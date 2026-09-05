@@ -38,6 +38,7 @@ async function setup(
   backendOverride?: VaultCredentialStoreBackendV1,
   includeCodex = false,
   authorityOverride?: VerifiedWorkspaceCredentialAuthorityV1,
+  loggerOverride?: any,
 ) {
   const providerRegistry = createProviderRegistryV1([{
     contractVersion: 'boring.provider.v1',
@@ -76,7 +77,7 @@ async function setup(
       loadKek: async () => new Uint8Array(32).fill(7),
     }),
   })
-  const app = Fastify({ logger: false })
+  const app = Fastify({ logger: loggerOverride ?? false })
   await app.register(credentialsRoutes, {
     providerRegistry,
     vaultBackend,
@@ -209,7 +210,18 @@ describe('owner credential routes', () => {
 
     const rotate = await post('rotate', {})
     const rotateRetry = await post('rotate', {})
-    const rewrap = await post('rewrap', { dekGeneration: 2 })
+    const rewrap = await post('rewrap', {
+      operationId: 'rewrap-dek-generation-2',
+      dekGeneration: 2,
+    })
+    const rewrapRetry = await post('rewrap', {
+      operationId: 'rewrap-dek-generation-2',
+      dekGeneration: 2,
+    })
+    const conflictingRewrap = await post('rewrap', {
+      operationId: 'rewrap-dek-generation-2',
+      dekGeneration: 3,
+    })
     const shred = await post('crypto-shred', {})
     const shredRetry = await post('crypto-shred', {})
 
@@ -223,16 +235,21 @@ describe('owner credential routes', () => {
       status: 'completed',
       dekGeneration: 2,
     })
-    expect(rewrap.json()).toMatchObject({ operation: 'rewrap', operationId: 'rewrap-1', dekGeneration: 2 })
+    expect(rewrap.json()).toMatchObject({
+      operation: 'rewrap', operationId: 'rewrap-dek-generation-2', dekGeneration: 2,
+    })
+    expect(rewrapRetry.json()).toEqual(rewrap.json())
+    expect(conflictingRewrap.statusCode).toBe(400)
     expect(shredRetry.json()).toEqual(shred.json())
     expect(calls).toEqual([
       'rotate:workspace-a:rotate-1',
       'rotate:workspace-a:rotate-1',
       'rewrap:workspace-a:2',
+      'rewrap:workspace-a:2',
       'shred:workspace-a',
       'shred:workspace-a',
     ])
-    for (const response of [rotate, rotateRetry, rewrap, shred, shredRetry]) {
+    for (const response of [rotate, rotateRetry, rewrap, rewrapRetry, conflictingRewrap, shred, shredRetry]) {
       expect(response.body).not.toMatch(/secret|cipher|wrapped/i)
     }
     await app.close()
@@ -269,6 +286,39 @@ describe('owner credential routes', () => {
     expect(unconfirmed.statusCode).toBe(400)
     expect(unconfirmed.body).not.toContain('secret-canary')
     await owner.app.close()
+  })
+
+  test('audits lifecycle failures with metadata and a digest, never raw operation/provider values', async () => {
+    const logs: string[] = []
+    const base = createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createInMemoryCredentialVersionAnchorV1(),
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'test-key', keyVersion: 1, loadKek: async () => new Uint8Array(32).fill(7),
+      }),
+    })
+    const { app } = await setup('owner', {
+      ...base,
+      cryptoShredWorkspace: async () => { throw new Error('provider-secret-canary') },
+    }, false, undefined, {
+      level: 'warn',
+      stream: { write: (line: string) => logs.push(line) },
+    })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/credential-key-lifecycle/crypto-shred',
+      payload: { operationId: 'operation-secret-canary', confirmWorkspaceId: 'workspace-a' },
+    })
+
+    expect(response.statusCode).toBe(400)
+    const audit = logs.join('\n')
+    expect(audit).toContain('crypto-shred')
+    expect(audit).toContain('workspace-a')
+    expect(audit).toContain('receipt-a')
+    expect(audit).toContain('operationIdDigest')
+    expect(audit).not.toContain('operation-secret-canary')
+    expect(audit).not.toContain('provider-secret-canary')
+    await app.close()
   })
 
   test('supports create, replace, disable, revoke, and delete without plaintext reads', async () => {

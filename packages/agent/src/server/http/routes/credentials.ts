@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   CREDENTIAL_ERROR_CODES,
@@ -139,9 +140,22 @@ function parseLifecycleBody(
     if (!Number.isSafeInteger(input.dekGeneration) || (input.dekGeneration as number) < 1) {
       throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
     }
-    return { operationId: input.operationId, dekGeneration: input.dekGeneration as number }
+    const dekGeneration = input.dekGeneration as number
+    // Rewrap has no durable backend receipt. Bind its caller-supplied key to
+    // the complete mutation payload so one key can never target two generations;
+    // replaying the same key is safe because rewrap itself is idempotent.
+    if (input.operationId !== `rewrap-dek-generation-${dekGeneration}`) {
+      throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
+    }
+    return { operationId: input.operationId, dekGeneration }
   }
   return { operationId: input.operationId }
+}
+
+function operationIdDigest(operationId: unknown): string | undefined {
+  return typeof operationId === 'string'
+    ? `sha256:${createHash('sha256').update(operationId).digest('hex')}`
+    : undefined
 }
 
 function lifecycleReceipt(
@@ -267,11 +281,28 @@ export async function credentialsRoutes(
   app: FastifyInstance,
   options: CredentialRoutesOptionsV1,
 ): Promise<void> {
+  const lifecycleAudit = new WeakMap<FastifyRequest, {
+    operation: CredentialKeyLifecycleOperationV1
+    workspaceId: string
+    authorizationReceiptId: string
+  }>()
   app.setErrorHandler((error, request, reply) => {
     const sanitized = routeError(error)
+    const audit = lifecycleAudit.get(request)
+    const routeTemplate = request.routeOptions.url ?? 'unknown'
+    const isLifecycleRoute = routeTemplate.startsWith(LIFECYCLE_ROUTE_PREFIX)
+    const bodyOperationId = (request.body as { operationId?: unknown } | undefined)?.operationId
     request.log.warn({
       credentialErrorCode: sanitized.code,
-      providerId: (request.params as { providerId?: unknown } | undefined)?.providerId,
+      ...(isLifecycleRoute
+        ? {
+            credentialLifecycleRoute: routeTemplate,
+            ...(audit ?? {}),
+            operationIdDigest: operationIdDigest(bodyOperationId),
+          }
+        : {
+            providerId: (request.params as { providerId?: unknown } | undefined)?.providerId,
+          }),
     }, 'credential route failed')
     return reply.code(sanitized.code === CREDENTIAL_ERROR_CODES.FORBIDDEN ? 403 : 400).send({
       error: { code: sanitized.code, message: sanitized.message },
@@ -364,6 +395,11 @@ export async function credentialsRoutes(
 
   app.post(`${LIFECYCLE_ROUTE_PREFIX}/rotate`, async (request, reply) => {
     const authority = await requireLifecycleOperator(request, options)
+    lifecycleAudit.set(request, {
+      operation: 'rotate',
+      workspaceId: authority.workspaceId,
+      authorizationReceiptId: authority.authorizationReceiptId,
+    })
     const input = parseLifecycleBody(request.body, authority.workspaceId, 'rotate')
     const dekGeneration = await options.vaultBackend.rotateWorkspaceDek(
       authority.workspaceId,
@@ -373,6 +409,7 @@ export async function credentialsRoutes(
       workspaceId: authority.workspaceId,
       credentialLifecycleOperation: 'rotate',
       authorizationReceiptId: authority.authorizationReceiptId,
+      operationIdDigest: operationIdDigest(input.operationId),
       dekGeneration,
     }, 'credential key lifecycle completed')
     return reply.code(200).send(lifecycleReceipt(
@@ -385,6 +422,11 @@ export async function credentialsRoutes(
 
   app.post(`${LIFECYCLE_ROUTE_PREFIX}/rewrap`, async (request, reply) => {
     const authority = await requireLifecycleOperator(request, options)
+    lifecycleAudit.set(request, {
+      operation: 'rewrap',
+      workspaceId: authority.workspaceId,
+      authorizationReceiptId: authority.authorizationReceiptId,
+    })
     const input = parseLifecycleBody(request.body, authority.workspaceId, 'rewrap')
     await options.vaultBackend.rewrapWorkspaceDek(
       authority.workspaceId,
@@ -394,6 +436,7 @@ export async function credentialsRoutes(
       workspaceId: authority.workspaceId,
       credentialLifecycleOperation: 'rewrap',
       authorizationReceiptId: authority.authorizationReceiptId,
+      operationIdDigest: operationIdDigest(input.operationId),
       dekGeneration: input.dekGeneration,
     }, 'credential key lifecycle completed')
     return reply.code(200).send(lifecycleReceipt(
@@ -406,12 +449,18 @@ export async function credentialsRoutes(
 
   app.post(`${LIFECYCLE_ROUTE_PREFIX}/crypto-shred`, async (request, reply) => {
     const authority = await requireLifecycleOperator(request, options)
+    lifecycleAudit.set(request, {
+      operation: 'crypto-shred',
+      workspaceId: authority.workspaceId,
+      authorizationReceiptId: authority.authorizationReceiptId,
+    })
     const input = parseLifecycleBody(request.body, authority.workspaceId, 'crypto-shred')
     await options.vaultBackend.cryptoShredWorkspace(authority.workspaceId)
     request.log.info({
       workspaceId: authority.workspaceId,
       credentialLifecycleOperation: 'crypto-shred',
       authorizationReceiptId: authority.authorizationReceiptId,
+      operationIdDigest: operationIdDigest(input.operationId),
     }, 'credential key lifecycle completed')
     return reply.code(200).send(lifecycleReceipt(
       authority,
