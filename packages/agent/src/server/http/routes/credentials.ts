@@ -99,8 +99,10 @@ async function requireOwner(
 async function requireLifecycleOperator(
   request: FastifyRequest,
   options: CredentialRoutesOptionsV1,
+  onVerified: (authority: VerifiedWorkspaceCredentialAuthorityV1) => void,
 ): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
   const authority = await verifiedAuthority(request, options)
+  onVerified(authority)
   const principal = authority.principal
   const authorized = principal.kind === 'user'
     ? principal.membershipRole === 'owner' && principal.userId.length > 0
@@ -394,11 +396,12 @@ export async function credentialsRoutes(
   })
 
   app.post(`${LIFECYCLE_ROUTE_PREFIX}/rotate`, async (request, reply) => {
-    const authority = await requireLifecycleOperator(request, options)
-    lifecycleAudit.set(request, {
-      operation: 'rotate',
-      workspaceId: authority.workspaceId,
-      authorizationReceiptId: authority.authorizationReceiptId,
+    const authority = await requireLifecycleOperator(request, options, (verified) => {
+      lifecycleAudit.set(request, {
+        operation: 'rotate',
+        workspaceId: verified.workspaceId,
+        authorizationReceiptId: verified.authorizationReceiptId,
+      })
     })
     const input = parseLifecycleBody(request.body, authority.workspaceId, 'rotate')
     const dekGeneration = await options.vaultBackend.rotateWorkspaceDek(
@@ -421,11 +424,12 @@ export async function credentialsRoutes(
   })
 
   app.post(`${LIFECYCLE_ROUTE_PREFIX}/rewrap`, async (request, reply) => {
-    const authority = await requireLifecycleOperator(request, options)
-    lifecycleAudit.set(request, {
-      operation: 'rewrap',
-      workspaceId: authority.workspaceId,
-      authorizationReceiptId: authority.authorizationReceiptId,
+    const authority = await requireLifecycleOperator(request, options, (verified) => {
+      lifecycleAudit.set(request, {
+        operation: 'rewrap',
+        workspaceId: verified.workspaceId,
+        authorizationReceiptId: verified.authorizationReceiptId,
+      })
     })
     const input = parseLifecycleBody(request.body, authority.workspaceId, 'rewrap')
     await options.vaultBackend.rewrapWorkspaceDek(
@@ -448,11 +452,12 @@ export async function credentialsRoutes(
   })
 
   app.post(`${LIFECYCLE_ROUTE_PREFIX}/crypto-shred`, async (request, reply) => {
-    const authority = await requireLifecycleOperator(request, options)
-    lifecycleAudit.set(request, {
-      operation: 'crypto-shred',
-      workspaceId: authority.workspaceId,
-      authorizationReceiptId: authority.authorizationReceiptId,
+    const authority = await requireLifecycleOperator(request, options, (verified) => {
+      lifecycleAudit.set(request, {
+        operation: 'crypto-shred',
+        workspaceId: verified.workspaceId,
+        authorizationReceiptId: verified.authorizationReceiptId,
+      })
     })
     const input = parseLifecycleBody(request.body, authority.workspaceId, 'crypto-shred')
     await options.vaultBackend.cryptoShredWorkspace(authority.workspaceId)

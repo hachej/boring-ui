@@ -257,6 +257,7 @@ describe('owner credential routes', () => {
 
   test('denies non-owner lifecycle calls and requires workspace-bound confirmation without leaking input', async () => {
     const rotateWorkspaceDek = vi.fn(async () => 2)
+    const deniedLogs: string[] = []
     const { app } = await setup('editor', {
       ...createVaultCredentialStoreBackendV1({
         persistence: createInMemoryCredentialVaultPersistenceV1(),
@@ -266,6 +267,9 @@ describe('owner credential routes', () => {
         }),
       }),
       rotateWorkspaceDek,
+    }, false, undefined, {
+      level: 'warn',
+      stream: { write: (line: string) => deniedLogs.push(line) },
     })
     const denied = await app.inject({
       method: 'POST',
@@ -275,6 +279,11 @@ describe('owner credential routes', () => {
     expect(denied.statusCode).toBe(403)
     expect(denied.body).not.toContain('secret-canary')
     expect(rotateWorkspaceDek).not.toHaveBeenCalled()
+    const deniedAudit = deniedLogs.join('\n')
+    expect(deniedAudit).toContain('workspace-a')
+    expect(deniedAudit).toContain('receipt-a')
+    expect(deniedAudit).toContain('operationIdDigest')
+    expect(deniedAudit).not.toContain('secret-canary')
     await app.close()
 
     const owner = await setup('owner')
