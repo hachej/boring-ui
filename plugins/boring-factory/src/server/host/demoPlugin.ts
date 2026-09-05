@@ -13,7 +13,19 @@ import {
   resolveEpicSnapshot,
 } from '../sandbox'
 import type { FactoryEpicEntry, FactoryEpicRegistry } from './epicRegistry'
-import { nodeLocalProcessRuntime, portIsAvailable, resolveLocalPort, type LocalDemoProcessRuntime } from './localDemoRuntime'
+import {
+  buildLocalDemoEnvironment,
+  closeLocalProxy,
+  localDemoHost,
+  nodeLocalProcessRuntime,
+  portIsAvailable,
+  resolveLocalPort,
+  singleShellCommandError,
+  startLocalProxy,
+  type LocalDemoProcessIdentity,
+  type LocalDemoProxy,
+  type LocalDemoProcessRuntime,
+} from './localDemoRuntime'
 import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
 
 export type { LocalDemoProcessRuntime } from './localDemoRuntime'
@@ -21,7 +33,7 @@ export type { LocalDemoProcessRuntime } from './localDemoRuntime'
 export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 
 /** Bump when this file's demo behavior changes; hashed into the plugin's contentDigest. */
-const DEMO_PLUGIN_VERSION = 'factory-demo.v2.2026-09-05'
+const DEMO_PLUGIN_VERSION = 'factory-demo.v3.2026-09-05'
 
 /** The only seat allowed to open a live demo: the owner-facing seat that raises Gate 2. */
 const DEMO_AGENT_TYPE_ID = 'boring-orchestrator'
@@ -33,6 +45,8 @@ const MIN_PORT = 1024
 const MAX_PORT = 65535
 const READY_POLL_TIMEOUT_MS = 120_000
 const READY_POLL_INTERVAL_MS = 2_000
+const LOCAL_READY_TOKEN_HEADER = 'x-boring-factory-demo-token'
+const LOCAL_START_ATTEMPTS = 3
 
 const execFileAsync = promisify(execFile)
 
@@ -136,6 +150,7 @@ export interface DemoEntry {
   readonly leaseId?: string
   readonly leaseRoot?: string
   readonly processId?: number
+  readonly processStartTime?: string
   readonly url: string
   readonly sha: string
   readonly port: number
@@ -184,6 +199,10 @@ export interface CreateFactoryDemoPluginOptions {
   readonly localProcessRuntime?: LocalDemoProcessRuntime
   /** Injectable port probe. Production binds loopback briefly to test availability. */
   readonly localPortAvailable?: (port: number) => Promise<boolean>
+  /** Test-only readiness deadline override. */
+  readonly readyPollTimeoutMs?: number
+  /** Test-only readiness interval override. */
+  readonly readyPollIntervalMs?: number
 }
 
 export interface FactoryDemoPluginControl {
@@ -250,20 +269,45 @@ async function pollReady(
   readyPath: string,
   fetchImpl: typeof fetch,
   shouldContinue: () => boolean = () => true,
+  options: {
+    readonly deadline?: number
+    readonly intervalMs?: number
+    readonly readyToken?: string
+  } = {},
 ): Promise<{ ready: boolean; lastStatus?: number }> {
-  const deadline = Date.now() + READY_POLL_TIMEOUT_MS
+  const deadline = options.deadline ?? Date.now() + READY_POLL_TIMEOUT_MS
+  const intervalMs = options.intervalMs ?? READY_POLL_INTERVAL_MS
   let lastStatus: number | undefined
   const target = `${url}${readyPath.startsWith('/') ? readyPath : `/${readyPath}`}`
   while (Date.now() < deadline) {
     if (!shouldContinue()) break
+    const controller = new AbortController()
+    const remainingMs = Math.max(1, Math.min(deadline - Date.now(), intervalMs))
+    let rejectAtDeadline: ((reason?: unknown) => void) | undefined
+    const deadlineReached = new Promise<never>((_resolve, reject) => { rejectAtDeadline = reject })
+    const timeout = setTimeout(() => {
+      controller.abort()
+      rejectAtDeadline?.(new Error('readiness probe deadline reached'))
+    }, remainingMs)
     try {
-      const response = await fetchImpl(target, { method: 'GET' })
+      const response = await Promise.race([
+        fetchImpl(target, {
+          method: 'GET',
+          signal: controller.signal,
+          ...(options.readyToken ? { headers: { [LOCAL_READY_TOKEN_HEADER]: options.readyToken } } : {}),
+        }),
+        deadlineReached,
+      ])
       lastStatus = response.status
-      if (response.status === 200) return { ready: true, lastStatus }
+      const tokenMatches = !options.readyToken || response.headers.get(LOCAL_READY_TOKEN_HEADER) === options.readyToken
+      if (response.status === 200 && tokenMatches) return { ready: true, lastStatus }
     } catch {
       // Connection refused / not up yet: keep polling until the deadline.
+    } finally {
+      clearTimeout(timeout)
     }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, READY_POLL_INTERVAL_MS))
+    const sleepMs = Math.min(intervalMs, Math.max(0, deadline - Date.now()))
+    if (sleepMs > 0) await new Promise((resolvePromise) => setTimeout(resolvePromise, sleepMs))
   }
   return { ready: false, ...(lastStatus !== undefined ? { lastStatus } : {}) }
 }
@@ -272,10 +316,14 @@ function demoProvider(entry: DemoEntry): 'vercel' | 'local' {
   return entry.provider ?? 'vercel'
 }
 
-function advertisedLocalHost(env: NodeJS.ProcessEnv): string {
-  const configured = env.BORING_FACTORY_DEMO_HOST?.trim()
-  if (!configured) return '127.0.0.1'
-  return configured.includes(':') && !configured.startsWith('[') ? `[${configured}]` : configured
+function remoteLeaseWasNotFound(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /not found|no fake sandbox named|\b404\b/i.test(message)
+}
+
+function localProcessIdentity(entry: DemoEntry): LocalDemoProcessIdentity | undefined {
+  if (!entry.processId || !entry.processStartTime) return undefined
+  return { processId: entry.processId, processStartTime: entry.processStartTime }
 }
 
 function localLeaseRoot(stateRoot: string, epicKey: string, leaseId: string): string {
@@ -297,9 +345,13 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
   const fetchImpl = options.fetchImpl ?? fetch
   const localProcessRuntime = options.localProcessRuntime ?? nodeLocalProcessRuntime
   const localPortAvailable = options.localPortAvailable ?? portIsAvailable
+  const readyPollTimeoutMs = options.readyPollTimeoutMs ?? READY_POLL_TIMEOUT_MS
+  const readyPollIntervalMs = options.readyPollIntervalMs ?? READY_POLL_INTERVAL_MS
   let sandboxFactoryPromise: Promise<DemoSandboxFactory> | undefined
   let stateMutations = Promise.resolve()
+  let localStarts = Promise.resolve()
   const localPairs = new Map<string, WorkspaceSandboxPairV1>()
+  const localProxies = new Map<string, LocalDemoProxy>()
   const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const startingEpics = new Set<string>()
   const getSandboxFactory = (): Promise<DemoSandboxFactory> => {
@@ -343,7 +395,9 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
 
   function localDemoIsAlive(id: string, entry: DemoEntry): boolean {
     try {
-      return localProcessRuntime.isAlive(entry.processId, localLeaseRoot(stateRoot, entry.epicKey, entry.leaseId ?? id))
+      localLeaseRoot(stateRoot, entry.epicKey, entry.leaseId ?? id)
+      const identity = localProcessIdentity(entry)
+      return localProcessRuntime.isAlive(identity) && identity !== undefined && localProcessRuntime.isListeningOnLoopback(identity, entry.port)
     } catch {
       return false
     }
@@ -351,7 +405,10 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
 
   async function stopLocalDemo(id: string, entry: DemoEntry): Promise<void> {
     const leaseRoot = localLeaseRoot(stateRoot, entry.epicKey, entry.leaseId ?? id)
-    await localProcessRuntime.stop(entry.processId, leaseRoot)
+    const proxy = localProxies.get(id)
+    localProxies.delete(id)
+    await closeLocalProxy(proxy).catch(() => undefined)
+    await localProcessRuntime.stop(localProcessIdentity(entry))
     const pair = localPairs.get(id)
     localPairs.delete(id)
     if (pair) {
@@ -368,8 +425,24 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
       const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
       await sandbox.stop()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'failed to stop sandbox'
-      if (!/not found|no fake sandbox named/i.test(message)) throw error
+      if (!remoteLeaseWasNotFound(error)) throw error
+    }
+  }
+
+  async function reconcileRemoteCreateFailure(sandboxName: string): Promise<void> {
+    const credentials = resolveVercelCredentials(env)
+    const factory = await getSandboxFactory()
+    let sandbox: DemoSandboxHandle
+    try {
+      sandbox = await factory.get({ name: sandboxName, ...credentials })
+    } catch (error) {
+      if (remoteLeaseWasNotFound(error)) return
+      throw new Error(`could not classify remote lease ${sandboxName}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    try {
+      await sandbox.stop()
+    } catch (error) {
+      throw new Error(`could not stop remote lease ${sandboxName}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -400,7 +473,16 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
       })
     }
     const retained = await readState(statePath)
-    for (const [id, entry] of Object.entries(retained.demos)) scheduleExpiry(id, entry)
+    for (const [id, entry] of Object.entries(retained.demos)) {
+      if (demoProvider(entry) === 'local' && localDemoIsAlive(id, entry)) {
+        const host = localDemoHost(env)
+        if (host.needsProxy && !localProxies.has(id)) {
+          const proxy = await startLocalProxy(host, entry.port)
+          if (proxy) localProxies.set(id, proxy)
+        }
+      }
+      scheduleExpiry(id, entry)
+    }
     return dropped.length
   }
 
@@ -455,13 +537,24 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     readonly fallbackFrom?: 'vercel'
     readonly fallbackReason?: string
   }): Promise<ToolResult> {
+    let releaseStart!: () => void
+    const previousStart = localStarts
+    localStarts = new Promise<void>((resolveStart) => { releaseStart = resolveStart })
+    await previousStart
     const leaseId = input.id
     const leaseRoot = localLeaseRoot(stateRoot, input.epic.epicKey, leaseId)
     let pair: WorkspaceSandboxPairV1 | undefined
-    let processId: number | undefined
+    let processIdentity: LocalDemoProcessIdentity | undefined
+    let proxy: LocalDemoProxy | undefined
     let failureCode = 'LOCAL_START_FAILED'
     try {
-      const port = await resolveLocalPort(input.requestedPort, localPortAvailable)
+      const commandError = singleShellCommandError(input.command)
+      const installError = input.install?.trim() ? singleShellCommandError(input.install) : undefined
+      if (commandError || installError) {
+        failureCode = 'INVALID_COMMAND'
+        throw new Error(commandError ?? installError)
+      }
+      const host = localDemoHost(env)
       await mkdir(resolve(leaseRoot, '..'), { recursive: true })
       pair = await createLocalDisposableProvider(input.epic.worktree, input.sha).create({
         workspaceRoot: leaseRoot,
@@ -469,37 +562,69 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
         sessionId: leaseId,
       })
 
-      if (input.install?.trim()) {
-        const installResult = await pair.sandbox.exec(input.install, { timeoutMs: READY_POLL_TIMEOUT_MS })
-        if (installResult.exitCode !== 0) {
-          failureCode = 'INSTALL_FAILED'
-          throw new Error(`install command exited ${installResult.exitCode}`)
+      const attemptedPorts = new Set<number>()
+      let readinessDeadline = 0
+      let port: number | undefined
+      let readyToken = randomUUID()
+      for (let attempt = 0; attempt < LOCAL_START_ATTEMPTS; attempt += 1) {
+        port = await resolveLocalPort(input.requestedPort, localPortAvailable, attemptedPorts)
+        attemptedPorts.add(port)
+        readyToken = randomUUID()
+        const processEnv = buildLocalDemoEnvironment(env, { port, leaseId, sha: input.sha, readyToken })
+
+        if (attempt === 0 && input.install?.trim()) {
+          const installExitCode = await localProcessRuntime.run(input.install, leaseRoot, processEnv, readyPollTimeoutMs)
+          if (installExitCode !== 0) {
+            failureCode = 'INSTALL_FAILED'
+            throw new Error(`install command exited ${installExitCode}`)
+          }
         }
-      }
+        if (readinessDeadline === 0) readinessDeadline = Date.now() + readyPollTimeoutMs
 
-      processId = await localProcessRuntime.start(input.command, leaseRoot, port)
+        try {
+          proxy = await startLocalProxy(host, port)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') continue
+          throw error
+        }
+        processIdentity = await localProcessRuntime.start(input.command, leaseRoot, processEnv)
 
-      const probeUrl = `http://127.0.0.1:${port}`
-      const readiness = await pollReady(probeUrl, input.readyPath, fetchImpl, () => localProcessRuntime.isAlive(processId, leaseRoot))
-      if (!readiness.ready) {
+        const probeUrl = `http://127.0.0.1:${port}`
+        const readiness = await pollReady(
+          probeUrl,
+          input.readyPath,
+          fetchImpl,
+          () => localProcessRuntime.isAlive(processIdentity),
+          { deadline: readinessDeadline, intervalMs: readyPollIntervalMs, readyToken },
+        )
+        if (readiness.ready && localProcessRuntime.isListeningOnLoopback(processIdentity, port)) break
+
         failureCode = 'READY_FAILED'
+        const bindWasLost = !localProcessRuntime.isAlive(processIdentity)
+        await localProcessRuntime.stop(processIdentity).catch(() => undefined)
+        processIdentity = undefined
+        await closeLocalProxy(proxy).catch(() => undefined)
+        proxy = undefined
+        if (bindWasLost && Date.now() < readinessDeadline && attempt + 1 < LOCAL_START_ATTEMPTS) continue
         throw new Error(
           readiness.lastStatus === undefined
             ? `demo command exited or ${input.readyPath} did not become ready`
-            : `${input.readyPath} did not return HTTP 200 (last status ${readiness.lastStatus})`,
+            : `${input.readyPath} did not pass authenticated HTTP 200 readiness (last status ${readiness.lastStatus})`,
         )
       }
+      if (!port || !processIdentity) throw new Error('local demo lost its port before the command became ready')
 
       const startedAt = new Date().toISOString()
       const expiresAt = new Date(Date.now() + input.ttlMinutes * 60_000).toISOString()
-      const url = `http://${advertisedLocalHost(env)}:${port}`
+      const url = `http://${host.urlHost}:${port}`
       const entry: DemoEntry = {
         epicKey: input.epic.epicKey,
         sandboxId: leaseId,
         provider: 'local',
         leaseId,
         leaseRoot,
-        processId,
+        processId: processIdentity.processId,
+        processStartTime: processIdentity.processStartTime,
         url,
         sha: input.sha,
         port,
@@ -510,6 +635,7 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
       }
       await mutateState((current) => ({ demos: { ...current.demos, [leaseId]: entry } }))
       localPairs.set(leaseId, pair)
+      if (proxy) localProxies.set(leaseId, proxy)
       scheduleExpiry(leaseId, entry)
       return jsonResult({
         id: leaseId,
@@ -523,7 +649,8 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
         ...(input.fallbackFrom ? { fallbackFrom: input.fallbackFrom, reason: input.fallbackReason } : {}),
       })
     } catch (error) {
-      await localProcessRuntime.stop(processId, leaseRoot).catch(() => undefined)
+      await closeLocalProxy(proxy).catch(() => undefined)
+      await localProcessRuntime.stop(processIdentity).catch(() => undefined)
       if (pair) await pair.dispose().catch(() => undefined)
       else await rm(leaseRoot, { recursive: true, force: true }).catch(() => undefined)
       const message = error instanceof Error ? error.message : 'failed to start local demo'
@@ -533,12 +660,16 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
         provider: 'local',
         ...(input.fallbackFrom ? { fallbackFrom: input.fallbackFrom, reason: input.fallbackReason } : {}),
       }, true)
+    } finally {
+      releaseStart()
     }
   }
 
   function close(): void {
     for (const timer of expiryTimers.values()) clearTimeout(timer)
     expiryTimers.clear()
+    for (const proxy of localProxies.values()) proxy.close()
+    localProxies.clear()
   }
 
   const demoTool: AgentTool = {
@@ -719,6 +850,16 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
           })
         } catch (error) {
           const reason = error instanceof Error ? error.message : 'Vercel failed to create a demo lease'
+          try {
+            await reconcileRemoteCreateFailure(sandboxName)
+          } catch (reconciliationError) {
+            return jsonResult({
+              code: 'REMOTE_RECONCILIATION_FAILED',
+              message: reconciliationError instanceof Error ? reconciliationError.message : 'failed to reconcile remote demo lease',
+              provider: 'vercel',
+              reason,
+            }, true)
+          }
           return await startLocalDemo({
             id,
             epic,

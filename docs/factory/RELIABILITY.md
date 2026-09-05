@@ -67,10 +67,21 @@ The canonical `exec` and `owner-gate` blocks assume per-Bead PRs, push-after-com
 
 ## What is still not covered
 
-- Security confinement: the local provider isolates by routing only. Use the Vercel provider for untrusted execution.
-- Local demos are routing isolation, not security confinement: `demo_sandbox` runs the
-  exact-SHA lease command on the host and binds it to `127.0.0.1`. Configure
-  `BORING_FACTORY_DEMO_HOST` (for example, a Tailscale IP) when the owner is not on the host.
+- Security confinement: local demos are host processes, not containers. Their limited
+  host confinement consists only of an exact-SHA disposable lease root as the working
+  directory and a scrubbed environment allowlisting `PATH`, `HOME`, `LANG`, `TZ`,
+  `NODE_OPTIONS`, `CI`, the loopback `HOST`/selected `PORT`, and non-secret demo
+  lease/SHA/readiness values. The command can still read or modify any host path allowed
+  to the Factory OS user and has the user's network authority. Use Vercel for untrusted
+  execution. A hard executable or shell-builtin allowlist is intentionally out of scope;
+  local inputs are limited to one shell command line with control/redirection operators
+  rejected. Container-grade confinement belongs to SBX1: the earlier gVisor plan is
+  superseded by the ratified Firecracker microVM decision in `docs/DECISIONS.md` §31.
+- Local demo listeners are checked through Linux `/proc` and rejected unless the demo
+  process group owns only loopback listeners on its selected port. A validated,
+  non-wildcard `BORING_FACTORY_DEMO_HOST` address is served by a host-owned reverse proxy
+  to that loopback listener; the child never receives the advertised address. This limits
+  accidental listener exposure but is not a sandbox or network-egress boundary.
 - Concurrency: two Workers on one epic share the worktree without file reservations by owner ruling; collisions are resolved in place. Add reservations only if runs show collisions.
 - Provider quotas: model credit exhaustion still surfaces as failed turns. Host dispatch and review caps bound retries, but do not predict or replenish provider credit.
 
@@ -94,8 +105,10 @@ Running several work threads at once is `apps/factory-playground/scripts/factory
 - **State**: `<stateRoot>/epics.json` is the authoritative runtime epic registry, `<stateRoot>/session-bindings.json` maps every Factory session to its epic, and `<stateRoot>/dispatches.json` records dispatch/review admission and outcomes. Coupled registry/binding mutations write the registry first and bindings second; each state file is atomic. Supervision, limits, demos, leases, and snapshots carry or key by the same epic key.
 - **State**: `<stateRoot>/epics.json` is the authoritative runtime epic registry and `<stateRoot>/session-bindings.json` maps every Factory session to its epic. Coupled mutations write the registry first and bindings second; each file is atomic. Supervision, demos, leases, and snapshots carry or key by the same epic key.
 - **Demos**: `<stateRoot>/demos.json` records one active demo per epic. A local entry carries
-  its process group and disposable lease root so `stop` can terminate the full command tree
-  and release the clone. Boot reconciliation drops dead local processes, stops expired demos,
+  its process group, Linux process-start identity, and disposable lease root so `stop` can
+  terminate the full command tree without signaling a reused PID and release the clone.
+  Group liveness is independent of the leader, so surviving children remain stoppable. Boot
+  reconciliation drops dead local processes, stops expired demos, restores owner-host proxies,
   and re-arms TTL cleanup; the active URL is projected into workspace metadata and the Epics list.
 - **Recovery**: boot validates canonical registry paths, restores missing registry Orchestrator bindings, preserves child bindings to active epics, and drops/logs orphan bindings to missing or closed epics before any re-arm. It then prunes stale supervision, re-arms only matching registry Orchestrators, cleans expired demos, and warms active snapshots. The idempotent adopt endpoint reattaches shared sessions, transfers supervision, and safely copies native transcripts from the former per-epic session roots into the hub namespace; it rejects cross-epic binding collisions and preserves the legacy source files.
 - **Lifecycle**: `factory-epic.mjs hub up` starts the shared `5230` API / `5220` UI. `up` provisions and builds an epic worktree, then calls intake; `list` reads live facts from the host; `down` marks the entry closed and never deletes its worktree.
