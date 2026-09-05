@@ -235,6 +235,7 @@ export class ChannelBindingStore {
   }
 
   provision(input: ProvisionChannelBindingInput): ChannelBinding {
+    const now = Date.now()
     const row = this.sql.exec(`INSERT INTO boring_channel_bindings
       (channel, conversation_key, agent_type_id, workspace_id, auth_subject_id, binding_version, status, session_key, outbound_cursor)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
@@ -271,7 +272,7 @@ export class ChannelBindingStore {
         session_reset_pending, template_sent_for_inbound_at`,
     input.channel, input.conversationKey, input.agentTypeId, input.workspaceId,
     input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null,
-    input.outboundCursor ?? '-1', Date.now(), Date.now()).toArray()[0]
+    input.outboundCursor ?? '-1', now, now).toArray()[0]
     if (!row) {
       throw Object.assign(new Error('Channel binding has active outbound delivery.'), {
         code: ErrorCode.enum.CHANNEL_BINDING_BUSY,
