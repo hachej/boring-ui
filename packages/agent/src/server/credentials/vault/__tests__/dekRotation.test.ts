@@ -133,6 +133,27 @@ describe('workspace DEK lifecycle', () => {
     oldDek.fill(0)
   })
 
+  test('rejects a forged non-adjacent rotation before modifying source records', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const { backend } = harness(persistence)
+    const original = await backend.writeCredentialFields({
+      workspaceId,
+      providerId: providerA,
+      fields: new Map([[apiKey, text('must-remain-generation-one')]]),
+    })
+    await persistence.putDekRotationState(workspaceId, {
+      operationId: 'forged-n-plus-two',
+      sourceGeneration: 1,
+      targetGeneration: 3,
+      phase: 'reencrypting',
+    })
+
+    await expect(backend.rotateWorkspaceDek(workspaceId, 'forged-n-plus-two'))
+      .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+    expect(await persistence.getCredentialRecord(workspaceId, providerA)).toEqual(original)
+    expect(await persistence.getWrappedDek(workspaceId, 3)).toBeUndefined()
+  })
+
   test('new providers use the anchored current generation after rotation', async () => {
     const persistence = createInMemoryCredentialVaultPersistenceV1()
     const { backend } = harness(persistence)

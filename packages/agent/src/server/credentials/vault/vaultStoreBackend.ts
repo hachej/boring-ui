@@ -715,6 +715,11 @@ function createVaultCredentialStoreBackendInternalV1(
           }
         }
 
+        if (
+          rotation.targetGeneration !== rotation.sourceGeneration + 1
+          || !Number.isSafeInteger(rotation.targetGeneration)
+        ) unreadable('Credential DEK rotation generations are not adjacent')
+
         let targetWrapped = await locked.getWrappedDek(workspaceId, rotation.targetGeneration)
         if (!targetWrapped) {
           if (rotation.phase !== 'reencrypting') {
