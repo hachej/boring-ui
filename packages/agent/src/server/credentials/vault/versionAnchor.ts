@@ -4,7 +4,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto'
-import { open, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { open, readFile, rename, stat, unlink, utimes } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname } from 'node:path'
 import {
@@ -23,8 +23,8 @@ export interface WorkspaceCredentialVersionStateV1 {
   readonly cryptoShredGeneration: number
   /** Monotonic workspace-wide fence for replayed wrapped DEKs and records. */
   readonly dekGeneration: number
-  /** Authenticated idempotency key for the most recently completed DEK rotation. */
-  readonly dekRotationOperationId?: string
+  /** Authenticated idempotency receipts for completed DEK rotations. */
+  readonly dekRotationReceipts: Readonly<Record<string, number>>
   readonly credentialVersions: Readonly<Record<string, number>>
   readonly credentialMaterialKinds: Readonly<Record<string, CredentialMaterialKindV1>>
   readonly credentialLifecycleStates: Readonly<Record<string, CredentialLifecycleStateV1>>
@@ -127,7 +127,8 @@ type MutableAnchorStateV1 = {
     /** Absent only in authenticated v2 files written before the shred fence. */
     cryptoShredGeneration?: number
     dekGeneration: number
-    dekRotationOperationId?: string
+    /** Absent in authenticated v2 files written before recoverable rotation. */
+    dekRotationReceipts?: Record<string, number>
     credentialVersions: Record<string, number>
     credentialMaterialKinds: Record<string, CredentialMaterialKindV1>
     credentialLifecycleStates: Record<string, CredentialLifecycleStateV1>
@@ -191,8 +192,9 @@ async function removeAbandonedMutationLock(lockPath: string): Promise<void> {
   const sameHostDead = owner?.hostname === hostname()
     && Number.isSafeInteger(owner.pid)
     && !localProcessIsAlive(owner.pid!)
-  const stale = Date.now() - modifiedAt >= MUTATION_LOCK_STALE_MS
-  if (!sameHostDead && !stale) return
+  const staleForeignHost = owner?.hostname !== hostname()
+    && Date.now() - modifiedAt >= MUTATION_LOCK_STALE_MS
+  if (!sameHostDead && !staleForeignHost) return
 
   // Two recovery processes may inspect the same abandoned file. Only unlink
   // the exact owner snapshot we inspected; never remove a newly acquired lock.
@@ -205,13 +207,26 @@ async function acquireMutationLock(lockPath: string) {
     try {
       const lock = await open(lockPath, 'wx', 0o600)
       try {
-        await lock.writeFile(JSON.stringify({
+        const encodedOwner = JSON.stringify({
           token: randomUUID(),
           hostname: hostname(),
           pid: process.pid,
-        } satisfies MutationLockOwnerV1), 'utf8')
+        } satisfies MutationLockOwnerV1)
+        await lock.writeFile(encodedOwner, 'utf8')
         await lock.sync()
-        return lock
+        const heartbeat = setInterval(() => {
+          const now = new Date()
+          void utimes(lockPath, now, now).catch(() => undefined)
+        }, MUTATION_LOCK_STALE_MS / 3)
+        heartbeat.unref()
+        return {
+          async release() {
+            clearInterval(heartbeat)
+            await lock.close().catch(() => undefined)
+            const current = await readFile(lockPath, 'utf8').catch(() => undefined)
+            if (current === encodedOwner) await unlink(lockPath).catch(() => undefined)
+          },
+        }
       } catch (error) {
         await lock.close().catch(() => undefined)
         await unlink(lockPath).catch(() => undefined)
@@ -249,9 +264,7 @@ function copyWorkspaceState(
     counter: workspace.counter,
     cryptoShredGeneration: workspace.cryptoShredGeneration ?? 0,
     dekGeneration: workspace.dekGeneration,
-    ...(workspace.dekRotationOperationId === undefined
-      ? {}
-      : { dekRotationOperationId: workspace.dekRotationOperationId }),
+    dekRotationReceipts: Object.freeze({ ...workspace.dekRotationReceipts }),
     credentialVersions: Object.freeze({ ...workspace.credentialVersions }),
     credentialMaterialKinds: Object.freeze({ ...workspace.credentialMaterialKinds }),
     credentialLifecycleStates: Object.freeze({ ...workspace.credentialLifecycleStates }),
@@ -269,9 +282,12 @@ function canonicalState(state: MutableAnchorStateV1): string {
           ? {}
           : { cryptoShredGeneration: workspace.cryptoShredGeneration }),
         dekGeneration: workspace.dekGeneration,
-        ...(workspace.dekRotationOperationId === undefined
+        ...(workspace.dekRotationReceipts === undefined
           ? {}
-          : { dekRotationOperationId: workspace.dekRotationOperationId }),
+          : { dekRotationReceipts: Object.fromEntries(
+              Object.entries(workspace.dekRotationReceipts)
+                .sort(([left], [right]) => left.localeCompare(right)),
+            ) }),
         credentialVersions: Object.fromEntries(
           Object.entries(workspace.credentialVersions)
             .sort(([left], [right]) => left.localeCompare(right)),
@@ -311,10 +327,14 @@ function validateState(value: unknown): MutableAnchorStateV1 {
       ))
       || !Number.isSafeInteger(workspace.dekGeneration)
       || workspace.dekGeneration < 1
-      || (workspace.dekRotationOperationId !== undefined && (
-        typeof workspace.dekRotationOperationId !== 'string'
-        || workspace.dekRotationOperationId.length === 0
-        || workspace.dekRotationOperationId.length > 200
+      || (workspace.dekRotationReceipts !== undefined && (
+        typeof workspace.dekRotationReceipts !== 'object'
+        || Object.entries(workspace.dekRotationReceipts).some(([operationId, generation]) => (
+          operationId.length === 0
+          || operationId.length > 200
+          || !Number.isSafeInteger(generation)
+          || generation < 2
+        ))
       ))
       || !workspace.credentialVersions
       || typeof workspace.credentialVersions !== 'object'
@@ -406,9 +426,7 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
         next.workspaces[workspaceId] = {
           counter: (current?.counter ?? 0) + 1,
           dekGeneration: mutation.nextDekGeneration,
-          ...(current?.dekRotationOperationId === undefined
-            ? {}
-            : { dekRotationOperationId: current.dekRotationOperationId }),
+          dekRotationReceipts: { ...current?.dekRotationReceipts },
           credentialVersions: {
             ...current?.credentialVersions,
             [providerId]: mutation.nextCredentialVersion,
@@ -482,9 +500,7 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
             counter: (currentWorkspace?.counter ?? 0) + 1,
             cryptoShredGeneration: 1,
             dekGeneration: currentWorkspace?.dekGeneration ?? 1,
-            ...(currentWorkspace?.dekRotationOperationId === undefined
-              ? {}
-              : { dekRotationOperationId: currentWorkspace.dekRotationOperationId }),
+            dekRotationReceipts: { ...currentWorkspace?.dekRotationReceipts },
             credentialVersions: { ...currentWorkspace?.credentialVersions },
             credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
             credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
@@ -526,7 +542,10 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
           ...next.workspaces[workspaceId]!,
           counter: current.counter + 1,
           dekGeneration: mutation.nextDekGeneration,
-          dekRotationOperationId: mutation.nextDekRotationOperationId,
+          dekRotationReceipts: {
+            ...current.dekRotationReceipts,
+            [mutation.nextDekRotationOperationId]: mutation.nextDekGeneration,
+          },
         }
         state = next
         result = mutation.result
@@ -722,8 +741,7 @@ export function createLocalFileCredentialVersionAnchorV1(
           return state ? copyWorkspaceState(state, workspaceId) : undefined
         })
       } finally {
-        await lock.close().catch(() => undefined)
-        await unlink(lockPath).catch(() => undefined)
+        await lock.release()
       }
     },
     async withMutation<T>(
@@ -736,8 +754,8 @@ export function createLocalFileCredentialVersionAnchorV1(
       const lockPath = `${options.anchorFilePath}.lock`
       const lock = await acquireMutationLock(lockPath)
       try {
-        // A process crash can leave the lock behind. Future writes then fail
-        // closed until operator cleanup rather than guessing lock ownership.
+        // The owner-stamped lease above recovers a dead process lock without
+        // permitting a live mutation's lock to be removed by pathname alone.
         const state = await readSealedState(options)
         const current = copyWorkspaceState(state, workspaceId)
         if ((current?.cryptoShredGeneration ?? 0) > 0) {
@@ -757,9 +775,7 @@ export function createLocalFileCredentialVersionAnchorV1(
         next.workspaces[workspaceId] = {
           counter: (currentWorkspace?.counter ?? 0) + 1,
           dekGeneration: mutation.nextDekGeneration,
-          ...(currentWorkspace?.dekRotationOperationId === undefined
-            ? {}
-            : { dekRotationOperationId: currentWorkspace.dekRotationOperationId }),
+          dekRotationReceipts: { ...currentWorkspace?.dekRotationReceipts },
           credentialVersions: {
             ...currentWorkspace?.credentialVersions,
             [providerId]: mutation.nextCredentialVersion,
@@ -780,8 +796,7 @@ export function createLocalFileCredentialVersionAnchorV1(
         await replaceSealedState(next, options)
         return mutation.result
       } finally {
-        await lock.close().catch(() => undefined)
-        await unlink(lockPath).catch(() => undefined)
+        await lock.release()
       }
     },
     async withLifecycleMutation<T>(
@@ -815,8 +830,7 @@ export function createLocalFileCredentialVersionAnchorV1(
         await replaceSealedState(next, options)
         return mutation.result
       } finally {
-        await lock.close().catch(() => undefined)
-        await unlink(lockPath).catch(() => undefined)
+        await lock.release()
       }
     },
     async withCryptoShredMutation<T>(
@@ -837,9 +851,7 @@ export function createLocalFileCredentialVersionAnchorV1(
             counter: (currentWorkspace?.counter ?? 0) + 1,
             cryptoShredGeneration: 1,
             dekGeneration: currentWorkspace?.dekGeneration ?? 1,
-            ...(currentWorkspace?.dekRotationOperationId === undefined
-              ? {}
-              : { dekRotationOperationId: currentWorkspace.dekRotationOperationId }),
+            dekRotationReceipts: { ...currentWorkspace?.dekRotationReceipts },
             credentialVersions: { ...currentWorkspace?.credentialVersions },
             credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
             credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
@@ -851,8 +863,7 @@ export function createLocalFileCredentialVersionAnchorV1(
         }
         return (await mutate(current!)).result
       } finally {
-        await lock.close().catch(() => undefined)
-        await unlink(lockPath).catch(() => undefined)
+        await lock.release()
       }
     },
     async withDekGenerationMutation<T>(
@@ -884,13 +895,15 @@ export function createLocalFileCredentialVersionAnchorV1(
           ...next.workspaces[workspaceId]!,
           counter: current.counter + 1,
           dekGeneration: mutation.nextDekGeneration,
-          dekRotationOperationId: mutation.nextDekRotationOperationId,
+          dekRotationReceipts: {
+            ...current.dekRotationReceipts,
+            [mutation.nextDekRotationOperationId]: mutation.nextDekGeneration,
+          },
         }
         await replaceSealedState(next, options)
         return mutation.result
       } finally {
-        await lock.close().catch(() => undefined)
-        await unlink(lockPath).catch(() => undefined)
+        await lock.release()
       }
     },
   }

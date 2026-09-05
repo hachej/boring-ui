@@ -369,6 +369,7 @@ describe('local-KEK credential version anchor', () => {
       counter: 2,
       cryptoShredGeneration: 0,
       dekGeneration: 1,
+      dekRotationReceipts: {},
       credentialVersions: { 'provider-a': 1, 'provider-b': 1 },
       credentialMaterialKinds: {
         'provider-a': 'field-set',

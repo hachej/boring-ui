@@ -212,6 +212,7 @@ describe('Postgres credential rollback protection', () => {
       'target-key',
       'record-migration',
       'verified-marker',
+      'anchor-lock-recovery',
       'anchor-advance',
       'anchor-advanced-marker',
       'atomic-finalize',
@@ -283,23 +284,28 @@ describe('Postgres credential rollback protection', () => {
           }
         },
       })
-      const faultAnchor = boundary === 'anchor-advance'
+      const faultAnchor = boundary === 'anchor-lock-recovery' || boundary === 'anchor-advance'
         ? {
             ...anchor,
             async withDekGenerationMutation<T>(
               requestedWorkspaceId: string,
               mutate: Parameters<typeof anchor.withDekGenerationMutation<T>>[1],
             ): Promise<T> {
-              if (!injected) {
+              if (!injected && boundary === 'anchor-lock-recovery') {
                 injected = true
                 await writeFile(`${anchorFilePath}.lock`, JSON.stringify({
                   token: 'dead-process-lock',
                   hostname: hostname(),
                   pid: 999_999_999,
                 }), { mode: 0o600 })
+                throw new Error('simulated crash after anchor-lock-recovery')
+              }
+              const result = await anchor.withDekGenerationMutation(requestedWorkspaceId, mutate)
+              if (!injected) {
+                injected = true
                 throw new Error('simulated crash after anchor-advance')
               }
-              return anchor.withDekGenerationMutation(requestedWorkspaceId, mutate)
+              return result
             },
           }
         : anchor
@@ -329,7 +335,7 @@ describe('Postgres credential rollback protection', () => {
       expect(await durable.getWrappedDek(workspaceId, 3)).toBeUndefined()
       expect(await anchor.read(workspaceId)).toMatchObject({
         dekGeneration: 2,
-        dekRotationOperationId: operationId,
+        dekRotationReceipts: { [operationId]: 2 },
       })
       if (boundary === 'atomic-finalize') {
         await sql`
@@ -364,6 +370,46 @@ describe('Postgres credential rollback protection', () => {
       })).toThrow(CredentialResolutionError)
       oldDek.fill(0)
     }
+  })
+
+  test('does not trust a database-forged verified rotation marker', async () => {
+    const workspaceId = `rotation-forged-${randomUUID()}`
+    const providerId = 'rotation-forged-provider' as ProviderId
+    const fieldId = 'api-key' as CredentialFieldId
+    const persistence = createPostgresCredentialVaultPersistenceV1(sql)
+    const anchor = createInMemoryCredentialVersionAnchorV1()
+    const kmsBackend = createLocalKekWorkspaceKekProviderV1({
+      keyRef: 'rotation-forged-test',
+      keyVersion: 1,
+      loadKek: async () => new Uint8Array(32).fill(0xa5),
+    })
+    const vault = createVaultCredentialStoreBackendV1({ persistence, versionAnchor: anchor, kmsBackend })
+    await vault.writeCredentialFields({
+      workspaceId,
+      providerId,
+      fields: new Map([[fieldId, new TextEncoder().encode('still-generation-one')]]),
+    })
+    const target = await kmsBackend.generateDataKey({
+      workspaceId,
+      dekGeneration: 2,
+      requestId: 'forged-target',
+    })
+    try {
+      await persistence.putWrappedDek(workspaceId, 2, target.wrappedDek)
+    } finally {
+      target.plaintextDek.fill(0)
+    }
+    await persistence.putDekRotationState(workspaceId, {
+      operationId: 'forged-verified-operation',
+      sourceGeneration: 1,
+      targetGeneration: 2,
+      phase: 'verified',
+    })
+
+    await expect(vault.rotateWorkspaceDek(workspaceId, 'forged-verified-operation'))
+      .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+    expect(await anchor.read(workspaceId)).toMatchObject({ dekGeneration: 1 })
+    expect(await persistence.getWrappedDek(workspaceId, 1)).toBeDefined()
   })
 
   test('rejects a complete pre-shred Postgres snapshot after restart', async () => {

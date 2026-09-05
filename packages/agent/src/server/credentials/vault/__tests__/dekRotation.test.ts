@@ -153,6 +153,7 @@ describe('workspace DEK lifecycle', () => {
       .resolves.toMatchObject({ kind: 'field-set' })
     await expect(backend.rotateWorkspaceDek(workspaceId, 'rotation-1')).resolves.toBe(2)
     await expect(backend.rotateWorkspaceDek(workspaceId, 'rotation-2')).resolves.toBe(3)
+    await expect(backend.rotateWorkspaceDek(workspaceId, 'rotation-1')).resolves.toBe(2)
     await expect(backend.read(workspaceId, providerC, [apiKey]))
       .resolves.toMatchObject({ kind: 'field-set' })
   })
