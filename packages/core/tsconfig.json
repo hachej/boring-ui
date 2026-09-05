@@ -45,6 +45,12 @@
       "@hachej/boring-agent/server": [
         "../agent/src/server/index.ts"
       ],
+      "@hachej/boring-agent/shared": [
+        "../agent/src/shared/index.ts"
+      ],
+      "@hachej/channel-whatsapp": [
+        "../channels/whatsapp/src/index.ts"
+      ],
       "@hachej/boring-agent/server/agent-host/testing/compositionRouteProof": [
         "../agent/src/server/agent-host/testing/compositionRouteProof.ts"
       ],

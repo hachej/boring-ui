@@ -6,6 +6,7 @@ import path from 'node:path'
 import {
   autoDetectMode,
   createAgentHost,
+  createAgentHostChannelStorage,
   createEnvironmentProvisioningFingerprint,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
@@ -140,6 +141,11 @@ import {
 } from '../../shared/workspaceDefaultAgent.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
+import {
+  mountCoreWhatsAppChannel,
+  type CoreWhatsAppChannelOptions,
+  type MountedCoreWhatsAppChannel,
+} from './whatsappChannelComposition.js'
 
 const WORKSPACE_DEFAULT_AGENT_GATED_EFFECTS = new Set<AgentGatewayEffect>([
   'session.create',
@@ -243,6 +249,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   piResourceAuthorizedRoots?: string[]
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  /** Trusted, provisioned-only WhatsApp Cloud API mount. Omit to keep the edge disabled. */
+  whatsAppChannel?: CoreWhatsAppChannelOptions
   filterModels?: AgentHostDirectProjectionOptions['filterModels']
   shareEntryStore?: ShareEntryStore
   externalPlugins?: boolean
@@ -1749,6 +1757,9 @@ export async function createCoreWorkspaceAgentServer(
     },
   }
 
+  const channelStorage = options.whatsAppChannel
+    ? createAgentHostChannelStorage({ sessionRoot: sessionRoot ?? workspaceRoot })
+    : undefined
   const agentHost = await createAgentHost({
     agents: hostAgents,
     fleetCompiler: createValidatingAgentFleetCompiler({
@@ -1791,6 +1802,7 @@ export async function createCoreWorkspaceAgentServer(
     metering: options.metering,
     harnessFactory: options.harnessFactory,
     effectAdmission: coreEffectAdmission,
+    ...(channelStorage ? { eventStore: channelStorage.events } : {}),
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       return scopeAuthority.resolveEnvironment(authorizedScope)
     },
@@ -1844,10 +1856,28 @@ export async function createCoreWorkspaceAgentServer(
           : runtime.revalidateResourceInputs,
       }
     },
+  }).catch((error: unknown) => {
+    channelStorage?.close()
+    throw error
   })
 
   let hostMounted = false
+  let whatsAppMount: MountedCoreWhatsAppChannel | undefined
   try {
+    if (options.whatsAppChannel && channelStorage) {
+      whatsAppMount = await mountCoreWhatsAppChannel({
+        app,
+        gateway: agentHost.gateway,
+        storage: channelStorage,
+        resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
+          workspaceId: binding.workspaceId,
+          userId: binding.authSubjectId,
+        }),
+        options: options.whatsAppChannel,
+      })
+      app.addHook('preClose', async () => whatsAppMount?.close())
+    }
+
     await reconcileWorkspaceDefaultAgentTypes({
       workspaceStore,
       appId: config.appId,
@@ -2126,6 +2156,10 @@ export async function createCoreWorkspaceAgentServer(
       filterModels: options.filterModels,
     }))
     hostMounted = true
+    if (channelStorage) {
+      // Agent Host's onClose hook was registered above; storage remains alive until it finishes.
+      app.addHook('onClose', async () => channelStorage.close())
+    }
 
     const directDispatcherResolver: WorkspaceAgentDispatcherResolver = {
       async runWithWorkspaceAgent(input, run) {
@@ -2167,7 +2201,9 @@ export async function createCoreWorkspaceAgentServer(
       await registerFrontendFallback(app, appRoot, telemetry, options.frontendRootHandler)
     }
   } catch (error) {
+    await whatsAppMount?.close().catch(() => undefined)
     if (!hostMounted) await agentHost.host.close().catch(() => undefined)
+    channelStorage?.close()
     await app.close().catch(() => undefined)
     throw error
   }

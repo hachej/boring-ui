@@ -677,6 +677,9 @@ importers:
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../workspace
+      '@hachej/channel-whatsapp':
+        specifier: workspace:*
+        version: link:../channels/whatsapp
       '@hookform/resolvers':
         specifier: ^5.9.1
         version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.84.0(react@19.2.8))(zod@3.25.76)
