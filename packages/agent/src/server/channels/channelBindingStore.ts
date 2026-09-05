@@ -6,6 +6,7 @@ export const SESSION_CREATE_TIMEOUT = ErrorCode.enum.SESSION_CREATE_TIMEOUT
 export const RESERVATION_TTL_MS = 30_000
 export const INBOUND_CLAIM_TTL_MS = 30_000
 export const OUTBOUND_CLAIM_TTL_MS = 30_000
+export const INTENTION_CLAIM_TTL_MS = 30_000
 
 export type ChannelBindingStatus = 'active' | 'revoked'
 export type ChannelInboundStatus = 'pending' | 'processing' | 'processed' | 'parked'
@@ -58,6 +59,27 @@ export type EnqueueInboundResult =
   | { readonly disposition: 'enqueued'; readonly binding: ChannelBinding; readonly queueId: number }
   | { readonly disposition: 'duplicate'; readonly binding?: ChannelBinding }
   | { readonly disposition: 'unknown_binding' }
+
+export interface ChannelIntentionRecord {
+  readonly questionId: string
+  readonly sessionId: string
+  readonly channel: string
+  readonly conversationKey: string
+  readonly agentTypeId: string
+  readonly bindingVersion: number
+  readonly fieldName: string
+  readonly options: readonly { value: string; label: string; description?: string }[]
+  readonly title?: string
+  readonly context?: string
+  readonly status: 'pending' | 'projecting' | 'projected' | 'answering' | 'answered' | 'closed'
+  readonly answerValues?: Readonly<Record<string, unknown>>
+  readonly answerProviderMessageId?: string
+}
+
+export type ClaimIntentionReplyResult =
+  | { readonly disposition: 'claimed'; readonly intention: ChannelIntentionRecord }
+  | { readonly disposition: 'duplicate' }
+  | { readonly disposition: 'no_intention' }
 
 type NextInboundResult =
   | { readonly disposition: 'claimed'; readonly inbound: QueuedChannelInbound }
@@ -167,6 +189,34 @@ export class ChannelBindingStore {
       parked_at INTEGER NOT NULL,
       PRIMARY KEY (channel, conversation_key, agent_type_id, binding_version, terminal_offset)
     )`)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS boring_channel_intentions (
+      question_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      conversation_key TEXT NOT NULL,
+      agent_type_id TEXT NOT NULL,
+      binding_version INTEGER NOT NULL,
+      field_name TEXT NOT NULL,
+      options_json TEXT NOT NULL,
+      title TEXT,
+      context TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      claim_owner TEXT,
+      claim_expires_at INTEGER,
+      answer_values_json TEXT,
+      answer_provider_message_id TEXT UNIQUE,
+      updated_at INTEGER NOT NULL
+    )`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS boring_channel_intentions_binding
+      ON boring_channel_intentions(channel, conversation_key, agent_type_id, binding_version, status)`)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS boring_channel_intention_reply_dedupe (
+      channel TEXT NOT NULL,
+      provider_message_id TEXT NOT NULL,
+      seen_at INTEGER NOT NULL,
+      PRIMARY KEY (channel, provider_message_id)
+    )`)
+    this.sql.exec(`UPDATE boring_channel_intentions SET status='pending', claim_owner=NULL, claim_expires_at=NULL
+      WHERE status='projecting' AND claim_expires_at<=?`, Date.now())
     this.sql.exec(`UPDATE boring_channel_inbound_queue
       SET status='parked', error_code=?
       WHERE workspace_id IS NULL OR auth_subject_id IS NULL OR binding_version IS NULL`, ErrorCode.enum.CHANNEL_BINDING_REVOKED)
@@ -208,14 +258,20 @@ export class ChannelBindingStore {
         outbound_status='active',
         session_reset_pending=0,
         template_sent_for_inbound_at=NULL
-      WHERE boring_channel_bindings.outbound_claim_owner IS NULL
-        OR boring_channel_bindings.outbound_claim_expires_at<=?
+      WHERE (boring_channel_bindings.outbound_claim_owner IS NULL
+        OR boring_channel_bindings.outbound_claim_expires_at<=?)
+        AND NOT EXISTS (SELECT 1 FROM boring_channel_intentions i
+          WHERE i.channel=boring_channel_bindings.channel
+            AND i.conversation_key=boring_channel_bindings.conversation_key
+            AND i.agent_type_id=boring_channel_bindings.agent_type_id
+            AND i.binding_version=boring_channel_bindings.binding_version
+            AND i.status IN ('projecting', 'answering') AND i.claim_expires_at>?)
       RETURNING channel, conversation_key, agent_type_id, workspace_id, auth_subject_id,
         binding_version, status, session_key, last_inbound_at, outbound_cursor, outbound_status,
         session_reset_pending, template_sent_for_inbound_at`,
     input.channel, input.conversationKey, input.agentTypeId, input.workspaceId,
     input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null,
-    input.outboundCursor ?? '-1', Date.now()).toArray()[0]
+    input.outboundCursor ?? '-1', Date.now(), Date.now()).toArray()[0]
     if (!row) {
       throw Object.assign(new Error('Channel binding has active outbound delivery.'), {
         code: ErrorCode.enum.CHANNEL_BINDING_BUSY,
@@ -270,6 +326,158 @@ export class ChannelBindingStore {
       auth_subject_id, binding_version, status, session_key, last_inbound_at, outbound_cursor,
       outbound_status, session_reset_pending, template_sent_for_inbound_at
       FROM boring_channel_bindings WHERE status='active'`).toArray().map(bindingFromRow)
+  }
+
+  bindingForSession(sessionId: string, workspaceId: string): ChannelBinding | undefined {
+    const row = this.sql.exec(`SELECT channel, conversation_key, agent_type_id, workspace_id,
+      auth_subject_id, binding_version, status, session_key, last_inbound_at, outbound_cursor,
+      outbound_status, session_reset_pending, template_sent_for_inbound_at
+      FROM boring_channel_bindings WHERE status='active' AND session_key=? AND workspace_id=?
+      ORDER BY binding_version DESC LIMIT 1`, sessionId, workspaceId).toArray()[0]
+    return row ? bindingFromRow(row) : undefined
+  }
+
+  recordIntention(input: Omit<ChannelIntentionRecord, 'status'>): boolean {
+    const binding = this.getBinding(input.channel, input.conversationKey, input.agentTypeId)
+    if (!binding || binding.status !== 'active' || binding.bindingVersion !== input.bindingVersion
+      || binding.sessionKey !== input.sessionId) return false
+    return this.sql.exec(`INSERT OR IGNORE INTO boring_channel_intentions
+      (question_id, session_id, channel, conversation_key, agent_type_id, binding_version,
+        field_name, options_json, title, context, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?) RETURNING question_id`,
+    input.questionId, input.sessionId, input.channel, input.conversationKey, input.agentTypeId,
+    input.bindingVersion, input.fieldName, JSON.stringify(input.options), input.title ?? null,
+    input.context ?? null, Date.now()).toArray().length === 1
+  }
+
+  openIntentions(): ChannelIntentionRecord[] {
+    return this.sql.exec(`SELECT i.* FROM boring_channel_intentions i
+      JOIN boring_channel_bindings b ON b.channel=i.channel AND b.conversation_key=i.conversation_key
+        AND b.agent_type_id=i.agent_type_id AND b.binding_version=i.binding_version
+        AND b.session_key=i.session_id AND b.status='active'
+      WHERE i.status IN ('pending', 'projecting', 'projected', 'answering')
+      ORDER BY i.updated_at, i.question_id`).toArray().map(intentionFromRow)
+  }
+
+  activeIntention(channel: string, conversationKey: string, agentTypeId: string): ChannelIntentionRecord | undefined {
+    const row = this.sql.exec(`SELECT i.* FROM boring_channel_intentions i
+      JOIN boring_channel_bindings b ON b.channel=i.channel AND b.conversation_key=i.conversation_key
+        AND b.agent_type_id=i.agent_type_id AND b.binding_version=i.binding_version
+        AND b.session_key=i.session_id AND b.status='active'
+      WHERE i.channel=? AND i.conversation_key=? AND i.agent_type_id=?
+        AND i.status IN ('projected', 'answering') ORDER BY i.updated_at DESC LIMIT 1`,
+    channel, conversationKey, agentTypeId).toArray()[0]
+    return row ? intentionFromRow(row) : undefined
+  }
+
+  claimIntentionProjection(questionId: string, owner: string, ttlMs = INTENTION_CLAIM_TTL_MS): ChannelIntentionRecord | undefined {
+    const now = Date.now()
+    const row = this.sql.exec(`UPDATE boring_channel_intentions SET status='projecting',
+        claim_owner=?, claim_expires_at=?, updated_at=?
+      WHERE question_id=? AND (status='pending' OR (status='projecting' AND claim_expires_at<=?))
+        AND EXISTS (SELECT 1 FROM boring_channel_bindings b
+          WHERE b.channel=boring_channel_intentions.channel
+            AND b.conversation_key=boring_channel_intentions.conversation_key
+            AND b.agent_type_id=boring_channel_intentions.agent_type_id
+            AND b.binding_version=boring_channel_intentions.binding_version
+            AND b.session_key=boring_channel_intentions.session_id AND b.status='active')
+      RETURNING *`, owner, now + ttlMs, now, questionId, now).toArray()[0]
+    return row ? intentionFromRow(row) : undefined
+  }
+
+  ownsIntentionClaim(questionId: string, owner: string): boolean {
+    return this.sql.exec(`SELECT 1 FROM boring_channel_intentions
+      WHERE question_id=? AND claim_owner=? AND claim_expires_at>?`,
+    questionId, owner, Date.now()).toArray().length === 1
+  }
+
+  renewIntentionClaim(questionId: string, owner: string, ttlMs = INTENTION_CLAIM_TTL_MS): boolean {
+    const now = Date.now()
+    return this.sql.exec(`UPDATE boring_channel_intentions SET claim_expires_at=?
+      WHERE question_id=? AND claim_owner=? AND claim_expires_at>? RETURNING question_id`,
+    now + ttlMs, questionId, owner, now).toArray().length === 1
+  }
+
+  completeIntentionProjection(questionId: string, owner: string): boolean {
+    return this.sql.exec(`UPDATE boring_channel_intentions SET status='projected',
+        claim_owner=NULL, claim_expires_at=NULL, updated_at=?
+      WHERE question_id=? AND status='projecting' AND claim_owner=? AND claim_expires_at>?
+      RETURNING question_id`, Date.now(), questionId, owner, Date.now()).toArray().length === 1
+  }
+
+  claimIntentionReply(
+    intention: ChannelIntentionRecord,
+    providerMessageId: string,
+    values: Readonly<Record<string, unknown>>,
+    owner: string,
+    ttlMs = INTENTION_CLAIM_TTL_MS,
+  ): ClaimIntentionReplyResult {
+    return this.runTransaction(() => {
+      const duplicate = this.sql.exec(`SELECT 1 FROM boring_channel_intention_reply_dedupe
+        WHERE channel=? AND provider_message_id=?`, intention.channel, providerMessageId).toArray()[0]
+      if (duplicate) return { disposition: 'duplicate' } as const
+      const now = Date.now()
+      const claimed = this.sql.exec(`UPDATE boring_channel_intentions SET status='answering',
+          claim_owner=?, claim_expires_at=?, answer_values_json=?, answer_provider_message_id=?, updated_at=?
+        WHERE question_id=? AND binding_version=? AND status='projected'
+          AND EXISTS (SELECT 1 FROM boring_channel_bindings b
+            WHERE b.channel=boring_channel_intentions.channel
+              AND b.conversation_key=boring_channel_intentions.conversation_key
+              AND b.agent_type_id=boring_channel_intentions.agent_type_id
+              AND b.binding_version=boring_channel_intentions.binding_version
+              AND b.session_key=boring_channel_intentions.session_id AND b.status='active')
+        RETURNING *`, owner, now + ttlMs, JSON.stringify(values), providerMessageId, now,
+      intention.questionId, intention.bindingVersion).toArray()[0]
+      if (!claimed) return { disposition: 'no_intention' } as const
+      this.sql.exec(`INSERT INTO boring_channel_intention_reply_dedupe(channel, provider_message_id, seen_at)
+        VALUES (?, ?, ?)`, intention.channel, providerMessageId, now)
+      return { disposition: 'claimed', intention: intentionFromRow(claimed) } as const
+    }, 'immediate')
+  }
+
+  claimRecoverableIntentionAnswer(questionId: string, owner: string, ttlMs = INTENTION_CLAIM_TTL_MS): ChannelIntentionRecord | undefined {
+    const now = Date.now()
+    const row = this.sql.exec(`UPDATE boring_channel_intentions SET claim_owner=?, claim_expires_at=?, updated_at=?
+      WHERE question_id=? AND status='answering' AND answer_values_json IS NOT NULL
+        AND (claim_owner IS NULL OR claim_expires_at<=?)
+        AND EXISTS (SELECT 1 FROM boring_channel_bindings b
+          WHERE b.channel=boring_channel_intentions.channel
+            AND b.conversation_key=boring_channel_intentions.conversation_key
+            AND b.agent_type_id=boring_channel_intentions.agent_type_id
+            AND b.binding_version=boring_channel_intentions.binding_version
+            AND b.session_key=boring_channel_intentions.session_id AND b.status='active')
+        RETURNING *`, owner, now + ttlMs, now, questionId, now).toArray()[0]
+    return row ? intentionFromRow(row) : undefined
+  }
+
+  completeIntentionAnswer(questionId: string, owner: string): boolean {
+    return this.sql.exec(`UPDATE boring_channel_intentions SET status='answered',
+        claim_owner=NULL, claim_expires_at=NULL, updated_at=?
+      WHERE question_id=? AND status='answering' AND claim_owner=? RETURNING question_id`,
+    Date.now(), questionId, owner).toArray().length === 1
+  }
+
+  reconcileIntentionAnswered(questionId: string): void {
+    this.sql.exec(`UPDATE boring_channel_intentions SET status='answered',
+      claim_owner=NULL, claim_expires_at=NULL, updated_at=?
+      WHERE question_id=? AND status IN ('pending', 'projecting', 'projected', 'answering')`, Date.now(), questionId)
+  }
+
+  reconcileIntentionClosed(questionId: string): void {
+    this.sql.exec(`UPDATE boring_channel_intentions SET status='closed',
+      claim_owner=NULL, claim_expires_at=NULL, updated_at=?
+      WHERE question_id=? AND status IN ('pending', 'projecting', 'projected', 'answering')`, Date.now(), questionId)
+  }
+
+  recordInvalidIntentionReply(channel: string, providerMessageId: string): boolean {
+    return this.sql.exec(`INSERT OR IGNORE INTO boring_channel_intention_reply_dedupe
+      (channel, provider_message_id, seen_at) VALUES (?, ?, ?) RETURNING provider_message_id`,
+    channel, providerMessageId, Date.now()).toArray().length === 1
+  }
+
+  hasIntentionReply(channel: string, providerMessageId: string): boolean {
+    return this.sql.exec(`SELECT 1 FROM boring_channel_intention_reply_dedupe
+      WHERE channel=? AND provider_message_id=?`, channel, providerMessageId).toArray().length === 1
   }
 
   claimOutbound(binding: ChannelBinding, owner: string, claimTtlMs = OUTBOUND_CLAIM_TTL_MS): boolean {
@@ -572,6 +780,25 @@ function bindingFromRow(row: Record<string, unknown>): ChannelBinding {
     ...(row.template_sent_for_inbound_at === null || row.template_sent_for_inbound_at === undefined
       ? {}
       : { templateSentForInboundAt: Number(row.template_sent_for_inbound_at) }),
+  }
+}
+
+function intentionFromRow(row: Record<string, unknown>): ChannelIntentionRecord {
+  const answerValues = row.answer_values_json ? JSON.parse(String(row.answer_values_json)) as Record<string, unknown> : undefined
+  return {
+    questionId: String(row.question_id),
+    sessionId: String(row.session_id),
+    channel: String(row.channel),
+    conversationKey: String(row.conversation_key),
+    agentTypeId: String(row.agent_type_id),
+    bindingVersion: Number(row.binding_version),
+    fieldName: String(row.field_name),
+    options: JSON.parse(String(row.options_json)) as ChannelIntentionRecord['options'],
+    ...(row.title ? { title: String(row.title) } : {}),
+    ...(row.context ? { context: String(row.context) } : {}),
+    status: row.status as ChannelIntentionRecord['status'],
+    ...(answerValues ? { answerValues } : {}),
+    ...(row.answer_provider_message_id ? { answerProviderMessageId: String(row.answer_provider_message_id) } : {}),
   }
 }
 

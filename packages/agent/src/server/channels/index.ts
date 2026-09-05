@@ -1,6 +1,7 @@
 export {
   ChannelBindingStore,
   ChannelSessionCreateTimeoutError,
+  INTENTION_CLAIM_TTL_MS,
   OUTBOUND_CLAIM_TTL_MS,
   RESERVATION_TTL_MS,
   SESSION_CREATE_TIMEOUT,
@@ -8,6 +9,8 @@ export {
 export type {
   ChannelBinding,
   ChannelBindingStatus,
+  ChannelIntentionRecord,
+  ClaimIntentionReplyResult,
   ChannelInboundStatus,
   ChannelOutboundStatus,
   EnqueueInboundResult,
@@ -27,6 +30,17 @@ export type {
   ChannelAgentInvoker,
   ChannelInboundAck,
 } from './channelInboundService'
+export { ChannelIntentionService, ChannelMessageRouter } from './channelIntentionService'
+export type {
+  ChannelIntentionAck,
+  ChannelIntentionAdapter,
+  ChannelIntentionField,
+  ChannelIntentionOption,
+  ChannelIntentionQuestion,
+  ChannelIntentionRuntime,
+  ChannelIntentionServiceOptions,
+  ChannelMessageAck,
+} from './channelIntentionService'
 export {
   CHANNEL_OUTBOUND_PARKED,
   CHANNEL_TURN_STALLED,
@@ -42,7 +56,6 @@ export type {
   ChannelOutboundServiceOptions,
   ChannelOutboundTurn,
 } from './channelOutboundService'
-
 import { ErrorCode } from '../../shared/error-codes'
 
 export const CHANNELS_ENV_FLAG = 'BORING_AGENT_CHANNELS'
