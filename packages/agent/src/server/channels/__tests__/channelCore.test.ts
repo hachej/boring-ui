@@ -215,7 +215,7 @@ describe('ChannelInboundService fake-channel path', () => {
       first.enqueueInbound(inbound('wamid.busy'), 'default')
       const nextPending = first.nextPending.bind(first)
       vi.spyOn(first, 'nextPending')
-        .mockImplementationOnce(() => { throw Object.assign(new Error('busy'), { code: 'SQLITE_BUSY' }) })
+        .mockImplementationOnce(() => { throw new Error('transient database contention') })
         .mockImplementation(nextPending)
       const prompt = vi.fn(async () => {})
       const service = new ChannelInboundService(first, {
