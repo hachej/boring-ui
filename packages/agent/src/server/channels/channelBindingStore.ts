@@ -5,6 +5,7 @@ import type { RunTransaction, SqlStorage } from '../events/sqlStorage'
 export const SESSION_CREATE_TIMEOUT = ErrorCode.enum.SESSION_CREATE_TIMEOUT
 export const RESERVATION_TTL_MS = 30_000
 export const INBOUND_CLAIM_TTL_MS = 30_000
+export const OUTBOUND_CLAIM_TTL_MS = 30_000
 
 export type ChannelBindingStatus = 'active' | 'revoked'
 export type ChannelInboundStatus = 'pending' | 'processing' | 'processed' | 'parked'
@@ -111,6 +112,8 @@ export class ChannelBindingStore {
       outbound_status TEXT NOT NULL DEFAULT 'active',
       session_reset_pending INTEGER NOT NULL DEFAULT 0,
       template_sent_for_inbound_at INTEGER,
+      outbound_claim_owner TEXT,
+      outbound_claim_expires_at INTEGER,
       PRIMARY KEY (channel, conversation_key, agent_type_id)
     )`)
     this.sql.exec(`CREATE TABLE IF NOT EXISTS boring_channel_inbound_dedupe (
@@ -150,6 +153,8 @@ export class ChannelBindingStore {
     this.ensureColumn('boring_channel_bindings', 'outbound_status', "TEXT NOT NULL DEFAULT 'active'")
     this.ensureColumn('boring_channel_bindings', 'session_reset_pending', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('boring_channel_bindings', 'template_sent_for_inbound_at', 'INTEGER')
+    this.ensureColumn('boring_channel_bindings', 'outbound_claim_owner', 'TEXT')
+    this.ensureColumn('boring_channel_bindings', 'outbound_claim_expires_at', 'INTEGER')
     this.sql.exec(`CREATE TABLE IF NOT EXISTS boring_channel_outbound_parked (
       channel TEXT NOT NULL,
       conversation_key TEXT NOT NULL,
@@ -192,18 +197,28 @@ export class ChannelBindingStore {
         create_expires_at=NULL,
         create_session_key=NULL,
         outbound_cursor=CASE
-          WHEN boring_channel_bindings.session_key IS excluded.session_key THEN boring_channel_bindings.outbound_cursor
+          WHEN boring_channel_bindings.session_key IS excluded.session_key
+            AND boring_channel_bindings.workspace_id=excluded.workspace_id
+            AND boring_channel_bindings.auth_subject_id=excluded.auth_subject_id
+          THEN boring_channel_bindings.outbound_cursor
           ELSE '-1'
         END,
         outbound_status='active',
         session_reset_pending=0,
         template_sent_for_inbound_at=NULL
+      WHERE boring_channel_bindings.outbound_claim_owner IS NULL
+        OR boring_channel_bindings.outbound_claim_expires_at<=?
       RETURNING channel, conversation_key, agent_type_id, workspace_id, auth_subject_id,
         binding_version, status, session_key, last_inbound_at, outbound_cursor, outbound_status,
         session_reset_pending, template_sent_for_inbound_at`,
     input.channel, input.conversationKey, input.agentTypeId, input.workspaceId,
-    input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null).toArray()[0]
-    return bindingFromRow(row!)
+    input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null, Date.now()).toArray()[0]
+    if (!row) {
+      throw Object.assign(new Error('Channel binding has active outbound delivery.'), {
+        code: ErrorCode.enum.CHANNEL_BINDING_BUSY,
+      })
+    }
+    return bindingFromRow(row)
   }
 
   getBinding(channel: string, conversationKey: string, agentTypeId: string): ChannelBinding | undefined {
@@ -252,6 +267,45 @@ export class ChannelBindingStore {
       auth_subject_id, binding_version, status, session_key, last_inbound_at, outbound_cursor,
       outbound_status, session_reset_pending, template_sent_for_inbound_at
       FROM boring_channel_bindings WHERE status='active'`).toArray().map(bindingFromRow)
+  }
+
+  claimOutbound(binding: ChannelBinding, owner: string, claimTtlMs = OUTBOUND_CLAIM_TTL_MS): boolean {
+    const now = Date.now()
+    return this.sql.exec(`UPDATE boring_channel_bindings
+      SET outbound_claim_owner=?, outbound_claim_expires_at=?
+      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+        AND status='active' AND outbound_status='active' AND session_key=? AND outbound_cursor=?
+        AND (outbound_claim_owner IS NULL OR outbound_claim_expires_at<=?) RETURNING channel`,
+    owner, now + claimTtlMs, binding.channel, binding.conversationKey, binding.agentTypeId,
+    binding.bindingVersion, binding.sessionKey ?? null, binding.outboundCursor, now).toArray().length === 1
+  }
+
+  renewOutbound(owner: string, claimTtlMs = OUTBOUND_CLAIM_TTL_MS): boolean {
+    return this.sql.exec(`UPDATE boring_channel_bindings SET outbound_claim_expires_at=?
+      WHERE outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`,
+    Date.now() + claimTtlMs, owner, Date.now()).toArray().length === 1
+  }
+
+  releaseOutbound(owner: string): void {
+    this.sql.exec(`UPDATE boring_channel_bindings
+      SET outbound_claim_owner=NULL, outbound_claim_expires_at=NULL
+      WHERE outbound_claim_owner=?`, owner)
+  }
+
+  parkOutboundBinding(binding: ChannelBinding, errorCode: string): boolean {
+    return this.runTransaction(() => {
+      const updated = this.sql.exec(`UPDATE boring_channel_bindings SET outbound_status='parked'
+        WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+          AND status='active' AND session_key=? AND outbound_cursor=? RETURNING channel`,
+      binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion,
+      binding.sessionKey ?? null, binding.outboundCursor).toArray()
+      if (updated.length !== 1) return false
+      this.sql.exec(`INSERT OR IGNORE INTO boring_channel_outbound_parked
+        (channel, conversation_key, agent_type_id, binding_version, terminal_offset, error_code, parked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`, binding.channel, binding.conversationKey, binding.agentTypeId,
+      binding.bindingVersion, binding.outboundCursor, errorCode, Date.now())
+      return true
+    }, 'immediate')
   }
 
   compareAndSetOutboundCursor(binding: ChannelBinding, nextCursor: string): boolean {

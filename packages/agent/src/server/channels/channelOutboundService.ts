@@ -1,12 +1,14 @@
+import { randomUUID } from 'node:crypto'
 import type { PiChatEvent } from '../../shared/chat'
 import type { AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import type { EventStreamStore } from '../events/eventStreamStore'
-import type { ChannelBinding, ChannelBindingStore } from './channelBindingStore'
+import { OUTBOUND_CLAIM_TTL_MS, type ChannelBinding, type ChannelBindingStore } from './channelBindingStore'
 
 export const CHANNEL_OUTBOUND_PARKED = ErrorCode.enum.CHANNEL_OUTBOUND_PARKED
 export const CHANNEL_TURN_STALLED = ErrorCode.enum.CHANNEL_TURN_STALLED
 export const DEFAULT_WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1_000
+export const DEFAULT_CHANNEL_STALL_TIMEOUT_MS = 5 * 60 * 1_000
 
 export interface ChannelOutboundTurn {
   readonly turnId: string
@@ -35,6 +37,7 @@ export interface ChannelOutboundServiceOptions {
   readonly maxSendAttempts?: number
   readonly retryDelayMs?: number
   readonly stallTimeoutMs?: number
+  readonly outboundClaimTtlMs?: number
   readonly now?: () => number
 }
 
@@ -72,12 +75,13 @@ export class ChannelOutboundService<Message = unknown> {
     }
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.disposed = true
     for (const subscription of this.subscriptions.values()) subscription.unsubscribe()
     this.subscriptions.clear()
     for (const timer of this.stallTimers.values()) clearTimeout(timer)
     this.stallTimers.clear()
+    await Promise.allSettled([...this.drains.values()])
   }
 
   private schedule(binding: ChannelBinding): void {
@@ -102,63 +106,93 @@ export class ChannelOutboundService<Message = unknown> {
     if (!binding?.sessionKey) return
     const adapter = this.adapters.get(binding.channel)
     if (!adapter) return
+    const claimOwner = randomUUID()
+    const claimTtlMs = this.options.outboundClaimTtlMs ?? OUTBOUND_CLAIM_TTL_MS
+    if (!this.store.claimOutbound(binding, claimOwner, claimTtlMs)) return
+    let claimLost = false
+    const heartbeat = setInterval(() => {
+      try {
+        if (!this.store.renewOutbound(claimOwner, claimTtlMs)) claimLost = true
+      } catch {
+        claimLost = true
+      }
+    }, Math.max(1, Math.floor(claimTtlMs / 3)))
 
-    let streamPath = await this.runtime.resolveStreamPath(binding)
-    if (!streamPath) {
-      if (!this.store.markSessionGone(binding)) return
-      const cleared = this.current(binding)
-      if (!cleared) return
-      const ensured = await this.store.ensureSession(cleared, {
-        allocate: () => this.runtime.createSession(cleared),
-        admit: async () => undefined,
-      })
-      binding = this.current(cleared)
-      if (!binding || binding.sessionKey !== ensured.sessionKey) return
-      streamPath = await this.runtime.resolveStreamPath(binding)
-      if (!streamPath) return
-    }
+    try {
+      let streamPath = await this.runtime.resolveStreamPath(binding)
+      if (claimLost) return
+      if (!streamPath) {
+        if (!this.store.markSessionGone(binding)) return
+        const cleared = this.current(binding)
+        if (!cleared) return
+        const ensured = await this.store.ensureSession(cleared, {
+          allocate: () => this.runtime.createSession(cleared),
+          admit: async () => undefined,
+        })
+        binding = this.current(cleared)
+        if (claimLost || !binding || binding.sessionKey !== ensured.sessionKey) return
+        streamPath = await this.runtime.resolveStreamPath(binding)
+        if (!streamPath || claimLost) return
+      }
 
-    this.ensureSubscription(binding, streamPath)
-    for (;;) {
-      binding = this.current(binding)
-      if (!binding?.sessionKey || binding.status !== 'active' || binding.outboundStatus !== 'active') return
-      if (binding.sessionResetPending) {
-        if (!this.isInsideServiceWindow(binding, adapter)) {
-          await this.sendWindowTemplate(adapter, binding)
+      this.ensureSubscription(binding, streamPath)
+      for (;;) {
+        const current = this.current(binding)
+        if (!current?.sessionKey || !sameBindingGeneration(binding, current)
+          || current.status !== 'active' || current.outboundStatus !== 'active' || claimLost) return
+        binding = current
+        if (binding.sessionResetPending) {
+          try {
+            if (!this.isInsideServiceWindow(binding, adapter)) {
+              await this.sendWindowTemplate(adapter, binding)
+              return
+            }
+            await this.sendWithRetry(adapter, binding, {
+              turnId: 'session-reset',
+              status: 'error',
+              text: 'The previous session is no longer available. I started a new conversation.',
+            })
+          } catch (error) {
+            this.store.parkOutboundBinding(binding, stableErrorCode(error))
+            return
+          }
+          if (claimLost || !this.store.acknowledgeSessionReset(binding)) return
+          binding = this.current(binding) ?? binding
+        }
+        const unread = await this.readUnreadEvents(streamPath, binding.outboundCursor)
+        const assembled = assembleNextTurn(unread, this.now(), this.stallTimeoutMs())
+        if (!assembled) {
+          this.scheduleStall(binding, unread)
           return
         }
-        await this.sendWithRetry(adapter, binding, {
-          turnId: 'session-reset',
-          status: 'error',
-          text: 'The previous session is no longer available. I started a new conversation.',
-        })
-        if (!this.store.acknowledgeSessionReset(binding)) return
-        binding = this.current(binding) ?? binding
-      }
-      const unread = await this.readUnreadEvents(streamPath, binding.outboundCursor)
-      const assembled = assembleNextTurn(unread, this.now(), this.options.stallTimeoutMs)
-      if (!assembled) {
-        this.scheduleStall(binding, unread)
-        return
-      }
-      this.clearStall(binding)
+        this.clearStall(binding)
 
-      if (!this.isInsideServiceWindow(binding, adapter)) {
-        await this.sendWindowTemplate(adapter, binding)
-        return
-      }
+        if (!this.isInsideServiceWindow(binding, adapter)) {
+          try {
+            await this.sendWindowTemplate(adapter, binding)
+          } catch (error) {
+            this.store.parkOutboundBinding(binding, stableErrorCode(error))
+          }
+          return
+        }
 
-      try {
-        await this.sendWithRetry(adapter, binding, assembled.turn)
-      } catch (error) {
-        this.store.parkOutbound(binding, assembled.terminalOffset, stableErrorCode(error))
-        continue
+        try {
+          if (claimLost) return
+          await this.sendWithRetry(adapter, binding, assembled.turn)
+        } catch (error) {
+          this.store.parkOutbound(binding, assembled.terminalOffset, stableErrorCode(error))
+          continue
+        }
+        if (claimLost) return
+        if (assembled.turn.status === 'stalled') {
+          if (!this.store.parkOutbound(binding, assembled.terminalOffset, CHANNEL_TURN_STALLED)) return
+          continue
+        }
+        if (!this.store.compareAndSetOutboundCursor(binding, assembled.terminalOffset)) return
       }
-      if (assembled.turn.status === 'stalled') {
-        if (!this.store.parkOutbound(binding, assembled.terminalOffset, CHANNEL_TURN_STALLED)) return
-        continue
-      }
-      if (!this.store.compareAndSetOutboundCursor(binding, assembled.terminalOffset)) return
+    } finally {
+      clearInterval(heartbeat)
+      this.store.releaseOutbound(claimOwner)
     }
   }
 
@@ -188,8 +222,7 @@ export class ChannelOutboundService<Message = unknown> {
   private scheduleStall(binding: ChannelBinding, events: Array<{ data: unknown; offset: string }>): void {
     const first = events.find((entry) => isAgentEvent(entry.data) && entry.data.chunk.type === 'agent-start')
     if (!first || !isAgentEvent(first.data)) return
-    const timeout = this.options.stallTimeoutMs
-    if (timeout === undefined) return
+    const timeout = this.stallTimeoutMs()
     const remaining = Math.max(1, first.data.timestamp + timeout - this.now())
     const key = bindingKey(binding)
     if (this.stallTimers.has(key)) return
@@ -262,6 +295,10 @@ export class ChannelOutboundService<Message = unknown> {
     return age >= 0 && age <= adapter.serviceWindowMs
   }
 
+  private stallTimeoutMs(): number {
+    return this.options.stallTimeoutMs ?? DEFAULT_CHANNEL_STALL_TIMEOUT_MS
+  }
+
   private now(): number {
     return this.options.now?.() ?? Date.now()
   }
@@ -270,7 +307,7 @@ export class ChannelOutboundService<Message = unknown> {
 export function assembleNextTurn(
   entries: ReadonlyArray<{ data: unknown; offset: string }>,
   now = Date.now(),
-  stallTimeoutMs?: number,
+  stallTimeoutMs = DEFAULT_CHANNEL_STALL_TIMEOUT_MS,
 ): AssembledTurn | undefined {
   let active: { turnId: string; startedAt: number; assistantText: string } | undefined
   for (const entry of entries) {
@@ -281,6 +318,16 @@ export function assembleNextTurn(
       continue
     }
     if (!active) continue
+    if (chunk.type === 'error' && (!chunk.turnId || chunk.turnId === active.turnId)) {
+      return {
+        terminalOffset: entry.offset,
+        turn: {
+          turnId: active.turnId,
+          status: 'error',
+          text: 'I could not complete that request. Please try again.',
+        },
+      }
+    }
     if (chunk.type === 'message-end' && chunk.final.role === 'assistant'
       && (!chunk.final.turnId || chunk.final.turnId === active.turnId)) {
       active.assistantText = displayText(chunk.final)
@@ -302,7 +349,7 @@ export function assembleNextTurn(
       }
     }
   }
-  if (active && stallTimeoutMs !== undefined && now - active.startedAt >= stallTimeoutMs) {
+  if (active && now - active.startedAt >= stallTimeoutMs) {
     return {
       terminalOffset: entries.at(-1)?.offset ?? '-1',
       turn: {
@@ -358,6 +405,15 @@ function isAgentEvent(value: unknown): value is AgentEvent {
   return candidate.v === 1 && typeof candidate.timestamp === 'number'
     && !!candidate.chunk && typeof candidate.chunk === 'object'
     && typeof (candidate.chunk as Partial<PiChatEvent>).type === 'string'
+}
+
+function sameBindingGeneration(left: ChannelBinding, right: ChannelBinding): boolean {
+  return left.channel === right.channel
+    && left.conversationKey === right.conversationKey
+    && left.agentTypeId === right.agentTypeId
+    && left.bindingVersion === right.bindingVersion
+    && left.workspaceId === right.workspaceId
+    && left.authSubjectId === right.authSubjectId
 }
 
 function bindingKey(binding: ChannelBinding): string {

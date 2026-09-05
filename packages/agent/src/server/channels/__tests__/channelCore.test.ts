@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 import { CHANNEL_DESCRIPTORS, channelDescriptor } from '../../../shared/channel'
+import { ErrorCode } from '../../../shared/error-codes'
 import { openDatabase } from '../../events/sqlStorage'
 import { ChannelBindingStore } from '../channelBindingStore'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
@@ -115,6 +116,33 @@ describe('ChannelBindingStore', () => {
         authSubjectId: 'user-2',
         bindingVersion: 2,
       })
+    })
+  })
+
+  test('resets the outbound cursor on every composite identity change', async () => {
+    await withStores(async ({ first }) => {
+      const initial = first.provision({ ...bindingInput, sessionKey: 'same-session-id' })
+      expect(first.compareAndSetOutboundCursor(initial, 'offset-7')).toBe(true)
+      const rebound = first.provision({
+        ...bindingInput,
+        workspaceId: 'workspace-2',
+        authSubjectId: 'user-2',
+        sessionKey: 'same-session-id',
+      })
+      expect(rebound.outboundCursor).toBe('-1')
+      expect(rebound.bindingVersion).toBe(2)
+    })
+  })
+
+  test('blocks reprovisioning while a generation owns outbound delivery', async () => {
+    await withStores(async ({ first, second }) => {
+      const binding = first.provision({ ...bindingInput, sessionKey: 'session-1' })
+      expect(first.claimOutbound(binding, 'outbound-owner', 1_000)).toBe(true)
+      expect(() => second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
+        .toThrow(expect.objectContaining({ code: ErrorCode.enum.CHANNEL_BINDING_BUSY }))
+      first.releaseOutbound('outbound-owner')
+      expect(second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
+        .toMatchObject({ workspaceId: 'workspace-2', bindingVersion: 2, outboundCursor: '-1' })
     })
   })
 

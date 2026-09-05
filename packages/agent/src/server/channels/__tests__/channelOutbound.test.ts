@@ -117,6 +117,23 @@ describe('durable channel outbound', () => {
     })
   })
 
+  test('treats a synthetic error event as terminal without leaking its details', () => {
+    const entries = [
+      envelope({ type: 'agent-start', seq: 1, turnId: 'turn-error' }, '0'),
+      envelope({
+        type: 'error', seq: 2, turnId: 'turn-error', retryable: false,
+        error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'private provider detail', retryable: false },
+      }, '1'),
+    ]
+    expect(assembleNextTurn(entries)).toEqual({
+      terminalOffset: '1',
+      turn: {
+        turnId: 'turn-error', status: 'error',
+        text: 'I could not complete that request. Please try again.',
+      },
+    })
+  })
+
   test('persists the cursor across restart and sends each terminal turn once', async () => {
     await withChannel(async ({ bindings, events, path, append }) => {
       bindings.provision(bindingInput)
@@ -130,7 +147,7 @@ describe('durable channel outbound', () => {
         new Map([['whatsapp', fakeAdapter(sent)]]))
       first.start()
       await first.waitForIdle()
-      first.dispose()
+      await first.dispose()
       expect(sent).toEqual(['first reply'])
       expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor).not.toBe('-1')
 
@@ -142,7 +159,45 @@ describe('durable channel outbound', () => {
       await appendTurn(append, 'turn-2', 'second reply')
       await second.waitForIdle()
       expect(sent).toEqual(['first reply', 'second reply'])
-      second.dispose()
+      await second.dispose()
+    })
+  })
+
+  test('graceful disposal waits for an in-flight send and prevents restart duplicates', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.graceful', text: 'hello', receivedAt: Date.now(),
+      }, 'default')
+      await appendTurn(append, 'turn-graceful', 'one reply')
+      const sent: string[] = []
+      let release!: () => void
+      let started!: () => void
+      const blocked = new Promise<void>((resolve) => { release = resolve })
+      const sending = new Promise<void>((resolve) => { started = resolve })
+      const adapter = fakeAdapter(sent)
+      adapter.send = vi.fn(async ({ message }) => {
+        started()
+        await blocked
+        sent.push(message)
+      })
+      const first = new ChannelOutboundService(bindings, events, runtime(path), new Map([['whatsapp', adapter]]))
+      first.start()
+      await sending
+      let disposed = false
+      const disposal = first.dispose().then(() => { disposed = true })
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(disposed).toBe(false)
+      release()
+      await disposal
+
+      const second = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent)]]))
+      second.start()
+      await second.waitForIdle()
+      await second.dispose()
+      expect(sent).toEqual(['one reply'])
     })
   })
 
@@ -160,11 +215,11 @@ describe('durable channel outbound', () => {
       const first = new ChannelOutboundService(bindings, events, runtime(path), new Map([['whatsapp', fakeAdapter(sent)]]))
       first.start()
       await first.waitForIdle()
-      first.dispose()
+      await first.dispose()
       const second = new ChannelOutboundService(bindings, events, runtime(path), new Map([['whatsapp', fakeAdapter(sent)]]))
       second.start()
       await second.waitForIdle()
-      second.dispose()
+      await second.dispose()
       expect(sent).toEqual(['deliver me', 'deliver me'])
       expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor).not.toBe('-1')
     })
@@ -200,7 +255,7 @@ describe('durable channel outbound', () => {
       service.notifyInbound(accepted.binding)
       await service.waitForIdle()
       expect(sent).toEqual(['held reply'])
-      service.dispose()
+      await service.dispose()
     })
   })
 
@@ -224,7 +279,7 @@ describe('durable channel outbound', () => {
       await service.waitForIdle()
       expect(adapter.send).toHaveBeenCalledTimes(2)
       expect(sent).toEqual(['good reply'])
-      service.dispose()
+      await service.dispose()
     })
   })
 
@@ -248,7 +303,30 @@ describe('durable channel outbound', () => {
       expect(adapter.sendWindowTemplate).toHaveBeenCalledTimes(2)
       expect(sent).toEqual([])
       expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor).toBe('-1')
-      service.dispose()
+      await service.dispose()
+    })
+  })
+
+  test('parks a permanently failing fallback without discarding held content', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.template-park', text: 'old', receivedAt: 1,
+      }, 'default')
+      await appendTurn(append, 'turn-template-park', 'held reply')
+      const adapter = fakeAdapter([], [], 10)
+      adapter.sendWindowTemplate = vi.fn(async () => {
+        throw Object.assign(new Error('permanent'), { code: ErrorCode.enum.INTERNAL_ERROR, retryable: false })
+      })
+      const service = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', adapter]]), { now: () => 100 })
+      service.start()
+      await service.waitForIdle()
+      expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')).toMatchObject({
+        outboundCursor: '-1', outboundStatus: 'parked',
+      })
+      await service.dispose()
     })
   })
 
@@ -270,7 +348,7 @@ describe('durable channel outbound', () => {
         'That request was stopped before it completed. Please try again.',
         'That request did not finish in time. Please try again.',
       ])
-      service.dispose()
+      await service.dispose()
     })
   })
 
@@ -293,7 +371,7 @@ describe('durable channel outbound', () => {
         sessionKey: 'replacement-session', outboundCursor: '-1', sessionResetPending: false,
       })
       expect(sent).toEqual(['The previous session is no longer available. I started a new conversation.'])
-      service.dispose()
+      await service.dispose()
     })
   })
 })

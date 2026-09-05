@@ -1,6 +1,7 @@
 export {
   ChannelBindingStore,
   ChannelSessionCreateTimeoutError,
+  OUTBOUND_CLAIM_TTL_MS,
   RESERVATION_TTL_MS,
   SESSION_CREATE_TIMEOUT,
 } from './channelBindingStore'
@@ -29,6 +30,7 @@ export type {
 export {
   CHANNEL_OUTBOUND_PARKED,
   CHANNEL_TURN_STALLED,
+  DEFAULT_CHANNEL_STALL_TIMEOUT_MS,
   DEFAULT_WHATSAPP_WINDOW_MS,
   ChannelOutboundService,
   assembleNextTurn,
