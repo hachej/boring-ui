@@ -44,7 +44,7 @@ export interface OpenAiCodexOAuthBrokerV1 {
 }
 
 export interface OpenAiCodexOAuthBrokerOptionsV1 {
-  readonly credentialStoreForActor: (workspaceId: string, userId: string) => CredentialStore
+  readonly credentialStoreForActor: (workspaceId: string, userId: string) => CredentialStore | Promise<CredentialStore>
   readonly createRuntime?: (credentials: CredentialStore) => Promise<Pick<ModelRuntime, 'login' | 'logout'>>
   readonly now?: () => number
 }
@@ -153,6 +153,9 @@ export function createOpenAiCodexOAuthBrokerV1(
     async start(workspaceId, userId) {
       if (!workspaceId.trim() || !userId.trim()) throw new Error('OAuth actor is invalid')
       if (disconnectingActors.has(actorKey(workspaceId, userId))) throw new Error('OAuth disconnect is in progress')
+      // Capture the actor's durable credential version before this flow exists.
+      // The login-only store uses it to reject a newer cross-process revoke.
+      const credentials = await options.credentialStoreForActor(workspaceId, userId)
       const flow: Flow = {
         flowId: randomUUID(),
         workspaceId,
@@ -165,7 +168,7 @@ export function createOpenAiCodexOAuthBrokerV1(
       flows.set(flow.flowId, flow)
       void (async () => {
         try {
-          const runtime = await runtimeFactory(options.credentialStoreForActor(workspaceId, userId))
+          const runtime = await runtimeFactory(credentials)
           await runtime.login('openai-codex', 'oauth', {
             signal: flow.abort.signal,
             notify(event) {
@@ -237,7 +240,8 @@ export function createOpenAiCodexOAuthBrokerV1(
           }
         }
         try {
-          const runtime = await runtimeFactory(options.credentialStoreForActor(workspaceId, userId))
+          const credentials = await options.credentialStoreForActor(workspaceId, userId)
+          const runtime = await runtimeFactory(credentials)
           await runtime.logout('openai-codex')
           return Object.freeze({ logoutStatus: 'completed', upstreamStatus: 'pending' })
         } catch {

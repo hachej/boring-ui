@@ -244,18 +244,31 @@ describe('vault-backed Pi CredentialStore', () => {
     const normal = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a', userId: 'alice', vaultBackend: backend(), allowSubscriptionOAuth: true,
     })
-    const reconnect = createVaultCredentialStoreV1({
-      workspaceId: 'workspace-a', userId: 'alice', vaultBackend: backend(), allowSubscriptionOAuth: true,
-      allowRevokedOAuthReplacement: true,
-    })
     await workspace.modify('openai-codex', async () => ({ type: 'api_key', key: 'workspace-fallback' }))
     await normal.modify('openai-codex', async () => initial)
+    const active = await backend().getCredentialMetadata(
+      'workspace-a', actorCredentialProviderIdV1('alice', 'openai-codex'),
+    )
+    const staleLogin = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', userId: 'alice', vaultBackend: backend(), allowSubscriptionOAuth: true,
+      revokedOAuthReplacementVersion: active?.credentialVersion,
+    })
+    await normal.delete('openai-codex')
     await backend().setCredentialLifecycleState(
       'workspace-a', actorCredentialProviderIdV1('alice', 'openai-codex'), 'revoked',
     )
+    const revoked = await backend().getCredentialMetadata(
+      'workspace-a', actorCredentialProviderIdV1('alice', 'openai-codex'),
+    )
+    const reconnect = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', userId: 'alice', vaultBackend: backend(), allowSubscriptionOAuth: true,
+      revokedOAuthReplacementVersion: revoked?.credentialVersion,
+    })
 
     await expect(normal.read('openai-codex')).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.REVOKED })
     await expect(normal.modify('openai-codex', async () => ({ ...initial, access: 'unexpected' })))
+      .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.REVOKED })
+    await expect(staleLogin.modify('openai-codex', async () => ({ ...initial, access: 'stale-login' })))
       .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.REVOKED })
     await reconnect.modify('openai-codex', async (current) => {
       expect(current).toBeUndefined()

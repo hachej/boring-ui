@@ -31,8 +31,8 @@ export interface VaultCredentialStoreOptionsV1 {
   readonly vaultBackend: VaultCredentialStoreBackendV1
   /** Subscription OAuth is interactive-only; unattended seats set this false. */
   readonly allowSubscriptionOAuth: boolean
-  /** Login-only stores may replace an actor's revoked OAuth tombstone. */
-  readonly allowRevokedOAuthReplacement?: boolean
+  /** Login-only store's durable version fence for replacing a revoked OAuth tombstone. */
+  readonly revokedOAuthReplacementVersion?: number
   readonly allowedOAuthProviderIds?: readonly string[]
 }
 
@@ -184,10 +184,14 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     providerId: string,
     operation?: AuthOperationOptions,
   ): Promise<Credential | undefined> => {
-    if (options.allowRevokedOAuthReplacement && oauthProviders.has(providerId)) {
+    if (options.allowSubscriptionOAuth && oauthProviders.has(providerId)) {
       abortIfNeeded(operation)
       const metadata = await backend.getCredentialMetadata(options.workspaceId, personalProviderId(providerId))
-      if (metadata?.credentialType === 'oauth' && metadata.state === 'revoked') return undefined
+      if (metadata?.credentialType === 'oauth' && metadata.state === 'revoked') {
+        if (metadata.credentialVersion === options.revokedOAuthReplacementVersion) return undefined
+        // A login store created before a cross-process revoke must not revive
+        // the newer durable tombstone.
+      }
     }
     return readFrom(backend, providerId, operation)
   }

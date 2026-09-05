@@ -13,6 +13,7 @@ import {
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { resolveWorkspaceCredentialVaultCompositionFromEnvV1 } from '../credentials/startupComposition'
 import { createOpenAiCodexOAuthBrokerV1 } from '../credentials/openAiCodexOAuthBroker'
+import { actorCredentialProviderIdV1 } from '../credentials/vaultCredentialStore'
 import { createApiKeyValidatorV1 } from '../credentials/apiKeyValidation'
 import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/startupComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
@@ -850,11 +851,16 @@ export async function createAgentHost(
   }
   const oauthBroker = credentialComposition
     ? createOpenAiCodexOAuthBrokerV1({
-        credentialStoreForActor: (workspaceId, userId) =>
-          credentialComposition.createPiCredentialStore(workspaceId, userId, {
+        credentialStoreForActor: async (workspaceId, userId) => {
+          const observed = await credentialComposition.vaultBackend.getCredentialMetadata(
+            workspaceId,
+            actorCredentialProviderIdV1(userId, 'openai-codex'),
+          )
+          return credentialComposition.createPiCredentialStore(workspaceId, userId, {
             allowSubscriptionOAuth: true,
-            allowRevokedOAuthReplacement: true,
-          }),
+            revokedOAuthReplacementVersion: observed?.credentialVersion,
+          })
+        },
       })
     : undefined
   const invocationFundingPolicy = new AsyncLocalStorage<AgentInvocationFundingPolicyV1>()
