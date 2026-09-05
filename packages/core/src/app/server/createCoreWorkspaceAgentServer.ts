@@ -2205,8 +2205,10 @@ export async function createCoreWorkspaceAgentServer(
   } catch (error) {
     await whatsAppMount?.close().catch(() => undefined)
     if (!hostMounted) await agentHost.host.close().catch(() => undefined)
-    channelStorage?.close()
+    // When mounted, app.close runs Agent Host's hooks before the root storage
+    // hook. On partial mounting, close the Host explicitly before storage.
     await app.close().catch(() => undefined)
+    channelStorage?.close()
     throw error
   }
 
