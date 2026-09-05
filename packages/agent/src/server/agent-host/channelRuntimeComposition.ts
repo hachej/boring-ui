@@ -231,18 +231,16 @@ export function createAgentHostChannelRuntime<Message>(
         })
       }
       if (router) {
+        const binding = options.storage.bindings.getBinding(message.channel, message.conversationKey, agentTypeId)
+        const refreshed = binding
+          ? options.storage.bindings.recordIntentionInboundActivity(binding, message.receivedAt)
+          : undefined
+        if (refreshed) {
+          intentions!.notifyInbound(refreshed)
+          outbound.notifyInbound(refreshed)
+        }
         return router.accept(message, agentTypeId).then((result) => {
           if (result.kind === 'agent' && result.ack.accepted) notifyAfterAgentDelivery()
-          if (result.kind === 'intention' && result.ack.handled && !result.ack.duplicate) {
-            const binding = options.storage.bindings.getBinding(message.channel, message.conversationKey, agentTypeId)
-            const refreshed = binding
-              ? options.storage.bindings.recordIntentionInboundActivity(binding, message.receivedAt)
-              : undefined
-            if (refreshed) {
-              intentions!.notifyInbound(refreshed)
-              outbound.notifyInbound(refreshed)
-            }
-          }
           return result
         })
       }
