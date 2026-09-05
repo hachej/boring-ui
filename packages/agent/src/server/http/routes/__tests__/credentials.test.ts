@@ -1,3 +1,6 @@
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import Fastify from 'fastify'
 import { describe, expect, test } from 'vitest'
 import {
@@ -12,9 +15,11 @@ import type {
 import {
   createInMemoryCredentialVaultPersistenceV1,
   createInMemoryCredentialVersionAnchorV1,
+  createLocalFileCredentialVersionAnchorV1,
   createLocalKekWorkspaceKekProviderV1,
   createVaultCredentialStoreBackendV1,
 } from '../../../credentials'
+import type { VaultCredentialStoreBackendV1 } from '../../../credentials'
 import { credentialsRoutes } from '../credentials'
 
 const PROVIDER = 'anthropic' as ProviderId
@@ -30,7 +35,10 @@ function authority(role: 'owner' | 'editor' | 'viewer'): VerifiedWorkspaceCreden
   }
 }
 
-async function setup(role: 'owner' | 'editor' | 'viewer' = 'owner') {
+async function setup(
+  role: 'owner' | 'editor' | 'viewer' = 'owner',
+  backendOverride?: VaultCredentialStoreBackendV1,
+) {
   const providerRegistry = createProviderRegistryV1([{
     contractVersion: 'boring.provider.v1',
     id: PROVIDER,
@@ -51,7 +59,7 @@ async function setup(role: 'owner' | 'editor' | 'viewer' = 'owner') {
     sandboxEgressOrigins: [],
   }])
   const persistence = createInMemoryCredentialVaultPersistenceV1()
-  const vaultBackend = createVaultCredentialStoreBackendV1({
+  const vaultBackend = backendOverride ?? createVaultCredentialStoreBackendV1({
     persistence,
     versionAnchor: createInMemoryCredentialVersionAnchorV1(),
     kmsBackend: createLocalKekWorkspaceKekProviderV1({
@@ -70,6 +78,37 @@ async function setup(role: 'owner' | 'editor' | 'viewer' = 'owner') {
 }
 
 describe('owner credential routes', () => {
+  test('lists registry providers from clean persistence before the anchor is provisioned', async () => {
+    const anchorFilePath = join(
+      await mkdtemp(join(tmpdir(), 'credential-route-clean-anchor-')),
+      'credential-anchor',
+    )
+    const loadKek = async () => new Uint8Array(32).fill(7)
+    const vaultBackend = createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'test-key',
+        keyVersion: 1,
+        loadKek,
+      }),
+    })
+    const { app } = await setup('owner', vaultBackend)
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/credentials' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      credentials: [{
+        providerId: 'anthropic',
+        displayName: 'Anthropic',
+        credentialType: 'api-key',
+        state: 'not_configured',
+      }],
+    })
+    await app.close()
+  })
+
   test.each(['editor', 'viewer'] as const)('denies %s writes server-side', async (role) => {
     const { app } = await setup(role)
     const response = await app.inject({

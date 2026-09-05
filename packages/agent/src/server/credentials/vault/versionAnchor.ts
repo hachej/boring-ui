@@ -45,8 +45,20 @@ export interface CredentialLifecycleMutationResultV1<T> {
   readonly result: T
 }
 
+export interface CredentialVersionAnchorReadOptionsV1 {
+  /**
+   * A provider-list probe may treat a never-provisioned anchor file as empty
+   * only when persistence has no credential metadata. Existing malformed or
+   * unauthenticated anchor files still fail closed.
+   */
+  readonly allowUnprovisioned?: boolean
+}
+
 export interface WorkspaceCredentialVersionAnchorV1 {
-  read(workspaceId: string): Promise<WorkspaceCredentialVersionStateV1 | undefined>
+  read(
+    workspaceId: string,
+    options?: CredentialVersionAnchorReadOptionsV1,
+  ): Promise<WorkspaceCredentialVersionStateV1 | undefined>
   /**
    * Holds the external workspace mutation lock through the supplied DB CAS.
    * If the DB commit succeeds but advancing this external anchor fails, the
@@ -404,10 +416,31 @@ async function sealState(
 
 async function readSealedState(
   options: LocalCredentialVersionAnchorOptionsV1,
-): Promise<MutableAnchorStateV1> {
+): Promise<MutableAnchorStateV1>
+async function readSealedState(
+  options: LocalCredentialVersionAnchorOptionsV1,
+  readOptions: CredentialVersionAnchorReadOptionsV1,
+): Promise<MutableAnchorStateV1 | undefined>
+async function readSealedState(
+  options: LocalCredentialVersionAnchorOptionsV1,
+  readOptions?: CredentialVersionAnchorReadOptionsV1,
+): Promise<MutableAnchorStateV1 | undefined> {
+  let serialized: string
+  try {
+    serialized = await readFile(options.anchorFilePath, 'utf8')
+  } catch (error) {
+    if (
+      readOptions?.allowUnprovisioned
+      && error
+      && typeof error === 'object'
+      && 'code' in error
+      && (error as { code?: unknown }).code === 'ENOENT'
+    ) return undefined
+    unreadable('Credential version anchor is unreadable')
+  }
   let parsed: Partial<SealedAnchorFileV1>
   try {
-    parsed = JSON.parse(await readFile(options.anchorFilePath, 'utf8')) as Partial<SealedAnchorFileV1>
+    parsed = JSON.parse(serialized) as Partial<SealedAnchorFileV1>
   } catch {
     unreadable('Credential version anchor is unreadable')
   }
@@ -492,8 +525,11 @@ export function createLocalFileCredentialVersionAnchorV1(
   options: LocalCredentialVersionAnchorOptionsV1,
 ): WorkspaceCredentialVersionAnchorV1 {
   const anchor: WorkspaceCredentialVersionAnchorV1 = {
-    async read(workspaceId: string) {
-      return copyWorkspaceState(await readSealedState(options), workspaceId)
+    async read(workspaceId: string, readOptions?: CredentialVersionAnchorReadOptionsV1) {
+      const state = readOptions
+        ? await readSealedState(options, readOptions)
+        : await readSealedState(options)
+      return state ? copyWorkspaceState(state, workspaceId) : undefined
     },
     async withMutation<T>(
       workspaceId: string,

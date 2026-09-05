@@ -527,7 +527,14 @@ function createVaultCredentialStoreBackendInternalV1(
     async listCredentialMetadata(workspaceId: string) {
       assertWorkspaceId(workspaceId)
       const listed = await persistence.listCredentialMetadata(workspaceId)
-      const anchored = await versionAnchor.read(workspaceId)
+      // A clean deployment has neither persistence rows nor an anchor file yet.
+      // Permit only that narrow unprovisioned case so the registry can project
+      // `not_configured`; once persistence exists, a missing anchor remains
+      // corruption. A present anchor is always authenticated and still catches
+      // deleted/replayed metadata even when the persistence list is empty.
+      const anchored = await versionAnchor.read(workspaceId, {
+        allowUnprovisioned: listed.length === 0,
+      })
       const providers = new Set(listed.map(({ providerId }) => providerId))
       if (Object.keys(anchored?.credentialVersions ?? {}).some((providerId) => !providers.has(providerId as ProviderId))) {
         unreadable('Credential metadata failed rollback verification')

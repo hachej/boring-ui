@@ -495,6 +495,58 @@ function expectSyncCredentialError(run: () => unknown): CredentialResolutionErro
 }
 
 describe('vault credential store backend', () => {
+  test('provider listing rejects authenticated tombstoned state when metadata is missing', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const versionAnchor = createInMemoryCredentialVersionAnchorV1()
+    const kmsBackend = kekProvider(KEK_A)
+    const writer = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor,
+      kmsBackend,
+    })
+    await writer.writeCredentialFields({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      fields: new Map([
+        [FIELD_API_KEY, new Uint8Array(Buffer.from(SECRET_VALUE, 'utf8'))],
+      ]),
+      metadata: { credentialType: 'api-key' },
+    })
+    await writer.writeAbsentCredential('ws-a', PROVIDER_A)
+
+    const metadataMissing = createVaultCredentialStoreBackendV1({
+      persistence: {
+        ...persistence,
+        async listCredentialMetadata() { return [] },
+      },
+      versionAnchor,
+      kmsBackend,
+    })
+    await expectCredentialError(
+      () => metadataMissing.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
+  test('provider listing does not excuse a present malformed anchor for empty persistence', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'boring-list-anchor-'))
+    const anchorFilePath = join(dir, 'credential-anchor')
+    await writeFile(anchorFilePath, '{"tampered":true}\n')
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({
+        anchorFilePath,
+        loadKek: async () => new Uint8Array(KEK_A),
+      }),
+      kmsBackend: kekProvider(KEK_A),
+    })
+
+    await expectCredentialError(
+      () => backend.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
   test('round-trips a credential field end to end', async () => {
     const { backend } = vaultStore()
     const record = await backend.writeCredentialFields({
