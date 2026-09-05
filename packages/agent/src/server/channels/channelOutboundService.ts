@@ -363,6 +363,16 @@ export function assembleNextTurn(
       if (!active) active = { turnId: chunk.turnId, startedAt: entry.data.timestamp, assistantText: '' }
       continue
     }
+    if (!active && chunk.type === 'error') {
+      return {
+        terminalOffset: entry.offset,
+        turn: {
+          turnId: chunk.turnId ?? `error:${entry.data.eventIndex}`,
+          status: 'error',
+          text: 'I could not complete that request. Please try again.',
+        },
+      }
+    }
     if (!active) continue
     if (chunk.type === 'error' && (!chunk.turnId || chunk.turnId === active.turnId)) {
       return {

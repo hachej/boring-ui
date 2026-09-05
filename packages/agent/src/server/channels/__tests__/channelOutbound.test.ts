@@ -125,16 +125,15 @@ describe('durable channel outbound', () => {
 
   test('treats a synthetic error event as terminal without leaking its details', () => {
     const entries = [
-      envelope({ type: 'agent-start', seq: 1, turnId: 'turn-error' }, '0'),
       envelope({
-        type: 'error', seq: 2, turnId: 'turn-error', retryable: false,
+        type: 'error', seq: 2, retryable: false,
         error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'private provider detail', retryable: false },
       }, '1'),
     ]
     expect(assembleNextTurn(entries)).toEqual({
       terminalOffset: '1',
       turn: {
-        turnId: 'turn-error', status: 'error',
+        turnId: 'error:1', status: 'error',
         text: 'I could not complete that request. Please try again.',
       },
     })
@@ -406,6 +405,7 @@ describe('fake-channel conformance', () => {
   test('drives inbound through HarnessPiChatService durable events and resumes from the persisted outbound cursor', async () => {
     await withChannel(async ({ bindings, events, path }) => {
       const listeners = new Set<(event: AgentSessionEvent) => void>()
+      const promptRun = vi.fn(async () => {})
       const piAdapter = {
         readSnapshot: () => ({
           state: {}, messages: [], isStreaming: false, isRetrying: false, retryAttempt: 0,
@@ -416,7 +416,7 @@ describe('fake-channel conformance', () => {
           listeners.add(listener)
           return () => listeners.delete(listener)
         },
-        prompt: vi.fn(async () => {}),
+        prompt: promptRun,
         followUp: vi.fn(async () => {}),
         clearFollowUp: vi.fn(),
         abort: vi.fn(async () => {}),
@@ -459,9 +459,11 @@ describe('fake-channel conformance', () => {
         createSession: async () => bindingInput.sessionKey,
         isSessionBusy: async () => false,
         async prompt(input) {
+          if (input.text === 'fail before stream') promptRun.mockRejectedValueOnce(new Error('private provider outage'))
           await pi.prompt({ ...ctx, requestId: input.requestId }, input.sessionKey, {
             message: input.text, clientNonce: input.requestId,
           })
+          if (input.text === 'fail before stream') return
           for (const listener of listeners) listener({ type: 'agent_start', turnId: 'turn-conformance' } as AgentSessionEvent)
           for (const listener of listeners) listener({
             type: 'agent_end',
@@ -488,6 +490,14 @@ describe('fake-channel conformance', () => {
       const cursor = bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor
       expect(cursor).not.toBe('-1')
 
+      expect(inbound.accept({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.conformance-failure', text: 'fail before stream', receivedAt: Date.now(),
+      }, 'default')).toMatchObject({ accepted: true })
+      await inbound.waitForIdle()
+      await eventually(() => sent.length === 2)
+      expect(sent[1]).toBe('I could not complete that request. Please try again.')
+
       await outbound.dispose()
       const restarted = new ChannelOutboundService(bindings, events, {
         resolveStreamPath: async () => path,
@@ -495,7 +505,7 @@ describe('fake-channel conformance', () => {
       }, new Map([['whatsapp', fakeAdapter(sent)]]))
       restarted.start()
       await restarted.waitForIdle()
-      expect(sent).toEqual(['CONFORMANCE_OK'])
+      expect(sent).toEqual(['CONFORMANCE_OK', 'I could not complete that request. Please try again.'])
       await restarted.dispose()
       await pi.dispose()
     })
