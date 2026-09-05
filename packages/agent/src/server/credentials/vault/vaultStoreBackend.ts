@@ -380,10 +380,14 @@ function createVaultCredentialStoreBackendInternalV1(
           const credentialId =
             input.credentialId ?? existing?.credentialId ?? randomUUID()
           const rotation = await persistence.getDekRotationState(workspaceId)
-          const dekGeneration = rotation?.targetGeneration
-            ?? existing?.dekGeneration
-            ?? anchorState?.dekGeneration
-            ?? 1
+          if (rotation) {
+            throw new CredentialResolutionError(
+              CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+              'Credential write must retry after DEK rotation',
+              { retryable: true },
+            )
+          }
+          const dekGeneration = existing?.dekGeneration ?? anchorState?.dekGeneration ?? 1
           const encryptedFields = new Map<string, ReturnType<typeof encryptCredentialFieldV1>>()
 
           let plaintextDek: Uint8Array | undefined
@@ -490,13 +494,17 @@ function createVaultCredentialStoreBackendInternalV1(
           ) unreadable('Credential current state failed rollback verification')
           const expectedCredentialVersion = existing?.credentialVersion ?? 0
           const rotation = await persistence.getDekRotationState(workspaceId)
+          if (rotation) {
+            throw new CredentialResolutionError(
+              CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+              'Credential write must retry after DEK rotation',
+              { retryable: true },
+            )
+          }
           const record: StoredCredentialRecordV1 = Object.freeze({
             credentialId: existing?.credentialId ?? randomUUID(),
             credentialVersion: expectedCredentialVersion + 1,
-            dekGeneration: rotation?.targetGeneration
-              ?? existing?.dekGeneration
-              ?? anchorState?.dekGeneration
-              ?? 1,
+            dekGeneration: existing?.dekGeneration ?? anchorState?.dekGeneration ?? 1,
             materialKind: 'none',
           })
           await persistence.commitCredentialVersion({
@@ -913,6 +921,13 @@ function createVaultCredentialStoreBackendInternalV1(
         if (rotation.phase !== 'anchor-advanced') {
           unreadable('Credential DEK rotation finalization state is invalid')
         }
+        const finalAnchor = await versionAnchor.read(workspaceId)
+        if (
+          !finalAnchor
+          || finalAnchor.dekGeneration !== rotation.targetGeneration
+          || finalAnchor.dekRotationReceipts[rotation.operationId] !== rotation.targetGeneration
+        ) unreadable('Credential DEK rotation finalization failed anchor verification')
+        await verifyTargetGeneration()
         await locked.finalizeDekRotation(workspaceId, rotation)
         return rotation.targetGeneration
       })

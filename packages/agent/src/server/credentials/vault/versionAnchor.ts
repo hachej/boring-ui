@@ -4,8 +4,8 @@ import {
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto'
-import { open, readFile, rename, stat, unlink, utimes } from 'node:fs/promises'
-import { hostname } from 'node:os'
+import { open, readFile, rename, unlink } from 'node:fs/promises'
+import lockfile from 'proper-lockfile'
 import { dirname } from 'node:path'
 import {
   CREDENTIAL_ERROR_CODES,
@@ -158,112 +158,23 @@ function backendUnavailable(message: string): never {
   )
 }
 
-const MUTATION_LOCK_STALE_MS = 30_000
-
-type MutationLockOwnerV1 = {
-  readonly token: string
-  readonly hostname: string
-  readonly pid: number
-}
-
-function localProcessIsAlive(pid: number): boolean {
+async function acquireMutationLock(lockPath: string) {
   try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return Boolean(
-      error
-      && typeof error === 'object'
-      && 'code' in error
-      && (error as { code?: unknown }).code === 'EPERM',
+    const release = await lockfile.lock(lockPath, {
+      lockfilePath: lockPath,
+      realpath: false,
+      stale: 30_000,
+      update: 5_000,
+      retries: { retries: 100, minTimeout: 25, maxTimeout: 100 },
+    })
+    return { release }
+  } catch {
+    throw new CredentialResolutionError(
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+      'Credential version anchor mutation lock is unavailable',
+      { retryable: true },
     )
   }
-}
-
-async function removeAbandonedMutationLock(lockPath: string): Promise<void> {
-  let encoded: string
-  let modifiedAt: number
-  try {
-    ;[encoded, modifiedAt] = await Promise.all([
-      readFile(lockPath, 'utf8'),
-      stat(lockPath).then((value) => value.mtimeMs),
-    ])
-  } catch {
-    return
-  }
-  let owner: Partial<MutationLockOwnerV1> | undefined
-  try { owner = JSON.parse(encoded) as Partial<MutationLockOwnerV1> } catch { /* incomplete lock */ }
-  const sameHostDead = owner?.hostname === hostname()
-    && Number.isSafeInteger(owner.pid)
-    && !localProcessIsAlive(owner.pid!)
-  const staleForeignHost = owner?.hostname !== hostname()
-    && Date.now() - modifiedAt >= MUTATION_LOCK_STALE_MS
-  if (!sameHostDead && !staleForeignHost) return
-
-  // Atomically move the candidate inode out of the acquisition pathname.
-  // Recovery never unlinks by pathname after a separate token comparison.
-  const quarantinePath = `${lockPath}.abandoned-${randomUUID()}`
-  try {
-    await rename(lockPath, quarantinePath)
-  } catch {
-    return
-  }
-  const moved = await readFile(quarantinePath, 'utf8').catch(() => undefined)
-  if (moved === encoded) {
-    await unlink(quarantinePath).catch(() => undefined)
-    return
-  }
-  // Another recovery won the race and this was a successor. Restore it when
-  // the acquisition path is still free; otherwise retain it rather than delete.
-  await rename(quarantinePath, lockPath).catch(() => undefined)
-}
-
-async function acquireMutationLock(lockPath: string) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      const lock = await open(lockPath, 'wx', 0o600)
-      try {
-        const encodedOwner = JSON.stringify({
-          token: randomUUID(),
-          hostname: hostname(),
-          pid: process.pid,
-        } satisfies MutationLockOwnerV1)
-        await lock.writeFile(encodedOwner, 'utf8')
-        await lock.sync()
-        const heartbeat = setInterval(() => {
-          const now = new Date()
-          void utimes(lockPath, now, now).catch(() => undefined)
-        }, MUTATION_LOCK_STALE_MS / 3)
-        heartbeat.unref()
-        return {
-          async release() {
-            clearInterval(heartbeat)
-            await lock.close().catch(() => undefined)
-            const current = await readFile(lockPath, 'utf8').catch(() => undefined)
-            if (current === encodedOwner) await unlink(lockPath).catch(() => undefined)
-          },
-        }
-      } catch (error) {
-        await lock.close().catch(() => undefined)
-        await unlink(lockPath).catch(() => undefined)
-        throw error
-      }
-    } catch (error) {
-      if (
-        !error
-        || typeof error !== 'object'
-        || !('code' in error)
-        || (error as { code?: unknown }).code !== 'EEXIST'
-      ) unreadable('Credential version anchor lock is unavailable')
-      await removeAbandonedMutationLock(lockPath)
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
-  }
-  throw new CredentialResolutionError(
-    CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
-    'Credential version anchor mutation lock is unavailable',
-    { retryable: true },
-  )
 }
 
 function emptyState(): MutableAnchorStateV1 {

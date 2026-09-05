@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, writeFile } from 'node:fs/promises'
-import { hostname, tmpdir } from 'node:os'
+import { mkdir, mkdtemp, utimes } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
@@ -293,11 +293,9 @@ describe('Postgres credential rollback protection', () => {
             ): Promise<T> {
               if (!injected && boundary === 'anchor-lock-recovery') {
                 injected = true
-                await writeFile(`${anchorFilePath}.lock`, JSON.stringify({
-                  token: 'dead-process-lock',
-                  hostname: hostname(),
-                  pid: 999_999_999,
-                }), { mode: 0o600 })
+                await mkdir(`${anchorFilePath}.lock`, { mode: 0o700 })
+                const stale = new Date(Date.now() - 60_000)
+                await utimes(`${anchorFilePath}.lock`, stale, stale)
                 throw new Error('simulated crash after anchor-lock-recovery')
               }
               const result = await anchor.withDekGenerationMutation(requestedWorkspaceId, mutate)
@@ -316,6 +314,16 @@ describe('Postgres credential rollback protection', () => {
       })
       await expect(interrupted.rotateWorkspaceDek(workspaceId, operationId))
         .rejects.toThrow(`simulated crash after ${boundary}`)
+      if (boundary === 'intent-marker') {
+        await expect(initial.writeCredentialFields({
+          workspaceId,
+          providerId,
+          fields: new Map([[fieldId, new TextEncoder().encode('must-wait-for-rotation')]]),
+        })).rejects.toMatchObject({
+          code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+          retryable: true,
+        })
+      }
 
       // A new backend/anchor instance models process restart. The same operation
       // id resumes N→N+1 and the durable receipt makes even post-finalize retry idempotent.
@@ -410,6 +418,14 @@ describe('Postgres credential rollback protection', () => {
       WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
     `
 
+    await expect(vault.rotateWorkspaceDek(workspaceId, 'forged-verified-operation'))
+      .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+    await persistence.putDekRotationState(workspaceId, {
+      operationId: 'forged-verified-operation',
+      sourceGeneration: 1,
+      targetGeneration: 2,
+      phase: 'anchor-advanced',
+    })
     await expect(vault.rotateWorkspaceDek(workspaceId, 'forged-verified-operation'))
       .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
     expect(await anchor.read(workspaceId)).toMatchObject({ dekGeneration: 1 })
