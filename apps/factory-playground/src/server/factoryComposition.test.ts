@@ -34,7 +34,7 @@ const SESSION_BINDINGS: FactorySessionBindings = {
   inherit: async () => EPIC_KEY,
   reconcile: async () => ({ droppedSessionIds: [], restoredOrchestratorSessionIds: [] }),
 }
-const DELEGATE_OPTIONS = { workspaceScopeId: WORKSPACE_SCOPE_ID, registry: EPIC_REGISTRY, sessionBindings: SESSION_BINDINGS }
+const DELEGATE_OPTIONS = { stateRoot: resolve(tmpdir(), 'factory-composition-delegate'), workspaceScopeId: WORKSPACE_SCOPE_ID, registry: EPIC_REGISTRY, sessionBindings: SESSION_BINDINGS }
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
@@ -87,8 +87,8 @@ describe('native Factory composition', () => {
 
     // Recovery rule (epic-binding appendix, orchestrator).
     expect(orchestrator.definition.instructions).toContain('Recovery: run `factory_status` on every supervision tick.')
-    expect(orchestrator.definition.instructions).toContain('br update <id> --assignee "" --status open --actor <your session id>')
-    expect(orchestrator.definition.instructions).toContain('Never release a Bead whose assignee session is `exists-busy`.')
+    expect(orchestrator.definition.instructions).toContain('call the host\'s `recover_stale_claims` tool')
+    expect(orchestrator.definition.instructions).toContain('never release a busy claim')
 
     // Uncommitted-changes handoff rule (epic-binding appendix, worker).
     expect(worker.definition.instructions).toContain('If the shared worktree already holds uncommitted changes for your Bead from a previous')
@@ -183,7 +183,7 @@ describe('native Factory composition', () => {
       expect(names(workerTools)).not.toContain('factory_status')
       expect(names(orchestratorTools)).toContain('boring_automation')
       expect(names(orchestratorTools)).not.toContain('sandbox')
-      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'dispatch_worker', 'demo_sandbox']))
+      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'recover_stale_claims', 'dispatch_worker', 'demo_sandbox']))
     } finally {
       await app.close()
     }
@@ -268,10 +268,10 @@ describe('native Factory composition', () => {
 })
 
 describe('factory delegate plugin', () => {
-  it('grants dispatch_worker+factory_status to the orchestrator and fresh_review to the worker, and nothing to any other seat', () => {
+  it('grants dispatch_worker+factory_status+recovery to the orchestrator and fresh_review to the worker, and nothing to any other seat', () => {
     const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }).map((tool) => tool.name))
-      .toEqual(['dispatch_worker', 'factory_status'])
+      .toEqual(['dispatch_worker', 'factory_status', 'recover_stale_claims'])
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
       .toEqual(['fresh_review'])
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_REVIEWER_AGENT_TYPE_ID })).toEqual([])

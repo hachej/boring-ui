@@ -1,3 +1,6 @@
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createFactoryDelegatePlugin } from './delegatePlugin'
 import type { FactoryEpicEntry, FactoryEpicRegistry } from './epicRegistry'
@@ -5,6 +8,7 @@ import type { FactorySessionBindings } from './sessionBindings'
 
 describe('factory delegate plugin', () => {
   it('binds a child to its parent epic and prefixes the child brief with that epic host context', async () => {
+    const stateRoot = await mkdtemp(resolve(tmpdir(), 'factory-delegate-existing-'))
     const entry: FactoryEpicEntry = {
       epicKey: 'parent-epic',
       featureName: 'Parent Epic',
@@ -30,6 +34,9 @@ describe('factory delegate plugin', () => {
     let promptPayload: Record<string, unknown> | undefined
     const app = {
       async inject(request: { method: string; url: string; payload?: unknown }) {
+        if (request.method === 'GET' && request.url.endsWith('/sessions')) {
+          return { statusCode: 200, body: '', json: <T>() => ({ sessions: [] }) as T }
+        }
         if (request.method === 'POST' && request.url.endsWith('/sessions')) {
           return { statusCode: 201, body: '', json: <T>() => ({ sessionId: 'worker-child' }) as T }
         }
@@ -47,12 +54,15 @@ describe('factory delegate plugin', () => {
         throw new Error(`unexpected request ${request.method} ${request.url}`)
       },
     }
-    const handle = createFactoryDelegatePlugin({ workspaceScopeId: 'factory-hub', registry, sessionBindings, timeoutMs: 1_000 })
+    const runBr = async (args: readonly string[]) => args[0] === 'list'
+      ? JSON.stringify({ issues: [{ id: 'br-1', status: 'open', labels: ['epic:parent-epic'] }] })
+      : JSON.stringify([])
+    const handle = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, timeoutMs: 1_000, runBr })
     handle.bind(app as never)
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const result = await tool!.execute(
-      { brief: 'Implement the bounded worker task and report proof.' },
+      { beadId: 'br-1', brief: 'Implement the bounded worker task for br-1 and report proof.' },
       { abortSignal: new AbortController().signal, toolCallId: 'call-1', sessionId: 'orch-parent' },
     )
 
@@ -60,12 +70,12 @@ describe('factory delegate plugin', () => {
     expect(sessionBindings.bind).toHaveBeenCalledWith('worker-child', 'parent-epic')
     expect(bindingState['worker-child']).toBe('parent-epic')
     expect(promptPayload).toMatchObject({ model: { provider: 'openai', id: 'gpt-worker' }, requireIdle: true })
-    expect(promptPayload?.content).toBe(
-      'Host context: epic parent-epic ([Parent Epic]) worktree /repo/.worktrees/epic-parent-epic branch epic/parent-epic. Your session id is worker-child (use it as your br actor). Parent session: orch-parent.\n\nImplement the bounded worker task and report proof.',
-    )
+    expect(promptPayload?.content).toContain('Target Bead: br-1.')
+    expect(promptPayload?.content).toContain('Implement the bounded worker task for br-1 and report proof.')
   })
 
   it('unbinds a newly created child when its first prompt fails', async () => {
+    const stateRoot = await mkdtemp(resolve(tmpdir(), 'factory-delegate-existing-'))
     const entry: FactoryEpicEntry = {
       epicKey: 'parent-epic', featureName: 'Parent Epic', worktree: '/repo/.worktrees/epic-parent-epic',
       branch: 'epic/parent-epic', repositoryRoot: '/repo', orchestratorSessionId: 'orch-parent',
@@ -86,6 +96,9 @@ describe('factory delegate plugin', () => {
     }
     const app = {
       async inject(request: { method: string; url: string }) {
+        if (request.method === 'GET' && request.url.endsWith('/sessions')) {
+          return { statusCode: 200, body: '', json: <T>() => ({ sessions: [] }) as T }
+        }
         if (request.method === 'POST' && request.url.endsWith('/sessions')) {
           return { statusCode: 201, body: '', json: <T>() => ({ sessionId: 'worker-child' }) as T }
         }
@@ -95,11 +108,14 @@ describe('factory delegate plugin', () => {
         throw new Error(`unexpected request ${request.method} ${request.url}`)
       },
     }
-    const handle = createFactoryDelegatePlugin({ workspaceScopeId: 'factory-hub', registry, sessionBindings, timeoutMs: 1_000 })
+    const runBr = async (args: readonly string[]) => args[0] === 'list'
+      ? JSON.stringify({ issues: [{ id: 'br-1', status: 'open', labels: ['epic:parent-epic'] }] })
+      : JSON.stringify([])
+    const handle = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, timeoutMs: 1_000, runBr })
     handle.bind(app as never)
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute(
-      { brief: 'Implement the bounded worker task and report proof.' },
+      { beadId: 'br-1', brief: 'Implement the bounded worker task for br-1 and report proof.' },
       { abortSignal: new AbortController().signal, toolCallId: 'call-failed', sessionId: 'orch-parent' },
     )
     expect(result).toMatchObject({ isError: true, details: { code: 'PROMPT_FAILED', delegationId: 'worker-child', status: 503 } })

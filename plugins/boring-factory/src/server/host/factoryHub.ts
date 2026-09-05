@@ -18,7 +18,8 @@ import { createFactoryDemoPlugin } from './demoPlugin'
 import { executeCloseEpic } from './epicClosure'
 import { createFactoryEpicRegistry, FACTORY_REQUEST_FILE_MAX_BYTES, FactoryEpicRegistryError, resolveFactoryEpicRequestFile, validateFactoryEpicEntry, type FactoryEpicEntry, type FactoryEpicModels, type FactoryEpicRegistry } from './epicRegistry'
 import { createFactorySessionBindings, FactoryEpicResolutionError, FactorySessionBindingError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
-import { buildEpicKickoffPrompt } from './epicKickoff'
+import { buildEpicKickoffPrompt, FACTORY_DEFAULT_PLAN_BUDGET_MS } from './epicKickoff'
+import { positiveInteger } from './dispatchLedger'
 
 const execFileAsync = promisify(execFile)
 const FACTORY_WORKSPACE_SCOPE_ID = 'factory-hub'
@@ -397,7 +398,7 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
     reviewer: options.models?.reviewer ?? env.BORING_FACTORY_REVIEWER_MODEL,
   })
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
-  const delegate = createFactoryDelegatePlugin({ workspaceScopeId, registry, sessionBindings })
+  const delegate = createFactoryDelegatePlugin({ stateRoot, env, workspaceScopeId, registry, sessionBindings })
   const supervision = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId, registry, sessionBindings })
   const demo = createFactoryDemoPlugin({ stateRoot, env, workspaceScopeId, registry, sessionBindings })
   let appRef: FastifyInstance | undefined
@@ -490,6 +491,8 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
       }
       requestText = content.toString('utf8')
     }
+    const createdAt = new Date().toISOString()
+    const planBudgetMs = positiveInteger(env.BORING_FACTORY_PLAN_BUDGET_MS, FACTORY_DEFAULT_PLAN_BUDGET_MS)
     const candidate = await validateFactoryEpicEntry({
       epicKey: input.epicKey,
       featureName: input.featureName,
@@ -498,7 +501,8 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
       repositoryRoot,
       ...(requestFile ? { requestFile } : {}),
       ...(input.models ? { models: input.models } : {}),
-      createdAt: new Date().toISOString(),
+      createdAt,
+      planDeadlineAt: new Date(Date.parse(createdAt) + planBudgetMs).toISOString(),
       status: 'active',
     })
     const sessionId = await createOrchestratorSession(app, candidate)
