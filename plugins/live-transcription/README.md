@@ -108,17 +108,27 @@ Two ways to trigger it:
   on the session for tests as `session.refinePromise`.
 - **On demand, for an existing recording.** `POST
   /api/v1/live-transcripts/transcribe-file` takes `{ path, title?,
-  overwrite? }`, where `path` is a workspace-relative audio file (extension
-  one of `m4a`, `mp3`, `wav`, `webm`, `ogg`, `mp4`, `aac`, `flac`; `..`,
-  absolute paths, and symlink escapes out of the workspace root are
-  rejected). It writes the refined transcript to `<path without
-  extension>.transcript.md` (refusing to overwrite an existing file unless
-  `overwrite: true`, which returns `live_transcript_revision_conflict`/409)
-  and responds `{ transcriptPath, words, speakers, durationSeconds }`. It
-  answers `503 live_transcript_disabled` when no refiner is configured and
-  `409 live_transcript_already_active` if another file transcription job is
-  already running. The front end exposes this as `/transcribe <workspace
-  path> [title]`, which opens the resulting transcript file afterward.
+  overwrite? }`, where `path` must name a recording under
+  `live-transcripts/` — `live-transcripts/<name>.<ext>`, a single path
+  segment after the folder, extension one of `m4a`, `mp3`, `wav`, `webm`,
+  `ogg`, `mp4`, `aac`, `flac`. Any other path (outside `live-transcripts/`,
+  containing extra segments or `..`, absolute) is rejected with 400. The
+  audio is read from the plugin's own `audioRecordingDirectory` (the real
+  host directory backing the workspace's `live-transcripts/` folder) rather
+  than through the sandbox-facing `workspace.root`, since the latter is a
+  sandbox-canonical label that doesn't resolve to a real path in the host
+  Node process; symlink escapes out of that directory are rejected, and the
+  request answers `503 live_transcript_disabled` if no
+  `audioRecordingDirectory` is configured. It writes the refined transcript
+  to `<path without extension>.transcript.md` in the workspace (refusing to
+  overwrite an existing file unless `overwrite: true`, which returns
+  `live_transcript_revision_conflict`/409) and responds `{ transcriptPath,
+  words, speakers, durationSeconds }`. It also answers `503
+  live_transcript_disabled` when no refiner is configured and `409
+  live_transcript_already_active` if another file transcription job is
+  already running. The front end exposes this as `/transcribe
+  <live-transcripts recording> [title]`, which opens the resulting
+  transcript file afterward.
 
 The refine service's HTTP errors map onto existing `LiveTranscriptError`
 codes: `429` → `live_transcript_already_active` (409), `413` →

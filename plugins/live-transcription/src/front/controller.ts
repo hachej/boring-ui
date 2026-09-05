@@ -435,7 +435,7 @@ export class LiveTranscriptBrowserController {
 
   private async transcribeFile(args: string): Promise<string> {
     const trimmed = args.trim()
-    if (!trimmed) return "Usage: /transcribe <workspace path> [title]"
+    if (!trimmed) return "Usage: /transcribe <live-transcripts recording> [title]"
     const separator = trimmed.indexOf(" ")
     const path = separator < 0 ? trimmed : trimmed.slice(0, separator)
     const title = separator < 0 ? undefined : trimmed.slice(separator + 1).trim() || undefined
