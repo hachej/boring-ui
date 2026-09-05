@@ -81,6 +81,10 @@ export type ClaimIntentionReplyResult =
   | { readonly disposition: 'duplicate' }
   | { readonly disposition: 'no_intention' }
 
+export type ClaimInvalidIntentionReplyResult =
+  | { readonly disposition: 'claimed' }
+  | { readonly disposition: 'duplicate' }
+
 type NextInboundResult =
   | { readonly disposition: 'claimed'; readonly inbound: QueuedChannelInbound }
   | { readonly disposition: 'blocked'; readonly retryAt: number }
@@ -213,8 +217,16 @@ export class ChannelBindingStore {
       channel TEXT NOT NULL,
       provider_message_id TEXT NOT NULL,
       seen_at INTEGER NOT NULL,
+      question_id TEXT,
+      status TEXT NOT NULL DEFAULT 'sent',
+      claim_owner TEXT,
+      claim_expires_at INTEGER,
       PRIMARY KEY (channel, provider_message_id)
     )`)
+    this.ensureColumn('boring_channel_intention_reply_dedupe', 'question_id', 'TEXT')
+    this.ensureColumn('boring_channel_intention_reply_dedupe', 'status', "TEXT NOT NULL DEFAULT 'sent'")
+    this.ensureColumn('boring_channel_intention_reply_dedupe', 'claim_owner', 'TEXT')
+    this.ensureColumn('boring_channel_intention_reply_dedupe', 'claim_expires_at', 'INTEGER')
     this.sql.exec(`UPDATE boring_channel_intentions SET status='pending', claim_owner=NULL, claim_expires_at=NULL
       WHERE status='projecting' AND claim_expires_at<=?`, Date.now())
     this.sql.exec(`UPDATE boring_channel_inbound_queue
@@ -342,10 +354,32 @@ export class ChannelBindingStore {
     const binding = this.getBinding(input.channel, input.conversationKey, input.agentTypeId)
     if (!binding || binding.status !== 'active' || binding.bindingVersion !== input.bindingVersion
       || binding.sessionKey !== input.sessionId) return false
-    return this.sql.exec(`INSERT OR IGNORE INTO boring_channel_intentions
+    return this.sql.exec(`INSERT INTO boring_channel_intentions
       (question_id, session_id, channel, conversation_key, agent_type_id, binding_version,
         field_name, options_json, title, context, status, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?) RETURNING question_id`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+      ON CONFLICT(question_id) DO UPDATE SET
+        channel=excluded.channel,
+        conversation_key=excluded.conversation_key,
+        agent_type_id=excluded.agent_type_id,
+        binding_version=excluded.binding_version,
+        field_name=excluded.field_name,
+        options_json=excluded.options_json,
+        title=excluded.title,
+        context=excluded.context,
+        status='pending',
+        claim_owner=NULL,
+        claim_expires_at=NULL,
+        answer_values_json=NULL,
+        answer_provider_message_id=NULL,
+        updated_at=excluded.updated_at
+      WHERE boring_channel_intentions.session_id=excluded.session_id
+        AND boring_channel_intentions.status NOT IN ('answered', 'closed')
+        AND (boring_channel_intentions.channel<>excluded.channel
+          OR boring_channel_intentions.conversation_key<>excluded.conversation_key
+          OR boring_channel_intentions.agent_type_id<>excluded.agent_type_id
+          OR boring_channel_intentions.binding_version<>excluded.binding_version)
+      RETURNING question_id`,
     input.questionId, input.sessionId, input.channel, input.conversationKey, input.agentTypeId,
     input.bindingVersion, input.fieldName, JSON.stringify(input.options), input.title ?? null,
     input.context ?? null, Date.now()).toArray().length === 1
@@ -430,8 +464,9 @@ export class ChannelBindingStore {
         RETURNING *`, owner, now + ttlMs, JSON.stringify(values), providerMessageId, now,
       intention.questionId, intention.bindingVersion).toArray()[0]
       if (!claimed) return { disposition: 'no_intention' } as const
-      this.sql.exec(`INSERT INTO boring_channel_intention_reply_dedupe(channel, provider_message_id, seen_at)
-        VALUES (?, ?, ?)`, intention.channel, providerMessageId, now)
+      this.sql.exec(`INSERT INTO boring_channel_intention_reply_dedupe
+        (channel, provider_message_id, seen_at, question_id, status)
+        VALUES (?, ?, ?, ?, 'sent')`, intention.channel, providerMessageId, now, intention.questionId)
       return { disposition: 'claimed', intention: intentionFromRow(claimed) } as const
     }, 'immediate')
   }
@@ -470,10 +505,48 @@ export class ChannelBindingStore {
       WHERE question_id=? AND status IN ('pending', 'projecting', 'projected', 'answering')`, Date.now(), questionId)
   }
 
-  recordInvalidIntentionReply(channel: string, providerMessageId: string): boolean {
-    return this.sql.exec(`INSERT OR IGNORE INTO boring_channel_intention_reply_dedupe
-      (channel, provider_message_id, seen_at) VALUES (?, ?, ?) RETURNING provider_message_id`,
-    channel, providerMessageId, Date.now()).toArray().length === 1
+  claimInvalidIntentionReply(
+    intention: ChannelIntentionRecord,
+    providerMessageId: string,
+    owner: string,
+    ttlMs = INTENTION_CLAIM_TTL_MS,
+  ): ClaimInvalidIntentionReplyResult {
+    return this.runTransaction(() => {
+      const now = Date.now()
+      const existing = this.sql.exec(`SELECT status, claim_expires_at
+        FROM boring_channel_intention_reply_dedupe WHERE channel=? AND provider_message_id=?`,
+      intention.channel, providerMessageId).toArray()[0]
+      if (existing && (existing.status === 'sent' || Number(existing.claim_expires_at) > now)) {
+        return { disposition: 'duplicate' } as const
+      }
+      const row = existing
+        ? this.sql.exec(`UPDATE boring_channel_intention_reply_dedupe
+            SET question_id=?, status='sending', claim_owner=?, claim_expires_at=?
+            WHERE channel=? AND provider_message_id=? AND status='sending' AND claim_expires_at<=?
+            RETURNING provider_message_id`, intention.questionId, owner, now + ttlMs,
+          intention.channel, providerMessageId, now).toArray()[0]
+        : this.sql.exec(`INSERT INTO boring_channel_intention_reply_dedupe
+            (channel, provider_message_id, seen_at, question_id, status, claim_owner, claim_expires_at)
+            VALUES (?, ?, ?, ?, 'sending', ?, ?) RETURNING provider_message_id`, intention.channel,
+          providerMessageId, now, intention.questionId, owner, now + ttlMs).toArray()[0]
+      return row ? { disposition: 'claimed' } as const : { disposition: 'duplicate' } as const
+    }, 'immediate')
+  }
+
+  completeInvalidIntentionReply(channel: string, providerMessageId: string, owner: string): boolean {
+    return this.sql.exec(`UPDATE boring_channel_intention_reply_dedupe
+      SET status='sent', claim_owner=NULL, claim_expires_at=NULL
+      WHERE channel=? AND provider_message_id=? AND status='sending' AND claim_owner=?
+      RETURNING provider_message_id`, channel, providerMessageId, owner).toArray().length === 1
+  }
+
+  pendingInvalidIntentionReplies(): Array<{ intention: ChannelIntentionRecord; providerMessageId: string }> {
+    return this.sql.exec(`SELECT i.*, d.provider_message_id FROM boring_channel_intention_reply_dedupe d
+      JOIN boring_channel_intentions i ON i.question_id=d.question_id
+      WHERE d.status='sending' AND d.claim_expires_at<=?`, Date.now()).toArray().map((row) => ({
+      intention: intentionFromRow(row),
+      providerMessageId: String(row.provider_message_id),
+    }))
   }
 
   hasIntentionReply(channel: string, providerMessageId: string): boolean {

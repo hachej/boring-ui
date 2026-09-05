@@ -6,6 +6,7 @@ import { openDatabase } from '../../events/sqlStorage'
 import { ChannelBindingStore } from '../channelBindingStore'
 import {
   ChannelIntentionService,
+  createChannelIntentionRuntime,
   type ChannelIntentionQuestion,
   type ChannelIntentionRuntime,
 } from '../channelIntentionService'
@@ -23,6 +24,7 @@ function question(): ChannelIntentionQuestion {
   return {
     questionId: 'question-1',
     sessionId: bindingInput.sessionKey,
+    ownerPrincipalId: bindingInput.authSubjectId,
     status: 'ready',
     title: 'Approve deployment?',
     context: 'Choose exactly one option.',
@@ -193,6 +195,71 @@ describe('ChannelIntentionService', () => {
       } finally {
         secondDb.db.close()
       }
+    })
+  })
+
+  test('reprojects a pending question onto a newly provisioned binding generation', async () => {
+    await withStore(async (store) => {
+      const runtime = new FakeIntentionRuntime()
+      const sent: string[] = []
+      const service = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async ({ text }) => { sent.push(text) },
+      }]]))
+      runtime.publish(question())
+      service.start()
+      await service.waitForIdle()
+      expect(sent).toHaveLength(1)
+
+      expect(store.provision(bindingInput).bindingVersion).toBe(2)
+      runtime.publish(question())
+      await service.waitForIdle()
+      expect(sent).toHaveLength(2)
+      await expect(service.accept(inbound('wamid.rebound', '2'), 'default')).resolves.toMatchObject({
+        handled: true, accepted: true,
+      })
+      expect(runtime.answers.at(-1)?.values).toEqual({ decision: 'reject' })
+      await service.dispose()
+    })
+  })
+
+  test('retries durable invalid-choice feedback after a send failure', async () => {
+    await withStore(async (store) => {
+      const runtime = new FakeIntentionRuntime()
+      runtime.publish(question())
+      let attempts = 0
+      const sent: string[] = []
+      const service = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async ({ text }) => {
+          attempts += 1
+          if (attempts === 2) throw new Error('temporary provider failure')
+          sent.push(text)
+        },
+      }]]), { claimTtlMs: 5, retryDelayMs: 1 })
+      service.start()
+      await service.waitForIdle()
+      await expect(service.accept(inbound('wamid.invalid-retry', 'maybe'), 'default')).rejects.toThrow('temporary provider failure')
+      await new Promise((resolve) => setTimeout(resolve, 8))
+      await service.waitForIdle()
+      expect(sent.at(-1)).toBe('That is not a valid choice. Reply with 1 or 2.')
+      await expect(service.accept(inbound('wamid.invalid-retry', 'maybe'), 'default')).resolves.toMatchObject({
+        handled: true, duplicate: true,
+      })
+      await service.dispose()
+    })
+  })
+
+  test('adapts a real store/runtime-shaped pair and fences the owner principal', async () => {
+    await withStore(async (store) => {
+      const backing = new FakeIntentionRuntime()
+      const runtime = createChannelIntentionRuntime(backing.workspaceId, backing, backing)
+      const send = vi.fn(async () => undefined)
+      const service = new ChannelIntentionService(store, runtime, new Map([['whatsapp', { send }]]))
+      backing.publish({ ...question(), ownerPrincipalId: 'different-user' })
+      service.start()
+      await service.waitForIdle()
+      expect(send).not.toHaveBeenCalled()
+      expect(store.openIntentions()).toHaveLength(0)
+      await service.dispose()
     })
   })
 

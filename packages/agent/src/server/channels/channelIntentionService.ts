@@ -16,6 +16,7 @@ export interface ChannelIntentionOption {
 export interface ChannelIntentionQuestion {
   readonly questionId: string
   readonly sessionId: string
+  readonly ownerPrincipalId: string
   readonly status: 'ready' | 'answered' | 'cancelled' | 'abandoned'
   readonly title?: string
   readonly context?: string
@@ -39,6 +40,27 @@ export interface ChannelIntentionRuntime {
   getByQuestionId(questionId: string): Promise<ChannelIntentionQuestion | null>
   submitAnswer(questionId: string, sessionId: string, values: Readonly<Record<string, string>>): Promise<unknown>
   subscribe(listener: () => void): () => void
+}
+
+export interface ChannelIntentionSource {
+  listPending(): Promise<readonly ChannelIntentionQuestion[]>
+  getByQuestionId(questionId: string): Promise<ChannelIntentionQuestion | null>
+  subscribe(listener: (...args: readonly unknown[]) => void): () => void
+}
+
+/** Adapts the real ask_user store/runtime pair without introducing a package cycle. */
+export function createChannelIntentionRuntime(
+  workspaceId: string,
+  source: ChannelIntentionSource,
+  answers: Pick<ChannelIntentionRuntime, 'submitAnswer'>,
+): ChannelIntentionRuntime {
+  return {
+    workspaceId,
+    listPending: () => source.listPending(),
+    getByQuestionId: (questionId) => source.getByQuestionId(questionId),
+    submitAnswer: (questionId, sessionId, values) => answers.submitAnswer(questionId, sessionId, values),
+    subscribe: (listener) => source.subscribe(listener),
+  }
 }
 
 export interface ChannelIntentionAdapter {
@@ -118,11 +140,27 @@ export class ChannelIntentionService {
     const choice = parseChoice(message.text, intention.options)
     const adapter = this.adapters.get(message.channel)
     if (!choice) {
-      const first = this.store.recordInvalidIntentionReply(message.channel, message.providerMessageId)
-      if (first && adapter) {
-        await adapter.send({ conversationKey: message.conversationKey, text: invalidChoiceText(intention) })
+      const claimed = this.store.claimInvalidIntentionReply(
+        intention,
+        message.providerMessageId,
+        this.owner,
+        this.options.claimTtlMs ?? INTENTION_CLAIM_TTL_MS,
+      )
+      if (claimed.disposition === 'claimed' && adapter) {
+        try {
+          await adapter.send({ conversationKey: message.conversationKey, text: invalidChoiceText(intention) })
+          this.store.completeInvalidIntentionReply(message.channel, message.providerMessageId, this.owner)
+        } catch (error) {
+          this.armRetry()
+          throw error
+        }
       }
-      return { handled: true, accepted: false, duplicate: !first, questionId: intention.questionId }
+      return {
+        handled: true,
+        accepted: false,
+        duplicate: claimed.disposition === 'duplicate',
+        questionId: intention.questionId,
+      }
     }
 
     const result = this.store.claimIntentionReply(
@@ -163,11 +201,37 @@ export class ChannelIntentionService {
   }
 
   private async scanOnce(): Promise<void> {
+    let retryAt: number | undefined
+    for (const pendingReply of this.store.pendingInvalidIntentionReplies()) {
+      const claimed = this.store.claimInvalidIntentionReply(
+        pendingReply.intention,
+        pendingReply.providerMessageId,
+        this.owner,
+        this.options.claimTtlMs ?? INTENTION_CLAIM_TTL_MS,
+      )
+      if (claimed.disposition !== 'claimed') continue
+      const adapter = this.adapters.get(pendingReply.intention.channel)
+      if (!adapter) continue
+      try {
+        await adapter.send({
+          conversationKey: pendingReply.intention.conversationKey,
+          text: invalidChoiceText(pendingReply.intention),
+        })
+        this.store.completeInvalidIntentionReply(
+          pendingReply.intention.channel,
+          pendingReply.providerMessageId,
+          this.owner,
+        )
+      } catch {
+        retryAt = Date.now() + (this.options.claimTtlMs ?? INTENTION_CLAIM_TTL_MS)
+      }
+    }
+
     const pending = await this.runtime.listPending()
     for (const question of pending) {
       const binding = this.store.bindingForSession(question.sessionId, this.runtime.workspaceId)
       const field = answerableField(question)
-      if (!binding || !field) continue
+      if (!binding || binding.authSubjectId !== question.ownerPrincipalId || !field) continue
       this.store.recordIntention({
         questionId: question.questionId,
         sessionId: question.sessionId,
@@ -182,7 +246,6 @@ export class ChannelIntentionService {
       })
     }
 
-    let retryAt: number | undefined
     for (const intention of this.store.openIntentions()) {
       const question = await this.runtime.getByQuestionId(intention.questionId)
       if (question?.status === 'answered') {

@@ -30,7 +30,11 @@ export type {
   ChannelAgentInvoker,
   ChannelInboundAck,
 } from './channelInboundService'
-export { ChannelIntentionService, ChannelMessageRouter } from './channelIntentionService'
+export {
+  ChannelIntentionService,
+  ChannelMessageRouter,
+  createChannelIntentionRuntime,
+} from './channelIntentionService'
 export type {
   ChannelIntentionAck,
   ChannelIntentionAdapter,
@@ -39,6 +43,7 @@ export type {
   ChannelIntentionQuestion,
   ChannelIntentionRuntime,
   ChannelIntentionServiceOptions,
+  ChannelIntentionSource,
   ChannelMessageAck,
 } from './channelIntentionService'
 export {
