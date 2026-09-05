@@ -114,6 +114,36 @@ describe('OpenAI Codex OAuth routes', () => {
     expect(await store.read('openai-codex')).toMatchObject({ type: 'oauth', refresh: 'refresh-secret' })
   })
 
+  test('cancels and fences an in-flight login before disconnect returns', async () => {
+    let releaseLogin!: () => void
+    const loginGate = new Promise<void>((resolve) => { releaseLogin = resolve })
+    const calls: string[] = []
+    const broker = createOpenAiCodexOAuthBrokerV1({
+      credentialStoreForActor: () => new InMemoryCredentialStore(),
+      createRuntime: async () => ({
+        async login() {
+          calls.push('login')
+          await loginGate
+          return { type: 'oauth', refresh: 'refresh-canary', access: 'access-canary', expires: 1 }
+        },
+        async logout() { calls.push('logout') },
+      }),
+    })
+
+    const flow = await broker.start('workspace-a', 'owner')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await expect(broker.disconnect('workspace-a', 'owner')).resolves.toMatchObject({ logoutStatus: 'completed' })
+    expect(broker.get('workspace-a', 'owner', flow.flowId)?.status).toBe('cancelled')
+    releaseLogin()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(broker.get('workspace-a', 'owner', flow.flowId)?.status).toBe('cancelled')
+    expect(calls).toEqual(['login', 'logout'])
+
+    // The disconnect fence is scoped to the operation, so a later explicit
+    // reconnect may begin without reviving the cancelled flow.
+    await expect(broker.start('workspace-a', 'owner')).resolves.toMatchObject({ status: 'pending' })
+  })
+
   test.each([
     { fails: false, expected: 'completed' },
     { fails: true, expected: 'failed' },

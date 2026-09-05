@@ -124,6 +124,7 @@ export function createOpenAiCodexOAuthBrokerV1(
   options: OpenAiCodexOAuthBrokerOptionsV1,
 ): OpenAiCodexOAuthBrokerV1 {
   const flows = new Map<string, Flow>()
+  const disconnectingActors = new Set<string>()
   const now = options.now ?? Date.now
   const runtimeFactory = options.createRuntime ?? (async (credentials) => ModelRuntime.create({
     credentials,
@@ -139,9 +140,19 @@ export function createOpenAiCodexOAuthBrokerV1(
     return flow
   }
 
+  const actorKey = (workspaceId: string, userId: string) => `${workspaceId}\u0000${userId}`
+  const cancelFlow = (flow: Flow): void => {
+    flow.abort.abort(new Error('OAuth flow cancelled'))
+    flow.prompt?.reject(new Error('OAuth flow cancelled'))
+    flow.prompt = undefined
+    flow.status = 'cancelled'
+    flow.completedAt = new Date(now()).toISOString()
+  }
+
   const broker: OpenAiCodexOAuthBrokerV1 = {
     async start(workspaceId, userId) {
       if (!workspaceId.trim() || !userId.trim()) throw new Error('OAuth actor is invalid')
+      if (disconnectingActors.has(actorKey(workspaceId, userId))) throw new Error('OAuth disconnect is in progress')
       const flow: Flow = {
         flowId: randomUUID(),
         workspaceId,
@@ -181,6 +192,7 @@ export function createOpenAiCodexOAuthBrokerV1(
               })
             },
           })
+          flow.abort.signal.throwIfAborted()
           flow.status = 'succeeded'
         } catch {
           flow.status = flow.abort.signal.aborted ? 'cancelled' : 'failed'
@@ -209,23 +221,32 @@ export function createOpenAiCodexOAuthBrokerV1(
       return snapshot(flow)
     },
     async cancel(workspaceId, userId, flowId) {
-      const flow = requireFlow(workspaceId, userId, flowId)
-      flow.abort.abort(new Error('OAuth flow cancelled'))
-      flow.prompt?.reject(new Error('OAuth flow cancelled'))
-      flow.prompt = undefined
-      flow.status = 'cancelled'
-      flow.completedAt = new Date(now()).toISOString()
+      cancelFlow(requireFlow(workspaceId, userId, flowId))
     },
     async disconnect(workspaceId, userId) {
       if (!workspaceId.trim() || !userId.trim()) throw new Error('OAuth actor is invalid')
+      const key = actorKey(workspaceId, userId)
+      if (disconnectingActors.has(key)) throw new Error('OAuth disconnect is already in progress')
+      disconnectingActors.add(key)
       try {
-        const runtime = await runtimeFactory(options.credentialStoreForActor(workspaceId, userId))
-        await runtime.logout('openai-codex')
-        return Object.freeze({ logoutStatus: 'completed', upstreamStatus: 'pending' })
-      } catch {
-        // Pi currently exposes local logout, but no upstream revocation receipt.
-        // The route still persists a fail-closed local revoked state.
-        return Object.freeze({ logoutStatus: 'failed', upstreamStatus: 'pending' })
+        // Fence all pre-disconnect login tasks before local deletion. Their
+        // AbortSignal is also checked immediately before successful completion.
+        for (const flow of flows.values()) {
+          if (flow.workspaceId === workspaceId && flow.userId === userId && flow.status === 'pending') {
+            cancelFlow(flow)
+          }
+        }
+        try {
+          const runtime = await runtimeFactory(options.credentialStoreForActor(workspaceId, userId))
+          await runtime.logout('openai-codex')
+          return Object.freeze({ logoutStatus: 'completed', upstreamStatus: 'pending' })
+        } catch {
+          // Pi currently exposes local logout, but no upstream revocation receipt.
+          // The route still persists a fail-closed local revoked state.
+          return Object.freeze({ logoutStatus: 'failed', upstreamStatus: 'pending' })
+        }
+      } finally {
+        disconnectingActors.delete(key)
       }
     },
   }
