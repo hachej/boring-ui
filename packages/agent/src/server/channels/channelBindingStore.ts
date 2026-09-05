@@ -218,7 +218,7 @@ export class ChannelBindingStore {
       b.workspace_id, b.auth_subject_id, b.binding_version, b.status, b.session_key, b.last_inbound_at
       FROM boring_channel_bindings b JOIN boring_channel_inbound_queue q
         ON q.channel=b.channel AND q.conversation_key=b.conversation_key AND q.agent_type_id=b.agent_type_id
-      WHERE b.status='active' AND q.status IN ('pending', 'processing')`).toArray().map(bindingFromRow)
+      WHERE q.status IN ('pending', 'processing')`).toArray().map(bindingFromRow)
   }
 
   nextPending(

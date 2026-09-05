@@ -279,6 +279,27 @@ describe('ChannelInboundService fake-channel path', () => {
     })
   })
 
+  test('startup parks accepted work for a binding revoked before restart', async () => {
+    await withStores(async ({ first, second }) => {
+      first.provision({ ...bindingInput, sessionKey: 'session-1' })
+      first.enqueueInbound(inbound('wamid.revoked'), 'default')
+      second.provision({ ...bindingInput, status: 'revoked', sessionKey: 'session-1' })
+      const invoker = {
+        createSession: vi.fn(),
+        isSessionBusy: vi.fn(),
+        prompt: vi.fn(),
+        followUp: vi.fn(),
+      } as unknown as ChannelAgentInvoker
+      const service = new ChannelInboundService(second, invoker)
+      await service.waitForIdle()
+      expect(invoker.prompt).not.toHaveBeenCalled()
+      expect(second.getInbound(1)).toMatchObject({
+        status: 'parked',
+        errorCode: 'CHANNEL_BINDING_REVOKED',
+      })
+    })
+  })
+
   test('re-provisioning parks queued content instead of crossing tenant boundaries', async () => {
     await withStores(async ({ first, second }) => {
       first.provision({ ...bindingInput, sessionKey: 'session-1' })
