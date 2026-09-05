@@ -248,6 +248,64 @@ describe('ChannelIntentionService', () => {
     })
   })
 
+  test('schedules invalid-choice recovery when restart happens before claim expiry', async () => {
+    await withStore(async (store) => {
+      const runtime = new FakeIntentionRuntime()
+      runtime.publish(question())
+      const sent: string[] = []
+      const first = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async ({ text }) => { sent.push(text) },
+      }]]), { claimTtlMs: 20, retryDelayMs: 1 })
+      first.start()
+      await first.waitForIdle()
+      await first.dispose()
+      const projected = store.activeIntention('whatsapp', bindingInput.conversationKey, 'default')!
+      expect(store.claimInvalidIntentionReply(projected, 'wamid.invalid-crash', 'dead-process', 20).disposition)
+        .toBe('claimed')
+
+      const restarted = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async ({ text }) => { sent.push(text) },
+      }]]), { claimTtlMs: 20, retryDelayMs: 1 })
+      restarted.start()
+      await restarted.waitForIdle()
+      expect(sent).toHaveLength(1)
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      await restarted.waitForIdle()
+      expect(sent).toEqual([
+        expect.stringContaining('Approve deployment?'),
+        'That is not a valid choice. Reply with 1 or 2.',
+      ])
+      await restarted.dispose()
+    })
+  })
+
+  test('does not recover invalid feedback after the Inbox intention is answered', async () => {
+    await withStore(async (store) => {
+      const runtime = new FakeIntentionRuntime()
+      runtime.publish(question())
+      const sent: string[] = []
+      const first = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async ({ text }) => { sent.push(text) },
+      }]]), { claimTtlMs: 5, retryDelayMs: 1 })
+      first.start()
+      await first.waitForIdle()
+      await first.dispose()
+      const projected = store.activeIntention('whatsapp', bindingInput.conversationKey, 'default')!
+      expect(store.claimInvalidIntentionReply(projected, 'wamid.invalid-stale', 'dead-process', 5).disposition)
+        .toBe('claimed')
+      runtime.questions.set('question-1', { ...question(), status: 'answered' })
+      await new Promise((resolve) => setTimeout(resolve, 8))
+
+      const restarted = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async ({ text }) => { sent.push(text) },
+      }]]), { claimTtlMs: 5, retryDelayMs: 1 })
+      restarted.start()
+      await restarted.waitForIdle()
+      expect(sent).toHaveLength(1)
+      await restarted.dispose()
+    })
+  })
+
   test('adapts a real store/runtime-shaped pair and fences the owner principal', async () => {
     await withStore(async (store) => {
       const backing = new FakeIntentionRuntime()

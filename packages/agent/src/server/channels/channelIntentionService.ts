@@ -203,6 +203,16 @@ export class ChannelIntentionService {
   private async scanOnce(): Promise<void> {
     let retryAt: number | undefined
     for (const pendingReply of this.store.pendingInvalidIntentionReplies()) {
+      if (pendingReply.retryAt > Date.now()) {
+        retryAt = retryAt === undefined ? pendingReply.retryAt : Math.min(retryAt, pendingReply.retryAt)
+        continue
+      }
+      const question = await this.runtime.getByQuestionId(pendingReply.intention.questionId)
+      if (!question || question.status !== 'ready') {
+        if (question?.status === 'answered') this.store.reconcileIntentionAnswered(pendingReply.intention.questionId)
+        else this.store.reconcileIntentionClosed(pendingReply.intention.questionId)
+        continue
+      }
       const claimed = this.store.claimInvalidIntentionReply(
         pendingReply.intention,
         pendingReply.providerMessageId,
@@ -211,7 +221,10 @@ export class ChannelIntentionService {
       )
       if (claimed.disposition !== 'claimed') continue
       const adapter = this.adapters.get(pendingReply.intention.channel)
-      if (!adapter) continue
+      if (!adapter) {
+        retryAt = Date.now() + (this.options.claimTtlMs ?? INTENTION_CLAIM_TTL_MS)
+        continue
+      }
       try {
         await adapter.send({
           conversationKey: pendingReply.intention.conversationKey,
