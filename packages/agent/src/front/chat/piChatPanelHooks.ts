@@ -62,8 +62,10 @@ export function useExternalRemotePiSession({
   }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, sessionId, stableRequestHeaders, storageScope, workspaceId])
   useEffect(() => {
     if (!session) return
-    if (enabled) session.resumeStream?.()
-    else session.suspendStream?.()
+    if (!enabled) session.suspendStream?.()
+    else if (remoteSessionOptionsRef.current?.autoStart !== false || session.getState().connection.state === 'suspended') {
+      session.resumeStream?.()
+    }
   }, [enabled, session])
   return session
 }
