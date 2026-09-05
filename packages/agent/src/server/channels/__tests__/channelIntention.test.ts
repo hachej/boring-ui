@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 import { openDatabase } from '../../events/sqlStorage'
+import { ErrorCode } from '../../../shared/error-codes'
 import { ChannelBindingStore } from '../channelBindingStore'
 import {
   ChannelIntentionService,
@@ -178,6 +179,8 @@ describe('ChannelIntentionService', () => {
         .toBe('claimed')
       await first.dispose()
       await new Promise((resolve) => setTimeout(resolve, 8))
+      expect(() => store.provision({ ...bindingInput, workspaceId: 'workspace-2' }))
+        .toThrow(expect.objectContaining({ code: ErrorCode.enum.CHANNEL_BINDING_BUSY }))
 
       const secondDb = openDatabase(path)
       try {
@@ -276,6 +279,57 @@ describe('ChannelIntentionService', () => {
         'That is not a valid choice. Reply with 1 or 2.',
       ])
       await restarted.dispose()
+    })
+  })
+
+  test('fences rebinding during invalid feedback and rejects a stale claim after expiry', async () => {
+    await withStore(async (store) => {
+      const runtime = new FakeIntentionRuntime()
+      runtime.publish(question())
+      const service = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async () => undefined,
+      }]]), { claimTtlMs: 20, retryDelayMs: 1 })
+      service.start()
+      await service.waitForIdle()
+      await service.dispose()
+      const projected = store.activeIntention('whatsapp', bindingInput.conversationKey, 'default')!
+      expect(store.claimInvalidIntentionReply(projected, 'wamid.invalid-rebind', 'dead-process', 20).disposition)
+        .toBe('claimed')
+      expect(() => store.provision({ ...bindingInput, workspaceId: 'workspace-2' }))
+        .toThrow(expect.objectContaining({ code: ErrorCode.enum.CHANNEL_BINDING_BUSY }))
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(store.provision({ ...bindingInput, workspaceId: 'workspace-2' }).bindingVersion).toBe(2)
+      expect(store.claimInvalidIntentionReply(projected, 'wamid.invalid-rebind', 'new-owner', 20).disposition)
+        .toBe('no_intention')
+    })
+  })
+
+  test('backfills an earlier invalid-feedback row so restart recovery can find it', async () => {
+    await withStore(async (store, path) => {
+      const runtime = new FakeIntentionRuntime()
+      runtime.publish(question())
+      const first = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        send: async () => undefined,
+      }]]), { claimTtlMs: 5, retryDelayMs: 1 })
+      first.start()
+      await first.waitForIdle()
+      await first.dispose()
+      const projected = store.activeIntention('whatsapp', bindingInput.conversationKey, 'default')!
+      expect(store.claimInvalidIntentionReply(projected, 'wamid.legacy-invalid', 'dead-process', 5).disposition)
+        .toBe('claimed')
+
+      const secondDb = openDatabase(path)
+      try {
+        secondDb.sql.exec(`UPDATE boring_channel_intention_reply_dedupe SET binding_version=NULL
+          WHERE provider_message_id='wamid.legacy-invalid'`)
+        await new Promise((resolve) => setTimeout(resolve, 8))
+        const restartedStore = new ChannelBindingStore(secondDb.sql, secondDb.runTransaction)
+        expect(restartedStore.pendingInvalidIntentionReplies()).toEqual([
+          expect.objectContaining({ providerMessageId: 'wamid.legacy-invalid' }),
+        ])
+      } finally {
+        secondDb.db.close()
+      }
     })
   })
 

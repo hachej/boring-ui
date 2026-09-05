@@ -84,6 +84,7 @@ export type ClaimIntentionReplyResult =
 export type ClaimInvalidIntentionReplyResult =
   | { readonly disposition: 'claimed' }
   | { readonly disposition: 'duplicate' }
+  | { readonly disposition: 'no_intention' }
 
 type NextInboundResult =
   | { readonly disposition: 'claimed'; readonly inbound: QueuedChannelInbound }
@@ -229,6 +230,10 @@ export class ChannelBindingStore {
     this.ensureColumn('boring_channel_intention_reply_dedupe', 'status', "TEXT NOT NULL DEFAULT 'sent'")
     this.ensureColumn('boring_channel_intention_reply_dedupe', 'claim_owner', 'TEXT')
     this.ensureColumn('boring_channel_intention_reply_dedupe', 'claim_expires_at', 'INTEGER')
+    this.sql.exec(`UPDATE boring_channel_intention_reply_dedupe
+      SET binding_version=(SELECT i.binding_version FROM boring_channel_intentions i
+        WHERE i.question_id=boring_channel_intention_reply_dedupe.question_id)
+      WHERE binding_version IS NULL AND question_id IS NOT NULL`)
     this.sql.exec(`UPDATE boring_channel_intentions SET status='pending', claim_owner=NULL, claim_expires_at=NULL
       WHERE status='projecting' AND claim_expires_at<=?`, Date.now())
     this.sql.exec(`UPDATE boring_channel_inbound_queue
@@ -280,13 +285,21 @@ export class ChannelBindingStore {
             AND i.conversation_key=boring_channel_bindings.conversation_key
             AND i.agent_type_id=boring_channel_bindings.agent_type_id
             AND i.binding_version=boring_channel_bindings.binding_version
-            AND i.status IN ('projecting', 'answering') AND i.claim_expires_at>?)
+            AND ((i.status='projecting' AND i.claim_expires_at>?) OR i.status='answering'))
+        AND NOT EXISTS (SELECT 1 FROM boring_channel_intention_reply_dedupe d
+          JOIN boring_channel_intentions i ON i.question_id=d.question_id
+            AND i.binding_version=d.binding_version
+          WHERE i.channel=boring_channel_bindings.channel
+            AND i.conversation_key=boring_channel_bindings.conversation_key
+            AND i.agent_type_id=boring_channel_bindings.agent_type_id
+            AND i.binding_version=boring_channel_bindings.binding_version
+            AND d.status='sending' AND d.claim_expires_at>?)
       RETURNING channel, conversation_key, agent_type_id, workspace_id, auth_subject_id,
         binding_version, status, session_key, last_inbound_at, outbound_cursor, outbound_status,
         session_reset_pending, template_sent_for_inbound_at`,
     input.channel, input.conversationKey, input.agentTypeId, input.workspaceId,
     input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null,
-    input.outboundCursor ?? '-1', now, now).toArray()[0]
+    input.outboundCursor ?? '-1', now, now, now).toArray()[0]
     if (!row) {
       throw Object.assign(new Error('Channel binding has active outbound delivery.'), {
         code: ErrorCode.enum.CHANNEL_BINDING_BUSY,
@@ -376,7 +389,7 @@ export class ChannelBindingStore {
         answer_provider_message_id=NULL,
         updated_at=excluded.updated_at
       WHERE boring_channel_intentions.session_id=excluded.session_id
-        AND boring_channel_intentions.status NOT IN ('answered', 'closed')
+        AND boring_channel_intentions.status IN ('pending', 'projecting', 'projected')
         AND (boring_channel_intentions.channel<>excluded.channel
           OR boring_channel_intentions.conversation_key<>excluded.conversation_key
           OR boring_channel_intentions.agent_type_id<>excluded.agent_type_id
@@ -516,6 +529,13 @@ export class ChannelBindingStore {
   ): ClaimInvalidIntentionReplyResult {
     return this.runTransaction(() => {
       const now = Date.now()
+      const authoritative = this.sql.exec(`SELECT 1 FROM boring_channel_intentions i
+        JOIN boring_channel_bindings b ON b.channel=i.channel AND b.conversation_key=i.conversation_key
+          AND b.agent_type_id=i.agent_type_id AND b.binding_version=i.binding_version
+          AND b.session_key=i.session_id AND b.status='active'
+        WHERE i.question_id=? AND i.binding_version=? AND i.status='projected'`,
+      intention.questionId, intention.bindingVersion).toArray()[0]
+      if (!authoritative) return { disposition: 'no_intention' } as const
       const existing = this.sql.exec(`SELECT status, claim_expires_at
         FROM boring_channel_intention_reply_dedupe WHERE channel=? AND provider_message_id=?`,
       intention.channel, providerMessageId).toArray()[0]
