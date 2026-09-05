@@ -34,8 +34,9 @@ before editing; contracts live beside their types.
   clean, current, and on `main`;
   code in isolated branch worktrees inside `.worktrees/`. Investigate
   unexpected changes; never overwrite another agent's or the user's work.
-- Core owns identity and persistence; agent/workspace remain DB-free and
-  receive stores. Shared/browser code must not import Node APIs. Routes and
+- Core owns application identity and Postgres stores. Keep standalone
+  agent/workspace usable without Core and inject application stores at
+  composition. Shared/browser code must not import Node APIs. Routes and
   tools receive `Workspace`, not root paths; adapters own path validation.
   `UiBridge.postCommand` owns UI dispatch. Follow the complete
   [coding invariants](docs/procedures/coding-invariants.md).
