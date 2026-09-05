@@ -90,11 +90,14 @@ describe('Postgres credential workspace lock lifecycle', () => {
   test('bounds pool reservation and releases a late reservation', async () => {
     const workspaceId = `lock-pool-${randomUUID()}`
     const oneConnectionSql = postgres(TEST_DB_URL, {
-      max: 1,
+      max: 2,
       connection: { search_path: schemaName },
     })
-    const blocker = await oneConnectionSql.reserve()
-    let blockerReleased = false
+    const blockers = await Promise.all([
+      oneConnectionSql.reserve(),
+      oneConnectionSql.reserve(),
+    ])
+    let blockersReleased = false
     const persistence = createPostgresCredentialVaultPersistenceV1(oneConnectionSql, {
       lockAcquireTimeoutMs: 40,
       lockPollIntervalMs: 5,
@@ -108,14 +111,29 @@ describe('Postgres credential workspace lock lifecycle', () => {
           message: 'Credential workspace lock timed out',
         })
       expect(Date.now() - startedAt).toBeLessThan(500)
-      blocker.release()
-      blockerReleased = true
+      for (const blocker of blockers) blocker.release()
+      blockersReleased = true
       await new Promise((resolve) => setTimeout(resolve, 20))
       await expect(persistence.withWorkspaceLock(workspaceId, async () => 'reused', {
         timeoutMs: 1_000,
       })).resolves.toBe('reused')
     } finally {
-      if (!blockerReleased) blocker.release()
+      if (!blockersReleased) for (const blocker of blockers) blocker.release()
+      await oneConnectionSql.end({ timeout: 1 })
+    }
+  })
+
+  test('rejects a one-connection pool that cannot guarantee eviction', async () => {
+    const oneConnectionSql = postgres(TEST_DB_URL, { max: 1 })
+    try {
+      await expect(createPostgresCredentialVaultPersistenceV1(oneConnectionSql)
+        .withWorkspaceLock(`lock-one-${randomUUID()}`, async () => undefined))
+        .rejects.toMatchObject({
+          code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+          retryable: true,
+          message: 'Credential workspace lock is unavailable',
+        })
+    } finally {
       await oneConnectionSql.end({ timeout: 1 })
     }
   })

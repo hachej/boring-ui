@@ -140,6 +140,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
         metadata.credentialType === 'api-key'
           ? [LLM_API_KEY_FIELD_ID_V1]
           : [PI_OAUTH_CREDENTIAL_FIELD_ID_V1],
+        { signal: operation?.signal },
       )
       throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.UNREADABLE, 'Credential lifecycle state is invalid')
     }
@@ -149,6 +150,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
         options.workspaceId,
         effectiveProviderId,
         [PI_OAUTH_CREDENTIAL_FIELD_ID_V1],
+        { signal: operation?.signal },
       )
       if (resolved.kind !== 'field-set') return undefined
       const bytes = resolved.fields.get(PI_OAUTH_CREDENTIAL_FIELD_ID_V1)
@@ -164,6 +166,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
         options.workspaceId,
         effectiveProviderId,
         [LLM_API_KEY_FIELD_ID_V1],
+        { signal: operation?.signal },
       )
       if (resolved.kind !== 'field-set') return undefined
       const bytes = resolved.fields.get(LLM_API_KEY_FIELD_ID_V1)
@@ -278,6 +281,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
           options.allowSubscriptionOAuth && oauthProviders.has(providerId)
             ? personalProviderId(providerId)
             : providerId as ProviderId,
+          { signal: operation?.signal },
         )
       })
     },

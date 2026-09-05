@@ -212,7 +212,9 @@ implements CredentialVaultPersistenceV1 {
     lockOptions: WorkspaceCredentialLockOptionsV1 = {},
   ): Promise<T> {
     if (this.lockedWorkspaceId === workspaceId) return mutate(this)
-    if (!('reserve' in this.sql)) {
+    if (!('reserve' in this.sql) || this.sql.options.max < 2) {
+      // One connection cannot both hold the session lock and independently
+      // terminate that backend if unlock becomes uncertain.
       throw new CredentialResolutionError(
         CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
         'Credential workspace lock is unavailable',

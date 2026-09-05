@@ -58,6 +58,12 @@ export interface WriteCredentialFieldsInputV1 {
 }
 
 export interface VaultCredentialStoreBackendV1 extends CredentialStoreBackendV1 {
+  read(
+    workspaceId: string,
+    providerId: ProviderId,
+    allowedFieldIds: readonly CredentialFieldId[],
+    options?: WorkspaceCredentialLockOptionsV1,
+  ): Promise<ResolvedCredentialMaterialV1 & { credentialVersion: number }>
   /** Cross-process workspace serialization for Pi CredentialStore.modify(). */
   withWorkspaceLock<T>(
     workspaceId: string,
@@ -75,6 +81,7 @@ export interface VaultCredentialStoreBackendV1 extends CredentialStoreBackendV1 
   writeAbsentCredential(
     workspaceId: string,
     providerId: ProviderId,
+    options?: WorkspaceCredentialLockOptionsV1,
   ): Promise<StoredCredentialRecordV1>
   getCredentialMetadata(
     workspaceId: string,
@@ -241,11 +248,12 @@ function createVaultCredentialStoreBackendInternalV1(
       workspaceId: string,
       providerId: ProviderId,
       allowedFieldIds: readonly CredentialFieldId[],
+      lockOptions?: WorkspaceCredentialLockOptionsV1,
     ): Promise<ResolvedCredentialMaterialV1 & { credentialVersion: number }> {
       assertWorkspaceId(workspaceId)
       if (lockedWorkspaceId !== workspaceId) {
         return this.withWorkspaceLock(workspaceId, (locked) =>
-          locked.read(workspaceId, providerId, allowedFieldIds))
+          locked.read(workspaceId, providerId, allowedFieldIds), lockOptions)
       }
       await requireNotShredded(workspaceId)
       // The version anchor is authenticated with the same KEK. Check backend
@@ -473,11 +481,12 @@ function createVaultCredentialStoreBackendInternalV1(
     async writeAbsentCredential(
       workspaceId: string,
       providerId: ProviderId,
+      lockOptions?: WorkspaceCredentialLockOptionsV1,
     ): Promise<StoredCredentialRecordV1> {
       assertWorkspaceId(workspaceId)
       if (lockedWorkspaceId !== workspaceId) {
         return this.withWorkspaceLock(workspaceId, (locked) =>
-          locked.writeAbsentCredential(workspaceId, providerId))
+          locked.writeAbsentCredential(workspaceId, providerId), lockOptions)
       }
       await requireNotShredded(workspaceId)
       await requireReady()
