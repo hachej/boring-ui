@@ -54,11 +54,20 @@ export interface CredentialVersionAnchorReadOptionsV1 {
   readonly allowUnprovisioned?: boolean
 }
 
+export type CredentialVersionAnchorReaderV1 = (
+  options?: CredentialVersionAnchorReadOptionsV1,
+) => Promise<WorkspaceCredentialVersionStateV1 | undefined>
+
 export interface WorkspaceCredentialVersionAnchorV1 {
   read(
     workspaceId: string,
     options?: CredentialVersionAnchorReadOptionsV1,
   ): Promise<WorkspaceCredentialVersionStateV1 | undefined>
+  /** Serializes a persistence inspection with anchor mutations. */
+  withReadLock<T>(
+    workspaceId: string,
+    inspect: (readLocked: CredentialVersionAnchorReaderV1) => Promise<T>,
+  ): Promise<T>
   /**
    * Holds the external workspace mutation lock through the supplied DB CAS.
    * If the DB commit succeeds but advancing this external anchor fails, the
@@ -253,6 +262,18 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
     async read(workspaceId: string) {
       await queue
       return copyWorkspaceState(state, workspaceId)
+    },
+    async withReadLock<T>(
+      workspaceId: string,
+      inspect: (readLocked: CredentialVersionAnchorReaderV1) => Promise<T>,
+    ): Promise<T> {
+      let result!: T
+      const operation = queue.then(async () => {
+        result = await inspect(async () => copyWorkspaceState(state, workspaceId))
+      })
+      queue = operation.catch(() => undefined)
+      await operation
+      return result
     },
     async withMutation<T>(
       workspaceId: string,
@@ -530,6 +551,24 @@ export function createLocalFileCredentialVersionAnchorV1(
         ? await readSealedState(options, readOptions)
         : await readSealedState(options)
       return state ? copyWorkspaceState(state, workspaceId) : undefined
+    },
+    async withReadLock<T>(
+      workspaceId: string,
+      inspect: (readLocked: CredentialVersionAnchorReaderV1) => Promise<T>,
+    ): Promise<T> {
+      const lockPath = `${options.anchorFilePath}.lock`
+      const lock = await acquireMutationLock(lockPath)
+      try {
+        return await inspect(async (readOptions?: CredentialVersionAnchorReadOptionsV1) => {
+          const state = readOptions
+            ? await readSealedState(options, readOptions)
+            : await readSealedState(options)
+          return state ? copyWorkspaceState(state, workspaceId) : undefined
+        })
+      } finally {
+        await lock.close().catch(() => undefined)
+        await unlink(lockPath).catch(() => undefined)
+      }
     },
     async withMutation<T>(
       workspaceId: string,

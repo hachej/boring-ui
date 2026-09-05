@@ -526,24 +526,28 @@ function createVaultCredentialStoreBackendInternalV1(
 
     async listCredentialMetadata(workspaceId: string) {
       assertWorkspaceId(workspaceId)
-      const listed = await persistence.listCredentialMetadata(workspaceId)
-      const hasArtifacts = listed.length > 0
-        || await persistence.hasWorkspaceCredentialArtifacts(workspaceId)
-      // A clean deployment has neither persistence artifacts nor an anchor
-      // file yet. Permit only that narrow unprovisioned case so the registry
-      // can project `not_configured`. A present anchor is always authenticated
-      // and still catches deleted/replayed metadata when the list is empty.
-      const anchored = await versionAnchor.read(workspaceId, {
-        allowUnprovisioned: !hasArtifacts,
+      return versionAnchor.withReadLock(workspaceId, async (readLocked) => {
+        const listed = await persistence.listCredentialMetadata(workspaceId)
+        const hasArtifacts = listed.length > 0
+          || await persistence.hasWorkspaceCredentialArtifacts(workspaceId)
+        // A clean deployment has neither persistence artifacts nor an anchor
+        // file yet. Permit only that narrow unprovisioned case so the registry
+        // can project `not_configured`. A present anchor is always authenticated
+        // and still catches deleted/replayed metadata when the list is empty.
+        const anchored = await readLocked({ allowUnprovisioned: !hasArtifacts })
+        const providers = new Set(listed.map(({ providerId }) => providerId))
+        if (Object.keys(anchored?.credentialVersions ?? {}).some((providerId) => !providers.has(providerId as ProviderId))) {
+          unreadable('Credential metadata failed rollback verification')
+        }
+        for (const metadata of listed) {
+          if (
+            anchored?.credentialVersions[metadata.providerId] !== metadata.credentialVersion
+            || anchored.credentialLifecycleStates[metadata.providerId] !== metadata.state
+            || anchored.credentialTypes[metadata.providerId] !== metadata.credentialType
+          ) unreadable('Credential metadata failed rollback verification')
+        }
+        return listed
       })
-      const providers = new Set(listed.map(({ providerId }) => providerId))
-      if (Object.keys(anchored?.credentialVersions ?? {}).some((providerId) => !providers.has(providerId as ProviderId))) {
-        unreadable('Credential metadata failed rollback verification')
-      }
-      for (const metadata of listed) {
-        await requireCurrentMetadata(workspaceId, metadata.providerId, metadata)
-      }
-      return listed
     },
 
     async setCredentialLifecycleState(

@@ -53,6 +53,7 @@ export {
 export type {
   CredentialLifecycleMutationResultV1,
   CredentialVersionAnchorReadOptionsV1,
+  CredentialVersionAnchorReaderV1,
   CredentialVersionMutationResultV1,
   DekGenerationMutationResultV1,
   LocalCredentialVersionAnchorOptionsV1,

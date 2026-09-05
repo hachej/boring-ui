@@ -306,6 +306,34 @@ describe('local-KEK configuration resolution', () => {
 })
 
 describe('local-KEK credential version anchor', () => {
+  test('serializes provider-list inspections with anchor mutations', async () => {
+    const anchor = createInMemoryCredentialVersionAnchorV1()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let mutationEntered = false
+    const inspection = anchor.withReadLock('ws-a', async (readLocked) => {
+      expect(await readLocked()).toBeUndefined()
+      await gate
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mutation = anchor.withMutation('ws-a', PROVIDER_A, async () => {
+      mutationEntered = true
+      return {
+        nextCredentialVersion: 1,
+        nextCredentialMaterialKind: 'none',
+        nextCredentialLifecycleState: 'intentionally_absent',
+        nextCredentialType: 'api-key',
+        nextDekGeneration: 1,
+        result: undefined,
+      }
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mutationEntered).toBe(false)
+    release()
+    await Promise.all([inspection, mutation])
+    expect(mutationEntered).toBe(true)
+  })
+
   test('persists one workspace counter with exact per-provider current versions', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'boring-anchor-'))
     const anchorFilePath = join(dir, 'credential-anchor')
