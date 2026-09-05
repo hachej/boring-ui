@@ -234,6 +234,10 @@ function createVaultCredentialStoreBackendInternalV1(
     ): Promise<ResolvedCredentialMaterialV1 & { credentialVersion: number }> {
       assertWorkspaceId(workspaceId)
       await requireNotShredded(workspaceId)
+      // The version anchor is authenticated with the same KEK. Check backend
+      // readiness first so an unavailable key source keeps its retryable,
+      // operator-actionable code instead of being misclassified as corruption.
+      await requireReady()
       const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
       await requireCurrentMetadata(workspaceId, providerId, metadata)
       if (metadata?.state === 'disabled') {
@@ -251,7 +255,6 @@ function createVaultCredentialStoreBackendInternalV1(
       if (metadata?.state === 'instance_fallback_enabled') {
         notConfigured('Workspace credential uses instance fallback')
       }
-      await requireReady()
       const record = await persistence.getCredentialRecord(workspaceId, providerId)
       if (!record) {
         const anchoredVersion = (await versionAnchor.read(workspaceId))
