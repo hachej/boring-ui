@@ -78,13 +78,16 @@ export class ChannelOutboundService<Message = unknown> {
 
   async dispose(): Promise<void> {
     this.disposed = true
-    for (const subscription of this.subscriptions.values()) subscription.unsubscribe()
-    this.subscriptions.clear()
     for (const timer of this.stallTimers.values()) clearTimeout(timer)
     this.stallTimers.clear()
     for (const timer of this.claimTimers.values()) clearTimeout(timer)
     this.claimTimers.clear()
     await Promise.allSettled([...this.drains.values()])
+    // A drain may have been inside async path resolution when disposal began
+    // and installed its subscription while we awaited it. Unsubscribe only
+    // after every drain has quiesced so no late subscription can escape.
+    for (const subscription of this.subscriptions.values()) subscription.unsubscribe()
+    this.subscriptions.clear()
   }
 
   private schedule(binding: ChannelBinding): void {

@@ -206,6 +206,33 @@ describe('durable channel outbound', () => {
     })
   })
 
+  test('disposal removes a subscription installed by an in-flight path resolution', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      let release!: () => void
+      let resolving!: () => void
+      const blocked = new Promise<void>((resolve) => { release = resolve })
+      const started = new Promise<void>((resolve) => { resolving = resolve })
+      const sent: string[] = []
+      const service = new ChannelOutboundService(bindings, events, {
+        async resolveStreamPath() {
+          resolving()
+          await blocked
+          return path
+        },
+        createSession: async () => bindingInput.sessionKey,
+      }, new Map([['whatsapp', fakeAdapter(sent)]]))
+      service.start()
+      await started
+      const disposal = service.dispose()
+      release()
+      await disposal
+      await appendTurn(append, 'turn-after-dispose', 'must not send')
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(sent).toEqual([])
+    })
+  })
+
   test('reclaims an expired crash lease without requiring another inbound wake', async () => {
     await withChannel(async ({ bindings, events, path, append }) => {
       const binding = bindings.provision(bindingInput)
