@@ -58,6 +58,50 @@ export async function mountCoreWhatsAppChannel(input: {
   }) => Promise<AuthorizedAgentScope>
   readonly options: CoreWhatsAppChannelOptions
 }): Promise<MountedCoreWhatsAppChannel> {
+  const configured = input.options.provisionedBindings ?? []
+  const configuredKeys = new Set<string>()
+  for (const binding of configured) {
+    if (configuredKeys.has(binding.conversationKey)) {
+      throw new Error(`Duplicate WhatsApp provisioned binding: ${binding.conversationKey}`)
+    }
+    configuredKeys.add(binding.conversationKey)
+  }
+  // Reconcile the authoritative provisioned set before services resume durable
+  // queues. Removed senders and bindings under an old configured Agent fail closed.
+  for (const current of input.storage.bindings.activeBindings()) {
+    if (current.channel !== WHATSAPP_CHANNEL_ID) continue
+    if (current.agentTypeId === input.options.agentTypeId && configuredKeys.has(current.conversationKey)) continue
+    input.storage.bindings.provision({
+      channel: current.channel,
+      conversationKey: current.conversationKey,
+      agentTypeId: current.agentTypeId,
+      workspaceId: current.workspaceId,
+      authSubjectId: current.authSubjectId,
+      status: 'revoked',
+      sessionKey: current.sessionKey,
+      outboundCursor: current.outboundCursor,
+    })
+  }
+  for (const binding of configured) {
+    const current = input.storage.bindings.getBinding(
+      WHATSAPP_CHANNEL_ID,
+      binding.conversationKey,
+      input.options.agentTypeId,
+    )
+    // Startup config is declarative. Re-applying an unchanged binding must not
+    // create a new generation, because acknowledged queue rows retain the old one.
+    if (current
+      && current.workspaceId === binding.workspaceId
+      && current.authSubjectId === binding.authSubjectId
+      && (binding.sessionKey === undefined || current.sessionKey === binding.sessionKey)
+      && current.status === (binding.status ?? 'active')) continue
+    input.storage.bindings.provision({
+      ...binding,
+      channel: WHATSAPP_CHANNEL_ID,
+      agentTypeId: input.options.agentTypeId,
+    })
+  }
+
   const adapterEdge = createWhatsAppCloudEdge({
     withCredentials: input.options.withCredentials,
     agentTypeId: input.options.agentTypeId,
@@ -74,26 +118,6 @@ export async function mountCoreWhatsAppChannel(input: {
   const webhookPath = input.options.webhookPath ?? CORE_WHATSAPP_WEBHOOK_PATH
   const bodyLimit = input.options.bodyLimit ?? WHATSAPP_WEBHOOK_BODY_LIMIT
   try {
-    for (const binding of input.options.provisionedBindings ?? []) {
-      const current = runtime.bindings.getBinding(
-        WHATSAPP_CHANNEL_ID,
-        binding.conversationKey,
-        input.options.agentTypeId,
-      )
-      // Startup config is declarative. Re-applying an unchanged binding must not
-      // create a new generation, because acknowledged queue rows retain the old one.
-      if (current
-        && current.workspaceId === binding.workspaceId
-        && current.authSubjectId === binding.authSubjectId
-        && (binding.sessionKey === undefined || current.sessionKey === binding.sessionKey)
-        && current.status === (binding.status ?? 'active')) continue
-      runtime.provision({
-        ...binding,
-        channel: WHATSAPP_CHANNEL_ID,
-        agentTypeId: input.options.agentTypeId,
-      })
-    }
-
     await input.app.register(async (routes) => {
       routes.addContentTypeParser('application/json', { parseAs: 'buffer', bodyLimit }, (_request, body, done) => {
         done(null, body)

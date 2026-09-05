@@ -111,6 +111,13 @@ describe('mountCoreWhatsAppChannel', () => {
       authSubjectId: 'user-1',
       sessionKey: 'generated-session',
     })
+    storage.bindings.provision({
+      channel: 'whatsapp',
+      conversationKey: '+41790000002',
+      agentTypeId: 'default',
+      workspaceId: 'workspace-1',
+      authSubjectId: 'user-1',
+    })
 
     const restartedApp = Fastify()
     const restarted = await mountCoreWhatsAppChannel({
@@ -132,6 +139,7 @@ describe('mountCoreWhatsAppChannel', () => {
     // The mocked gateway has no durable stream, so the runtime may clear its
     // unusable session asynchronously; startup provisioning must not bump generation.
     expect(restartedBinding?.bindingVersion).toBe(assigned.bindingVersion)
+    expect(restarted.runtime.bindings.getBinding('whatsapp', '+41790000002', 'default')?.status).toBe('revoked')
     await restarted.close()
     await restartedApp.close()
     storage.close()
