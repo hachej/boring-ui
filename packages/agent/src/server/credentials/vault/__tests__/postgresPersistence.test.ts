@@ -318,6 +318,16 @@ describe('Postgres credential workspace lock lifecycle', () => {
           message: 'Credential workspace lock could not be released',
         })
       expect(Date.now() - startedAt).toBeLessThan(500)
+      // Keep the other primary connection occupied while independently proving
+      // the stalled lock-holder backend no longer exists.
+      const lockKey = JSON.stringify(['credential-workspace', workspaceId])
+      const remaining = await adminSql<{ count: string }[]>`
+        SELECT count(*)::text AS count FROM pg_locks
+        WHERE locktype = 'advisory' AND granted
+          AND classid = (((hashtextextended(${lockKey}, 0) >> 32) & 4294967295)::oid)
+          AND objid = ((hashtextextended(${lockKey}, 0) & 4294967295)::oid)
+      `
+      expect(remaining[0]?.count).toBe('0')
       primaryBlocker.release()
       primaryBlockerReleased = true
       await expect(createPostgresCredentialVaultPersistenceV1(primarySql, { evictionSql: adminSql })

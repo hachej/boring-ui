@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type postgres from 'postgres'
 import {
   CREDENTIAL_ENVELOPE_VERSION,
@@ -184,19 +185,44 @@ async function destroyReservedConnection(
   pool: postgres.Sql,
   reserved: postgres.ReservedSql,
   backendPid?: number,
+  probeToken?: string,
 ): Promise<void> {
   // postgres.js has no public destroy method for one reserved connection.
   // Try both an out-of-band termination (works when its query is stalled) and
   // self-termination (works even when this is a max=1 pool and the connection
   // is responsive). Either path drives postgres.js's connection-close eviction.
-  const attempts: PromiseLike<unknown>[] = backendPid === undefined
-    ? [reserved`SELECT pg_terminate_backend(pg_backend_pid())`]
-    : [pool`SELECT pg_terminate_backend(${backendPid})`]
-  await Promise.race([
-    ...attempts.map((attempt) => Promise.resolve(attempt).then(() => undefined, () => undefined)),
-    new Promise<void>((resolve) => setTimeout(resolve, 250)),
-  ])
-  // Do not call release(): the connection-close path owns reservation cleanup.
+  const evictionDeadlineMs = Date.now() + 1_000
+  if (backendPid !== undefined) {
+    const terminate = pool<{ terminated: boolean }[]>`
+      SELECT pg_terminate_backend(${backendPid}) AS terminated
+    `
+    await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+    for (;;) {
+      if (Date.now() >= evictionDeadlineMs) throw lockUnavailable('could not evict its connection')
+      const presenceQuery = pool<{ present: boolean }[]>`
+        SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid = ${backendPid}) AS present
+      `
+      const present = await boundedWait(
+        presenceQuery,
+        evictionDeadlineMs,
+        undefined,
+        () => presenceQuery.cancel(),
+      )
+      if (present[0]?.present !== true) break
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  } else if (probeToken !== undefined) {
+    const terminate = pool<{ terminated: boolean }[]>`
+      SELECT pg_terminate_backend(pid) AS terminated
+      FROM pg_stat_activity
+      WHERE pid <> pg_backend_pid() AND query LIKE ${`%${probeToken}%`}
+    `
+    await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+  } else {
+    const terminate = reserved`SELECT pg_terminate_backend(pg_backend_pid())`
+    await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+  }
+  // Do not call release(): the confirmed connection-close path owns cleanup.
 }
 
 /** Postgres implementation of the ciphertext-only credential vault port. */
@@ -251,12 +277,15 @@ implements CredentialVaultPersistenceV1 {
     }
 
     let backendPid: number | undefined
+    const probeToken = `credential_lock_probe_${randomUUID().replaceAll('-', '')}`
     try {
-      const pidQuery = reserved<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`
+      const pidQuery = reserved.unsafe<{ pid: number }[]>(
+        `SELECT pg_backend_pid() AS pid /* ${probeToken} */`,
+      )
       const pidRows = await boundedWait(pidQuery, deadlineMs, lockOptions.signal, () => pidQuery.cancel())
       if (Number.isSafeInteger(pidRows[0]?.pid)) backendPid = pidRows[0]!.pid
     } catch (error) {
-      await destroyReservedConnection(pool, reserved)
+      await destroyReservedConnection(this.options.evictionSql, reserved, undefined, probeToken)
       throw stableLockError(error)
     }
 
