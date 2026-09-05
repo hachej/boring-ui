@@ -5,4 +5,5 @@ export {
 export type {
   IdempotencyKeyStore,
   IdempotencyEntry,
+  IdempotencyClaim,
 } from './idempotency.js'
