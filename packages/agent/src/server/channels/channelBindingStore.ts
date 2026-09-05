@@ -254,10 +254,10 @@ export class ChannelBindingStore {
     Date.now() + claimTtlMs, id, claimOwner).toArray().length === 1
   }
 
-  completeInbound(id: number, claimOwner: string): void {
-    this.sql.exec(`UPDATE boring_channel_inbound_queue
+  completeInbound(id: number, claimOwner: string): boolean {
+    return this.sql.exec(`UPDATE boring_channel_inbound_queue
       SET status='processed', claim_owner=NULL, claim_expires_at=NULL, error_code=NULL
-      WHERE id=? AND status='processing' AND claim_owner=?`, id, claimOwner)
+      WHERE id=? AND status='processing' AND claim_owner=? RETURNING id`, id, claimOwner).toArray().length === 1
   }
 
   retryInbound(id: number, claimOwner: string, errorCode: string): void {

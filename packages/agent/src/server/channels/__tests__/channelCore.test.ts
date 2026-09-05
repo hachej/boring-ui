@@ -184,6 +184,8 @@ describe('ChannelInboundService fake-channel path', () => {
       await service.waitForIdle()
 
       expect(calls.map((call) => call.kind)).toEqual(['create', 'prompt', 'status', 'followUp'])
+      expect(calls.filter((call) => call.kind === 'prompt' || call.kind === 'followUp')
+        .map((call) => (call.input as { deliverySequence: number }).deliverySequence)).toEqual([1, 2])
       expect(calls.filter((call) => JSON.stringify(call.input).includes(bindingInput.conversationKey))).toEqual([])
       expect(first.getInbound(1)?.status).toBe('processed')
       expect(first.getInbound(2)?.status).toBe('processed')
@@ -204,6 +206,27 @@ describe('ChannelInboundService fake-channel path', () => {
       await service.waitForIdle()
       expect(prompt).toHaveBeenCalledOnce()
       expect(second.getInbound(1)?.status).toBe('processed')
+    })
+  })
+
+  test('transient database contention retries without another inbound', async () => {
+    await withStores(async ({ first }) => {
+      first.provision({ ...bindingInput, sessionKey: 'session-1' })
+      first.enqueueInbound(inbound('wamid.busy'), 'default')
+      const nextPending = first.nextPending.bind(first)
+      vi.spyOn(first, 'nextPending')
+        .mockImplementationOnce(() => { throw Object.assign(new Error('busy'), { code: 'SQLITE_BUSY' }) })
+        .mockImplementation(nextPending)
+      const prompt = vi.fn(async () => {})
+      const service = new ChannelInboundService(first, {
+        createSession: vi.fn(),
+        isSessionBusy: vi.fn(async () => false),
+        prompt,
+        followUp: vi.fn(),
+      }, { drainRetryMs: 1 })
+      await service.waitForIdle()
+      expect(prompt).toHaveBeenCalledOnce()
+      expect(first.getInbound(1)?.status).toBe('processed')
     })
   })
 

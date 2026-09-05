@@ -30,7 +30,13 @@ export interface ChannelAgentInvoker {
     readonly agentTypeId: string
     readonly sessionKey: string
   }): Promise<boolean>
+  /**
+   * Implementations MUST durably deduplicate requestId and serialize
+   * deliverySequence for a session before resolving. This is the downstream
+   * fence that makes an expired queue lease safe to replay.
+   */
   prompt(input: ChannelAgentInvocation): Promise<void>
+  /** Same durable idempotency and sequence contract as prompt. */
   followUp(input: ChannelAgentInvocation): Promise<void>
 }
 
@@ -40,6 +46,8 @@ export interface ChannelAgentInvocation {
   readonly agentTypeId: string
   readonly sessionKey: string
   readonly requestId: string
+  /** Monotonic durable queue id; stale/lower deliveries must be a no-op. */
+  readonly deliverySequence: number
   readonly text: string
 }
 
@@ -54,7 +62,11 @@ export class ChannelInboundService {
   constructor(
     private readonly store: ChannelBindingStore,
     private readonly invoker: ChannelAgentInvoker,
-    private readonly options: { readonly maxAttempts?: number; readonly inboundClaimTtlMs?: number } = {},
+    private readonly options: {
+      readonly maxAttempts?: number
+      readonly inboundClaimTtlMs?: number
+      readonly drainRetryMs?: number
+    } = {},
   ) {
     // Durable acknowledgement must not depend on a provider replay. The store
     // recovers interrupted claims during migration; every new service resumes
@@ -89,24 +101,35 @@ export class ChannelInboundService {
   private scheduleDrain(binding: ChannelBinding): void {
     const key = bindingKey(binding)
     if (this.drains.has(key)) return
-    const drain = Promise.resolve().then(() => this.drain(binding)).finally(() => {
+    let failed = false
+    const drain = Promise.resolve().then(() => this.drain(binding)).catch(() => {
+      failed = true
+    }).finally(() => {
       if (this.drains.get(key) === drain) this.drains.delete(key)
+      if (failed) {
+        setTimeout(() => this.scheduleDrain(binding), this.options.drainRetryMs ?? 50)
+      }
     })
     this.drains.set(key, drain)
-    void drain.catch(() => {})
   }
 
   private async drain(initialBinding: ChannelBinding): Promise<void> {
     let binding = initialBinding
     for (;;) {
       const claimTtlMs = this.options.inboundClaimTtlMs ?? INBOUND_CLAIM_TTL_MS
-      const claimed = this.store.nextPending(
-        binding.channel,
-        binding.conversationKey,
-        binding.agentTypeId,
-        this.claimOwner,
-        claimTtlMs,
-      )
+      let claimed
+      try {
+        claimed = this.store.nextPending(
+          binding.channel,
+          binding.conversationKey,
+          binding.agentTypeId,
+          this.claimOwner,
+          claimTtlMs,
+        )
+      } catch {
+        await delay(this.options.drainRetryMs ?? 50)
+        continue
+      }
       if (claimed.disposition === 'empty') return
       if (claimed.disposition === 'blocked') {
         await delay(Math.max(1, claimed.retryAt - Date.now()))
@@ -121,12 +144,14 @@ export class ChannelInboundService {
         this.store.parkInbound(queued.id, ErrorCode.enum.CHANNEL_BINDING_REVOKED, queued.claimOwner)
         continue
       }
+      let claimLost = false
       const heartbeat = setInterval(() => {
         try {
-          this.store.renewInbound(queued.id, queued.claimOwner, claimTtlMs)
+          if (!this.store.renewInbound(queued.id, queued.claimOwner, claimTtlMs)) claimLost = true
         } catch {
-          // A transient renewal failure leaves the durable expiry as the
-          // recovery boundary; invocation request IDs remain idempotent.
+          // The downstream sequence fence makes a replay safe, but this owner
+          // must stop advancing the binding after it loses renewal.
+          claimLost = true
         }
       }, Math.max(1, Math.floor(claimTtlMs / 3)))
       try {
@@ -149,7 +174,7 @@ export class ChannelInboundService {
           })
           await (busy ? this.invoker.followUp(call) : this.invoker.prompt(call))
         }
-        this.store.completeInbound(queued.id, queued.claimOwner)
+        if (claimLost || !this.store.completeInbound(queued.id, queued.claimOwner)) return
         binding = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId) ?? binding
       } catch (error) {
         const code = stableErrorCode(error)
@@ -168,7 +193,7 @@ export class ChannelInboundService {
 function invocation(
   binding: ChannelBinding,
   sessionKey: string,
-  queued: { providerMessageId: string; text: string },
+  queued: { id: number; providerMessageId: string; text: string },
 ): ChannelAgentInvocation {
   return {
     workspaceId: binding.workspaceId,
@@ -176,6 +201,7 @@ function invocation(
     agentTypeId: binding.agentTypeId,
     sessionKey,
     requestId: `channel:${binding.channel}:${queued.providerMessageId}`,
+    deliverySequence: queued.id,
     text: queued.text,
   }
 }
