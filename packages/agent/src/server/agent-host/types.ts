@@ -400,6 +400,8 @@ export interface CreateAgentHostOptions {
   readonly requestLedger?: AgentRequestLedger
   /** Durable effect ledger path, independent of transcript/session storage. */
   readonly requestLedgerPath?: string
+  /** App-host-owned durable event store, shared with channel outbound tails. */
+  readonly eventStore?: import('../events/eventStreamStore').EventStreamStore
   /** Explicit test/dev opt-in for an in-memory ledger. */
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
   readonly requestRetentionMs?: number

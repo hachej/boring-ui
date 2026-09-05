@@ -215,6 +215,16 @@ export { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttp
 export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/environmentHttpProjection'
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
+export {
+  CHANNEL_RUNTIME_FILE_NAME,
+  createAgentHostChannelRuntime,
+  createAgentHostChannelStorage,
+} from './agent-host/channelRuntimeComposition'
+export type {
+  AgentHostChannelRuntime,
+  AgentHostChannelStorage,
+  CreateAgentHostChannelRuntimeOptions,
+} from './agent-host/channelRuntimeComposition'
 export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
 export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 export type {

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { OriginChannel } from '../../shared/channel'
 import { ErrorCode } from '../../shared/error-codes'
 import { INBOUND_CLAIM_TTL_MS, type ChannelBinding, type ChannelBindingStore, type InboundChannelMessage } from './channelBindingStore'
@@ -23,6 +23,8 @@ export interface ChannelAgentInvoker {
     readonly authSubjectId: string
     readonly agentTypeId: string
     readonly originChannel: OriginChannel
+    /** Stable opaque id for replaying this binding generation's allocation. */
+    readonly requestId: string
   }): Promise<string>
   isSessionBusy(input: {
     readonly workspaceId: string
@@ -57,7 +59,9 @@ export type ChannelInboundAck =
 
 export class ChannelInboundService {
   private readonly drains = new Map<string, Promise<void>>()
+  private readonly retryTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly claimOwner = randomUUID()
+  private disposed = false
 
   constructor(
     private readonly store: ChannelBindingStore,
@@ -94,11 +98,19 @@ export class ChannelInboundService {
     return Promise.allSettled([...this.drains.values()]).then(() => undefined)
   }
 
+  async dispose(): Promise<void> {
+    this.disposed = true
+    for (const timer of this.retryTimers) clearTimeout(timer)
+    this.retryTimers.clear()
+    await Promise.allSettled([...this.drains.values()])
+  }
+
   resume(binding: ChannelBinding): void {
     if (binding.status === 'active') this.scheduleDrain(binding)
   }
 
   private scheduleDrain(binding: ChannelBinding): void {
+    if (this.disposed) return
     const key = bindingKey(binding)
     if (this.drains.has(key)) return
     let failed = false
@@ -106,8 +118,12 @@ export class ChannelInboundService {
       failed = true
     }).finally(() => {
       if (this.drains.get(key) === drain) this.drains.delete(key)
-      if (failed) {
-        setTimeout(() => this.scheduleDrain(binding), this.options.drainRetryMs ?? 50)
+      if (failed && !this.disposed) {
+        const timer = setTimeout(() => {
+          this.retryTimers.delete(timer)
+          this.scheduleDrain(binding)
+        }, this.options.drainRetryMs ?? 50)
+        this.retryTimers.add(timer)
       }
     })
     this.drains.set(key, drain)
@@ -161,6 +177,7 @@ export class ChannelInboundService {
             authSubjectId: binding.authSubjectId,
             agentTypeId: binding.agentTypeId,
             originChannel: binding.channel,
+            requestId: sessionCreationRequestId(binding),
           }),
           admit: async (sessionKey) => this.invoker.prompt(invocation(binding, sessionKey, queued)),
         })
@@ -213,6 +230,16 @@ function invocation(
 
 function bindingKey(binding: ChannelBinding): string {
   return JSON.stringify([binding.channel, binding.conversationKey, binding.agentTypeId])
+}
+
+function sessionCreationRequestId(binding: ChannelBinding): string {
+  const digest = createHash('sha256').update(JSON.stringify([
+    binding.channel,
+    binding.conversationKey,
+    binding.agentTypeId,
+    binding.bindingVersion,
+  ])).digest('hex')
+  return `channel:create:${digest}`
 }
 
 function delay(ms: number): Promise<void> {
