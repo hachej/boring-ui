@@ -125,6 +125,7 @@ export function createOpenAiCodexOAuthBrokerV1(
 ): OpenAiCodexOAuthBrokerV1 {
   const flows = new Map<string, Flow>()
   const disconnectingActors = new Set<string>()
+  const actorEpochs = new Map<string, number>()
   const now = options.now ?? Date.now
   const runtimeFactory = options.createRuntime ?? (async (credentials) => ModelRuntime.create({
     credentials,
@@ -152,10 +153,15 @@ export function createOpenAiCodexOAuthBrokerV1(
   const broker: OpenAiCodexOAuthBrokerV1 = {
     async start(workspaceId, userId) {
       if (!workspaceId.trim() || !userId.trim()) throw new Error('OAuth actor is invalid')
-      if (disconnectingActors.has(actorKey(workspaceId, userId))) throw new Error('OAuth disconnect is in progress')
+      const key = actorKey(workspaceId, userId)
+      if (disconnectingActors.has(key)) throw new Error('OAuth disconnect is in progress')
+      const epoch = actorEpochs.get(key) ?? 0
       // Capture the actor's durable credential version before this flow exists.
       // The login-only store uses it to reject a newer cross-process revoke.
       const credentials = await options.credentialStoreForActor(workspaceId, userId)
+      if (disconnectingActors.has(key) || (actorEpochs.get(key) ?? 0) !== epoch) {
+        throw new Error('OAuth flow was superseded by disconnect')
+      }
       const flow: Flow = {
         flowId: randomUUID(),
         workspaceId,
@@ -230,6 +236,7 @@ export function createOpenAiCodexOAuthBrokerV1(
       if (!workspaceId.trim() || !userId.trim()) throw new Error('OAuth actor is invalid')
       const key = actorKey(workspaceId, userId)
       if (disconnectingActors.has(key)) throw new Error('OAuth disconnect is already in progress')
+      actorEpochs.set(key, (actorEpochs.get(key) ?? 0) + 1)
       disconnectingActors.add(key)
       try {
         // Fence all pre-disconnect login tasks before local deletion. Their

@@ -144,6 +144,29 @@ describe('OpenAI Codex OAuth routes', () => {
     await expect(broker.start('workspace-a', 'owner')).resolves.toMatchObject({ status: 'pending' })
   })
 
+  test('rejects a start whose async store capture overlaps a disconnect', async () => {
+    let releaseStore!: () => void
+    const storeGate = new Promise<void>((resolve) => { releaseStore = resolve })
+    let storeCalls = 0
+    const broker = createOpenAiCodexOAuthBrokerV1({
+      credentialStoreForActor: async () => {
+        storeCalls += 1
+        if (storeCalls === 1) await storeGate
+        return new InMemoryCredentialStore()
+      },
+      createRuntime: async () => ({
+        async login() { throw new Error('superseded login must not run') },
+        async logout() {},
+      }),
+    })
+
+    const starting = broker.start('workspace-a', 'owner')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await broker.disconnect('workspace-a', 'owner')
+    releaseStore()
+    await expect(starting).rejects.toThrow('superseded by disconnect')
+  })
+
   test.each([
     { fails: false, expected: 'completed' },
     { fails: true, expected: 'failed' },
@@ -209,6 +232,7 @@ describe('OpenAI Codex OAuth routes', () => {
     expect(revoked.json()).toMatchObject({
       providerId: 'openai-codex',
       state: 'revoked',
+      credentialVersion: 2,
       oauthRevocation: { localStatus: 'revoked', upstreamStatus: 'pending' },
     })
     expect(revoked.body).not.toContain('refresh-canary')

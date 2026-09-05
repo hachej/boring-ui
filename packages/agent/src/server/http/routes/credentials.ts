@@ -547,6 +547,10 @@ export async function credentialsRoutes(
         // orchestration succeeds, persist a fail-closed actor tombstone. Pi does
         // not currently provide an upstream revocation confirmation API.
         await options.oauthBroker.disconnect(workspaceId, authority.principal.userId)
+        // Force a new durable credential version even if Pi logout failed
+        // before deleting. Cross-host login stores captured against the old
+        // version can no longer replace this tombstone.
+        await options.vaultBackend.writeAbsentCredential(workspaceId, personalId)
         const revoked = await options.vaultBackend.setCredentialLifecycleState(workspaceId, personalId, 'revoked')
         return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, revoked))
       }
