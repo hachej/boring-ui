@@ -213,7 +213,7 @@ export class ChannelOutboundService<Message = unknown> {
       // terminal state rather than leaking an unhandled rejection or waiting
       // for unrelated traffic to rediscover the same unread output.
       try {
-        const failedBinding = binding ?? this.current(initialBinding)
+        const failedBinding = this.current(initialBinding) ?? binding
         if (failedBinding && this.store.ownsOutboundClaim(claimOwner)) {
           this.store.parkOutboundBinding(failedBinding, claimOwner, stableErrorCode(error))
         }

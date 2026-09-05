@@ -656,7 +656,7 @@ export class ChannelBindingStore {
     return this.runTransaction(() => {
       const updated = this.sql.exec(`UPDATE boring_channel_bindings SET outbound_status='parked'
         WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
-          AND status='active' AND session_key=? AND outbound_cursor=?
+          AND status='active' AND session_key IS ? AND outbound_cursor=?
           AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`,
       binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion,
       binding.sessionKey ?? null, binding.outboundCursor, claimOwner, Date.now()).toArray()

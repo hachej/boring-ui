@@ -225,6 +225,25 @@ describe('durable channel outbound', () => {
     })
   })
 
+  test('parks the cleared current binding when replacement session authorization fails', async () => {
+    await withChannel(async ({ bindings, events }) => {
+      bindings.provision(bindingInput)
+      const service = new ChannelOutboundService(bindings, events, {
+        resolveStreamPath: vi.fn(async () => undefined),
+        createSession: vi.fn(async () => {
+          throw Object.assign(new Error('scope revoked'), { code: ErrorCode.enum.UNAUTHORIZED })
+        }),
+      }, new Map([['whatsapp', fakeAdapter([])]]))
+
+      service.start()
+      await expect(service.waitForIdle()).resolves.toBeUndefined()
+      const parked = bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')
+      expect(parked?.sessionKey).toBeUndefined()
+      expect(parked).toMatchObject({ outboundStatus: 'parked' })
+      await service.dispose()
+    })
+  })
+
   test('disposal removes a subscription installed by an in-flight path resolution', async () => {
     await withChannel(async ({ bindings, events, path, append }) => {
       bindings.provision(bindingInput)
