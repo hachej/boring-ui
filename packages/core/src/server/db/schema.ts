@@ -318,8 +318,9 @@ export const idempotencyKeys = pgTable(
   {
     key: text('key').primaryKey(),
     scope: text('scope').notNull(),
-    responseStatus: integer('response_status').notNull(),
-    responseBody: jsonb('response_body').notNull(),
+    requestHash: text('request_hash'),
+    responseStatus: integer('response_status'),
+    responseBody: jsonb('response_body'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [

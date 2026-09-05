@@ -89,6 +89,36 @@ identity match, then the workspace/agent surfaces warm in the background (see
   use standalone `@hachej/boring-workspace` server for plugin HMR/SSE.
 - Client-rendered shell only (no SSR), fail-closed on config/auth fetch.
 
+## Invite idempotency
+
+`POST /api/v1/workspaces/:id/invites` accepts an optional `Idempotency-Key`.
+After authorization and body validation, the key is scoped to the configured
+app, create-invite operation, workspace, and actor. Reusing it with another
+email or role returns `409 idempotency_key_conflict`; concurrent requests
+return `409 idempotency_in_progress` until the owner records its response.
+Completed responses replay for 24 hours from completion. Requests without a
+key retain their existing behavior.
+
+Apply migration `0028_invite_idempotency_claims` before deploying this code.
+Custom `IdempotencyKeyStore` adapters must implement the new atomic `claim`
+method: only one caller may receive `claimed`, and completed responses must
+remain bound to the original request hash. The existing `find` and `set`
+methods remain available; `find` returns completed responses only. Custom
+middleware users must include operation and authorization scope in `guard`'s
+scope string or request callback.
+
+If the process stops or response persistence fails after the claim, its effects
+may have happened. The claim stays unresolved and is not swept automatically;
+inspect the invite/mail outcome before operational reconciliation. This avoids
+blindly sending another invite; it does not promise exactly-once email delivery.
+The new scoped key format cannot safely replay the old globally keyed cache.
+A still-live legacy receipt returns `409 idempotency_key_conflict` without
+replaying its tenant metadata or running effects. Wait for its existing
+24-hour expiry or inspect the original outcome; do not blindly change keys.
+Drain old in-flight invite requests before deploying: older servers do not
+claim keys before effects, so unfinished requests without a receipt cannot be
+detected by the new middleware.
+
 ## Docs
 
 Architecture / contracts:
