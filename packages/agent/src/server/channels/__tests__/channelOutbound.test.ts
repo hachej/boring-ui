@@ -206,6 +206,25 @@ describe('durable channel outbound', () => {
     })
   })
 
+  test('parks a binding when authorized stream resolution fails without rejecting the drain', async () => {
+    await withChannel(async ({ bindings, events }) => {
+      bindings.provision(bindingInput)
+      const service = new ChannelOutboundService(bindings, events, {
+        resolveStreamPath: vi.fn(async () => {
+          throw Object.assign(new Error('scope revoked'), { code: ErrorCode.enum.UNAUTHORIZED })
+        }),
+        createSession: vi.fn(async () => 'unused'),
+      }, new Map([['whatsapp', fakeAdapter([])]]))
+
+      service.start()
+      await expect(service.waitForIdle()).resolves.toBeUndefined()
+      expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')).toMatchObject({
+        outboundStatus: 'parked',
+      })
+      await service.dispose()
+    })
+  })
+
   test('disposal removes a subscription installed by an in-flight path resolution', async () => {
     await withChannel(async ({ bindings, events, path, append }) => {
       bindings.provision(bindingInput)

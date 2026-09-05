@@ -208,6 +208,20 @@ export class ChannelOutboundService<Message = unknown> {
         }
         if (!this.store.compareAndSetOutboundCursor(binding, claimOwner, assembled.terminalOffset)) return
       }
+    } catch (error) {
+      // Resolution is an authority boundary. Fail closed and persist the
+      // terminal state rather than leaking an unhandled rejection or waiting
+      // for unrelated traffic to rediscover the same unread output.
+      try {
+        const failedBinding = binding ?? this.current(initialBinding)
+        if (failedBinding && this.store.ownsOutboundClaim(claimOwner)) {
+          this.store.parkOutboundBinding(failedBinding, claimOwner, stableErrorCode(error))
+        }
+      } catch {
+        // A concurrent generation change or storage failure already prevents
+        // this owner from advancing delivery; never turn it into a process-level
+        // unhandled rejection.
+      }
     } finally {
       clearInterval(heartbeat)
       this.store.releaseOutbound(claimOwner)
