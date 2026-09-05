@@ -122,20 +122,27 @@ export class ChannelIntentionService {
   async accept(message: InboundChannelMessage, agentTypeId: string): Promise<ChannelIntentionAck> {
     const intention = this.store.activeIntention(message.channel, message.conversationKey, agentTypeId)
     if (!intention) {
-      return this.store.hasIntentionReply(message.channel, message.providerMessageId)
-        ? { handled: true, accepted: true, duplicate: true }
+      if (this.store.hasIntentionReply(message.channel, message.providerMessageId)) {
+        return { handled: true, accepted: true, duplicate: true }
+      }
+      const terminal = this.store.terminalIntention(message.channel, message.conversationKey, agentTypeId)
+      return terminal && parseChoice(message.text, terminal.options)
+        ? { handled: true, accepted: false, duplicate: false, questionId: terminal.questionId }
         : { handled: false }
     }
     const question = await this.runtime.getByQuestionId(intention.questionId)
     if (question?.status === 'answered') {
       this.store.reconcileIntentionAnswered(intention.questionId)
-      return this.store.hasIntentionReply(message.channel, message.providerMessageId)
-        ? { handled: true, accepted: true, duplicate: true, questionId: intention.questionId }
-        : { handled: false }
+      return {
+        handled: true,
+        accepted: false,
+        duplicate: this.store.hasIntentionReply(message.channel, message.providerMessageId),
+        questionId: intention.questionId,
+      }
     }
     if (!question || question.status !== 'ready') {
       this.store.reconcileIntentionClosed(intention.questionId)
-      return { handled: false }
+      return { handled: true, accepted: false, duplicate: false, questionId: intention.questionId }
     }
     const choice = parseChoice(message.text, intention.options)
     const adapter = this.adapters.get(message.channel)

@@ -160,6 +160,9 @@ describe('ChannelIntentionService', () => {
       await expect(service.accept(inbound('wamid.answer', 'Approve'), 'default')).resolves.toEqual({
         handled: true, accepted: true, duplicate: true,
       })
+      await expect(service.accept(inbound('wamid.late-answer', 'Reject'), 'default')).resolves.toEqual({
+        handled: true, accepted: false, duplicate: false, questionId: 'question-1',
+      })
       await service.dispose()
     })
   })

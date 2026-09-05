@@ -409,6 +409,17 @@ export class ChannelBindingStore {
       ORDER BY i.updated_at, i.question_id`).toArray().map(intentionFromRow)
   }
 
+  terminalIntention(channel: string, conversationKey: string, agentTypeId: string): ChannelIntentionRecord | undefined {
+    const row = this.sql.exec(`SELECT i.* FROM boring_channel_intentions i
+      JOIN boring_channel_bindings b ON b.channel=i.channel AND b.conversation_key=i.conversation_key
+        AND b.agent_type_id=i.agent_type_id AND b.binding_version=i.binding_version
+        AND b.session_key=i.session_id AND b.status='active'
+      WHERE i.channel=? AND i.conversation_key=? AND i.agent_type_id=?
+        AND i.status IN ('answered', 'closed') ORDER BY i.updated_at DESC LIMIT 1`,
+    channel, conversationKey, agentTypeId).toArray()[0]
+    return row ? intentionFromRow(row) : undefined
+  }
+
   activeIntention(channel: string, conversationKey: string, agentTypeId: string): ChannelIntentionRecord | undefined {
     const row = this.sql.exec(`SELECT i.* FROM boring_channel_intentions i
       JOIN boring_channel_bindings b ON b.channel=i.channel AND b.conversation_key=i.conversation_key

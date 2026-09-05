@@ -4,6 +4,11 @@ import type { OriginChannel } from '../../shared/channel'
 import { ChannelBindingStore, type ChannelBinding, type InboundChannelMessage, type ProvisionChannelBindingInput } from '../channels/channelBindingStore'
 import { ChannelInboundService, type ChannelAgentInvocation } from '../channels/channelInboundService'
 import {
+  ChannelIntentionService,
+  ChannelMessageRouter,
+  type ChannelIntentionRuntime,
+} from '../channels/channelIntentionService'
+import {
   ChannelOutboundService,
   type ChannelOutboundAdapter,
   type ChannelOutboundServiceOptions,
@@ -48,6 +53,8 @@ export interface CreateAgentHostChannelRuntimeOptions<Message> {
   readonly resolveAuthorizedScope: (binding: Pick<ChannelBinding,
     'workspaceId' | 'authSubjectId' | 'agentTypeId'>) => Promise<AuthorizedAgentScope>
   readonly outboundAdapters: ReadonlyMap<string, ChannelOutboundAdapter<Message>>
+  /** Workspace-scoped ask_user source/answer seam; omit only when channels cannot ask owners. */
+  readonly intentionRuntime?: ChannelIntentionRuntime
   readonly outbound?: ChannelOutboundServiceOptions
 }
 
@@ -57,7 +64,10 @@ export interface AgentHostChannelRuntime<Message> {
   readonly outboundAdapters: ReadonlyMap<string, ChannelOutboundAdapter<Message>>
   provision(input: ProvisionChannelBindingInput): ChannelBinding
   /** Durable enqueue is the acknowledgement boundary; delivery continues asynchronously. */
-  acceptInbound(message: InboundChannelMessage, agentTypeId: string): ReturnType<ChannelInboundService['accept']>
+  acceptInbound(
+    message: InboundChannelMessage,
+    agentTypeId: string,
+  ): ReturnType<ChannelInboundService['accept']> | ReturnType<ChannelMessageRouter['accept']>
   waitForIdle(): Promise<void>
   close(): Promise<void>
 }
@@ -182,6 +192,21 @@ export function createAgentHostChannelRuntime<Message>(
   notifyOutbound = (binding) => outbound.notifyInbound(binding)
   outbound.start()
 
+  const intentions = options.intentionRuntime
+    ? new ChannelIntentionService(
+        options.storage.bindings,
+        options.intentionRuntime,
+        new Map([...adapters].map(([channel, adapter]) => [channel, {
+          async send({ conversationKey, text }) {
+            const messages = adapter.renderOutbound({ turnId: 'human-intention', status: 'ok', text })
+            for (const message of messages) await adapter.send({ conversationKey, message })
+          },
+        }])),
+      )
+    : undefined
+  intentions?.start()
+  const router = intentions ? new ChannelMessageRouter(intentions, inbound) : undefined
+
   return {
     bindings: options.storage.bindings,
     events: options.storage.events,
@@ -192,23 +217,32 @@ export function createAgentHostChannelRuntime<Message>(
     },
     acceptInbound(message, agentTypeId) {
       if (closed) throw new Error('Agent Host channel runtime is closed')
-      const acknowledgement = inbound.accept(message, agentTypeId)
-      if (acknowledgement.accepted) {
+      const notifyAfterAgentDelivery = () => {
         void inbound.waitForIdle().then(() => {
           const binding = options.storage.bindings.getBinding(message.channel, message.conversationKey, agentTypeId)
           if (binding) outbound.notifyInbound(binding)
         })
       }
+      if (router) {
+        return router.accept(message, agentTypeId).then((result) => {
+          if (result.kind === 'agent' && result.ack.accepted) notifyAfterAgentDelivery()
+          return result
+        })
+      }
+      const acknowledgement = inbound.accept(message, agentTypeId)
+      if (acknowledgement.accepted) notifyAfterAgentDelivery()
       return acknowledgement
     },
     async waitForIdle() {
       await inbound.waitForIdle()
+      await intentions?.waitForIdle()
       await outbound.waitForIdle()
     },
     async close() {
       if (closed) return
       closed = true
       await inbound.dispose()
+      await intentions?.dispose()
       await outbound.dispose()
       // Storage is host-owned and may still back live Agent compositions.
       // The app closes the Agent Host first, then storage.close().
