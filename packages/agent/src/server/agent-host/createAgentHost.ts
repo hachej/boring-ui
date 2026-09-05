@@ -703,8 +703,8 @@ function createRuntime(
       const tail = previous.then(() => current)
       bindingOperationTails.set(bindingKey, tail)
       await previous
-      runtime.assertOpen()
       try {
+        runtime.assertOpen()
         return await operation()
       } finally {
         release()
