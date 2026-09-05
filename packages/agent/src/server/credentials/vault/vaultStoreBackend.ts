@@ -453,6 +453,7 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             nextCredentialVersion: credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
+            nextCredentialFieldIds: [...encryptedFields.keys()],
             nextCredentialLifecycleState: 'active',
             nextCredentialType: storedMetadata.credentialType,
             nextDekGeneration: record.dekGeneration,
@@ -514,6 +515,7 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             nextCredentialVersion: record.credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
+            nextCredentialFieldIds: [],
             nextCredentialLifecycleState: 'intentionally_absent',
             nextCredentialType: storedMetadata.credentialType,
             nextDekGeneration: record.dekGeneration,
@@ -642,11 +644,22 @@ function createVaultCredentialStoreBackendInternalV1(
         if (completed) {
           const completedAnchor = await versionAnchor.read(workspaceId)
           const records = await locked.listCredentialRecords(workspaceId)
+          const anchoredProviders = completedAnchor
+            ? Object.keys(completedAnchor.credentialVersions)
+            : []
           if (
             !completedAnchor
             || completedAnchor.dekRotationReceipts[operationId] !== completed.targetGeneration
             || completedAnchor.dekGeneration < completed.targetGeneration
-            || records.some(({ record }) => record.dekGeneration < completed.targetGeneration)
+            || records.length !== anchoredProviders.length
+            || records.some(({ providerId, record }) => (
+              record.dekGeneration !== completedAnchor.dekGeneration
+              || record.credentialVersion !== completedAnchor.credentialVersions[providerId]
+              || record.materialKind !== completedAnchor.credentialMaterialKinds[providerId]
+            ))
+            || anchoredProviders.some(
+              (providerId) => !records.some((entry) => entry.providerId === providerId),
+            )
             || await locked.getWrappedDek(workspaceId, completed.sourceGeneration)
           ) {
             unreadable('Credential DEK rotation receipt failed finalization verification')
@@ -723,8 +736,22 @@ function createVaultCredentialStoreBackendInternalV1(
         }
 
         const targetGeneration = rotation.targetGeneration
+        const credentialAnchor = anchorState
         const verifyTargetGeneration = async () => {
           const migrated = await locked.listCredentialRecords(workspaceId)
+          const anchoredProviders = Object.keys(credentialAnchor.credentialVersions)
+          if (migrated.length !== anchoredProviders.length) {
+            unreadable('Workspace credential DEK rotation record set is incomplete')
+          }
+          const migratedByProvider = new Map(migrated.map((entry) => [entry.providerId, entry.record]))
+          for (const providerId of anchoredProviders) {
+            const record = migratedByProvider.get(providerId as ProviderId)
+            if (
+              !record
+              || record.credentialVersion !== credentialAnchor.credentialVersions[providerId]
+              || record.materialKind !== credentialAnchor.credentialMaterialKinds[providerId]
+            ) unreadable('Workspace credential DEK rotation record set failed anchor verification')
+          }
           const verifyWrapped = await requireWrappedDek(
             workspaceId,
             targetGeneration,
@@ -745,9 +772,12 @@ function createVaultCredentialStoreBackendInternalV1(
                 providerId,
                 record.credentialVersion,
               )
-              if (record.materialKind === 'field-set' && fields.size === 0) {
-                unreadable('Current credential field envelopes are missing')
-              }
+              const anchoredFieldIds = credentialAnchor.credentialFieldIds[providerId]
+              if (
+                !anchoredFieldIds
+                || anchoredFieldIds.length !== fields.size
+                || anchoredFieldIds.some((fieldId) => !fields.has(fieldId))
+              ) unreadable('Workspace credential fields failed anchor verification')
               for (const [fieldId, envelope] of fields) {
                 const plaintext = decryptCredentialFieldV1({
                   plaintextDek: verifyDek,

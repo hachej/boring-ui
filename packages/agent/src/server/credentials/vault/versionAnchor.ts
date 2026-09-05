@@ -27,6 +27,7 @@ export interface WorkspaceCredentialVersionStateV1 {
   readonly dekRotationReceipts: Readonly<Record<string, number>>
   readonly credentialVersions: Readonly<Record<string, number>>
   readonly credentialMaterialKinds: Readonly<Record<string, CredentialMaterialKindV1>>
+  readonly credentialFieldIds: Readonly<Record<string, readonly string[]>>
   readonly credentialLifecycleStates: Readonly<Record<string, CredentialLifecycleStateV1>>
   readonly credentialTypes: Readonly<Record<string, string>>
 }
@@ -34,6 +35,7 @@ export interface WorkspaceCredentialVersionStateV1 {
 export interface CredentialVersionMutationResultV1<T> {
   readonly nextCredentialVersion: number
   readonly nextCredentialMaterialKind: CredentialMaterialKindV1
+  readonly nextCredentialFieldIds: readonly string[]
   readonly nextCredentialLifecycleState: CredentialLifecycleStateV1
   readonly nextCredentialType: string
   readonly nextDekGeneration: number
@@ -131,6 +133,8 @@ type MutableAnchorStateV1 = {
     dekRotationReceipts?: Record<string, number>
     credentialVersions: Record<string, number>
     credentialMaterialKinds: Record<string, CredentialMaterialKindV1>
+    /** Absent in authenticated v2 files written before field-set anchoring. */
+    credentialFieldIds?: Record<string, string[]>
     credentialLifecycleStates: Record<string, CredentialLifecycleStateV1>
     credentialTypes: Record<string, string>
   }>
@@ -196,10 +200,22 @@ async function removeAbandonedMutationLock(lockPath: string): Promise<void> {
     && Date.now() - modifiedAt >= MUTATION_LOCK_STALE_MS
   if (!sameHostDead && !staleForeignHost) return
 
-  // Two recovery processes may inspect the same abandoned file. Only unlink
-  // the exact owner snapshot we inspected; never remove a newly acquired lock.
-  const current = await readFile(lockPath, 'utf8').catch(() => undefined)
-  if (current === encoded) await unlink(lockPath).catch(() => undefined)
+  // Atomically move the candidate inode out of the acquisition pathname.
+  // Recovery never unlinks by pathname after a separate token comparison.
+  const quarantinePath = `${lockPath}.abandoned-${randomUUID()}`
+  try {
+    await rename(lockPath, quarantinePath)
+  } catch {
+    return
+  }
+  const moved = await readFile(quarantinePath, 'utf8').catch(() => undefined)
+  if (moved === encoded) {
+    await unlink(quarantinePath).catch(() => undefined)
+    return
+  }
+  // Another recovery won the race and this was a successor. Restore it when
+  // the acquisition path is still free; otherwise retain it rather than delete.
+  await rename(quarantinePath, lockPath).catch(() => undefined)
 }
 
 async function acquireMutationLock(lockPath: string) {
@@ -267,6 +283,10 @@ function copyWorkspaceState(
     dekRotationReceipts: Object.freeze({ ...workspace.dekRotationReceipts }),
     credentialVersions: Object.freeze({ ...workspace.credentialVersions }),
     credentialMaterialKinds: Object.freeze({ ...workspace.credentialMaterialKinds }),
+    credentialFieldIds: Object.freeze(Object.fromEntries(
+      Object.entries(workspace.credentialFieldIds ?? {})
+        .map(([providerId, fieldIds]) => [providerId, Object.freeze([...fieldIds])]),
+    )),
     credentialLifecycleStates: Object.freeze({ ...workspace.credentialLifecycleStates }),
     credentialTypes: Object.freeze({ ...workspace.credentialTypes }),
   })
@@ -296,6 +316,13 @@ function canonicalState(state: MutableAnchorStateV1): string {
           Object.entries(workspace.credentialMaterialKinds)
             .sort(([left], [right]) => left.localeCompare(right)),
         ),
+        ...(workspace.credentialFieldIds === undefined
+          ? {}
+          : { credentialFieldIds: Object.fromEntries(
+              Object.entries(workspace.credentialFieldIds)
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([providerId, fieldIds]) => [providerId, [...fieldIds].sort()]),
+            ) }),
         credentialLifecycleStates: Object.fromEntries(
           Object.entries(workspace.credentialLifecycleStates)
             .sort(([left], [right]) => left.localeCompare(right)),
@@ -340,6 +367,8 @@ function validateState(value: unknown): MutableAnchorStateV1 {
       || typeof workspace.credentialVersions !== 'object'
       || !workspace.credentialMaterialKinds
       || typeof workspace.credentialMaterialKinds !== 'object'
+      || (workspace.credentialFieldIds !== undefined
+        && typeof workspace.credentialFieldIds !== 'object')
       || !workspace.credentialLifecycleStates
       || typeof workspace.credentialLifecycleStates !== 'object'
       || !workspace.credentialTypes
@@ -347,11 +376,18 @@ function validateState(value: unknown): MutableAnchorStateV1 {
     ) unreadable('Credential version anchor is malformed')
     for (const [providerId, version] of Object.entries(workspace.credentialVersions)) {
       const materialKind = workspace.credentialMaterialKinds[providerId]
+      const fieldIds = workspace.credentialFieldIds?.[providerId]
       const lifecycleState = workspace.credentialLifecycleStates[providerId]
       if (
         !Number.isSafeInteger(version)
         || version < 1
         || (materialKind !== 'field-set' && materialKind !== 'none')
+        || (fieldIds !== undefined && (
+          !Array.isArray(fieldIds)
+          || fieldIds.some((fieldId) => typeof fieldId !== 'string' || fieldId.length === 0)
+          || new Set(fieldIds).size !== fieldIds.length
+          || (materialKind === 'field-set' ? fieldIds.length === 0 : fieldIds.length !== 0)
+        ))
         || !['active', 'disabled', 'revoked', 'needs_reauth', 'intentionally_absent', 'instance_fallback_enabled'].includes(lifecycleState)
         || typeof workspace.credentialTypes[providerId] !== 'string'
         || workspace.credentialTypes[providerId].length === 0
@@ -361,6 +397,9 @@ function validateState(value: unknown): MutableAnchorStateV1 {
     }
     if (
       Object.keys(workspace.credentialMaterialKinds).some(
+        (providerId) => workspace.credentialVersions[providerId] === undefined,
+      )
+      || Object.keys(workspace.credentialFieldIds ?? {}).some(
         (providerId) => workspace.credentialVersions[providerId] === undefined,
       )
       || Object.keys(workspace.credentialLifecycleStates).some(
@@ -435,6 +474,10 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
             ...current?.credentialMaterialKinds,
             [providerId]: mutation.nextCredentialMaterialKind,
           },
+          credentialFieldIds: {
+            ...current?.credentialFieldIds,
+            [providerId]: [...mutation.nextCredentialFieldIds].sort(),
+          },
           credentialLifecycleStates: {
             ...current?.credentialLifecycleStates,
             [providerId]: mutation.nextCredentialLifecycleState,
@@ -503,6 +546,7 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
             dekRotationReceipts: { ...currentWorkspace?.dekRotationReceipts },
             credentialVersions: { ...currentWorkspace?.credentialVersions },
             credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
+            credentialFieldIds: { ...currentWorkspace?.credentialFieldIds },
             credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
             credentialTypes: { ...currentWorkspace?.credentialTypes },
           }
@@ -784,6 +828,10 @@ export function createLocalFileCredentialVersionAnchorV1(
             ...currentWorkspace?.credentialMaterialKinds,
             [providerId]: mutation.nextCredentialMaterialKind,
           },
+          credentialFieldIds: {
+            ...currentWorkspace?.credentialFieldIds,
+            [providerId]: [...mutation.nextCredentialFieldIds].sort(),
+          },
           credentialLifecycleStates: {
             ...currentWorkspace?.credentialLifecycleStates,
             [providerId]: mutation.nextCredentialLifecycleState,
@@ -854,6 +902,7 @@ export function createLocalFileCredentialVersionAnchorV1(
             dekRotationReceipts: { ...currentWorkspace?.dekRotationReceipts },
             credentialVersions: { ...currentWorkspace?.credentialVersions },
             credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
+            credentialFieldIds: { ...currentWorkspace?.credentialFieldIds },
             credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
             credentialTypes: { ...currentWorkspace?.credentialTypes },
           }

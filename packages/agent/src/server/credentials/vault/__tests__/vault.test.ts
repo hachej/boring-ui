@@ -321,6 +321,7 @@ describe('local-KEK credential version anchor', () => {
       return {
         nextCredentialVersion: 1,
         nextCredentialMaterialKind: 'none',
+        nextCredentialFieldIds: [],
         nextCredentialLifecycleState: 'intentionally_absent',
         nextCredentialType: 'api-key',
         nextDekGeneration: 1,
@@ -346,6 +347,7 @@ describe('local-KEK credential version anchor', () => {
     await anchor.withMutation('ws-a', providerId('provider-a'), async () => ({
       nextCredentialVersion: 1,
       nextCredentialMaterialKind: 'field-set',
+        nextCredentialFieldIds: ['api-key'],
       nextCredentialLifecycleState: 'active',
       nextCredentialType: 'oauth',
       nextDekGeneration: 1,
@@ -357,6 +359,7 @@ describe('local-KEK credential version anchor', () => {
       return {
         nextCredentialVersion: 1,
         nextCredentialMaterialKind: 'none',
+        nextCredentialFieldIds: [],
         nextCredentialLifecycleState: 'intentionally_absent',
         nextCredentialType: 'api-key',
         nextDekGeneration: 1,
@@ -374,6 +377,10 @@ describe('local-KEK credential version anchor', () => {
       credentialMaterialKinds: {
         'provider-a': 'field-set',
         'provider-b': 'none',
+      },
+      credentialFieldIds: {
+        'provider-a': ['api-key'],
+        'provider-b': [],
       },
       credentialLifecycleStates: {
         'provider-a': 'active',
@@ -398,6 +405,7 @@ describe('local-KEK credential version anchor', () => {
     await anchor.withMutation('ws-a', PROVIDER_A, async () => ({
       nextCredentialVersion: 1,
       nextCredentialMaterialKind: 'field-set',
+        nextCredentialFieldIds: ['api-key'],
       nextCredentialLifecycleState: 'active',
       nextCredentialType: 'api-key',
       nextDekGeneration: 1,
@@ -422,6 +430,7 @@ describe('local-KEK credential version anchor', () => {
       () => anchor.withMutation('ws-a', PROVIDER_A, async () => ({
         nextCredentialVersion: 2,
         nextCredentialMaterialKind: 'field-set',
+        nextCredentialFieldIds: ['api-key'],
         nextCredentialLifecycleState: 'active',
         nextCredentialType: 'api-key',
         nextDekGeneration: 1,

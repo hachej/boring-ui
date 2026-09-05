@@ -405,6 +405,10 @@ describe('Postgres credential rollback protection', () => {
       targetGeneration: 2,
       phase: 'verified',
     })
+    await sql`
+      DELETE FROM workspace_provider_credentials
+      WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+    `
 
     await expect(vault.rotateWorkspaceDek(workspaceId, 'forged-verified-operation'))
       .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
