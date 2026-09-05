@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
@@ -34,6 +35,7 @@ import {
   AgentSessionActivityIndex,
   AgentSessionInventory,
 } from './sessionInventory'
+import type { AgentInvocationFundingPolicyV1 } from '../../shared/workspaceAgentDispatcher'
 import type {
   AgentHostAgentSpec,
   AgentHostHandle,
@@ -58,6 +60,7 @@ export interface RuntimeBinding {
   readonly agentTypeId: string
   readonly workspaceScopeId: string
   readonly authSubjectId: string
+  readonly fundingPolicy: AgentInvocationFundingPolicyV1
   readonly generation: number
   readonly scope: ResolvedAgentRuntimeScope
   readonly environmentLease: EnvironmentLease
@@ -133,6 +136,7 @@ export interface AgentHostRuntime {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     resolvedRuntimeScope?: ResolvedAgentRuntimeScope,
+    fundingPolicy?: AgentInvocationFundingPolicyV1,
   ): Promise<RuntimeBinding>
   findPublishedCurrentBinding(
     agentTypeId: string,
@@ -141,6 +145,7 @@ export interface AgentHostRuntime {
     physicalBindingIdentity: string,
     bindingIdentity?: string,
     provisioningFingerprint?: string,
+    fundingPolicy?: AgentInvocationFundingPolicyV1,
   ): RuntimeBinding | undefined
   startDrain(): void
   drainRuntime(): Promise<void>
@@ -289,6 +294,7 @@ function resolveHostLedgerPath(options: CreateAgentHostOptions): string | undefi
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
+  invocationFundingPolicy: AsyncLocalStorage<AgentInvocationFundingPolicyV1>,
   credentialComposition?: WorkspaceCredentialVaultCompositionV1,
 ): AgentHostRuntime {
   const compiledById = new Map(compiledAgents.map((agent) => [agent.agentTypeId, agent]))
@@ -486,8 +492,13 @@ function createRuntime(
       return resolved
     },
     resolveAgentRuntimeScope,
-    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope) {
+    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope, requestedFundingPolicy) {
       runtime.assertOpen()
+      // Direct authenticated Gateway/HTTP use is interactive. Dispatcher callers
+      // execute inside an explicit authority-issued policy context below.
+      const fundingPolicy = credentialComposition
+        ? requestedFundingPolicy ?? invocationFundingPolicy.getStore() ?? 'personal-subscription'
+        : 'api-key-only'
       await assertAgentAccess(agentTypeId, scope, claim, 'runtime.bind')
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
@@ -503,6 +514,7 @@ function createRuntime(
         agentTypeId,
         claim.workspaceScopeId,
         claim.authSubjectId,
+        fundingPolicy,
         resolved.identity,
         resolved.environment.provisioningFingerprint,
         resolved.physicalBindingIdentity ?? resolved.identity,
@@ -512,6 +524,7 @@ function createRuntime(
         agentTypeId,
         claim.workspaceScopeId,
         claim.authSubjectId,
+        fundingPolicy,
         physicalBindingIdentity,
       ])
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
@@ -549,6 +562,7 @@ function createRuntime(
               agent,
               workspaceScopeId: claim.workspaceScopeId,
               actorUserId: claim.authSubjectId,
+              fundingPolicy,
               runtimeScope: resolved,
               runtimeBundle,
               credentialComposition,
@@ -567,6 +581,7 @@ function createRuntime(
               agentTypeId,
               workspaceScopeId: claim.workspaceScopeId,
               authSubjectId: claim.authSubjectId,
+              fundingPolicy,
               generation,
               scope: resolved,
               environmentLease,
@@ -623,11 +638,16 @@ function createRuntime(
       physicalBindingIdentity,
       bindingIdentity,
       provisioningFingerprint,
+      requestedFundingPolicy,
     ) {
+      const fundingPolicy = credentialComposition
+        ? requestedFundingPolicy ?? invocationFundingPolicy.getStore() ?? 'personal-subscription'
+        : 'api-key-only'
       const exact = publishedCurrentBindings.get(JSON.stringify([
         agentTypeId,
         workspaceScopeId,
         authSubjectId,
+        fundingPolicy,
         physicalBindingIdentity,
       ]))
       if (exact) return exact
@@ -635,6 +655,7 @@ function createRuntime(
         binding.agentTypeId === agentTypeId
         && binding.workspaceScopeId === workspaceScopeId
         && binding.authSubjectId === authSubjectId
+        && binding.fundingPolicy === fundingPolicy
         && (!bindingIdentity || binding.scope.identity === bindingIdentity)
         && (!provisioningFingerprint
           || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
@@ -826,7 +847,8 @@ export async function createAgentHost(
           credentialComposition.createPiCredentialStore(workspaceId, userId, { allowSubscriptionOAuth: true }),
       })
     : undefined
-  const runtime = createRuntime(options, compiledAgents, credentialComposition)
+  const invocationFundingPolicy = new AsyncLocalStorage<AgentInvocationFundingPolicyV1>()
+  const runtime = createRuntime(options, compiledAgents, invocationFundingPolicy, credentialComposition)
   if (
     runtime.ledger.durability !== 'durable-transactional'
     && options.inMemoryRequestLedgerMode === undefined
@@ -954,7 +976,15 @@ export async function createAgentHost(
   const runWithWorkspaceAgent = (
     input: import('./types').AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
-  ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
+  ) => {
+    if (input.fundingPolicy !== 'api-key-only') {
+      throw new TypeError('workspace dispatcher invocations must use api-key-only funding')
+    }
+    return invocationFundingPolicy.run(
+      input.fundingPolicy,
+      () => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run }),
+    )
+  }
 
   const resolveHarnessBackendForRequest = async (
     authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,

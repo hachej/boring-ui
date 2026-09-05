@@ -371,6 +371,7 @@ export async function createStandaloneAgentHostApp(
         agentTypeId: 'default',
         context: { workspaceId: sessionId, userId: 'standalone' },
         requestId: 'standalone-initialize',
+        fundingPolicy: 'api-key-only',
       }, async () => undefined)
     }
     return app

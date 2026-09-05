@@ -151,6 +151,7 @@ function createLeaseBoundDelegateRuntime(
       agentTypeId: 'default',
       context,
       requestId: `managed-mcp:${randomUUID()}`,
+      fundingPolicy: 'api-key-only',
       ...(request ? { request } : {}),
     }, async (binding) => {
       result = await operation(binding)

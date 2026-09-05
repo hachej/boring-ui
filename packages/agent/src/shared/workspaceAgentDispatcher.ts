@@ -54,10 +54,14 @@ export interface LeaseBoundWorkspaceAgent {
   stop(sessionId: string, requestId: string): Promise<StopReceipt>
 }
 
+export type AgentInvocationFundingPolicyV1 = 'personal-subscription' | 'api-key-only'
+
 export interface WorkspaceAgentDirectRunInput {
   readonly agentTypeId: string
   readonly context: WorkspaceAgentDispatcherContext
   readonly requestId: string
+  /** Dispatcher invocations are unattended by contract and can never opt into personal OAuth. */
+  readonly fundingPolicy: 'api-key-only'
 }
 
 export type WorkspaceAgentDirectRunCallback = (

@@ -393,11 +393,20 @@ describe('createAgentHost', () => {
     })).toThrow(expect.objectContaining({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED }))
 
     let retained: import('../types').LeaseBoundWorkspaceAgent | undefined
+    expect(() => created.runWithWorkspaceAgent({
+      authorizedScope: scope,
+      agentTypeId: 'alpha',
+      context: { workspaceId: 'workspace-a', userId: 'subject-a' },
+      requestId: 'dispatcher-invalid-funding',
+      fundingPolicy: 'personal-subscription',
+    } as never, async () => undefined)).toThrow('must use api-key-only funding')
+
     await created.runWithWorkspaceAgent({
       authorizedScope: scope,
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'dispatcher-1',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       expect(Object.keys(binding).sort()).toEqual([
@@ -711,6 +720,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'fire-and-forget',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       const watcher = binding.workspace.watch?.()
@@ -778,6 +788,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'never-settling-operation',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       await binding.workspace.writeFile('never.txt', 'never')
@@ -811,6 +822,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'stuck-callback',
+      fundingPolicy: 'api-key-only',
     }, async () => {
       markStarted()
       await new Promise<never>(() => {})

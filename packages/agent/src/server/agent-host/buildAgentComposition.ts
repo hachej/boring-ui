@@ -32,6 +32,7 @@ import type {
   WorkspaceCredentialRuntimeViewV1,
   WorkspaceCredentialVaultCompositionV1,
 } from '../credentials/startupComposition'
+import type { AgentInvocationFundingPolicyV1 } from '../../shared/workspaceAgentDispatcher'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -130,6 +131,8 @@ export interface BuildAgentCompositionInput {
   readonly workspaceScopeId: string
   /** Verified claim subject; omitted only by direct test/dev composition. */
   readonly actorUserId?: string
+  /** Invocation authority, independent of the authored Agent's mutable name/id. */
+  readonly fundingPolicy: AgentInvocationFundingPolicyV1
   readonly runtimeScope: ResolvedAgentRuntimeScope
   readonly runtimeBundle: RuntimeBundle
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
@@ -168,9 +171,9 @@ export interface BuiltAgentComposition {
   dispose(): Promise<void>
 }
 
-/** Factory seats are unattended-capable and may never spend subscription OAuth. */
-export function allowsSubscriptionOAuthForAgentTypeV1(agentTypeId: string): boolean {
-  return !agentTypeId.startsWith('boring-')
+/** Only an explicitly authorized interactive invocation may spend personal subscription OAuth. */
+export function allowsSubscriptionOAuthForInvocationV1(policy: AgentInvocationFundingPolicyV1): boolean {
+  return policy === 'personal-subscription'
 }
 
 /** Environment skill roots require an ordinary trusted host provisioning grant. */
@@ -302,7 +305,7 @@ export async function buildAgentComposition(
             input.actorUserId,
             {
               allowSubscriptionOAuth: input.actorUserId !== undefined
-                && allowsSubscriptionOAuthForAgentTypeV1(input.agent.agentTypeId),
+                && allowsSubscriptionOAuthForInvocationV1(input.fundingPolicy),
             },
           ),
         }

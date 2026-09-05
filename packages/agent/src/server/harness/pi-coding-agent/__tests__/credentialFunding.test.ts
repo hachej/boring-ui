@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { createAssistantMessageEventStream, type OAuthCredential } from '@earendil-works/pi-ai'
 import { ModelRuntime } from '@mariozechner/pi-coding-agent'
-import { allowsSubscriptionOAuthForAgentTypeV1 } from '../../../agent-host/buildAgentComposition'
+import { allowsSubscriptionOAuthForInvocationV1 } from '../../../agent-host/buildAgentComposition'
 import {
   createInMemoryCredentialVaultPersistenceV1,
   createInMemoryCredentialVersionAnchorV1,
@@ -21,11 +21,11 @@ function backend() {
 }
 
 describe('workspace credential funding policy', () => {
-  test('normal interactive agents can select Codex OAuth while Factory seats cannot', async () => {
+  test('invocation authority allows interactive OAuth and denies unattended agents regardless of name', async () => {
     const vaultBackend = backend()
     const normal = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
-      allowSubscriptionOAuth: allowsSubscriptionOAuthForAgentTypeV1('default'),
+      allowSubscriptionOAuth: allowsSubscriptionOAuthForInvocationV1('personal-subscription'),
     })
     const oauth: OAuthCredential = {
       type: 'oauth', refresh: 'refresh-token', access: 'access-token', expires: Date.now() + 60_000,
@@ -33,12 +33,15 @@ describe('workspace credential funding policy', () => {
     await normal.modify('openai-codex', async () => oauth)
     expect(await normal.read('openai-codex')).toEqual(oauth)
 
-    const factory = createVaultCredentialStoreV1({
-      workspaceId: 'workspace-a', vaultBackend,
-      allowSubscriptionOAuth: allowsSubscriptionOAuthForAgentTypeV1('boring-worker'),
-    })
-    expect(await factory.read('openai-codex')).toBeUndefined()
-    expect(await factory.list()).toEqual([])
+    for (const unattendedAgentTypeId of ['default', 'renamed-custom-worker']) {
+      const unattended = createVaultCredentialStoreV1({
+        workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
+        allowSubscriptionOAuth: allowsSubscriptionOAuthForInvocationV1('api-key-only'),
+      })
+      expect(unattendedAgentTypeId).not.toBe('boring-worker')
+      expect(await unattended.read('openai-codex')).toBeUndefined()
+      expect(await unattended.list()).toEqual([])
+    }
   })
 
   test('normal and Factory runtimes complete deterministically with workspace API-key funding', async () => {
@@ -49,10 +52,13 @@ describe('workspace credential funding policy', () => {
     })
     await writer.modify('credential-proof', async () => ({ type: 'api_key', key: 'sk-factory-funded' }))
 
-    for (const agentTypeId of ['default', 'boring-worker']) {
+    for (const [agentTypeId, fundingPolicy] of [
+      ['default', 'personal-subscription'],
+      ['renamed-custom-worker', 'api-key-only'],
+    ] as const) {
       const store = createVaultCredentialStoreV1({
         workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
-        allowSubscriptionOAuth: allowsSubscriptionOAuthForAgentTypeV1(agentTypeId),
+        allowSubscriptionOAuth: allowsSubscriptionOAuthForInvocationV1(fundingPolicy),
       })
       const runtime = await ModelRuntime.create({ credentials: store, modelsPath: null, refreshOnCreate: false })
       runtime.registerProvider('credential-proof', {

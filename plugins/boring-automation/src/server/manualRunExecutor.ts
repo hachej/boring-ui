@@ -141,6 +141,7 @@ export class ManualRunExecutor {
         agentTypeId,
         context: actor,
         requestId: run.id,
+        fundingPolicy: 'api-key-only',
         ...(input.request ? { request: input.request } : {}),
       }, async (binding) => {
         const dispatched = await binding.dispatch({

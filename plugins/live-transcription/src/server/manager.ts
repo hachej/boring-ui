@@ -161,6 +161,7 @@ export class LiveTranscriptManager {
       context: actor,
       requestId: `live-transcript:${randomUUID()}`,
       request,
+      fundingPolicy: 'api-key-only',
     }, async (binding: LeaseBoundWorkspaceAgent) => {
       try {
         const response = await this.createSession(
