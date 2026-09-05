@@ -5,6 +5,8 @@ import {
 } from '../../../shared/credentials'
 import type {
   CredentialFieldId,
+  CredentialKeyLifecycleOperationV1,
+  CredentialKeyLifecycleReceiptV1,
   CredentialMetadataV1,
   CredentialWriteRequestV1,
   ProviderId,
@@ -18,7 +20,9 @@ import type {
 } from '../../credentials'
 
 const ROUTE_PREFIX = '/api/v1/credentials'
+const LIFECYCLE_ROUTE_PREFIX = '/api/v1/credential-key-lifecycle'
 const MAX_DISPLAY_LABEL_LENGTH = 256
+const MAX_OPERATION_ID_LENGTH = 128
 
 export interface CredentialRoutesOptionsV1 {
   readonly providerRegistry: ProviderRegistryV1
@@ -44,7 +48,7 @@ function routeError(error: unknown): CredentialResolutionError {
   )
 }
 
-async function requireOwner(
+async function verifiedAuthority(
   request: FastifyRequest,
   options: CredentialRoutesOptionsV1,
 ): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
@@ -61,8 +65,8 @@ async function requireOwner(
     !authority
     || typeof authority.workspaceId !== 'string'
     || authority.workspaceId.length === 0
-    || authority.principal.kind !== 'user'
-    || authority.principal.membershipRole !== 'owner'
+    || typeof authority.authorizationReceiptId !== 'string'
+    || authority.authorizationReceiptId.length === 0
     || !Number.isFinite(Date.parse(authority.expiresAt))
     || Date.parse(authority.expiresAt) <= Date.now()
   ) {
@@ -72,6 +76,88 @@ async function requireOwner(
     )
   }
   return authority
+}
+
+async function requireOwner(
+  request: FastifyRequest,
+  options: CredentialRoutesOptionsV1,
+): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
+  const authority = await verifiedAuthority(request, options)
+  if (
+    authority.principal.kind !== 'user'
+    || authority.principal.membershipRole !== 'owner'
+  ) {
+    throw new CredentialResolutionError(
+      CREDENTIAL_ERROR_CODES.FORBIDDEN,
+      'Credential operation is forbidden',
+    )
+  }
+  return authority
+}
+
+async function requireLifecycleOperator(
+  request: FastifyRequest,
+  options: CredentialRoutesOptionsV1,
+): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
+  const authority = await verifiedAuthority(request, options)
+  const principal = authority.principal
+  const authorized = principal.kind === 'user'
+    ? principal.membershipRole === 'owner' && principal.userId.length > 0
+    : principal.principalId.length > 0 && principal.workspaceGrantId.length > 0
+  if (!authorized) {
+    throw new CredentialResolutionError(
+      CREDENTIAL_ERROR_CODES.FORBIDDEN,
+      'Credential operation is forbidden',
+    )
+  }
+  return authority
+}
+
+function parseLifecycleBody(
+  body: unknown,
+  workspaceId: string,
+  operation: CredentialKeyLifecycleOperationV1,
+): { operationId: string; dekGeneration?: number } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
+  }
+  const input = body as { operationId?: unknown; confirmWorkspaceId?: unknown; dekGeneration?: unknown }
+  const allowedKeys = operation === 'rewrap'
+    ? new Set(['operationId', 'confirmWorkspaceId', 'dekGeneration'])
+    : new Set(['operationId', 'confirmWorkspaceId'])
+  if (
+    Object.keys(body).some((key) => !allowedKeys.has(key))
+    || typeof input.operationId !== 'string'
+    || input.operationId.length === 0
+    || input.operationId.length > MAX_OPERATION_ID_LENGTH
+    || /[\u0000-\u001f\u007f]/.test(input.operationId)
+    || input.confirmWorkspaceId !== workspaceId
+  ) {
+    throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
+  }
+  if (operation === 'rewrap') {
+    if (!Number.isSafeInteger(input.dekGeneration) || (input.dekGeneration as number) < 1) {
+      throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
+    }
+    return { operationId: input.operationId, dekGeneration: input.dekGeneration as number }
+  }
+  return { operationId: input.operationId }
+}
+
+function lifecycleReceipt(
+  authority: VerifiedWorkspaceCredentialAuthorityV1,
+  operation: CredentialKeyLifecycleOperationV1,
+  operationId: string,
+  dekGeneration?: number,
+): CredentialKeyLifecycleReceiptV1 {
+  return {
+    contractVersion: 'boring.credential-key-lifecycle-receipt.v1',
+    operation,
+    workspaceId: authority.workspaceId,
+    operationId,
+    status: 'completed',
+    ...(dekGeneration === undefined ? {} : { dekGeneration }),
+  }
 }
 
 function providerIdFrom(request: FastifyRequest): ProviderId {
@@ -274,6 +360,64 @@ export async function credentialsRoutes(
     }
     await options.oauthBroker.cancel(workspaceId, authority.principal.userId, flowId)
     return reply.code(204).send()
+  })
+
+  app.post(`${LIFECYCLE_ROUTE_PREFIX}/rotate`, async (request, reply) => {
+    const authority = await requireLifecycleOperator(request, options)
+    const input = parseLifecycleBody(request.body, authority.workspaceId, 'rotate')
+    const dekGeneration = await options.vaultBackend.rotateWorkspaceDek(
+      authority.workspaceId,
+      input.operationId,
+    )
+    request.log.info({
+      workspaceId: authority.workspaceId,
+      credentialLifecycleOperation: 'rotate',
+      authorizationReceiptId: authority.authorizationReceiptId,
+      dekGeneration,
+    }, 'credential key lifecycle completed')
+    return reply.code(200).send(lifecycleReceipt(
+      authority,
+      'rotate',
+      input.operationId,
+      dekGeneration,
+    ))
+  })
+
+  app.post(`${LIFECYCLE_ROUTE_PREFIX}/rewrap`, async (request, reply) => {
+    const authority = await requireLifecycleOperator(request, options)
+    const input = parseLifecycleBody(request.body, authority.workspaceId, 'rewrap')
+    await options.vaultBackend.rewrapWorkspaceDek(
+      authority.workspaceId,
+      input.dekGeneration!,
+    )
+    request.log.info({
+      workspaceId: authority.workspaceId,
+      credentialLifecycleOperation: 'rewrap',
+      authorizationReceiptId: authority.authorizationReceiptId,
+      dekGeneration: input.dekGeneration,
+    }, 'credential key lifecycle completed')
+    return reply.code(200).send(lifecycleReceipt(
+      authority,
+      'rewrap',
+      input.operationId,
+      input.dekGeneration,
+    ))
+  })
+
+  app.post(`${LIFECYCLE_ROUTE_PREFIX}/crypto-shred`, async (request, reply) => {
+    const authority = await requireLifecycleOperator(request, options)
+    const input = parseLifecycleBody(request.body, authority.workspaceId, 'crypto-shred')
+    await options.vaultBackend.cryptoShredWorkspace(authority.workspaceId)
+    request.log.info({
+      workspaceId: authority.workspaceId,
+      credentialLifecycleOperation: 'crypto-shred',
+      authorizationReceiptId: authority.authorizationReceiptId,
+    }, 'credential key lifecycle completed')
+    return reply.code(200).send(lifecycleReceipt(
+      authority,
+      'crypto-shred',
+      input.operationId,
+    ))
   })
 
   app.put(`${ROUTE_PREFIX}/:providerId`, async (request, reply) => {

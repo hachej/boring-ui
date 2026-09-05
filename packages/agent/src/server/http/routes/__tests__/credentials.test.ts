@@ -1,5 +1,5 @@
 import Fastify from 'fastify'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import {
   CREDENTIAL_ERROR_CODES,
   createProviderRegistryV1,
@@ -37,6 +37,7 @@ async function setup(
   role: 'owner' | 'editor' | 'viewer' = 'owner',
   backendOverride?: VaultCredentialStoreBackendV1,
   includeCodex = false,
+  authorityOverride?: VerifiedWorkspaceCredentialAuthorityV1,
 ) {
   const providerRegistry = createProviderRegistryV1([{
     contractVersion: 'boring.provider.v1',
@@ -79,7 +80,7 @@ async function setup(
   await app.register(credentialsRoutes, {
     providerRegistry,
     vaultBackend,
-    authorizeRequest: async () => authority(role),
+    authorizeRequest: async () => authorityOverride ?? authority(role),
   })
   return { app, vaultBackend }
 }
@@ -166,6 +167,108 @@ describe('owner credential routes', () => {
     expect(legacy.body).not.toContain('Legacy Codex key')
     expect(legacy.body).not.toContain('-key')
     await app.close()
+  })
+
+  test('runs confirmed key lifecycle operations with metadata-only idempotency receipts', async () => {
+    const base = createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createInMemoryCredentialVersionAnchorV1(),
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'test-key',
+        keyVersion: 1,
+        loadKek: async () => new Uint8Array(32).fill(7),
+      }),
+    })
+    const calls: string[] = []
+    const backend: VaultCredentialStoreBackendV1 = {
+      ...base,
+      async rotateWorkspaceDek(workspaceId, operationId) {
+        calls.push(`rotate:${workspaceId}:${operationId}`)
+        return 2
+      },
+      async rewrapWorkspaceDek(workspaceId, generation) {
+        calls.push(`rewrap:${workspaceId}:${generation}`)
+      },
+      async cryptoShredWorkspace(workspaceId) {
+        calls.push(`shred:${workspaceId}`)
+      },
+    }
+    const systemAuthority: VerifiedWorkspaceCredentialAuthorityV1 = {
+      workspaceId: 'workspace-a',
+      appId: 'test',
+      principal: { kind: 'system', principalId: 'operator-a', workspaceGrantId: 'grant-a' },
+      authorizationReceiptId: 'operator-receipt-a',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }
+    const { app } = await setup('owner', backend, false, systemAuthority)
+    const post = (operation: string, payload: Record<string, unknown>) => app.inject({
+      method: 'POST',
+      url: `/api/v1/credential-key-lifecycle/${operation}`,
+      payload: { operationId: `${operation}-1`, confirmWorkspaceId: 'workspace-a', ...payload },
+    })
+
+    const rotate = await post('rotate', {})
+    const rotateRetry = await post('rotate', {})
+    const rewrap = await post('rewrap', { dekGeneration: 2 })
+    const shred = await post('crypto-shred', {})
+    const shredRetry = await post('crypto-shred', {})
+
+    expect(rotate.statusCode).toBe(200)
+    expect(rotateRetry.json()).toEqual(rotate.json())
+    expect(rotate.json()).toEqual({
+      contractVersion: 'boring.credential-key-lifecycle-receipt.v1',
+      operation: 'rotate',
+      workspaceId: 'workspace-a',
+      operationId: 'rotate-1',
+      status: 'completed',
+      dekGeneration: 2,
+    })
+    expect(rewrap.json()).toMatchObject({ operation: 'rewrap', operationId: 'rewrap-1', dekGeneration: 2 })
+    expect(shredRetry.json()).toEqual(shred.json())
+    expect(calls).toEqual([
+      'rotate:workspace-a:rotate-1',
+      'rotate:workspace-a:rotate-1',
+      'rewrap:workspace-a:2',
+      'shred:workspace-a',
+      'shred:workspace-a',
+    ])
+    for (const response of [rotate, rotateRetry, rewrap, shred, shredRetry]) {
+      expect(response.body).not.toMatch(/secret|cipher|wrapped/i)
+    }
+    await app.close()
+  })
+
+  test('denies non-owner lifecycle calls and requires workspace-bound confirmation without leaking input', async () => {
+    const rotateWorkspaceDek = vi.fn(async () => 2)
+    const { app } = await setup('editor', {
+      ...createVaultCredentialStoreBackendV1({
+        persistence: createInMemoryCredentialVaultPersistenceV1(),
+        versionAnchor: createInMemoryCredentialVersionAnchorV1(),
+        kmsBackend: createLocalKekWorkspaceKekProviderV1({
+          keyRef: 'test-key', keyVersion: 1, loadKek: async () => new Uint8Array(32).fill(7),
+        }),
+      }),
+      rotateWorkspaceDek,
+    })
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/api/v1/credential-key-lifecycle/rotate',
+      payload: { operationId: 'secret-canary', confirmWorkspaceId: 'workspace-a' },
+    })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.body).not.toContain('secret-canary')
+    expect(rotateWorkspaceDek).not.toHaveBeenCalled()
+    await app.close()
+
+    const owner = await setup('owner')
+    const unconfirmed = await owner.app.inject({
+      method: 'POST',
+      url: '/api/v1/credential-key-lifecycle/crypto-shred',
+      payload: { operationId: 'secret-canary', confirmWorkspaceId: 'workspace-b' },
+    })
+    expect(unconfirmed.statusCode).toBe(400)
+    expect(unconfirmed.body).not.toContain('secret-canary')
+    await owner.app.close()
   })
 
   test('supports create, replace, disable, revoke, and delete without plaintext reads', async () => {

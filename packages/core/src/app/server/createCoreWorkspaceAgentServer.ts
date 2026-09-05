@@ -42,6 +42,7 @@ import {
   type RuntimeProvisioningContribution,
   type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
+  type WorkspaceCredentialLifecycleV1,
 } from '@hachej/boring-agent/server'
 import { AgentGatewayErrorCode } from '@hachej/boring-agent/shared'
 import type { VerifiedWorkspaceCredentialAuthorityV1 } from '@hachej/boring-agent/shared'
@@ -1014,6 +1015,7 @@ async function createCoreRuntime(
   requestScopeResolver?: CoreRequestScopeResolver,
   authBaseURL?: CoreDynamicAuthBaseURL,
   resolveInitialAgentSeat?: ResolveInitialAgentSeat,
+  shredWorkspaceCredentials?: (workspaceId: string) => Promise<void>,
 ): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
@@ -1034,7 +1036,10 @@ async function createCoreRuntime(
     config.encryption.workspaceSettingsKey,
   )
 
-  const app = await createCoreApp(config, { requestScopeResolver }) as CoreWorkspaceAgentServer
+  const app = await createCoreApp(config, {
+    requestScopeResolver,
+    shredWorkspaceCredentials,
+  }) as CoreWorkspaceAgentServer
   // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
   const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
   const telemetrySource = customTelemetry
@@ -1149,6 +1154,14 @@ export async function createCoreWorkspaceAgentServer(
     defaultAgentTypeId: applicationDefaultAgentTypeId,
     signupAgentDefaults,
   }
+  let credentialLifecycle: WorkspaceCredentialLifecycleV1 | undefined
+  const shredWorkspaceCredentials = options.credentials
+    ? async (workspaceId: string) => {
+        const lifecycle = credentialLifecycle
+        if (!lifecycle) throw new Error('credential lifecycle is not ready')
+        await lifecycle.cryptoShredWorkspace(workspaceId)
+      }
+    : undefined
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
     config,
     signupAgentDefaults,
@@ -1157,6 +1170,7 @@ export async function createCoreWorkspaceAgentServer(
     options.requestScopeResolver,
     options.authBaseURL,
     options.resolveInitialAgentSeat,
+    shredWorkspaceCredentials,
   )
   const appRoot = options.appRoot
   const serveFrontend =
@@ -1430,6 +1444,9 @@ export async function createCoreWorkspaceAgentServer(
     ? {
         env: process.env,
         vaultPersistence: createPostgresCredentialVaultPersistenceV1(sql),
+        onLifecycleReady(lifecycle) {
+          credentialLifecycle = lifecycle
+        },
         async authorizeOwnerRequest(request): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
           const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
           const userId = request.user?.id

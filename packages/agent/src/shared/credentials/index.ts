@@ -1,4 +1,6 @@
 export type {
+  CredentialKeyLifecycleOperationV1,
+  CredentialKeyLifecycleReceiptV1,
   CredentialLifecycleStateV1,
   CredentialMetadataListResponseV1,
   CredentialMetadataV1,

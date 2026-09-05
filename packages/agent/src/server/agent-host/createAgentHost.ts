@@ -841,6 +841,12 @@ export async function createAgentHost(
     persistence: options.credentials?.vaultPersistence,
     authorityVerifier: options.credentials?.authorityVerifier,
   })
+  if (credentialComposition && options.credentials?.onLifecycleReady) {
+    options.credentials.onLifecycleReady(Object.freeze({
+      cryptoShredWorkspace: (workspaceId: string) =>
+        credentialComposition.vaultBackend.cryptoShredWorkspace(workspaceId),
+    }))
+  }
   const oauthBroker = credentialComposition
     ? createOpenAiCodexOAuthBrokerV1({
         credentialStoreForActor: (workspaceId, userId) =>

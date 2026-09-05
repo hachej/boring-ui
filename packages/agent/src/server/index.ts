@@ -206,6 +206,7 @@ export type {
   AgentHostEnvironmentScope,
   AgentHostHandle,
   AgentHostCredentialOptionsV1,
+  WorkspaceCredentialLifecycleV1,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,

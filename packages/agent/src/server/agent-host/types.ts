@@ -423,6 +423,11 @@ export interface CreateAgentHostOptions {
   readonly credentials?: AgentHostCredentialOptionsV1
 }
 
+export interface WorkspaceCredentialLifecycleV1 {
+  /** Irreversibly fences and destroys credential key access for one workspace. */
+  cryptoShredWorkspace(workspaceId: string): Promise<void>
+}
+
 export interface AgentHostCredentialOptionsV1 {
   /** Env-shaped record override; defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>
@@ -434,6 +439,8 @@ export interface AgentHostCredentialOptionsV1 {
   readonly authorizeOwnerRequest?: (
     request: FastifyRequest,
   ) => VerifiedWorkspaceCredentialAuthorityV1 | Promise<VerifiedWorkspaceCredentialAuthorityV1>
+  /** Core deletion composition receives only the narrow irreversible lifecycle seam. */
+  readonly onLifecycleReady?: (lifecycle: WorkspaceCredentialLifecycleV1) => void
 }
 
 export interface CreatedAgentHost {

@@ -220,6 +220,7 @@ export async function createCoreApp(
 
   app.decorate('config', config)
   app.decorate('provisioner', options?.provisioner ?? null)
+  app.decorate('shredWorkspaceCredentials', options?.shredWorkspaceCredentials ?? null)
 
   app.decorate('addRedactionPaths', function (paths: string[]) {
     for (const p of paths) {

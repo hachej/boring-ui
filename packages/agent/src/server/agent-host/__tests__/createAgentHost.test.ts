@@ -86,6 +86,21 @@ describe('createAgentHost', () => {
     })
   })
 
+  it('publishes only the narrow credential lifecycle seam for Core deletion composition', async () => {
+    const onLifecycleReady = vi.fn()
+    const created = await createAgentHost({
+      ...options(await root()),
+      credentials: { env: await credentialEnv(), onLifecycleReady },
+    })
+
+    expect(onLifecycleReady).toHaveBeenCalledOnce()
+    const lifecycle = onLifecycleReady.mock.calls[0]![0]
+    expect(Object.keys(lifecycle)).toEqual(['cryptoShredWorkspace'])
+    await expect(lifecycle.cryptoShredWorkspace('workspace-a')).resolves.toBeUndefined()
+    await expect(lifecycle.cryptoShredWorkspace('workspace-a')).resolves.toBeUndefined()
+    await created.host.close()
+  })
+
   it('maps unattended HTTP requests to a policy-isolated runtime binding', async () => {
     const workspaceRoot = await root()
     const harnessFactory = vi.fn<AgentHarnessFactory>(async (input) => createScriptedPiHarness(input))

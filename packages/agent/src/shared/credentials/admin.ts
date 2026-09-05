@@ -29,6 +29,18 @@ export interface CredentialWriteRequestV1 {
   readonly fields: Readonly<Record<string, string>>
 }
 
+export type CredentialKeyLifecycleOperationV1 = 'rotate' | 'rewrap' | 'crypto-shred'
+
+/** Metadata-only, caller-supplied-idempotency receipt; never includes key material. */
+export interface CredentialKeyLifecycleReceiptV1 {
+  readonly contractVersion: 'boring.credential-key-lifecycle-receipt.v1'
+  readonly operation: CredentialKeyLifecycleOperationV1
+  readonly workspaceId: string
+  readonly operationId: string
+  readonly status: 'completed'
+  readonly dekGeneration?: number
+}
+
 export interface CredentialRouteErrorV1 {
   readonly error: {
     readonly code: CredentialErrorCode
