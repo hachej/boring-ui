@@ -97,11 +97,21 @@ export interface CommitCredentialVersionInputV1 {
   readonly supersededFieldsTombstone?: CredentialFieldTombstoneV1
 }
 
+export interface WorkspaceCredentialLockOptionsV1 {
+  /** Cancels only while waiting to acquire the lock; a running mutation is never interrupted. */
+  readonly signal?: AbortSignal
+  /** Absolute Unix timestamp in milliseconds by which lock acquisition must finish. */
+  readonly deadlineMs?: number
+  /** Relative acquisition bound. The earliest of this and deadlineMs wins. */
+  readonly timeoutMs?: number
+}
+
 export interface CredentialVaultPersistenceV1 {
   /** Serializes workspace-wide lifecycle mutations and supplies a scoped adapter. */
   withWorkspaceLock<T>(
     workspaceId: string,
     mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+    options?: WorkspaceCredentialLockOptionsV1,
   ): Promise<T>
   getCredentialMetadata(
     workspaceId: string,

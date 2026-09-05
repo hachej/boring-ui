@@ -10,6 +10,7 @@ export {
   PostgresCredentialVaultPersistenceV1,
   createPostgresCredentialVaultPersistenceV1,
 } from './postgresPersistence'
+export type { PostgresCredentialVaultPersistenceOptionsV1 } from './postgresPersistence'
 export { runCredentialVaultPostgresMigrationsV1 } from './postgresMigrations'
 export {
   LOCAL_KEK_BACKEND_ENV_KEY_V1,
@@ -42,6 +43,7 @@ export type {
   CredentialVaultPersistenceV1,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
+  WorkspaceCredentialLockOptionsV1,
   WorkspaceCredentialRecordV1,
   WorkspaceDekRotationReceiptV1,
   WorkspaceDekRotationStateV1,

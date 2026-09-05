@@ -53,6 +53,132 @@ runVaultCredentialStoreConformanceV1(
   async () => createPostgresCredentialVaultPersistenceV1(sql),
 )
 
+describe('Postgres credential workspace lock lifecycle', () => {
+  async function holdWorkspaceLock(workspaceId: string) {
+    const blocker = await adminSql.reserve()
+    const lockKey = JSON.stringify(['credential-workspace', workspaceId])
+    await blocker`SELECT pg_advisory_lock(hashtextextended(${lockKey}, 0))`
+    return async () => {
+      await blocker`SELECT pg_advisory_unlock(hashtextextended(${lockKey}, 0))`
+      blocker.release()
+    }
+  }
+
+  test('times out with a stable retryable error and releases its reserved connection', async () => {
+    const workspaceId = `lock-timeout-${randomUUID()}`
+    const releaseBlocker = await holdWorkspaceLock(workspaceId)
+    const persistence = createPostgresCredentialVaultPersistenceV1(sql, {
+      lockAcquireTimeoutMs: 40,
+      lockPollIntervalMs: 5,
+    })
+    await expect(persistence.withWorkspaceLock(workspaceId, async () => undefined))
+      .rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+        retryable: true,
+        message: 'Credential workspace lock timed out',
+      })
+    await releaseBlocker()
+
+    // With repeated failure on a max-bounded pool, this would eventually hang
+    // if timed-out reserved connections were left pinned.
+    for (let index = 0; index < 8; index += 1) {
+      await expect(persistence.withWorkspaceLock(workspaceId, async () => index))
+        .resolves.toBe(index)
+    }
+  })
+
+  test('honors an absolute acquisition deadline', async () => {
+    const workspaceId = `lock-deadline-${randomUUID()}`
+    const releaseBlocker = await holdWorkspaceLock(workspaceId)
+    const persistence = createPostgresCredentialVaultPersistenceV1(sql, {
+      lockAcquireTimeoutMs: 1_000,
+      lockPollIntervalMs: 5,
+    })
+    await expect(persistence.withWorkspaceLock(workspaceId, async () => undefined, {
+      deadlineMs: Date.now() + 30,
+    })).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+      retryable: true,
+      message: 'Credential workspace lock timed out',
+    })
+    await releaseBlocker()
+  })
+
+  test('cancels lock waiting without running the mutation', async () => {
+    const workspaceId = `lock-cancel-${randomUUID()}`
+    const releaseBlocker = await holdWorkspaceLock(workspaceId)
+    const controller = new AbortController()
+    let mutated = false
+    const waiting = createPostgresCredentialVaultPersistenceV1(sql, {
+      lockAcquireTimeoutMs: 1_000,
+      lockPollIntervalMs: 100,
+    }).withWorkspaceLock(workspaceId, async () => { mutated = true }, {
+      signal: controller.signal,
+    })
+    setTimeout(() => controller.abort(), 20)
+    await expect(waiting).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+      retryable: true,
+      message: 'Credential workspace lock cancelled',
+    })
+    expect(mutated).toBe(false)
+    await releaseBlocker()
+  })
+
+  test('waits successfully and preserves full mutation serialization', async () => {
+    const workspaceId = `lock-wait-${randomUUID()}`
+    const releaseBlocker = await holdWorkspaceLock(workspaceId)
+    let mutated = false
+    const waiting = createPostgresCredentialVaultPersistenceV1(sql, {
+      lockAcquireTimeoutMs: 1_000,
+      lockPollIntervalMs: 5,
+    }).withWorkspaceLock(workspaceId, async () => {
+      mutated = true
+      return 'locked'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(mutated).toBe(false)
+    await releaseBlocker()
+    await expect(waiting).resolves.toBe('locked')
+    expect(mutated).toBe(true)
+  })
+
+  test('evicts a reserved connection when unlock cannot be confirmed', async () => {
+    const workspaceId = `lock-destroy-${randomUUID()}`
+    const evictionSql = postgres(TEST_DB_URL, {
+      max: 2,
+      connection: { search_path: schemaName },
+    })
+    const persistence = createPostgresCredentialVaultPersistenceV1(evictionSql, {
+      lockAcquireTimeoutMs: 1_000,
+      lockPollIntervalMs: 5,
+    })
+    try {
+      await expect(persistence.withWorkspaceLock(workspaceId, async () => {
+        const lockKey = JSON.stringify(['credential-workspace', workspaceId])
+        const locks = await adminSql<{ pid: number }[]>`
+          SELECT pid FROM pg_locks
+          WHERE locktype = 'advisory' AND granted
+            AND classid = (((hashtextextended(${lockKey}, 0) >> 32) & 4294967295)::oid)
+            AND objid = ((hashtextextended(${lockKey}, 0) & 4294967295)::oid)
+        `
+        expect(locks).toHaveLength(1)
+        await adminSql`SELECT pg_terminate_backend(${locks[0]!.pid})`
+      })).rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+        retryable: true,
+        message: 'Credential workspace lock could not be released',
+      })
+
+      // The dead reserved connection is replaced rather than returned poisoned.
+      await expect(persistence.withWorkspaceLock(workspaceId, async () => 'replacement'))
+        .resolves.toBe('replacement')
+    } finally {
+      await evictionSql.end({ timeout: 1 })
+    }
+  })
+})
+
 describe('Postgres credential rollback protection', () => {
   test('migration is idempotent and preserves existing rows as explicit workspace custody', async () => {
     await runCredentialVaultPostgresMigrationsV1(sql)

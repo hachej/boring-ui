@@ -17,8 +17,19 @@ import type {
   CredentialVaultPersistenceV1,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
+  WorkspaceCredentialLockOptionsV1,
   WorkspaceDekRotationStateV1,
 } from './persistence'
+
+export interface PostgresCredentialVaultPersistenceOptionsV1 {
+  /** Default bound for advisory-lock acquisition. */
+  readonly lockAcquireTimeoutMs?: number
+  /** Delay between non-blocking advisory-lock attempts. */
+  readonly lockPollIntervalMs?: number
+}
+
+const DEFAULT_LOCK_ACQUIRE_TIMEOUT_MS = 10_000
+const DEFAULT_LOCK_POLL_INTERVAL_MS = 25
 
 type Sql = postgres.Sql | postgres.TransactionSql
 
@@ -99,34 +110,124 @@ function credentialSubject(providerId: ProviderId): { kind: 'workspace' | 'user'
   return { kind: 'user', id }
 }
 
+function lockUnavailable(reason: string): CredentialResolutionError {
+  return new CredentialResolutionError(
+    CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    `Credential workspace lock ${reason}`,
+    { retryable: true },
+  )
+}
+
+async function waitForLockRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw lockUnavailable('cancelled')
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(done, delayMs)
+    signal?.addEventListener('abort', aborted, { once: true })
+    function cleanup(): void {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', aborted)
+    }
+    function done(): void {
+      cleanup()
+      resolve()
+    }
+    function aborted(): void {
+      cleanup()
+      reject(lockUnavailable('cancelled'))
+    }
+  })
+}
+
+async function destroyReservedConnection(reserved: postgres.ReservedSql): Promise<void> {
+  // postgres.js has no public destroy method for one reserved connection.
+  // Self-termination drives its connection-close path, which clears the
+  // reservation without ever placing the uncertain socket back in the pool.
+  const terminated = reserved`SELECT pg_terminate_backend(pg_backend_pid())`
+    .then(() => undefined, () => undefined)
+  await Promise.race([
+    terminated,
+    new Promise<void>((resolve) => setTimeout(resolve, 250)),
+  ])
+  // Do not call release(): the connection-close path owns reservation cleanup.
+}
+
 /** Postgres implementation of the ciphertext-only credential vault port. */
 export class PostgresCredentialVaultPersistenceV1
 implements CredentialVaultPersistenceV1 {
   constructor(
     private readonly sql: Sql,
     private readonly lockedWorkspaceId?: string,
+    private readonly options: PostgresCredentialVaultPersistenceOptionsV1 = {},
   ) {}
 
   async withWorkspaceLock<T>(
     workspaceId: string,
     mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+    lockOptions: WorkspaceCredentialLockOptionsV1 = {},
   ): Promise<T> {
     if (this.lockedWorkspaceId === workspaceId) return mutate(this)
     if (!('reserve' in this.sql)) {
       throw new CredentialResolutionError(
         CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
         'Credential workspace lock is unavailable',
+        { retryable: true },
       )
     }
+
+    const timeoutMs = lockOptions.timeoutMs ?? this.options.lockAcquireTimeoutMs
+      ?? DEFAULT_LOCK_ACQUIRE_TIMEOUT_MS
+    const pollIntervalMs = this.options.lockPollIntervalMs ?? DEFAULT_LOCK_POLL_INTERVAL_MS
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0
+      || !Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0
+      || (lockOptions.deadlineMs !== undefined && !Number.isFinite(lockOptions.deadlineMs))) {
+      throw new TypeError('Credential workspace lock timing must be finite and non-negative')
+    }
+    const deadlineMs = Math.min(
+      Date.now() + timeoutMs,
+      lockOptions.deadlineMs ?? Number.POSITIVE_INFINITY,
+    )
     const reserved = await this.sql.reserve()
     const lockKey = JSON.stringify(['credential-workspace', workspaceId])
+    let acquired = false
+    let release = true
     try {
-      await reserved`SELECT pg_advisory_lock(hashtextextended(${lockKey}, 0))`
-      return await mutate(new PostgresCredentialVaultPersistenceV1(reserved, workspaceId))
+      while (!acquired) {
+        if (lockOptions.signal?.aborted) throw lockUnavailable('cancelled')
+        if (Date.now() >= deadlineMs) throw lockUnavailable('timed out')
+        const rows = await reserved<{ locked: boolean }[]>`
+          SELECT pg_try_advisory_lock(hashtextextended(${lockKey}, 0)) AS locked
+        `
+        acquired = rows[0]?.locked === true
+        if (!acquired) {
+          await waitForLockRetry(
+            Math.min(pollIntervalMs, Math.max(0, deadlineMs - Date.now())),
+            lockOptions.signal,
+          )
+        }
+      }
+      return await mutate(new PostgresCredentialVaultPersistenceV1(
+        reserved,
+        workspaceId,
+        this.options,
+      ))
     } finally {
-      await reserved`SELECT pg_advisory_unlock(hashtextextended(${lockKey}, 0))`
-        .catch(() => undefined)
-      reserved.release()
+      if (acquired) {
+        let unlocked = false
+        try {
+          const rows = await reserved<{ unlocked: boolean }[]>`
+            SELECT pg_advisory_unlock(hashtextextended(${lockKey}, 0)) AS unlocked
+          `
+          unlocked = rows[0]?.unlocked === true
+        } catch {
+          // The connection must not re-enter the pool when lock state is uncertain.
+        }
+        if (!unlocked) {
+          release = false
+          await destroyReservedConnection(reserved)
+          throw lockUnavailable('could not be released')
+        }
+      }
+      if (release) reserved.release()
     }
   }
 
@@ -814,6 +915,7 @@ implements CredentialVaultPersistenceV1 {
 
 export function createPostgresCredentialVaultPersistenceV1(
   sql: Sql,
+  options: PostgresCredentialVaultPersistenceOptionsV1 = {},
 ): CredentialVaultPersistenceV1 {
-  return Object.freeze(new PostgresCredentialVaultPersistenceV1(sql))
+  return Object.freeze(new PostgresCredentialVaultPersistenceV1(sql, undefined, options))
 }
