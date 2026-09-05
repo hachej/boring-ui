@@ -209,12 +209,13 @@ export class ChannelBindingStore {
         session_reset_pending=0,
         template_sent_for_inbound_at=NULL
       WHERE boring_channel_bindings.outbound_claim_owner IS NULL
+        OR boring_channel_bindings.outbound_claim_expires_at<=?
       RETURNING channel, conversation_key, agent_type_id, workspace_id, auth_subject_id,
         binding_version, status, session_key, last_inbound_at, outbound_cursor, outbound_status,
         session_reset_pending, template_sent_for_inbound_at`,
     input.channel, input.conversationKey, input.agentTypeId, input.workspaceId,
     input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null,
-    input.outboundCursor ?? '-1').toArray()[0]
+    input.outboundCursor ?? '-1', Date.now()).toArray()[0]
     if (!row) {
       throw Object.assign(new Error('Channel binding has active outbound delivery.'), {
         code: ErrorCode.enum.CHANNEL_BINDING_BUSY,

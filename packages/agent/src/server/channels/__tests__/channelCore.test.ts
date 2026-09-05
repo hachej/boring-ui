@@ -144,11 +144,13 @@ describe('ChannelBindingStore', () => {
       expect(() => second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
         .toThrow(expect.objectContaining({ code: ErrorCode.enum.CHANNEL_BINDING_BUSY }))
       await new Promise((resolve) => setTimeout(resolve, 10))
-      expect(() => second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
-        .toThrow(expect.objectContaining({ code: ErrorCode.enum.CHANNEL_BINDING_BUSY }))
-      first.releaseOutbound('outbound-owner')
       expect(second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
         .toMatchObject({ workspaceId: 'workspace-2', bindingVersion: 2, outboundCursor: '-1' })
+      // The expired process cannot clear or mutate the replacement generation.
+      first.releaseOutbound('outbound-owner')
+      expect(first.getBinding('whatsapp', bindingInput.conversationKey, 'default')).toMatchObject({
+        workspaceId: 'workspace-2', bindingVersion: 2,
+      })
     })
   })
 
