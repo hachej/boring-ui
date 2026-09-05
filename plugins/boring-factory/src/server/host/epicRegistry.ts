@@ -24,6 +24,7 @@ export interface FactoryEpicEntry {
   readonly models?: FactoryEpicModels
   readonly orchestratorSessionId?: string
   readonly createdAt: string
+  readonly planDeadlineAt?: string
   readonly status: 'active' | 'closed'
 }
 
@@ -176,6 +177,12 @@ export async function validateFactoryEpicEntry(entry: FactoryEpicEntry): Promise
   assertNonEmpty(entry.branch, 'branch')
   assertNonEmpty(entry.repositoryRoot, 'repositoryRoot')
   assertNonEmpty(entry.createdAt, 'createdAt')
+  if (entry.planDeadlineAt !== undefined) {
+    assertNonEmpty(entry.planDeadlineAt, 'planDeadlineAt')
+    if (!Number.isFinite(Date.parse(entry.planDeadlineAt))) {
+      throw new FactoryEpicRegistryError('INVALID_EPIC', 'planDeadlineAt must be an ISO date-time string')
+    }
+  }
   if (entry.status !== 'active' && entry.status !== 'closed') {
     throw new FactoryEpicRegistryError('INVALID_EPIC', 'status must be "active" or "closed"')
   }
