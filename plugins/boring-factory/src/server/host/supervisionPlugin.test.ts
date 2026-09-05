@@ -144,7 +144,7 @@ describe('factory supervision plugin', () => {
       },
     })
 
-    const { app, prompts } = createFakeApp({ status: 'idle' })
+    const { app, prompts, calls } = createFakeApp({ status: 'idle' })
     const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
     handle.bind(app as never)
     const armedCount = await handle.rearm()
@@ -153,6 +153,7 @@ describe('factory supervision plugin', () => {
     await waitFor(() => prompts.length > 0)
     expect(prompts[0]).toContain('Supervision tick 1')
     expect(prompts[0]).toContain('restart nudge')
+    expect(calls.every((call) => call.headers?.['x-boring-invocation-mode'] === 'unattended')).toBe(true)
 
     handle.close()
   })

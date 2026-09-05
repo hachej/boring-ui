@@ -1007,7 +1007,7 @@ export async function createAgentHost(
     runWithWorkspaceAgent,
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
       assertStrongLedger()
-      return createAgentHostRoutes({
+      const routes = createAgentHostRoutes({
         host,
         gateway,
         options: projectionOptions,
@@ -1035,6 +1035,16 @@ export async function createAgentHost(
             : {}
         ),
       })
+      return async (app: import('fastify').FastifyInstance) => {
+        app.addHook('onRequest', async (request) => {
+          invocationFundingPolicy.enterWith(
+            request.headers['x-boring-invocation-mode'] === 'unattended'
+              ? 'api-key-only'
+              : 'personal-subscription',
+          )
+        })
+        await app.register(routes)
+      }
     },
   })
   return created
