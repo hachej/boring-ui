@@ -154,7 +154,7 @@ export class ChannelBindingStore {
   }
 
   provision(input: ProvisionChannelBindingInput): ChannelBinding {
-    this.sql.exec(`INSERT INTO boring_channel_bindings
+    const row = this.sql.exec(`INSERT INTO boring_channel_bindings
       (channel, conversation_key, agent_type_id, workspace_id, auth_subject_id, binding_version, status, session_key)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(channel, conversation_key, agent_type_id) DO UPDATE SET
@@ -166,10 +166,12 @@ export class ChannelBindingStore {
         create_state=NULL,
         create_owner=NULL,
         create_expires_at=NULL,
-        create_session_key=NULL`,
+        create_session_key=NULL
+      RETURNING channel, conversation_key, agent_type_id, workspace_id, auth_subject_id,
+        binding_version, status, session_key, last_inbound_at`,
     input.channel, input.conversationKey, input.agentTypeId, input.workspaceId,
-    input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null)
-    return this.getBinding(input.channel, input.conversationKey, input.agentTypeId)!
+    input.authSubjectId, input.status ?? 'active', input.sessionKey ?? null).toArray()[0]
+    return bindingFromRow(row!)
   }
 
   getBinding(channel: string, conversationKey: string, agentTypeId: string): ChannelBinding | undefined {

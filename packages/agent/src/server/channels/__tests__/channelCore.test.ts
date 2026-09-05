@@ -97,6 +97,27 @@ describe('ChannelBindingStore', () => {
     })
   })
 
+  test('provision returns its own atomic write result across two connections', async () => {
+    await withStores(async ({ first, second }) => {
+      const firstResult = first.provision(bindingInput)
+      const secondResult = second.provision({
+        ...bindingInput,
+        workspaceId: 'workspace-2',
+        authSubjectId: 'user-2',
+      })
+      expect(firstResult).toMatchObject({
+        workspaceId: 'workspace-1',
+        authSubjectId: 'user-1',
+        bindingVersion: 1,
+      })
+      expect(secondResult).toMatchObject({
+        workspaceId: 'workspace-2',
+        authSubjectId: 'user-2',
+        bindingVersion: 2,
+      })
+    })
+  })
+
   test('owner-token CAS admits one session during a concurrent create race', async () => {
     await withStores(async ({ first, second }) => {
       const binding = first.provision(bindingInput)
