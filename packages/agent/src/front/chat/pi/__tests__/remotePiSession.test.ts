@@ -185,6 +185,65 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('notifies only accepted events after applying them to the live session state', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot())
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const onEvent = vi.fn((_event: PiChatEvent) => ({
+      lastSeq: session.getState().lastSeq,
+      status: session.getState().status,
+    }))
+    const session = createSession(fetchMock, { onEvent })
+    try {
+      await waitUntil(() => session.getState().connection.state === 'connected')
+      for (const seq of [4, 5, 6, 6]) {
+        events.write({ type: 'agent-end', seq, turnId: 'turn-1', status: 'ok' } satisfies PiChatEvent)
+      }
+      events.write({ type: 'heartbeat', now: '2026-06-03T00:02:00.000Z' })
+      await waitUntil(() => session.getState().connection.lastHeartbeatAt !== undefined)
+
+      expect(onEvent).toHaveBeenCalledExactlyOnceWith({ type: 'agent-end', seq: 6, turnId: 'turn-1', status: 'ok' })
+      expect(onEvent.mock.results[0]?.value).toEqual({ lastSeq: 6, status: 'idle' })
+    } finally {
+      session.dispose()
+    }
+  })
+
+  it('withholds gap events from callbacks until recovery accepts them', async () => {
+    const streams = [openNdjsonStream(), openNdjsonStream()]
+    const recovery = deferred<Response>()
+    let stateCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return ++stateCalls === 1 ? jsonResponse(snapshot()) : recovery.promise
+      if (url.endsWith('/events?cursor=5')) return new Response(streams[0]!.stream)
+      if (url.endsWith('/events?cursor=6')) return new Response(streams[1]!.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const onEvent = vi.fn()
+    const session = createSession(fetchMock, { onEvent })
+    const terminal = { type: 'agent-end', seq: 7, turnId: 'turn-1', status: 'ok' } satisfies PiChatEvent
+    try {
+      await waitUntil(() => session.getState().connection.state === 'connected')
+      streams[0]!.write(terminal)
+      await waitUntil(() => stateCalls === 2)
+
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(session.getState()).toMatchObject({ lastSeq: 5, status: 'streaming' })
+
+      recovery.resolve(jsonResponse(snapshot({ seq: 6 })))
+      await waitUntil(() => session.getState().lastSeq === 6 && session.getState().connection.state === 'connected')
+      streams[1]!.write(terminal)
+      await waitUntil(() => session.getState().lastSeq === 7)
+      expect(onEvent).toHaveBeenCalledExactlyOnceWith(terminal)
+      expect(session.getState().status).toBe('idle')
+    } finally {
+      session.dispose()
+    }
+  })
+
   it('silently reconnects after a hung event stream connect times out', async () => {
     const events = openNdjsonStream()
     let eventCalls = 0

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
 import { AgentGatewayErrorCode } from '../../../shared/gateway/errors'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
-import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
+import { RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
 import { bootResumeSessionStorageKey } from '../session/sessionSelectionStorage'
 import { ComposerContributionProvider } from '../composerContributions'
@@ -1073,6 +1073,38 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByText('Second Resume failed')).toBeNull()
   })
 
+  test.each(['storageScope', 'workspaceId', 'agentTypeId'] as const)('ignores a late Resume rejection after %s changes for the same session id', async (scopeField) => {
+    const queue = { followUps: [{ id: 'q1', kind: 'followup' as const, displayText: 'queued message', clientNonce: 'nonce-1', clientSeq: 1 }] }
+    const remoteA = new FakeRemotePiSession(remoteState({ sessionId: 'pi-1', queue }))
+    const remoteB = new FakeRemotePiSession(remoteState({ sessionId: 'pi-1', queue }))
+    const resumeA = deferred<{ accepted: true; cursor: number }>()
+    const resumeB = deferred<{ accepted: true; cursor: number }>()
+    remoteA.interrupt.mockImplementationOnce(() => resumeA.promise)
+    remoteB.interrupt.mockImplementationOnce(() => resumeB.promise)
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
+      (options[scopeField] === 'alpha' ? remoteA : remoteB) as unknown as RemotePiSession
+    ))
+    const props = { sessionId: 'pi-1', serverResourcesEnabled: false, createRemoteSession }
+    const nudge = () => screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }) as HTMLButtonElement
+    const { rerender } = render(<PiChatPanel {...props} {...{ [scopeField]: 'alpha' }} />)
+    await screen.findByText('queued message')
+    fireEvent.click(nudge())
+    await waitFor(() => expect(remoteA.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
+
+    rerender(<PiChatPanel {...props} {...{ [scopeField]: 'beta' }} />)
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
+    expect(nudge().disabled).toBe(false)
+    fireEvent.click(nudge())
+    await waitFor(() => expect(remoteB.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
+    await act(async () => { resumeA.reject(new Error('Old scope resume failed')) })
+
+    expect(screen.queryByText('Old scope resume failed')).toBeNull()
+    expect(nudge().disabled).toBe(true)
+    await act(async () => { resumeB.resolve({ accepted: true, cursor: 8 }) })
+    await waitFor(() => expect(nudge().disabled).toBe(false))
+    expect(screen.queryByText('Old scope resume failed')).toBeNull()
+  })
+
   test('renders optimistic queued follow-ups in the composer banner before server queue metadata arrives', async () => {
     const remote = new FakeRemotePiSession(remoteState({
       status: 'streaming',
@@ -1779,24 +1811,64 @@ describe('PiChatPanel sandbox shell', () => {
     })))
   })
 
-  test('disables remote auto-start when hydrateMessages is false', async () => {
-    const remote = new FakeRemotePiSession(remoteState())
-    const createRemoteSession = remoteFactory(remote)
-
-    render(
+  test('defers real remote transport until the first prompt when hydrateMessages is false', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const stream = new ReadableStream<Uint8Array>({ start(next) { controller = next } })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/state')) return jsonResponse({
+        protocolVersion: 1, sessionId: 'pi-external', seq: 0, status: 'idle',
+        messages: [], queue: { followUps: [] }, followUpMode: 'one-at-a-time',
+      })
+      if (url.endsWith('/events?cursor=0')) return new Response(stream)
+      if (url.endsWith('/prompt')) {
+        const payload = JSON.parse(String(init?.body))
+        return jsonResponse({ accepted: true, cursor: 0, clientNonce: payload.clientNonce })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    })
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => new RemotePiSession(options))
+    const onTurnComplete = vi.fn()
+    const { unmount } = render(
       <PiChatPanel
         sessionId="pi-external"
         hydrateMessages={false}
         serverResourcesEnabled={false}
         storageScope="scope-a"
         createRemoteSession={createRemoteSession}
+        fetch={fetchMock as unknown as typeof fetch}
+        onTurnComplete={onTurnComplete}
       />,
     )
+    try {
+      await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
+      await act(async () => {})
+      expect(fetchMock).not.toHaveBeenCalled()
 
-    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'pi-external',
-      autoStart: false,
-    })))
+      const textarea = screen.getByLabelText('Agent prompt')
+      fireEvent.change(textarea, { target: { value: 'first prompt' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        '/api/v1/agents/default/sessions/pi-external/events?cursor=0',
+        '/api/v1/agents/default/sessions/pi-external/prompt',
+      ])
+      const remote = createRemoteSession.mock.results[0]!.value
+      const encoder = new TextEncoder()
+      await act(async () => {
+        for (const event of [
+          { type: 'agent-start', seq: 1, turnId: 'turn-1' },
+          { type: 'agent-end', seq: 1, turnId: 'turn-1', status: 'ok' },
+          { type: 'agent-end', seq: 2, turnId: 'turn-1', status: 'ok' },
+          { type: 'agent-end', seq: 2, turnId: 'turn-1', status: 'ok' },
+        ]) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`))
+      })
+      await waitFor(() => expect(remote.getState().lastSeq).toBe(2))
+      expect(remote.getState().status).toBe('idle')
+      expect(onTurnComplete).toHaveBeenCalledTimes(1)
+    } finally {
+      unmount()
+      controller.close()
+    }
   })
 
   test('settles auto-submit even when the prompt resolves after the turn is already idle', async () => {

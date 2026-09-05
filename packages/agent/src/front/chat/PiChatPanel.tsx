@@ -507,7 +507,7 @@ export function PiChatPanel<
   // Resume-queued pending/error/in-flight state is keyed by bare session id.
   // Reset it when the owning agent/storage scope changes so state cannot leak
   // into a different session that reuses the same id.
-  const chatScopeKey = `${externalSessionId ? 'external' : 'managed'}\u0000${agentTypeId}\u0000${storageScope ?? ''}`
+  const chatScopeKey = `${externalSessionId ? 'external' : 'managed'}\u0000${agentTypeId}\u0000${workspaceId ?? ''}\u0000${storageScope ?? ''}`
   useEffect(() => {
     setQueueMutationPending(false)
     setResumeQueuedPendingSessionIds(new Set())
@@ -1073,6 +1073,7 @@ export function PiChatPanel<
     const run = policy.resumeQueued()
     resumeQueuedInFlightRef.current.set(sessionId, run)
     void run.catch((error) => {
+      if (resumeQueuedInFlightRef.current.get(sessionId) !== run) return
       setResumeQueuedErrorsBySessionId((previous) => new Map(previous).set(sessionId, {
         id: errorNoticeId,
         level: 'error',
