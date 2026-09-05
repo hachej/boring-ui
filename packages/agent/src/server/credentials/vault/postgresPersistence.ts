@@ -26,10 +26,13 @@ export interface PostgresCredentialVaultPersistenceOptionsV1 {
   readonly lockAcquireTimeoutMs?: number
   /** Delay between non-blocking advisory-lock attempts. */
   readonly lockPollIntervalMs?: number
+  /** Bound for confirming advisory unlock before evicting the connection. */
+  readonly lockReleaseTimeoutMs?: number
 }
 
 const DEFAULT_LOCK_ACQUIRE_TIMEOUT_MS = 10_000
 const DEFAULT_LOCK_POLL_INTERVAL_MS = 25
+const DEFAULT_LOCK_RELEASE_TIMEOUT_MS = 1_000
 
 type Sql = postgres.Sql | postgres.TransactionSql
 
@@ -127,15 +130,52 @@ async function waitForLockRetry(delayMs: number, signal?: AbortSignal): Promise<
       clearTimeout(timer)
       signal?.removeEventListener('abort', aborted)
     }
-    function done(): void {
+    function done(): void { cleanup(); resolve() }
+    function aborted(): void { cleanup(); reject(lockUnavailable('cancelled')) }
+  })
+}
+
+async function boundedWait<T>(
+  pending: PromiseLike<T>,
+  deadlineMs: number,
+  signal?: AbortSignal,
+  cancel?: () => void,
+): Promise<T> {
+  if (signal?.aborted) throw lockUnavailable('cancelled')
+  const remainingMs = Math.max(0, deadlineMs - Date.now())
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => finishError(lockUnavailable('timed out')), remainingMs)
+    signal?.addEventListener('abort', aborted, { once: true })
+    void Promise.resolve(pending).then(finishValue, finishError)
+
+    function cleanup(): void {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', aborted)
+    }
+    function finishValue(value: T): void {
+      if (settled) return
+      settled = true
       cleanup()
-      resolve()
+      resolve(value)
+    }
+    function finishError(error: unknown): void {
+      if (settled) return
+      settled = true
+      cleanup()
+      cancel?.()
+      reject(error)
     }
     function aborted(): void {
-      cleanup()
-      reject(lockUnavailable('cancelled'))
+      finishError(lockUnavailable('cancelled'))
     }
   })
+}
+
+function stableLockError(error: unknown): CredentialResolutionError {
+  return error instanceof CredentialResolutionError
+    ? error
+    : lockUnavailable('is unavailable')
 }
 
 async function destroyReservedConnection(reserved: postgres.ReservedSql): Promise<void> {
@@ -177,8 +217,10 @@ implements CredentialVaultPersistenceV1 {
     const timeoutMs = lockOptions.timeoutMs ?? this.options.lockAcquireTimeoutMs
       ?? DEFAULT_LOCK_ACQUIRE_TIMEOUT_MS
     const pollIntervalMs = this.options.lockPollIntervalMs ?? DEFAULT_LOCK_POLL_INTERVAL_MS
+    const releaseTimeoutMs = this.options.lockReleaseTimeoutMs ?? DEFAULT_LOCK_RELEASE_TIMEOUT_MS
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0
       || !Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0
+      || !Number.isFinite(releaseTimeoutMs) || releaseTimeoutMs <= 0
       || (lockOptions.deadlineMs !== undefined && !Number.isFinite(lockOptions.deadlineMs))) {
       throw new TypeError('Credential workspace lock timing must be finite and non-negative')
     }
@@ -186,7 +228,17 @@ implements CredentialVaultPersistenceV1 {
       Date.now() + timeoutMs,
       lockOptions.deadlineMs ?? Number.POSITIVE_INFINITY,
     )
-    const reserved = await this.sql.reserve()
+    const reservation = this.sql.reserve()
+    let reserved: postgres.ReservedSql
+    try {
+      reserved = await boundedWait(reservation, deadlineMs, lockOptions.signal)
+    } catch (error) {
+      // reserve() itself cannot be cancelled. If a connection becomes available
+      // after our caller has stopped waiting, immediately return it to the pool.
+      void reservation.then((late) => late.release(), () => undefined)
+      throw stableLockError(error)
+    }
+
     const lockKey = JSON.stringify(['credential-workspace', workspaceId])
     let acquired = false
     let release = true
@@ -194,10 +246,23 @@ implements CredentialVaultPersistenceV1 {
       while (!acquired) {
         if (lockOptions.signal?.aborted) throw lockUnavailable('cancelled')
         if (Date.now() >= deadlineMs) throw lockUnavailable('timed out')
-        const rows = await reserved<{ locked: boolean }[]>`
+        const query = reserved<{ locked: boolean }[]>`
           SELECT pg_try_advisory_lock(hashtextextended(${lockKey}, 0)) AS locked
         `
+        let rows: { locked: boolean }[]
+        try {
+          rows = await boundedWait(query, deadlineMs, lockOptions.signal, () => query.cancel())
+        } catch (error) {
+          throw stableLockError(error)
+        }
         acquired = rows[0]?.locked === true
+        // Cancellation/deadline may have happened while the query acquired the
+        // lock. Never begin a mutation after the acquisition contract expired.
+        if (acquired && (lockOptions.signal?.aborted || Date.now() >= deadlineMs)) {
+          throw lockOptions.signal?.aborted
+            ? lockUnavailable('cancelled')
+            : lockUnavailable('timed out')
+        }
         if (!acquired) {
           await waitForLockRetry(
             Math.min(pollIntervalMs, Math.max(0, deadlineMs - Date.now())),
@@ -214,9 +279,15 @@ implements CredentialVaultPersistenceV1 {
       if (acquired) {
         let unlocked = false
         try {
-          const rows = await reserved<{ unlocked: boolean }[]>`
+          const query = reserved<{ unlocked: boolean }[]>`
             SELECT pg_advisory_unlock(hashtextextended(${lockKey}, 0)) AS unlocked
           `
+          const rows = await boundedWait(
+            query,
+            Date.now() + releaseTimeoutMs,
+            undefined,
+            () => query.cancel(),
+          )
           unlocked = rows[0]?.unlocked === true
         } catch {
           // The connection must not re-enter the pool when lock state is uncertain.

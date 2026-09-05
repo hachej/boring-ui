@@ -263,6 +263,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
           }
           return cloneCredential(next)
         },
+        { signal: operation?.signal },
       ))
     },
     delete(providerId, operation) {

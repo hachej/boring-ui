@@ -87,6 +87,39 @@ describe('Postgres credential workspace lock lifecycle', () => {
     }
   })
 
+  test('bounds pool reservation and releases a late reservation', async () => {
+    const workspaceId = `lock-pool-${randomUUID()}`
+    const oneConnectionSql = postgres(TEST_DB_URL, {
+      max: 1,
+      connection: { search_path: schemaName },
+    })
+    const blocker = await oneConnectionSql.reserve()
+    let blockerReleased = false
+    const persistence = createPostgresCredentialVaultPersistenceV1(oneConnectionSql, {
+      lockAcquireTimeoutMs: 40,
+      lockPollIntervalMs: 5,
+    })
+    const startedAt = Date.now()
+    try {
+      await expect(persistence.withWorkspaceLock(workspaceId, async () => undefined))
+        .rejects.toMatchObject({
+          code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+          retryable: true,
+          message: 'Credential workspace lock timed out',
+        })
+      expect(Date.now() - startedAt).toBeLessThan(500)
+      blocker.release()
+      blockerReleased = true
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await expect(persistence.withWorkspaceLock(workspaceId, async () => 'reused', {
+        timeoutMs: 1_000,
+      })).resolves.toBe('reused')
+    } finally {
+      if (!blockerReleased) blocker.release()
+      await oneConnectionSql.end({ timeout: 1 })
+    }
+  })
+
   test('honors an absolute acquisition deadline', async () => {
     const workspaceId = `lock-deadline-${randomUUID()}`
     const releaseBlocker = await holdWorkspaceLock(workspaceId)

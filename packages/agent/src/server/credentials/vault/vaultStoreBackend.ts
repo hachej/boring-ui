@@ -21,6 +21,7 @@ import type {
   CredentialVaultPersistenceV1,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
+  WorkspaceCredentialLockOptionsV1,
 } from './persistence'
 import type { WorkspaceCredentialVersionAnchorV1 } from './versionAnchor'
 
@@ -61,6 +62,7 @@ export interface VaultCredentialStoreBackendV1 extends CredentialStoreBackendV1 
   withWorkspaceLock<T>(
     workspaceId: string,
     mutate: (locked: VaultCredentialStoreBackendV1) => Promise<T>,
+    options?: WorkspaceCredentialLockOptionsV1,
   ): Promise<T>
   /**
    * Writes (or rotates to) a new credential version for a workspace/provider.
@@ -223,6 +225,7 @@ function createVaultCredentialStoreBackendInternalV1(
     async withWorkspaceLock<T>(
       workspaceId: string,
       mutate: (locked: VaultCredentialStoreBackendV1) => Promise<T>,
+      lockOptions?: WorkspaceCredentialLockOptionsV1,
     ): Promise<T> {
       assertWorkspaceId(workspaceId)
       if (lockedWorkspaceId === workspaceId) return mutate(this)
@@ -231,7 +234,7 @@ function createVaultCredentialStoreBackendInternalV1(
           kmsBackend,
           versionAnchor,
           persistence: lockedPersistence,
-        }, workspaceId)))
+        }, workspaceId)), lockOptions)
     },
 
     async read(
