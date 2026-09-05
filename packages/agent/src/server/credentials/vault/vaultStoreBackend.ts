@@ -535,6 +535,9 @@ function createVaultCredentialStoreBackendInternalV1(
         // can project `not_configured`. A present anchor is always authenticated
         // and still catches deleted/replayed metadata when the list is empty.
         const anchored = await readLocked({ allowUnprovisioned: !hasArtifacts })
+        if (hasArtifacts && !anchored) {
+          unreadable('Credential workspace state failed rollback verification')
+        }
         const providers = new Set(listed.map(({ providerId }) => providerId))
         if (Object.keys(anchored?.credentialVersions ?? {}).some((providerId) => !providers.has(providerId as ProviderId))) {
           unreadable('Credential metadata failed rollback verification')

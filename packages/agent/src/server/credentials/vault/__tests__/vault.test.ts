@@ -588,6 +588,35 @@ describe('vault credential store backend', () => {
     )
   })
 
+  test('provider listing rejects orphaned artifacts beside a valid empty anchor', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const generated = await kekProvider(KEK_A).generateDataKey(context('ws-a'))
+    try {
+      await persistence.putWrappedDek('ws-a', 1, generated.wrappedDek)
+    } finally {
+      generated.plaintextDek.fill(0)
+    }
+    const anchorFilePath = join(
+      await mkdtemp(join(tmpdir(), 'boring-empty-list-anchor-')),
+      'credential-anchor',
+    )
+    const anchorOptions = {
+      anchorFilePath,
+      loadKek: async () => new Uint8Array(KEK_A),
+    }
+    await initializeLocalFileCredentialVersionAnchorV1(anchorOptions)
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor: createLocalFileCredentialVersionAnchorV1(anchorOptions),
+      kmsBackend: kekProvider(KEK_A),
+    })
+
+    await expectCredentialError(
+      () => backend.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
   test('provider listing does not excuse a present malformed anchor for empty persistence', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'boring-list-anchor-'))
     const anchorFilePath = join(dir, 'credential-anchor')
