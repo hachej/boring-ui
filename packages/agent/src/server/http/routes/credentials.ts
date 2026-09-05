@@ -11,6 +11,7 @@ import type {
   ProviderRegistryV1,
   VerifiedWorkspaceCredentialAuthorityV1,
 } from '../../../shared/credentials'
+import { actorCredentialProviderIdV1 } from '../../credentials'
 import type {
   OpenAiCodexOAuthBrokerV1,
   VaultCredentialStoreBackendV1,
@@ -181,36 +182,49 @@ export async function credentialsRoutes(
   })
 
   app.get(ROUTE_PREFIX, async (request, reply) => {
-    const { workspaceId } = await requireOwner(request, options)
+    const authority = await requireOwner(request, options)
+    const { workspaceId } = authority
+    const userId = authority.principal.kind === 'user' ? authority.principal.userId : ''
     const stored = new Map(
       (await options.vaultBackend.listCredentialMetadata(workspaceId))
         .map((item) => [item.providerId, item]),
     )
+    const personalCodex = stored.get(actorCredentialProviderIdV1(userId, 'openai-codex'))
+    if (personalCodex) stored.set('openai-codex' as ProviderId, { ...personalCodex, providerId: 'openai-codex' as ProviderId })
     const credentials = options.providerRegistry.list().map((provider) =>
       metadataProjection(options.providerRegistry, provider.id, stored.get(provider.id)))
     return reply.code(200).send({ credentials })
   })
 
   app.get(`${ROUTE_PREFIX}/:providerId`, async (request, reply) => {
-    const { workspaceId } = await requireOwner(request, options)
+    const authority = await requireOwner(request, options)
+    const { workspaceId } = authority
     const providerId = providerIdFrom(request)
-    const stored = await options.vaultBackend.getCredentialMetadata(workspaceId, providerId)
+    const storedId = providerId === 'openai-codex' && authority.principal.kind === 'user'
+      ? actorCredentialProviderIdV1(authority.principal.userId, providerId)
+      : providerId
+    const stored = await options.vaultBackend.getCredentialMetadata(workspaceId, storedId)
+      ?? (storedId === providerId ? undefined : await options.vaultBackend.getCredentialMetadata(workspaceId, providerId))
     return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, stored))
   })
 
   app.post(`${ROUTE_PREFIX}/openai-codex/oauth`, async (request, reply) => {
-    const { workspaceId } = await requireOwner(request, options)
-    if (!options.oauthBroker) {
+    const authority = await requireOwner(request, options)
+    const { workspaceId } = authority
+    if (!options.oauthBroker || authority.principal.kind !== 'user') {
       throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.NOT_CONFIGURED, 'Credential operation failed')
     }
-    const flow = await options.oauthBroker.start(workspaceId)
+    const flow = await options.oauthBroker.start(workspaceId, authority.principal.userId)
     return reply.code(202).send(flow)
   })
 
   app.get(`${ROUTE_PREFIX}/openai-codex/oauth/:flowId`, async (request, reply) => {
-    const { workspaceId } = await requireOwner(request, options)
+    const authority = await requireOwner(request, options)
+    const { workspaceId } = authority
     const flowId = (request.params as { flowId?: unknown }).flowId
-    const flow = typeof flowId === 'string' ? options.oauthBroker?.get(workspaceId, flowId) : undefined
+    const flow = typeof flowId === 'string' && authority.principal.kind === 'user'
+      ? options.oauthBroker?.get(workspaceId, authority.principal.userId, flowId)
+      : undefined
     if (!flow) return reply.code(404).send({
       error: { code: CREDENTIAL_ERROR_CODES.OAUTH_STATE_INVALID, message: 'OAuth flow not found' },
     })
@@ -218,23 +232,25 @@ export async function credentialsRoutes(
   })
 
   app.post(`${ROUTE_PREFIX}/openai-codex/oauth/:flowId/respond`, async (request, reply) => {
-    const { workspaceId } = await requireOwner(request, options)
+    const authority = await requireOwner(request, options)
+    const { workspaceId } = authority
     const flowId = (request.params as { flowId?: unknown }).flowId
     const body = request.body as { value?: unknown } | undefined
-    if (!options.oauthBroker || typeof flowId !== 'string' || typeof body?.value !== 'string') {
+    if (!options.oauthBroker || authority.principal.kind !== 'user' || typeof flowId !== 'string' || typeof body?.value !== 'string') {
       throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
     }
-    const flow = await options.oauthBroker.respond(workspaceId, flowId, body.value)
+    const flow = await options.oauthBroker.respond(workspaceId, authority.principal.userId, flowId, body.value)
     return reply.code(200).send(flow)
   })
 
   app.delete(`${ROUTE_PREFIX}/openai-codex/oauth/:flowId`, async (request, reply) => {
-    const { workspaceId } = await requireOwner(request, options)
+    const authority = await requireOwner(request, options)
+    const { workspaceId } = authority
     const flowId = (request.params as { flowId?: unknown }).flowId
-    if (!options.oauthBroker || typeof flowId !== 'string') {
+    if (!options.oauthBroker || authority.principal.kind !== 'user' || typeof flowId !== 'string') {
       throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
     }
-    await options.oauthBroker.cancel(workspaceId, flowId)
+    await options.oauthBroker.cancel(workspaceId, authority.principal.userId, flowId)
     return reply.code(204).send()
   })
 
@@ -262,20 +278,36 @@ export async function credentialsRoutes(
 
   for (const action of ['disable', 'revoke'] as const) {
     app.post(`${ROUTE_PREFIX}/:providerId/${action}`, async (request, reply) => {
-      const { workspaceId } = await requireOwner(request, options)
+      const authority = await requireOwner(request, options)
+      const { workspaceId } = authority
       const providerId = providerIdFrom(request)
       options.providerRegistry.require(providerId)
-      const stored = await options.vaultBackend.setCredentialLifecycleState(workspaceId, providerId, action === 'disable' ? 'disabled' : 'revoked')
+      const personalId = providerId === 'openai-codex' && authority.principal.kind === 'user'
+        ? actorCredentialProviderIdV1(authority.principal.userId, providerId)
+        : undefined
+      const storedId = personalId
+        && await options.vaultBackend.getCredentialMetadata(workspaceId, personalId)
+        ? personalId
+        : providerId
+      const stored = await options.vaultBackend.setCredentialLifecycleState(workspaceId, storedId, action === 'disable' ? 'disabled' : 'revoked')
       return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, stored))
     })
   }
 
   app.delete(`${ROUTE_PREFIX}/:providerId`, async (request, reply) => {
-    const { workspaceId } = await requireOwner(request, options)
+    const authority = await requireOwner(request, options)
+    const { workspaceId } = authority
     const providerId = providerIdFrom(request)
     options.providerRegistry.require(providerId)
-    await options.vaultBackend.writeAbsentCredential(workspaceId, providerId)
-    const stored = await options.vaultBackend.getCredentialMetadata(workspaceId, providerId)
+    const personalId = providerId === 'openai-codex' && authority.principal.kind === 'user'
+      ? actorCredentialProviderIdV1(authority.principal.userId, providerId)
+      : undefined
+    const storedId = personalId
+      && await options.vaultBackend.getCredentialMetadata(workspaceId, personalId)
+      ? personalId
+      : providerId
+    await options.vaultBackend.writeAbsentCredential(workspaceId, storedId)
+    const stored = await options.vaultBackend.getCredentialMetadata(workspaceId, storedId)
     return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, stored))
   })
 }

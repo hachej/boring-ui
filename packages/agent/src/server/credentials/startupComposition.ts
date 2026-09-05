@@ -291,6 +291,7 @@ export interface WorkspaceCredentialRuntimeViewV1 {
   /** Actor-bound Pi credential store; workspace identity is fixed at construction. */
   createPiCredentialStore(
     workspaceId: string,
+    userId: string | undefined,
     options: { readonly allowSubscriptionOAuth: boolean },
   ): CredentialStore
 }
@@ -378,9 +379,11 @@ export async function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
     : undefined
   const createPiCredentialStore = (
     workspaceId: string,
+    userId: string | undefined,
     storeOptions: { readonly allowSubscriptionOAuth: boolean },
   ): CredentialStore => createVaultCredentialStoreV1({
     workspaceId,
+    userId,
     vaultBackend,
     allowSubscriptionOAuth: storeOptions.allowSubscriptionOAuth,
     allowedOAuthProviderIds: ['openai-codex'],

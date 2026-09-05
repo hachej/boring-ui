@@ -30,14 +30,14 @@ export interface OAuthFlowSnapshotV1 {
 }
 
 export interface OpenAiCodexOAuthBrokerV1 {
-  start(workspaceId: string): Promise<OAuthFlowSnapshotV1>
-  get(workspaceId: string, flowId: string): OAuthFlowSnapshotV1 | undefined
-  respond(workspaceId: string, flowId: string, value: string): Promise<OAuthFlowSnapshotV1>
-  cancel(workspaceId: string, flowId: string): Promise<void>
+  start(workspaceId: string, userId: string): Promise<OAuthFlowSnapshotV1>
+  get(workspaceId: string, userId: string, flowId: string): OAuthFlowSnapshotV1 | undefined
+  respond(workspaceId: string, userId: string, flowId: string, value: string): Promise<OAuthFlowSnapshotV1>
+  cancel(workspaceId: string, userId: string, flowId: string): Promise<void>
 }
 
 export interface OpenAiCodexOAuthBrokerOptionsV1 {
-  readonly credentialStoreForWorkspace: (workspaceId: string) => CredentialStore
+  readonly credentialStoreForActor: (workspaceId: string, userId: string) => CredentialStore
   readonly createRuntime?: (credentials: CredentialStore) => Promise<Pick<ModelRuntime, 'login'>>
   readonly now?: () => number
 }
@@ -52,6 +52,7 @@ interface PendingPrompt {
 interface Flow {
   readonly flowId: string
   readonly workspaceId: string
+  readonly userId: string
   readonly createdAtMs: number
   readonly abort: AbortController
   status: OAuthFlowSnapshotV1['status']
@@ -123,19 +124,21 @@ export function createOpenAiCodexOAuthBrokerV1(
     refreshOnCreate: false,
   }))
 
-  const requireFlow = (workspaceId: string, flowId: string): Flow => {
+  const requireFlow = (workspaceId: string, userId: string, flowId: string): Flow => {
     const flow = flows.get(flowId)
-    if (!flow || flow.workspaceId !== workspaceId || now() - flow.createdAtMs > FLOW_TTL_MS) {
+    if (!flow || flow.workspaceId !== workspaceId || flow.userId !== userId || now() - flow.createdAtMs > FLOW_TTL_MS) {
       throw new Error('OAuth flow not found')
     }
     return flow
   }
 
   const broker: OpenAiCodexOAuthBrokerV1 = {
-    async start(workspaceId) {
+    async start(workspaceId, userId) {
+      if (!workspaceId.trim() || !userId.trim()) throw new Error('OAuth actor is invalid')
       const flow: Flow = {
         flowId: randomUUID(),
         workspaceId,
+        userId,
         createdAtMs: now(),
         abort: new AbortController(),
         status: 'pending',
@@ -144,7 +147,7 @@ export function createOpenAiCodexOAuthBrokerV1(
       flows.set(flow.flowId, flow)
       void (async () => {
         try {
-          const runtime = await runtimeFactory(options.credentialStoreForWorkspace(workspaceId))
+          const runtime = await runtimeFactory(options.credentialStoreForActor(workspaceId, userId))
           await runtime.login('openai-codex', 'oauth', {
             signal: flow.abort.signal,
             notify(event) {
@@ -181,15 +184,15 @@ export function createOpenAiCodexOAuthBrokerV1(
       })()
       return snapshot(flow)
     },
-    get(workspaceId, flowId) {
+    get(workspaceId, userId, flowId) {
       try {
-        return snapshot(requireFlow(workspaceId, flowId))
+        return snapshot(requireFlow(workspaceId, userId, flowId))
       } catch {
         return undefined
       }
     },
-    async respond(workspaceId, flowId, value) {
-      const flow = requireFlow(workspaceId, flowId)
+    async respond(workspaceId, userId, flowId, value) {
+      const flow = requireFlow(workspaceId, userId, flowId)
       if (flow.status !== 'pending' || !flow.prompt || typeof value !== 'string' || value.length > 8_192) {
         throw new Error('OAuth flow is not awaiting input')
       }
@@ -198,8 +201,8 @@ export function createOpenAiCodexOAuthBrokerV1(
       pending.resolve(value)
       return snapshot(flow)
     },
-    async cancel(workspaceId, flowId) {
-      const flow = requireFlow(workspaceId, flowId)
+    async cancel(workspaceId, userId, flowId) {
+      const flow = requireFlow(workspaceId, userId, flowId)
       flow.abort.abort(new Error('OAuth flow cancelled'))
       flow.prompt?.reject(new Error('OAuth flow cancelled'))
       flow.prompt = undefined

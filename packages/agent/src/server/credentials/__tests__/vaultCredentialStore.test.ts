@@ -8,7 +8,7 @@ import {
   createLocalKekWorkspaceKekProviderV1,
   createVaultCredentialStoreBackendV1,
 } from '../vault'
-import { createVaultCredentialStoreV1 } from '../vaultCredentialStore'
+import { actorCredentialProviderIdV1, createVaultCredentialStoreV1 } from '../vaultCredentialStore'
 
 function setup() {
   const persistence = createInMemoryCredentialVaultPersistenceV1()
@@ -36,14 +36,14 @@ describe('vault-backed Pi CredentialStore', () => {
     const first = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a',
       vaultBackend: backend(),
-      allowSubscriptionOAuth: true,
+      userId: 'user-a', allowSubscriptionOAuth: true,
     })
     await first.modify('openai-codex', async () => initial)
 
     const restarted = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a',
       vaultBackend: backend(),
-      allowSubscriptionOAuth: true,
+      userId: 'user-a', allowSubscriptionOAuth: true,
     })
     expect(await restarted.read('openai-codex')).toEqual(initial)
 
@@ -59,7 +59,7 @@ describe('vault-backed Pi CredentialStore', () => {
       access: 'access-canary-two',
       expires: 9_999,
     })
-    expect(await backend().getCredentialMetadata('workspace-a', 'openai-codex' as ProviderId)).toMatchObject({
+    expect(await backend().getCredentialMetadata('workspace-a', actorCredentialProviderIdV1('user-a', 'openai-codex'))).toMatchObject({
       credentialType: 'oauth',
       credentialVersion: 2,
       state: 'active',
@@ -68,8 +68,8 @@ describe('vault-backed Pi CredentialStore', () => {
 
   test('serializes refresh modify across independent stores sharing durable persistence', async () => {
     const { backend } = setup()
-    const one = createVaultCredentialStoreV1({ workspaceId: 'workspace-a', vaultBackend: backend(), allowSubscriptionOAuth: true })
-    const two = createVaultCredentialStoreV1({ workspaceId: 'workspace-a', vaultBackend: backend(), allowSubscriptionOAuth: true })
+    const one = createVaultCredentialStoreV1({ workspaceId: 'workspace-a', vaultBackend: backend(), userId: 'user-a', allowSubscriptionOAuth: true })
+    const two = createVaultCredentialStoreV1({ workspaceId: 'workspace-a', vaultBackend: backend(), userId: 'user-a', allowSubscriptionOAuth: true })
     await one.modify('openai-codex', async () => initial)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
@@ -94,15 +94,15 @@ describe('vault-backed Pi CredentialStore', () => {
     const store = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a',
       vaultBackend: backend(),
-      allowSubscriptionOAuth: true,
+      userId: 'user-a', allowSubscriptionOAuth: true,
     })
     await store.modify('openai-codex', async () => initial)
 
-    await backend().setCredentialLifecycleState('workspace-a', 'openai-codex' as ProviderId, 'disabled')
+    await backend().setCredentialLifecycleState('workspace-a', actorCredentialProviderIdV1('user-a', 'openai-codex'), 'disabled')
     await expect(store.read('openai-codex')).rejects.toMatchObject({
       code: CREDENTIAL_ERROR_CODES.DISABLED,
     })
-    await backend().setCredentialLifecycleState('workspace-a', 'openai-codex' as ProviderId, 'revoked')
+    await backend().setCredentialLifecycleState('workspace-a', actorCredentialProviderIdV1('user-a', 'openai-codex'), 'revoked')
     await expect(store.read('openai-codex')).rejects.toMatchObject({
       code: CREDENTIAL_ERROR_CODES.REVOKED,
     })
@@ -117,12 +117,12 @@ describe('vault-backed Pi CredentialStore', () => {
     const store = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a',
       vaultBackend: backend(),
-      allowSubscriptionOAuth: true,
+      userId: 'user-a', allowSubscriptionOAuth: true,
     })
     await store.modify('openai-codex', async () => initial)
     const activeMetadata = await persistence.getCredentialMetadata(
       'workspace-a',
-      'openai-codex' as ProviderId,
+      actorCredentialProviderIdV1('user-a', 'openai-codex'),
     )
     const typeTamperedStore = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a',
@@ -136,6 +136,7 @@ describe('vault-backed Pi CredentialStore', () => {
         },
         versionAnchor,
       }),
+      userId: 'user-a',
       allowSubscriptionOAuth: true,
     })
     await expect(typeTamperedStore.read('openai-codex')).rejects.toMatchObject({
@@ -144,7 +145,7 @@ describe('vault-backed Pi CredentialStore', () => {
 
     await backend().setCredentialLifecycleState(
       'workspace-a',
-      'openai-codex' as ProviderId,
+      actorCredentialProviderIdV1('user-a', 'openai-codex'),
       'revoked',
     )
 
@@ -160,7 +161,8 @@ describe('vault-backed Pi CredentialStore', () => {
           persistence: replayedPersistence,
           versionAnchor,
         }),
-        allowSubscriptionOAuth: true,
+        userId: 'user-a',
+      allowSubscriptionOAuth: true,
       })
       await expect(replayedStore.read('openai-codex')).rejects.toMatchObject({
         code: CREDENTIAL_ERROR_CODES.UNREADABLE,
@@ -175,12 +177,12 @@ describe('vault-backed Pi CredentialStore', () => {
       const store = createVaultCredentialStoreV1({
         workspaceId: 'workspace-a',
         vaultBackend: backend(),
-        allowSubscriptionOAuth: true,
+        userId: 'user-a', allowSubscriptionOAuth: true,
       })
       const lifecycleStore = createVaultCredentialStoreV1({
         workspaceId: 'workspace-a',
         vaultBackend: backend(),
-        allowSubscriptionOAuth: true,
+        userId: 'user-a', allowSubscriptionOAuth: true,
       })
       await store.modify('openai-codex', async () => initial)
       let entered!: () => void
@@ -196,14 +198,14 @@ describe('vault-backed Pi CredentialStore', () => {
       const lifecycle = outcome === 'revoked'
         ? backend().setCredentialLifecycleState(
           'workspace-a',
-          'openai-codex' as ProviderId,
+          actorCredentialProviderIdV1('user-a', 'openai-codex'),
           'revoked',
         )
         : lifecycleStore.delete('openai-codex')
       release()
       await Promise.all([refresh, lifecycle])
 
-      expect(await backend().getCredentialMetadata('workspace-a', 'openai-codex' as ProviderId))
+      expect(await backend().getCredentialMetadata('workspace-a', actorCredentialProviderIdV1('user-a', 'openai-codex')))
         .toMatchObject({ state: outcome === 'revoked' ? 'revoked' : 'intentionally_absent' })
       await expect(store.read('openai-codex')).rejects.toMatchObject({
         code: CREDENTIAL_ERROR_CODES.REVOKED,
@@ -211,19 +213,63 @@ describe('vault-backed Pi CredentialStore', () => {
     },
   )
 
+  test('binds personal OAuth read, refresh, list, and logout to one verified actor', async () => {
+    const { backend } = setup()
+    const alice = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', userId: 'alice', vaultBackend: backend(), allowSubscriptionOAuth: true,
+    })
+    const bob = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', userId: 'bob', vaultBackend: backend(), allowSubscriptionOAuth: true,
+    })
+    await alice.modify('openai-codex', async () => initial)
+
+    expect(await bob.read('openai-codex')).toBeUndefined()
+    expect(await bob.list()).toEqual([])
+    await bob.modify('openai-codex', async () => ({ ...initial, access: 'bob-access', refresh: 'bob-refresh' }))
+    await bob.modify('openai-codex', async (current) => ({ ...(current as OAuthCredential), expires: 44 }))
+    expect(await alice.read('openai-codex')).toMatchObject({ access: 'access-canary-one', expires: 1 })
+    expect(await bob.read('openai-codex')).toMatchObject({ access: 'bob-access', expires: 44 })
+
+    await bob.delete('openai-codex')
+    await expect(bob.read('openai-codex')).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.REVOKED })
+    expect(await alice.read('openai-codex')).toMatchObject({ access: 'access-canary-one' })
+    expect(await alice.list()).toEqual([{ providerId: 'openai-codex', type: 'oauth' }])
+  })
+
+  test('keeps workspace API-key fallback distinct from personal OAuth custody', async () => {
+    const { backend } = setup()
+    const workspace = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', vaultBackend: backend(), allowSubscriptionOAuth: false,
+    })
+    await workspace.modify('openai-codex', async () => ({ type: 'api_key', key: 'workspace-key' }))
+    const alice = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', userId: 'alice', vaultBackend: backend(), allowSubscriptionOAuth: true,
+    })
+    expect(await alice.read('openai-codex')).toEqual({ type: 'api_key', key: 'workspace-key' })
+    await alice.modify('openai-codex', async () => initial)
+    expect(await alice.read('openai-codex')).toEqual(initial)
+    expect(await workspace.read('openai-codex')).toEqual({ type: 'api_key', key: 'workspace-key' })
+  })
+
+  test('refuses an OAuth-capable store without verified actor identity', () => {
+    expect(() => createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', vaultBackend: setup().backend(), allowSubscriptionOAuth: true,
+    })).toThrow('verified userId is required')
+  })
+
   test('isolates workspace scope and hides subscription OAuth from unattended stores', async () => {
     const { backend } = setup()
     const interactive = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a',
       vaultBackend: backend(),
-      allowSubscriptionOAuth: true,
+      userId: 'user-a', allowSubscriptionOAuth: true,
     })
     await interactive.modify('openai-codex', async () => initial)
 
     const otherWorkspace = createVaultCredentialStoreV1({
       workspaceId: 'workspace-b',
       vaultBackend: backend(),
-      allowSubscriptionOAuth: true,
+      userId: 'user-a', allowSubscriptionOAuth: true,
     })
     const unattended = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a',

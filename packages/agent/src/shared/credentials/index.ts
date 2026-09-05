@@ -12,6 +12,16 @@ export type {
   WorkspaceCredentialAuthorityVerifierV1,
 } from './authority'
 export type {
+  CredentialCustodyScopeV1,
+  CredentialCustodySubjectV1,
+} from './custody'
+export {
+  assertCredentialCustodyScopeV1,
+  credentialCustodySubjectKeyV1,
+  userCredentialCustodyScopeV1,
+  workspaceCredentialCustodyScopeV1,
+} from './custody'
+export type {
   CredentialConsumerBindingRegistryV1,
   CredentialConsumerBindingV1,
   CredentialConsumerKindV1,

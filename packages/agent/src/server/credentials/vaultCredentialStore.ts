@@ -8,6 +8,7 @@ import type {
 import {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,
+  credentialCustodySubjectKeyV1,
 } from '../../shared/credentials'
 import type { CredentialFieldId, ProviderId } from '../../shared/credentials'
 import type { VaultCredentialStoreBackendV1 } from './vault'
@@ -15,12 +16,18 @@ import { LLM_API_KEY_FIELD_ID_V1 } from './startupComposition'
 
 /** Opaque, encrypted vault field containing Pi's canonical OAuth credential. */
 export const PI_OAUTH_CREDENTIAL_FIELD_ID_V1 = 'pi-oauth-v1' as CredentialFieldId
+export function actorCredentialProviderIdV1(userId: string, providerId: string): ProviderId {
+  if (!userId.trim()) throw new TypeError('userId must be non-empty')
+  return `boring.actor.v1/${credentialCustodySubjectKeyV1({ kind: 'user', userId })}/${providerId}` as ProviderId
+}
 const MAX_OAUTH_CREDENTIAL_BYTES = 64 * 1024
 const decoder = new TextDecoder('utf-8', { fatal: true })
 const encoder = new TextEncoder()
 
 export interface VaultCredentialStoreOptionsV1 {
   readonly workspaceId: string
+  /** Verified actor identity. Required whenever subscription OAuth is enabled. */
+  readonly userId?: string
   readonly vaultBackend: VaultCredentialStoreBackendV1
   /** Subscription OAuth is interactive-only; unattended seats set this false. */
   readonly allowSubscriptionOAuth: boolean
@@ -74,8 +81,17 @@ function encodeOAuthCredential(credential: OAuthCredential): Uint8Array {
  */
 export function createVaultCredentialStoreV1(options: VaultCredentialStoreOptionsV1): CredentialStore {
   if (!options.workspaceId.trim()) throw new TypeError('workspaceId must be non-empty')
+  if (options.allowSubscriptionOAuth && !options.userId?.trim()) {
+    throw new TypeError('verified userId is required for subscription OAuth')
+  }
   const oauthProviders = new Set(options.allowedOAuthProviderIds ?? ['openai-codex'])
   const chains = new Map<string, Promise<void>>()
+  // Internal persistence/anchor identity. Existing unprefixed rows remain
+  // explicit workspace-scoped API-key fallback credentials.
+  const personalProviderId = (providerId: string): ProviderId =>
+    actorCredentialProviderIdV1(options.userId!, providerId)
+  const storedProviderId = (providerId: string, type: 'oauth' | 'api-key'): ProviderId =>
+    type === 'oauth' ? personalProviderId(providerId) : providerId as ProviderId
 
   const enqueue = async <T>(providerId: string, task: () => Promise<T>): Promise<T> => {
     const previous = chains.get(providerId) ?? Promise.resolve()
@@ -98,7 +114,15 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     operation?: AuthOperationOptions,
   ): Promise<Credential | undefined> => {
     abortIfNeeded(operation)
-    const metadata = await backend.getCredentialMetadata(options.workspaceId, providerId as ProviderId)
+    const personalId = options.allowSubscriptionOAuth && oauthProviders.has(providerId)
+      ? personalProviderId(providerId)
+      : undefined
+    const personalMetadata = personalId
+      ? await backend.getCredentialMetadata(options.workspaceId, personalId)
+      : undefined
+    const effectiveProviderId = personalMetadata ? personalId! : providerId as ProviderId
+    const metadata = personalMetadata
+      ?? await backend.getCredentialMetadata(options.workspaceId, effectiveProviderId)
     if (!metadata) return undefined
     // A known non-active vault entry is an explicit deny, not absence. Ask the
     // backend for its stable lifecycle error so Pi cannot fall through to an
@@ -106,7 +130,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     if (metadata.state !== 'active') {
       await backend.read(
         options.workspaceId,
-        providerId as ProviderId,
+        effectiveProviderId,
         metadata.credentialType === 'api-key'
           ? [LLM_API_KEY_FIELD_ID_V1]
           : [PI_OAUTH_CREDENTIAL_FIELD_ID_V1],
@@ -117,7 +141,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
       if (!options.allowSubscriptionOAuth || !oauthProviders.has(providerId)) return undefined
       const resolved = await backend.read(
         options.workspaceId,
-        providerId as ProviderId,
+        effectiveProviderId,
         [PI_OAUTH_CREDENTIAL_FIELD_ID_V1],
       )
       if (resolved.kind !== 'field-set') return undefined
@@ -132,7 +156,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     if (metadata.credentialType === 'api-key') {
       const resolved = await backend.read(
         options.workspaceId,
-        providerId as ProviderId,
+        effectiveProviderId,
         [LLM_API_KEY_FIELD_ID_V1],
       )
       if (resolved.kind !== 'field-set') return undefined
@@ -155,11 +179,17 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
       abortIfNeeded(operation)
       const metadata = await options.vaultBackend.listCredentialMetadata(options.workspaceId)
       const result: CredentialInfo[] = []
+      const personalPrefix = options.userId
+        ? `boring.actor.v1/${encodeURIComponent(options.userId)}/`
+        : undefined
       for (const item of metadata) {
         if (item.state !== 'active') continue
-        if (item.credentialType === 'oauth' && options.allowSubscriptionOAuth && oauthProviders.has(item.providerId)) {
-          result.push({ providerId: item.providerId, type: 'oauth' })
-        } else if (item.credentialType === 'api-key') {
+        if (item.credentialType === 'oauth' && personalPrefix && item.providerId.startsWith(personalPrefix)) {
+          const providerId = item.providerId.slice(personalPrefix.length)
+          if (options.allowSubscriptionOAuth && oauthProviders.has(providerId)) {
+            result.push({ providerId, type: 'oauth' })
+          }
+        } else if (item.credentialType === 'api-key' && !item.providerId.startsWith('boring.actor.v1/')) {
           result.push({ providerId: item.providerId, type: 'api_key' })
         }
       }
@@ -185,7 +215,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
             try {
               await lockedBackend.writeCredentialFields({
                 workspaceId: options.workspaceId,
-                providerId: providerId as ProviderId,
+                providerId: storedProviderId(providerId, 'oauth'),
                 fields: new Map([[PI_OAUTH_CREDENTIAL_FIELD_ID_V1, encoded]]),
                 metadata: { displayLabel: 'OpenAI Codex', credentialType: 'oauth' },
               })
@@ -200,7 +230,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
             try {
               await lockedBackend.writeCredentialFields({
                 workspaceId: options.workspaceId,
-                providerId: providerId as ProviderId,
+                providerId: storedProviderId(providerId, 'api-key'),
                 fields: new Map([[LLM_API_KEY_FIELD_ID_V1, encoded]]),
                 metadata: {
                   displayLabel: providerId,
@@ -219,7 +249,12 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     delete(providerId, operation) {
       return enqueue(providerId, async () => {
         abortIfNeeded(operation)
-        await options.vaultBackend.writeAbsentCredential(options.workspaceId, providerId as ProviderId)
+        await options.vaultBackend.writeAbsentCredential(
+          options.workspaceId,
+          options.allowSubscriptionOAuth && oauthProviders.has(providerId)
+            ? personalProviderId(providerId)
+            : providerId as ProviderId,
+        )
       })
     },
   }

@@ -297,10 +297,11 @@ export async function buildAgentComposition(
       ? {
           credentialStore: input.credentialComposition.createPiCredentialStore(
             input.workspaceScopeId,
-            // Factory seats are unattended-capable and must use API-key
-            // funding. Subscription OAuth remains available to normal
-            // interactive agents only.
-            { allowSubscriptionOAuth: allowsSubscriptionOAuthForAgentTypeV1(input.agent.agentTypeId) },
+            undefined,
+            // This composition is workspace-shared and has no verified actor.
+            // It may consume only explicit workspace API-key fallback. A later
+            // invocation-bound composition may opt into personal OAuth.
+            { allowSubscriptionOAuth: false },
           ),
         }
       : {}),

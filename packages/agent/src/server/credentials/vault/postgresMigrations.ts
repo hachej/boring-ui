@@ -7,6 +7,9 @@ export async function runCredentialVaultPostgresMigrationsV1(
   await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS workspace_provider_credentials (
       workspace_id text NOT NULL,
+      credential_subject_kind text NOT NULL DEFAULT 'workspace'
+        CHECK (credential_subject_kind IN ('workspace', 'user')),
+      credential_subject_id text NOT NULL DEFAULT '',
       provider_id text NOT NULL,
       credential_id text NOT NULL,
       display_label text NOT NULL,
@@ -25,8 +28,31 @@ export async function runCredentialVaultPostgresMigrationsV1(
       masked_last_four_suffix text,
       created_at timestamptz NOT NULL DEFAULT NOW(),
       updated_at timestamptz NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (workspace_id, provider_id)
+      PRIMARY KEY (workspace_id, credential_subject_kind, credential_subject_id, provider_id),
+      CHECK (
+        (credential_subject_kind = 'workspace' AND credential_subject_id = '')
+        OR (credential_subject_kind = 'user' AND credential_subject_id <> '')
+      )
     )
+  `)
+  await sql.unsafe(`
+    ALTER TABLE workspace_provider_credentials
+      ADD COLUMN IF NOT EXISTS credential_subject_kind text NOT NULL DEFAULT 'workspace',
+      ADD COLUMN IF NOT EXISTS credential_subject_id text NOT NULL DEFAULT ''
+  `)
+  await sql.unsafe(`
+    DO $$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = 'workspace_provider_credentials'::regclass
+          AND conname = 'workspace_provider_credentials_pkey'
+          AND pg_get_constraintdef(oid) = 'PRIMARY KEY (workspace_id, provider_id)'
+      ) THEN
+        ALTER TABLE workspace_provider_credentials DROP CONSTRAINT workspace_provider_credentials_pkey;
+        ALTER TABLE workspace_provider_credentials ADD PRIMARY KEY (
+          workspace_id, credential_subject_kind, credential_subject_id, provider_id
+        );
+      END IF;
+    END $$
   `)
   await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS workspace_credential_keys (
@@ -54,6 +80,9 @@ export async function runCredentialVaultPostgresMigrationsV1(
   await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS workspace_provider_credential_fields (
       workspace_id text NOT NULL,
+      credential_subject_kind text NOT NULL DEFAULT 'workspace'
+        CHECK (credential_subject_kind IN ('workspace', 'user')),
+      credential_subject_id text NOT NULL DEFAULT '',
       provider_id text NOT NULL,
       credential_version bigint NOT NULL
         CHECK (credential_version > 0 AND credential_version <= 9007199254740991),
@@ -66,7 +95,7 @@ export async function runCredentialVaultPostgresMigrationsV1(
       aad_context bytea,
       deleted_at timestamptz,
       deletion_reason text,
-      PRIMARY KEY (workspace_id, provider_id, credential_version, field_id),
+      PRIMARY KEY (workspace_id, credential_subject_kind, credential_subject_id, provider_id, credential_version, field_id),
       CONSTRAINT workspace_provider_credential_fields_dek_fk
         FOREIGN KEY (workspace_id, dek_generation)
         REFERENCES workspace_credential_keys (workspace_id, dek_generation),
@@ -82,6 +111,25 @@ export async function runCredentialVaultPostgresMigrationsV1(
           AND nonce IS NULL AND auth_tag IS NULL AND aad_context IS NULL)
       )
     )
+  `)
+  await sql.unsafe(`
+    ALTER TABLE workspace_provider_credential_fields
+      ADD COLUMN IF NOT EXISTS credential_subject_kind text NOT NULL DEFAULT 'workspace',
+      ADD COLUMN IF NOT EXISTS credential_subject_id text NOT NULL DEFAULT ''
+  `)
+  await sql.unsafe(`
+    DO $$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = 'workspace_provider_credential_fields'::regclass
+          AND conname = 'workspace_provider_credential_fields_pkey'
+          AND pg_get_constraintdef(oid) = 'PRIMARY KEY (workspace_id, provider_id, credential_version, field_id)'
+      ) THEN
+        ALTER TABLE workspace_provider_credential_fields DROP CONSTRAINT workspace_provider_credential_fields_pkey;
+        ALTER TABLE workspace_provider_credential_fields ADD PRIMARY KEY (
+          workspace_id, credential_subject_kind, credential_subject_id, provider_id, credential_version, field_id
+        );
+      END IF;
+    END $$
   `)
   await sql.unsafe(`
     DO $$
@@ -112,7 +160,7 @@ export async function runCredentialVaultPostgresMigrationsV1(
   `)
   await sql.unsafe(`
     CREATE INDEX IF NOT EXISTS workspace_provider_credential_fields_live_idx
-      ON workspace_provider_credential_fields (workspace_id, provider_id, credential_version)
+      ON workspace_provider_credential_fields (workspace_id, credential_subject_kind, credential_subject_id, provider_id, credential_version)
       WHERE deleted_at IS NULL
   `)
   await sql.unsafe(`

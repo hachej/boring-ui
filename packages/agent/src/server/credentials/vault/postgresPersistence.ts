@@ -89,6 +89,15 @@ function bytes(value: Uint8Array): Uint8Array {
   return new Uint8Array(value)
 }
 
+function credentialSubject(providerId: ProviderId): { kind: 'workspace' | 'user'; id: string } {
+  const match = /^boring\.actor\.v1\/([^/]+)\//.exec(providerId)
+  if (!match) return { kind: 'workspace', id: '' }
+  let id: string
+  try { id = decodeURIComponent(match[1]!) } catch { unreadable('Invalid credential actor identity') }
+  if (!id!) unreadable('Invalid credential actor identity')
+  return { kind: 'user', id }
+}
+
 /** Postgres implementation of the ciphertext-only credential vault port. */
 export class PostgresCredentialVaultPersistenceV1
 implements CredentialVaultPersistenceV1 {
@@ -134,11 +143,14 @@ implements CredentialVaultPersistenceV1 {
   }
 
   async getCredentialMetadata(workspaceId: string, providerId: ProviderId) {
+    const subject = credentialSubject(providerId)
     const rows = await this.sql<CredentialMetadataRow[]>`
       SELECT provider_id, display_label, credential_type, state, credential_version,
         masked_last_four_suffix, created_at, updated_at
       FROM workspace_provider_credentials
       WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+        AND credential_subject_kind = ${subject.kind}
+        AND credential_subject_id = ${subject.id}
     `
     return rows[0] ? this.metadataFromRow(rows[0]) : undefined
   }
@@ -177,6 +189,7 @@ implements CredentialVaultPersistenceV1 {
       maskedLastFourSuffix?: string | null
     }>,
   ) {
+    const subject = credentialSubject(providerId)
     const displayLabel = update.displayLabel ?? null
     const credentialType = update.credentialType ?? null
     const suffix = update.maskedLastFourSuffix ?? null
@@ -192,6 +205,8 @@ implements CredentialVaultPersistenceV1 {
         END,
         updated_at = NOW()
       WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+        AND credential_subject_kind = ${subject.kind}
+        AND credential_subject_id = ${subject.id}
       RETURNING provider_id, display_label, credential_type, state, credential_version,
         masked_last_four_suffix, created_at, updated_at
     `
@@ -208,10 +223,13 @@ implements CredentialVaultPersistenceV1 {
     workspaceId: string,
     providerId: ProviderId,
   ): Promise<StoredCredentialRecordV1 | undefined> {
+    const subject = credentialSubject(providerId)
     const rows = await this.sql<CredentialRecordRow[]>`
       SELECT credential_id, credential_version, dek_generation, material_kind
       FROM workspace_provider_credentials
       WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+        AND credential_subject_kind = ${subject.kind}
+        AND credential_subject_id = ${subject.id}
     `
     const row = rows[0]
     if (!row) return undefined
@@ -228,18 +246,21 @@ implements CredentialVaultPersistenceV1 {
     providerId: ProviderId,
     record: StoredCredentialRecordV1,
   ): Promise<void> {
+    const subject = credentialSubject(providerId)
     await this.sql`
       INSERT INTO workspace_provider_credentials (
-        workspace_id, provider_id, credential_id, display_label,
+        workspace_id, credential_subject_kind, credential_subject_id,
+        provider_id, credential_id, display_label,
         credential_type, credential_schema_version, state, credential_version,
         dek_generation, material_kind
       ) VALUES (
-        ${workspaceId}, ${providerId}, ${record.credentialId}, ${providerId},
+        ${workspaceId}, ${subject.kind}, ${subject.id},
+        ${providerId}, ${record.credentialId}, ${providerId},
         'field-set.v1', 1,
         ${record.materialKind === 'none' ? 'intentionally_absent' : 'active'},
         ${record.credentialVersion}, ${record.dekGeneration}, ${record.materialKind}
       )
-      ON CONFLICT (workspace_id, provider_id) DO UPDATE SET
+      ON CONFLICT (workspace_id, credential_subject_kind, credential_subject_id, provider_id) DO UPDATE SET
         credential_id = EXCLUDED.credential_id,
         credential_version = EXCLUDED.credential_version,
         dek_generation = EXCLUDED.dek_generation,
@@ -479,10 +500,13 @@ implements CredentialVaultPersistenceV1 {
   }
 
   async listFields(workspaceId: string, providerId: ProviderId, credentialVersion: number) {
+    const subject = credentialSubject(providerId)
     const rows = await this.sql<FieldRow[]>`
       SELECT field_id, envelope_version, ciphertext, nonce, auth_tag, aad_context
       FROM workspace_provider_credential_fields
       WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+        AND credential_subject_kind = ${subject.kind}
+        AND credential_subject_id = ${subject.id}
         AND credential_version = ${credentialVersion} AND deleted_at IS NULL
       ORDER BY field_id
     `
@@ -544,6 +568,8 @@ implements CredentialVaultPersistenceV1 {
       UPDATE workspace_provider_credentials
       SET dek_generation = ${input.targetGeneration}, updated_at = NOW()
       WHERE workspace_id = ${input.workspaceId} AND provider_id = ${input.providerId}
+        AND credential_subject_kind = ${credentialSubject(input.providerId).kind}
+        AND credential_subject_id = ${credentialSubject(input.providerId).id}
         AND credential_version = ${input.expectedCredentialVersion}
         AND dek_generation = ${input.sourceGeneration}
     `
@@ -623,11 +649,14 @@ implements CredentialVaultPersistenceV1 {
   }
 
   async getField(key: CredentialFieldKeyV1): Promise<CredentialEnvelopeV1 | undefined> {
+    const subject = credentialSubject(key.providerId)
     const rows = await this.sql<FieldRow[]>`
       SELECT envelope_version, ciphertext, nonce, auth_tag, aad_context
       FROM workspace_provider_credential_fields
       WHERE workspace_id = ${key.workspaceId}
         AND provider_id = ${key.providerId}
+        AND credential_subject_kind = ${subject.kind}
+        AND credential_subject_id = ${subject.id}
         AND credential_version = ${key.credentialVersion}
         AND field_id = ${key.fieldId}
         AND deleted_at IS NULL
@@ -654,17 +683,20 @@ implements CredentialVaultPersistenceV1 {
         'Credential field DEK generation is required',
       )
     }
+    const subject = credentialSubject(key.providerId)
     const result = await this.sql`
       INSERT INTO workspace_provider_credential_fields (
-        workspace_id, provider_id, credential_version, field_id, dek_generation,
+        workspace_id, credential_subject_kind, credential_subject_id,
+        provider_id, credential_version, field_id, dek_generation,
         envelope_version, ciphertext, nonce, auth_tag, aad_context,
         deleted_at, deletion_reason
       ) VALUES (
-        ${key.workspaceId}, ${key.providerId}, ${key.credentialVersion}, ${key.fieldId},
+        ${key.workspaceId}, ${subject.kind}, ${subject.id},
+        ${key.providerId}, ${key.credentialVersion}, ${key.fieldId},
         ${dekGeneration!}, ${envelope.envelopeVersion}, ${envelope.ciphertext},
         ${envelope.nonce}, ${envelope.authTag}, ${envelope.aadContext}, NULL, NULL
       )
-      ON CONFLICT (workspace_id, provider_id, credential_version, field_id)
+      ON CONFLICT (workspace_id, credential_subject_kind, credential_subject_id, provider_id, credential_version, field_id)
       DO UPDATE SET
         envelope_version = EXCLUDED.envelope_version,
         ciphertext = EXCLUDED.ciphertext,
@@ -690,6 +722,7 @@ implements CredentialVaultPersistenceV1 {
     credentialVersion: number,
     tombstone: CredentialFieldTombstoneV1,
   ): Promise<void> {
+    const subject = credentialSubject(providerId)
     await this.sql`
       UPDATE workspace_provider_credential_fields
       SET envelope_version = NULL, ciphertext = NULL, nonce = NULL,
@@ -697,6 +730,8 @@ implements CredentialVaultPersistenceV1 {
         deleted_at = ${tombstone.deletedAt}, deletion_reason = ${tombstone.reason}
       WHERE workspace_id = ${workspaceId}
         AND provider_id = ${providerId}
+        AND credential_subject_kind = ${subject.kind}
+        AND credential_subject_id = ${subject.id}
         AND credential_version = ${credentialVersion}
     `
   }
@@ -704,11 +739,14 @@ implements CredentialVaultPersistenceV1 {
   async getFieldTombstone(
     key: CredentialFieldKeyV1,
   ): Promise<CredentialFieldTombstoneV1 | undefined> {
+    const subject = credentialSubject(key.providerId)
     const rows = await this.sql<TombstoneRow[]>`
       SELECT deleted_at, deletion_reason
       FROM workspace_provider_credential_fields
       WHERE workspace_id = ${key.workspaceId}
         AND provider_id = ${key.providerId}
+        AND credential_subject_kind = ${subject.kind}
+        AND credential_subject_id = ${subject.id}
         AND credential_version = ${key.credentialVersion}
         AND field_id = ${key.fieldId}
         AND deleted_at IS NOT NULL

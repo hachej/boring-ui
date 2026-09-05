@@ -14,11 +14,11 @@ import type { OAuthFlowSnapshotV1, OpenAiCodexOAuthBrokerV1 } from '../../../cre
 import { credentialsRoutes } from '../credentials'
 
 const providerId = 'openai-codex' as ProviderId
-function owner(workspaceId: string): VerifiedWorkspaceCredentialAuthorityV1 {
+function owner(workspaceId: string, userId = 'owner'): VerifiedWorkspaceCredentialAuthorityV1 {
   return {
     workspaceId,
     appId: 'test',
-    principal: { kind: 'user', userId: 'owner', membershipRole: 'owner' },
+    principal: { kind: 'user', userId, membershipRole: 'owner' },
     authorizationReceiptId: 'receipt',
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   }
@@ -49,9 +49,9 @@ function setup() {
   }
   const oauthBroker: OpenAiCodexOAuthBrokerV1 = {
     async start() { return pending },
-    get(workspaceId, flowId) { return workspaceId === 'workspace-a' && flowId === 'flow-a' ? pending : undefined },
-    async respond(workspaceId, flowId, value) {
-      if (workspaceId !== 'workspace-a' || flowId !== 'flow-a' || value !== secret) throw new Error('invalid')
+    get(workspaceId, userId, flowId) { return workspaceId === 'workspace-a' && userId === 'owner' && flowId === 'flow-a' ? pending : undefined },
+    async respond(workspaceId, userId, flowId, value) {
+      if (workspaceId !== 'workspace-a' || userId !== 'owner' || flowId !== 'flow-a' || value !== secret) throw new Error('invalid')
       return { ...pending, status: 'succeeded', prompt: undefined, completedAt: new Date(1).toISOString() }
     },
     async cancel() {},
@@ -61,7 +61,10 @@ function setup() {
     providerRegistry,
     vaultBackend,
     oauthBroker,
-    authorizeRequest: async (request) => owner(String(request.headers['x-workspace'] ?? 'workspace-a')),
+    authorizeRequest: async (request) => owner(
+      String(request.headers['x-workspace'] ?? 'workspace-a'),
+      String(request.headers['x-user'] ?? 'owner'),
+    ),
   })
   return { app, secret }
 }
@@ -70,7 +73,7 @@ describe('OpenAI Codex OAuth routes', () => {
   test('delegates the flow to Pi login callbacks and persists only through its CredentialStore', async () => {
     const store = new InMemoryCredentialStore()
     const broker = createOpenAiCodexOAuthBrokerV1({
-      credentialStoreForWorkspace: () => store,
+      credentialStoreForActor: () => store,
       createRuntime: async (credentials) => ({
         async login(provider, type, interaction) {
           expect([provider, type]).toEqual(['openai-codex', 'oauth'])
@@ -84,9 +87,9 @@ describe('OpenAI Codex OAuth routes', () => {
         },
       }),
     })
-    const started = await broker.start('workspace-a')
+    const started = await broker.start('workspace-a', 'owner')
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(broker.get('workspace-a', started.flowId)).toMatchObject({
+    expect(broker.get('workspace-a', 'owner', started.flowId)).toMatchObject({
       status: 'pending',
       events: [
         { type: 'progress' },
@@ -94,9 +97,9 @@ describe('OpenAI Codex OAuth routes', () => {
       ],
       prompt: { type: 'manual_code' },
     })
-    await broker.respond('workspace-a', started.flowId, 'owner-code')
+    await broker.respond('workspace-a', 'owner', started.flowId, 'owner-code')
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const completed = broker.get('workspace-a', started.flowId)
+    const completed = broker.get('workspace-a', 'owner', started.flowId)
     expect(completed?.status).toBe('succeeded')
     expect(JSON.stringify(completed)).not.toContain('access-secret')
     expect(await store.read('openai-codex')).toMatchObject({ type: 'oauth', refresh: 'refresh-secret' })
@@ -121,6 +124,22 @@ describe('OpenAI Codex OAuth routes', () => {
     expect(completed.json().status).toBe('succeeded')
     expect(completed.body).not.toContain(secret)
     expect(completed.body).not.toContain('access_token')
+    await app.close()
+  })
+
+  test('does not allow another actor in the same workspace to observe or mutate a flow', async () => {
+    const { app, secret } = setup()
+    const headers = { 'x-user': 'other-owner' }
+    const get = await app.inject({
+      method: 'GET', url: '/api/v1/credentials/openai-codex/oauth/flow-a', headers,
+    })
+    expect(get.statusCode).toBe(404)
+    const respond = await app.inject({
+      method: 'POST', url: '/api/v1/credentials/openai-codex/oauth/flow-a/respond', headers,
+      payload: { value: secret },
+    })
+    expect(respond.statusCode).toBe(400)
+    expect(respond.body).not.toContain(secret)
     await app.close()
   })
 

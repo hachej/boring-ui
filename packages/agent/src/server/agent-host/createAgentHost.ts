@@ -809,8 +809,8 @@ export async function createAgentHost(
   })
   const oauthBroker = credentialComposition
     ? createOpenAiCodexOAuthBrokerV1({
-        credentialStoreForWorkspace: (workspaceId) =>
-          credentialComposition.createPiCredentialStore(workspaceId, { allowSubscriptionOAuth: true }),
+        credentialStoreForActor: (workspaceId, userId) =>
+          credentialComposition.createPiCredentialStore(workspaceId, userId, { allowSubscriptionOAuth: true }),
       })
     : undefined
   const runtime = createRuntime(options, compiledAgents, credentialComposition)

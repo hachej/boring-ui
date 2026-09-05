@@ -9,6 +9,7 @@ import {
   CredentialResolutionError,
 } from '../../../../shared/credentials'
 import type { CredentialFieldId, ProviderId } from '../../../../shared/credentials'
+import { actorCredentialProviderIdV1 } from '../../vaultCredentialStore'
 import {
   createInMemoryCredentialVersionAnchorV1,
   createLocalFileCredentialVersionAnchorV1,
@@ -51,8 +52,37 @@ runVaultCredentialStoreConformanceV1(
 )
 
 describe('Postgres credential rollback protection', () => {
-  test('migration is idempotent', async () => {
+  test('migration is idempotent and preserves existing rows as explicit workspace custody', async () => {
     await runCredentialVaultPostgresMigrationsV1(sql)
+    const workspaceId = `legacy-${randomUUID()}`
+    await sql`
+      INSERT INTO workspace_provider_credentials (
+        workspace_id, provider_id, credential_id, display_label, credential_type,
+        state, credential_version, dek_generation, material_kind
+      ) VALUES (${workspaceId}, 'legacy-provider', 'legacy-id', 'Legacy', 'api-key',
+        'intentionally_absent', 1, 1, 'none')
+    `
+    const rows = await sql<{ credential_subject_kind: string; credential_subject_id: string }[]>`
+      SELECT credential_subject_kind, credential_subject_id
+      FROM workspace_provider_credentials WHERE workspace_id = ${workspaceId}
+    `
+    expect(rows).toEqual([{ credential_subject_kind: 'workspace', credential_subject_id: '' }])
+  })
+
+  test('persists personal credential rows with immutable actor columns', async () => {
+    const workspaceId = `actor-${randomUUID()}`
+    const providerId = actorCredentialProviderIdV1('user-a', 'openai-codex')
+    const persistence = createPostgresCredentialVaultPersistenceV1(sql)
+    await persistence.putCredentialRecord(workspaceId, providerId, {
+      credentialId: 'actor-credential', credentialVersion: 1, dekGeneration: 1, materialKind: 'none',
+    })
+    const rows = await sql<{ credential_subject_kind: string; credential_subject_id: string; provider_id: string }[]>`
+      SELECT credential_subject_kind, credential_subject_id, provider_id
+      FROM workspace_provider_credentials WHERE workspace_id = ${workspaceId}
+    `
+    expect(rows).toEqual([{
+      credential_subject_kind: 'user', credential_subject_id: 'user-a', provider_id: providerId,
+    }])
   })
 
   test('fails closed when current material state is changed without a version bump', async () => {

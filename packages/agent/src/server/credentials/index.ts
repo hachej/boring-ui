@@ -10,6 +10,7 @@ export type {
 export { withResolvedCredential } from './withResolvedCredential'
 export {
   PI_OAUTH_CREDENTIAL_FIELD_ID_V1,
+  actorCredentialProviderIdV1,
   createVaultCredentialStoreV1,
 } from './vaultCredentialStore'
 export type { VaultCredentialStoreOptionsV1 } from './vaultCredentialStore'

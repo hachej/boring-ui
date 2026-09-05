@@ -24,7 +24,7 @@ describe('workspace credential funding policy', () => {
   test('normal interactive agents can select Codex OAuth while Factory seats cannot', async () => {
     const vaultBackend = backend()
     const normal = createVaultCredentialStoreV1({
-      workspaceId: 'workspace-a', vaultBackend,
+      workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
       allowSubscriptionOAuth: allowsSubscriptionOAuthForAgentTypeV1('default'),
     })
     const oauth: OAuthCredential = {
@@ -44,13 +44,14 @@ describe('workspace credential funding policy', () => {
   test('normal and Factory runtimes complete deterministically with workspace API-key funding', async () => {
     const vaultBackend = backend()
     const writer = createVaultCredentialStoreV1({
-      workspaceId: 'workspace-a', vaultBackend, allowSubscriptionOAuth: true,
+      workspaceId: 'workspace-a', vaultBackend, userId: 'user-a',
+      allowSubscriptionOAuth: true,
     })
     await writer.modify('credential-proof', async () => ({ type: 'api_key', key: 'sk-factory-funded' }))
 
     for (const agentTypeId of ['default', 'boring-worker']) {
       const store = createVaultCredentialStoreV1({
-        workspaceId: 'workspace-a', vaultBackend,
+        workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
         allowSubscriptionOAuth: allowsSubscriptionOAuthForAgentTypeV1(agentTypeId),
       })
       const runtime = await ModelRuntime.create({ credentials: store, modelsPath: null, refreshOnCreate: false })
