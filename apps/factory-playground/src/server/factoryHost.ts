@@ -74,7 +74,7 @@ export async function startFactoryHost(options: StartFactoryHostOptions) {
     pi: { noContextFiles: true, noExtensions: true, noAmbientPackages: true, noSkills: true },
     workspaceScopedDefaultPluginAgentContributions: true,
     plugins: host.plugins as never,
-    defaultPluginPackages: [],
+    defaultPluginPackages: ['@hachej/boring-ask-user'],
     workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
   })
   try {

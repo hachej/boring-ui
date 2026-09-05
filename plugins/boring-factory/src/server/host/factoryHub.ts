@@ -5,7 +5,7 @@ import { basename, isAbsolute, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
-import { createAskUserServerPlugin, FileAskUserStore } from '@hachej/boring-ask-user/server'
+import { FileAskUserStore } from '@hachej/boring-ask-user/server'
 import type { AskUserQuestion } from '@hachej/boring-ask-user/shared'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import type { FastifyInstance, FastifyReply } from 'fastify'
@@ -366,10 +366,8 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
   const registry = createFactoryEpicRegistry(stateRoot)
   const sessionBindings = createFactorySessionBindings(stateRoot)
   const askUserStore = new FileAskUserStore(resolve(workspaceRoot, '.boring', 'ask-user.json'))
-  const askUserPlugin = {
-    ...createAskUserServerPlugin({ store: askUserStore }),
-    contentDigest: `sha256:${createHash('sha256').update('factory-hub-ask-user.v1.2026-09-05').digest('hex')}`,
-  }
+  // The ask-user package is projected to every seat via defaultPluginPackages (same store file);
+  // this store instance is the hub's read/migration handle on the same file.
   const adoptionTails = new Map<string, Promise<void>>()
   await Promise.all([registry.load(), sessionBindings.load()])
   const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
@@ -499,7 +497,7 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
     agents,
     registry,
     sessionBindings,
-    plugins: [askUserPlugin, supervision.plugin, demo.plugin, sandboxPlugin, delegate.plugin, closeEpicPlugin, taskPlugin, automationPlugin],
+    plugins: [supervision.plugin, demo.plugin, sandboxPlugin, delegate.plugin, closeEpicPlugin, taskPlugin, automationPlugin],
     bind(app) {
       appRef = app
       delegate.bind(app)
@@ -613,7 +611,7 @@ export async function createFactoryHostedApp(options: CreateFactoryHostOptions):
     pi: { noContextFiles: true, noExtensions: true, noAmbientPackages: true, noSkills: true },
     workspaceScopedDefaultPluginAgentContributions: true,
     plugins: host.plugins as never,
-    defaultPluginPackages: [],
+    defaultPluginPackages: ['@hachej/boring-ask-user'],
     workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
   })
   host.bind(app)
