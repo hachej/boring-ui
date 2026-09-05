@@ -142,7 +142,6 @@ async function boundedWait<T>(
   pending: PromiseLike<T>,
   deadlineMs: number,
   signal?: AbortSignal,
-  cancel?: () => unknown,
 ): Promise<T> {
   if (signal?.aborted) throw lockUnavailable('cancelled')
   const remainingMs = Math.max(0, deadlineMs - Date.now())
@@ -166,14 +165,6 @@ async function boundedWait<T>(
       if (settled) return
       settled = true
       cleanup()
-      try {
-        const cancellation = cancel?.()
-        if (cancellation && typeof (cancellation as PromiseLike<unknown>).then === 'function') {
-          void Promise.resolve(cancellation).catch(() => undefined)
-        }
-      } catch {
-        // Cancellation is best-effort; the stable lock error remains authoritative.
-      }
       reject(error)
     }
     function aborted(): void {
@@ -203,18 +194,13 @@ async function destroyReservedConnection(
     const terminate = pool<{ terminated: boolean }[]>`
       SELECT pg_terminate_backend(${backendPid}) AS terminated
     `
-    await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+    await boundedWait(terminate, evictionDeadlineMs)
     for (;;) {
       if (Date.now() >= evictionDeadlineMs) throw lockUnavailable('could not evict its connection')
       const presenceQuery = pool<{ present: boolean }[]>`
         SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid = ${backendPid}) AS present
       `
-      const present = await boundedWait(
-        presenceQuery,
-        evictionDeadlineMs,
-        undefined,
-        () => presenceQuery.cancel(),
-      )
+      const present = await boundedWait(presenceQuery, evictionDeadlineMs)
       if (present[0]?.present !== true) break
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
@@ -224,11 +210,11 @@ async function destroyReservedConnection(
       FROM pg_stat_activity
       WHERE pid <> pg_backend_pid() AND query LIKE ${`%${probeToken}%`}
     `
-    const rows = await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+    const rows = await boundedWait(terminate, evictionDeadlineMs)
     if (rows.length === 0) return false
   } else {
     const terminate = reserved`SELECT pg_terminate_backend(pg_backend_pid())`
-    await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+    await boundedWait(terminate, evictionDeadlineMs)
   }
   // Do not call release(): the confirmed connection-close path owns cleanup.
   return true
@@ -291,7 +277,7 @@ implements CredentialVaultPersistenceV1 {
       `SELECT pg_backend_pid() AS pid /* ${probeToken} */`,
     )
     try {
-      const pidRows = await boundedWait(pidQuery, deadlineMs, lockOptions.signal, () => pidQuery.cancel())
+      const pidRows = await boundedWait(pidQuery, deadlineMs, lockOptions.signal)
       if (Number.isSafeInteger(pidRows[0]?.pid)) backendPid = pidRows[0]!.pid
     } catch (error) {
       try {
@@ -331,7 +317,7 @@ implements CredentialVaultPersistenceV1 {
         `
         let rows: { locked: boolean }[]
         try {
-          rows = await boundedWait(query, deadlineMs, lockOptions.signal, () => query.cancel())
+          rows = await boundedWait(query, deadlineMs, lockOptions.signal)
         } catch (error) {
           release = false
           await destroyReservedConnection(this.options.evictionSql, reserved, backendPid)
@@ -365,12 +351,7 @@ implements CredentialVaultPersistenceV1 {
           const query = reserved<{ unlocked: boolean }[]>`
             SELECT pg_advisory_unlock(hashtextextended(${lockKey}, 0)) AS unlocked
           `
-          const rows = await boundedWait(
-            query,
-            Date.now() + releaseTimeoutMs,
-            undefined,
-            () => query.cancel(),
-          )
+          const rows = await boundedWait(query, Date.now() + releaseTimeoutMs)
           unlocked = rows[0]?.unlocked === true
         } catch {
           // The connection must not re-enter the pool when lock state is uncertain.
