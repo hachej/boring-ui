@@ -223,6 +223,7 @@ try {
   }
 
   if (process.env.OWNER_ANSWERS_GATE1 === '1') {
+    // Planning epics: Gate 1 carries owner decisions, so the driver validates the card and leaves it pending.
     receipt.gate1.decision = 'left pending for the owner (OWNER_ANSWERS_GATE1=1)'
     loopOn = false
     const pendingOut = process.env.RECEIPT_PATH ?? resolve(EPIC_WT, 'apps/factory-playground/workspace/factory-runs', `live-${EPIC}.json`)
