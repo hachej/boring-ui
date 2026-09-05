@@ -63,6 +63,8 @@ export interface FactorySupervisionPluginHandle {
   bind(app: FastifyInstance): void
   /** Read the state file and arm a timer for every persisted entry. Returns the count armed. */
   rearm(): Promise<number>
+  /** Move an epic's persisted cadence to its newly adopted Orchestrator. Idempotent. */
+  transferSupervision(epicKey: string, previousSessionId: string | undefined, adoptedSessionId: string): Promise<void>
   /** Host-only control surface for epic closure. */
   readonly control: FactorySupervisionPluginControl
   /** Clear every armed timer. Idempotent. */
@@ -159,6 +161,27 @@ export function createFactorySupervisionPlugin(
       return
     }
 
+    const [epic, boundEpic] = await Promise.all([
+      options.registry.get(entry.epicKey),
+      options.sessionBindings.get(entry.sessionId),
+    ])
+    if (
+      entry.agentTypeId !== SUPERVISED_AGENT_TYPE_ID
+      || !epic
+      || epic.status !== 'active'
+      || epic.orchestratorSessionId !== entry.sessionId
+      || boundEpic !== entry.epicKey
+    ) {
+      clearTimerFor(sessionId)
+      await mutateState((current) => {
+        if (!(sessionId in current.entries)) return current
+        const entries = { ...current.entries }
+        delete entries[sessionId]
+        return { entries }
+      })
+      return
+    }
+
     let outcome: NonNullable<SupervisionEntry['lastTickOutcome']>
     try {
       const stateResponse = await app.inject({
@@ -174,11 +197,6 @@ export function createFactorySupervisionPlugin(
           outcome = 'skipped-busy'
         } else {
           const tickNumber = entry.ticks + 1
-          const epic = await options.registry.get(entry.epicKey)
-          if (!epic || epic.status !== 'active') {
-            clearTimerFor(sessionId)
-            return
-          }
           const selectedModel = modelSelection(epic.models?.orchestrator)
           const promptResponse = await app.inject({
             method: 'POST',
@@ -229,15 +247,52 @@ export function createFactorySupervisionPlugin(
   }
 
   async function rearm(): Promise<number> {
-    const state = await readState(statePath)
-    const activeKeys = new Set((await options.registry.list()).filter((entry) => entry.status === 'active').map((entry) => entry.epicKey))
+    for (const sessionId of [...timers.keys()]) clearTimerFor(sessionId)
+    const [registryEntries, bindings] = await Promise.all([options.registry.list(), options.sessionBindings.load()])
+    const active = new Map(registryEntries.filter((entry) => entry.status === 'active').map((entry) => [entry.epicKey, entry]))
+    const state = await mutateState((current) => ({
+      entries: Object.fromEntries(Object.entries(current.entries).filter(([, entry]) => {
+        const epic = active.get(entry.epicKey)
+        return entry.agentTypeId === SUPERVISED_AGENT_TYPE_ID
+          && epic?.orchestratorSessionId === entry.sessionId
+          && bindings[entry.sessionId] === entry.epicKey
+      })),
+    }))
     let count = 0
     for (const entry of Object.values(state.entries)) {
-      if (!entry.epicKey || !activeKeys.has(entry.epicKey)) continue
       arm(entry.sessionId, entry.intervalMs)
       count += 1
     }
     return count
+  }
+
+  async function transferSupervision(
+    epicKey: string,
+    previousSessionId: string | undefined,
+    adoptedSessionId: string,
+  ): Promise<void> {
+    let transferred: SupervisionEntry | undefined
+    const removedSessionIds: string[] = []
+    await mutateState((current) => {
+      const entries = { ...current.entries }
+      const source = [
+        previousSessionId ? entries[previousSessionId] : undefined,
+        entries[adoptedSessionId],
+        ...Object.values(entries),
+      ].find((entry) => entry?.epicKey === epicKey)
+      for (const [sessionId, entry] of Object.entries(entries)) {
+        if (entry.epicKey !== epicKey && sessionId !== adoptedSessionId) continue
+        removedSessionIds.push(sessionId)
+        delete entries[sessionId]
+      }
+      if (source?.epicKey === epicKey) {
+        transferred = { ...source, agentTypeId: SUPERVISED_AGENT_TYPE_ID, sessionId: adoptedSessionId }
+        entries[adoptedSessionId] = transferred
+      }
+      return { entries }
+    })
+    for (const sessionId of removedSessionIds) clearTimerFor(sessionId)
+    if (transferred) arm(adoptedSessionId, transferred.intervalMs)
   }
 
   function close(): void {
@@ -381,6 +436,7 @@ export function createFactorySupervisionPlugin(
       })
     },
     rearm,
+    transferSupervision,
     control: { stopSupervision },
     close,
   }

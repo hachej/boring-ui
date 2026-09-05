@@ -3,14 +3,14 @@
 import { execFile, spawn } from 'node:child_process'
 import { openSync } from 'node:fs'
 import { mkdir, stat } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const exec = promisify(execFile)
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const APP_ROOT = resolve(SCRIPT_DIR, '..')
-const REPOSITORY_ROOT = process.env.BORING_FACTORY_WORKSPACE_ROOT
+export const REPOSITORY_ROOT = process.env.BORING_FACTORY_WORKSPACE_ROOT
   ? resolve(process.env.BORING_FACTORY_WORKSPACE_ROOT)
   : (await exec('git', ['-C', SCRIPT_DIR, 'rev-parse', '--show-toplevel'])).stdout.trim()
 const STATE_ROOT = resolve(process.env.BORING_FACTORY_STATE_ROOT || resolve(APP_ROOT, '.factory-state'))
@@ -208,6 +208,19 @@ async function cmdDown(epicKey) {
   console.log(`[factory-epic] marked '${entry.epicKey}' closed; worktree kept at ${entry.worktree}`)
 }
 
+export async function cmdAdopt(epicKey, flags) {
+  if (!epicKey) throw new Error('usage: adopt <epic-key> --session <id> --transcript <absolute-path>')
+  if (typeof flags.session !== 'string' || !flags.session.trim()) throw new Error('--session <id> is required')
+  if (typeof flags.transcript !== 'string' || !flags.transcript.trim()) throw new Error('--transcript <absolute-path> is required')
+  if (!isAbsolute(flags.transcript)) throw new Error('--transcript must be an absolute path')
+  assertExpectedHub(await request('/api/v1/workspace/meta'))
+  const entry = await request(`/api/v1/factory/epics/${encodeURIComponent(epicKey)}/adopt`, {
+    method: 'POST',
+    body: JSON.stringify({ orchestratorSessionId: flags.session.trim(), transcriptPath: flags.transcript }),
+  })
+  console.log(`[factory-epic] adopted Orchestrator ${entry.orchestratorSessionId} for '${entry.epicKey}'`)
+}
+
 async function cmdIntake() {
   const { stdout } = await exec('gh', ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,headRefName,isDraft'], { cwd: REPOSITORY_ROOT })
   const pulls = JSON.parse(stdout)
@@ -224,13 +237,16 @@ async function main() {
   if (command === 'hub' && positional[0] === 'up') return await cmdHubUp()
   if (command === 'up') return await cmdUp(flags)
   if (command === 'list') return await cmdList()
+  if (command === 'adopt') return await cmdAdopt(positional[0], flags)
   if (command === 'down') return await cmdDown(positional[0])
   if (command === 'intake') return await cmdIntake()
-  console.log('Usage: factory-epic.mjs hub up | up --feature <name> [--key <slug>] [--pr <n>|--branch <name>] [--request <path>] [--models orch=...,worker=...,reviewer=...] [--start false] | list | down <key> | intake')
+  console.log('Usage: factory-epic.mjs hub up | up --feature <name> [--key <slug>] [--pr <n>|--branch <name>] [--request <path>] [--models orch=...,worker=...,reviewer=...] [--start false] | list | adopt <key> --session <id> --transcript <absolute-path> | down <key> | intake')
   if (command) process.exitCode = 1
 }
 
-main().catch((error) => {
-  console.error(`[factory-epic] ${error.stack || error.message}`)
-  process.exitCode = 1
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error(`[factory-epic] ${error.stack || error.message}`)
+    process.exitCode = 1
+  })
+}

@@ -49,12 +49,19 @@ Every host uses the stable workspace scope `factory-hub`, giving all registered 
 sessions surface and one Inbox. Each tool resolves its epic from the calling session binding,
 or from its optional explicit `epicKey`, and then operates on that registry entry's worktree.
 An unbound call fails with an error that names the `epicKey` override. Child sessions inherit
-the parent's binding before their first prompt.
+the parent's binding before their first prompt; if that prompt is rejected, the host removes
+the new child binding again.
 
 Factory intake is `POST /api/v1/factory/epics`; listing is `GET /api/v1/factory/epics`, and
 `POST /api/v1/factory/epics/:key/adopt` attaches an existing Orchestrator session. Legacy
 per-epic transcripts are copied into the hub session namespace during adoption while their
-source files remain intact. Intake reports whether the optional kickoff was accepted; a
+source files remain intact. Adoption is idempotent and transfers any persisted supervision
+cadence to the adopted session. Intake request files must be relative regular files of at most
+1 MiB whose canonical path remains beneath the validated epic worktree. Registry paths are
+persisted canonically; the repository root and active worktree/branch reuse are rejected.
+The registry is the source of truth: coupled writes persist it before bindings, and boot
+reconciliation restores its Orchestrator bindings while dropping bindings for missing or
+closed epics. Intake reports whether the optional kickoff was accepted; a
 failed kickoff leaves the registered, bound Orchestrator available for an explicit retry.
 `BORING_FACTORY_EPIC_KEY`/`BORING_FACTORY_FEATURE_NAME` values are accepted only as one-shot
 intake on boot and are logged as such; they are no longer host identity.

@@ -139,6 +139,7 @@ function epicDeps(worktree: string): {
         bindings[childSessionId] = epicKey
         return epicKey
       },
+      reconcile: async () => ({ droppedSessionIds: [], restoredOrchestratorSessionIds: [] }),
     },
   }
 }

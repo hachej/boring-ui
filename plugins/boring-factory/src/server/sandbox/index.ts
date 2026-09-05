@@ -32,6 +32,7 @@ export {
   getFactoryBootstrapLog,
   gitFetchAuthShellSetup,
   isBootstrapRefreshNeeded,
+  normalizeRemoteUrl,
   resolveFactoryGitToken,
 } from './remoteSnapshotProvider'
 export type {

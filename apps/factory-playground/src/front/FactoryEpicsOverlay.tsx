@@ -71,7 +71,8 @@ export function FactoryEpicsOverlay({ onClose }: { onClose: () => void }) {
   const [epics, setEpics] = useState<FactoryEpicLiveEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [featureName, setFeatureName] = useState('')
   const [epicKey, setEpicKey] = useState('')
   const [requestFile, setRequestFile] = useState('')
@@ -81,9 +82,9 @@ export function FactoryEpicsOverlay({ onClose }: { onClose: () => void }) {
     try {
       const response = await fetch('/api/v1/factory/epics', { signal })
       setEpics(await responseJson<FactoryEpicLiveEntry[]>(response))
-      setError(null)
+      setRefreshError(null)
     } catch (nextError) {
-      if ((nextError as Error).name !== 'AbortError') setError((nextError as Error).message)
+      if ((nextError as Error).name !== 'AbortError') setRefreshError((nextError as Error).message)
     } finally {
       setLoading(false)
     }
@@ -99,14 +100,15 @@ export function FactoryEpicsOverlay({ onClose }: { onClose: () => void }) {
   const openEpic = useCallback((entry: FactoryEpicLiveEntry) => {
     if (!entry.orchestratorSessionId) return
     const result = shell.openFullChat({ agentTypeId: 'boring-orchestrator', sessionId: entry.orchestratorSessionId })
-    if (!result.success) { setError(result.message); return }
+    if (!result.success) { setActionError(result.message); return }
+    setActionError(null)
     onClose()
   }, [onClose, shell])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setSubmitting(true)
-    setError(null)
+    setActionError(null)
     try {
       const entry = await responseJson<FactoryEpicLiveEntry>(await fetch('/api/v1/factory/epics', {
         method: 'POST',
@@ -125,12 +127,12 @@ export function FactoryEpicsOverlay({ onClose }: { onClose: () => void }) {
       setKeyEdited(false)
       await refresh()
       if (entry.kickoff?.status === 'failed') {
-        setError(`${entry.kickoff.message ?? 'Kickoff was not accepted'}. The Orchestrator session was created and is ready to retry.`)
+        setActionError(`${entry.kickoff.message ?? 'Kickoff was not accepted'}. The Orchestrator session was created and is ready to retry.`)
         return
       }
       openEpic(entry)
     } catch (nextError) {
-      setError((nextError as Error).message)
+      setActionError((nextError as Error).message)
     } finally {
       setSubmitting(false)
     }
@@ -187,7 +189,8 @@ export function FactoryEpicsOverlay({ onClose }: { onClose: () => void }) {
           </button>
         </form>
 
-        {error ? <p role="alert" className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p> : null}
+        {actionError ? <p role="alert" className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{actionError}</p> : null}
+        {refreshError ? <p role="alert" className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{refreshError}</p> : null}
         {loading ? <p className="px-1 text-xs text-muted-foreground">Loading epics…</p> : null}
         {!loading && epics.length === 0 ? <p className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-xs text-muted-foreground">No epics registered yet.</p> : null}
 

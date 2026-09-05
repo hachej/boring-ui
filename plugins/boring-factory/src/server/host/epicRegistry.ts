@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 const EPIC_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+export const FACTORY_REQUEST_FILE_MAX_BYTES = 1024 * 1024
 
 export interface FactoryEpicModels {
   readonly orchestrator?: string
@@ -112,6 +113,60 @@ function listedWorktrees(porcelain: string): string[] {
     .map((line) => line.slice('worktree '.length))
 }
 
+function isWithin(root: string, candidate: string): boolean {
+  const path = relative(root, candidate)
+  return path.length > 0 && path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
+}
+
+async function validateCanonicalRequestFile(worktree: string, requestFile: string): Promise<string> {
+  if (!isAbsolute(requestFile)) {
+    throw new FactoryEpicRegistryError('INVALID_EPIC', 'stored requestFile must be an absolute canonical path')
+  }
+  let canonicalRequestFile: string
+  try {
+    canonicalRequestFile = await realpath(requestFile)
+  } catch (error) {
+    throw new FactoryEpicRegistryError('INVALID_EPIC', `requestFile does not exist: ${(error as Error).message}`)
+  }
+  if (!isWithin(worktree, canonicalRequestFile)) {
+    throw new FactoryEpicRegistryError('INVALID_EPIC', 'requestFile must stay beneath the epic worktree')
+  }
+  const info = await stat(canonicalRequestFile)
+  if (!info.isFile()) throw new FactoryEpicRegistryError('INVALID_EPIC', 'requestFile must be a regular file')
+  if (info.size > FACTORY_REQUEST_FILE_MAX_BYTES) {
+    throw new FactoryEpicRegistryError('INVALID_EPIC', `requestFile must be at most ${FACTORY_REQUEST_FILE_MAX_BYTES} bytes`)
+  }
+  return canonicalRequestFile
+}
+
+export async function resolveFactoryEpicRequestFile(worktree: string, requestFile: string): Promise<string> {
+  if (isAbsolute(requestFile)) throw new FactoryEpicRegistryError('INVALID_EPIC', 'requestFile must be relative to the epic worktree')
+  if (requestFile.split(/[\\/]+/).includes('..')) {
+    throw new FactoryEpicRegistryError('INVALID_EPIC', 'requestFile must not contain traversal segments')
+  }
+  const canonicalWorktree = await realpath(worktree)
+  return await validateCanonicalRequestFile(canonicalWorktree, resolve(canonicalWorktree, requestFile))
+}
+
+function assertNoActiveDuplicates(entries: readonly FactoryEpicEntry[]): void {
+  const active = entries.filter((entry) => entry.status === 'active')
+  for (let index = 0; index < active.length; index += 1) {
+    const entry = active[index]!
+    for (const other of active.slice(index + 1)) {
+      if (entry.orchestratorSessionId && entry.orchestratorSessionId === other.orchestratorSessionId) {
+        throw new FactoryEpicRegistryError('EPIC_EXISTS', `active epics ${entry.epicKey} and ${other.epicKey} reuse Orchestrator session ${entry.orchestratorSessionId}`)
+      }
+      if (entry.repositoryRoot !== other.repositoryRoot) continue
+      if (entry.worktree === other.worktree) {
+        throw new FactoryEpicRegistryError('EPIC_EXISTS', `active epics ${entry.epicKey} and ${other.epicKey} reuse worktree ${entry.worktree}`)
+      }
+      if (entry.branch === other.branch) {
+        throw new FactoryEpicRegistryError('EPIC_EXISTS', `active epics ${entry.epicKey} and ${other.epicKey} reuse branch ${entry.branch}`)
+      }
+    }
+  }
+}
+
 export async function validateFactoryEpicEntry(entry: FactoryEpicEntry): Promise<FactoryEpicEntry> {
   if (!EPIC_KEY_PATTERN.test(entry.epicKey)) {
     throw new FactoryEpicRegistryError('INVALID_EPIC', 'epicKey must be a lowercase slug (letters, numbers, and single hyphens)')
@@ -146,20 +201,31 @@ export async function validateFactoryEpicEntry(entry: FactoryEpicEntry): Promise
     throw new FactoryEpicRegistryError('INVALID_EPIC', `worktree does not exist: ${worktree}`)
   }
 
+  let canonicalRepositoryRoot: string
+  let canonicalWorktree: string
   try {
-    const [canonicalRepositoryRoot, canonicalWorktree, topLevel, branch, worktreeList] = await Promise.all([
+    let topLevel: string
+    let branch: string
+    let worktreeList: string
+    [canonicalRepositoryRoot, canonicalWorktree, topLevel, branch, worktreeList] = await Promise.all([
       realpath(repositoryRoot),
       realpath(worktree),
       gitOutput(worktree, ['rev-parse', '--show-toplevel']).then(async (path) => await realpath(path)),
       gitOutput(worktree, ['rev-parse', '--abbrev-ref', 'HEAD']),
       gitOutput(repositoryRoot, ['worktree', 'list', '--porcelain']),
     ])
+    if (canonicalRepositoryRoot === canonicalWorktree) {
+      throw new Error('the repository root itself cannot be registered as an epic worktree')
+    }
     if (topLevel !== canonicalWorktree) {
       throw new Error(`git top-level is ${topLevel}`)
     }
     const registered = await Promise.all(listedWorktrees(worktreeList).map(async (path) => {
       try { return await realpath(path) } catch { return resolve(path) }
     }))
+    if (registered[0] !== canonicalRepositoryRoot) {
+      throw new Error(`repositoryRoot must be the primary Git worktree ${registered[0] ?? '(missing)'}`)
+    }
     if (!registered.includes(canonicalWorktree)) {
       throw new Error(`not listed by git -C ${canonicalRepositoryRoot} worktree list`)
     }
@@ -180,8 +246,8 @@ export async function validateFactoryEpicEntry(entry: FactoryEpicEntry): Promise
 
   return {
     ...cloneEntry(entry),
-    worktree,
-    repositoryRoot,
+    worktree: canonicalWorktree,
+    repositoryRoot: canonicalRepositoryRoot,
   }
 }
 
@@ -218,8 +284,12 @@ export function createFactoryEpicRegistry(stateRoot: string): FactoryEpicRegistr
       migrated ||= normalized.migrated
       const entry = normalized.entry
       if (key !== entry.epicKey) throw new FactoryEpicRegistryError('INVALID_EPIC', `registry key ${key} does not match entry epicKey`)
-      return await validateFactoryEpicEntry(entry)
+      const canonical = await validateFactoryEpicEntry(entry)
+      migrated ||= canonical.worktree !== entry.worktree
+        || canonical.repositoryRoot !== entry.repositoryRoot
+      return canonical
     }))
+    assertNoActiveDuplicates(validated)
     entries = new Map(validated.map((entry) => [entry.epicKey, entry]))
     loaded = true
     if (migrated) await persist()
@@ -264,6 +334,7 @@ export function createFactoryEpicRegistry(stateRoot: string): FactoryEpicRegistr
         if (existing) {
           throw new FactoryEpicRegistryError('EPIC_EXISTS', `epic ${entry.epicKey} is already registered (${existing.status})`)
         }
+        assertNoActiveDuplicates([...entries.values(), entry])
         const next = new Map(entries).set(entry.epicKey, entry)
         await writeAtomic(path, { epics: Object.fromEntries(next) })
         entries = next
@@ -278,6 +349,7 @@ export function createFactoryEpicRegistry(stateRoot: string): FactoryEpicRegistr
         if (!entry) throw new FactoryEpicRegistryError('EPIC_NOT_FOUND', `epic ${epicKey} is not registered`)
         const next = { ...entry, orchestratorSessionId: sessionId }
         const nextEntries = new Map(entries).set(epicKey, next)
+        assertNoActiveDuplicates([...nextEntries.values()])
         await writeAtomic(path, { epics: Object.fromEntries(nextEntries) })
         entries = nextEntries
         return cloneEntry(next)

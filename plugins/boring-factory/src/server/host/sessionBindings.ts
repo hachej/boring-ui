@@ -8,12 +8,18 @@ interface SessionBindingsFile {
   readonly bindings: Record<string, string>
 }
 
+export interface FactorySessionBindingReconciliation {
+  readonly droppedSessionIds: readonly string[]
+  readonly restoredOrchestratorSessionIds: readonly string[]
+}
+
 export interface FactorySessionBindings {
   load(): Promise<Readonly<Record<string, string>>>
   get(sessionId: string): Promise<string | undefined>
   bind(sessionId: string, epicKey: string): Promise<void>
   unbind(sessionId: string): Promise<void>
   inherit(parentSessionId: string, childSessionId: string): Promise<string>
+  reconcile(entries: readonly FactoryEpicEntry[], dropSessionIds?: readonly string[]): Promise<FactorySessionBindingReconciliation>
 }
 
 export class FactoryEpicResolutionError extends Error {
@@ -112,6 +118,31 @@ export function createFactorySessionBindings(stateRoot: string): FactorySessionB
       }
       await this.bind(childSessionId, epicKey)
       return epicKey
+    },
+    async reconcile(entries, dropSessionIds = []) {
+      let report: FactorySessionBindingReconciliation = { droppedSessionIds: [], restoredOrchestratorSessionIds: [] }
+      await mutate(async () => {
+        await load()
+        const active = new Map(entries.filter((entry) => entry.status === 'active').map((entry) => [entry.epicKey, entry]))
+        const explicitlyDropped = new Set(dropSessionIds)
+        const next: Record<string, string> = {}
+        const droppedSessionIds: string[] = []
+        for (const [sessionId, epicKey] of Object.entries(bindings)) {
+          if (explicitlyDropped.has(sessionId) || !active.has(epicKey)) droppedSessionIds.push(sessionId)
+          else next[sessionId] = epicKey
+        }
+        const restoredOrchestratorSessionIds: string[] = []
+        for (const entry of active.values()) {
+          const sessionId = entry.orchestratorSessionId
+          if (!sessionId) continue
+          if (next[sessionId] !== entry.epicKey) restoredOrchestratorSessionIds.push(sessionId)
+          next[sessionId] = entry.epicKey
+        }
+        if (JSON.stringify(next) !== JSON.stringify(bindings)) await writeAtomic(path, { bindings: next })
+        bindings = next
+        report = { droppedSessionIds, restoredOrchestratorSessionIds }
+      })
+      return report
     },
   }
 }

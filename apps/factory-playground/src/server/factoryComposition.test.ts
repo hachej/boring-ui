@@ -32,6 +32,7 @@ const EPIC_REGISTRY: FactoryEpicRegistry = {
 const SESSION_BINDINGS: FactorySessionBindings = {
   load: async () => ({}), get: async () => undefined, bind: async () => {}, unbind: async () => {},
   inherit: async () => EPIC_KEY,
+  reconcile: async () => ({ droppedSessionIds: [], restoredOrchestratorSessionIds: [] }),
 }
 const DELEGATE_OPTIONS = { workspaceScopeId: WORKSPACE_SCOPE_ID, registry: EPIC_REGISTRY, sessionBindings: SESSION_BINDINGS }
 
@@ -150,6 +151,7 @@ describe('native Factory composition', () => {
       }
       const workerSessionId = await createSession(FACTORY_WORKER_AGENT_TYPE_ID)
       const orchestratorSessionId = await createSession(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID)
+      await createSession(FACTORY_REVIEWER_AGENT_TYPE_ID)
       const commandsFor = async (agentTypeId: string, sessionId: string) => {
         const response = await app.inject({
           method: 'GET',
@@ -164,7 +166,14 @@ describe('native Factory composition', () => {
 
       const workerTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_WORKER_AGENT_TYPE_ID}/tools`, headers: header })
       const orchestratorTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/tools`, headers: header })
+      const reviewerTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_REVIEWER_AGENT_TYPE_ID}/tools`, headers: header })
       const names = (response: typeof workerTools) => response.json<{ tools: Array<{ name: string }> }>().tools.map(({ name }) => name)
+      expect(workerTools.statusCode).toBe(200)
+      expect(orchestratorTools.statusCode).toBe(200)
+      expect(reviewerTools.statusCode).toBe(200)
+      expect(names(workerTools)).toContain('ask_user')
+      expect(names(orchestratorTools)).toContain('ask_user')
+      expect(names(reviewerTools)).toContain('ask_user')
       expect(names(workerTools)).toEqual(expect.arrayContaining(['sandbox', 'sandbox_bash']))
       expect(names(workerTools)).not.toContain('boring_automation')
       expect(names(workerTools)).not.toContain('supervise')

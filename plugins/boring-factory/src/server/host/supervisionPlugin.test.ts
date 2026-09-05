@@ -23,13 +23,14 @@ async function writeSupervisionFile(stateRoot: string, entries: Record<string, u
   await writeFile(resolve(stateRoot, 'supervision.json'), JSON.stringify({ entries }, null, 2), 'utf8')
 }
 
-function epicDeps(): { registry: FactoryEpicRegistry; sessionBindings: FactorySessionBindings } {
+function epicDeps(orchestratorSessionId = 'session-orch-1'): { registry: FactoryEpicRegistry; sessionBindings: FactorySessionBindings } {
   const entry: FactoryEpicEntry = {
     epicKey: 'live-farewell',
     featureName: 'Live Farewell',
     worktree: '/tmp/factory-live-farewell',
     branch: 'epic/live-farewell',
     repositoryRoot: '/tmp/repository',
+    orchestratorSessionId,
     createdAt: '2026-09-05T00:00:00.000Z',
     status: 'active',
   }
@@ -59,6 +60,7 @@ function epicDeps(): { registry: FactoryEpicRegistry; sessionBindings: FactorySe
         bindings[childSessionId] = key
         return key
       },
+      reconcile: async () => ({ droppedSessionIds: [], restoredOrchestratorSessionIds: [] }),
     },
   }
 }
@@ -188,7 +190,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-restart') })
     handle.bind(app as never)
     const armedCount = await handle.rearm()
     expect(armedCount).toBe(1)
@@ -197,6 +199,54 @@ describe('factory supervision plugin', () => {
     expect(prompts[0]).toContain('Supervision tick 1')
     expect(prompts[0]).toContain('restart nudge')
 
+    handle.close()
+  })
+
+  it('rearm() prunes entries that are not the bound registry Orchestrator', async () => {
+    const stateRoot = await makeStateRoot()
+    const entry = (sessionId: string, epicKey = 'live-farewell', agentTypeId = 'boring-orchestrator') => ({
+      epicKey,
+      agentTypeId,
+      sessionId,
+      intervalMs: 50,
+      prompt: `${sessionId} nudge`,
+      startedAt: '2026-09-05T00:00:00.000Z',
+      ticks: 0,
+    })
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': entry('session-restart'),
+      'adopted-away': entry('adopted-away'),
+      'missing-epic': entry('missing-epic', 'missing'),
+      'wrong-agent': entry('wrong-agent', 'live-farewell', 'boring-worker'),
+    })
+
+    const { app, prompts } = createFakeApp({ status: 'idle' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-restart') })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+    expect(Object.keys(JSON.parse(await readFile(resolve(stateRoot, 'supervision.json'), 'utf8')).entries)).toEqual(['session-restart'])
+    await waitFor(() => prompts.length > 0)
+    expect(prompts).toEqual([expect.stringContaining('session-restart nudge')])
+    handle.close()
+  })
+
+  it('transfers an epic supervision entry to the adopted session idempotently', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      old: {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'old', intervalMs: 45_000,
+        prompt: 'preserved nudge', startedAt: '2026-09-05T00:00:00.000Z', lastTickAt: '2026-09-05T00:01:00.000Z',
+        lastTickOutcome: 'sent', ticks: 4,
+      },
+    })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('adopted') })
+    await handle.transferSupervision('live-farewell', 'old', 'adopted')
+    await handle.transferSupervision('live-farewell', 'adopted', 'adopted')
+    const state = JSON.parse(await readFile(resolve(stateRoot, 'supervision.json'), 'utf8')) as { entries: Record<string, unknown> }
+    expect(state.entries).toEqual({ adopted: expect.objectContaining({
+      epicKey: 'live-farewell', sessionId: 'adopted', intervalMs: 45_000, prompt: 'preserved nudge', ticks: 4,
+      lastTickOutcome: 'sent',
+    }) })
     handle.close()
   })
 
@@ -215,7 +265,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts, calls } = createFakeApp({ status: 'streaming' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-busy') })
     handle.bind(app as never)
     await handle.rearm()
 
@@ -252,7 +302,7 @@ describe('factory supervision plugin', () => {
       },
     })
     const { app, prompts, triggerClose } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-close') })
     handle.bind(app as never)
     await handle.rearm()
 

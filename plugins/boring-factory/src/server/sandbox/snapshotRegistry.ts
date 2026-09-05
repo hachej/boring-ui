@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { normalizeRemoteUrl } from './remoteSnapshotProvider'
 import { createWarmSnapshot, type WarmSnapshotAuth } from './warmSnapshot'
 
 const execFileAsync = promisify(execFile)
@@ -57,6 +58,12 @@ export async function sha256File(path: string): Promise<`sha256:${string}`> {
 
 async function gitRevParseHead(cwd: string): Promise<string> {
   return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim()
+}
+
+async function credentialStrippedOriginUrl(cwd: string): Promise<string> {
+  const raw = (await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd })).stdout.trim()
+  if (!raw) throw new Error(`epic worktree ${cwd} has no origin URL`)
+  return normalizeRemoteUrl(raw)
 }
 
 async function resolveBranchRef(cwd: string): Promise<string> {
@@ -170,12 +177,16 @@ export async function resolveEpicSnapshot(options: ResolveEpicSnapshotOptions): 
       return { ...cached, reused: true }
     }
 
-    const headSha = await gitRevParseHead(options.workspaceRoot)
+    const [headSha, remoteUrl] = await Promise.all([
+      gitRevParseHead(options.workspaceRoot),
+      credentialStrippedOriginUrl(options.workspaceRoot),
+    ])
     await verifyPushed(options.workspaceRoot, headSha)
 
     const createSnapshot = options.createSnapshot ?? createWarmSnapshot
     const built = await createSnapshot({
       ref: headSha,
+      remoteUrl,
       auth: options.auth,
       ...(options.gitToken ? { gitToken: options.gitToken } : {}),
       ...(options.vcpus !== undefined ? { vcpus: options.vcpus } : {}),

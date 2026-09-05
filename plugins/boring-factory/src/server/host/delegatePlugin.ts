@@ -245,6 +245,7 @@ function createDelegateTool(
           },
         })
         if (promptResponse.statusCode !== 202) {
+          await options.sessionBindings.unbind(sessionId)
           return textResult(
             { code: 'PROMPT_FAILED', delegationId: sessionId, status: promptResponse.statusCode, body: promptResponse.body },
             true,

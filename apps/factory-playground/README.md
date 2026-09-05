@@ -6,15 +6,15 @@ A dedicated local dogfood app that composes the Factory directly from this check
 
 - `boring-orchestrator`: canonical `.agents/personas/orchestrator` profile plus canonical `plan`, `feedback`, `owner-gate`, `handoff`, and `show-me` skill sources; receives `factory-supervision`, `factory-demo`, `boring-automation`, and `factory-delegate`.
 - `boring-worker`: canonical `.agents/personas/worker` profile plus canonical `exec`, `fresh-eyes`, and `handoff` skill sources (`owner-gate` is dropped: this seat never raises an owner gate — see `factory-precedence` below); receives the trusted `sandbox` plugin and `factory-delegate`.
-- `boring-reviewer`: canonical `.agents/personas/reviewer` profile plus the canonical `fresh-eyes` skill source; a fresh-context adversarial reviewer of exactly one SHA, with no plugins of its own — it is only ever reached as a `fresh_review` delegation target, never addressed directly by a user.
-- `factory-supervision` is host-governed and Orchestrator-only. Every persisted entry in `<stateRoot>/supervision.json` carries its epic key; boot re-arms entries for every active registry epic. Busy sessions are skipped rather than queued.
-- `factory-delegate` resolves the calling session through `<stateRoot>/session-bindings.json`, creates a fresh Worker or Reviewer, binds the child to the same epic before its first prompt, and prefixes that prompt with the registry entry's feature, worktree, and branch. `factory_status` uses the same resolution and reports only that epic's Beads, sessions, and git facts. An unbound caller must pass the optional `epicKey` explicitly or receives `EPIC_BINDING_REQUIRED`.
+- `boring-reviewer`: canonical `.agents/personas/reviewer` profile plus the canonical `fresh-eyes` skill source; a fresh-context adversarial reviewer of exactly one SHA, with no seat-specific plugins — it is only ever reached as a `fresh_review` delegation target, never addressed directly by a user.
+- `factory-supervision` is host-governed and Orchestrator-only. Every persisted entry in `<stateRoot>/supervision.json` carries its epic key; boot keeps and re-arms only the active registry Orchestrator with a matching session binding. Busy sessions are skipped rather than queued.
+- `factory-delegate` resolves the calling session through `<stateRoot>/session-bindings.json`, creates a fresh Worker or Reviewer, binds the child to the same epic before its first prompt, and prefixes that prompt with the registry entry's feature, worktree, and branch. If the first prompt fails, the new binding is removed. `factory_status` uses the same resolution and reports only that epic's Beads, sessions, and git facts. An unbound caller must pass the optional `epicKey` explicitly or receives `EPIC_BINDING_REQUIRED`.
 - each seat may receive its own strict host-selected default model through `BORING_FACTORY_ORCHESTRATOR_MODEL`, `BORING_FACTORY_WORKER_MODEL`, and `BORING_FACTORY_REVIEWER_MODEL`; users may still select another admitted model for a session/turn;
 - every seat receives a generic host-authored `epic-binding` appendix: its concrete epic is supplied in the host context of its first message, and every `br` command/tool call stays on that registry entry. Fleet digest-pinned skill blocks are unchanged;
 - the Worker and Orchestrator also receive a `factory-precedence` appendix reconciling the canonical `exec`/`owner-gate` skill blocks (written for per-Bead PRs and blocking `ask_user` gates) with this Factory's actual topology: the epic branch is the only branch and the epic PR belongs to the Orchestrator/owner; Workers never open PRs or run `ask_user` gates and hand off through a Bead comment instead; the Orchestrator's plan-block `/skill:exec` handoff is replaced by `dispatch_worker`, and it raises exactly two Inbox gates itself — see [Owner handoff (Inbox gates)](#owner-handoff-inbox-gates) below;
 - `factory-demo` is a host-governed plugin, granted only to the Orchestrator, backing Gate 2 with a real running demo — see [Owner handoff (Inbox gates)](#owner-handoff-inbox-gates);
-- all seats receive the workspace-scoped ask-user capability;
-- Tasks reads GitHub plus the checkout's Beads graph;
+- all seats expose the workspace-scoped `ask_user` capability in their real tool catalogs; Factory policy reserves owner gates for the Orchestrator;
+- Tasks reads GitHub plus the canonical host checkout's Beads graph; per-epic task selection is not implemented;
 - the standard Agents, sessions, Inbox, Tasks, and Automations surfaces provide the watch plane.
 
 The app is deliberately no-auth and local. It is an integration playground, not a production deployment.
@@ -77,7 +77,9 @@ node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --branch fix/1
 2. Runs `pnpm install --offline --frozen-lockfile` and `pnpm build` in the
    worktree. The host itself never installs or builds.
 3. Calls `POST /api/v1/factory/epics` with the worktree, branch, optional
-   request path and `--models orch=...,worker=...,reviewer=...`.
+   request path and `--models orch=...,worker=...,reviewer=...`. The request
+   path is relative to the epic worktree, cannot traverse or escape it through
+   symlinks, and must resolve to a regular file of at most 1 MiB.
 4. The hub persists the registry entry, creates and binds `[Feature Name]
    Orchestrator`, and starts it with the shared kickoff prompt unless
    `--start false` is supplied. If kickoff is not accepted, intake keeps the
@@ -90,6 +92,14 @@ node scripts/factory-epic.mjs list
 Reads `GET /api/v1/factory/epics` and prints each registry entry with live
 Orchestrator status, pending gate, branch HEAD, Bead counts, feature, branch,
 and worktree.
+
+```bash
+node scripts/factory-epic.mjs adopt <epic-key> --session <id> --transcript </absolute/path/to/session.jsonl>
+```
+
+Adopts a legacy Orchestrator and its explicit native transcript. Re-running
+the same command is idempotent; any persisted supervision cadence moves from
+the former registry Orchestrator to the adopted session.
 
 ```bash
 node scripts/factory-epic.mjs down <epic-key>
@@ -108,6 +118,9 @@ request ledger, supervision, demos, leases, and snapshots. Seat model and
 `models` override them at intake. `BORING_FACTORY_EPIC_KEY` and
 `BORING_FACTORY_FEATURE_NAME` are no longer boot identity: when present they
 perform a backwards-compatible one-shot intake and the host logs that fact.
+The registry is authoritative and is always written before bindings. On boot,
+the host restores missing registry Orchestrator bindings, drops and logs
+bindings for missing or closed epics, and prunes stale supervision entries.
 Adopting a legacy Orchestrator copies its native transcript from the former
 `<stateRoot>/epics/<key>/sessions` tree into the shared hub namespace without
 removing the source; sessions already owned by another epic are rejected.

@@ -1,12 +1,13 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import Fastify from 'fastify'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFactoryHost } from './index'
+import { FACTORY_REQUEST_FILE_MAX_BYTES } from './epicRegistry'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../../../..')
 const execFileAsync = promisify(execFile)
@@ -98,20 +99,45 @@ describe('factory host composition', () => {
       const intake = await app.inject({
         method: 'POST',
         url: '/api/v1/factory/epics',
-        payload: { epicKey: 'intake-proof', featureName: 'Intake Proof', worktree: intakeRepository, branch: 'main', requestFile: 'request.md', start: true },
+        payload: { epicKey: 'intake-proof', featureName: 'Intake Proof', requestFile: 'request.md', start: true },
       })
       expect(intake.statusCode).toBe(201)
-      expect(intake.json()).toMatchObject({ epicKey: 'intake-proof', orchestratorSessionId: 'orch-1', repositoryRoot: intakeRepository, kickoff: { status: 'accepted' } })
+      const intakeWorktree = resolve(intakeRepository, '.worktrees', 'epic-intake-proof')
+      expect(intake.json()).toMatchObject({
+        epicKey: 'intake-proof',
+        orchestratorSessionId: 'orch-1',
+        repositoryRoot: intakeRepository,
+        worktree: intakeWorktree,
+        requestFile: resolve(intakeWorktree, 'request.md'),
+        kickoff: { status: 'accepted' },
+      })
       await expect(host.sessionBindings.get('orch-1')).resolves.toBe('intake-proof')
       expect(prompts[0]).toMatchObject({ sessionId: 'orch-1', payload: { requireIdle: true } })
       expect(prompts[0]?.payload.content).toEqual(expect.stringContaining('Host context: epic intake-proof ([Intake Proof])'))
       expect(prompts[0]?.payload.content).toEqual(expect.stringContaining('Build the intake proof.'))
+
+      await writeFile(resolve(stateRoot, 'supervision.json'), JSON.stringify({ entries: {
+        'orch-1': {
+          epicKey: 'intake-proof', agentTypeId: 'boring-orchestrator', sessionId: 'orch-1', intervalMs: 45_000,
+          prompt: 'preserve this cadence', startedAt: '2026-09-05T01:00:00.000Z', ticks: 3,
+        },
+      } }))
 
       const adopt = await app.inject({ method: 'POST', url: '/api/v1/factory/epics/intake-proof/adopt', payload: { orchestratorSessionId: 'existing-orch' } })
       expect(adopt.statusCode).toBe(200)
       expect(adopt.json()).toMatchObject({ orchestratorSessionId: 'existing-orch' })
       await expect(host.sessionBindings.get('orch-1')).resolves.toBeUndefined()
       await expect(host.sessionBindings.get('existing-orch')).resolves.toBe('intake-proof')
+      expect(JSON.parse(await readFile(resolve(stateRoot, 'supervision.json'), 'utf8'))).toEqual({ entries: {
+        'existing-orch': expect.objectContaining({
+          epicKey: 'intake-proof', sessionId: 'existing-orch', intervalMs: 45_000, prompt: 'preserve this cadence', ticks: 3,
+        }),
+      } })
+      const repeatedAdopt = await app.inject({ method: 'POST', url: '/api/v1/factory/epics/intake-proof/adopt', payload: { orchestratorSessionId: 'existing-orch' } })
+      expect(repeatedAdopt.statusCode).toBe(200)
+      expect(repeatedAdopt.json()).toMatchObject({ orchestratorSessionId: 'existing-orch' })
+      await expect(host.sessionBindings.load()).resolves.toMatchObject({ 'existing-orch': 'intake-proof' })
+      expect(Object.keys(JSON.parse(await readFile(resolve(stateRoot, 'supervision.json'), 'utf8')).entries)).toEqual(['existing-orch'])
 
       const defaultIntake = await app.inject({
         method: 'POST',
@@ -169,13 +195,13 @@ describe('factory host composition', () => {
       failNextCreate = true
       const failedCreate = await app.inject({
         method: 'POST', url: '/api/v1/factory/epics',
-        payload: { epicKey: 'retryable', featureName: 'Retryable', worktree: intakeRepository, branch: 'main', start: false },
+        payload: { epicKey: 'retryable', featureName: 'Retryable', start: false },
       })
       expect(failedCreate.statusCode).toBe(500)
       await expect(host.registry.get('retryable')).resolves.toBeUndefined()
       const retried = await app.inject({
         method: 'POST', url: '/api/v1/factory/epics',
-        payload: { epicKey: 'retryable', featureName: 'Retryable', worktree: intakeRepository, branch: 'main', start: false },
+        payload: { epicKey: 'retryable', featureName: 'Retryable', start: false },
       })
       expect(retried.statusCode).toBe(201)
       await expect(host.sessionBindings.get(retried.json().orchestratorSessionId)).resolves.toBe('retryable')
@@ -183,7 +209,7 @@ describe('factory host composition', () => {
       failNextPrompt = true
       const failedKickoff = await app.inject({
         method: 'POST', url: '/api/v1/factory/epics',
-        payload: { epicKey: 'kickoff-retry', featureName: 'Kickoff Retry', worktree: intakeRepository, branch: 'main', start: true },
+        payload: { epicKey: 'kickoff-retry', featureName: 'Kickoff Retry', start: true },
       })
       expect(failedKickoff.statusCode).toBe(201)
       expect(failedKickoff.json()).toMatchObject({ kickoff: { status: 'failed', message: 'failed to start Orchestrator session: HTTP 503' } })
@@ -222,6 +248,122 @@ describe('factory host composition', () => {
     } finally {
       host.close()
       await app.close()
+    }
+  })
+
+  it('rejects unsafe, non-regular, and oversized request files before creating a session', async () => {
+    const stateRoot = await mkdtemp(resolve(tmpdir(), 'factory-request-state-'))
+    const intakeRepository = await mkdtemp(resolve(tmpdir(), 'factory-request-repository-'))
+    temporaryRoots.push(stateRoot, intakeRepository)
+    await execFileAsync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: intakeRepository })
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: intakeRepository })
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: intakeRepository })
+    await writeFile(resolve(intakeRepository, 'request.md'), 'outside the epic worktree')
+    await writeFile(resolve(intakeRepository, '.gitignore'), '.worktrees/\n')
+    await execFileAsync('git', ['add', '.'], { cwd: intakeRepository })
+    await execFileAsync('git', ['commit', '--quiet', '-m', 'initial'], { cwd: intakeRepository })
+    await execFileAsync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: intakeRepository })
+
+    async function provision(epicKey: string): Promise<string> {
+      const worktree = resolve(intakeRepository, '.worktrees', `epic-${epicKey}`)
+      await mkdir(resolve(intakeRepository, '.worktrees'), { recursive: true })
+      await execFileAsync('git', ['worktree', 'add', '-q', '-b', `epic/${epicKey}`, worktree, 'HEAD'], { cwd: intakeRepository })
+      return worktree
+    }
+
+    const symlinkWorktree = await provision('symlink-request')
+    await symlink(resolve(intakeRepository, 'request.md'), resolve(symlinkWorktree, 'linked-request.md'))
+    const directoryWorktree = await provision('directory-request')
+    await mkdir(resolve(directoryWorktree, 'request-directory'))
+    const oversizedWorktree = await provision('oversized-request')
+    await writeFile(resolve(oversizedWorktree, 'oversized.md'), Buffer.alloc(FACTORY_REQUEST_FILE_MAX_BYTES + 1, 0x61))
+
+    let createdSessions = 0
+    const app = Fastify({ logger: false })
+    app.post('/api/v1/agents/boring-orchestrator/sessions', async (_request, reply) => {
+      createdSessions += 1
+      return reply.code(201).send({ sessionId: `unexpected-${createdSessions}` })
+    })
+    const host = await createFactoryHost({ repositoryRoot, workspaceRoot: intakeRepository, stateRoot, env: {}, provider: 'local-simulation' })
+    host.bind(app)
+    try {
+      const cases = [
+        { key: 'absolute-request', requestFile: resolve(intakeRepository, 'request.md'), message: 'relative' },
+        { key: 'traversal-request', requestFile: '../request.md', message: 'traversal' },
+        { key: 'symlink-request', requestFile: 'linked-request.md', message: 'beneath' },
+        { key: 'directory-request', requestFile: 'request-directory', message: 'regular file' },
+        { key: 'missing-request', requestFile: 'missing.md', message: 'does not exist' },
+        { key: 'oversized-request', requestFile: 'oversized.md', message: `${FACTORY_REQUEST_FILE_MAX_BYTES}` },
+      ]
+      for (const testCase of cases) {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/v1/factory/epics',
+          payload: { epicKey: testCase.key, featureName: testCase.key, requestFile: testCase.requestFile, start: false },
+        })
+        expect(response.statusCode, response.body).toBe(400)
+        expect(response.json()).toMatchObject({ code: 'INVALID_EPIC', message: expect.stringContaining(testCase.message) })
+        await expect(host.registry.get(testCase.key)).resolves.toBeUndefined()
+      }
+      expect(createdSessions).toBe(0)
+    } finally {
+      host.close()
+      await app.close()
+    }
+  })
+
+  it('reconciles session bindings from the registry before the host can rearm', async () => {
+    const stateRoot = await mkdtemp(resolve(tmpdir(), 'factory-reconcile-state-'))
+    const intakeRepository = await mkdtemp(resolve(tmpdir(), 'factory-reconcile-repository-'))
+    temporaryRoots.push(stateRoot, intakeRepository)
+    await execFileAsync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: intakeRepository })
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: intakeRepository })
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: intakeRepository })
+    await writeFile(resolve(intakeRepository, 'tracked.txt'), 'tracked')
+    await execFileAsync('git', ['add', '.'], { cwd: intakeRepository })
+    await execFileAsync('git', ['commit', '--quiet', '-m', 'initial'], { cwd: intakeRepository })
+    await mkdir(resolve(intakeRepository, '.worktrees'), { recursive: true })
+
+    async function addWorktree(key: string): Promise<string> {
+      const worktree = resolve(intakeRepository, '.worktrees', key)
+      await execFileAsync('git', ['worktree', 'add', '-q', '-b', `epic/${key}`, worktree, 'HEAD'], { cwd: intakeRepository })
+      return worktree
+    }
+
+    const activeWorktree = await addWorktree('active')
+    const closedWorktree = await addWorktree('closed')
+    const orphanWorktree = await addWorktree('orphan')
+    const createdAt = '2026-09-05T00:00:00.000Z'
+    await writeFile(resolve(stateRoot, 'epics.json'), JSON.stringify({ epics: {
+      active: {
+        epicKey: 'active', featureName: 'Active', repositoryRoot: intakeRepository, worktree: activeWorktree,
+        branch: 'epic/active', orchestratorSessionId: 'orch-active', createdAt, status: 'active',
+      },
+      closed: {
+        epicKey: 'closed', featureName: 'Closed', repositoryRoot: intakeRepository, worktree: closedWorktree,
+        branch: 'epic/closed', orchestratorSessionId: 'orch-closed', createdAt, status: 'closed',
+      },
+      orphan: {
+        epicKey: 'orphan', featureName: 'Orphan', repositoryRoot: intakeRepository, worktree: orphanWorktree,
+        branch: 'epic/orphan', createdAt, status: 'active',
+      },
+    } }))
+    await writeFile(resolve(stateRoot, 'session-bindings.json'), JSON.stringify({ bindings: {
+      'orch-active': 'missing',
+      'worker-active': 'active',
+      'orch-closed': 'closed',
+      stale: 'missing',
+    } }))
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const host = await createFactoryHost({ repositoryRoot, workspaceRoot: intakeRepository, stateRoot, env: {}, provider: 'local-simulation' })
+    try {
+      await expect(host.sessionBindings.load()).resolves.toEqual({ 'worker-active': 'active', 'orch-active': 'active' })
+      expect(errorSpy.mock.calls.flat().join('\n')).toContain('dropped orphan session binding')
+      expect(errorSpy.mock.calls.flat().join('\n')).toContain('active epic orphan is orphaned')
+    } finally {
+      host.close()
+      errorSpy.mockRestore()
     }
   })
 })

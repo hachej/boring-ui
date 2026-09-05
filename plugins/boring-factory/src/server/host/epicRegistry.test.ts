@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -23,14 +23,17 @@ async function fixture(): Promise<{ repositoryRoot: string; stateRoot: string; e
   await writeFile(resolve(repositoryRoot, 'tracked.txt'), 'tracked')
   await execFileAsync('git', ['add', 'tracked.txt'], { cwd: repositoryRoot })
   await execFileAsync('git', ['commit', '--quiet', '-m', 'initial'], { cwd: repositoryRoot })
+  const worktree = resolve(repositoryRoot, '.worktrees', 'registry-proof')
+  await mkdir(resolve(repositoryRoot, '.worktrees'), { recursive: true })
+  await execFileAsync('git', ['worktree', 'add', '-q', '-b', 'epic/registry-proof', worktree, 'HEAD'], { cwd: repositoryRoot })
   return {
     repositoryRoot,
     stateRoot,
     entry: {
       epicKey: 'registry-proof',
       featureName: 'Registry Proof',
-      worktree: repositoryRoot,
-      branch: 'main',
+      worktree,
+      branch: 'epic/registry-proof',
       repositoryRoot,
       models: { orchestrator: 'openai:gpt-test' },
       createdAt: '2026-09-05T00:00:00.000Z',
@@ -59,11 +62,49 @@ describe('factory epic registry', () => {
     const { repositoryRoot, entry } = await fixture()
     await expect(validateFactoryEpicEntry({ ...entry, epicKey: 'Not A Slug' })).rejects.toMatchObject({ code: 'INVALID_EPIC' })
     await expect(validateFactoryEpicEntry({ ...entry, branch: 'epic/wrong' })).rejects.toMatchObject({ code: 'INVALID_EPIC' })
+    await expect(validateFactoryEpicEntry({ ...entry, worktree: repositoryRoot, branch: 'main' })).rejects.toMatchObject({ code: 'INVALID_EPIC' })
 
     const unrelatedRoot = await mkdtemp(resolve(tmpdir(), 'factory-registry-unrelated-'))
     temporaryRoots.push(unrelatedRoot)
     await execFileAsync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: unrelatedRoot })
     await expect(validateFactoryEpicEntry({ ...entry, worktree: unrelatedRoot })).rejects.toMatchObject({ code: 'INVALID_EPIC' })
+    await expect(validateFactoryEpicEntry({ ...entry, repositoryRoot: entry.worktree })).rejects.toMatchObject({ code: 'INVALID_EPIC' })
+    await expect(validateFactoryEpicEntry({ ...entry, repositoryRoot: resolve(repositoryRoot, '.worktrees') })).rejects.toMatchObject({ code: 'INVALID_EPIC' })
+  })
+
+  it('persists canonical paths and rejects active worktree or branch reuse', async () => {
+    const { repositoryRoot, stateRoot, entry } = await fixture()
+    const aliasRoot = await mkdtemp(resolve(tmpdir(), 'factory-registry-alias-'))
+    temporaryRoots.push(aliasRoot)
+    const repositoryAlias = resolve(aliasRoot, 'repository')
+    const worktreeAlias = resolve(aliasRoot, 'worktree')
+    await symlink(repositoryRoot, repositoryAlias)
+    await symlink(entry.worktree, worktreeAlias)
+
+    const registry = createFactoryEpicRegistry(stateRoot)
+    await expect(registry.register({ ...entry, repositoryRoot: repositoryAlias, worktree: worktreeAlias })).resolves.toMatchObject({
+      repositoryRoot,
+      worktree: entry.worktree,
+    })
+    const persisted = JSON.parse(await readFile(resolve(stateRoot, 'epics.json'), 'utf8')) as { epics: Record<string, FactoryEpicEntry> }
+    expect(persisted.epics[entry.epicKey]).toMatchObject({ repositoryRoot, worktree: entry.worktree })
+
+    await expect(registry.register({ ...entry, epicKey: 'registry-reuse' })).rejects.toMatchObject({ code: 'EPIC_EXISTS' })
+
+    const detachedA = resolve(repositoryRoot, '.worktrees', 'detached-a')
+    const detachedB = resolve(repositoryRoot, '.worktrees', 'detached-b')
+    await execFileAsync('git', ['worktree', 'add', '-q', '--detach', detachedA, 'HEAD'], { cwd: repositoryRoot })
+    await execFileAsync('git', ['worktree', 'add', '-q', '--detach', detachedB, 'HEAD'], { cwd: repositoryRoot })
+    const detachedEntry = {
+      ...entry,
+      epicKey: 'detached-a',
+      featureName: 'Detached A',
+      worktree: detachedA,
+      branch: 'HEAD',
+    }
+    await expect(registry.register(detachedEntry)).resolves.toMatchObject({ epicKey: 'detached-a', branch: 'HEAD' })
+    await expect(registry.register({ ...detachedEntry, epicKey: 'detached-b', featureName: 'Detached B', worktree: detachedB }))
+      .rejects.toMatchObject({ code: 'EPIC_EXISTS' })
   })
 
   it('migrates the former launcher process entry to the host registry shape', async () => {
@@ -73,9 +114,9 @@ describe('factory epic registry', () => {
         [entry.epicKey]: {
           epicKey: entry.epicKey,
           featureName: entry.featureName,
-          workspaceRoot: repositoryRoot,
+          workspaceRoot: entry.worktree,
           worktreeGitRoot: repositoryRoot,
-          branch: 'main',
+          branch: entry.branch,
           apiPort: 5232,
           uiPort: 5222,
           pids: [123],
@@ -86,7 +127,7 @@ describe('factory epic registry', () => {
     const registry = createFactoryEpicRegistry(stateRoot)
     await expect(registry.load()).resolves.toEqual([expect.objectContaining({
       epicKey: entry.epicKey,
-      worktree: repositoryRoot,
+      worktree: entry.worktree,
       repositoryRoot,
       status: 'active',
     })])

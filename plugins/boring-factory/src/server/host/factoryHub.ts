@@ -16,7 +16,7 @@ import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySupervisionPlugin } from './supervisionPlugin'
 import { createFactoryDemoPlugin } from './demoPlugin'
 import { executeCloseEpic } from './epicClosure'
-import { createFactoryEpicRegistry, FactoryEpicRegistryError, validateFactoryEpicEntry, type FactoryEpicEntry, type FactoryEpicModels, type FactoryEpicRegistry } from './epicRegistry'
+import { createFactoryEpicRegistry, FACTORY_REQUEST_FILE_MAX_BYTES, FactoryEpicRegistryError, resolveFactoryEpicRequestFile, validateFactoryEpicEntry, type FactoryEpicEntry, type FactoryEpicModels, type FactoryEpicRegistry } from './epicRegistry'
 import { createFactorySessionBindings, FactoryEpicResolutionError, FactorySessionBindingError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
 import { buildEpicKickoffPrompt } from './epicKickoff'
 
@@ -118,6 +118,12 @@ function parseIntakeBody(value: unknown): IntakeBody {
   for (const field of ['worktree', 'branch', 'requestFile'] as const) {
     if (body[field] !== undefined && (typeof body[field] !== 'string' || !body[field].trim())) {
       throw new TypeError(`${field} must be a non-empty string when provided`)
+    }
+  }
+  if (typeof body.requestFile === 'string') {
+    if (isAbsolute(body.requestFile)) throw new FactoryEpicRegistryError('INVALID_EPIC', 'requestFile must be relative to the epic worktree')
+    if (body.requestFile.split(/[\\/]+/).includes('..')) {
+      throw new FactoryEpicRegistryError('INVALID_EPIC', 'requestFile must not contain traversal segments')
     }
   }
   if (body.start !== undefined && typeof body.start !== 'boolean') throw new TypeError('start must be a boolean when provided')
@@ -369,7 +375,20 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
   // The ask-user package is projected to every seat via defaultPluginPackages (same store file);
   // this store instance is the hub's read/migration handle on the same file.
   const adoptionTails = new Map<string, Promise<void>>()
-  await Promise.all([registry.load(), sessionBindings.load()])
+  const registryEntries = await registry.load()
+  await sessionBindings.load()
+  const bootReconciliation = await sessionBindings.reconcile(registryEntries)
+  for (const sessionId of bootReconciliation.droppedSessionIds) {
+    console.error(`[factory-hub] dropped orphan session binding ${sessionId}`)
+  }
+  for (const sessionId of bootReconciliation.restoredOrchestratorSessionIds) {
+    console.error(`[factory-hub] restored registry Orchestrator binding ${sessionId}`)
+  }
+  for (const entry of registryEntries) {
+    if (entry.status === 'active' && !entry.orchestratorSessionId) {
+      console.error(`[factory-hub] active epic ${entry.epicKey} is orphaned: no Orchestrator session is registered`)
+    }
+  }
   const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
     orchestrator: options.models?.orchestrator ?? env.BORING_FACTORY_ORCHESTRATOR_MODEL,
     worker: options.models?.worker ?? env.BORING_FACTORY_WORKER_MODEL,
@@ -380,6 +399,12 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
   const supervision = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId, registry, sessionBindings })
   const demo = createFactoryDemoPlugin({ stateRoot, env, workspaceScopeId, registry, sessionBindings })
   let appRef: FastifyInstance | undefined
+
+  async function markEpicClosed(epicKey: string): Promise<FactoryEpicEntry> {
+    const entry = await registry.markClosed(epicKey)
+    await sessionBindings.reconcile(await registry.list())
+    return entry
+  }
 
   async function withEpicAdoptionLock<T>(epicKey: string, operation: () => Promise<T>): Promise<T> {
     const previous = adoptionTails.get(epicKey) ?? Promise.resolve()
@@ -420,7 +445,7 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
           workspaceScopeId,
           demoControl: demo.control,
           supervisionControl: supervision.control,
-          markRegistryClosed: async (epicKey) => await registry.markClosed(epicKey),
+          markRegistryClosed: markEpicClosed,
         })
       } catch (error) {
         const code = error instanceof FactoryEpicResolutionError ? error.code : 'EPIC_RESOLUTION_FAILED'
@@ -454,8 +479,15 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
     }
     const repositoryRoot = workspaceRoot
     const { worktree, branch } = await ensureEpicWorktree(repositoryRoot, input)
-    const requestFile = input.requestFile ? (isAbsolute(input.requestFile) ? resolve(input.requestFile) : resolve(worktree, input.requestFile)) : undefined
-    const requestText = requestFile && input.start ? await readFile(requestFile, 'utf8') : undefined
+    const requestFile = input.requestFile ? await resolveFactoryEpicRequestFile(worktree, input.requestFile) : undefined
+    let requestText: string | undefined
+    if (requestFile && input.start) {
+      const content = await readFile(requestFile)
+      if (content.byteLength > FACTORY_REQUEST_FILE_MAX_BYTES) {
+        throw new FactoryEpicRegistryError('INVALID_EPIC', `requestFile must be at most ${FACTORY_REQUEST_FILE_MAX_BYTES} bytes`)
+      }
+      requestText = content.toString('utf8')
+    }
     const candidate = await validateFactoryEpicEntry({
       epicKey: input.epicKey,
       featureName: input.featureName,
@@ -468,14 +500,8 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
       status: 'active',
     })
     const sessionId = await createOrchestratorSession(app, candidate)
-    await sessionBindings.bind(sessionId, candidate.epicKey)
-    let entry: FactoryEpicEntry
-    try {
-      entry = await registry.register({ ...candidate, orchestratorSessionId: sessionId })
-    } catch (error) {
-      await sessionBindings.unbind(sessionId)
-      throw error
-    }
+    const entry = await registry.register({ ...candidate, orchestratorSessionId: sessionId })
+    await sessionBindings.reconcile(await registry.list())
     let kickoff: FactoryEpicIntakeResult['kickoff'] = { status: 'not-requested' }
     if (input.start) {
       try {
@@ -522,6 +548,7 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
           return await withEpicAdoptionLock(key, async () => {
             const entry = await registry.get(key)
             if (!entry) throw new FactoryEpicRegistryError('EPIC_NOT_FOUND', `epic ${key} is not registered`)
+            if (entry.status !== 'active') throw new FactoryEpicResolutionError('EPIC_CLOSED', `epic ${key} is closed`)
             const boundEpic = await sessionBindings.get(sessionId)
             const registryOwner = (await registry.list()).find((candidate) => candidate.epicKey !== key && candidate.orchestratorSessionId === sessionId)
             if ((boundEpic && boundEpic !== key) || registryOwner) {
@@ -533,16 +560,12 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
             }
             if (stateResponse.statusCode !== 200) return reply.code(404).send({ code: 'SESSION_NOT_FOUND', message: `Orchestrator session ${sessionId} was not found` })
             const pendingGate = await prepareLegacyPendingGateImport(entry.worktree, sessionId, askUserStore)
-            await sessionBindings.bind(sessionId, key)
-            let adopted: FactoryEpicEntry
-            try {
-              adopted = await registry.setOrchestratorSession(key, sessionId)
-            } catch (error) {
-              await sessionBindings.unbind(sessionId)
-              if (entry.orchestratorSessionId) await sessionBindings.bind(entry.orchestratorSessionId, key)
-              throw error
-            }
-            if (entry.orchestratorSessionId && entry.orchestratorSessionId !== sessionId) await sessionBindings.unbind(entry.orchestratorSessionId)
+            const adopted = await registry.setOrchestratorSession(key, sessionId)
+            const replacedSessionIds = entry.orchestratorSessionId && entry.orchestratorSessionId !== sessionId
+              ? [entry.orchestratorSessionId]
+              : []
+            await sessionBindings.reconcile(await registry.list(), replacedSessionIds)
+            await supervision.transferSupervision(key, entry.orchestratorSessionId, sessionId)
             if (pendingGate) await askUserStore.createPending(pendingGate.question)
             return adopted
           })
@@ -552,7 +575,7 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
         try {
           const key = (request.params as { key?: unknown }).key
           if (typeof key !== 'string' || !key.trim()) throw new TypeError('epic key is required')
-          return await registry.markClosed(key)
+          return await markEpicClosed(key)
         } catch (error) { return sendError(reply, error) }
       })
       app.get('/api/v1/workspace/meta', async () => ({
