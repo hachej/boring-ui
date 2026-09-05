@@ -9,7 +9,10 @@ import {
   type AuthorizedAgentScope,
 } from '@hachej/boring-agent/server'
 import type { AgentGateway } from '@hachej/boring-agent/shared'
-import { mountCoreWhatsAppChannel } from '../whatsappChannelComposition.js'
+import {
+  assertCoreWhatsAppAgentAvailable,
+  mountCoreWhatsAppChannel,
+} from '../whatsappChannelComposition.js'
 
 const roots: string[] = []
 
@@ -18,6 +21,16 @@ afterEach(async () => {
 })
 
 describe('mountCoreWhatsAppChannel', () => {
+  it('rejects a configured Agent outside the validated host fleet', () => {
+    expect(() => assertCoreWhatsAppAgentAvailable({
+      withCredentials: async (use) => use({
+        accessToken: 'access', appSecret: 'secret', verifyToken: 'verify', phoneNumberId: '1',
+        fallbackTemplateName: 'continue',
+      }),
+      agentTypeId: 'typo',
+    }, ['default'])).toThrow(/not in the validated fleet: typo/)
+  })
+
   it('mounts the Meta challenge and provisions only trusted app-owned bindings', async () => {
     const root = await mkdtemp(join(tmpdir(), 'core-whatsapp-mount-'))
     roots.push(root)
@@ -50,7 +63,6 @@ describe('mountCoreWhatsAppChannel', () => {
           conversationKey: '+41790000000',
           workspaceId: 'workspace-1',
           authSubjectId: 'user-1',
-          sessionKey: 'session-1',
         }],
       },
     })
@@ -64,7 +76,7 @@ describe('mountCoreWhatsAppChannel', () => {
     expect(mounted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')).toMatchObject({
       workspaceId: 'workspace-1',
       authSubjectId: 'user-1',
-      sessionKey: 'session-1',
+      sessionKey: undefined,
     })
     expect(mounted.runtime.outboundAdapters.has('whatsapp')).toBe(true)
 
@@ -88,9 +100,16 @@ describe('mountCoreWhatsAppChannel', () => {
     expect(mounted.runtime.bindings.getBinding('whatsapp', '+41790000001', 'default')).toBeUndefined()
     expect(gateway.createSession).not.toHaveBeenCalled()
 
-    const firstVersion = mounted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')!.bindingVersion
     await mounted.close()
     await app.close()
+    const assigned = storage.bindings.provision({
+      channel: 'whatsapp',
+      conversationKey: '+41790000000',
+      agentTypeId: 'default',
+      workspaceId: 'workspace-1',
+      authSubjectId: 'user-1',
+      sessionKey: 'generated-session',
+    })
 
     const restartedApp = Fastify()
     const restarted = await mountCoreWhatsAppChannel({
@@ -105,12 +124,13 @@ describe('mountCoreWhatsAppChannel', () => {
           conversationKey: '+41790000000',
           workspaceId: 'workspace-1',
           authSubjectId: 'user-1',
-          sessionKey: 'session-1',
         }],
       },
     })
-    expect(restarted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')?.bindingVersion)
-      .toBe(firstVersion)
+    expect(restarted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')).toMatchObject({
+      bindingVersion: assigned.bindingVersion,
+      sessionKey: 'generated-session',
+    })
     await restarted.close()
     await restartedApp.close()
     storage.close()

@@ -16,8 +16,12 @@ const enabledEnv = {
 }
 
 describe('readFullAppWhatsAppChannelOptions', () => {
-  it('keeps the deployable host disabled unless the channel flag is explicit', () => {
+  it('keeps the deployable host disabled unless the shared channel flag is explicit', () => {
     expect(readFullAppWhatsAppChannelOptions('default', {})).toBeUndefined()
+    expect(readFullAppWhatsAppChannelOptions('default', {
+      ...enabledEnv,
+      BORING_AGENT_CHANNELS: 'true',
+    })).toBeDefined()
   })
 
   it('builds a provisioned-only credential lease without returning secrets', async () => {

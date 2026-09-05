@@ -7,6 +7,7 @@ export {
 } from './createCoreWorkspaceAgentServer.js'
 export {
   CORE_WHATSAPP_WEBHOOK_PATH,
+  assertCoreWhatsAppAgentAvailable,
   mountCoreWhatsAppChannel,
   type CoreWhatsAppChannelOptions,
   type MountedCoreWhatsAppChannel,

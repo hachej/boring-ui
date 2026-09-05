@@ -33,6 +33,15 @@ export interface MountedCoreWhatsAppChannel {
   close(): Promise<void>
 }
 
+export function assertCoreWhatsAppAgentAvailable(
+  options: CoreWhatsAppChannelOptions | undefined,
+  agentTypeIds: readonly string[],
+): void {
+  if (options && !agentTypeIds.includes(options.agentTypeId)) {
+    throw new Error(`WhatsApp channel Agent is not in the validated fleet: ${options.agentTypeId}`)
+  }
+}
+
 /**
  * Mounts the Meta edge into the app-owned Fastify host. The caller owns storage,
  * workspace authorization, credentials, and lifecycle; the provider owns only
@@ -76,7 +85,7 @@ export async function mountCoreWhatsAppChannel(input: {
       if (current
         && current.workspaceId === binding.workspaceId
         && current.authSubjectId === binding.authSubjectId
-        && current.sessionKey === binding.sessionKey
+        && (binding.sessionKey === undefined || current.sessionKey === binding.sessionKey)
         && current.status === (binding.status ?? 'active')) continue
       runtime.provision({
         ...binding,

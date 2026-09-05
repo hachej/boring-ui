@@ -142,6 +142,7 @@ import {
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 import {
+  assertCoreWhatsAppAgentAvailable,
   mountCoreWhatsAppChannel,
   type CoreWhatsAppChannelOptions,
   type MountedCoreWhatsAppChannel,
@@ -1757,6 +1758,7 @@ export async function createCoreWorkspaceAgentServer(
     },
   }
 
+  assertCoreWhatsAppAgentAvailable(options.whatsAppChannel, agentTypeIds)
   const channelStorage = options.whatsAppChannel
     ? createAgentHostChannelStorage({ sessionRoot: sessionRoot ?? workspaceRoot })
     : undefined

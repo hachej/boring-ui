@@ -20,7 +20,7 @@ export function readFullAppWhatsAppChannelOptions(
   defaultAgentTypeId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): CoreWhatsAppChannelOptions | undefined {
-  if (env.BORING_AGENT_CHANNELS !== '1') return undefined
+  if (env.BORING_AGENT_CHANNELS !== '1' && env.BORING_AGENT_CHANNELS !== 'true') return undefined
 
   const missing = REQUIRED_CREDENTIALS.filter((name) => !env[name]?.trim())
   if (missing.length > 0) throw new Error(`WhatsApp channel credentials missing: ${missing.join(', ')}`)
