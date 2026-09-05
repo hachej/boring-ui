@@ -131,6 +131,16 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
       }
       return Object.freeze(result.sort((a, b) => a.providerId.localeCompare(b.providerId)))
     },
+    async hasWorkspaceCredentialArtifacts(workspaceId) {
+      if (rotations.has(workspaceId) || shreddedWorkspaces.has(workspaceId)) return true
+      for (const store of [records, metadata, wrappedDeks, fields, tombstones]) {
+        for (const encodedKey of store.keys()) {
+          const [storedWorkspaceId] = JSON.parse(encodedKey) as [string]
+          if (storedWorkspaceId === workspaceId) return true
+        }
+      }
+      return false
+    },
     async updateCredentialMetadata(workspaceId, providerId, update) {
       const key = recordKey(workspaceId, providerId)
       const record = records.get(key)

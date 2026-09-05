@@ -100,6 +100,8 @@ export interface CredentialVaultPersistenceV1 {
     providerId: ProviderId,
   ): Promise<StoredCredentialMetadataV1 | undefined>
   listCredentialMetadata(workspaceId: string): Promise<readonly StoredCredentialMetadataV1[]>
+  /** True when any credential row, key, field/tombstone, rotation, or shred fence remains. */
+  hasWorkspaceCredentialArtifacts(workspaceId: string): Promise<boolean>
   updateCredentialMetadata(
     workspaceId: string,
     providerId: ProviderId,

@@ -514,16 +514,48 @@ describe('vault credential store backend', () => {
     })
     await writer.writeAbsentCredential('ws-a', PROVIDER_A)
 
-    const metadataMissing = createVaultCredentialStoreBackendV1({
-      persistence: {
-        ...persistence,
-        async listCredentialMetadata() { return [] },
+    const metadataMissingPersistence: CredentialVaultPersistenceV1 = {
+      ...persistence,
+      async withWorkspaceLock(_workspaceId, mutate) {
+        return mutate(metadataMissingPersistence)
       },
+      async listCredentialMetadata() { return [] },
+    }
+    const metadataMissing = createVaultCredentialStoreBackendV1({
+      persistence: metadataMissingPersistence,
       versionAnchor,
       kmsBackend,
     })
     await expectCredentialError(
       () => metadataMissing.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
+  test('provider listing rejects a missing anchor when orphaned vault artifacts remain', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const kmsBackend = kekProvider(KEK_A)
+    const generated = await kmsBackend.generateDataKey(context('ws-a'))
+    try {
+      await persistence.putWrappedDek('ws-a', 1, generated.wrappedDek)
+    } finally {
+      generated.plaintextDek.fill(0)
+    }
+    const anchorFilePath = join(
+      await mkdtemp(join(tmpdir(), 'boring-missing-list-anchor-')),
+      'credential-anchor',
+    )
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({
+        anchorFilePath,
+        loadKek: async () => new Uint8Array(KEK_A),
+      }),
+      kmsBackend,
+    })
+
+    await expectCredentialError(
+      () => backend.listCredentialMetadata('ws-a'),
       CREDENTIAL_ERROR_CODES.UNREADABLE,
     )
   })

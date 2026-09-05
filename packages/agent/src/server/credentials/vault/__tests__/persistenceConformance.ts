@@ -67,6 +67,14 @@ export function runCredentialVaultPersistenceConformanceV1(
       expect(enteredSecond).toBe(true)
     })
 
+    test('detects any remaining workspace credential artifact', async () => {
+      const persistence = await createPersistence()
+      const workspaceId = `ws-${randomUUID()}`
+      expect(await persistence.hasWorkspaceCredentialArtifacts(workspaceId)).toBe(false)
+      await persistence.putWrappedDek(workspaceId, 1, wrappedDek(2))
+      expect(await persistence.hasWorkspaceCredentialArtifacts(workspaceId)).toBe(true)
+    })
+
     test('round-trips records, field envelopes, and wrapped DEKs', async () => {
       const persistence = await createPersistence()
       const workspaceId = `ws-${randomUUID()}`

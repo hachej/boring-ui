@@ -154,6 +154,19 @@ implements CredentialVaultPersistenceV1 {
     return Object.freeze(rows.map((row) => this.metadataFromRow(row)))
   }
 
+  async hasWorkspaceCredentialArtifacts(workspaceId: string) {
+    const rows = await this.sql<{ exists: boolean }[]>`
+      SELECT (
+        EXISTS(SELECT 1 FROM workspace_provider_credentials WHERE workspace_id = ${workspaceId})
+        OR EXISTS(SELECT 1 FROM workspace_credential_keys WHERE workspace_id = ${workspaceId})
+        OR EXISTS(SELECT 1 FROM workspace_provider_credential_fields WHERE workspace_id = ${workspaceId})
+        OR EXISTS(SELECT 1 FROM workspace_credential_dek_rotations WHERE workspace_id = ${workspaceId})
+        OR EXISTS(SELECT 1 FROM workspace_credential_shreds WHERE workspace_id = ${workspaceId})
+      ) AS exists
+    `
+    return rows[0]?.exists === true
+  }
+
   async updateCredentialMetadata(
     workspaceId: string,
     providerId: ProviderId,
