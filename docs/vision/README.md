@@ -28,6 +28,30 @@ one surface owns the substrate. Every visible product is an *Experience over
 the governed work substrate*; the explicit optimization loop attaches where
 a real objective and outcome signal exist.
 
+## Personal software evolution (owner-requested extension, 2026-09-05)
+
+An Experience can become the user's own software: start with a minimal useful
+workspace, ask it to change its layout or permitted behavior, inspect a
+candidate, and keep or undo it. Intentional customizations survive shared
+upgrades; approved improvements can become optional reusable components or
+domain packages. A raw workspace should support useful work immediately and
+can adopt a domain starter without making the user design the application.
+
+The branch is normally a private versioned composition of shared packages,
+local settings, behavior assets, and isolated custom modules. The host keeps
+identity, authority, recovery, and activation; business records remain separate
+from software revisions. Full layout variation is a supported goal, while
+Meridian remains the flagship workspace Experience. Personalization does not
+mutate a shared expert for every subscriber or require a measurable A/B result
+for every preference.
+
+This is **specified future work, effective on owner merge**, grounded in
+[RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+[Workspace Evolution](../plans/workspace-evolution/README.md) defines the
+E0–E6 proofs; [DIRECTION](../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
+controls when each may run. Clinic is the first proving workflow and Seneca
+the authenticated ownership host; this does not set commercial sequencing.
+
 ## Layer 1 — the execution engine (built, hardening)
 
 Agents run behind **one gateway** — a single frozen session contract and a

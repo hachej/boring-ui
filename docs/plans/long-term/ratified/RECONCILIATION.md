@@ -421,3 +421,87 @@ implementation obligation until the first Experience-layer slice.
 
 **Explicit non-change.** No new nouns, no A2A loopback, no shared-runtime
 room; §7 and §9 stand unaltered.
+
+## 11. OWNER-REQUESTED AMENDMENT — 2026-09-05 (Workspace Evolution)
+
+The owner requested that the personal, self-evolving workspace design become
+a vision, milestone, and implementation-plan PR. This amendment takes effect
+on owner merge. It specifies future behavior; no capability is marked shipped
+by this documentation change. Sequencing is recorded only in
+[DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution).
+
+**(a) Product contract.** A minimal workspace is usable immediately and can
+adopt an optional domain starter. A direct user request can change its
+interface, layout, workflows, and permitted agent behavior. The user can
+preview, keep, compare, and undo versions. Adaptation should remove the
+founder's manual request relay. Successful arrangements persist; passive
+usage signals may suggest a change but do not themselves authorize one.
+
+**(b) A private branch is a versioned composition.** Resolve exact shared
+package versions plus workspace and personal overlays, behavior assets, and
+any private modules. Git can own custom source and lineage; ordinary
+preferences need not fork the entire platform. Active records, session
+history, private files, and credentials are separate from software revisions.
+The platform contract may be pinned within support policy; the host's current
+security implementation and revocation authority cannot be pinned away.
+
+A local behavior override constrains a binding or creates an explicit derived
+definition with provenance. It never mutates the shared Agent identity for
+other consumers. Preferences cannot widen the intersection of grants in §6.
+Publishing a new expert package and adopting it in a customer's workspace are
+different decisions.
+
+**(c) Evolution uses host-controlled release.** An admitted builder Run keeps
+RunId := RequestKey. Its immutable candidate identifies requester/scope,
+parent/base, package lock, artifact and behavior digests, state compatibility,
+and verification evidence. Records live in a product module using existing
+Artifact/Evaluation/accepted-work seams where available; this does not promote
+Experiment, Product, Schema, AgentState, or a module-runtime kernel noun.
+An uppercase optimization Candidate/Objective is optional, as in the scoped
+north star. Any durable job uses the existing Thread root (§9).
+
+The host validates the exact candidate, checks current authority, and
+atomically activates it against the expected revision generations across all
+affected scopes. A stale parent or incompatible contract stops activation.
+Candidate/source/evidence retrieval, preview access, and every brokered
+read/action also require current scoped authorization. A digest or preview URL
+is not a grant; revocation denies further access, not only activation, and
+cannot undo prior disclosure.
+The builder cannot alter protected checks, attest its own approval, or write
+the active pointer. A capability expansion requires a separate host grant or
+trusted package release, not an overlay field. Standing user policies may
+authorize bounded changes without asking on every edit.
+
+Undo is another authorized, append-only activation of a compatible prior
+revision. It preserves business records and admits no unsupported state
+rollback or repetition of external effects. Already admitted work retains its
+code/behavior identity subject to current revocation; incompatible migrations
+must drain or migrate it. Host recovery remains reachable outside custom UI.
+
+**(d) Three distinct loops.** Private adaptation builds and adopts a local
+candidate. Downstream maintenance reconciles old base, local intent, and new
+base, with stable semantic targets, explicit conflicts, and compatibility
+evidence. Shared improvement exports only approved portable material to an
+optional package after review. Neither a successful private change nor an
+upstream publication automatically changes another customer's workspace.
+Domain concepts stay in domain packages; broader extraction needs repeat-use
+evidence or an explicit owner promotion. No cross-tenant training or public
+marketplace is required.
+
+**(e) Named amendments and preserved boundaries.** VISION §8's universal-app
+generator exclusion is narrowed to admit this bounded program. The generic
+workspace/Meridian shell remains one supported Experience, not a mandatory
+layout for every vertical. ARCHITECTURE-PLAN R1/D-b/§6 remain binding:
+trusted registries are composition-time; generated code builds separately and
+is served only through the isolated tier. A disposable working directory or
+hot reload does not prove runtime confinement or release safety.
+
+§8(c)'s View contract remains a set. A product-specific configuration may
+select props of already registered components; it may not become a lookalike
+saved ViewDescriptor before [saved-views-kernel]. Durable agent-driven release
+waits for its accepted-work/Level-D prerequisites. Thread shape is a dependency
+only when the slice consumes Job Threads; it is not imposed on every layout
+preference. DIRECTION explicitly classifies the new lane rather than silently
+reopening the former non-chrome or Wave-4 freezes. Pricing/GTM stay tenant-side.
+
+Plan and milestone acceptance: [Workspace Evolution](../../workspace-evolution/README.md).

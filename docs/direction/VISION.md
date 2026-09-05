@@ -90,3 +90,30 @@ component is tracked in [`STATE.md`](STATE.md), not here.
 Amend by dated addendum via owner-gated PR; never rewrite ratified sections.
 Proposed amendments queue inside the current dated snapshot under
 [`state/`](state/) until ratified here.
+
+### 2026-09-05 — Workspace Evolution
+
+**Owner-requested amendment; effective on owner merge, implementation pending.**
+Extend the author-and-deploy vision above to the end user's own Experience.
+A user starts with a useful minimal workspace, directly requests interface,
+layout, workflow, and permitted behavior changes, then previews, keeps,
+compares, or undoes a version. The system maintains those choices through
+shared upgrades and can generalize an approved improvement into an optional
+package for others.
+
+The private branch is a resolved package composition plus scoped overlays and
+custom modules, rather than a requirement to fork the complete platform for
+every person. Existing business records and session history remain outside
+software rollback. Host-owned authority, independent Agent identity, isolated
+generated execution, and explicit private export remain mandatory.
+
+This adds a checkable vision component: **a customization requested without
+founder relay remains useful, survives a real upstream upgrade, and contributes
+an approved reusable part to a second workspace with different local choices.**
+The first workflow is Clinic; Seneca supplies the authenticated personal-scope
+proof. This is not a replacement for tenant-owned commercial ordering.
+
+Normative amendment: [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+Readable vision: [vision overview](../vision/README.md#personal-software-evolution-owner-requested-extension-2026-09-05).
+Milestones/proof: [Workspace Evolution](../plans/workspace-evolution/README.md).
+Dispatch: [DIRECTION amendment](DIRECTION.md#amendment-2026-09-05--workspace-evolution).
