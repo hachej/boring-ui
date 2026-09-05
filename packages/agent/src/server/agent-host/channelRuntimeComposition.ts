@@ -197,10 +197,14 @@ export function createAgentHostChannelRuntime<Message>(
         options.storage.bindings,
         options.intentionRuntime,
         new Map([...adapters].map(([channel, adapter]) => [channel, {
+          ...(adapter.serviceWindowMs === undefined ? {} : { serviceWindowMs: adapter.serviceWindowMs }),
           async send({ conversationKey, text }) {
             const messages = adapter.renderOutbound({ turnId: 'human-intention', status: 'ok', text })
             for (const message of messages) await adapter.send({ conversationKey, message })
           },
+          ...(adapter.sendWindowTemplate ? {
+            sendWindowTemplate: (input: { conversationKey: string }) => adapter.sendWindowTemplate!(input),
+          } : {}),
         }])),
       )
     : undefined
@@ -220,7 +224,10 @@ export function createAgentHostChannelRuntime<Message>(
       const notifyAfterAgentDelivery = () => {
         void inbound.waitForIdle().then(() => {
           const binding = options.storage.bindings.getBinding(message.channel, message.conversationKey, agentTypeId)
-          if (binding) outbound.notifyInbound(binding)
+          if (binding) {
+            intentions?.notifyInbound(binding)
+            outbound.notifyInbound(binding)
+          }
         })
       }
       if (router) {

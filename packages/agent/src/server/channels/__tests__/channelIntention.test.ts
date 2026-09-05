@@ -204,6 +204,31 @@ describe('ChannelIntentionService', () => {
     })
   })
 
+  test('holds free-form projection behind the service-window template until fresh inbound', async () => {
+    await withStore(async (store) => {
+      const runtime = new FakeIntentionRuntime()
+      runtime.publish(question())
+      const sent: string[] = []
+      const templates: string[] = []
+      const service = new ChannelIntentionService(store, runtime, new Map([['whatsapp', {
+        serviceWindowMs: 100,
+        send: async ({ text }) => { sent.push(text) },
+        sendWindowTemplate: async ({ conversationKey }) => { templates.push(conversationKey) },
+      }]]))
+      service.start()
+      await service.waitForIdle()
+      expect(templates).toEqual([bindingInput.conversationKey])
+      expect(sent).toEqual([])
+
+      const accepted = store.enqueueInbound(inbound('wamid.window-open', 'hello'), 'default')
+      expect(accepted.disposition).toBe('enqueued')
+      if (accepted.disposition === 'enqueued') service.notifyInbound(accepted.binding)
+      await service.waitForIdle()
+      expect(sent).toEqual([expect.stringContaining('Approve deployment?')])
+      await service.dispose()
+    })
+  })
+
   test('reprojects a pending question onto a newly provisioned binding generation', async () => {
     await withStore(async (store) => {
       const runtime = new FakeIntentionRuntime()

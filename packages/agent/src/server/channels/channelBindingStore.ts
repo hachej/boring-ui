@@ -71,7 +71,7 @@ export interface ChannelIntentionRecord {
   readonly options: readonly { value: string; label: string; description?: string }[]
   readonly title?: string
   readonly context?: string
-  readonly status: 'pending' | 'projecting' | 'projected' | 'answering' | 'answered' | 'closed'
+  readonly status: 'pending' | 'projecting' | 'window-held' | 'projected' | 'answering' | 'answered' | 'closed'
   readonly answerValues?: Readonly<Record<string, unknown>>
   readonly answerProviderMessageId?: string
 }
@@ -389,7 +389,7 @@ export class ChannelBindingStore {
         answer_provider_message_id=NULL,
         updated_at=excluded.updated_at
       WHERE boring_channel_intentions.session_id=excluded.session_id
-        AND boring_channel_intentions.status IN ('pending', 'projecting', 'projected')
+        AND boring_channel_intentions.status IN ('pending', 'projecting', 'window-held', 'projected')
         AND (boring_channel_intentions.channel<>excluded.channel
           OR boring_channel_intentions.conversation_key<>excluded.conversation_key
           OR boring_channel_intentions.agent_type_id<>excluded.agent_type_id
@@ -405,7 +405,7 @@ export class ChannelBindingStore {
       JOIN boring_channel_bindings b ON b.channel=i.channel AND b.conversation_key=i.conversation_key
         AND b.agent_type_id=i.agent_type_id AND b.binding_version=i.binding_version
         AND b.session_key=i.session_id AND b.status='active'
-      WHERE i.status IN ('pending', 'projecting', 'projected', 'answering')
+      WHERE i.status IN ('pending', 'projecting', 'window-held', 'projected', 'answering')
       ORDER BY i.updated_at, i.question_id`).toArray().map(intentionFromRow)
   }
 
@@ -444,6 +444,21 @@ export class ChannelBindingStore {
             AND b.session_key=boring_channel_intentions.session_id AND b.status='active')
       RETURNING *`, owner, now + ttlMs, now, questionId, now).toArray()[0]
     return row ? intentionFromRow(row) : undefined
+  }
+
+  holdIntentionForWindow(questionId: string, owner: string): boolean {
+    return this.sql.exec(`UPDATE boring_channel_intentions SET status='window-held',
+      claim_owner=NULL, claim_expires_at=NULL, updated_at=?
+      WHERE question_id=? AND status='projecting' AND claim_owner=? RETURNING question_id`,
+    Date.now(), questionId, owner).toArray().length === 1
+  }
+
+  releaseWindowHeldIntentions(binding: Pick<ChannelBinding,
+    'channel' | 'conversationKey' | 'agentTypeId' | 'bindingVersion'>): void {
+    this.sql.exec(`UPDATE boring_channel_intentions SET status='pending', updated_at=?
+      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+        AND status='window-held'`, Date.now(), binding.channel, binding.conversationKey,
+    binding.agentTypeId, binding.bindingVersion)
   }
 
   ownsIntentionClaim(questionId: string, owner: string): boolean {
@@ -523,13 +538,13 @@ export class ChannelBindingStore {
   reconcileIntentionAnswered(questionId: string): void {
     this.sql.exec(`UPDATE boring_channel_intentions SET status='answered',
       claim_owner=NULL, claim_expires_at=NULL, updated_at=?
-      WHERE question_id=? AND status IN ('pending', 'projecting', 'projected', 'answering')`, Date.now(), questionId)
+      WHERE question_id=? AND status IN ('pending', 'projecting', 'window-held', 'projected', 'answering')`, Date.now(), questionId)
   }
 
   reconcileIntentionClosed(questionId: string): void {
     this.sql.exec(`UPDATE boring_channel_intentions SET status='closed',
       claim_owner=NULL, claim_expires_at=NULL, updated_at=?
-      WHERE question_id=? AND status IN ('pending', 'projecting', 'projected', 'answering')`, Date.now(), questionId)
+      WHERE question_id=? AND status IN ('pending', 'projecting', 'window-held', 'projected', 'answering')`, Date.now(), questionId)
   }
 
   claimInvalidIntentionReply(

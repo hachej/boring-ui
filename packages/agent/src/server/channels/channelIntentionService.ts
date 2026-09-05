@@ -64,7 +64,9 @@ export function createChannelIntentionRuntime(
 }
 
 export interface ChannelIntentionAdapter {
+  readonly serviceWindowMs?: number
   send(input: { readonly conversationKey: string; readonly text: string }): Promise<void>
+  sendWindowTemplate?(input: { readonly conversationKey: string }): Promise<void>
 }
 
 export type ChannelIntentionAck =
@@ -119,6 +121,11 @@ export class ChannelIntentionService {
     await this.scan
   }
 
+  notifyInbound(binding: { channel: string; conversationKey: string; agentTypeId: string; bindingVersion: number }): void {
+    this.store.releaseWindowHeldIntentions(binding)
+    this.schedule()
+  }
+
   async accept(message: InboundChannelMessage, agentTypeId: string): Promise<ChannelIntentionAck> {
     const intention = this.store.activeIntention(message.channel, message.conversationKey, agentTypeId)
     if (!intention) {
@@ -133,16 +140,20 @@ export class ChannelIntentionService {
     const question = await this.runtime.getByQuestionId(intention.questionId)
     if (question?.status === 'answered') {
       this.store.reconcileIntentionAnswered(intention.questionId)
-      return {
-        handled: true,
-        accepted: false,
-        duplicate: this.store.hasIntentionReply(message.channel, message.providerMessageId),
-        questionId: intention.questionId,
-      }
+      return parseChoice(message.text, intention.options)
+        ? {
+            handled: true,
+            accepted: false,
+            duplicate: this.store.hasIntentionReply(message.channel, message.providerMessageId),
+            questionId: intention.questionId,
+          }
+        : { handled: false }
     }
     if (!question || question.status !== 'ready') {
       this.store.reconcileIntentionClosed(intention.questionId)
-      return { handled: true, accepted: false, duplicate: false, questionId: intention.questionId }
+      return parseChoice(message.text, intention.options)
+        ? { handled: true, accepted: false, duplicate: false, questionId: intention.questionId }
+        : { handled: false }
     }
     const choice = parseChoice(message.text, intention.options)
     const adapter = this.adapters.get(message.channel)
@@ -289,6 +300,19 @@ export class ChannelIntentionService {
             continue
           }
           const ttlMs = this.options.claimTtlMs ?? INTENTION_CLAIM_TTL_MS
+          const binding = this.store.getBinding(claimed.channel, claimed.conversationKey, claimed.agentTypeId)
+          if (adapter.serviceWindowMs !== undefined
+            && (!binding?.lastInboundAt || Date.now() - binding.lastInboundAt > adapter.serviceWindowMs)) {
+            try {
+              if (adapter.sendWindowTemplate) {
+                await adapter.sendWindowTemplate({ conversationKey: claimed.conversationKey })
+              }
+              this.store.holdIntentionForWindow(claimed.questionId, this.owner)
+            } catch {
+              retryAt = Date.now() + ttlMs
+            }
+            continue
+          }
           const heartbeat = setInterval(() => {
             try { this.store.renewIntentionClaim(claimed.questionId, this.owner, ttlMs) } catch { /* retry after lease */ }
           }, Math.max(1, Math.floor(ttlMs / 3)))
