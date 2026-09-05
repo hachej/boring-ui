@@ -5,8 +5,6 @@ import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 
 export interface FactoryRegistration {
   readonly workspaceRoot: string
-  readonly epicKey: string
-  readonly featureName: string
   readonly stateRoot: string
   readonly provider?: string
   readonly apiPort: number
@@ -24,6 +22,8 @@ export interface StartFactoryHostOptions {
   readonly registration: FactoryRegistration
   readonly env?: NodeJS.ProcessEnv
   readonly logger?: boolean
+  /** Tests and in-process embedders may bind routes without opening a socket. */
+  readonly listen?: boolean
 }
 
 export async function startFactoryHost(options: StartFactoryHostOptions) {
@@ -36,8 +36,6 @@ export async function startFactoryHost(options: StartFactoryHostOptions) {
   const hostEnv: NodeJS.ProcessEnv = {
     ...env,
     BORING_FACTORY_WORKSPACE_ROOT: workspaceRoot,
-    BORING_FACTORY_EPIC_KEY: registration.epicKey,
-    BORING_FACTORY_FEATURE_NAME: registration.featureName,
     BORING_FACTORY_STATE_ROOT: stateRoot,
     BORING_AGENT_SESSION_ROOT: env.BORING_AGENT_SESSION_ROOT ?? resolve(stateRoot, 'sessions'),
     BORING_FACTORY_SANDBOX_PROVIDER: registration.provider ?? env.BORING_FACTORY_SANDBOX_PROVIDER,
@@ -52,19 +50,19 @@ export async function startFactoryHost(options: StartFactoryHostOptions) {
     appRoot: options.appRoot,
     repositoryRoot: options.repositoryRoot,
     workspaceRoot,
-    epicKey: registration.epicKey,
-    featureName: registration.featureName,
     stateRoot,
     env: hostEnv,
     models: registration.models,
     provider: registration.provider,
     logger: options.logger,
+    epicKey: env.BORING_FACTORY_EPIC_KEY,
+    featureName: env.BORING_FACTORY_FEATURE_NAME,
   })
 
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
     appRoot: options.appRoot,
-    sessionId: deriveFactoryWorkspaceScopeId(registration.epicKey),
+    sessionId: deriveFactoryWorkspaceScopeId(),
     sessionRoot: hostEnv.BORING_AGENT_SESSION_ROOT,
     requestLedgerPath: resolve(stateRoot, 'request-ledger.sqlite'),
     mode: 'direct',
@@ -79,21 +77,25 @@ export async function startFactoryHost(options: StartFactoryHostOptions) {
     defaultPluginPackages: ['@hachej/boring-ask-user'],
     workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
   })
-  host.bind(app)
-  await host.rearm()
-  await app.listen({ host: '127.0.0.1', port: registration.apiPort })
-  return { app, host, env: hostEnv }
+  try {
+    host.bind(app)
+    await host.rearm()
+    if (options.listen !== false) await app.listen({ host: '127.0.0.1', port: registration.apiPort })
+    return { app, host, env: hostEnv }
+  } catch (error) {
+    host.close()
+    await app.close()
+    throw error
+  }
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   const workspaceRoot = process.env.BORING_FACTORY_WORKSPACE_ROOT
-  const epicKey = process.env.BORING_FACTORY_EPIC_KEY
-  const featureName = process.env.BORING_FACTORY_FEATURE_NAME
   const stateRoot = process.env.BORING_FACTORY_STATE_ROOT
   const apiPort = Number(process.env.AGENT_API_PORT || '5230')
   const uiPort = Number(process.env.PORT || '5220')
-  if (!workspaceRoot || !epicKey || !featureName || !stateRoot) {
-    console.error('factory-host requires BORING_FACTORY_WORKSPACE_ROOT, BORING_FACTORY_EPIC_KEY, BORING_FACTORY_FEATURE_NAME, and BORING_FACTORY_STATE_ROOT')
+  if (!workspaceRoot || !stateRoot) {
+    console.error('factory-host requires BORING_FACTORY_WORKSPACE_ROOT and BORING_FACTORY_STATE_ROOT')
     process.exitCode = 1
   } else {
     startFactoryHost({
@@ -101,8 +103,6 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
       repositoryRoot: resolve(import.meta.dirname, '../../..'),
       registration: {
         workspaceRoot,
-        epicKey,
-        featureName,
         stateRoot,
         provider: process.env.BORING_FACTORY_SANDBOX_PROVIDER,
         apiPort,

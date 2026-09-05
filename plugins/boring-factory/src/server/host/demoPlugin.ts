@@ -10,6 +10,8 @@ import {
   FACTORY_BOOTSTRAP_SCRIPT,
   resolveEpicSnapshot,
 } from '../sandbox'
+import type { FactoryEpicRegistry } from './epicRegistry'
+import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
 
 export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 
@@ -127,6 +129,7 @@ async function createDefaultSandboxFactory(): Promise<DemoSandboxFactory> {
 }
 
 export interface DemoEntry {
+  readonly epicKey: string
   readonly sandboxId: string
   readonly url: string
   readonly sha: string
@@ -163,10 +166,8 @@ async function writeStateAtomic(statePath: string, state: DemoState): Promise<vo
 export interface CreateFactoryDemoPluginOptions {
   /** Directory holding `demos.json`. Created if missing. */
   readonly stateRoot: string
-  /** Shared epic worktree root; default `sha` and bootstrap files come from here. */
-  readonly workspaceRoot: string
-  /** Epic label this Factory instance is bound to (unused today; kept for parity/future filtering). */
-  readonly epicKey: string
+  readonly registry: FactoryEpicRegistry
+  readonly sessionBindings: FactorySessionBindings
   /** Host-owned workspace identity paired with this epic. */
   readonly workspaceScopeId: string
   readonly env: NodeJS.ProcessEnv
@@ -180,6 +181,7 @@ export interface FactoryDemoPluginControl {
   listDemos(): Promise<Record<string, DemoEntry>>
   stopDemo(id: string): Promise<'stopped' | 'already-stopped'>
   listDemosForSession(sessionId: string): Promise<Record<string, DemoEntry>>
+  listDemosForEpic(epicKey: string): Promise<Record<string, DemoEntry>>
 }
 
 export interface FactoryDemoPluginHandle {
@@ -265,16 +267,13 @@ async function pollReady(
 
 export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions): FactoryDemoPluginHandle {
   if (!options.stateRoot.trim()) throw new TypeError('factory-demo stateRoot is required')
-  if (!options.workspaceRoot.trim()) throw new TypeError('factory-demo workspaceRoot is required')
-  if (!options.epicKey.trim()) throw new TypeError('factory-demo epicKey is required')
 
   const stateRoot = options.stateRoot
-  const workspaceRoot = options.workspaceRoot
-  const epicKey = options.epicKey
   const env = options.env
   const statePath = resolve(stateRoot, 'demos.json')
   const fetchImpl = options.fetchImpl ?? fetch
   let sandboxFactoryPromise: Promise<DemoSandboxFactory> | undefined
+  let stateMutations = Promise.resolve()
   const getSandboxFactory = (): Promise<DemoSandboxFactory> => {
     if (options.sandboxFactory) return Promise.resolve(options.sandboxFactory)
     if (!sandboxFactoryPromise) sandboxFactoryPromise = createDefaultSandboxFactory()
@@ -282,10 +281,15 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
   }
 
   async function mutateState(mutator: (current: DemoState) => DemoState): Promise<DemoState> {
-    await mkdir(stateRoot, { recursive: true })
-    const current = await readState(statePath)
-    const next = mutator(current)
-    await writeStateAtomic(statePath, next)
+    let next!: DemoState
+    const operation = stateMutations.then(async () => {
+      await mkdir(stateRoot, { recursive: true })
+      const current = await readState(statePath)
+      next = mutator(current)
+      await writeStateAtomic(statePath, next)
+    })
+    stateMutations = operation.catch(() => undefined)
+    await operation
     return next
   }
 
@@ -346,6 +350,11 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     return Object.fromEntries(Object.entries(demos).filter(([, entry]) => entry.sessionId === sessionId))
   }
 
+  async function listDemosForEpic(epicKey: string): Promise<Record<string, DemoEntry>> {
+    const demos = await listDemos()
+    return Object.fromEntries(Object.entries(demos).filter(([, entry]) => entry.epicKey === epicKey))
+  }
+
   function close(): void {
     // No recurring timers owned by this plugin: expiry is enforced by the sandbox provider's
     // own `timeout`, and stale entries are swept by `rearm()` on the next boot.
@@ -361,6 +370,10 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     parameters: {
       type: 'object',
       properties: {
+        epicKey: {
+          type: 'string',
+          description: 'Optional explicit epic override. Normally the host resolves the epic from this session binding.',
+        },
         op: {
           type: 'string',
           enum: ['start', 'stop', 'status', 'list'],
@@ -401,6 +414,14 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
       additionalProperties: false,
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+      let epic
+      try {
+        epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings)
+      } catch (error) {
+        if (error instanceof FactoryEpicResolutionError) return jsonResult({ code: error.code, message: error.message }, true)
+        return jsonResult({ code: 'EPIC_RESOLUTION_FAILED', message: error instanceof Error ? error.message : 'failed to resolve Factory epic' }, true)
+      }
+
       if (!isProviderConfigured(env)) return providerNotConfiguredResult()
 
       const op = parseOp(params.op)
@@ -409,7 +430,7 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
       if (op === 'status' || op === 'list') {
         const state = await readState(statePath)
         const now = Date.now()
-        const demos = Object.entries(state.demos).map(([id, entry]) => ({
+        const demos = Object.entries(state.demos).filter(([, entry]) => entry.epicKey === epic.epicKey).map(([id, entry]) => ({
           id,
           ...entry,
           expired: new Date(entry.expiresAt).getTime() <= now,
@@ -423,6 +444,7 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
         const state = await readState(statePath)
         const entry = state.demos[id]
         if (!entry) return jsonResult({ code: 'NOT_FOUND', message: `no demo with id ${id}` }, true)
+        if (entry.epicKey !== epic.epicKey) return jsonResult({ code: 'NOT_FOUND', message: `no demo with id ${id} for epic ${epic.epicKey}` }, true)
         try {
           await stopDemo(id)
         } catch (error) {
@@ -465,11 +487,11 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
 
       const sha = typeof params.sha === 'string' && params.sha.length > 0
         ? params.sha
-        : await gitRevParseHead(workspaceRoot)
+        : await gitRevParseHead(epic.worktree)
 
       let snapshotId: string
       try {
-        snapshotId = await resolveDemoSnapshotId(env, workspaceRoot, stateRoot, epicKey)
+        snapshotId = await resolveDemoSnapshotId(env, epic.worktree, stateRoot, epic.epicKey)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'failed to resolve a Factory snapshot for this demo'
         return jsonResult({ code: 'SNAPSHOT_UNAVAILABLE', message }, true)
@@ -496,7 +518,7 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
       }
 
       try {
-        const files = await buildFetchBootstrapFiles(workspaceRoot, sha)
+        const files = await buildFetchBootstrapFiles(epic.worktree, sha)
         await sandbox.writeFiles(files.map((file) => ({ path: file.path, content: file.content })))
 
         const bootstrapResult = await sandbox.runCommand({ cmd: 'sh', args: ['-c', FACTORY_BOOTSTRAP_SCRIPT] }) as { exitCode: number }
@@ -522,6 +544,7 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
           demos: {
             ...current.demos,
             [id]: {
+              epicKey: epic.epicKey,
               sandboxId: sandboxName,
               url,
               sha,
@@ -554,5 +577,5 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     },
   })
 
-  return { plugin, rearm, control: { listDemos, stopDemo, listDemosForSession }, close }
+  return { plugin, rearm, control: { listDemos, stopDemo, listDemosForSession, listDemosForEpic }, close }
 }

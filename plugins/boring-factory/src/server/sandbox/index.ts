@@ -32,6 +32,7 @@ export {
   getFactoryBootstrapLog,
   gitFetchAuthShellSetup,
   isBootstrapRefreshNeeded,
+  normalizeRemoteUrl,
   resolveFactoryGitToken,
 } from './remoteSnapshotProvider'
 export type {
@@ -41,6 +42,7 @@ export type {
 
 export {
   invalidateEpicSnapshot,
+  invalidateAllEpicSnapshots,
   peekEpicSnapshot,
   registryKey,
   resolveEpicSnapshot,

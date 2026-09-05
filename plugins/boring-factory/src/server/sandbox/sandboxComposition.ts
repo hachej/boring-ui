@@ -7,6 +7,8 @@ import { promisify } from 'node:util'
 import { createVercelSandboxProvider } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import { DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1, PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '@hachej/boring-sandbox/shared'
 import type { DisposableSandboxProviderProfileV1, DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import { defineServerPlugin } from '@hachej/boring-workspace/server'
+import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
 import { createLocalDisposableProvider } from './localDisposableProvider'
 import {
   createExactShaTemplateProvider,
@@ -16,10 +18,12 @@ import {
 } from './remoteSnapshotProvider'
 import { invalidateEpicSnapshot, peekEpicSnapshot, resolveEpicSnapshot } from './snapshotRegistry'
 import type { WarmSnapshotAuth } from './warmSnapshot'
+import type { FactoryEpicEntry, FactoryEpicRegistry } from '../host/epicRegistry'
+import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBindings } from '../host/sessionBindings'
 
 const execFileAsync = promisify(execFile)
 
-export const FACTORY_WORKSPACE_SCOPE_ID = 'factory-playground'
+export const FACTORY_WORKSPACE_SCOPE_ID = 'factory-hub'
 export const FACTORY_WORKER_AGENT_TYPE_ID = 'boring-worker'
 
 /** Default Vercel disposable-lease timeout. Raised from 15 to 30 minutes: a warm snapshot whose baseSha has drifted from the epic branch (before the per-epic snapshot registry existed) blew past the old 15-minute cap on the incremental rebuild alone. Env override kept via `BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS`. */
@@ -294,13 +298,55 @@ export function createFactorySandboxProvider(
   })
 }
 
-export async function createFactorySandboxPlugin(
-  workspaceRoot: string,
-  stateRoot: string,
-  env: NodeJS.ProcessEnv = process.env,
-  epicKey?: string,
-  workspaceScopeId: string = FACTORY_WORKSPACE_SCOPE_ID,
-) {
+export interface CreateFactorySandboxPluginOptions {
+  readonly stateRoot: string
+  readonly env?: NodeJS.ProcessEnv
+  readonly workspaceScopeId?: string
+  readonly registry: FactoryEpicRegistry
+  readonly sessionBindings: FactorySessionBindings
+}
+
+function resultForEpicResolution(error: unknown): ToolResult {
+  if (error instanceof FactoryEpicResolutionError) {
+    return { content: [{ type: 'text', text: error.message }], details: { code: error.code }, isError: true }
+  }
+  return {
+    content: [{ type: 'text', text: 'failed to resolve Factory epic' }],
+    details: { code: 'EPIC_RESOLUTION_FAILED' },
+    isError: true,
+  }
+}
+
+function withoutEpicKey(params: Record<string, unknown>): Record<string, unknown> {
+  const { epicKey: _epicKey, ...rest } = params
+  return rest
+}
+
+function parametersWithEpicKey(parameters: AgentTool['parameters']): AgentTool['parameters'] {
+  const epicKey = {
+    type: 'string',
+    description: 'Optional explicit epic override. Normally the host resolves the epic from this session binding.',
+  }
+  if (Array.isArray(parameters.oneOf)) {
+    return {
+      ...parameters,
+      oneOf: parameters.oneOf.map((branch) => ({
+        ...branch,
+        properties: { ...((branch as { properties?: Record<string, unknown> }).properties ?? {}), epicKey },
+      })),
+    }
+  }
+  return { ...parameters, properties: { ...(parameters.properties as Record<string, unknown> | undefined), epicKey } }
+}
+
+function ownerIdForSession(workspaceScopeId: string, agentTypeId: string, sessionId: string): string {
+  return createHash('sha256').update(JSON.stringify([workspaceScopeId, agentTypeId, sessionId])).digest('hex')
+}
+
+export async function createFactorySandboxPlugin(options: CreateFactorySandboxPluginOptions) {
+  const stateRoot = resolve(options.stateRoot)
+  const env = options.env ?? process.env
+  const workspaceScopeId = options.workspaceScopeId ?? FACTORY_WORKSPACE_SCOPE_ID
   const ttlMs = positiveInteger(env.BORING_FACTORY_SANDBOX_TTL_MS, 30 * 60_000)
   const maxPerWorker = positiveInteger(env.BORING_FACTORY_SANDBOX_MAX_PER_WORKER, 2)
   const maxTotal = positiveInteger(env.BORING_FACTORY_SANDBOX_MAX_TOTAL, 4)
@@ -312,26 +358,92 @@ export async function createFactorySandboxPlugin(
     maxPerWorker,
     maxTotal,
   }))
-  const provider = createFactorySandboxProvider(workspaceRoot, stateRoot, env, epicKey)
-
   // Peer dependency provided by the composing host; loaded lazily so the packaged server entry imports without it.
-  const { createSandboxServerPlugin, SandboxLeaseService } = await import('@hachej/boring-sandbox-plugin/server')
-  return createSandboxServerPlugin({
-    workspaceScopeId,
-    authorizedAgentTypeIds: [FACTORY_WORKER_AGENT_TYPE_ID],
-    pluginContentDigest: sandboxPluginContentDigest(),
-    authorityDigest,
-    createLeaseService: ({ agentTypeId }) => new SandboxLeaseService({
-      workspaceRoot: resolve(stateRoot, 'leases', agentTypeId),
-      provider,
-      providerWorkspaceId: workspaceScopeId,
-      serviceDigest: authorityDigest,
-      ttlMs,
-      reapIntervalMs: Math.min(60_000, ttlMs),
-      drainTimeoutMs: 15_000,
-      maxActiveLeasesPerOwner: maxPerWorker,
-      maxActiveLeasesTotal: maxTotal,
-    }),
+  const { createSandboxBashTool, createSandboxManagementTool, SandboxLeaseService } = await import('@hachej/boring-sandbox-plugin/server')
+  const services = new Map<string, InstanceType<typeof SandboxLeaseService>>()
+
+  function serviceFor(epic: FactoryEpicEntry): InstanceType<typeof SandboxLeaseService> {
+    let service = services.get(epic.epicKey)
+    if (!service) {
+      const provider = createFactorySandboxProvider(epic.worktree, stateRoot, env, epic.epicKey)
+      service = new SandboxLeaseService({
+        workspaceRoot: resolve(stateRoot, 'leases', epic.epicKey, FACTORY_WORKER_AGENT_TYPE_ID),
+        provider,
+        providerWorkspaceId: workspaceScopeId,
+        serviceDigest: sha256(`${authorityDigest}:${epic.epicKey}:${epic.worktree}`),
+        ttlMs,
+        reapIntervalMs: Math.min(60_000, ttlMs),
+        drainTimeoutMs: 15_000,
+        maxActiveLeasesPerOwner: maxPerWorker,
+        maxActiveLeasesTotal: maxTotal,
+      })
+      services.set(epic.epicKey, service)
+    }
+    return service
+  }
+
+  const managementTools = new Map<string, AgentTool>()
+  const bashTools = new Map<string, AgentTool>()
+  const delegateFor = (kind: 'management' | 'bash', epic: FactoryEpicEntry): AgentTool => {
+    const cache = kind === 'management' ? managementTools : bashTools
+    let tool = cache.get(epic.epicKey)
+    if (!tool) {
+      const toolOptions = { leases: serviceFor(epic), workspaceScopeId, agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }
+      tool = kind === 'management' ? createSandboxManagementTool(toolOptions) : createSandboxBashTool(toolOptions)
+      cache.set(epic.epicKey, tool)
+    }
+    return tool
+  }
+
+  const wrap = (kind: 'management' | 'bash', contract: AgentTool): AgentTool => ({
+    ...contract,
+    parameters: parametersWithEpicKey(contract.parameters),
+    async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+      try {
+        const epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings)
+        return await delegateFor(kind, epic).execute(withoutEpicKey(params), ctx)
+      } catch (error) {
+        return resultForEpicResolution(error)
+      }
+    },
+  })
+
+  const contractService = {
+    acquire: async () => { throw new Error('contract only') },
+    listOwn: () => [],
+    status: () => { throw new Error('contract only') },
+    release: async () => {},
+    withPair: async () => { throw new Error('contract only') },
+  } as unknown as InstanceType<typeof SandboxLeaseService>
+  const contractOptions = { leases: contractService, workspaceScopeId, agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }
+  const managementTool = wrap('management', createSandboxManagementTool(contractOptions))
+  const bashTool = wrap('bash', createSandboxBashTool(contractOptions))
+
+  return defineServerPlugin({
+    id: 'sandbox',
+    label: 'Disposable sandbox',
+    contentDigest: sha256(JSON.stringify({ contract: 'boring-factory-sandbox-hub.v1', executable: sandboxPluginContentDigest(), authority: authorityDigest })),
+    agentConfigContract: { keys: [] },
+    agentToolFactory({ agentTypeId }) {
+      if (agentTypeId !== FACTORY_WORKER_AGENT_TYPE_ID) throw new Error(`sandbox host grant denied for Agent "${agentTypeId}"`)
+      return [managementTool, bashTool]
+    },
+    async onAgentSessionDelete({ workspaceScopeId: deletedScopeId, agentTypeId, sessionId }) {
+      if (deletedScopeId !== workspaceScopeId) throw new Error('sandbox session cleanup workspace scope mismatch')
+      const epicKey = await options.sessionBindings.get(sessionId)
+      if (!epicKey) return
+      const service = services.get(epicKey)
+      if (!service) return
+      await service.releaseOwner(ownerIdForSession(workspaceScopeId, agentTypeId, sessionId))
+    },
+    routes: async (app) => {
+      app.addHook('onClose', async () => {
+        const outcomes = await Promise.allSettled([...services.values()].map(async (service) => await service.dispose()))
+        services.clear()
+        const failures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
+        if (failures.length > 0) throw new AggregateError(failures.map((failure) => failure.reason), 'sandbox plugin cleanup failed')
+      })
+    },
   })
 }
 
@@ -344,7 +456,7 @@ export interface FactorySandboxSnapshotInfo {
 }
 
 /**
- * Best-effort, non-blocking snapshot info for `/api/v1/workspace/meta`.
+ * Best-effort, non-blocking snapshot info for one entry in `/api/v1/factory/epics`.
  * `undefined` when the provider isn't `vercel`. Never triggers a build: in
  * `'per-epic'` mode this reads whatever the registry already has cached for
  * `epicKey` (populated by `warmUpFactorySandboxSnapshot` at boot, or by the

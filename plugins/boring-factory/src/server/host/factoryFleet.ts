@@ -74,12 +74,12 @@ export function deriveFeatureName(epicKey: string, env: NodeJS.ProcessEnv = proc
   return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
 
-function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string, featureName: string): string {
-  const shared = `This session is bound by the host to epic \`${epicKey}\` (**${featureName}**): its shared worktree is the current workspace root, its branch is the epic branch, and its Beads carry the label \`epic:${epicKey}\`.`
+function epicBindingContent(seat: keyof typeof seatSkills): string {
+  const shared = 'Your epic is given in the host context of your first message. Use that epic key, feature name, worktree, and branch for every tool call and every `br --label epic:<key>` command; never assume the host workspace root is the epic worktree.'
   if (seat === 'orchestrator') {
     return [
       shared,
-      `Every Bead you create for this epic MUST be created with \`--labels epic:${epicKey}\` (add \`--parent <epic bead id>\` when you create an epic bead first) and titled per docs/procedures/naming-conventions.md, i.e. \`[${featureName}] <verb phrase>\` (\`[${featureName}] Epic\` for the epic Bead itself); inspect this epic only with \`br ready --label epic:${epicKey}\` / \`br list --label epic:${epicKey}\`; never dispatch, inspect or supervise Beads without that label.`,
+      'Every Bead you create MUST carry `--labels epic:<key>` (add `--parent <epic bead id>` when you create an epic Bead first) and use the feature name from host context in its title. Inspect only with `br ready --label epic:<key>` / `br list --label epic:<key>` and pass `epicKey` to host tools when you use an explicit override.',
       'Recovery: run `factory_status` on every supervision tick. A Bead that is `in_progress` whose ' +
         'assignee session is `unknown` or `exists-idle` with no handoff comment and no new commit on ' +
         'the epic branch is STALE: release it with `br update <id> --assignee "" --status open --actor ' +
@@ -92,20 +92,20 @@ function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string, feat
   if (seat === 'reviewer') {
     return [
       shared,
-      `You review only Beads labelled \`epic:${epicKey}\`; report, never edit.`,
+      'Review only Beads labelled `epic:<key>` for the epic in host context; report, never edit.',
     ].join('\n\n')
   }
   return [
     shared,
-    `Discover work ONLY with \`br ready --label epic:${epicKey} --unassigned\`; claim exactly one result with \`br update <id> --claim --actor <your session id>\`; if that command returns nothing, stop and report "no ready Bead for epic ${epicKey}" instead of running a broader \`br ready\`. Never claim a Bead lacking that label.`,
+    'Discover work ONLY with `br ready --label epic:<key> --unassigned`; claim exactly one result with `br update <id> --claim --actor <your session id>`; if that command returns nothing, stop and report "no ready Bead for epic <key>" instead of running a broader `br ready`. Never claim a Bead lacking that label.',
     'If the shared worktree already holds uncommitted changes for your Bead from a previous ' +
       'Worker, inspect them, adopt what is correct, finish the work, and say so in the handoff; ' +
       'never revert them wholesale. Fix forward only: no git reset, no amend or rebase of pushed commits, no force push.',
   ].join('\n\n')
 }
 
-async function epicBindingAppendix(seat: keyof typeof seatSkills, epicKey: string, featureName: string): Promise<TrustedAgentInstructionAppendix> {
-  const content = epicBindingContent(seat, epicKey, featureName)
+async function epicBindingAppendix(seat: keyof typeof seatSkills): Promise<TrustedAgentInstructionAppendix> {
+  const content = epicBindingContent(seat)
   return { name: 'epic-binding', content, digest: await createAgentAssetDigest(content) }
 }
 
@@ -115,8 +115,6 @@ async function createSeat(input: {
   agentTypeId: string
   plugins: readonly string[]
   preferredModel?: string
-  epicKey: string
-  featureName: string
 }): Promise<AgentHostAgentSpec> {
   const directory = resolve(input.repositoryRoot, '.agents/personas', input.seat)
   const source = await materializeAgentDirectory({
@@ -131,7 +129,7 @@ async function createSeat(input: {
       instructionAppendices: [
         ...await loadAppendices(input.repositoryRoot, seatSkills[input.seat]),
         ...(input.seat === 'worker' || input.seat === 'orchestrator' ? [await factoryPrecedenceAppendix(input.seat)] : []),
-        await epicBindingAppendix(input.seat, input.epicKey, input.featureName),
+        await epicBindingAppendix(input.seat),
       ],
       plugins: input.plugins.map((name) => ({ name })),
       preferredModel: input.preferredModel,
@@ -144,9 +142,6 @@ export interface FactoryFleetOptions {
   readonly orchestrator?: string
   readonly worker?: string
   readonly reviewer?: string
-  readonly epicKey: string
-  /** Feature name per docs/procedures/naming-conventions.md; see `deriveFeatureName`. */
-  readonly featureName: string
 }
 
 export async function loadNativeFactoryFleet(
@@ -160,8 +155,6 @@ export async function loadNativeFactoryFleet(
       agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
       plugins: [FACTORY_SUPERVISION_PLUGIN_ID, FACTORY_DEMO_PLUGIN_ID, 'boring-automation', FACTORY_DELEGATE_PLUGIN_ID],
       preferredModel: options.orchestrator,
-      epicKey: options.epicKey,
-      featureName: options.featureName,
     }),
     createSeat({
       repositoryRoot,
@@ -169,8 +162,6 @@ export async function loadNativeFactoryFleet(
       agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID,
       plugins: ['sandbox', FACTORY_DELEGATE_PLUGIN_ID],
       preferredModel: options.worker,
-      epicKey: options.epicKey,
-      featureName: options.featureName,
     }),
     createSeat({
       repositoryRoot,
@@ -178,8 +169,6 @@ export async function loadNativeFactoryFleet(
       agentTypeId: FACTORY_REVIEWER_AGENT_TYPE_ID,
       plugins: [],
       preferredModel: options.reviewer,
-      epicKey: options.epicKey,
-      featureName: options.featureName,
     }),
   ])
 }

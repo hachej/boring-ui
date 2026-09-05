@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { normalizeRemoteUrl } from './remoteSnapshotProvider'
 import { createWarmSnapshot, type WarmSnapshotAuth } from './warmSnapshot'
 
 const execFileAsync = promisify(execFile)
@@ -57,6 +58,12 @@ export async function sha256File(path: string): Promise<`sha256:${string}`> {
 
 async function gitRevParseHead(cwd: string): Promise<string> {
   return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim()
+}
+
+async function credentialStrippedOriginUrl(cwd: string): Promise<string> {
+  const raw = (await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd })).stdout.trim()
+  if (!raw) throw new Error(`epic worktree ${cwd} has no origin URL`)
+  return normalizeRemoteUrl(raw)
 }
 
 async function resolveBranchRef(cwd: string): Promise<string> {
@@ -115,6 +122,21 @@ export interface ResolvedEpicSnapshot extends SnapshotRegistryEntry {
 // snapshot twice. Keyed by `${stateRoot}:${key}` so distinct hosts (tests)
 // never collide.
 const inflight = new Map<string, Promise<ResolvedEpicSnapshot>>()
+const registryWrites = new Map<string, Promise<void>>()
+
+async function mutateRegistryFile(
+  registryPath: string,
+  mutator: (file: SnapshotRegistryFile) => void,
+): Promise<void> {
+  const previous = registryWrites.get(registryPath) ?? Promise.resolve()
+  const operation = previous.then(async () => {
+    const file = await readRegistryFile(registryPath)
+    mutator(file)
+    await writeRegistryFileAtomic(registryPath, file)
+  })
+  registryWrites.set(registryPath, operation.catch(() => undefined))
+  await operation
+}
 
 /**
  * Resolves the per-epic warm snapshot to boot Factory leases from.
@@ -155,12 +177,16 @@ export async function resolveEpicSnapshot(options: ResolveEpicSnapshotOptions): 
       return { ...cached, reused: true }
     }
 
-    const headSha = await gitRevParseHead(options.workspaceRoot)
+    const [headSha, remoteUrl] = await Promise.all([
+      gitRevParseHead(options.workspaceRoot),
+      credentialStrippedOriginUrl(options.workspaceRoot),
+    ])
     await verifyPushed(options.workspaceRoot, headSha)
 
     const createSnapshot = options.createSnapshot ?? createWarmSnapshot
     const built = await createSnapshot({
       ref: headSha,
+      remoteUrl,
       auth: options.auth,
       ...(options.gitToken ? { gitToken: options.gitToken } : {}),
       ...(options.vcpus !== undefined ? { vcpus: options.vcpus } : {}),
@@ -186,9 +212,9 @@ export async function resolveEpicSnapshot(options: ResolveEpicSnapshotOptions): 
 
     // Re-read before writing: another process may have written a different
     // key's entry concurrently. Merge rather than clobber.
-    const latest = await readRegistryFile(registryPath)
-    latest.entries[key] = entry
-    await writeRegistryFileAtomic(registryPath, latest)
+    await mutateRegistryFile(registryPath, (latest) => {
+      latest.entries[key] = entry
+    })
 
     return { ...entry, reused: false }
   })()
@@ -219,9 +245,18 @@ export async function invalidateEpicSnapshot(
   lockfileSha256: string,
 ): Promise<void> {
   const registryPath = resolve(stateRoot, 'snapshots.json')
-  const file = await readRegistryFile(registryPath)
   const key = registryKey(epicKey, lockfileSha256)
-  if (!(key in file.entries)) return
-  delete file.entries[key]
-  await writeRegistryFileAtomic(registryPath, file)
+  await mutateRegistryFile(registryPath, (file) => {
+    delete file.entries[key]
+  })
+}
+
+/** Removes every cached snapshot for an epic, regardless of lockfile version. */
+export async function invalidateAllEpicSnapshots(stateRoot: string, epicKey: string): Promise<void> {
+  const registryPath = resolve(stateRoot, 'snapshots.json')
+  await mutateRegistryFile(registryPath, (file) => {
+    for (const [key, entry] of Object.entries(file.entries)) {
+      if (entry.epicKey === epicKey) delete file.entries[key]
+    }
+  })
 }
