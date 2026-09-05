@@ -679,6 +679,9 @@ function createVaultCredentialStoreBackendInternalV1(
 
         let anchorState = await versionAnchor.read(workspaceId)
         let rotation = await locked.getDekRotationState(workspaceId)
+        if (!rotation && anchorState?.dekRotationReceipts[operationId] !== undefined) {
+          unreadable('Credential DEK rotation persistence receipt is missing')
+        }
         if (!rotation) {
           const records = await locked.listCredentialRecords(workspaceId)
           if (records.length === 0) notConfigured('Credential material is not configured')

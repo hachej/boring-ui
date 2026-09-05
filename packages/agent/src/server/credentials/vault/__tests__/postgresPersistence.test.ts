@@ -353,6 +353,12 @@ describe('Postgres credential rollback protection', () => {
         `
         await expect(restarted.rotateWorkspaceDek(workspaceId, 'forged-operation'))
           .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+        await sql`
+          DELETE FROM workspace_credential_dek_rotation_receipts
+          WHERE workspace_id = ${workspaceId} AND operation_id = ${operationId}
+        `
+        await expect(restarted.rotateWorkspaceDek(workspaceId, operationId))
+          .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
       }
       const resolved = await restarted.read(workspaceId, providerId, [fieldId])
       if (resolved.kind !== 'field-set') throw new Error('expected rotated field set')
