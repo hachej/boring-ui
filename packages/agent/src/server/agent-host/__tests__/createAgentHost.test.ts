@@ -16,6 +16,10 @@ import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
 import { CREDENTIAL_ERROR_CODES } from '../../../shared/credentials'
+import {
+  createLocalKekFileSourceV1,
+  initializeLocalFileCredentialVersionAnchorV1,
+} from '../../credentials/vault'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
 const roots: string[] = []
@@ -25,6 +29,23 @@ async function root() {
   const value = await mkdtemp(join(tmpdir(), 'agent-host-'))
   roots.push(value)
   return value
+}
+
+async function credentialEnv(): Promise<Record<string, string>> {
+  const directory = await root()
+  const keyFilePath = join(directory, 'kek')
+  const anchorFilePath = join(directory, 'anchor')
+  await writeFile(keyFilePath, Buffer.alloc(32, 0x2a).toString('hex'))
+  await initializeLocalFileCredentialVersionAnchorV1({
+    anchorFilePath,
+    loadKek: createLocalKekFileSourceV1(keyFilePath),
+  })
+  return {
+    BORING_CREDENTIAL_KMS_BACKEND: 'local-kek',
+    BORING_CREDENTIAL_LOCAL_KEK_FILE: keyFilePath,
+    BORING_CREDENTIAL_LOCAL_KEK_ANCHOR_FILE: anchorFilePath,
+    BORING_CREDENTIAL_PERSISTENCE: 'memory',
+  }
 }
 
 const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
@@ -63,6 +84,32 @@ describe('createAgentHost', () => {
       name: 'CredentialResolutionError',
       code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
     })
+  })
+
+  it('maps unattended HTTP requests to a policy-isolated runtime binding', async () => {
+    const workspaceRoot = await root()
+    const harnessFactory = vi.fn<AgentHarnessFactory>(async (input) => createScriptedPiHarness(input))
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      harnessFactory,
+      credentials: { env: await credentialEnv() },
+    })
+    const app = Fastify()
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    await app.ready()
+
+    const createSession = (requestId: string, unattended = false) => app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      headers: unattended ? { 'x-boring-invocation-mode': 'unattended' } : {},
+      payload: { requestId },
+    })
+    expect((await createSession('interactive-session')).statusCode).toBe(201)
+    expect((await createSession('factory-session', true)).statusCode).toBe(201)
+    expect((await createSession('factory-session-two', true)).statusCode).toBe(201)
+    expect(harnessFactory).toHaveBeenCalledTimes(2)
+
+    await app.close()
   })
 
   it('requires durable transactional ledger ownership for the direct projection unless test/dev in-memory mode is explicit', async () => {
