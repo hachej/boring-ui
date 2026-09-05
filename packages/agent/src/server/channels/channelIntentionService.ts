@@ -308,11 +308,19 @@ export class ChannelIntentionService {
               retryAt = Date.now() + (this.options.retryDelayMs ?? 50)
               continue
             }
+            const heartbeat = setInterval(() => {
+              try {
+                this.store.renewOutbound(outboundOwner, ttlMs)
+                this.store.renewIntentionClaim(claimed.questionId, this.owner, ttlMs)
+              } catch { /* the fenced completion below will fail closed */ }
+            }, Math.max(1, Math.floor(ttlMs / 3)))
             try {
-              const templateAlreadySent = binding.templateSentForInboundAt === (binding.lastInboundAt ?? 0)
+              const current = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId)
+              if (!current || current.bindingVersion !== binding.bindingVersion) continue
+              const templateAlreadySent = current.templateSentForInboundAt === (current.lastInboundAt ?? 0)
               if (!templateAlreadySent && adapter.sendWindowTemplate) {
                 await adapter.sendWindowTemplate({ conversationKey: claimed.conversationKey })
-                if (!this.store.markTemplateSent(binding, outboundOwner)) {
+                if (!this.store.markTemplateSent(current, outboundOwner)) {
                   retryAt = Date.now() + ttlMs
                   continue
                 }
@@ -321,6 +329,7 @@ export class ChannelIntentionService {
             } catch {
               retryAt = Date.now() + ttlMs
             } finally {
+              clearInterval(heartbeat)
               this.store.releaseOutbound(outboundOwner)
             }
             continue

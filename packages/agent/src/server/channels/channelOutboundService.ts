@@ -306,7 +306,10 @@ export class ChannelOutboundService<Message = unknown> {
     binding: ChannelBinding,
     claimOwner: string,
   ): Promise<void> {
-    if (binding.templateSentForInboundAt === binding.lastInboundAt) return
+    const current = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId)
+    if (!current || !sameBindingGeneration(binding, current)) throw lostClaimError()
+    if (current.templateSentForInboundAt === (current.lastInboundAt ?? 0)) return
+    binding = current
     if (!adapter.sendWindowTemplate) {
       throw Object.assign(new Error('Channel adapter has a service window but no fallback template.'), {
         code: CHANNEL_OUTBOUND_PARKED,

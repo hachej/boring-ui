@@ -349,6 +349,20 @@ export class ChannelBindingStore {
     }, 'immediate')
   }
 
+  recordIntentionInboundActivity(
+    binding: Pick<ChannelBinding, 'channel' | 'conversationKey' | 'agentTypeId' | 'bindingVersion'>,
+    receivedAt: number,
+  ): ChannelBinding | undefined {
+    const row = this.sql.exec(`UPDATE boring_channel_bindings SET last_inbound_at=?,
+        template_sent_for_inbound_at=NULL
+      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=? AND status='active'
+      RETURNING channel, conversation_key, agent_type_id, workspace_id, auth_subject_id,
+        binding_version, status, session_key, last_inbound_at, outbound_cursor, outbound_status,
+        session_reset_pending, template_sent_for_inbound_at`, receivedAt, binding.channel,
+    binding.conversationKey, binding.agentTypeId, binding.bindingVersion).toArray()[0]
+    return row ? bindingFromRow(row) : undefined
+  }
+
   activeBindings(): ChannelBinding[] {
     return this.sql.exec(`SELECT channel, conversation_key, agent_type_id, workspace_id,
       auth_subject_id, binding_version, status, session_key, last_inbound_at, outbound_cursor,
