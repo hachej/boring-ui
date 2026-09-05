@@ -205,6 +205,7 @@ export type {
   AgentHostEnvironmentLease,
   AgentHostEnvironmentScope,
   AgentHostHandle,
+  AgentHostCredentialOptionsV1,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,

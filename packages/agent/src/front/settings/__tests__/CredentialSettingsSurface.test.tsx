@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { CredentialMetadataV1 } from '../../../shared/credentials'
 import { CredentialSettingsSurface } from '../CredentialSettingsSurface'
@@ -156,6 +156,38 @@ describe('CredentialSettingsSurface', () => {
     expect(await screen.findByRole('alert')).not.toBeNull()
     expect(screen.getByText('OpenAI Codex sign-in: pending')).not.toBeNull()
     expect(cancelCodexLogin).toHaveBeenCalledWith('flow-pending')
+  })
+
+  test('ignores an old poll response after successful cancellation', async () => {
+    let finishPoll: ((flow: CredentialOAuthFlow) => void) | undefined
+    const pending: CredentialOAuthFlow = {
+      flowId: 'flow-old',
+      providerId: 'openai-codex',
+      status: 'pending',
+      events: [],
+    }
+    const api = client({
+      list: vi.fn(async () => [{ ...codex, credentialType: 'oauth', state: 'active' as const }]),
+      startCodexLogin: vi.fn(async () => pending),
+      getCodexLogin: vi.fn(() => new Promise<CredentialOAuthFlow>((resolve) => { finishPoll = resolve })),
+    })
+    render(<CredentialSettingsSurface isWorkspaceOwner client={api} />)
+    await screen.findByRole('button', { name: 'Sign in again' })
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }))
+      await act(async () => {})
+      expect(screen.getByText('OpenAI Codex sign-in: pending')).not.toBeNull()
+      await act(async () => { await vi.advanceTimersByTimeAsync(750) })
+      expect(api.getCodexLogin).toHaveBeenCalledWith('flow-old')
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' })) })
+      expect(screen.queryByText('OpenAI Codex sign-in: pending')).toBeNull()
+      await act(async () => { finishPoll?.({ ...pending, status: 'succeeded' }) })
+      expect(screen.queryByText(/OpenAI Codex is connected/)).toBeNull()
+      expect(screen.queryByText('OpenAI Codex sign-in: succeeded')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('requires confirmation before deleting metadata and credential material', async () => {

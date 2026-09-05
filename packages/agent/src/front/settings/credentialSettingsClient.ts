@@ -134,13 +134,18 @@ function oauthFlowFromResponse(value: unknown): CredentialOAuthFlow {
 export function createCredentialSettingsClient(
   apiBaseUrl = '',
   fetchImpl: typeof fetch = fetch,
+  requestHeaders?: Readonly<Record<string, string>>,
 ): CredentialSettingsClient {
   const base = apiBaseUrl.replace(/\/$/, '')
   const request = async (path: string, init?: RequestInit): Promise<unknown> => {
     const response = await fetchImpl(`${base}${path}`, {
       credentials: 'include',
       ...init,
-      headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
+      headers: {
+        ...requestHeaders,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
     })
     if (!response.ok) throw new Error(response.status === 403 ? 'Only workspace owners can manage credentials.' : 'Credential operation failed. Try again.')
     return response.status === 204 ? undefined : response.json()

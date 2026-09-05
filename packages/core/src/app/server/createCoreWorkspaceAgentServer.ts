@@ -7,6 +7,7 @@ import {
   autoDetectMode,
   createAgentHost,
   createEnvironmentProvisioningFingerprint,
+  createPostgresCredentialVaultPersistenceV1,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   createRemoteWorkerModeAdapter,
@@ -16,6 +17,7 @@ import {
   projectAuthorizedSessionRunDetails,
   resolveDefaultAgentFleet,
   resolveRequestLedgerPath,
+  runCredentialVaultPostgresMigrationsV1,
   withRuntimeEnvContributions,
   type AgentAccessDecision,
   type AgentAccessOperation,
@@ -24,6 +26,7 @@ import {
   type AgentGatewayEffect,
   type AgentHarnessFactory,
   type AgentHostAgentSpec,
+  type AgentHostCredentialOptionsV1,
   type AgentHostDirectProjectionOptions,
   type AgentHostEnvironmentScope,
   type AgentMeteringSink,
@@ -41,6 +44,7 @@ import {
   type WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
 import { AgentGatewayErrorCode } from '@hachej/boring-agent/shared'
+import type { VerifiedWorkspaceCredentialAuthorityV1 } from '@hachej/boring-agent/shared'
 import type {
   AgentTool,
   SandboxHandleStore,
@@ -243,6 +247,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   piResourceAuthorizedRoots?: string[]
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  /** Mount the owner-only workspace credential routes with durable Core Postgres storage. */
+  credentials?: boolean
   filterModels?: AgentHostDirectProjectionOptions['filterModels']
   shareEntryStore?: ShareEntryStore
   externalPlugins?: boolean
@@ -1420,6 +1426,33 @@ export async function createCoreWorkspaceAgentServer(
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
+  const credentialOptions: AgentHostCredentialOptionsV1 | undefined = options.credentials
+    ? {
+        env: process.env,
+        vaultPersistence: createPostgresCredentialVaultPersistenceV1(sql),
+        async authorizeOwnerRequest(request): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
+          const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
+          const userId = request.user?.id
+          if (!userId) throw httpError('authentication required', 401)
+          const [workspace, membershipRole] = await Promise.all([
+            workspaceStore.get(workspaceId),
+            workspaceStore.getMemberRole(workspaceId, userId),
+          ])
+          if (!workspace || workspace.appId !== config.appId || !membershipRole) {
+            throw httpError('workspace access denied', 403)
+          }
+          return {
+            workspaceId,
+            appId: config.appId,
+            principal: { kind: 'user', userId, membershipRole },
+            authorizationReceiptId: `credential-owner:${request.id}`,
+            expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          }
+        },
+      }
+    : undefined
+  if (credentialOptions) await runCredentialVaultPostgresMigrationsV1(sql)
+
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,
@@ -1768,6 +1801,7 @@ export async function createCoreWorkspaceAgentServer(
     }),
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
     scopeVerifier: scopeAuthority.verifier,
+    ...(credentialOptions ? { credentials: credentialOptions } : {}),
     ...(options.workspaceAgentAccessMode === 'enforce'
       ? {
           resolveAgentAccess: async ({ verifiedClaim, agentTypeId, operation }) => {

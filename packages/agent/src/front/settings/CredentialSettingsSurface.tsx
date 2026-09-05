@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Button,
@@ -19,6 +19,8 @@ import {
 export interface CredentialSettingsSurfaceProps {
   /** The host must derive this from its authenticated workspace membership. */
   isWorkspaceOwner: boolean
+  /** Active workspace scope sent to the authenticated credential routes. */
+  workspaceId?: string
   apiBaseUrl?: string
   /** Test/host transport seam. It must preserve the metadata-only contract. */
   client?: CredentialSettingsClient
@@ -45,12 +47,17 @@ function updatedLabel(value?: string): string | undefined {
 
 export function CredentialSettingsSurface({
   isWorkspaceOwner,
+  workspaceId,
   apiBaseUrl = '',
   client: suppliedClient,
 }: CredentialSettingsSurfaceProps) {
   const client = useMemo(
-    () => suppliedClient ?? createCredentialSettingsClient(apiBaseUrl),
-    [apiBaseUrl, suppliedClient],
+    () => suppliedClient ?? createCredentialSettingsClient(
+      apiBaseUrl,
+      fetch,
+      workspaceId ? { 'x-boring-workspace-id': workspaceId } : undefined,
+    ),
+    [apiBaseUrl, suppliedClient, workspaceId],
   )
   const [credentials, setCredentials] = useState<readonly CredentialMetadataV1[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,6 +67,7 @@ export function CredentialSettingsSurface({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [fundingMethods, setFundingMethods] = useState<Record<string, CredentialFundingMethod>>({})
   const [oauthFlow, setOauthFlow] = useState<CredentialOAuthFlow | null>(null)
+  const oauthRequestEpoch = useRef(0)
 
   const load = useCallback(async () => {
     setError(null)
@@ -79,8 +87,10 @@ export function CredentialSettingsSurface({
 
   useEffect(() => {
     if (!oauthFlow || oauthFlow.status !== 'pending') return
+    const epoch = ++oauthRequestEpoch.current
     const timer = window.setTimeout(() => {
       void client.getCodexLogin(oauthFlow.flowId).then((flow) => {
+        if (oauthRequestEpoch.current !== epoch) return
         setOauthFlow(flow)
         if (flow.status === 'succeeded') {
           setSuccess('OpenAI Codex is connected for this workspace. New sessions can use it.')
@@ -88,9 +98,14 @@ export function CredentialSettingsSurface({
         } else if (flow.status === 'failed') {
           setError('OpenAI Codex sign-in did not complete. Try again.')
         }
-      }).catch(() => setError('Could not refresh OpenAI Codex sign-in.'))
+      }).catch(() => {
+        if (oauthRequestEpoch.current === epoch) setError('Could not refresh OpenAI Codex sign-in.')
+      })
     }, 750)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      if (oauthRequestEpoch.current === epoch) oauthRequestEpoch.current += 1
+    }
   }, [client, load, oauthFlow])
 
   if (!isWorkspaceOwner) return null
@@ -142,6 +157,7 @@ export function CredentialSettingsSurface({
   }
 
   const startCodex = async () => {
+    oauthRequestEpoch.current += 1
     setError(null)
     setSuccess(null)
     setBusyProvider('openai-codex')
@@ -170,12 +186,15 @@ export function CredentialSettingsSurface({
 
   const cancelCodex = async () => {
     if (!oauthFlow) return
+    oauthRequestEpoch.current += 1
     setBusyProvider('openai-codex')
     try {
       await client.cancelCodexLogin(oauthFlow.flowId)
       setOauthFlow(null)
     } catch {
       setError('Could not cancel OpenAI Codex sign-in. The flow is still pending.')
+      // Re-arm polling after invalidating any request that raced cancellation.
+      setOauthFlow((flow) => flow ? { ...flow } : flow)
     } finally {
       setBusyProvider(null)
     }

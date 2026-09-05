@@ -13,6 +13,7 @@ import {
   UserMenu,
   UserSettingsPage,
   WorkspaceSwitcher,
+  useCurrentWorkspace,
   useWorkspaceRole,
 } from '@hachej/boring-core/front'
 import { CredentialSettingsSurface } from '@hachej/boring-agent/front'
@@ -61,6 +62,7 @@ function McpIcon({ className }: { className?: string }) {
 // self-hide and otherwise leave a dangling nav link with no target.
 const AccountSettingsPage = () => {
   const { hidden } = useCreditBalance()
+  const workspace = useCurrentWorkspace()
   const workspaceRole = useWorkspaceRole()
   const isWorkspaceOwner = workspaceRole === 'owner'
   return (
@@ -71,7 +73,7 @@ const AccountSettingsPage = () => {
               id: 'credentials',
               navLabel: 'AI providers',
               navDescription: 'Workspace credentials and funding',
-              content: <CredentialSettingsSurface isWorkspaceOwner />,
+              content: <CredentialSettingsSurface isWorkspaceOwner workspaceId={workspace?.id} />,
             }]
           : []),
         // Full governed-usage panel (role + aggregate cap + company-context
