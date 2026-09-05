@@ -9,7 +9,7 @@ import type { FactorySessionBindings } from './sessionBindings'
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(temporaryRoots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true })))
+  await Promise.all(temporaryRoots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
 })
 
 async function makeStateRoot(): Promise<string> {
