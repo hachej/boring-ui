@@ -177,6 +177,11 @@ credential value, a workspace DEK, or KEK material.
 | `CREDENTIAL_LEASE_EXPIRED` | A resolved credential lease was used after disposal or expiry | 410 | resolve a fresh lease | warn | stable (trusted API) |
 | `CREDENTIAL_OAUTH_STATE_INVALID` | A one-use OAuth state transaction was unknown, replayed, or expired | 400 | restart the connect flow | warn | stable (trusted API) |
 | `CREDENTIAL_OAUTH_REFRESH_FAILED` | Upstream refused a refresh-token exchange | 401 | re-auth | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_UNAUTHORIZED` | Provider rejected a pending API key before persistence | 401 | correct the key and retry | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_RATE_LIMITED` | Provider rate-limited pending API-key validation | 429 | retry later | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_UNAVAILABLE` | Provider validation transport was unavailable | 503 | retry later | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_TIMEOUT` | Provider validation exceeded the bounded timeout | 504 | retry later | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_UNSUPPORTED` | Provider lacks a trusted API-key validation probe | 400 | use a supported provider/auth method | warn | stable (trusted API) |
 
 ## Readiness error details
 

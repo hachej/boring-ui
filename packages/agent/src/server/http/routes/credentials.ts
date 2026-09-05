@@ -16,6 +16,7 @@ import type {
 } from '../../../shared/credentials'
 import { actorCredentialProviderIdV1 } from '../../credentials'
 import type {
+  ApiKeyValidatorV1,
   OpenAiCodexOAuthBrokerV1,
   VaultCredentialStoreBackendV1,
 } from '../../credentials'
@@ -28,6 +29,8 @@ const MAX_OPERATION_ID_LENGTH = 128
 export interface CredentialRoutesOptionsV1 {
   readonly providerRegistry: ProviderRegistryV1
   readonly vaultBackend: VaultCredentialStoreBackendV1
+  /** Host-side validation boundary; invalid material must never reach the vault. */
+  readonly apiKeyValidator: ApiKeyValidatorV1
   /** Pi-native OpenAI Codex login broker; absent keeps OAuth routes disabled. */
   readonly oauthBroker?: OpenAiCodexOAuthBrokerV1
   /** Core-owned authentication boundary; request params/body are never authority. */
@@ -306,7 +309,18 @@ export async function credentialsRoutes(
             providerId: (request.params as { providerId?: unknown } | undefined)?.providerId,
           }),
     }, 'credential route failed')
-    return reply.code(sanitized.code === CREDENTIAL_ERROR_CODES.FORBIDDEN ? 403 : 400).send({
+    const statusCode = sanitized.code === CREDENTIAL_ERROR_CODES.FORBIDDEN
+      ? 403
+      : sanitized.code === CREDENTIAL_ERROR_CODES.VALIDATION_UNAUTHORIZED
+        ? 401
+        : sanitized.code === CREDENTIAL_ERROR_CODES.VALIDATION_RATE_LIMITED
+          ? 429
+          : sanitized.code === CREDENTIAL_ERROR_CODES.VALIDATION_TIMEOUT
+            ? 504
+            : sanitized.code === CREDENTIAL_ERROR_CODES.VALIDATION_UNAVAILABLE
+              ? 503
+              : 400
+    return reply.code(statusCode).send({
       error: { code: sanitized.code, message: sanitized.message },
     })
   })
@@ -479,6 +493,14 @@ export async function credentialsRoutes(
     const providerId = providerIdFrom(request)
     const parsed = parseWriteBody(request.body, options.providerRegistry, providerId)
     try {
+      const apiKey = parsed.fields.get('api-key' as CredentialFieldId)
+      if (!apiKey) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH,
+          'Credential operation failed',
+        )
+      }
+      await options.apiKeyValidator.validate(providerId, apiKey)
       await options.vaultBackend.writeCredentialFields({
         workspaceId,
         providerId,

@@ -60,6 +60,7 @@ function setup() {
   app.register(credentialsRoutes, {
     providerRegistry,
     vaultBackend,
+    apiKeyValidator: { validate: async () => undefined },
     oauthBroker,
     authorizeRequest: async (request) => owner(
       String(request.headers['x-workspace'] ?? 'workspace-a'),

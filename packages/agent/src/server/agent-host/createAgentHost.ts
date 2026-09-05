@@ -13,6 +13,7 @@ import {
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { resolveWorkspaceCredentialVaultCompositionFromEnvV1 } from '../credentials/startupComposition'
 import { createOpenAiCodexOAuthBrokerV1 } from '../credentials/openAiCodexOAuthBroker'
+import { createApiKeyValidatorV1 } from '../credentials/apiKeyValidation'
 import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/startupComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
@@ -1033,6 +1034,7 @@ export async function createAgentHost(
                   await app.register(credentialsRoutes, {
                     providerRegistry: credentialComposition.providerRegistry,
                     vaultBackend: credentialComposition.vaultBackend,
+                    apiKeyValidator: createApiKeyValidatorV1(),
                     oauthBroker,
                     authorizeRequest: options.credentials!.authorizeOwnerRequest!,
                   })

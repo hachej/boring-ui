@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import { describe, expect, test, vi } from 'vitest'
 import {
   CREDENTIAL_ERROR_CODES,
+  CredentialResolutionError,
   createProviderRegistryV1,
 } from '../../../../shared/credentials'
 import type {
@@ -16,7 +17,7 @@ import {
   createLocalKekWorkspaceKekProviderV1,
   createVaultCredentialStoreBackendV1,
 } from '../../../credentials'
-import type { VaultCredentialStoreBackendV1 } from '../../../credentials'
+import type { ApiKeyValidatorV1, VaultCredentialStoreBackendV1 } from '../../../credentials'
 import { createTemporaryCredentialAnchorPath } from '../../../credentials/__tests__/testSupport'
 import { credentialsRoutes } from '../credentials'
 
@@ -39,6 +40,7 @@ async function setup(
   includeCodex = false,
   authorityOverride?: VerifiedWorkspaceCredentialAuthorityV1,
   loggerOverride?: any,
+  apiKeyValidator: ApiKeyValidatorV1 = { validate: async () => undefined },
 ) {
   const providerRegistry = createProviderRegistryV1([{
     contractVersion: 'boring.provider.v1',
@@ -81,6 +83,7 @@ async function setup(
   await app.register(credentialsRoutes, {
     providerRegistry,
     vaultBackend,
+    apiKeyValidator,
     authorizeRequest: async () => authorityOverride ?? authority(role),
   })
   return { app, vaultBackend }
@@ -327,6 +330,82 @@ describe('owner credential routes', () => {
     expect(audit).toContain('operationIdDigest')
     expect(audit).not.toContain('operation-secret-canary')
     expect(audit).not.toContain('provider-secret-canary')
+    await app.close()
+  })
+
+  test('validates before the first vault write and persists exactly once on success', async () => {
+    const base = createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createInMemoryCredentialVersionAnchorV1(),
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'test-key', keyVersion: 1, loadKek: async () => new Uint8Array(32).fill(7),
+      }),
+    })
+    const order: string[] = []
+    const writeCredentialFields = vi.fn(async (...args: Parameters<typeof base.writeCredentialFields>) => {
+      order.push('write')
+      return base.writeCredentialFields(...args)
+    })
+    const { app } = await setup('owner', { ...base, writeCredentialFields }, false, undefined, undefined, {
+      validate: async () => { order.push('validate') },
+    })
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/credentials/anthropic',
+      payload: { fields: { 'api-key': 'valid-secret-canary' } },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(order).toEqual(['validate', 'write'])
+    expect(writeCredentialFields).toHaveBeenCalledOnce()
+    expect(response.body).not.toContain('valid-secret-canary')
+    await app.close()
+  })
+
+  test.each([
+    [CREDENTIAL_ERROR_CODES.VALIDATION_UNAUTHORIZED, 401],
+    [CREDENTIAL_ERROR_CODES.VALIDATION_RATE_LIMITED, 429],
+    [CREDENTIAL_ERROR_CODES.VALIDATION_UNAVAILABLE, 503],
+    [CREDENTIAL_ERROR_CODES.VALIDATION_TIMEOUT, 504],
+    [CREDENTIAL_ERROR_CODES.VALIDATION_UNSUPPORTED, 400],
+  ] as const)('persists nothing for redacted validation failure %s', async (code, statusCode) => {
+    const secret = `route-secret-canary-${code}`
+    const logs: string[] = []
+    const base = createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createInMemoryCredentialVersionAnchorV1(),
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'test-key', keyVersion: 1, loadKek: async () => new Uint8Array(32).fill(7),
+      }),
+    })
+    const writeCredentialFields = vi.fn(base.writeCredentialFields.bind(base))
+    const { app } = await setup('owner', { ...base, writeCredentialFields }, false, undefined, {
+      level: 'warn',
+      stream: { write: (line: string) => logs.push(line) },
+    }, {
+      validate: async () => {
+        throw new CredentialResolutionError(
+          code,
+          `provider body ${secret}`,
+          { retryable: code !== CREDENTIAL_ERROR_CODES.VALIDATION_UNAUTHORIZED },
+        )
+      },
+    })
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/credentials/anthropic',
+      payload: { fields: { 'api-key': secret } },
+    })
+
+    expect(response.statusCode).toBe(statusCode)
+    expect(response.json()).toEqual({
+      error: { code, message: 'Credential operation failed' },
+    })
+    expect(writeCredentialFields).not.toHaveBeenCalled()
+    expect(response.body).not.toContain(secret)
+    expect(logs.join('\n')).not.toContain(secret)
     await app.close()
   })
 

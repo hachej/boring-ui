@@ -1,4 +1,15 @@
 export {
+  API_KEY_VALIDATION_TIMEOUT_MS_V1,
+  createApiKeyValidatorV1,
+  piApiKeyProbeTransportV1,
+} from './apiKeyValidation'
+export type {
+  ApiKeyProbeInputV1,
+  ApiKeyProbeTransportV1,
+  ApiKeyValidationFailureV1,
+  ApiKeyValidatorV1,
+} from './apiKeyValidation'
+export {
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
 } from './hostResolver'

@@ -64,6 +64,7 @@ test('credential responses and logged errors never contain submitted secret mate
   await app.register(credentialsRoutes, {
     providerRegistry,
     vaultBackend,
+    apiKeyValidator: { validate: async () => undefined },
     authorizeRequest: async () => authority,
   })
 
