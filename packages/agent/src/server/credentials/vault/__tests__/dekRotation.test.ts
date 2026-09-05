@@ -154,6 +154,35 @@ describe('workspace DEK lifecycle', () => {
     expect(await persistence.getWrappedDek(workspaceId, 3)).toBeUndefined()
   })
 
+  test('rejects a forged completed receipt with the authentic operation and target', async () => {
+    const durable = createInMemoryCredentialVaultPersistenceV1()
+    const current = harness(durable)
+    await current.backend.writeCredentialFields({
+      workspaceId,
+      providerId: providerA,
+      fields: new Map([[apiKey, text('rotated-secret')]]),
+    })
+    await current.backend.rotateWorkspaceDek(workspaceId, 'authentic-operation')
+    const forgedReceiptPersistence: CredentialVaultPersistenceV1 = {
+      ...durable,
+      async withWorkspaceLock(_workspaceId, mutate) {
+        return mutate(forgedReceiptPersistence)
+      },
+      async getDekRotationReceipt(requestedWorkspaceId, operationId) {
+        const receipt = await durable.getDekRotationReceipt(requestedWorkspaceId, operationId)
+        return receipt ? { ...receipt, sourceGeneration: 99 } : undefined
+      },
+    }
+    const retry = createVaultCredentialStoreBackendV1({
+      persistence: forgedReceiptPersistence,
+      kmsBackend: current.kmsBackend,
+      versionAnchor: current.versionAnchor,
+    })
+
+    await expect(retry.rotateWorkspaceDek(workspaceId, 'authentic-operation'))
+      .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+  })
+
   test('new providers use the anchored current generation after rotation', async () => {
     const persistence = createInMemoryCredentialVaultPersistenceV1()
     const { backend } = harness(persistence)

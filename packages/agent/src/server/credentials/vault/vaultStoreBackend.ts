@@ -657,6 +657,8 @@ function createVaultCredentialStoreBackendInternalV1(
             : []
           if (
             !completedAnchor
+            || completed.targetGeneration !== completed.sourceGeneration + 1
+            || !Number.isSafeInteger(completed.targetGeneration)
             || completedAnchor.dekRotationReceipts[operationId] !== completed.targetGeneration
             || completedAnchor.dekGeneration < completed.targetGeneration
             || records.length !== anchoredProviders.length
