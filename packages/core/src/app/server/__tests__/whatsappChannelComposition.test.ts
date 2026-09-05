@@ -73,11 +73,12 @@ describe('mountCoreWhatsAppChannel', () => {
     })
     expect(challenge.statusCode).toBe(200)
     expect(challenge.body).toBe('mounted')
-    expect(mounted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')).toMatchObject({
+    const initialBinding = mounted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')
+    expect(initialBinding).toMatchObject({
       workspaceId: 'workspace-1',
       authSubjectId: 'user-1',
-      sessionKey: undefined,
     })
+    expect(initialBinding?.sessionKey).toBeUndefined()
     expect(mounted.runtime.outboundAdapters.has('whatsapp')).toBe(true)
 
     const unknownInbound = JSON.stringify({
