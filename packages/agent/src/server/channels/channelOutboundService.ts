@@ -83,6 +83,11 @@ export class ChannelOutboundService<Message = unknown> {
     for (const timer of this.claimTimers.values()) clearTimeout(timer)
     this.claimTimers.clear()
     await Promise.allSettled([...this.drains.values()])
+    // Drains can also install a stall timer after the first timer sweep.
+    for (const timer of this.stallTimers.values()) clearTimeout(timer)
+    this.stallTimers.clear()
+    for (const timer of this.claimTimers.values()) clearTimeout(timer)
+    this.claimTimers.clear()
     // A drain may have been inside async path resolution when disposal began
     // and installed its subscription while we awaited it. Unsubscribe only
     // after every drain has quiesced so no late subscription can escape.
@@ -227,6 +232,7 @@ export class ChannelOutboundService<Message = unknown> {
         return {
           entries,
           assembled: assembled.turn.status === 'stalled'
+            && entries.filter((entry) => isAgentEvent(entry.data) && entry.data.chunk.type === 'agent-start').length === 1
             ? { ...assembled, terminalOffset: lastOffset }
             : assembled,
         }
@@ -363,7 +369,18 @@ export function assembleNextTurn(
     if (!isAgentEvent(entry.data)) continue
     const { chunk } = entry.data
     if (chunk.type === 'agent-start') {
-      if (!active) active = { turnId: chunk.turnId, startedAt: entry.data.timestamp, assistantText: '' }
+      if (!active) {
+        active = { turnId: chunk.turnId, startedAt: entry.data.timestamp, assistantText: '' }
+      } else if (now - active.startedAt >= stallTimeoutMs) {
+        return {
+          terminalOffset: entries[Math.max(0, entries.indexOf(entry) - 1)]?.offset ?? entry.offset,
+          turn: {
+            turnId: active.turnId,
+            status: 'stalled',
+            text: 'That request did not finish in time. Please try again.',
+          },
+        }
+      }
       continue
     }
     if (!active && chunk.type === 'error') {
@@ -422,9 +439,7 @@ export function assembleNextTurn(
 }
 
 export function shapeChannelText(text: string, dialect: string, maxLength = 4_096): string[] {
-  const rendered = dialect === 'whatsapp/markdown'
-    ? text.replace(/^#{1,6}\s+/gm, '').replace(/\*\*([^*]+)\*\*/g, '*$1*')
-    : text
+  const rendered = dialect === 'whatsapp/markdown' ? renderWhatsAppMarkdown(text) : text
   if (rendered.length <= maxLength) return [rendered]
   const chunks: string[] = []
   let remaining = rendered
@@ -448,6 +463,24 @@ export function shapeChannelText(text: string, dialect: string, maxLength = 4_09
   }
   if (remaining.length > 0) chunks.push(remaining)
   return chunks
+}
+
+function renderWhatsAppMarkdown(text: string): string {
+  return text.split(/(```[\s\S]*?```)/g).map((section, index) => {
+    if (index % 2 === 1) return section
+    return section
+      .replace(/^#{1,6}\s+/gm, '')
+      .split('\n')
+      .filter((line) => !/^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/.test(line))
+      .map((line) => {
+        if (!line.includes('|')) return line
+        const cells = line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((cell) => cell.trim())
+        return cells.join(' — ')
+      })
+      .join('\n')
+      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1_$2_')
+      .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+  }).join('')
 }
 
 function displayText(message: { parts: readonly { type: string; text?: string }[] }): string {

@@ -404,6 +404,28 @@ describe('durable channel outbound', () => {
     })
   })
 
+  test('parks a stale incomplete turn without skipping a later completed turn', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.stale-boundary', text: 'hello', receivedAt: 200,
+      }, 'default')
+      await append({ type: 'agent-start', seq: 1, turnId: 'turn-stale' }, 1)
+      await appendTurn(append, 'turn-after-stale', 'later reply', 'ok', 100)
+      const sent: string[] = []
+      const service = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent)]]), { stallTimeoutMs: 5, now: () => 200 })
+      service.start()
+      await service.waitForIdle()
+      expect(sent).toEqual([
+        'That request did not finish in time. Please try again.',
+        'later reply',
+      ])
+      await service.dispose()
+    })
+  })
+
   test('replaces a gone session and emits one reset greeting', async () => {
     await withChannel(async ({ bindings, events }) => {
       bindings.provision(bindingInput)
@@ -541,12 +563,14 @@ describe('fake-channel conformance', () => {
 
 describe('channel shaping', () => {
   test('uses WhatsApp markdown and closes/reopens fences across bounded chunks', () => {
-    const chunks = shapeChannelText(`## Heading\n\n**bold**\n\n\`\`\`ts\n${'x'.repeat(40)}\n\`\`\``, 'whatsapp/markdown', 30)
+    const chunks = shapeChannelText(`## Heading\n\n**bold** and *italic*\n\n| A | B |\n| --- | --- |\n| one | two |\n\n\`\`\`ts\n${'x'.repeat(40)}\n\`\`\``, 'whatsapp/markdown', 30)
     expect(chunks.every((chunk) => chunk.length <= 30)).toBe(true)
     expect(chunks.join('\n')).toContain('Heading')
-    expect(chunks.join('\n')).toContain('*bold*')
-    expect(chunks[1]).toMatch(/```$/)
-    expect(chunks[2]).toMatch(/^```/)
+    expect(chunks.join('\n')).toContain('*bold* and _italic_')
+    expect(chunks.join('\n')).toContain('A — B')
+    expect(chunks.join('\n')).not.toContain('| --- |')
+    const closedFence = chunks.findIndex((chunk, index) => chunk.endsWith('```') && chunks[index + 1]?.startsWith('```'))
+    expect(closedFence).toBeGreaterThanOrEqual(0)
   })
 })
 
