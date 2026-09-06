@@ -104,6 +104,8 @@ describe('workspace-wide pending questions', () => {
     questionId: 'q-merge',
     sessionId: 'orchestrator-session',
     status: 'ready' as const,
+    blocking: false,
+    agentTypeId: 'boring-orchestrator',
     title: '[Factory Plugin] Merge approval',
     context: 'Approve the epic PR',
     artifacts: [],
@@ -120,6 +122,7 @@ describe('workspace-wide pending questions', () => {
       sessionId: 'orchestrator-session',
       agentTypeId: 'boring-orchestrator',
       chatAvailable: true,
+      nonBlocking: true,
       updatedAt: '2026-09-03T10:05:00.000Z',
     })
     // The row must be able to open the Questions surface for that question.
@@ -160,6 +163,8 @@ describe('answered questions', () => {
     decision: 'approve',
     values: { decision: 'approve', notes: 'Demo matched the brief.' },
     status: 'answered' as const,
+    blocking: false,
+    deliveryStatus: 'delivered' as const,
   }
 
   it('adapts an answered summary into a resolved inbox item carrying the decision and notes', () => {
@@ -175,6 +180,8 @@ describe('answered questions', () => {
       chatAvailable: true,
       createdAt: '2026-09-03T10:00:00.000Z',
       updatedAt: '2026-09-03T10:07:00.000Z',
+      nonBlocking: true,
+      deliveryStatus: 'delivered',
     })
     expect(item.answerValues).toMatchObject({ notes: 'Demo matched the brief.' })
   })

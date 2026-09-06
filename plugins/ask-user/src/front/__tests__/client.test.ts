@@ -81,6 +81,18 @@ describe("ask-user front client", () => {
     expect(fetchMock.mock.calls[0]![1]!.signal).toBe(controller.signal)
   })
 
+  it("requests an exact pending question when a session has several", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { pending: null } }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await createQuestionsClient().pending("default", undefined, "q-specific")
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toMatchObject({
+      op: "ask-user.v1.pending",
+      input: { sessionId: "default", questionId: "q-specific" },
+    })
+  })
+
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {
     vi.stubGlobal("crypto", {})
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { ok: true, status: "cancelled" } }))

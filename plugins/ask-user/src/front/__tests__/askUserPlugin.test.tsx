@@ -671,6 +671,39 @@ describe("askUserPlugin front shell", () => {
     })))
   })
 
+  it("does not turn a non-blocking question into a composer blocker", async () => {
+    const seen: unknown[] = []
+    const nonBlockingQuestion = { ...question, blocking: false }
+    function AttentionProbe() {
+      const { blockers } = useWorkspaceAttention()
+      seen.splice(0, seen.length, ...blockers)
+      return null
+    }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: nonBlockingQuestion } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({
+        "questions.pending": {
+          hint: { questionId: question.questionId, sessionId: question.sessionId, status: question.status, blocking: false },
+          hintsBySession: { [question.sessionId]: { questionId: question.questionId, sessionId: question.sessionId, status: question.status, blocking: false } },
+        },
+      })
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+
+    render(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
+          <AttentionProbe />
+        </Provider>
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(seen).not.toContainEqual(expect.objectContaining({ id: "ask-user:default:q1" }))
+  })
+
   it("generic attention cancel action cancels the matching ask-user question", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })

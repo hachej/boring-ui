@@ -1,17 +1,18 @@
 # @hachej/boring-ask-user
 
-Lets the coding agent ask the user a structured, typed question and block until
-the answer comes back. The question renders as a form in the **Questions**
-workbench pane; the agent's `ask_user` tool resolves once the user submits or
-cancels.
+Lets the coding agent ask the user a structured, typed question. Questions are
+blocking by default; `blocking: false` creates the same durable Inbox form and
+returns immediately, then delivers the owner's answer to the asking session as
+a follow-up prompt.
 
 ## What it does
 
 - Adds an `ask_user` agent tool that emits a typed form schema (text, textarea,
-  select, multiselect, checkbox, radio, number) and waits for a validated answer.
+  select, multiselect, checkbox, radio, number) and either waits for a validated
+  answer or returns a durable pending receipt.
 - Contributes a **Questions** center pane that renders the pending question,
   validates input (Zod), and posts the answer back.
-- Registers a workspace **blocker** while a question is pending, so the
+- Registers a workspace **blocker** while a blocking question is pending, so the
   composer surfaces "Answer the question to continue" with open/cancel actions.
 - Persists pending questions to a file store that survives agent restarts.
 
@@ -22,7 +23,7 @@ cancels.
 | Provider | `ask-user.provider` — owns the per-app questions runtime + pending store |
 | Panel | `ask-user.questions` ("Questions"), `placement: "center"`, chromeless |
 | Surface resolver | kind `questions` (`ASK_USER_SURFACE_KIND`) → opens the panel |
-| Agent tool | `ask_user` (blocking; resolves `answered` / `cancelled`) |
+| Agent tool | `ask_user` (blocking by default; non-blocking returns `pending`) |
 | WorkspaceBridge ops | `ask-user.v1.request`, `ask-user.v1.answer`, `ask-user.v1.cancel`, `ask-user.v1.pending`, `ask-user.v1.transcript` |
 | Pi prompt | `pi.systemPrompt` nudges the agent to use `ask_user` over chat roleplay |
 
@@ -54,11 +55,16 @@ const plugin = createAskUserServerPlugin({
 })
 ```
 
-The agent then calls `ask_user` with a `{ title, context?, schema }` payload:
+The package's default server adapter wires follow-up delivery through the
+trusted workspace agent dispatcher. Hosts that call the named factory directly
+must provide `answerDeliveryTransport` to enable non-blocking answer delivery.
+
+The agent then calls `ask_user` with a `{ title, context?, schema, blocking? }` payload:
 
 ```ts
 {
   title: "Deploy target?",
+  blocking: false,
   schema: {
     wireVersion: 1,
     fields: [
@@ -71,8 +77,18 @@ The agent then calls `ask_user` with a `{ title, context?, schema }` payload:
 }
 ```
 
-The pane opens, the user submits, and the tool resolves with
-`{ status: "answered", answer: { values: { env: "production" } } }`.
+With the default `blocking: true`, the pane opens and the tool resolves with
+`{ status: "answered", answer: { values: { env: "production" } } }` after the
+owner submits. With `blocking: false`, it returns immediately with
+`{ questionId, status: "pending", blocking: false }`.
+
+When a non-blocking question is answered, the plugin sends the asking session a
+prompt such as ``Owner answered `Deploy target?` (question <id>): Environment:
+production; notes: none``. If the session is busy, the answer remains marked
+`undelivered` in the store and is retried on boot, on the next answer, and on a
+timer tick. A stable request id derived from the question id makes delivery
+idempotent across retries and restarts. The Inbox labels these questions
+`non-blocking`; the Answered tab shows `undelivered` or `delivered`.
 
 Submit/cancel/pending/transcript traffic goes through WorkspaceBridge
 `ask-user.v1.*` operations. The old `questionsRoutes` helper for
@@ -95,7 +111,9 @@ name under `answer.values`.
 The default `FileAskUserStore` persists to
 `${workspaceRoot}/.boring/ask-user.json`. Implement the `AskUserStore`
 interface and pass it as `store` for DB-backed persistence. The store enforces
-one pending question per session (`PENDING_EXISTS` on a duplicate).
+one pending blocking question per session (`PENDING_EXISTS` on a duplicate). A
+session may have multiple pending non-blocking questions so batch work can
+continue while the owner decides.
 
 ## Package surfaces
 

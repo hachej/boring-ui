@@ -45,6 +45,7 @@ export function createQuestionsStore(): QuestionsStore {
           sessionId: question.sessionId,
           ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
           status: question.status,
+          ...(question.blocking === false ? { blocking: false as const } : {}),
         })
       } else if (sessionId) {
         pendingBySession.delete(sessionId)

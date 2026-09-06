@@ -141,8 +141,18 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const explicitQuestionId = hasExplicitTarget(params) ? params.questionId : undefined
   useEffect(() => {
     if (!sessionId) return
-    if (!pending || (explicitQuestionId && pending.questionId !== explicitQuestionId)) runtime.requestPendingRefresh(sessionId)
-  }, [explicitQuestionId, runtime.requestPendingRefresh, sessionId])
+    if (!explicitQuestionId) {
+      if (!pending) runtime.requestPendingRefresh(sessionId)
+      return
+    }
+    if (pending?.questionId === explicitQuestionId) return
+    const controller = new AbortController()
+    void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders })
+      .pending(sessionId, controller.signal, explicitQuestionId)
+      .then((question) => { if (question) runtime.setPending(question) })
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [explicitQuestionId, pending, runtime, sessionId])
   useEffect(() => {
     const onStop = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail

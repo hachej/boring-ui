@@ -37,6 +37,7 @@ import { QuestionsBridge, QuestionsBridgeError } from "./questionsBridge"
 export interface AskUserBridgeHandlersOptions {
   runtime: AskUserRuntime
   store: AskUserStore
+  agentTypeId?: string
 }
 
 const MAX_QUESTION_BYTES = HUMAN_ARTIFACT_LIMITS.maxSerializedMetadataBytes + 64 * 1024
@@ -159,19 +160,23 @@ function contribution<TInput, TOutput>(
   }
 }
 
-function requestHandler({ runtime }: AskUserBridgeHandlersOptions) {
+function requestHandler({ runtime, agentTypeId }: AskUserBridgeHandlersOptions) {
   return async ({ input, context, signal }: { input: AskUserBridgeRequestInput; context: WorkspaceBridgeCallContext; signal: AbortSignal }) => {
     assertRequestInput(input)
     assertRequestSessionScope(input.sessionId, context)
     try {
       return await runtime.ask({
         sessionId: input.sessionId,
+        blocking: input.blocking,
         title: input.title,
         context: input.context,
         schema: input.schema,
         artifacts: input.artifacts,
         timeoutMs: input.timeoutMs,
         ownerPrincipalId: ownerPrincipalIdFromRuntimeContext(context),
+        agentTypeId,
+        workspaceId: context.workspaceId,
+        askingUserId: principalIdFromContext(context),
       }, signal)
     } catch (error) {
       throw mapAskUserError(error)
@@ -215,9 +220,15 @@ function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
     if (!input || typeof input.sessionId !== "string" || input.sessionId.length === 0) {
       throw invalid("ask-user pending requires sessionId")
     }
+    if (input.questionId !== undefined && (typeof input.questionId !== "string" || input.questionId.length === 0)) {
+      throw invalid("ask-user pending questionId must be a non-empty string")
+    }
     assertBrowserSessionScope(input.sessionId, context)
     try {
-      const pending = await store.getPending(input.sessionId)
+      const candidate = input.questionId
+        ? await store.getByQuestionId(input.questionId)
+        : await store.getPending(input.sessionId)
+      const pending = candidate?.status === "ready" && candidate.sessionId === input.sessionId ? candidate : null
       assertQuestionOwner(context, pending)
       return { pending }
     } catch (error) {
@@ -252,8 +263,10 @@ function toPendingSummary(question: AskUserQuestion): AskUserPendingSummary {
   return {
     questionId: question.questionId,
     sessionId: question.sessionId,
+    ...(question.agentTypeId ? { agentTypeId: question.agentTypeId } : {}),
     ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
     status: question.status,
+    blocking: question.blocking !== false,
     ...(question.title ? { title: question.title } : {}),
     ...(question.context ? { context: question.context } : {}),
     artifacts: question.artifacts ?? [],
@@ -316,6 +329,7 @@ function toAnsweredSummary({ question, answer }: AskUserResolvedQuestion): AskUs
   return {
     questionId: question.questionId,
     sessionId: question.sessionId,
+    ...(question.agentTypeId ? { agentTypeId: question.agentTypeId } : {}),
     title: question.title ?? "Question",
     ...(contextFirstLine ? { contextFirstLine } : {}),
     askedAt: question.createdAt,
@@ -323,6 +337,8 @@ function toAnsweredSummary({ question, answer }: AskUserResolvedQuestion): AskUs
     ...(decisionValue(question, answer) ? { decision: decisionValue(question, answer)! } : {}),
     values: answer?.values ?? {},
     status: question.status === "answered" || question.status === "cancelled" ? question.status : "abandoned",
+    blocking: question.blocking !== false,
+    ...(question.delivery ? { deliveryStatus: question.delivery.status } : {}),
   }
 }
 
@@ -374,6 +390,7 @@ async function runQuestionsBridge(
 function assertRequestInput(input: AskUserBridgeRequestInput): void {
   if (!input || typeof input !== "object") throw invalid("ask-user request input is required")
   if (typeof input.sessionId !== "string" || input.sessionId.length === 0) throw invalid("ask-user request requires sessionId")
+  if (input.blocking !== undefined && typeof input.blocking !== "boolean") throw invalid("ask-user request blocking must be a boolean")
   if (!input.schema || typeof input.schema !== "object") throw invalid("ask-user request requires schema")
   if (input.title !== undefined && typeof input.title !== "string") throw invalid("ask-user request title must be a string")
   if (input.context !== undefined && typeof input.context !== "string") throw invalid("ask-user request context must be a string")

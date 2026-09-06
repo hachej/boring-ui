@@ -94,6 +94,22 @@ describe('workspace agent dispatcher', () => {
     ])
   })
 
+  it('forwards trusted require-idle prompt admission to the Gateway', async () => {
+    const gateway = createFakeGateway()
+    const dispatcher = createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, CTX)
+
+    await dispatcher.dispatch!({
+      requestId: 'answer-q1',
+      sessionId: 'shared',
+      content: 'Owner answered',
+      requireIdle: true,
+    })
+
+    expect(gateway.sends).toEqual([
+      expect.objectContaining({ kind: 'prompt', requestId: 'answer-q1', requireIdle: true }),
+    ])
+  })
+
   it('uses addressed control operations and returns typed receipts', async () => {
     const gateway = createFakeGateway()
     const dispatcher = createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, CTX)

@@ -15,6 +15,7 @@ import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from "../../shared"
 import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserBridgeHandlers } from "../askUserBridgeHandlers"
 import { MemoryAskUserStore } from "./testAskUserStore"
+import { AskUserAnswerDelivery } from "../askUserAnswerDelivery"
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer", required: true }] }
 const controllers: AbortController[] = []
@@ -98,6 +99,31 @@ function injectFetch(app: FastifyInstance) {
 }
 
 describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
+  it("delivers a non-blocking answer submitted through ask-user.v1.answer", async () => {
+    const { store, registry } = fixture()
+    const deliver = vi.fn(async () => "accepted" as const)
+    const stop = new AskUserAnswerDelivery(store, { deliver }).start()
+    try {
+      const requested = await registry.call({
+        op: ASK_USER_BRIDGE_OPS.request,
+        input: { sessionId: "s1", title: "Review item", schema, blocking: false },
+        requestId: "req-non-blocking",
+      }, runtimeContext())
+      expect(requested).toMatchObject({ ok: true, output: { status: "pending", blocking: false } })
+      const question = (await store.listPending())[0]!
+
+      await registry.call({
+        op: ASK_USER_BRIDGE_OPS.answer,
+        input: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "continue" } },
+      }, browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.answer]))
+
+      await vi.waitFor(async () => expect((await store.getByQuestionId(question.questionId))?.delivery?.status).toBe("delivered"))
+      expect(deliver).toHaveBeenCalledTimes(1)
+    } finally {
+      await stop()
+    }
+  })
+
   it("keeps the real browser client compatible with the production bridge policy", async () => {
     const { app, runtime, store } = await productionPolicyApp()
     vi.stubGlobal("fetch", injectFetch(app))
@@ -256,6 +282,21 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
 })
 
 describe("ask-user.v1.pending-all", () => {
+  it("addresses one exact question when a session has several non-blocking asks", async () => {
+    const { store, registry } = fixture()
+    const first = await registry.call({ op: ASK_USER_BRIDGE_OPS.request, input: { sessionId: "s1", title: "First", schema, blocking: false }, requestId: "req-first" }, runtimeContext())
+    const second = await registry.call({ op: ASK_USER_BRIDGE_OPS.request, input: { sessionId: "s1", title: "Second", schema, blocking: false }, requestId: "req-second" }, runtimeContext())
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+    const questions = await store.listPending()
+
+    const exact = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1", questionId: questions[0]!.questionId } },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pending]),
+    )
+    expect(exact).toMatchObject({ ok: true, output: { pending: { questionId: questions[0]!.questionId, title: "First" } } })
+  })
+
   it("lists every pending question in the workspace, not just the browser's own session", async () => {
     const { store, registry } = fixture()
     const c1 = new AbortController()

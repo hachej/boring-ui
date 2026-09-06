@@ -33,6 +33,9 @@ export function AnsweredDetail({
       ) : null}
       <div>
         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Answered</div>
+        {item.deliveryStatus ? (
+          <p className="mt-1 text-muted-foreground">Follow-up delivery: <span className="font-medium text-foreground">{item.deliveryStatus}</span></p>
+        ) : null}
         {item.decision ? (
           <span className="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium" style={inboxDecisionBadgeStyle(item.decision)}>{item.decision}</span>
         ) : null}

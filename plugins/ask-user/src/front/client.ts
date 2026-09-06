@@ -17,7 +17,7 @@ type BridgeResponse<T> =
   | { ok: true; output: T }
   | { ok: false; error?: { code?: string; message?: string } }
 
-export type PendingQuestionHint = { questionId: string; sessionId: string; toolCallId?: string; status?: AskUserQuestion["status"] }
+export type PendingQuestionHint = { questionId: string; sessionId: string; toolCallId?: string; status?: AskUserQuestion["status"]; blocking?: false }
 
 export function readPendingQuestionHintsFromState(state: Record<string, unknown> | null | undefined): PendingQuestionHint[] {
   const slot = state?.[ASK_USER_UI_STATE_SLOTS.PENDING]
@@ -41,7 +41,7 @@ export function readPendingQuestionHintFromState(state: Record<string, unknown> 
 
 function readHint(value: unknown): PendingQuestionHint | null {
   if (!value || typeof value !== "object") return null
-  const raw = value as { questionId?: unknown; sessionId?: unknown; toolCallId?: unknown; status?: unknown }
+  const raw = value as { questionId?: unknown; sessionId?: unknown; toolCallId?: unknown; status?: unknown; blocking?: unknown }
   if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return null
   const status = normalizeQuestionStatus(raw.status)
   return {
@@ -49,6 +49,7 @@ function readHint(value: unknown): PendingQuestionHint | null {
     sessionId: raw.sessionId,
     ...(typeof raw.toolCallId === "string" ? { toolCallId: raw.toolCallId } : {}),
     ...(status === "abandoned" && raw.status === undefined ? {} : { status }),
+    ...(raw.blocking === false ? { blocking: false as const } : {}),
   }
 }
 
@@ -94,10 +95,10 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   }
 
   return {
-    async pending(sessionId: string, signal?: AbortSignal): Promise<AskUserQuestion | null> {
+    async pending(sessionId: string, signal?: AbortSignal, questionId?: string): Promise<AskUserQuestion | null> {
       const output = await callBridge<{ pending: AskUserQuestion | null }>(
         ASK_USER_BRIDGE_OPS.pending,
-        { sessionId },
+        { sessionId, ...(questionId ? { questionId } : {}) },
         sessionId,
         undefined,
         signal,
@@ -182,6 +183,8 @@ export function normalizePendingSummaries(value: unknown): AskUserPendingSummary
       sessionId: question.sessionId,
       ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
       status: question.status,
+      blocking: question.blocking !== false,
+      ...(question.agentTypeId ? { agentTypeId: question.agentTypeId } : {}),
       ...(question.title ? { title: question.title } : {}),
       ...(question.context ? { context: question.context } : {}),
       artifacts: question.artifacts,
@@ -212,6 +215,8 @@ export function normalizeAnsweredSummaries(value: unknown): AskUserAnsweredSumma
       ...(typeof raw.decision === "string" ? { decision: raw.decision } : {}),
       values: raw.values && typeof raw.values === "object" && !Array.isArray(raw.values) ? raw.values as AskUserAnsweredSummary["values"] : {},
       status,
+      blocking: raw.blocking !== false,
+      ...(raw.deliveryStatus === "undelivered" || raw.deliveryStatus === "delivered" ? { deliveryStatus: raw.deliveryStatus } : {}),
     }
     return [summary]
   })
@@ -228,6 +233,14 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     sessionId: raw.sessionId,
     toolCallId: typeof raw.toolCallId === "string" ? raw.toolCallId : undefined,
     ownerPrincipalId: typeof raw.ownerPrincipalId === "string" ? raw.ownerPrincipalId : "anonymous",
+    blocking: raw.blocking !== false,
+    agentTypeId: typeof raw.agentTypeId === "string" ? raw.agentTypeId : undefined,
+    workspaceId: typeof raw.workspaceId === "string" ? raw.workspaceId : undefined,
+    askingUserId: typeof raw.askingUserId === "string" ? raw.askingUserId : undefined,
+    delivery: raw.delivery && typeof raw.delivery === "object"
+      && ((raw.delivery as { status?: unknown }).status === "undelivered" || (raw.delivery as { status?: unknown }).status === "delivered")
+      ? raw.delivery as AskUserQuestion["delivery"]
+      : undefined,
     status: normalizeQuestionStatus(raw.status),
     title: typeof raw.title === "string" ? raw.title : undefined,
     context: typeof raw.context === "string" ? raw.context : undefined,

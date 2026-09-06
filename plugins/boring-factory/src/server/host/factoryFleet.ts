@@ -55,6 +55,7 @@ const FACTORY_PRECEDENCE_CONTENT = {
     'The host, not persona prose, enforces stale-claim recovery and dispatch/review caps. When',
     '`factory_status` reports a stale claim, call `recover_stale_claims`. When `dispatch_worker`',
     'refuses at a cap, do not retry: raise the requested Inbox question with `ask_user`.',
+    'Use `ask_user` with `blocking:false` for per-item decisions (one card per item is fine, they do not stall you); use `blocking:true` only for Gate 1 and Gate 2. Continue dispatching while owner decisions are pending; when the answer arrives as a follow-up message, act on it.',
     'Gate 2 requires a demo URL when `demo_sandbox` can provide one. If `demo_sandbox` returns',
     'an error after the fallback, raise Gate 2 anyway and write the exact error under `Demo:`',
     'in the card; an owner or host waiver relayed in a prompt is authoritative (AGENTS.md hard rule 1).',

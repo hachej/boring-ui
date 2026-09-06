@@ -115,9 +115,8 @@ export class AskUserRuntime {
   }
 
   /**
-   * Supersede a session's pending question when that same session asks a new one.
-   * Only ever called from `ask()`: the store allows a single pending question per
-   * session, and the previous one is explicitly replaced by the new ask.
+   * Supersede a session's orphaned blocking question when that same session asks
+   * a new blocking one. Non-blocking questions remain independently answerable.
    *
    * This must never be run as a sweep over all sessions (e.g. at hub boot): waiter
    * presence is in-process state, so every persisted question looks orphaned after
@@ -125,7 +124,7 @@ export class AskUserRuntime {
    */
   async supersedeSessionPending(sessionId: string): Promise<void> {
     const pending = await this.store.getPending(sessionId)
-    if (pending && !this.coordinator.hasWaiter(pending.questionId)) {
+    if (pending && pending.blocking !== false && !this.coordinator.hasWaiter(pending.questionId)) {
       await this.abandon(pending.questionId, pending.sessionId)
     }
   }
@@ -133,7 +132,7 @@ export class AskUserRuntime {
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
     const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
-    await this.supersedeSessionPending(request.sessionId)
+    if (request.blocking !== false) await this.supersedeSessionPending(request.sessionId)
     this.assertAllowed(request.sessionId, ownerPrincipalId)
     const parsedArtifacts = HumanArtifactListSchema.safeParse(request.artifacts ?? [])
     if (!parsedArtifacts.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsedArtifacts.error.message)
@@ -141,6 +140,13 @@ export class AskUserRuntime {
     const parsed = AskUserFormSchemaSchema.safeParse(request.schema)
     if (!parsed.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsed.error.message)
     question.schema = parsed.data
+
+    if (request.blocking === false) {
+      await this.store.createPending(question)
+      await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
+      await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
+      return { questionId: question.questionId, status: "pending", blocking: false }
+    }
 
     // Register the waiter before publishing/persisting the question. The UI
     // state publisher can make a question answerable as soon as createPending
@@ -243,13 +249,17 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId" | "blocking" | "agentTypeId" | "workspaceId" | "askingUserId">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
       sessionId: request.sessionId,
       toolCallId: request.toolCallId,
       ownerPrincipalId: request.ownerPrincipalId ?? this.ownerPrincipalId,
+      blocking: request.blocking !== false,
+      ...(request.agentTypeId ? { agentTypeId: request.agentTypeId } : {}),
+      ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
+      ...(request.askingUserId ? { askingUserId: request.askingUserId } : {}),
       status: "ready",
       title: request.title,
       context: request.context,

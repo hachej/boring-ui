@@ -29,6 +29,7 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
 
 export type AskUserBridgeRequestInput = {
   sessionId: string
+  blocking?: boolean
   title?: string
   context?: string
   schema: AskUserFormSchema
@@ -51,6 +52,7 @@ export type AskUserBridgeCancelInput = {
 
 export type AskUserBridgePendingInput = {
   sessionId: string
+  questionId?: string
 }
 
 export type AskUserBridgeTranscriptInput = {
@@ -69,6 +71,9 @@ export type AskUserPendingSummary = {
   sessionId: string
   toolCallId?: string
   status: AskUserQuestion["status"]
+  /** Missing on legacy payloads means true. */
+  blocking?: boolean
+  agentTypeId?: string
   title?: string
   context?: string
   artifacts: AskUserQuestion["artifacts"]
@@ -97,6 +102,9 @@ export type AskUserAnsweredSummary = {
   decision?: string
   values: Record<string, AskUserAnswerValue>
   status: "answered" | "cancelled" | "abandoned"
+  /** Missing on legacy payloads means true. */
+  blocking?: boolean
+  deliveryStatus?: "undelivered" | "delivered"
 }
 
 export type AskUserBridgeAnsweredAllOutput = {
@@ -126,4 +134,3 @@ export type AskUserBridgePendingAllOutput = {
 export type AskUserBridgeTranscriptOutput = {
   events: AskUserTranscriptEvent[]
 }
-

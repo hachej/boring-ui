@@ -136,6 +136,41 @@ describe("InProcessAskUserCoordinator", () => {
 })
 
 describe("AskUserRuntime", () => {
+  it("returns immediately for non-blocking questions and keeps multiple cards pending", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+
+    const first = await runtime.ask({ sessionId: "s1", title: "First", schema, blocking: false })
+    const second = await runtime.ask({ sessionId: "s1", title: "Second", schema, blocking: false })
+
+    expect(first).toMatchObject({ status: "pending", blocking: false, questionId: expect.any(String) })
+    expect(second).toMatchObject({ status: "pending", blocking: false, questionId: expect.any(String) })
+    await expect(store.listPending()).resolves.toHaveLength(2)
+    if (first.status !== "pending" || second.status !== "pending") throw new Error("non-blocking ask did not return pending")
+    expect(runtime.coordinator.hasWaiter(first.questionId)).toBe(false)
+    expect(runtime.coordinator.hasWaiter(second.questionId)).toBe(false)
+  })
+
+  it("keeps non-blocking questions pending when a later blocking question starts", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+    const nonBlocking = await runtime.ask({ sessionId: "s1", title: "Later", schema, blocking: false })
+    if (nonBlocking.status !== "pending") throw new Error("non-blocking ask did not return pending")
+
+    const blockingResult = runtime.ask({ sessionId: "s1", title: "Now", schema })
+    await vi.waitFor(async () => expect(await store.listPending()).toHaveLength(2))
+    const pending = await store.listPending()
+    expect(pending).toEqual(expect.arrayContaining([
+      expect.objectContaining({ questionId: nonBlocking.questionId, status: "ready", blocking: false }),
+      expect.objectContaining({ title: "Now", status: "ready", blocking: true }),
+    ]))
+
+    const blocking = pending.find((question) => question.blocking !== false)!
+    await runtime.cancelQuestion(blocking.questionId, blocking.sessionId)
+    await expect(blockingResult).resolves.toMatchObject({ status: "cancelled" })
+    await expect(store.getByQuestionId(nonBlocking.questionId)).resolves.toMatchObject({ status: "ready" })
+  })
+
   it("creates ready questions with anonymous owner and random answer tokens", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })

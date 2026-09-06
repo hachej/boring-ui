@@ -10,6 +10,7 @@ export type AskUserPendingHint = {
   sessionId: string
   toolCallId?: string
   status: AskUserQuestion["status"]
+  blocking?: false
 }
 
 export type AskUserPendingState = {
@@ -45,8 +46,9 @@ export class AskUserStatePublisher {
     }
     const activeGeneration = ++this.generation
     this.unsubscribe = this.store.subscribe((change) => {
+      if (change.reason === "transcript") return
       void this.enqueuePublish(
-        (generation) => this.publishSessionNow(change.sessionId, generation),
+        (generation) => this.publishSessionNow(change.sessionId, generation, true),
         activeGeneration,
       )
     })
@@ -80,13 +82,13 @@ export class AskUserStatePublisher {
     await this.publishSessionNow(sessionId)
   }
 
-  private async publishSessionNow(sessionId: string, generation?: number): Promise<void> {
+  private async publishSessionNow(sessionId: string, generation?: number, forceNotify = false): Promise<void> {
     const hint = toPendingHint(await this.store.getPending(sessionId))
     if (!this.isCurrent(generation)) return
     if (hint) this.hintsBySession.set(sessionId, hint)
     else this.hintsBySession.delete(sessionId)
     const nextPending = this.currentPendingState(hint)
-    await this.publishPendingState(nextPending, generation)
+    await this.publishPendingState(nextPending, generation, forceNotify)
   }
 
   private currentPendingState(preferredHint?: AskUserPendingHint | null): AskUserPendingState {
@@ -159,6 +161,7 @@ export class AskUserStatePublisher {
   private async publishPendingState(
     nextPending: AskUserPendingState,
     generation?: number,
+    forceNotify = false,
   ): Promise<void> {
     const nextSnapshot = JSON.stringify(nextPending)
     let stateChanged = false
@@ -170,7 +173,7 @@ export class AskUserStatePublisher {
         : undefined
     })
     if (!this.isCurrent(generation)) return
-    if (!stateChanged && this.lastAcceptedInvalidationSnapshot === nextSnapshot) return
+    if (!forceNotify && !stateChanged && this.lastAcceptedInvalidationSnapshot === nextSnapshot) return
     await this.notifyPendingChanged(generation)
     if (!this.isCurrent(generation)) return
     this.lastAcceptedInvalidationSnapshot = nextSnapshot
@@ -194,6 +197,7 @@ function toPendingHint(question: AskUserQuestion | null): AskUserPendingHint | n
     sessionId: question.sessionId,
     ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
     status: question.status,
+    ...(question.blocking === false ? { blocking: false as const } : {}),
   }
 }
 

@@ -36,6 +36,15 @@ function requestedSession(init?: RequestInit): string | undefined {
 }
 
 describe("createPendingRefreshCoordinator", () => {
+  it("preserves a non-blocking hint after hydrating the full question", () => {
+    const store = createQuestionsStore()
+    store.setPending({ ...baseQuestion, blocking: false })
+
+    expect(store.getPendingHints()).toEqual([
+      expect.objectContaining({ questionId: "q-active", blocking: false }),
+    ])
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
   })
