@@ -215,6 +215,13 @@ describe('factory host composition', () => {
       expect(failedKickoff.json()).toMatchObject({ kickoff: { status: 'failed', message: 'failed to start Orchestrator session: HTTP 503' } })
       await expect(host.sessionBindings.get(failedKickoff.json().orchestratorSessionId)).resolves.toBe('kickoff-retry')
 
+      await writeFile(resolve(stateRoot, 'demos.json'), JSON.stringify({ demos: {
+        'default-path-demo': {
+          epicKey: 'default-path', sandboxId: 'remote-demo', provider: 'vercel', leaseId: 'default-path-demo',
+          url: 'https://demo.example.test', sha: 'a'.repeat(40), port: 3000, command: 'node server.mjs',
+          startedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      } }))
       const listed = await app.inject({ method: 'GET', url: '/api/v1/factory/epics' })
       expect(listed.statusCode).toBe(200)
       expect(listed.json()).toEqual(expect.arrayContaining([expect.objectContaining({
@@ -223,6 +230,7 @@ describe('factory host composition', () => {
         pendingQuestion: { questionId: 'gate-1', title: '[Default Path] Plan approval' },
         beads: { open: 0, closed: 0 },
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        activeDemoUrl: 'https://demo.example.test',
       })]))
 
       const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta' })
@@ -231,6 +239,9 @@ describe('factory host composition', () => {
         workspaceId: 'factory-hub',
         workspaceRoot: intakeRepository,
         epics: expect.arrayContaining([expect.objectContaining({ epicKey: 'intake-proof', orchestratorSessionId: 'existing-orch' })]),
+      })
+      expect(meta.json()).toMatchObject({
+        epics: expect.arrayContaining([expect.objectContaining({ epicKey: 'default-path', activeDemoUrl: 'https://demo.example.test' })]),
       })
 
       availableSessions.add('race-a')

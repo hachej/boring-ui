@@ -101,6 +101,7 @@ export type {
   DemoSandboxHandle,
   FactoryDemoPluginControl,
   FactoryDemoPluginHandle,
+  LocalDemoProcessRuntime,
 } from './host/demoPlugin'
 export {
   executeCloseEpic,
