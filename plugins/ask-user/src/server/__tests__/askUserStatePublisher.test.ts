@@ -144,6 +144,28 @@ describe("AskUserStatePublisher", () => {
     await expect(s1).resolves.toMatchObject({ status: "cancelled" })
   }, 30_000)
 
+  it("publishes every non-blocking question when one session has a batch", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const runtime = new AskUserRuntime({ store })
+    const first = await runtime.ask({ sessionId: "s1", title: "First", schema, blocking: false })
+    const second = await runtime.ask({ sessionId: "s1", title: "Second", schema, blocking: false })
+    if (first.status !== "pending" || second.status !== "pending") throw new Error("expected pending questions")
+
+    new AskUserStatePublisher(store, ui).start()
+
+    await vi.waitFor(async () => {
+      expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hintsBySession: { s1: { questionId: second.questionId, sessionId: "s1", blocking: false } },
+        hintsByQuestion: {
+          [first.questionId]: { questionId: first.questionId, sessionId: "s1", blocking: false },
+          [second.questionId]: { questionId: second.questionId, sessionId: "s1", blocking: false },
+        },
+      })
+    })
+    expect(JSON.stringify((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING])).not.toContain("answerToken")
+  })
+
   it("re-notifies after repairing pending state overwritten by a browser snapshot", async () => {
     const store = await makeStore()
     const ui = bridge()

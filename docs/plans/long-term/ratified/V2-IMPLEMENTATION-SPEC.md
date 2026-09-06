@@ -268,29 +268,33 @@ AR1-003/004 (ports into M2's L2) · result→runId · keep selling.
 
 ## Workspace Evolution milestone extension — 2026-09-05
 
+> Consumer scope updated 2026-09-06 under RECONCILIATION §12. The rows below
+> reflect that clarification; the M0–M8 ordering and frozen port remain unchanged.
+
 **Specified, unbuilt by this PR; effective on owner merge.** This adds a
 named product proof to the capabilities above without renumbering M0–M8,
 opening the new-repo implementation freeze, or requiring M8 Product extraction
 for a private change. The [execution plan](../../workspace-evolution/README.md#milestones)
-owns E0–E6 acceptance; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
+owns E0–E6 acceptance; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
 owns dispatch. M-labels below map capability dependencies, not a second queue.
 
 | Extension | Capability relationship | Product proof |
 |---|---|---|
-| E0 — request and preview preparation | Registered rendering units plus fixture-only adapter/extraction if needed; no new runtime/storage premise | French document-dashboard and chat-first contract fixtures use normalized synthetic references; no live Clinic Session-independence claim. |
-| E1 — durable workspace revision | E1a: M1 host/admission/recovery + M4 composition, current-repo P1 and any consumed Thread gates. E1b additionally requires Clinic migration, [thread-storage-spike], and [seat-audit-attribution] | E1a activation/undo survives restart and may land first. E1b proves independent domain records and bounded Job Thread with non-chat status/decisions. Both complete E1. |
+| E0 — request and preview preparation | Registered units plus fixture-only adapter/extraction; no new runtime/storage premise | Two mounts and Clinic + Charlotte/Seneca synthetic fixtures; ESG is a labeled hypothesis; no live data-path claim. |
+| E1 — durable workspace revision | E1a: M1 host/admission/recovery + M4 composition, current-repo P1 and consumed gates. E1b adds selected domain migration as needed, mandatory [thread-storage-spike] and [seat-audit-attribution] | E1a activation/undo survives restart. E1b proves selected live domain work and bounded Job Thread with non-chat results/decisions. Both complete E1; Clinic selection requires its identity migration. |
 | E2 — personal scope | M4 workspace bindings + relevant M5 identity/membership substrate | Two authenticated users keep different presentations over shared work; personal UI state does not mutate content; parallel subjects remain isolated. Multi-seat UI is not a prerequisite. |
 | E3 — behavior revision | M1 agent identity/provenance + E1/E2; relevant M6 evaluation machinery where present | Permitted personal behavior survives a shared expert update and is attributable to the work that used it. |
 | E4 — isolated private module | E1/E2 + admitted C4 isolation and capability contracts | A novel component runs with scoped data and can be removed without breaking recovery. |
-| E5 — upgrade and reconciliation | E1/E2 + supported package/state compatibility; run after E3/E4 when those artifact classes are included | A real upstream update preserves local intent across both supported compositions; a conflicting binding/state change requires resolution. |
+| E5 — upgrade and reconciliation | E1/E2 + supported package/state compatibility; E3/E4 when those classes are included | Real update and conflict proof; a second structurally different live consumer exercises a capability before a cross-domain claim. Kernel promotion retains its existing gate. |
 | E6 — approved reuse and broader autonomy | E5 + repeat-use evidence and maintainer/export authority | A second private workspace adopts an optional generalized package and retains its own choices. |
 
 E5's ordinary configuration upgrade proof should run before expanding the
 catalog; it need not wait for E4. Behavior/module upgrades extend that proof
 when those lanes exist. L7 owns reusable distribution and entitlements, while
-private activation belongs to the host and Experience. The first consumer is
-Clinic's workflow; Seneca supplies the authenticated ownership proof. This
-is a platform acceptance choice, not a new commercial-vertical ordering.
+private activation belongs to the host and Experience. Cross-domain
+preparation uses Clinic and Charlotte/Seneca; one selected consumer earns the
+first live loop. ESG remains a proposed stress case until inspected. This is
+a platform acceptance choice, not a new commercial-vertical ordering.
 
 # PART D — repo tree (full vision, single package)
 

@@ -49,7 +49,7 @@ try {
   const supervision = JSON.parse(await readFile(resolve(STATE_ROOT, 'supervision.json'), 'utf8')).entries?.[osid]
   if (!supervision) throw new Error('supervision entry not persisted'); phase('supervision-armed', { intervalMs: supervision.intervalMs })
 
-  await prompt('boring-orchestrator', osid, `Dispatch exactly one Worker now with dispatch_worker. Brief: epic ${EPIC}, shared worktree, pull protocol (br ready --label epic:${EPIC} --unassigned; claim one with --claim --actor <session id>), implement + stage only intended files + commit on the epic branch, exact-SHA dedicated sandbox test (verify .factory-sha or git rev-parse HEAD), adversarial fresh_review, complete handoff on the Bead, push the epic branch, never merge or close. Do not name a specific Bead.`)
+  await prompt('boring-orchestrator', osid, `Read the exact ready Bead id with br ready --label epic:${EPIC} --unassigned, then dispatch exactly one Worker with dispatch_worker using that id as beadId and naming it in the brief. Brief: epic ${EPIC}, shared worktree, verify the named Bead is ready and claim it with --claim --actor <session id>, implement + stage only intended files + commit on the epic branch, exact-SHA dedicated sandbox test (verify .factory-sha or git rev-parse HEAD), adversarial fresh_review, complete handoff on the Bead, push the epic branch, never merge or close.`)
   // Wait until a Worker exists and has claimed the Bead (assignee set), then crash the API.
   let claimed
   for (let i = 0; i < 200; i++) { const beads = await br(['list', '--label', `epic:${EPIC}`]); claimed = beads.find(b => b.assignee && b.status === 'in_progress'); if (claimed) break; await new Promise(r => setTimeout(r, 3000)) }

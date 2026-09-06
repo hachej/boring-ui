@@ -61,25 +61,27 @@ completion, so it indirectly gates every Thread-view slice that consumes P1.
 
 ## Workspace Evolution extension — specified, not shipped
 
-The owner-requested 2026-09-05 amendment adds a named consumer program on
+The owner-requested 2026-09-05 amendment, generalized 2026-09-06, adds a consumer program on
 owner merge. Its [E0–E6 milestones](../plans/workspace-evolution/README.md#milestones)
 prove private adaptation, downstream maintenance, and approved reuse:
 
 | Milestone | Observable result | Key gate |
 |---|---|---|
-| E0 — request/preview preparation | Two contract fixtures reuse a rendering unit through normalized synthetic references and a fixture-only adapter; no live data-path claim | Owner adoption; no production activation; Clinic's session-keyed document path is a known gap |
-| E1 — workspace revision | E1a activation/undo survives restart and may land first; E1b proves live Clinic records and Job Thread independent of chat; both complete E1 | E1a: E0 + P1-C and any consumed premises; saved Views need the View contract. E1b: Clinic migration + mandatory [thread-storage-spike] and [seat-audit-attribution] |
+| E0 — request/preview preparation | One unit across two mounts and Clinic + Charlotte/Seneca synthetic fixtures; labeled ESG assumptions | Owner adoption; no live data path, production activation or substitute saved View |
+| E1 — workspace revision | E1a durable activation/undo; E1b selected live consumer's domain work and Job Thread outside chat; both complete E1 | E1a: E0 + P1-C and consumed premises; full View contract if saved. E1b: domain migration as needed plus mandatory [thread-storage-spike] and [seat-audit-attribution]; Clinic migration for Clinic |
 | E2 — personal scope | Two users keep different presentations over shared work; parallel subjects and personal state stay isolated | E1 + authenticated scope; Seat attribution where consumed |
 | E3 — behavior revision | Allowed personal behavior remains attributable and survives expert updates | E1/E2 + behavior evaluation and policy boundaries |
 | E4 — generated module | A new private component runs with scoped data and safe removal | E1/E2 + proven build/serving isolation in C4 |
-| E5 — upgrade reconciliation | Local intent survives an upstream update in both supported compositions; a binding/state conflict stops activation | E1/E2 for configuration; E3/E4 only for their artifact classes |
+| E5 — upgrade reconciliation | Intent survives an update or a precise conflict blocks it; second live domain consumer before cross-domain claims | E1/E2 for configuration; E3/E4 only for their artifact classes; Rule of Three still gates kernel promotion |
 | E6 — approved reuse | A second workspace adopts a useful optional package | E5 + export/maintainer authority and reuse evidence |
 
 E5's configuration proof runs before expanding the catalog; it does not wait
-for generated modules. Clinic is the first workflow and Seneca the target
-authenticated host. The first journey opens on Documents médicaux with ambient
-assistance and optional chat; a full Meridian shell or multi-agent engine is
-not needed for the E0 fixture. These are acceptance consumers, not a change to GTM order.
+for generated modules. [The software model](../vision/software-model.md)
+uses Clinic, Charlotte/Seneca and a labeled ESG hypothesis to test distinct
+responsibilities. One selected consumer earns the first live loop; another
+earns a claimed shared capability. Clinic retains its own migration/capture
+obligations. A full Meridian shell, all-client rollout or multi-agent engine
+is not needed for E0. Commercial sequencing remains tenant-owned.
 The [implementation-spec crosswalk](../plans/long-term/ratified/V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
 relates E-slices to M0–M8 without reopening the new-repo freeze.
 
@@ -91,7 +93,7 @@ shell-location, and shell-navigation tranche; and **Wave B — Commercial**, who
 commercial ordering lives in the Seneca tenant repository while Boring supplies
 only neutral platform substrate. The older numbered waves are historical and
 superseded for dispatch. The
-[2026-09-05 amendment](../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
+[2026-09-06 amendment](../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
 adds E0 preparation and the explicitly gated evolution consumers to that
 program; it preserves the premise priority. Read [`../direction/DIRECTION.md`](../direction/DIRECTION.md)
 before dispatching anything; read [`../vision/README.md`](../vision/README.md)

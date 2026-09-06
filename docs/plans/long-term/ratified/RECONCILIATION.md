@@ -424,6 +424,9 @@ room; §7 and §9 stand unaltered.
 
 ## 11. OWNER-REQUESTED AMENDMENT — 2026-09-05 (Workspace Evolution)
 
+> Consumer scope is amended by §12 below (2026-09-06). Clinic-specific
+> requirements remain binding for Clinic; they do not define all products.
+
 The owner requested that the personal, self-evolving workspace design become
 a vision, milestone, and implementation-plan PR. This amendment takes effect
 on owner merge. It specifies future behavior; no capability is marked shipped
@@ -563,3 +566,94 @@ shipped guarantees. This replaces the literal blanket reading of "docs never
 precede implementation" while preserving the G16 evidence requirement.
 
 Plan and milestone acceptance: [Workspace Evolution](../../workspace-evolution/README.md).
+
+## 12. OWNER-REQUESTED AMENDMENT — 2026-09-06 (software model and cross-domain proof)
+
+The owner requested a step back from Clinic-specific framing and a stronger
+general software model, naming the Charlotte Ledoux/Seneca adaptation and ESG
+portfolio-impact analysis. **Effective on owner merge; specified and unbuilt.**
+This clarifies §§8–11 and makes the consumer-scope change below explicit.
+The [software model](../../../vision/software-model.md) is the readable
+synthesis; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
+is the only dispatch authority.
+
+**(a) Responsibilities, not new ontology.** The application model is state
+and knowledge + domain operations + Experiences + durable work, under
+authority, evidence and lifecycle control. Map these to existing semantic
+resources/artifacts/mounts, Capability/operation, AppComposition/View,
+Thread/Session/Run and trusted-host contracts. No universal SystemOfRecord,
+Schema, DataSource, Process, Product or workflow-DSL noun is promoted here.
+The full saved-View contract and existing promotion rules remain binding.
+
+**(b) Sources and domain truth.** An application may own records or consume
+authorized external systems and read-only corpora. It need not centralize them
+in Boring storage. The domain adapter owns source identity, authority,
+freshness/version semantics and write rules. Source evidence, derived results,
+proposals and accepted records remain distinguishable. Missing guarantees
+must be visible; a renderer or agent cannot infer them from a generic reference.
+
+**(c) Domain operations are the shared behavior boundary.** UI, agents,
+deterministic jobs and authorized external clients use the same governed
+operation implementation. Subject/resource bindings, input versions, current
+authority and effects are explicit. Domain code owns reproducible methods,
+validation and transitions. Agents may reason and propose within that boundary;
+they cannot mint grants or silently change domain policy. Ordinary queries,
+manual edits and deterministic calculations do not require an agent Run,
+Thread, or optimization Objective merely to fit the architecture. Admitted
+agent work still uses RunId := RequestKey, and Thread remains the job root
+with 0..n optional Sessions where a durable job is used.
+
+**(d) Separate operating and software lifecycles.** Performing domain work
+and changing the software that performs it are different loops. §11's immutable
+candidates, current authorization, independent checks, scoped previews,
+generation-checked activation, compatible undo and approved export continue
+to govern the software loop. Domain records, knowledge state, effects and
+already admitted work keep their own lifecycle; a software rollback cannot
+rewrite them. Behavior/knowledge/method changes need the compatibility and
+affected evaluation evidence appropriate to the changed class.
+
+**(e) Cross-domain evidence.** Clinic's document/record workflow,
+Charlotte/Seneca's source-grounded knowledge/draft workflow, and the owner's
+ESG analysis use case test different responsibilities. The Charlotte package
+and host seams are source-inspected, not production-activation proof. Charlotte
+refers here to a public-corpus governance knowledge package, not evidence
+about the person or their endorsement. ESG is
+an unverified architecture stress case until the client sources and method
+are provided. Synthetic fixtures and cosmetic variants do not qualify as real
+consumer reuse or satisfy Rule of Three. A claimed shared capability must
+work in a second structurally different live consumer before a cross-domain
+capability claim; kernel promotion retains its stricter existing gate.
+
+**(f) Explicit E-program scope change.** Replace §11's Clinic-only E0/E1
+selection and Seneca-only identity-host framing with:
+
+- E0 maps the owner-described Clinic request and a source-backed proposed
+  Charlotte/Seneca fixture request to supported contracts. It records requester
+  and provenance; a proposed request needs the intended requester's confirmation
+  before being called an actual customer request. It reuses a rendering unit
+  across two mounts and both synthetic domain
+  fixtures, and records a labeled ESG hypothesis. No live proof, saved-View
+  substitute or production activation follows.
+- E1a proves durable configuration in one selected consumer. E1b proves that
+  consumer's live domain identity/operations and bounded Job Thread with
+  non-chat status/results/decisions. Record the workflow and domain owner
+  before implementation. E1 still requires both subproofs.
+- E1b's [thread-storage-spike] and [seat-audit-attribution] gates remain
+  mandatory for every consumer; E1a retains P1-C and every premise it consumes.
+  Clinic's domain migration is mandatory when Clinic is selected. Selecting a
+  corpus-backed consumer neither performs nor waives Clinic's migration.
+- E2/E5 prove ownership and maintenance for supported capabilities. Repeat
+  a capability in a second structurally different live consumer before calling
+  it cross-domain. This does not make every client deployment or every mode
+  a prerequisite for an earlier bounded private change.
+- E3 is required before promising behavior personalization; E4 only when novel
+  code is needed. E5 configuration precedes E6 under DIRECTION; later behavior
+  and module classes extend the applicable upgrade proof. E6 export and
+  independent adoption remain separately authorized.
+
+**Preserved boundaries.** No commercial reprioritization, universal database
+or schema builder, shared-runtime room, marketplace prerequisite, second
+execution identity or authority model, frozen-port reopening, or bypass of
+confinement/accepted-work/attribution/View gates. The single-agent and ordinary
+operate paths remain first-class. Known old scope is amended by this section;
+the remaining implementation decisions are exposed in the consumer slices.

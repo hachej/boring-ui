@@ -546,6 +546,9 @@ queue item changes; P1-A dispatch is unaffected.
 
 ## Amendment 2026-09-05 — Workspace Evolution
 
+> The 2026-09-06 amendment below supersedes the consumer selection in this
+> section. Its premise gates and priority stand except where explicitly scoped.
+
 **Owner-requested; effective on owner merge. Specified, not implemented by
 this PR.** Add Workspace Evolution as a named platform-consumer program:
 direct user requests produce private software revisions that can be previewed,
@@ -598,3 +601,42 @@ The done-bar is a direct request kept through real use and a supported
 upgrade, followed by approved reuse in another private workspace. Track all
 attempts, including failed builds and repair work; generated-code volume is
 not progress by itself.
+
+## Amendment 2026-09-06 — Cross-domain Workspace Evolution
+
+**Owner-requested; effective on owner merge; no runtime capability is closed.**
+The owner requested a general software vision that covers Clinic,
+Charlotte Ledoux/Seneca and ESG portfolio-impact analysis. Binding semantics:
+[RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
+Readable model and evidence: [software model](../vision/software-model.md).
+
+**Explicit scope change:** the 2026-09-05 E0/E1 consumer selection is no longer
+Clinic-only, and Seneca is more than an identity proof host. Select one useful
+bounded live consumer for the first release loop; record its workflow, domain
+owner, source/operation contracts and missing prerequisites before E1
+implementation. This is implementation scoping, not permission to change
+tenant GTM or dispatch a second heavy platform build.
+
+| Slice | Current dispatch and done-bar |
+|---|---|
+| E0 — cross-domain preparation | After owner merge, alongside premises: map the owner-described Clinic request and a source-backed proposed Charlotte/Seneca fixture request. Record requester and provenance; confirm proposed requests with the intended requester before calling them actual customer requests. Reuse one registered resource/evidence unit across two supported mounts and both synthetic domain fixtures. Record ESG as an unverified analytical stress case. No live migration, production activation, new Job Thread or substitute saved-View schema. |
+| E1a — durable configuration | After E0 and P1-C accepted-work/recovery. One selected consumer earns request → candidate → private preview → durable keep/undo. Retain current authorization and every consumed Thread/View/pause premise from the September 5 row. |
+| E1b — selected live domain work | After E1a, the selected consumer's domain identity/operation and any required migration proof, plus mandatory [thread-storage-spike] and [seat-audit-attribution]. One bounded Job Thread exposes status/results/decisions outside chat. Clinic selection additionally requires its trusted Session-keyed record migration. E1 needs E1a and E1b. |
+| E2/E5 — ownership and maintenance | Existing gates stand. Earn personal/shared isolation and a real configuration upgrade/conflict. Before declaring a shared capability cross-domain, repeat it in a second structurally different live consumer with its own domain acceptance. Synthetic ESG fixtures do not count. |
+| E3/E4/E6 — broaden the earned class | Existing order stands: E3 for behavior promises; E4 for novel confined code; E5 configuration before E6, with E3/E4 extending upgrade evidence for their classes. Approved minimal export, maintainer review and independent adoption remain required. |
+
+**Next work on adoption:** Factory returns one request/contract map for Clinic
+and one source-backed proposed fixture request/contract map for Charlotte/Seneca,
+each with requester/provenance and confirmation status, one bounded
+two-domain/two-mount fixture demo,
+the ESG assumptions it could not verify, and the proposed first live workflow
+with its prerequisite issues. A supported private change does not wait for
+three client rollouts. A domain-specific success does not close a universal
+platform claim. Rule of Three and any kernel promotion still need their
+existing evidence, beyond this consumer-readiness bar.
+
+Premise priority, merge-queue preflight, interface-first port doctrine,
+new-repo freeze and tenant-owned commercial ordering are unchanged. Reuse
+Seneca's existing exact-package publication/activation seams where applicable;
+they do not substitute for scoped Experience activation, personal overlays,
+or general upgrade reconciliation.

@@ -127,3 +127,42 @@ Normative amendment: [RECONCILIATION §11](../plans/long-term/ratified/RECONCILI
 Readable vision: [vision overview](../vision/README.md#personal-software-evolution-owner-requested-extension-2026-09-05).
 Milestones/proof: [Workspace Evolution](../plans/workspace-evolution/README.md).
 Dispatch: [DIRECTION amendment](DIRECTION.md#amendment-2026-09-05--workspace-evolution).
+
+### 2026-09-06 — One software model, many Experiences
+
+**Owner-requested clarification; effective on owner merge, implementation
+pending.** The owner identified Clinic, Charlotte Ledoux/Seneca, and ESG
+portfolio-impact analysis as different adaptations and requested a general
+software model. This supersedes Clinic as the defining platform example and
+Seneca as merely an identity host in the 2026-09-05 extension above.
+
+**Boring lets people compose and maintain software around their work: connect
+records and knowledge, expose trustworthy domain operations, choose useful
+Experiences, and delegate bounded work to agents.** The software model is
+state/knowledge + domain operations + Experiences + durable work, under
+authority, evidence and lifecycle control. These are responsibilities over
+the existing substrate; no new kernel nouns, mandatory service split, or
+universal schema are introduced.
+
+A domain may own transactional records, use an attributed read-only corpus,
+or query an external system. Deterministic rules/calculations and manual work
+remain first-class; an agent is an optional participant, not the store or
+business-rule authority. Ordinary use does not require an optimization
+Objective. The operating loop and the software-change loop have separate
+state: interface undo never rewinds business records or completed effects.
+
+The checkable generality claim now needs structurally different consumers.
+E0 uses Clinic and Charlotte/Seneca synthetic fixtures plus an explicitly
+hypothetical ESG stress case. One selected live consumer earns the initial
+loop; a second structurally different live consumer must exercise a claimed
+shared capability before it is advertised as cross-domain. Every consumer
+keeps its own domain acceptance criteria. Clinic's migration does not gate a
+knowledge product, and a source-corpus skin does not prove clinical readiness.
+No all-client deployment or marketplace is required for a useful private edit.
+
+The [software model](../vision/software-model.md) owns the readable synthesis
+and pinned source scope. [RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof)
+records the named amendment;
+[DIRECTION](DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
+owns its bounded dispatch change. Host authority, the frozen ontology, premise
+priority, interface-first port doctrine and tenant-owned GTM remain intact.

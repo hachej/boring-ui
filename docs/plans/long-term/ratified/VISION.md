@@ -321,3 +321,38 @@ excluded. Arbitrary code cannot promise conflict-free automatic upgrades.
 1. ~~R-a~~ RULED: new repo, interface-first, port mechanisms (protocol above).
 2. Track K sequencing after P0 as in §5 — confirm.
 3. Creator growth as first vertical (K7) — confirm or substitute.
+
+## 11. Owner-requested clarification — 2026-09-06 (software model)
+
+**Proposed; effective on owner merge; no implementation claim.** The current
+Experience-over-governed-work north star remains. The owner requested that it
+be made concrete across Clinic, the Charlotte Ledoux/Seneca knowledge product,
+and an ESG portfolio-impact use case, instead of being defined by Clinic.
+
+The product responsibilities are **state and knowledge, domain operations,
+Experiences, and durable work**, under **authority, evidence and lifecycle
+control**. They map to existing resource/artifact, Capability, View,
+Thread/Session/Run, and host contracts. They are not additional kernel nouns.
+Domain truth may remain in external systems or read-only corpora; no universal
+record schema or mandatory system-of-record migration follows. Deterministic
+calculations and manual operations are valid without model inference. The
+explicit optimization loop remains optional under the 2026-08-27 scope ruling.
+
+Domain packages own schemas, methods, validation and review meaning. Shared
+mechanisms own composition, authority, context, accepted work and compatible
+software revision. Software undo does not undo domain records or effects.
+Each vertical earns its own readiness; source-grounded knowledge adaptation
+does not prove medical correctness, and a synthetic portfolio fixture does
+not prove a live financial client.
+
+**Named scope amendment:** the September 5 E-program references to Clinic as
+the first universal proof and Seneca only as an authenticated host are
+superseded by cross-domain preparation and one selected live consumer, then
+second-consumer evidence for claimed shared capabilities. Clinic retains its
+mandatory migration when selected; E1b retains its Thread/attribution premises
+for every selected consumer. This changes neither K/M commercial ordering nor
+Rule of Three, the frozen noun set, the port doctrine or the security model.
+
+Normative detail: [RECONCILIATION §12](RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
+Readable model/evidence: [software model](../../../vision/software-model.md).
+Dispatch: [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution).

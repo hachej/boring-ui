@@ -38,7 +38,7 @@ function deps(overrides: Partial<EpicClosureDeps> = {}): EpicClosureDeps {
     featureName: 'Factory Plugin',
     workspaceScopeId: 'factory-hub',
     getApp: () => ({ inject: vi.fn(async () => ({ statusCode: 200, json: () => ({ isError: false }) })) }) as never,
-    demoControl: { listDemos: async () => ({}), stopDemo: async () => 'stopped', listDemosForSession: async () => ({}), listDemosForEpic: async () => ({}) },
+    demoControl: { listDemos: async () => ({}), listActiveDemoUrls: async () => ({}), stopDemo: async () => 'stopped', listDemosForSession: async () => ({}), listDemosForEpic: async () => ({}) },
     supervisionControl: { stopSupervision: async () => {} },
     markRegistryClosed: async () => {},
     invalidateSnapshotFn: vi.fn(async () => {}),
@@ -171,6 +171,7 @@ describe('executeCloseEpic', () => {
         invalidateSnapshotFn,
         demoControl: {
           listDemos: async () => demoEntries,
+          listActiveDemoUrls: async () => ({}),
           listDemosForSession: async (sessionId) => {
             operations.push(`list:${sessionId}`)
             return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.sessionId === sessionId))
@@ -257,6 +258,7 @@ describe('executeCloseEpic', () => {
     const sharedDeps = deps({
       demoControl: {
         listDemos: async () => demoEntries,
+        listActiveDemoUrls: async () => ({}),
         listDemosForSession: async (sessionId) => {
           operations.push(`list:${sessionId}`)
           return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.sessionId === sessionId))

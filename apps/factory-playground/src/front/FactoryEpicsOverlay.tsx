@@ -12,6 +12,7 @@ interface FactoryEpicLiveEntry {
   pendingQuestion: { questionId: string; title?: string } | null
   beads: { open: number; closed: number }
   headSha: string | null
+  activeDemoUrl?: string
   kickoff?: { status: 'not-requested' | 'accepted' | 'failed'; message?: string }
 }
 
@@ -196,27 +197,41 @@ export function FactoryEpicsOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="space-y-2">
           {epics.map((entry) => (
-            <button
+            <div
               key={entry.epicKey}
-              type="button"
-              onClick={() => openEpic(entry)}
-              disabled={!entry.orchestratorSessionId}
-              className="group w-full rounded-lg border border-border/70 bg-background p-3 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30 disabled:cursor-default disabled:opacity-60"
+              className="rounded-lg border border-border/70 bg-background transition-colors hover:border-foreground/20 hover:bg-muted/30"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-semibold">{entry.featureName}</div>
-                  <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{entry.branch} · {entry.headSha?.slice(0, 8) ?? 'no head'}</div>
+              <button
+                type="button"
+                onClick={() => openEpic(entry)}
+                disabled={!entry.orchestratorSessionId}
+                className="group w-full p-3 text-left disabled:cursor-default disabled:opacity-60"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold">{entry.featureName}</div>
+                    <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{entry.branch} · {entry.headSha?.slice(0, 8) ?? 'no head'}</div>
+                  </div>
+                  <span style={entry.status === 'active' ? activeBadge : mutedBadge}>{entry.status}</span>
                 </div>
-                <span style={entry.status === 'active' ? activeBadge : mutedBadge}>{entry.status}</span>
-              </div>
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <span style={mutedBadge}>{entry.orchestratorStatus ?? 'no session'}</span>
-                {entry.pendingQuestion ? <span style={gateBadge}>gate pending</span> : null}
-                <span style={mutedBadge}>{entry.beads.open} open</span>
-                <span style={mutedBadge}>{entry.beads.closed} closed</span>
-              </div>
-            </button>
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  <span style={mutedBadge}>{entry.orchestratorStatus ?? 'no session'}</span>
+                  {entry.pendingQuestion ? <span style={gateBadge}>gate pending</span> : null}
+                  <span style={mutedBadge}>{entry.beads.open} open</span>
+                  <span style={mutedBadge}>{entry.beads.closed} closed</span>
+                </div>
+              </button>
+              {entry.activeDemoUrl ? (
+                <a
+                  href={entry.activeDemoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mx-3 mb-3 block truncate rounded-md bg-accent/10 px-2 py-1.5 font-mono text-[10px] text-accent hover:bg-accent/15"
+                >
+                  Demo: {entry.activeDemoUrl}
+                </a>
+              ) : null}
+            </div>
           ))}
         </div>
       </div>
