@@ -143,6 +143,21 @@ class RefineLexiconWiringTest(unittest.TestCase):
         self.assertNotIn("corrected_from", result["words"][1])
         self.assertEqual(result["corrections"], [{"from": "zylorique", "to": "Zyloric", "startSeconds": 0.0}])
 
+    def test_corrections_report_strips_edge_punctuation_but_words_keep_it(self):
+        refiner = self._bare_refiner(self._snapper())
+        refiner.transcribe = lambda audio, language: [
+            {"text": "zylorique,", "start": 0.0, "end": 0.5},
+        ]
+        refiner.diarize = lambda audio, max_speakers: asyncio.sleep(0, result=[])
+
+        result = refiner.refine(audio=[], language="fr", max_speakers=3)
+
+        # the transcript word itself keeps whatever punctuation whisper produced
+        self.assertEqual(result["words"][0]["text"], "Zyloric")
+        self.assertEqual(result["words"][0]["corrected_from"], "zylorique,")
+        # but the corrections report is cleaned up
+        self.assertEqual(result["corrections"], [{"from": "zylorique", "to": "Zyloric", "startSeconds": 0.0}])
+
     def test_no_snapper_means_no_corrections(self):
         refiner = self._bare_refiner(None)
         refiner.transcribe = lambda audio, language: [{"text": "zylorique", "start": 0.0, "end": 0.5}]
@@ -153,6 +168,35 @@ class RefineLexiconWiringTest(unittest.TestCase):
         self.assertEqual(result["words"][0]["text"], "zylorique")
         self.assertNotIn("corrected_from", result["words"][0])
         self.assertEqual(result["corrections"], [])
+
+
+class HotwordsFileTest(unittest.TestCase):
+    def _write(self, content: str) -> str:
+        fd, path = tempfile.mkstemp(suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        self.addCleanup(os.unlink, path)
+        return path
+
+    def test_one_name_per_line(self):
+        path = self._write("Doliprane\nAdvil\nZyloric\n")
+        self.assertEqual(rs.parse_hotwords_file(path), ["Doliprane", "Advil", "Zyloric"])
+
+    def test_full_line_comments_and_blank_lines_are_ignored(self):
+        path = self._write("# drug hotwords\nDoliprane\n\n# another comment\nAdvil\n\n")
+        self.assertEqual(rs.parse_hotwords_file(path), ["Doliprane", "Advil"])
+
+    def test_trailing_comments_are_stripped(self):
+        path = self._write("Doliprane  # brand name\nAdvil#no space\n")
+        self.assertEqual(rs.parse_hotwords_file(path), ["Doliprane", "Advil"])
+
+    def test_whitespace_only_lines_are_ignored(self):
+        path = self._write("Doliprane\n   \n\t\nAdvil\n")
+        self.assertEqual(rs.parse_hotwords_file(path), ["Doliprane", "Advil"])
+
+    def test_empty_file(self):
+        path = self._write("")
+        self.assertEqual(rs.parse_hotwords_file(path), [])
 
 
 class LimitsTest(unittest.TestCase):

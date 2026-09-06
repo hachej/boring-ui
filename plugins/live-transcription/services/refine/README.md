@@ -18,7 +18,9 @@ live WebSocket session, including the trailing silence-padding flush.
 /opt/WhisperLiveKit/.venv/bin/python refine_server.py \
   --host 127.0.0.1 --port 18884 \
   --sidecar-path /opt/boring-sortformer-poc \
-  --model-path /opt/models/sortformer/diar_streaming_sortformer_4spk-v2.nemo
+  --model-path /opt/models/sortformer/diar_streaming_sortformer_4spk-v2.nemo \
+  --lexicon /opt/boring-refine/lexicon.json \
+  --hotwords /opt/boring-refine/hotwords.txt
 ```
 
 Requires `BORING_REFINE_TOKEN` (or `--token`) and a CUDA-capable box with
@@ -54,8 +56,17 @@ Response `200`:
 
 When started with `--lexicon`, each corrected word also carries a
 `corrected_from` field holding its original (pre-correction) text, and
-`corrections` lists every change made. Without `--lexicon`, `corrections` is
-always `[]` and words are left untouched.
+`corrections` lists every change made, with the `from`/`to` values stripped
+of leading/trailing punctuation (e.g. a raw `"Antacapone,"` is reported as
+`"Antacapone"`; the word's own `text` is unaffected). Without `--lexicon`,
+`corrections` is always `[]` and words are left untouched.
+
+When started with `--hotwords`, faster-whisper's transcription is biased
+towards the file's vocabulary (passed as its `hotwords` parameter, the names
+joined with `, `). This does not change spelling after the fact like
+`--lexicon` does — it nudges the decoder's own choices, so it also helps on
+names the lexicon snap wouldn't touch (e.g. because they're too short, or
+share a phonetic key with a common French word).
 
 Errors: `401` unauthorized, `403` browser `Origin` header present, `413` file
 or audio too large, `415` undecodable file, `429` a job is already running,
@@ -88,9 +99,20 @@ Build the phonetic drug-name lexicon once (needs BDPM's `CIS_bdpm.txt` and
   --out /opt/boring-refine/lexicon.json
 ```
 
+Optionally build a vocabulary-bias hotwords file: one name per line, `#`
+starts a comment, blank lines ignored, passed as-is (joined with `, `) to
+faster-whisper's `hotwords` parameter:
+
+```
+# a few of our own clinic-specific names
+Ozempic
+Doliprane
+```
+
 Install `boring-refine.service` to `/etc/systemd/system/` (its `ExecStart`
 example already passes `--lexicon /opt/boring-refine/lexicon.json`; drop the
-flag, or the file, to run without drug-name correction), then:
+flag, or the file, to run without drug-name correction — same for
+`--hotwords /opt/boring-refine/hotwords.txt` and vocabulary bias), then:
 
 ```sh
 sudo systemctl daemon-reload

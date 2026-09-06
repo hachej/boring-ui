@@ -53,6 +53,17 @@ FORM_WORDS = (
 
 
 # ---------- normalization ----------
+def strip_edge_punct(s: str) -> str:
+    """Strip leading/trailing punctuation (quotes, commas, etc.) from a string,
+    leaving interior characters (accents, apostrophes, hyphens) untouched.
+
+    Used to clean up the `from`/`to` values reported in the refine service's
+    `corrections` list (e.g. "Antacapone," -> "Antacapone"); the corrected
+    word's actual `text` in the transcript keeps its surrounding punctuation.
+    """
+    return re.sub(r"^[^\w]+|[^\w]+$", "", s, flags=re.UNICODE)
+
+
 def strip_accents(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     return "".join(c for c in s if not unicodedata.combining(c))

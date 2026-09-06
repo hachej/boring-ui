@@ -144,6 +144,27 @@ class SnapWordsTest(unittest.TestCase):
         self.assertEqual(out[0]["speaker"], 2)
 
 
+class StripEdgePunctTest(unittest.TestCase):
+    def test_strips_trailing_comma(self):
+        self.assertEqual(M.strip_edge_punct("Antacapone,"), "Antacapone")
+
+    def test_strips_leading_and_trailing_quotes(self):
+        self.assertEqual(M.strip_edge_punct('"Doliprane."'), "Doliprane")
+
+    def test_leaves_interior_punctuation_alone(self):
+        self.assertEqual(M.strip_edge_punct("d'Advil"), "d'Advil")
+        self.assertEqual(M.strip_edge_punct("Saint-Amand"), "Saint-Amand")
+
+    def test_leaves_clean_word_unchanged(self):
+        self.assertEqual(M.strip_edge_punct("Zyloric"), "Zyloric")
+
+    def test_empty_string(self):
+        self.assertEqual(M.strip_edge_punct(""), "")
+
+    def test_all_punctuation_becomes_empty(self):
+        self.assertEqual(M.strip_edge_punct("..."), "")
+
+
 class BuildLexiconGuardTest(unittest.TestCase):
     def test_guard_merges_frequency_list_and_form_words(self):
         with tempfile.TemporaryDirectory() as tmp:

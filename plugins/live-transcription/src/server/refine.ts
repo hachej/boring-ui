@@ -10,6 +10,7 @@ import type { WhisperLiveKitLine } from "./whisperLiveKit"
 /** Refuse to stream recordings larger than this to the offline refine service. */
 const MAX_AUDIO_BYTES = 200 * 1024 * 1024
 const HEARTBEAT_INTERVAL_MS = 30_000
+const RETRY_DELAY_MS = 5_000
 
 export interface TranscriptRefinerOptions {
   refineUrl: string
@@ -17,6 +18,8 @@ export interface TranscriptRefinerOptions {
   lifecycle?: LifecycleClient
   fetch?: typeof fetch
   now?: () => number
+  /** Overridable for tests; defaults to a real `setTimeout`-based delay. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export interface RefineInput {
@@ -99,18 +102,7 @@ export class TranscriptRefiner {
     form.set("file", new Blob([new Uint8Array(buffer)]), basename(input.audioAbsolutePath))
     form.set("language", input.language?.trim() || "fr")
 
-    let response: Response
-    try {
-      response = await (this.options.fetch ?? fetch)(`${this.options.refineUrl}/refine`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${this.options.bearerToken}` },
-        body: form,
-      })
-    } catch {
-      throw new LiveTranscriptError("live_transcript_upstream_failed", "Transcript refine service was unavailable.", 502)
-    }
-    if (!response.ok) throw await mapErrorResponse(response)
-
+    const response = await this.postRefineWithRetry(form)
     const payload = await response.json().catch(() => null)
     const parsed = parseRefineResponse(payload)
 
@@ -153,16 +145,71 @@ export class TranscriptRefiner {
     }
   }
 
+  /**
+   * POSTs the form to the refine service. A network failure, or a 500/503
+   * whose body mentions "out of memory" or "CUDA" (the GPU box is shared and
+   * these are the transient failure modes worth a retry), gets one retry
+   * after a fixed delay before the caller sees an error.
+   */
+  private async postRefineWithRetry(form: FormData): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      let response: Response
+      try {
+        response = await (this.options.fetch ?? fetch)(`${this.options.refineUrl}/refine`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${this.options.bearerToken}` },
+          body: form,
+        })
+      } catch {
+        if (attempt === 0) {
+          await this.delay(RETRY_DELAY_MS)
+          continue
+        }
+        throw new LiveTranscriptError("live_transcript_upstream_failed", "Transcript refine service was unavailable.", 502)
+      }
+      if (response.ok) return response
+      const { text, payload } = await readErrorBody(response)
+      if (attempt === 0 && isRetryableFailure(response.status, text)) {
+        await this.delay(RETRY_DELAY_MS)
+        continue
+      }
+      throw mapError(response.status, payload)
+    }
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await (this.options.sleep ?? defaultSleep)(ms)
+  }
+
   private now(): number {
     return (this.options.now ?? Date.now)()
   }
 }
 
-async function mapErrorResponse(response: Response): Promise<LiveTranscriptError> {
-  const payload = await response.json().catch(() => null) as { error?: unknown } | null
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function readErrorBody(response: Response): Promise<{ text: string; payload: { error?: unknown } | null }> {
+  const text = await response.text().catch(() => "")
+  let payload: { error?: unknown } | null = null
+  try {
+    payload = JSON.parse(text) as { error?: unknown }
+  } catch {
+    payload = null
+  }
+  return { text, payload }
+}
+
+function isRetryableFailure(status: number, body: string): boolean {
+  if (status !== 500 && status !== 503) return false
+  return /out of memory|cuda/i.test(body)
+}
+
+function mapError(status: number, payload: { error?: unknown } | null): LiveTranscriptError {
   const message = typeof payload?.error === "string" ? payload.error : "Transcript refine service rejected the request."
-  if (response.status === 429) return new LiveTranscriptError("live_transcript_already_active", message, 409)
-  if (response.status === 413) return new LiveTranscriptError("live_transcript_limit_exceeded", message, 413)
+  if (status === 429) return new LiveTranscriptError("live_transcript_already_active", message, 409)
+  if (status === 413) return new LiveTranscriptError("live_transcript_limit_exceeded", message, 413)
   return new LiveTranscriptError("live_transcript_upstream_failed", message, 502)
 }
 

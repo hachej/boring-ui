@@ -77,14 +77,34 @@ def merge(words: list[dict], segments: list[dict], lag: float) -> list[int]:
     return out
 
 
+def parse_hotwords_file(path: str) -> list[str]:
+    """Read a vocabulary-bias file: one name per line, '#' starts a comment
+    (whole-line or trailing), blank lines ignored."""
+    names: list[str] = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            name = line.split("#", 1)[0].strip()
+            if name:
+                names.append(name)
+    return names
+
+
 class Refiner:
-    def __init__(self, sidecar_path: str, model_path: str | None, token: str, snapper: "medlex.Snapper | None" = None):
+    def __init__(
+        self,
+        sidecar_path: str,
+        model_path: str | None,
+        token: str,
+        snapper: "medlex.Snapper | None" = None,
+        hotwords: str | None = None,
+    ):
         sys.path.insert(0, sidecar_path)
         import sidecar as sidecar_module
         self.sidecar_module = sidecar_module
         self.sidecar = sidecar_module.Sidecar(model_path, token)
         self.token = token
         self.snapper = snapper
+        self.hotwords = hotwords
         self.busy = threading.Semaphore(1)
 
         from faster_whisper import WhisperModel
@@ -122,9 +142,13 @@ class Refiner:
         return [asdict(segment) for segment in segments]
 
     def transcribe(self, audio: np.ndarray, language: str) -> list[dict]:
+        extra: dict = {}
+        if self.hotwords:
+            extra["hotwords"] = self.hotwords
         segments, _info = self.whisper.transcribe(
             audio, language=language, beam_size=5, vad_filter=True,
             condition_on_previous_text=False, word_timestamps=True,
+            **extra,
         )
         # faster-whisper times French elisions (e.g. "n'" + "accompagnait") as two
         # separate word tokens with no leading space before the second one; a
@@ -153,7 +177,11 @@ class Refiner:
         if self.snapper is not None:
             out_words = self.snapper.snap_words(out_words)
             corrections = [
-                {"from": w["corrected_from"], "to": w["text"], "startSeconds": w["startSeconds"]}
+                {
+                    "from": medlex.strip_edge_punct(w["corrected_from"]),
+                    "to": medlex.strip_edge_punct(w["text"]),
+                    "startSeconds": w["startSeconds"],
+                }
                 for w in out_words
                 if "corrected_from" in w
             ]
@@ -307,6 +335,12 @@ def main() -> None:
         help="path to a lexicon.json built by medlex.py's 'build' command; when omitted, no "
         "phonetic drug-name correction is applied",
     )
+    parser.add_argument(
+        "--hotwords",
+        default=None,
+        help="path to a file of one hotword/name per line ('#' comments, blank lines ignored) "
+        "passed to faster-whisper as a vocabulary bias; when omitted, no bias is applied",
+    )
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("refine server must bind to loopback")
@@ -314,7 +348,8 @@ def main() -> None:
         raise SystemExit("BORING_REFINE_TOKEN or --token is required")
 
     snapper = medlex.Snapper(args.lexicon) if args.lexicon else None
-    refiner = Refiner(args.sidecar_path, args.model_path, args.token, snapper)
+    hotwords = ", ".join(parse_hotwords_file(args.hotwords)) if args.hotwords else None
+    refiner = Refiner(args.sidecar_path, args.model_path, args.token, snapper, hotwords)
     refiner.warm_up()
     RefineHandler.refiner = refiner
     RefineHandler.token = args.token

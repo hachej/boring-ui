@@ -179,6 +179,83 @@ describe("TranscriptRefiner", () => {
     expect(client.acquire).toHaveBeenCalledWith(expect.stringMatching(/^refine:/))
   })
 
+  it("retries once after a delay on a 500 mentioning CUDA out of memory, then succeeds", async () => {
+    let calls = 0
+    const baseUrl = await listen((req, res) => {
+      calls += 1
+      req.on("data", () => {})
+      req.on("end", () => {
+        if (calls === 1) {
+          res.writeHead(500, { "content-type": "application/json" })
+          res.end(JSON.stringify({ error: "CUDA out of memory" }))
+          return
+        }
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify(SUCCESS_PAYLOAD))
+      })
+    })
+    const audioPath = await makeAudioFile()
+    const sleeps: number[] = []
+    const refiner = new TranscriptRefiner({
+      refineUrl: baseUrl,
+      bearerToken: "s".repeat(40),
+      sleep: async (ms) => { sleeps.push(ms) },
+    })
+
+    const result = await refiner.refine({ audioAbsolutePath: audioPath, title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" })
+
+    expect(calls).toBe(2)
+    expect(sleeps).toEqual([5_000])
+    expect(result.words).toBe(5)
+  })
+
+  it("retries once after a delay on a network failure, then succeeds", async () => {
+    let calls = 0
+    const fakeFetch = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      calls += 1
+      if (calls === 1) throw new Error("ECONNREFUSED")
+      return new Response(JSON.stringify(SUCCESS_PAYLOAD), { status: 200, headers: { "content-type": "application/json" } })
+    })
+    const audioPath = await makeAudioFile()
+    const sleeps: number[] = []
+    const refiner = new TranscriptRefiner({
+      refineUrl: "http://127.0.0.1:1",
+      bearerToken: "s".repeat(40),
+      fetch: fakeFetch as unknown as typeof fetch,
+      sleep: async (ms) => { sleeps.push(ms) },
+    })
+
+    const result = await refiner.refine({ audioAbsolutePath: audioPath, title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" })
+
+    expect(calls).toBe(2)
+    expect(sleeps).toEqual([5_000])
+    expect(result.words).toBe(5)
+  })
+
+  it("does not retry a 500 that doesn't mention CUDA or out-of-memory", async () => {
+    let calls = 0
+    const baseUrl = await listen((req, res) => {
+      calls += 1
+      req.on("data", () => {})
+      req.on("end", () => {
+        res.writeHead(500, { "content-type": "application/json" })
+        res.end(JSON.stringify({ error: "boom" }))
+      })
+    })
+    const audioPath = await makeAudioFile()
+    const sleeps: number[] = []
+    const refiner = new TranscriptRefiner({
+      refineUrl: baseUrl,
+      bearerToken: "s".repeat(40),
+      sleep: async (ms) => { sleeps.push(ms) },
+    })
+
+    await expect(refiner.refine({ audioAbsolutePath: audioPath, title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" }))
+      .rejects.toMatchObject({ code: "live_transcript_upstream_failed" })
+    expect(calls).toBe(1)
+    expect(sleeps).toEqual([])
+  })
+
   it("maps 429, 413, and other upstream errors to the expected live transcript error codes", async () => {
     const audioPath = await makeAudioFile()
     const cases: { status: number; body: unknown; code: string; statusCode: number }[] = [
