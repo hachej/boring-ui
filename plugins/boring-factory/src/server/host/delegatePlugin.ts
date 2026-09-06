@@ -31,7 +31,7 @@ import {
 export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 
 /** Bump when this file's delegation behavior changes; hashed into the plugin's contentDigest. */
-const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v3.2026-09-05'
+const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v4.2026-09-06'
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000
 const POLL_INTERVAL_MS = 1_000
@@ -253,6 +253,17 @@ function capRefusal(
   }, true)
 }
 
+function reviewCapRefusal(targetKey: string, current: number, maximum: number): ToolResult {
+  return textResult({
+    code: 'REVIEW_ROUND_CAP_REACHED',
+    reviewTarget: targetKey,
+    current,
+    maximum,
+    blocked: true,
+    message: `Factory host refused review: the review-round cap is reached (${current}/${maximum}). Do not infer approval or create another review. The Worker must hand off the current SHA with unresolved findings; the Orchestrator must escalate them to the owner.`,
+  }, true)
+}
+
 function createDelegateTool(
   toolName: string,
   targetAgentTypeId: string,
@@ -395,8 +406,22 @@ function createDelegateTool(
 
           const timestamp = new Date(options.now?.() ?? Date.now()).toISOString()
           let dispatchRecord: FactoryDispatchRecord | undefined
+          let reviewRecord: FactoryReviewRecord | undefined
           if (toolName === 'dispatch_worker') {
             dispatchRecord = await ledger.reserveDispatch({ epicKey: epic.epicKey, beadId: beadId!, timestamp })
+          } else {
+            const reservation = await ledger.reserveReview({
+              epicKey: epic.epicKey,
+              targetKey: reviewTargetKey!,
+              ...(beadId ? { beadId } : {}),
+              ...(reviewSha ? { sha: reviewSha } : {}),
+              ...(ctx.sessionId ? { parentSessionId: ctx.sessionId } : {}),
+              timestamp,
+            }, limits.maxReviewRounds)
+            if (!reservation.accepted) {
+              return reviewCapRefusal(reservation.targetKey, reservation.current, reservation.maximum)
+            }
+            reviewRecord = reservation.record
           }
           const createResponse = await app.inject({
             method: 'POST',
@@ -406,26 +431,17 @@ function createDelegateTool(
           })
           if (createResponse.statusCode !== 201) {
             if (dispatchRecord) await ledger.updateDispatch(dispatchRecord.id, 'failed')
+            if (reviewRecord) await ledger.updateReview(reviewRecord.id, 'failed')
             return textResult(
               { code: 'CREATE_SESSION_FAILED', status: createResponse.statusCode, body: createResponse.body },
               true,
             )
           }
           const { sessionId } = createResponse.json<{ sessionId: string }>()
-          let reviewRecord: FactoryReviewRecord | undefined
           if (toolName === 'dispatch_worker') {
             dispatchRecord = await ledger.attachDispatch(dispatchRecord!.id, sessionId, 'created')
           } else {
-            reviewRecord = await ledger.appendReview({
-              epicKey: epic.epicKey,
-              targetKey: reviewTargetKey!,
-              ...(beadId ? { beadId } : {}),
-              ...(reviewSha ? { sha: reviewSha } : {}),
-              ...(ctx.sessionId ? { parentSessionId: ctx.sessionId } : {}),
-              childSessionId: sessionId,
-              timestamp,
-              outcome: 'created',
-            })
+            reviewRecord = await ledger.attachReview(reviewRecord!.id, sessionId, 'created')
           }
 
           try {
@@ -513,7 +529,7 @@ function createDelegateTool(
             reviewTarget: started.reviewRecord.targetKey,
             capReached: started.capReached,
             ...(started.capReached ? {
-              capInstructions: `Review-round cap reached (${started.reviewRecord.round}/${limits.maxReviewRounds}). Hand off at the current SHA and file remaining findings as follow-up Beads; do not fix forward again.`,
+              capInstructions: `Review-round cap reached (${started.reviewRecord.round}/${limits.maxReviewRounds}). Do not infer approval or fix forward again. The Worker must hand off the current SHA with unresolved findings; the Orchestrator must escalate them to the owner.`,
             } : {}),
           } : {}),
           provenance: {

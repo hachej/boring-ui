@@ -31,13 +31,17 @@ same check.
 
 `fresh_review` records rounds per `(epic, Bead)` when `beadId` is present, otherwise
 per persisted SHA lineage for the calling Worker. `BORING_FACTORY_MAX_REVIEW_ROUNDS`
-(default `4`) does not suppress the capped review: that review runs and returns
-`capReached: true` with instructions to hand off at the current SHA and file remaining
-findings as follow-up Beads instead of fixing forward again.
+(default `4`) does not suppress the last allowed review: round N runs and returns
+`capReached: true`. Round N+1 is refused with `REVIEW_ROUND_CAP_REACHED` before a
+reviewer session is created; the Worker hands off the current SHA with unresolved
+findings and the Orchestrator escalates instead of inferring approval or fixing forward.
+Review admission is serialized and durably reserved before child-session creation, so
+concurrent calls, restart, failed creation, and crash-before-attach cannot reset budget.
 
-Each dispatch/review record contains the epic, target, child session, timestamp, and
-latest outcome in atomically replaced `<stateRoot>/dispatches.json`. A restarted host
-reads the same file before admission. `factory_status` exposes `busyWorkers`,
+Each dispatch/review record contains the epic, target, timestamp, latest outcome, and
+the child session once one has been attached, in atomically replaced
+`<stateRoot>/dispatches.json`. A restarted host reads the same file before admission.
+`factory_status` exposes `busyWorkers`,
 `dispatchesPerOpenBead`, and review rounds by Bead or SHA lineage, together with the
 active limits.
 
