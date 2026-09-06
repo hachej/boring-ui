@@ -1290,7 +1290,9 @@ function resolveWorkspaceBridgeBrowserAuthPolicy(
 
   emitLocalCliBridgeAuthWarning()
   return createLocalCliBridgeAuthPolicy({
-    workspaceId: "default",
+    // The owner workspace is the host scope agents stamp on their records; a literal "default" would
+    // never match records written by scoped agent sessions (e.g. the Factory hub).
+    workspaceId: opts.sessionId ?? "default",
     capabilities: registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
     forceOwnerWorkspaceId: true,
   })
@@ -1467,7 +1469,7 @@ export async function createWorkspaceAgentServer(
 
   const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
     registry: opts.workspaceBridge?.registry,
-    ownerWorkspaceId: "default",
+    ownerWorkspaceId: opts.sessionId ?? "default",
     handlers: [
       ...(opts.workspaceBridge?.handlers ?? []),
       ...(pluginCollection.workspaceBridgeHandlers ?? []),
@@ -2282,7 +2284,7 @@ export async function createWorkspaceAgentServer(
       registry: workspaceBridgeRegistry,
       runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
       runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
-      ownerWorkspaceId: "default",
+      ownerWorkspaceId: opts.sessionId ?? "default",
       idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
       browserAuthPolicy: resolveWorkspaceBridgeBrowserAuthPolicy(opts, workspaceBridgeRegistry),
     })
