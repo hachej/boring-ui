@@ -110,6 +110,7 @@ import {
 import {
   bootstrapServer,
   compactPiPackages,
+  type ServerBootstrapResult,
   type ServerBootstrapOptions,
   type WorkspacePackageResourceRecord,
   type WorkspacePiPackageSource,
@@ -811,6 +812,51 @@ export class AgentSpecPluginProjectionError extends Error {
 }
 
 /**
+ * Materialize the Agent tools collected from trusted server plugins for one
+ * canonical Agent identity. Hosts that compose their own Agent runtime use
+ * this same projection as the workspace Agent host, so selected-Agent tool
+ * factories cannot disappear at a host boundary.
+ */
+function projectWorkspaceAgentTools(
+  agentTypeId: string,
+  projection: Pick<ServerBootstrapResult, "agentTools" | "agentToolFactories">,
+  existingTools: readonly AgentTool[] = [],
+): AgentTool[] {
+  const generatedTools = projection.agentToolFactories.flatMap(({ id, createTools }) => {
+    const tools = createTools({ agentTypeId })
+    if (!Array.isArray(tools)) {
+      throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory must return an array`)
+    }
+    return tools.map((tool, index) => {
+      if (
+        !tool
+        || typeof tool !== "object"
+        || typeof tool.name !== "string"
+        || !tool.name
+        || typeof tool.description !== "string"
+        || !tool.parameters
+        || typeof tool.parameters !== "object"
+        || typeof tool.execute !== "function"
+      ) {
+        throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory returned an invalid tool at index ${index}`)
+      }
+      return tool
+    })
+  })
+  const occupiedToolNames = new Set([
+    ...existingTools.map((tool) => tool.name),
+    ...projection.agentTools.map((tool) => tool.name),
+  ])
+  for (const tool of generatedTools) {
+    if (occupiedToolNames.has(tool.name)) {
+      throw new AgentSpecPluginProjectionError(`generated Agent tool collides with existing tool "${tool.name}"`)
+    }
+    occupiedToolNames.add(tool.name)
+  }
+  return [...projection.agentTools, ...generatedTools]
+}
+
+/**
  * Projects only Agent-site contributions from canonical artifacts that the app
  * resolver already imported and preflighted. It never discovers or loads a
  * package, so Workspace and fleet activation cannot grow separate machinery.
@@ -866,43 +912,13 @@ export function projectAgentSpecPluginArtifacts(
     ...hostDefaults,
     plugins: selected.map((artifact) => artifact.plugin),
   })
-  const generatedTools = projected.agentToolFactories.flatMap(({ id, createTools }) => {
-    const tools = createTools({ agentTypeId: agent.agentTypeId })
-    if (!Array.isArray(tools)) {
-      throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory must return an array`)
-    }
-    return tools.map((tool, index) => {
-      if (
-        !tool
-        || typeof tool !== "object"
-        || typeof tool.name !== "string"
-        || !tool.name
-        || typeof tool.description !== "string"
-        || !tool.parameters
-        || typeof tool.parameters !== "object"
-        || typeof tool.execute !== "function"
-      ) {
-        throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory returned an invalid tool at index ${index}`)
-      }
-      return tool
-    })
-  })
-  const occupiedToolNames = new Set([
-    ...existingTools.map((tool) => tool.name),
-    ...projected.agentTools.map((tool) => tool.name),
-  ])
-  for (const tool of generatedTools) {
-    if (occupiedToolNames.has(tool.name)) {
-      throw new AgentSpecPluginProjectionError(`generated Agent tool collides with existing tool "${tool.name}"`)
-    }
-    occupiedToolNames.add(tool.name)
-  }
+  const agentTools = projectWorkspaceAgentTools(agent.agentTypeId, projected, existingTools)
   const deleteContributions = projected.agentSessionDeleteContributions
   return {
     artifacts: selected,
     runtimePlugins: projected.runtimePlugins,
     agentOptions: {
-      extraTools: [...projected.agentTools, ...generatedTools],
+      extraTools: agentTools,
       systemPromptAppend: projected.systemPromptAppend || undefined,
       pi: {
         packages: projected.piPackages,
@@ -941,6 +957,8 @@ export interface WorkspaceAgentServerPluginCollection {
   agentReloadBlockers: WorkspaceAgentReloadBlocker[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
+  /** Project static and selected-Agent factory tools for a host-owned runtime. */
+  projectAgentTools(agentTypeId: string, existingTools?: readonly AgentTool[]): AgentTool[]
   defaultPluginPackagePaths: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
@@ -1037,6 +1055,8 @@ export function collectWorkspaceAgentServerPlugins(
     agentReloadBlockers: result.agentReloadBlockers,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
+    projectAgentTools: (agentTypeId, existingTools) =>
+      projectWorkspaceAgentTools(agentTypeId, result, existingTools),
     defaultPluginPackagePaths: [],
     agentOptions: {
       extraTools: result.agentTools,
@@ -1325,7 +1345,7 @@ function registerWorkspaceHealthRoutes(
 }
 
 function emitLocalCliBridgeAuthWarning(): void {
-  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
+  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to the fixed local principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
   if (typeof process.emitWarning === "function") {
     process.emitWarning(message, { code: "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH" })
     return

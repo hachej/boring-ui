@@ -3,6 +3,7 @@ import {
   createAskUserServerPlugin,
   type AskUserServerPluginOptions,
 } from "./askUserServerPlugin"
+import { createWorkspaceAgentAnswerDeliveryTransport } from "./askUserAnswerDelivery"
 export * from "./askUserStore"
 export * from "./askUserRuntime"
 export * from "./questionsBridge"
@@ -11,6 +12,7 @@ export * from "./askUserBridgeHandlers"
 export * from "./createAskUserTool"
 export * from "./askUserServerPlugin"
 export * from "./askUserStatePublisher"
+export * from "./askUserAnswerDelivery"
 export { ASK_USER_PLUGIN_ID } from "../shared"
 
 /**
@@ -23,11 +25,27 @@ export { ASK_USER_PLUGIN_ID } from "../shared"
  */
 export default function defaultAskUserServerPlugin(
   options: Partial<AskUserServerPluginOptions> | undefined,
-  ctx: { workspaceRoot: string; bridge: AskUserServerPluginOptions["bridge"] },
+  ctx: {
+    workspaceRoot: string
+    bridge: AskUserServerPluginOptions["bridge"]
+    agentTypeId?: string
+    trusted?: { workspaceAgentDispatcherResolver: import("@hachej/boring-agent/server").WorkspaceAgentDispatcherResolver }
+  },
 ): WorkspaceServerPlugin {
   return createAskUserServerPlugin({
     ...(options ?? {}),
     workspaceRoot: options?.workspaceRoot ?? ctx.workspaceRoot,
     bridge: options?.bridge ?? ctx.bridge,
+    agentTypeId: options?.agentTypeId ?? ctx.agentTypeId,
+    authorizeSession: options?.authorizeSession ?? (ctx.trusted?.workspaceAgentDispatcherResolver.authorizeSession
+      ? async ({ workspaceId, userId, agentTypeId, sessionId }) => {
+          await ctx.trusted!.workspaceAgentDispatcherResolver.authorizeSession!(
+            { workspaceId, userId },
+            { agentTypeId, sessionId },
+          )
+        }
+      : undefined),
+    answerDeliveryTransport: options?.answerDeliveryTransport
+      ?? (ctx.trusted ? createWorkspaceAgentAnswerDeliveryTransport(ctx.trusted.workspaceAgentDispatcherResolver) : undefined),
   })
 }

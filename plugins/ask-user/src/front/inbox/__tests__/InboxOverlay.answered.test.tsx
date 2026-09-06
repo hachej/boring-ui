@@ -13,6 +13,8 @@ const answered = [{
   decision: "approve",
   values: { decision: "approve", notes: "Demo matched the brief." },
   status: "answered" as const,
+  blocking: false,
+  deliveryStatus: "undelivered" as const,
 }]
 
 vi.mock("@hachej/boring-workspace", async (importOriginal) => {
@@ -66,6 +68,7 @@ describe("InboxOverlay Answered tab", () => {
     await user.click(row!)
     expect(screen.getByText("The epic PR is open and the demo ran at the exact SHA.")).toBeInTheDocument()
     expect(screen.getByText("Demo matched the brief.")).toBeInTheDocument()
+    expect(screen.getByText("undelivered")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open the session that asked" })).toBeInTheDocument()
   })
 })
