@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
 import { FileAskUserStore } from '@hachej/boring-ask-user/server'
+import { claimLegacyAskUserQuestions } from './askUserLegacy'
 import type { AskUserQuestion } from '@hachej/boring-ask-user/shared'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import type { FastifyInstance, FastifyReply } from 'fastify'
@@ -374,7 +375,10 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
   await mkdir(stateRoot, { recursive: true })
   const registry = createFactoryEpicRegistry(stateRoot)
   const sessionBindings = createFactorySessionBindings(stateRoot)
-  const askUserStore = new FileAskUserStore(resolve(workspaceRoot, '.boring', 'ask-user.json'))
+  const askUserStorePath = resolve(workspaceRoot, '.boring', 'ask-user.json')
+  const claimedLegacyQuestions = await claimLegacyAskUserQuestions(askUserStorePath, workspaceScopeId)
+  if (claimedLegacyQuestions > 0) console.log(`[factory-hub] claimed ${claimedLegacyQuestions} legacy ask-user question(s) for ${workspaceScopeId}`)
+  const askUserStore = new FileAskUserStore(askUserStorePath)
   // The ask-user package is projected to every seat via defaultPluginPackages (same store file);
   // this store instance is the hub's read/migration handle on the same file.
   const adoptionTails = new Map<string, Promise<void>>()
