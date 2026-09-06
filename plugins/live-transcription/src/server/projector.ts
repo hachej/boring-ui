@@ -17,8 +17,12 @@ export interface TranscriptDocument {
   refinedAt?: string
   /** Parenthetical detail rendered next to `refinedAt` (e.g. model, word and speaker counts). */
   refinedNote?: string
+  /** Phonetic drug-name corrections applied during refinement, in first-seen order. */
+  corrections?: readonly { from: string; to: string }[]
   lines: readonly ProjectedTranscriptLine[]
 }
+
+const MAX_RENDERED_CORRECTIONS = 30
 
 const encoder = new TextEncoder()
 
@@ -33,6 +37,12 @@ export function renderTranscriptMarkdown(document: TranscriptDocument): string {
     const suffix = document.refinedNote ? ` (${document.refinedNote})` : ""
     lines.push(`- Refined: ${document.refinedAt}${suffix}`)
   }
+  if (document.corrections && document.corrections.length > 0) {
+    const unique = uniquePairs(document.corrections)
+    const shown = unique.slice(0, MAX_RENDERED_CORRECTIONS).map((pair) => `${pair.from} → ${pair.to}`)
+    const suffix = unique.length > MAX_RENDERED_CORRECTIONS ? ", …" : ""
+    lines.push(`- Corrections: ${shown.join(", ")}${suffix}`)
+  }
   for (const line of document.lines) {
     const text = line.text.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim()
     if (!text) continue
@@ -44,6 +54,18 @@ export function renderTranscriptMarkdown(document: TranscriptDocument): string {
     lines.push("", `[${formatTimestamp(line.startSeconds)}] ${content}`)
   }
   return `${lines.join("\n")}\n`
+}
+
+function uniquePairs(pairs: readonly { from: string; to: string }[]): { from: string; to: string }[] {
+  const seen = new Set<string>()
+  const unique: { from: string; to: string }[] = []
+  for (const pair of pairs) {
+    const key = `${pair.from} ${pair.to}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(pair)
+  }
+  return unique
 }
 
 function cleanTitle(value: string): string {

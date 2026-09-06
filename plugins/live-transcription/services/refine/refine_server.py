@@ -22,6 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 
+import medlex
+
 DIARIZATION_LAG_SECONDS = 0.2
 FRAME_SAMPLES = 1_600  # 100 ms @ 16 kHz, matches the sidecar's network frame
 MAX_FILE_BYTES = 200 * 1024 * 1024
@@ -76,12 +78,13 @@ def merge(words: list[dict], segments: list[dict], lag: float) -> list[int]:
 
 
 class Refiner:
-    def __init__(self, sidecar_path: str, model_path: str | None, token: str):
+    def __init__(self, sidecar_path: str, model_path: str | None, token: str, snapper: "medlex.Snapper | None" = None):
         sys.path.insert(0, sidecar_path)
         import sidecar as sidecar_module
         self.sidecar_module = sidecar_module
         self.sidecar = sidecar_module.Sidecar(model_path, token)
         self.token = token
+        self.snapper = snapper
         self.busy = threading.Semaphore(1)
 
         from faster_whisper import WhisperModel
@@ -146,6 +149,14 @@ class Refiner:
             {"text": w["text"], "startSeconds": w["start"], "endSeconds": w["end"], "speaker": label}
             for w, label in zip(words, labels)
         ]
+        corrections: list[dict] = []
+        if self.snapper is not None:
+            out_words = self.snapper.snap_words(out_words)
+            corrections = [
+                {"from": w["corrected_from"], "to": w["text"], "startSeconds": w["startSeconds"]}
+                for w in out_words
+                if "corrected_from" in w
+            ]
         return {
             "durationSeconds": len(audio) / 16_000,
             "language": language,
@@ -153,6 +164,7 @@ class Refiner:
             "wallSeconds": time.monotonic() - started,
             "words": out_words,
             "segments": segments,
+            "corrections": corrections,
         }
 
 
@@ -289,13 +301,20 @@ def main() -> None:
     parser.add_argument("--sidecar-path", default="/opt/boring-sortformer-poc")
     parser.add_argument("--model-path")
     parser.add_argument("--token", default=os.environ.get("BORING_REFINE_TOKEN"))
+    parser.add_argument(
+        "--lexicon",
+        default=None,
+        help="path to a lexicon.json built by medlex.py's 'build' command; when omitted, no "
+        "phonetic drug-name correction is applied",
+    )
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("refine server must bind to loopback")
     if not args.token:
         raise SystemExit("BORING_REFINE_TOKEN or --token is required")
 
-    refiner = Refiner(args.sidecar_path, args.model_path, args.token)
+    snapper = medlex.Snapper(args.lexicon) if args.lexicon else None
+    refiner = Refiner(args.sidecar_path, args.model_path, args.token, snapper)
     refiner.warm_up()
     RefineHandler.refiner = refiner
     RefineHandler.token = args.token

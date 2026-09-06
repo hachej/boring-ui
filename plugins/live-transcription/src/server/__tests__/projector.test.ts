@@ -32,6 +32,47 @@ describe("LiveTranscriptProjector", () => {
     expect(markdown).toContain("[00:00:03] **Speaker unknown:** Bonjour")
   })
 
+  it("renders a Corrections line after Refined when corrections exist, deduplicated", () => {
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      refinedAt: "2026-09-05T10:00:00.000Z",
+      corrections: [
+        { from: "zylorique", to: "Zyloric" },
+        { from: "mucomiste", to: "Mucomyst" },
+        { from: "zylorique", to: "Zyloric" },
+      ],
+      lines: [],
+    })
+    const refinedIndex = markdown.indexOf("- Refined:")
+    const correctionsIndex = markdown.indexOf("- Corrections:")
+    expect(refinedIndex).toBeGreaterThanOrEqual(0)
+    expect(correctionsIndex).toBeGreaterThan(refinedIndex)
+    expect(markdown).toContain("- Corrections: zylorique → Zyloric, mucomiste → Mucomyst")
+  })
+
+  it("caps the Corrections line at 30 pairs and appends an ellipsis", () => {
+    const corrections = Array.from({ length: 35 }, (_, i) => ({ from: `orig${i}`, to: `Fixed${i}` }))
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      refinedAt: "2026-09-05T10:00:00.000Z",
+      corrections,
+      lines: [],
+    })
+    const line = markdown.split("\n").find((l) => l.startsWith("- Corrections:"))
+    expect(line).toBeDefined()
+    expect(line?.split(", ").filter((part) => part.includes("→"))).toHaveLength(30)
+    expect(line).toMatch(/…$/)
+  })
+
+  it("omits the Corrections line when there are none", () => {
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      refinedAt: "2026-09-05T10:00:00.000Z",
+      lines: [],
+    })
+    expect(markdown).not.toContain("- Corrections:")
+  })
+
   it("serializes throttled whole-document writes and terminal-flushes once", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)

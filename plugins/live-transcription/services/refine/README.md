@@ -47,9 +47,15 @@ Response `200`:
   "model": "large-v3-turbo",
   "wallSeconds": 21.7,
   "words": [{"text": "bonjour", "startSeconds": 0.12, "endSeconds": 0.44, "speaker": 0}],
-  "segments": [{"speaker": 0, "startSeconds": 0.0, "endSeconds": 3.2}]
+  "segments": [{"speaker": 0, "startSeconds": 0.0, "endSeconds": 3.2}],
+  "corrections": [{"from": "zylorique", "to": "Zyloric", "startSeconds": 14.2}]
 }
 ```
+
+When started with `--lexicon`, each corrected word also carries a
+`corrected_from` field holding its original (pre-correction) text, and
+`corrections` lists every change made. Without `--lexicon`, `corrections` is
+always `[]` and words are left untouched.
 
 Errors: `401` unauthorized, `403` browser `Origin` header present, `413` file
 or audio too large, `415` undecodable file, `429` a job is already running,
@@ -65,14 +71,26 @@ rejects any request carrying a browser `Origin` header — the same posture as
 
 ## Deployment
 
-Install `refine_server.py` root-owned (mode `0755`) under `/opt/boring-refine/`.
-Put the token in `/etc/boring-refine.env` (mode `0600`):
+Install `refine_server.py` and `medlex.py` root-owned (mode `0755`) under
+`/opt/boring-refine/`. Put the token in `/etc/boring-refine.env` (mode `0600`):
 
 ```sh
 BORING_REFINE_TOKEN=<same value as BORING_SORTFORMER_TOKEN>
 ```
 
-Install `boring-refine.service` to `/etc/systemd/system/`, then:
+Build the phonetic drug-name lexicon once (needs BDPM's `CIS_bdpm.txt` and
+`CIS_COMPO_bdpm.txt`, ISO-8859-1, and a frequency-ordered French word list):
+
+```sh
+/opt/WhisperLiveKit/.venv/bin/python /opt/boring-refine/medlex.py build \
+  --bdpm-dir /path/to/bdpm \
+  --freq /path/to/fr_50k.txt \
+  --out /opt/boring-refine/lexicon.json
+```
+
+Install `boring-refine.service` to `/etc/systemd/system/` (its `ExecStart`
+example already passes `--lexicon /opt/boring-refine/lexicon.json`; drop the
+flag, or the file, to run without drug-name correction), then:
 
 ```sh
 sudo systemctl daemon-reload
@@ -83,9 +101,12 @@ sudo systemctl enable --now boring-refine.service
 
 ```sh
 python3 -m unittest test_refine_server.py
-python3 -m py_compile refine_server.py
+python3 -m unittest test_medlex.py
+python3 -m py_compile refine_server.py medlex.py
 ```
 
-The tests exercise only pure-python parts (the diarization/speaker `merge`
-rule and the minimal multipart parser) — nothing that needs CUDA, a GPU,
-faster-whisper, or the sidecar module.
+The `test_refine_server.py` tests exercise only pure-python parts (the
+diarization/speaker `merge` rule and the minimal multipart parser) — nothing
+that needs CUDA, a GPU, faster-whisper, or the sidecar module.
+`test_medlex.py` builds a tiny lexicon inline and needs neither BDPM data
+nor a frequency list.

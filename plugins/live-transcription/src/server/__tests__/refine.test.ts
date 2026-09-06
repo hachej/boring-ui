@@ -54,6 +54,24 @@ const SUCCESS_PAYLOAD = {
     { text: "inconnu", startSeconds: 4, endSeconds: 4.3, speaker: -1 },
   ],
   segments: [],
+  corrections: [],
+}
+
+const CORRECTED_PAYLOAD = {
+  durationSeconds: 8,
+  language: "fr",
+  model: "whisper-large-v3",
+  wallSeconds: 2,
+  words: [
+    { text: "Zyloric", startSeconds: 0, endSeconds: 0.5, speaker: 0, corrected_from: "zylorique" },
+    { text: "et", startSeconds: 0.5, endSeconds: 0.6, speaker: 0 },
+    { text: "Mucomyst", startSeconds: 0.6, endSeconds: 1.1, speaker: 0, corrected_from: "mucomiste" },
+  ],
+  segments: [],
+  corrections: [
+    { from: "zylorique", to: "Zyloric", startSeconds: 0 },
+    { from: "mucomiste", to: "Mucomyst", startSeconds: 0.6 },
+  ],
 }
 
 describe("TranscriptRefiner", () => {
@@ -97,6 +115,49 @@ describe("TranscriptRefiner", () => {
     expect(result.markdown).toContain("**Speaker 1:** Bonjour à tous")
     expect(result.markdown).toContain("**Speaker 2:** Salut")
     expect(result.markdown).toContain("**Speaker unknown:** inconnu")
+  })
+
+  it("renders a Corrections metadata line from corrected words, deduplicated", async () => {
+    const baseUrl = await listen((req, res) => {
+      req.on("data", () => {})
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify(CORRECTED_PAYLOAD))
+      })
+    })
+    const audioPath = await makeAudioFile()
+    const refiner = new TranscriptRefiner({ refineUrl: baseUrl, bearerToken: "s".repeat(40) })
+
+    const result = await refiner.refine({ audioAbsolutePath: audioPath, title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" })
+
+    expect(result.markdown).toContain("- Corrections: zylorique → Zyloric, mucomiste → Mucomyst")
+  })
+
+  it("omits the Corrections line when the service reports none", async () => {
+    const baseUrl = await listen((req, res) => {
+      req.on("data", () => {})
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify(SUCCESS_PAYLOAD))
+      })
+    })
+    const audioPath = await makeAudioFile()
+    const refiner = new TranscriptRefiner({ refineUrl: baseUrl, bearerToken: "s".repeat(40) })
+
+    const result = await refiner.refine({ audioAbsolutePath: audioPath, title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" })
+
+    expect(result.markdown).not.toContain("- Corrections:")
+  })
+
+  it("rejects a malformed corrections entry", async () => {
+    const audioPath = await makeAudioFile()
+    const baseUrl = await listen((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" })
+      res.end(JSON.stringify({ ...SUCCESS_PAYLOAD, corrections: [{ from: "x" }] }))
+    })
+    const refiner = new TranscriptRefiner({ refineUrl: baseUrl, bearerToken: "s".repeat(40) })
+    await expect(refiner.refine({ audioAbsolutePath: audioPath, title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" }))
+      .rejects.toMatchObject({ code: "live_transcript_upstream_failed" })
   })
 
   it("acquires and releases a GPU lease around the request, heartbeating while it runs", async () => {

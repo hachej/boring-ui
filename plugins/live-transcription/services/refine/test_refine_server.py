@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Pure-python unit tests: no CUDA, no faster-whisper, no sidecar import."""
+import asyncio
+import json
+import os
+import tempfile
 import unittest
 
+import medlex
 import refine_server as rs
 
 
@@ -100,6 +105,54 @@ class MultipartTest(unittest.TestCase):
         )
         form = rs.parse_multipart_body(body, boundary)
         self.assertNotIn("file", form)
+
+
+class RefineLexiconWiringTest(unittest.TestCase):
+    """Exercises Refiner.refine()'s snapper wiring without CUDA/whisper/sidecar:
+    transcribe/diarize are stubbed, only the lexicon-snap + corrections plumbing
+    is under test."""
+
+    def _snapper(self) -> medlex.Snapper:
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        lexicon = [{"name": "zyloric", "ntok": 1, "key": medlex.phonetic_key("zyloric")}]
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"lexicon": lexicon, "guard": sorted(medlex.FORM_WORDS)}, f)
+        try:
+            return medlex.Snapper(path)
+        finally:
+            os.unlink(path)
+
+    def _bare_refiner(self, snapper) -> rs.Refiner:
+        refiner = object.__new__(rs.Refiner)
+        refiner.snapper = snapper
+        return refiner
+
+    def test_corrections_are_reported_and_words_carry_corrected_from(self):
+        refiner = self._bare_refiner(self._snapper())
+        refiner.transcribe = lambda audio, language: [
+            {"text": "zylorique", "start": 0.0, "end": 0.5},
+            {"text": "bonjour", "start": 0.6, "end": 1.0},
+        ]
+        refiner.diarize = lambda audio, max_speakers: asyncio.sleep(0, result=[])
+
+        result = refiner.refine(audio=[], language="fr", max_speakers=3)
+
+        self.assertEqual(result["words"][0]["text"], "Zyloric")
+        self.assertEqual(result["words"][0]["corrected_from"], "zylorique")
+        self.assertNotIn("corrected_from", result["words"][1])
+        self.assertEqual(result["corrections"], [{"from": "zylorique", "to": "Zyloric", "startSeconds": 0.0}])
+
+    def test_no_snapper_means_no_corrections(self):
+        refiner = self._bare_refiner(None)
+        refiner.transcribe = lambda audio, language: [{"text": "zylorique", "start": 0.0, "end": 0.5}]
+        refiner.diarize = lambda audio, max_speakers: asyncio.sleep(0, result=[])
+
+        result = refiner.refine(audio=[], language="fr", max_speakers=3)
+
+        self.assertEqual(result["words"][0]["text"], "zylorique")
+        self.assertNotIn("corrected_from", result["words"][0])
+        self.assertEqual(result["corrections"], [])
 
 
 class LimitsTest(unittest.TestCase):

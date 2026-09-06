@@ -38,6 +38,13 @@ interface RefineWord {
   startSeconds: number
   endSeconds: number
   speaker: number
+  correctedFrom?: string
+}
+
+interface RefineCorrection {
+  from: string
+  to: string
+  startSeconds: number
 }
 
 interface RefineResponse {
@@ -46,6 +53,7 @@ interface RefineResponse {
   model: string
   wallSeconds: number
   words: RefineWord[]
+  corrections: RefineCorrection[]
 }
 
 /** Streams a completed local recording to the offline GPU batch refine service. */
@@ -134,6 +142,7 @@ export class TranscriptRefiner {
       showSpeakerLabels: true,
       refinedAt: new Date(this.now()).toISOString(),
       refinedNote: `${parsed.model}, ${words} words, ${speakers} speakers`,
+      corrections: uniqueCorrectionPairs(parsed.corrections),
       lines: projected,
     }
     return {
@@ -171,15 +180,47 @@ function parseRefineResponse(payload: unknown): RefineResponse {
     if (typeof word.speaker !== "number" || !Number.isInteger(word.speaker) || word.speaker < -1 || word.speaker > 3) {
       throw invalidResponse()
     }
-    return { text: word.text, startSeconds: word.startSeconds, endSeconds: word.endSeconds, speaker: word.speaker }
+    if (word.corrected_from !== undefined && typeof word.corrected_from !== "string") throw invalidResponse()
+    return {
+      text: word.text,
+      startSeconds: word.startSeconds,
+      endSeconds: word.endSeconds,
+      speaker: word.speaker,
+      ...(typeof word.corrected_from === "string" ? { correctedFrom: word.corrected_from } : {}),
+    }
   })
+  const corrections = record.corrections === undefined ? [] : parseCorrections(record.corrections)
   return {
     durationSeconds: record.durationSeconds,
     language: record.language,
     model: record.model,
     wallSeconds: record.wallSeconds,
     words,
+    corrections,
   }
+}
+
+function parseCorrections(raw: unknown): RefineCorrection[] {
+  if (!Array.isArray(raw)) throw invalidResponse()
+  return raw.map((entry): RefineCorrection => {
+    if (!entry || typeof entry !== "object") throw invalidResponse()
+    const record = entry as Record<string, unknown>
+    if (typeof record.from !== "string" || typeof record.to !== "string") throw invalidResponse()
+    if (!isFiniteNumber(record.startSeconds)) throw invalidResponse()
+    return { from: record.from, to: record.to, startSeconds: record.startSeconds }
+  })
+}
+
+function uniqueCorrectionPairs(corrections: RefineCorrection[]): { from: string; to: string }[] {
+  const seen = new Set<string>()
+  const pairs: { from: string; to: string }[] = []
+  for (const correction of corrections) {
+    const key = `${correction.from} ${correction.to}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    pairs.push({ from: correction.from, to: correction.to })
+  }
+  return pairs
 }
 
 function isFiniteNumber(value: unknown): value is number {
