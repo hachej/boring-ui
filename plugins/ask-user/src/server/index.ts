@@ -37,6 +37,14 @@ export default function defaultAskUserServerPlugin(
     workspaceRoot: options?.workspaceRoot ?? ctx.workspaceRoot,
     bridge: options?.bridge ?? ctx.bridge,
     agentTypeId: options?.agentTypeId ?? ctx.agentTypeId,
+    authorizeSession: options?.authorizeSession ?? (ctx.trusted?.workspaceAgentDispatcherResolver.authorizeSession
+      ? async ({ workspaceId, userId, agentTypeId, sessionId }) => {
+          await ctx.trusted!.workspaceAgentDispatcherResolver.authorizeSession!(
+            { workspaceId, userId },
+            { agentTypeId, sessionId },
+          )
+        }
+      : undefined),
     answerDeliveryTransport: options?.answerDeliveryTransport
       ?? (ctx.trusted ? createWorkspaceAgentAnswerDeliveryTransport(ctx.trusted.workspaceAgentDispatcherResolver) : undefined),
   })

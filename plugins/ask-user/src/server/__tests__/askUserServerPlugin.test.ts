@@ -119,13 +119,27 @@ describe("ask-user Pi tool", () => {
     const { store, runtime } = await fixture()
     const tool = createAskUserTool({ runtime, sessionId: "s1" })
 
-    const result = await tool.execute("call", { title: "Review item", schema, blocking: false }, undefined)
+    const result = await tool.execute(
+      "call",
+      { title: "Review item", schema, blocking: false },
+      undefined,
+      "s1",
+      "user-1",
+      { agentTypeId: "reviewer", workspaceId: "workspace-1", userId: "user-1" },
+    )
 
     expect(result).toMatchObject({
       content: [{ type: "text", text: expect.stringContaining('"status":"pending"') }],
       details: { questionId: expect.any(String), status: "pending", blocking: false },
     })
-    await expect(store.getPending("s1")).resolves.toMatchObject({ blocking: false, status: "ready" })
+    await expect(store.getPending("s1")).resolves.toMatchObject({
+      blocking: false,
+      status: "ready",
+      ownerPrincipalId: "user-1",
+      workspaceId: "workspace-1",
+      agentTypeId: "reviewer",
+      askingUserId: "user-1",
+    })
   })
 
   it("requires schema for non-obvious multi-field requests instead of making a fake A/B form", async () => {
@@ -190,6 +204,32 @@ describe("createAskUserServerPlugin", () => {
       "ask-user.v1.answered-all",
       "ask-user.v1.transcript",
     ])
+  })
+
+  it("rejects non-blocking factory calls without trusted coordinates and persists verified coordinates", async () => {
+    const { store, runtime } = await fixture()
+    const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "fallback" })
+    const tool = plugin.agentToolFactory!({ agentTypeId: "reviewer" }).find((candidate) => candidate.name === "ask_user")!
+
+    await expect(tool.execute({ title: "Unowned", schema, blocking: false }, {
+      toolCallId: "unowned-call",
+      abortSignal: new AbortController().signal,
+    })).resolves.toMatchObject({ isError: true, details: { code: "ASK_USER_UNAUTHORIZED" } })
+    await expect(store.listPending()).resolves.toEqual([])
+
+    await expect(tool.execute({ title: "Owned", schema, blocking: false }, {
+      toolCallId: "owned-call",
+      sessionId: "session-owned",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      abortSignal: new AbortController().signal,
+    })).resolves.toMatchObject({ details: { status: "pending", blocking: false } })
+    await expect(store.getPending("session-owned")).resolves.toMatchObject({
+      ownerPrincipalId: "user-1",
+      workspaceId: "workspace-1",
+      agentTypeId: "reviewer",
+      askingUserId: "user-1",
+    })
   })
 
   it("lazily attaches its state publisher to the server bridge before tool execution", async () => {

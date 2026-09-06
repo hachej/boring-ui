@@ -7,7 +7,7 @@ import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
 import { AskUserStatePublisher } from "./askUserStatePublisher"
 import { createAskUserTool } from "./createAskUserTool"
-import { createAskUserBridgeHandlers } from "./askUserBridgeHandlers"
+import { createAskUserBridgeHandlers, type AskUserBridgeHandlersOptions } from "./askUserBridgeHandlers"
 import {
   AskUserAnswerDelivery,
   createWorkspaceAgentAnswerDeliveryTransport,
@@ -21,6 +21,9 @@ export type AskUserServerPluginOptions = {
   store?: AskUserStore
   sessionId?: string | (() => string)
   agentTypeId?: string
+  /** Workspace owning records created before workspaceId was persisted. */
+  legacyWorkspaceId?: string
+  authorizeSession?: AskUserBridgeHandlersOptions["authorizeSession"]
   answerDeliveryTransport?: AskUserAnswerDeliveryTransport
   answerDeliveryRetryMs?: number
   onClose?: () => void
@@ -84,7 +87,12 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       "Do not register routine source edits, lockfiles, caches, logs, or inferred files unless the user explicitly requested them as outputs. Never infer artifacts from prose, git state, branches, titles, prompts, diffs, or filesystem changes.",
     ].join("\n"),
     agentToolFactory: ({ agentTypeId }) => [agentTool(agentTypeId)],
-    workspaceBridgeHandlers: createAskUserBridgeHandlers({ runtime, store, agentTypeId: options.agentTypeId }),
+    workspaceBridgeHandlers: createAskUserBridgeHandlers({
+      runtime,
+      store,
+      authorizeSession: options.authorizeSession,
+      legacyWorkspaceId: options.legacyWorkspaceId,
+    }),
     routes: lifecycle,
     preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
   })

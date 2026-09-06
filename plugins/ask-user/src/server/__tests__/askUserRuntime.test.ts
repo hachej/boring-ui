@@ -151,6 +151,41 @@ describe("AskUserRuntime", () => {
     expect(runtime.coordinator.hasWaiter(second.questionId)).toBe(false)
   })
 
+  it("uses a separate higher session quota for non-blocking questions", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store, limits: { perPrincipalPerHour: 99 } })
+
+    for (let index = 0; index < 7; index += 1) {
+      await expect(runtime.ask({ sessionId: "s1", title: `Background ${index}`, schema, blocking: false }))
+        .resolves.toMatchObject({ status: "pending", blocking: false })
+    }
+    await expect(store.listPending()).resolves.toHaveLength(7)
+  })
+
+  it("rate limits abusive non-blocking bursts without consuming the blocking bucket", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({
+      store,
+      limits: { perSessionPerMinute: 1, perNonBlockingSessionPerMinute: 2, perPrincipalPerHour: 99 },
+    })
+
+    await runtime.ask({ sessionId: "s1", schema, blocking: false })
+    await runtime.ask({ sessionId: "s1", schema, blocking: false })
+    await expect(runtime.ask({ sessionId: "s1", schema, blocking: false }))
+      .rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.RATE_LIMITED })
+
+    const controller = new AbortController()
+    const blocking = runtime.ask({ sessionId: "s1", schema }, controller.signal)
+    const question = await vi.waitFor(async () => {
+      const candidate = (await store.listPending()).find((entry) => entry.blocking !== false)
+      expect(candidate).toBeDefined()
+      return candidate!
+    })
+    await waitForRuntimeWaiter(runtime, question.questionId)
+    controller.abort()
+    await expect(blocking).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
+  })
+
   it("keeps non-blocking questions pending when a later blocking question starts", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
@@ -336,6 +371,21 @@ describe("AskUserRuntime", () => {
     await expect(next).resolves.toMatchObject({ status: "cancelled" })
   })
 
+  it("supersedes an orphaned blocking question before every ask, including non-blocking asks", async () => {
+    const store = await makeStore()
+    const orphan = makeQuestion({ questionId: "orphan-q", sessionId: "s1", blocking: true })
+    await store.createPending(orphan)
+
+    const restarted = new AskUserRuntime({ store })
+    await expect(restarted.ask({ sessionId: "s1", title: "Background follow-up", schema, blocking: false }))
+      .resolves.toMatchObject({ status: "pending", blocking: false })
+
+    await expect(store.getByQuestionId(orphan.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await expect(store.getTranscriptEventsForQuestion(orphan.questionId)).resolves.toMatchObject([
+      { type: "abandoned", questionId: orphan.questionId, sessionId: "s1" },
+    ])
+  })
+
   // Inverted deliberately for #1348: submit used to convert an answer into an
   // abandonment when the waiter was gone, silently dropping the owner's decision.
   it("persists an answer submitted after the waiter is gone (#1348)", async () => {
@@ -356,6 +406,22 @@ describe("AskUserRuntime", () => {
     const restarted = new AskUserRuntime({ store })
     await restarted.cancelQuestion(question.questionId, "s1")
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
+  })
+
+  it("records a cancelled non-blocking question even though it has no waiter", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+    const pending = await runtime.ask({ sessionId: "s1", schema, blocking: false })
+    if (pending.status !== "pending") throw new Error("non-blocking ask did not return pending")
+
+    await runtime.cancelQuestion(pending.questionId, "s1")
+
+    await expect(store.getByQuestionId(pending.questionId)).resolves.toMatchObject({ status: "cancelled" })
+    await expect(store.getTranscriptEventsForQuestion(pending.questionId)).resolves.toEqual([
+      expect.objectContaining({ type: "created" }),
+      expect.objectContaining({ type: "ready" }),
+      expect.objectContaining({ type: "cancelled", questionId: pending.questionId, reason: "user_cancelled" }),
+    ])
   })
 
   it("reports runtime unavailable", () => {

@@ -19,7 +19,7 @@ import { useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import { AskUserToolInputSchema } from "../shared/schema"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
-import { createQuestionsClient, QuestionsClientError } from "./client"
+import { createQuestionsClient, QuestionsClientError, readPendingQuestionReceipt } from "./client"
 import { createQuestionsStore, pendingQuestionSnapshot, QuestionsRuntimeContext, isSessionOpen, useQuestionsRuntime, type QuestionsRuntime } from "./runtime"
 import { useAskUserAttentionActions, useAskUserAttentionBlockers, useAskUserComposerStopCancel, useAskUserPendingRefresh } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
@@ -89,7 +89,7 @@ async function resolveQuestionAction(
     const client = createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders })
     if (action === "submit") await client.submit(question, values ?? {})
     else await client.cancel(question)
-    runtime.setPending(null, question.sessionId)
+    runtime.removePending(question.questionId)
     return true
   } finally {
     runtime.finishQuestionAction(question)
@@ -136,7 +136,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const sessionId = paneQuestionSessionId(runtime, params)
   const pending = runtime.getPending(sessionId)
   const question = hasExplicitTarget(params)
-    ? (pending?.questionId === params.questionId ? pending : null)
+    ? runtime.getPendingByQuestionId(params.questionId)
     : pending
   const explicitQuestionId = hasExplicitTarget(params) ? params.questionId : undefined
   useEffect(() => {
@@ -157,7 +157,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     const onStop = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail
       if (!question || !workspaceComposerStopAppliesToSession(detail, question.sessionId)) return
-      runtime.setPending(null, question.sessionId)
+      runtime.removePending(question.questionId)
       api.close()
     }
     window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
@@ -211,12 +211,26 @@ function InlineArtifactList({ artifacts }: { artifacts: HumanArtifact[] }) {
 function InlineQuestion({ part }: { part: unknown }) {
   const runtime = useQuestionsRuntime()
   useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
-  const toolPart = typeof part === "object" && part ? part as { toolCallId?: unknown; state?: unknown; input?: unknown } : null
+  const toolPart = typeof part === "object" && part ? part as { toolCallId?: unknown; state?: unknown; input?: unknown; output?: unknown } : null
   const toolCallId = typeof toolPart?.toolCallId === "string" ? toolPart.toolCallId : null
-  const question = toolCallId ? runtime.getPendingByToolCallId(toolCallId) : null
+  const receipt = toolPart?.state === "output-available" ? readPendingQuestionReceipt(toolPart.output) : null
+  const question = receipt
+    ? runtime.getPendingByQuestionId(receipt.questionId)
+    : toolCallId ? runtime.getPendingByToolCallId(toolCallId) : null
+  useEffect(() => {
+    if (!receipt || !runtime.activeSessionId || question) return
+    runtime.requestPendingRefresh(runtime.activeSessionId, receipt.questionId)
+  }, [question, receipt?.questionId, runtime])
   const artifacts = inlineArtifactsFromInput(toolPart?.input)
   if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm">
     <PendingQuestionBody question={question} compact onOpen={() => postUiCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })} />
+    <InlineArtifactList artifacts={artifacts} />
+  </section>
+  if (receipt) return <section data-boring-ask-user-pending-receipt="true" className="my-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 text-sm">
+    <div className="flex items-center gap-3">
+      <HelpCircle className="h-4 w-4 text-muted-foreground" />
+      <div className="min-w-0"><div className="truncate font-medium text-foreground">{typeof (toolPart?.input as { title?: unknown } | undefined)?.title === "string" ? (toolPart!.input as { title: string }).title : "Agent question"}</div><div className="text-xs text-muted-foreground">Question pending</div></div>
+    </div>
     <InlineArtifactList artifacts={artifacts} />
   </section>
   if (toolPart?.state !== "output-available" && toolPart?.state !== "output-error" && toolPart?.state !== "aborted") return null

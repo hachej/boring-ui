@@ -29,6 +29,8 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
 
 export type AskUserBridgeRequestInput = {
   sessionId: string
+  /** Proposed Agent address; trusted only after server-side session authorization. */
+  agentTypeId?: string
   blocking?: boolean
   title?: string
   context?: string

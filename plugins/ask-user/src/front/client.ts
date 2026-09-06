@@ -23,13 +23,19 @@ export function readPendingQuestionHintsFromState(state: Record<string, unknown>
   const slot = state?.[ASK_USER_UI_STATE_SLOTS.PENDING]
   if (!slot || typeof slot !== "object") return []
   const hints = new Map<string, PendingQuestionHint>()
-  const rawSlot = slot as { hint?: unknown; question?: unknown; hintsBySession?: unknown }
+  const rawSlot = slot as { hint?: unknown; question?: unknown; hintsBySession?: unknown; hintsByQuestion?: unknown }
   const current = readHint(rawSlot.hint) ?? readHint(rawSlot.question)
-  if (current) hints.set(current.sessionId, current)
+  if (current) hints.set(current.questionId, current)
   if (rawSlot.hintsBySession && typeof rawSlot.hintsBySession === "object" && !Array.isArray(rawSlot.hintsBySession)) {
     for (const [sessionId, candidate] of Object.entries(rawSlot.hintsBySession as Record<string, unknown>)) {
       const hint = readHint(candidate)
-      if (hint && hint.sessionId === sessionId) hints.set(sessionId, hint)
+      if (hint && hint.sessionId === sessionId) hints.set(hint.questionId, hint)
+    }
+  }
+  if (rawSlot.hintsByQuestion && typeof rawSlot.hintsByQuestion === "object" && !Array.isArray(rawSlot.hintsByQuestion)) {
+    for (const [questionId, candidate] of Object.entries(rawSlot.hintsByQuestion as Record<string, unknown>)) {
+      const hint = readHint(candidate)
+      if (hint && hint.questionId === questionId) hints.set(questionId, hint)
     }
   }
   return [...hints.values()]
@@ -37,6 +43,15 @@ export function readPendingQuestionHintsFromState(state: Record<string, unknown>
 
 export function readPendingQuestionHintFromState(state: Record<string, unknown> | null | undefined): PendingQuestionHint | null {
   return readPendingQuestionHintsFromState(state)[0] ?? null
+}
+
+export function readPendingQuestionReceipt(output: unknown): { questionId: string; status: "pending"; blocking: false } | null {
+  if (!output || typeof output !== "object") return null
+  const details = (output as { details?: unknown }).details
+  if (!details || typeof details !== "object") return null
+  const raw = details as { questionId?: unknown; status?: unknown; blocking?: unknown }
+  if (typeof raw.questionId !== "string" || raw.questionId.length === 0 || raw.status !== "pending" || raw.blocking !== false) return null
+  return { questionId: raw.questionId, status: "pending", blocking: false }
 }
 
 function readHint(value: unknown): PendingQuestionHint | null {

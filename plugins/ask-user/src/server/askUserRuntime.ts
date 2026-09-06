@@ -91,6 +91,7 @@ export type AskUserRuntimeOptions = {
   now?: () => Date
   limits?: {
     perSessionPerMinute?: number
+    perNonBlockingSessionPerMinute?: number
     perPrincipalPerHour?: number
   }
 }
@@ -101,8 +102,10 @@ export class AskUserRuntime {
   private readonly ownerPrincipalId: string
   private readonly now: () => Date
   private readonly perSessionPerMinute: number
+  private readonly perNonBlockingSessionPerMinute: number
   private readonly perPrincipalPerHour: number
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
+  private readonly nonBlockingSessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
 
   constructor(options: AskUserRuntimeOptions) {
@@ -111,12 +114,13 @@ export class AskUserRuntime {
     this.ownerPrincipalId = options.ownerPrincipalId ?? "anonymous"
     this.now = options.now ?? (() => new Date())
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
+    this.perNonBlockingSessionPerMinute = options.limits?.perNonBlockingSessionPerMinute ?? 30
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
   }
 
   /**
    * Supersede a session's orphaned blocking question when that same session asks
-   * a new blocking one. Non-blocking questions remain independently answerable.
+   * again. Non-blocking questions remain independently answerable.
    *
    * This must never be run as a sweep over all sessions (e.g. at hub boot): waiter
    * presence is in-process state, so every persisted question looks orphaned after
@@ -132,8 +136,8 @@ export class AskUserRuntime {
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
     const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
-    if (request.blocking !== false) await this.supersedeSessionPending(request.sessionId)
-    this.assertAllowed(request.sessionId, ownerPrincipalId)
+    await this.supersedeSessionPending(request.sessionId)
+    this.assertAllowed(request.sessionId, ownerPrincipalId, request.blocking === false)
     const parsedArtifacts = HumanArtifactListSchema.safeParse(request.artifacts ?? [])
     if (!parsedArtifacts.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsedArtifacts.error.message)
     const question = this.createQuestion({ ...request, artifacts: parsedArtifacts.data, ownerPrincipalId })
@@ -194,7 +198,7 @@ export class AskUserRuntime {
   async cancelQuestion(questionId: string, sessionId: string, reason: AskUserCancelReason = "user_cancelled"): Promise<void> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    if (!this.coordinator.hasWaiter(questionId)) {
+    if (question.blocking !== false && !this.coordinator.hasWaiter(questionId)) {
       await this.abandon(questionId, sessionId)
       return
     }
@@ -270,8 +274,11 @@ export class AskUserRuntime {
     }
   }
 
-  private assertAllowed(sessionId: string, principalId: string): void {
-    if (!this.consume(this.sessionBuckets, sessionId, 60_000, this.perSessionPerMinute) || !this.consume(this.principalBuckets, principalId, 3_600_000, this.perPrincipalPerHour)) {
+  private assertAllowed(sessionId: string, principalId: string, nonBlocking: boolean): void {
+    const sessionAllowed = nonBlocking
+      ? this.consume(this.nonBlockingSessionBuckets, sessionId, 60_000, this.perNonBlockingSessionPerMinute)
+      : this.consume(this.sessionBuckets, sessionId, 60_000, this.perSessionPerMinute)
+    if (!sessionAllowed || !this.consume(this.principalBuckets, principalId, 3_600_000, this.perPrincipalPerHour)) {
       throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.RATE_LIMITED, "ask_user rate limit exceeded")
     }
   }

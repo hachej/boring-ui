@@ -1,4 +1,5 @@
 import { validateAskUserToolInput } from "../shared/schema"
+import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import type { AskUserToolInput, AskUserToolResult } from "../shared/types"
 import type { AskUserRuntime } from "./askUserRuntime"
 
@@ -93,6 +94,13 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
       }
       const input = parsed.data as AskUserToolInput
       try {
+        if (input.blocking === false && !hasVerifiedNonBlockingCoordinates(sessionId, ownerPrincipalId, deliveryContext)) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: "ask_user failed: non-blocking questions require verified session, workspace, owner, and Agent coordinates" }],
+            details: { code: ASK_USER_ERROR_CODES.UNAUTHORIZED },
+          }
+        }
         const result = await options.runtime.ask({
           ...input,
           toolCallId,
@@ -112,6 +120,18 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
       }
     },
   }
+}
+
+function hasVerifiedNonBlockingCoordinates(
+  sessionId: string | undefined,
+  ownerPrincipalId: string | undefined,
+  deliveryContext: { agentTypeId?: string; workspaceId?: string; userId?: string } | undefined,
+): boolean {
+  return !!sessionId
+    && !!ownerPrincipalId
+    && !!deliveryContext?.agentTypeId
+    && !!deliveryContext.workspaceId
+    && deliveryContext.userId === ownerPrincipalId
 }
 
 function resolveSessionId(sessionId: string | (() => string)): string {

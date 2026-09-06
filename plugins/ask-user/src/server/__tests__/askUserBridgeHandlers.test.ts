@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance } from "fastify"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   createBrowserBridgeAuthPolicy,
+  createLocalCliBridgeAuthPolicy,
   createWorkspaceBridgeRegistry,
   InMemoryWorkspaceBridgeIdempotencyStore,
   workspaceBridgeHttpRoutes,
@@ -13,7 +14,7 @@ import {
 import { createQuestionsClient } from "../../front/client"
 import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from "../../shared"
 import { AskUserRuntime } from "../askUserRuntime"
-import { createAskUserBridgeHandlers } from "../askUserBridgeHandlers"
+import { createAskUserBridgeHandlers, type AskUserBridgeHandlersOptions } from "../askUserBridgeHandlers"
 import { MemoryAskUserStore } from "./testAskUserStore"
 import { AskUserAnswerDelivery } from "../askUserAnswerDelivery"
 
@@ -50,14 +51,21 @@ function browserContext(userId: string, capabilities: string[]): WorkspaceBridge
   }
 }
 
-function fixture() {
+function fixture(overrides: Partial<Omit<AskUserBridgeHandlersOptions, "store" | "runtime">> = {}) {
   const store = new MemoryAskUserStore()
   const runtime = new AskUserRuntime({ store })
   const registry = createWorkspaceBridgeRegistry()
-  for (const entry of createAskUserBridgeHandlers({ store, runtime })) {
+  const authorizeSession = overrides.authorizeSession ?? vi.fn(async () => undefined)
+  for (const entry of createAskUserBridgeHandlers({
+    store,
+    runtime,
+    authorizeSession,
+    legacyWorkspaceId: "workspace-1",
+    ...overrides,
+  })) {
     registry.registerHandler(entry.definition, entry.handler)
   }
-  return { store, runtime, registry }
+  return { store, runtime, registry, authorizeSession }
 }
 
 async function productionPolicyApp() {
@@ -106,11 +114,12 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     try {
       const requested = await registry.call({
         op: ASK_USER_BRIDGE_OPS.request,
-        input: { sessionId: "s1", title: "Review item", schema, blocking: false },
+        input: { sessionId: "s1", agentTypeId: "orchestrator", title: "Review item", schema, blocking: false },
         requestId: "req-non-blocking",
       }, runtimeContext())
       expect(requested).toMatchObject({ ok: true, output: { status: "pending", blocking: false } })
       const question = (await store.listPending())[0]!
+      expect(question).toMatchObject({ workspaceId: "workspace-1", ownerPrincipalId: "user-1", askingUserId: "user-1", agentTypeId: "orchestrator" })
 
       await registry.call({
         op: ASK_USER_BRIDGE_OPS.answer,
@@ -133,6 +142,7 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
         title: "Production policy question",
         schema,
         ownerPrincipalId: "user-1",
+        workspaceId: "workspace-1",
       })
       const question = await vi.waitFor(async () => {
         const pending = await store.getPending("s1")
@@ -157,6 +167,39 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
 
       const wrongWorkspace = createQuestionsClient({ headers: { "x-boring-workspace-id": "workspace-2" } })
       await expect(wrongWorkspace.pending("s1")).rejects.toMatchObject({ statusCode: 403 })
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("hydrates and answers a locally-owned question through the local CLI browser policy", async () => {
+    const { store, runtime, registry } = fixture()
+    const app = Fastify()
+    await app.register(workspaceBridgeHttpRoutes, {
+      registry,
+      ownerWorkspaceId: "workspace-1",
+      idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
+      browserAuthPolicy: createLocalCliBridgeAuthPolicy({ workspaceId: "workspace-1" }),
+    })
+    vi.stubGlobal("fetch", injectFetch(app))
+    try {
+      const awaitingAnswer = runtime.ask({
+        sessionId: "s1",
+        title: "Local question",
+        schema,
+        ownerPrincipalId: "local",
+        workspaceId: "workspace-1",
+      })
+      const question = await vi.waitFor(async () => {
+        const pending = await store.getPending("s1")
+        expect(pending).not.toBeNull()
+        return pending!
+      })
+
+      const client = createQuestionsClient({ headers: { "x-boring-workspace-id": "workspace-1" } })
+      await expect(client.pending("s1", undefined, question.questionId)).resolves.toMatchObject({ questionId: question.questionId })
+      await expect(client.submit(question, { answer: "continue" })).resolves.toMatchObject({ status: "answered" })
+      await expect(awaitingAnswer).resolves.toMatchObject({ status: "answered", answer: { values: { answer: "continue" } } })
     } finally {
       await app.close()
     }
@@ -259,7 +302,7 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     expect(denied).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
   })
 
-  it("denies a browser principal reading another user's pending question", async () => {
+  it("denies a browser principal selecting another user's answer token or mutating the question", async () => {
     const { store, registry } = fixture()
     const controller = new AbortController()
     controllers.push(controller)
@@ -274,18 +317,129 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     }, { timeout: 10_000 })
 
     const denied = await registry.call(
-      { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1" } },
+      { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1", questionId: (await store.getPending("s1"))!.questionId } },
       browserContext("user-2", [ASK_USER_BRIDGE_CAPABILITIES.pending]),
     )
     expect(denied).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+
+    const question = (await store.getPending("s1"))!
+    for (const op of [ASK_USER_BRIDGE_OPS.answer, ASK_USER_BRIDGE_OPS.cancel] as const) {
+      const input = op === ASK_USER_BRIDGE_OPS.answer
+        ? { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "stolen" } }
+        : { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken }
+      const result = await registry.call({ op, input }, browserContext("user-2", [
+        op === ASK_USER_BRIDGE_OPS.answer ? ASK_USER_BRIDGE_CAPABILITIES.answer : ASK_USER_BRIDGE_CAPABILITIES.cancel,
+      ]))
+      expect(result).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+    }
+    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "ready" })
+  })
+
+  it("requires trusted owner and exact Agent coordinates for non-blocking bridge requests", async () => {
+    const authorizeSession = vi.fn(async ({ agentTypeId }: { agentTypeId: string }) => {
+      if (agentTypeId !== "orchestrator") throw new Error("wrong Agent type")
+    })
+    const { registry } = fixture({ authorizeSession })
+
+    const missingType = await registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "s1", schema, blocking: false },
+      requestId: "missing-type",
+    }, runtimeContext())
+    expect(missingType).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+
+    const missingOwner = await registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "s1", agentTypeId: "orchestrator", schema, blocking: false },
+      requestId: "missing-owner",
+    }, runtimeContext({ actor: { actorKind: "agent", performedBy: { label: "agent-runtime" } } }))
+    expect(missingOwner).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+
+    const wrongType = await registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "s1", agentTypeId: "worker", schema, blocking: false },
+      requestId: "wrong-type",
+    }, runtimeContext())
+    expect(wrongType).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+    expect(authorizeSession).toHaveBeenCalledWith({ workspaceId: "workspace-1", userId: "user-1", agentTypeId: "worker", sessionId: "s1" })
+
+    const withoutVerifier = fixture({ authorizeSession: undefined })
+    const noGrant = await withoutVerifier.registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "s1", agentTypeId: "orchestrator", schema, blocking: false },
+      requestId: "no-grant",
+    }, runtimeContext())
+    expect(noGrant).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+  })
+
+  it("enforces workspace scope for detail, lists, transcript, answer, and cancel", async () => {
+    const { store, runtime, registry } = fixture()
+    const first = await runtime.ask({ sessionId: "s1", schema, blocking: false, ownerPrincipalId: "user-1", workspaceId: "workspace-1" })
+    const second = await runtime.ask({ sessionId: "s1", schema, blocking: false, ownerPrincipalId: "user-1", workspaceId: "workspace-1" })
+    if (first.status !== "pending" || second.status !== "pending") throw new Error("expected pending questions")
+    await runtime.submitAnswer(second.questionId, "s1", { answer: "done" })
+    const question = (await store.getByQuestionId(first.questionId))!
+    const foreign = { ...browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pending]), workspaceId: "workspace-2" }
+
+    const detail = await registry.call({ op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1", questionId: question.questionId } }, foreign)
+    expect(detail).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+    const pendingAll = await registry.call({ op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} }, { ...foreign, capabilities: [ASK_USER_BRIDGE_CAPABILITIES.pendingAll] })
+    expect((pendingAll as { output: { pending: unknown[] } }).output.pending).toEqual([])
+    const answeredAll = await registry.call({ op: ASK_USER_BRIDGE_OPS.answeredAll, input: {} }, { ...foreign, capabilities: [ASK_USER_BRIDGE_CAPABILITIES.answeredAll] })
+    expect((answeredAll as { output: { answered: unknown[] } }).output.answered).toEqual([])
+    const transcript = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.transcript, input: { sessionId: "s1" } },
+      { ...runtimeContext(), workspaceId: "workspace-2", callerClass: "server", capabilities: [ASK_USER_BRIDGE_CAPABILITIES.transcriptRead] },
+    )
+    expect((transcript as { output: { events: unknown[] } }).output.events).toEqual([])
+
+    for (const op of [ASK_USER_BRIDGE_OPS.answer, ASK_USER_BRIDGE_OPS.cancel] as const) {
+      const input = op === ASK_USER_BRIDGE_OPS.answer
+        ? { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "foreign" } }
+        : { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken }
+      const result = await registry.call({ op, input }, { ...foreign, capabilities: [
+        op === ASK_USER_BRIDGE_OPS.answer ? ASK_USER_BRIDGE_CAPABILITIES.answer : ASK_USER_BRIDGE_CAPABILITIES.cancel,
+      ] })
+      expect(result).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+    }
+  })
+
+  it("exposes legacy records only when the store file is assigned to the caller workspace", async () => {
+    const owned = fixture()
+    const pending = await owned.runtime.ask({ sessionId: "s1", schema, blocking: false, ownerPrincipalId: "user-1" })
+    if (pending.status !== "pending") throw new Error("expected pending question")
+    const visible = await owned.registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1", questionId: pending.questionId } },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pending]),
+    )
+    expect(visible).toMatchObject({ ok: true, output: { pending: { questionId: pending.questionId } } })
+    const foreign = await owned.registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1", questionId: pending.questionId } },
+      { ...browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pending]), workspaceId: "workspace-2" },
+    )
+    expect(foreign).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+
+    const unassigned = fixture({ legacyWorkspaceId: undefined })
+    const hidden = await unassigned.runtime.ask({ sessionId: "s1", schema, blocking: false, ownerPrincipalId: "user-1" })
+    const list = await unassigned.registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pendingAll]),
+    )
+    expect((list as { output: { pending: unknown[] } }).output.pending).toEqual([])
+    if (hidden.status !== "pending") throw new Error("expected pending question")
+    const detail = await unassigned.registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1", questionId: hidden.questionId } },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pending]),
+    )
+    expect(detail).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
   })
 })
 
 describe("ask-user.v1.pending-all", () => {
   it("addresses one exact question when a session has several non-blocking asks", async () => {
     const { store, registry } = fixture()
-    const first = await registry.call({ op: ASK_USER_BRIDGE_OPS.request, input: { sessionId: "s1", title: "First", schema, blocking: false }, requestId: "req-first" }, runtimeContext())
-    const second = await registry.call({ op: ASK_USER_BRIDGE_OPS.request, input: { sessionId: "s1", title: "Second", schema, blocking: false }, requestId: "req-second" }, runtimeContext())
+    const first = await registry.call({ op: ASK_USER_BRIDGE_OPS.request, input: { sessionId: "s1", agentTypeId: "orchestrator", title: "First", schema, blocking: false }, requestId: "req-first" }, runtimeContext())
+    const second = await registry.call({ op: ASK_USER_BRIDGE_OPS.request, input: { sessionId: "s1", agentTypeId: "orchestrator", title: "Second", schema, blocking: false }, requestId: "req-second" }, runtimeContext())
     expect(first.ok).toBe(true)
     expect(second.ok).toBe(true)
     const questions = await store.listPending()
@@ -375,7 +529,8 @@ describe("ask-user.v1.answered-all", () => {
             { type: "textarea" as const, name: "notes", label: "Notes" },
           ],
         },
-        ownerPrincipalId: "anonymous",
+        ownerPrincipalId: "user-1",
+        workspaceId: "workspace-1",
       }, controller.signal).catch(() => undefined)
       const question = await vi.waitFor(async () => {
         const pending = await store.getPending(sessionId)

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createQuestionsClient, deriveIdempotencyKey, normalizeQuestion, readPendingQuestionHintFromState, readPendingQuestionHintsFromState } from "../client"
+import { createQuestionsClient, deriveIdempotencyKey, normalizeQuestion, readPendingQuestionHintFromState, readPendingQuestionHintsFromState, readPendingQuestionReceipt } from "../client"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 
@@ -49,6 +49,32 @@ describe("ask-user front client", () => {
       { questionId: "q2", sessionId: "s2", status: "ready" },
     ])
     expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "legacy", sessionId: "s-legacy", status: "ready" })
+  })
+
+  it("reads every question-indexed hint when one session has several questions", () => {
+    const state = {
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        hint: null,
+        hintsBySession: { s1: { questionId: "q2", sessionId: "s1", status: "ready", blocking: false } },
+        hintsByQuestion: {
+          q1: { questionId: "q1", sessionId: "s1", status: "ready", blocking: false },
+          q2: { questionId: "q2", sessionId: "s1", status: "ready", blocking: false },
+        },
+      },
+    }
+
+    expect(readPendingQuestionHintsFromState(state)).toEqual([
+      { questionId: "q2", sessionId: "s1", status: "ready", blocking: false },
+      { questionId: "q1", sessionId: "s1", status: "ready", blocking: false },
+    ])
+  })
+
+  it("recognizes only a complete non-blocking pending tool receipt", () => {
+    expect(readPendingQuestionReceipt({ details: { questionId: "q1", status: "pending", blocking: false } }))
+      .toEqual({ questionId: "q1", status: "pending", blocking: false })
+    expect(readPendingQuestionReceipt({ details: { questionId: "q1", status: "answered", blocking: false } })).toBeNull()
+    expect(readPendingQuestionReceipt({ details: { questionId: "q1", status: "pending", blocking: true } })).toBeNull()
+    expect(readPendingQuestionReceipt({ questionId: "q1", status: "pending", blocking: false })).toBeNull()
   })
 
   it("hydrates plural associated artifacts atomically without accepting malformed values", () => {
