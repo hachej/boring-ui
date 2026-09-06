@@ -29,3 +29,4 @@ The Orchestrator raises one Inbox question per reviewed PR as it hands off (titl
 ## Proof for Gate 2
 
 Eight Beads handed off, eight PR comments, eight Inbox decisions requested.
+- #1551 [Changed Workspace Verification] Check local edits and simplify the agent workflow | epic/changed-workspace-verification | +448 -372 8 files
