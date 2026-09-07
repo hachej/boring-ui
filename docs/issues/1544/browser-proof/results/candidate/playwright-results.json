@@ -1,14 +1,14 @@
 {
   "config": {
     "argv": [
-      "/home/ubuntu/.local/share/fnm/node-versions/v22.22.1/installation/bin/node",
-      "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/node_modules/@playwright/test/cli.js",
+      "<node-runtime>/bin/node",
+      "<proof-worktree>/node_modules/@playwright/test/cli.js",
       "test",
       "--config",
       "docs/issues/1544/browser-proof/playwright.config.ts"
     ],
-    "configFile": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof/playwright.config.ts",
-    "rootDir": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof",
+    "configFile": "<proof-worktree>/docs/issues/1544/browser-proof/playwright.config.ts",
+    "rootDir": "<proof-worktree>/docs/issues/1544/browser-proof",
     "failOnFlakyTests": false,
     "forbidOnly": false,
     "fullyParallel": false,
@@ -24,7 +24,7 @@
     "preserveOutput": "always",
     "projects": [
       {
-        "outputDir": "/tmp/pr1544-candidate-smoke",
+        "outputDir": "<ephemeral-output>",
         "repeatEach": 1,
         "retries": 0,
         "metadata": {
@@ -32,7 +32,7 @@
         },
         "id": "desktop",
         "name": "desktop",
-        "testDir": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof",
+        "testDir": "<proof-worktree>/docs/issues/1544/browser-proof",
         "testIgnore": [],
         "testMatch": [
           "chat-event-ownership.spec.ts"
@@ -40,7 +40,7 @@
         "timeout": 30000
       },
       {
-        "outputDir": "/tmp/pr1544-candidate-smoke",
+        "outputDir": "<ephemeral-output>",
         "repeatEach": 1,
         "retries": 0,
         "metadata": {
@@ -48,7 +48,7 @@
         },
         "id": "mobile",
         "name": "mobile",
-        "testDir": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof",
+        "testDir": "<proof-worktree>/docs/issues/1544/browser-proof",
         "testIgnore": [],
         "testMatch": [
           "chat-event-ownership.spec.ts"
@@ -65,7 +65,7 @@
       [
         "json",
         {
-          "outputFile": "/tmp/pr1544-candidate-smoke/results.json"
+          "outputFile": "<ephemeral-output>/results.json"
         }
       ]
     ],
@@ -81,7 +81,7 @@
     "workers": 1,
     "webServer": {
       "command": "pnpm exec vite --config vite.config.ts --port 5614",
-      "url": "http://127.0.0.1:5614",
+      "url": "<loopback-proof-server>",
       "reuseExistingServer": false,
       "timeout": 60000
     }
@@ -129,17 +129,17 @@
                     {
                       "name": "screenshot",
                       "contentType": "image/png",
-                      "path": "/tmp/pr1544-candidate-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/test-finished-1.png"
+                      "path": "<ephemeral-output>/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/test-finished-1.png"
                     },
                     {
                       "name": "video",
                       "contentType": "video/webm",
-                      "path": "/tmp/pr1544-candidate-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/video.webm"
+                      "path": "<ephemeral-output>/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/video.webm"
                     },
                     {
                       "name": "trace",
                       "contentType": "application/zip",
-                      "path": "/tmp/pr1544-candidate-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/trace.zip"
+                      "path": "<ephemeral-output>/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/trace.zip"
                     }
                   ]
                 }
@@ -188,17 +188,17 @@
                     {
                       "name": "screenshot",
                       "contentType": "image/png",
-                      "path": "/tmp/pr1544-candidate-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/test-finished-1.png"
+                      "path": "<ephemeral-output>/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/test-finished-1.png"
                     },
                     {
                       "name": "video",
                       "contentType": "video/webm",
-                      "path": "/tmp/pr1544-candidate-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/video.webm"
+                      "path": "<ephemeral-output>/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/video.webm"
                     },
                     {
                       "name": "trace",
                       "contentType": "application/zip",
-                      "path": "/tmp/pr1544-candidate-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/trace.zip"
+                      "path": "<ephemeral-output>/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/trace.zip"
                     }
                   ]
                 }
