@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import type { DatabaseSync } from 'node:sqlite'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -8,8 +10,10 @@ import { build } from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
-import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
+import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type { AgentRequestKey, AgentRequestLedger } from '../types'
+
+const require = createRequire(import.meta.url)
 
 const claimWorkerPath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -254,6 +258,80 @@ describe('SqliteAgentRequestLedger', () => {
       }
     },
   )
+
+  it('prunes only expired terminal payloads while preserving durable tombstones and unresolved ownership', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    let now = 0
+    const ledger = new SqliteAgentRequestLedger(path, { retentionMs: 1, now: () => now })
+    const keyed = (requestId: string): AgentRequestKey => ({ ...key, requestId })
+    const states = [
+      'pending-admission',
+      'admission-accepted',
+      'in-flight',
+      'rejected',
+      'completed',
+      'outcome-unknown',
+    ] as const
+
+    for (const state of states) {
+      const stateKey = keyed(state)
+      await ledger.prepare(stateKey, `digest-${state}`)
+      if (state === 'rejected') {
+        await ledger.reject(stateKey, {
+          kind: 'gateway',
+          error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED, message: 'denied' },
+        })
+      } else if (state !== 'pending-admission') {
+        await ledger.acceptAdmission(stateKey, 'admitted')
+        if (state !== 'admission-accepted') await ledger.beginEffect(stateKey)
+        if (state === 'completed') await ledger.complete(stateKey, { accepted: true })
+        if (state === 'outcome-unknown') await ledger.markOutcomeUnknown(stateKey, {
+          code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+          message: 'unknown',
+        })
+      }
+    }
+
+    const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const inspect = new SqliteDatabaseSync(path) as DatabaseSync
+    const count = (table: string) => (inspect.prepare(`SELECT count(*) AS count FROM ${table}`).get() as { count: number }).count
+
+    now = MIN_REQUEST_RETENTION_MS
+    await ledger.prepare(keyed('boundary-trigger'), 'digest-boundary')
+    expect(count('agent_request_ledger')).toBe(7)
+    expect(count('agent_request_tombstones')).toBe(0)
+
+    now += 1
+    await ledger.prepare(keyed('expired-trigger'), 'digest-expired')
+    expect(count('agent_request_ledger')).toBe(5)
+    expect(count('agent_request_tombstones')).toBe(3)
+    for (const state of ['pending-admission', 'admission-accepted', 'in-flight'] as const) {
+      await expect(ledger.prepare(keyed(state), `digest-${state}`)).resolves.toMatchObject({
+        ownership: 'existing', record: { state },
+      })
+    }
+    await expect(ledger.prepare(keyed('completed'), 'digest-completed')).resolves.toMatchObject({
+      ownership: 'existing',
+      record: {
+        state: 'outcome-unknown',
+        error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
+      },
+    })
+    await expect(ledger.prepare(keyed('completed'), 'changed-digest')).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+    })
+    inspect.close()
+    ledger.close()
+
+    const reopened = new SqliteAgentRequestLedger(path, { retentionMs: MIN_REQUEST_RETENTION_MS, now: () => now })
+    await expect(reopened.prepare(keyed('completed'), 'digest-completed')).resolves.toMatchObject({
+      ownership: 'existing', record: { state: 'outcome-unknown' },
+    })
+    reopened.close()
+    rmSync(path, { force: true })
+    rmSync(`${path}-wal`, { force: true })
+    rmSync(`${path}-shm`, { force: true })
+  })
 
   it('validates the effect target before claiming durable ownership', async () => {
     const ledger = new SqliteAgentRequestLedger(join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`))

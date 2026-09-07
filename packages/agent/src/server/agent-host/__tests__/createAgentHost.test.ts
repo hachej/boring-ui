@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
@@ -14,11 +15,12 @@ import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
-import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
+import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
+const require = createRequire(import.meta.url)
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
 
@@ -85,6 +87,15 @@ describe('createAgentHost', () => {
       authorizeAgentRequest: async () => scope,
     })).not.toThrow()
     await inMemory.host.close()
+
+    const customRoot = await root()
+    const customLedger = new SqliteAgentRequestLedger(join(customRoot, 'custom.sqlite'))
+    const custom = await createAgentHost({
+      ...options(customRoot),
+      requestLedger: customLedger,
+      requestRetentionMs: 0,
+    })
+    await custom.host.close()
   })
 
   it('awaits compilation, freezes the fleet, and publishes a stable durable identity', async () => {
@@ -121,6 +132,44 @@ describe('createAgentHost', () => {
     })
     await expect(restarted.gateway.createSession(input)).resolves.toEqual(ref)
     expect(harnessFactory).toHaveBeenCalledOnce()
+    await restarted.host.close()
+  })
+
+  it('keeps a create tombstone after its configured terminal receipt retention expires', async () => {
+    const sessionRoot = await root()
+    const ledgerPath = join(sessionRoot, '.agent-request-ledger.sqlite')
+    const input = { scope, agentTypeId: 'alpha', requestId: 'expired-create' }
+    const harnessFactory = vi.fn(persistedScriptedHarness)
+
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      requestRetentionMs: MIN_REQUEST_RETENTION_MS,
+      harnessFactory,
+    })
+    await first.gateway.createSession(input)
+    await first.host.close()
+
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const database = new DatabaseSync(ledgerPath)
+    database.prepare('UPDATE agent_request_ledger SET updated_at = 0 WHERE state = ?').run('completed')
+    database.close()
+
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      requestRetentionMs: MIN_REQUEST_RETENTION_MS,
+      harnessFactory,
+    })
+    await expect(restarted.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+    })
+    expect(harnessFactory).toHaveBeenCalledOnce()
+
+    const inspect = new DatabaseSync(ledgerPath)
+    expect(inspect.prepare('SELECT count(*) AS count FROM agent_request_ledger WHERE state = ?').get('completed'))
+      .toEqual({ count: 0 })
+    expect(inspect.prepare('SELECT count(*) AS count FROM agent_request_tombstones').get())
+      .toEqual({ count: 1 })
+    inspect.close()
     await restarted.host.close()
   })
 

@@ -611,8 +611,10 @@ The shipped Host has no startup reconciler: after abrupt restart, an unmarked
 state and a same-key retry returns `AGENT_REQUEST_IN_PROGRESS`. It becomes
 `AGENT_REQUEST_OUTCOME_UNKNOWN` only when the live Host explicitly records that
 terminal state after an ambiguous action failure or a bounded graceful-drain
-timeout. Completed create records/tombstones outlive session deletion while the
-record is retained, so delete + retry cannot create a second transcript.
+timeout. Completed create records outlive session deletion for their configured
+terminal-payload retention window. After that window, the built-in SQLite
+ledger atomically replaces terminal payloads with permanent key/digest
+tombstones, so delete + retry still cannot create a second transcript.
 Level-B conformance covers concurrent retry, cross-scope, cross-Agent and
 cross-session same IDs, acknowledgement loss, explicit retryable-admission
 reclaim across reopen, terminal replay across reopen, and preservation (without
@@ -638,12 +640,25 @@ derived from `sessionRoot`. An injected ledger must also report
 through an explicit `inMemoryRequestLedgerMode: 'test' | 'development'` opt-in;
 it is never an implicit production fallback. The durable ledger provides
 restart receipt/service-error replay and persistence of completed records/create
-tombstones; the current SQLite implementation does not perform startup state
-reconciliation or automatic eviction. Level-B conformance covers admission
-rejection before mutation, concurrent retry, retryable adapter failure,
-conflict, and the exact durable reopen behavior above. Level D adds durable
-stream offsets plus a separately implemented/proven crash reconciler and
-retention policy; it does not defer request-ledger durability.
+tombstones. When `requestRetentionMs` is configured, the built-in SQLite ledger
+lazily prunes terminal payloads during `prepare`; omitted retention preserves
+them indefinitely. Configured values below 24 hours are raised to 24 hours.
+Cleanup runs in the same `BEGIN IMMEDIATE` transaction as the next ownership
+claim: only `rejected | completed | outcome-unknown` rows with `updated_at`
+strictly less than `now - retention` move to the tombstone table, then the
+payload row is deleted. Pending-admission, admission-accepted, and in-flight
+rows are never eligible regardless of age. A retained tombstone keeps the full
+request key and digest: the same digest returns stable
+`AGENT_REQUEST_OUTCOME_UNKNOWN`, while a changed digest remains
+`AGENT_REQUEST_CONFLICT`; it can never become `created` or `reclaimed`.
+Injected custom ledgers remain source-compatible and own their storage policy;
+`requestRetentionMs` configures only the Agent-owned built-in SQLite ledger.
+The SQLite implementation does not perform startup state reconciliation.
+Level-B conformance covers admission rejection before mutation, concurrent
+retry, retryable adapter failure, conflict, retention boundaries/tombstones,
+and the exact durable reopen behavior above. Level D adds durable stream
+offsets plus a separately implemented/proven crash reconciler; it does not
+defer request-ledger durability or retention.
 
 The server-only ledger/admission contract is exact (none of these records is a
 transport DTO):
@@ -852,7 +867,9 @@ interface CreateAgentHostOptions {
   readonly requestLedgerPath?: string
   /** Explicit opt-in for tests/development; never a production fallback. */
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
-  readonly requestRetentionMs?: number // durable ledger retention
+  /** Built-in SQLite terminal-payload retention; omitted means indefinite.
+      Values below 24 hours are raised to the 24-hour safety minimum. */
+  readonly requestRetentionMs?: number
   /** Omission selects the built-in idempotent accept-all adapter for
       trusted-local composition; it never skips ledger admission. */
   readonly effectAdmission?: AgentEffectAdmission
@@ -1230,9 +1247,10 @@ maps the old callback.
    `buildAgentComposition`, unconditional durable append, offset reconnect,
    collapse `AgentLiveEventBuffer`; flip conformance to Level D. The production
    request ledger is already durable at Level B (including restart replay of
-   terminal receipts); Level D adds the still-unshipped request-ledger recovery
-   set: a specified retention policy, startup reconciliation backed by external
-   admission/effect evidence, and the full crash-boundary matrix. It must not
+   terminal receipts and safe configured terminal-payload retention); Level D
+   adds the still-unshipped request-ledger recovery set: startup reconciliation
+   backed by external admission/effect evidence and the full crash-boundary
+   matrix. It must not
    infer `outcome-unknown` merely from finding `in-flight`. The durable
    checkpointed activity index also gains startup reconciliation. The
    snapshot-registry pagination MAY land here or wait for the v2 pool cursor.

@@ -421,6 +421,11 @@ export interface CreateAgentHostOptions {
   readonly requestLedgerPath?: string
   /** Explicit test/dev opt-in for an in-memory ledger. */
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
+  /**
+   * Built-in SQLite terminal-payload retention. Values below 24 hours are
+   * raised to 24 hours; omitted retention keeps terminal payloads indefinitely.
+   * Injected ledgers retain ownership of their own storage policy.
+   */
   readonly requestRetentionMs?: number
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number
