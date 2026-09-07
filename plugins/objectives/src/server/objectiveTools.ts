@@ -24,10 +24,12 @@ function invalidFailure(prefix: string, message: string): ToolResult {
 }
 
 function failure(prefix: string, error: unknown): ToolResult {
-  const message = error instanceof Error ? error.message : String(error)
+  const objectiveError = error instanceof ObjectiveError
+    ? error
+    : new ObjectiveError(OBJECTIVE_ERROR_CODES.STORE_IO, "unexpected objective storage failure", { cause: error })
   return textResult(
-    `${prefix}: ${message}`,
-    error instanceof ObjectiveError ? { code: error.code } : undefined,
+    `${prefix}: ${objectiveError.message}`,
+    { code: objectiveError.code },
     true,
   )
 }

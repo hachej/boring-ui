@@ -107,4 +107,19 @@ describe("objective agent tools", () => {
     expect(result.content[0]?.text).toBe("list_objectives failed: objective storage unavailable")
     expect(result.details).not.toHaveProperty("cause")
   })
+
+  it("normalizes an unexpected substituted-store failure instead of publishing it", async () => {
+    tools = createObjectiveTools({
+      store: {
+        list: async () => {
+          throw Object.assign(new Error("EIO: /host/private/objectives.json"), { code: "EIO" })
+        },
+      } as unknown as FileObjectiveStore,
+    })
+
+    const result = await tool("list_objectives").execute({}, ctx)
+    expect(result).toMatchObject({ isError: true, details: { code: OBJECTIVE_ERROR_CODES.STORE_IO } })
+    expect(result.content[0]?.text).toBe("list_objectives failed: unexpected objective storage failure")
+    expect(JSON.stringify(result)).not.toContain("/host/private")
+  })
 })

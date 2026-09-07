@@ -41,7 +41,8 @@ function assertContained(realRoot: string, realCandidate: string, requestedPath:
   if (rel === "" ) return
   if (rel.startsWith("..") || isAbsolute(rel)) {
     throw new WorkspacePathEscapeError(
-      `Resolved path escapes workspace root: ${requestedPath} -> ${realCandidate} (root ${realRoot})`,
+      "objective store path escapes workspace root",
+      { cause: new Error(`Resolved path escapes workspace root: ${requestedPath} -> ${realCandidate} (root ${realRoot})`) },
     )
   }
 }
@@ -69,7 +70,10 @@ export async function assertFileNotSymlink(filePath: string): Promise<void> {
     throw normalizePathError("failed to inspect objective store path", error)
   }
   if (stats.isSymbolicLink()) {
-    throw new WorkspacePathEscapeError(`Refusing to operate on a symlinked objective store file: ${filePath}`)
+    throw new WorkspacePathEscapeError(
+      "objective store file must not be a symlink",
+      { cause: new Error(`Refusing to operate on a symlinked objective store file: ${filePath}`) },
+    )
   }
 }
 

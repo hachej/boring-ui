@@ -18,7 +18,6 @@ import type { CreateObjectiveInput } from "../../shared/types"
 import { createObjectiveBridgeHandlers } from "../objectiveBridgeHandlers"
 import { FileObjectiveStore } from "../objectiveStore"
 import { createObjectiveTools } from "../objectiveTools"
-import { WorkspacePathEscapeError } from "../pathSafety"
 
 // Node's ESM module namespace is non-configurable, so `vi.spyOn` on the raw
 // `node:fs/promises` exports fails ("Cannot redefine property"). Route the
@@ -318,6 +317,8 @@ describe("FileObjectiveStore", () => {
 
       await expect(store2.update({ id: seeded.id, current: 1 })).rejects.toMatchObject({
         code: OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
+        message: "timed out waiting for the objective store write lock",
+        cause: expect.objectContaining({ message: expect.stringContaining(lockPath) }),
       })
 
       await rm(lockPath, { force: true })
@@ -408,7 +409,11 @@ describe("FileObjectiveStore", () => {
       await writeFile(outsideFile, JSON.stringify({ pid: 1, token: "x", timestamp: Date.now() - 60_000 }), "utf8")
       await symlink(outsideFile, lockPath)
 
-      await expect(s.update({ id: created.id, current: 5 })).rejects.toBeInstanceOf(WorkspacePathEscapeError)
+      await expect(s.update({ id: created.id, current: 5 })).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.PATH_ESCAPE,
+        message: "objective store lock file must not be a symlink",
+        cause: expect.objectContaining({ message: expect.stringContaining(lockPath) }),
+      })
 
       await rm(lockPath, { force: true })
       await rm(outsideDir, { recursive: true, force: true })
@@ -452,8 +457,64 @@ describe("FileObjectiveStore", () => {
       const outsideDir = await mkdtemp(join(tmpdir(), "objectives-outside-"))
       await symlink(outsideDir, join(workspaceRoot, ".boring"))
 
-      const escapee = new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"), { workspaceRoot })
-      await expect(escapee.create(input())).rejects.toBeInstanceOf(WorkspacePathEscapeError)
+      const storePath = join(workspaceRoot, ".boring", "objectives.json")
+      const escapee = new FileObjectiveStore(storePath, { workspaceRoot })
+      await expect(escapee.create(input())).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.PATH_ESCAPE,
+        message: "objective store path escapes workspace root",
+        cause: expect.objectContaining({ message: expect.stringContaining(workspaceRoot) }),
+      })
+
+      await rm(workspaceRoot, { recursive: true, force: true })
+      await rm(outsideDir, { recursive: true, force: true })
+    })
+
+    it("keeps PATH_ESCAPE diagnostics out of the real tool seam", async () => {
+      const workspaceRoot = await mkdtemp(join(tmpdir(), "objectives-workspace-"))
+      const outsideDir = await mkdtemp(join(tmpdir(), "objectives-outside-"))
+      await symlink(outsideDir, join(workspaceRoot, ".boring"))
+      const unsafeStore = new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"), { workspaceRoot })
+      const listTool = createObjectiveTools({ store: unsafeStore }).find((candidate) => candidate.name === "list_objectives")!
+      const ctx: ToolExecContext = { abortSignal: new AbortController().signal, toolCallId: "call-path" }
+
+      const result = await listTool.execute({}, ctx)
+      expect(result).toMatchObject({
+        isError: true,
+        details: { code: OBJECTIVE_ERROR_CODES.PATH_ESCAPE },
+      })
+      expect(result.content[0]?.text).toBe("list_objectives failed: objective store path escapes workspace root")
+      expect(JSON.stringify(result)).not.toContain(workspaceRoot)
+      expect(JSON.stringify(result)).not.toContain(outsideDir)
+
+      await rm(workspaceRoot, { recursive: true, force: true })
+      await rm(outsideDir, { recursive: true, force: true })
+    })
+
+    it("keeps PATH_ESCAPE diagnostics out of the actual WorkspaceBridge registry seam", async () => {
+      const workspaceRoot = await mkdtemp(join(tmpdir(), "objectives-workspace-"))
+      const outsideDir = await mkdtemp(join(tmpdir(), "objectives-outside-"))
+      await symlink(outsideDir, join(workspaceRoot, ".boring"))
+      const unsafeStore = new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"), { workspaceRoot })
+      const registry = createWorkspaceBridgeRegistry()
+      for (const entry of createObjectiveBridgeHandlers({ store: unsafeStore })) {
+        registry.registerHandler(entry.definition, entry.handler)
+      }
+      const context: WorkspaceBridgeCallContext = {
+        callerClass: "browser",
+        workspaceId: "workspace-1",
+        sessionId: "s1",
+        capabilities: [OBJECTIVE_BRIDGE_CAPABILITIES.list],
+        actor: { actorKind: "human", performedBy: { id: "user-1", label: "user:user-1" } },
+      }
+
+      const result = await registry.call({ op: OBJECTIVE_BRIDGE_OPS.list, input: {} }, context)
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: WorkspaceBridgeErrorCode.InvalidRequest, message: "objective store path escapes workspace root" },
+      })
+      expect(JSON.stringify(result)).not.toContain(workspaceRoot)
+      expect(JSON.stringify(result)).not.toContain(outsideDir)
+      expect(JSON.stringify(result)).not.toContain(OBJECTIVE_ERROR_CODES.PATH_ESCAPE)
 
       await rm(workspaceRoot, { recursive: true, force: true })
       await rm(outsideDir, { recursive: true, force: true })
@@ -473,9 +534,17 @@ describe("FileObjectiveStore", () => {
       await mkdir(join(workspaceRoot, ".boring"), { recursive: true })
       await symlink(outsideFile, join(workspaceRoot, ".boring", "objectives.json"))
 
-      const escapee = new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"), { workspaceRoot })
-      await expect(escapee.create(input())).rejects.toBeInstanceOf(WorkspacePathEscapeError)
-      await expect(escapee.list()).rejects.toBeInstanceOf(WorkspacePathEscapeError)
+      const storePath = join(workspaceRoot, ".boring", "objectives.json")
+      const escapee = new FileObjectiveStore(storePath, { workspaceRoot })
+      await expect(escapee.create(input())).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.PATH_ESCAPE,
+        message: "objective store file must not be a symlink",
+        cause: expect.objectContaining({ message: expect.stringContaining(storePath) }),
+      })
+      await expect(escapee.list()).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.PATH_ESCAPE,
+        message: "objective store file must not be a symlink",
+      })
 
       await rm(workspaceRoot, { recursive: true, force: true })
     })

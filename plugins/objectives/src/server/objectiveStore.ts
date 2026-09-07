@@ -229,7 +229,8 @@ export class FileObjectiveStore implements ObjectiveStore {
       if (!(await this.acquireLock(lockPath, token))) {
         throw new ObjectiveStoreError(
           OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
-          `timed out waiting for the objective store write lock at ${lockPath}`,
+          "timed out waiting for the objective store write lock",
+          { cause: new Error(`Objective store lock acquisition timed out at ${lockPath}`) },
         )
       }
       try {
@@ -322,7 +323,10 @@ export class FileObjectiveStore implements ObjectiveStore {
       throw normalizeStoreIoError("failed to inspect objective store lock", error)
     }
     if (stats.isSymbolicLink()) {
-      throw new WorkspacePathEscapeError(`Refusing to operate on a symlinked objective store lock file: ${lockPath}`)
+      throw new WorkspacePathEscapeError(
+        "objective store lock file must not be a symlink",
+        { cause: new Error(`Refusing to operate on a symlinked objective store lock file: ${lockPath}`) },
+      )
     }
     try {
       const raw = await readFile(lockPath, "utf8")
