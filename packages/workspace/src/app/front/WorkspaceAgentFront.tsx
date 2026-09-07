@@ -147,7 +147,7 @@ export interface WorkspaceAgentSessionsApi<
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   loadArchived?: () => void | Promise<unknown>
-  refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
+  refresh?: (options?: { background?: boolean; throwOnError?: boolean; agentTypeId?: string }) => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
