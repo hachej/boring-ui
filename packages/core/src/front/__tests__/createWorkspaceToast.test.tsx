@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Toaster, clearToasts, useToast, type ToastEventInput } from '@hachej/boring-ui-kit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CreateWorkspaceDialog } from '../components/CreateWorkspaceDialog'
 import { useMswHandler } from './_setup'
 
-afterEach(() => clearToasts())
+afterEach(() => act(clearToasts))
 
 describe('toast delivery through the public UI kit', () => {
   it('shows a workspace creation rejection in the mounted Toaster and keeps the form open', async () => {
