@@ -1,0 +1,226 @@
+{
+  "config": {
+    "argv": [
+      "/home/ubuntu/.local/share/fnm/node-versions/v22.22.1/installation/bin/node",
+      "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/node_modules/@playwright/test/cli.js",
+      "test",
+      "--config",
+      "docs/issues/1544/browser-proof/playwright.config.ts"
+    ],
+    "configFile": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof/playwright.config.ts",
+    "rootDir": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/tmp/pr1544-base-smoke",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof",
+        "testIgnore": [],
+        "testMatch": [
+          "chat-event-ownership.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/tmp/pr1544-base-smoke",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/home/ubuntu/projects/boring-ui-v2/.worktrees/pr-1544-lane/docs/issues/1544/browser-proof",
+        "testIgnore": [],
+        "testMatch": [
+          "chat-event-ownership.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/tmp/pr1544-base-smoke/results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "pnpm exec vite --config vite.config.ts --port 5614",
+      "url": "http://127.0.0.1:5614",
+      "reuseExistingServer": false,
+      "timeout": 60000
+    }
+  },
+  "suites": [
+    {
+      "title": "chat-event-ownership.spec.ts",
+      "file": "chat-event-ownership.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "stale and contradictory terminals cannot falsely complete; valid next turn completes once",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 31042,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "proof phase before submit: Stream checkpointready\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T15:07:46.101Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "assertions.json",
+                      "contentType": "application/json",
+                      "body": "ewogICJyZXZpc2lvbkxhYmVsIjogImJlZm9yZSIsCiAgInZpZXdwb3J0IjogewogICAgIndpZHRoIjogMTQ0MCwKICAgICJoZWlnaHQiOiA5MDAKICB9LAogICJzdGFsZVRlcm1pbmFsQ2FsbGJhY2tzIjogMSwKICAiY2FsbGJhY2tzQWZ0ZXJSZWplY3RlZFRlcm1pbmFscyI6IDIsCiAgImNhbGxiYWNrc0FmdGVyVmFsaWROZXh0VHVybiI6IDMKfQ=="
+                    },
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/tmp/pr1544-base-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/test-finished-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/tmp/pr1544-base-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/video.webm"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/tmp/pr1544-base-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-desktop/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "f450dbe57742ed8dc755-7768bc571f1014f0e998",
+          "file": "chat-event-ownership.spec.ts",
+          "line": 6,
+          "column": 1
+        },
+        {
+          "title": "stale and contradictory terminals cannot falsely complete; valid next turn completes once",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 16218,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "proof phase before submit: Stream checkpointready\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T15:08:22.340Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "assertions.json",
+                      "contentType": "application/json",
+                      "body": "ewogICJyZXZpc2lvbkxhYmVsIjogImJlZm9yZSIsCiAgInZpZXdwb3J0IjogewogICAgIndpZHRoIjogMzkwLAogICAgImhlaWdodCI6IDg0NAogIH0sCiAgInN0YWxlVGVybWluYWxDYWxsYmFja3MiOiAxLAogICJjYWxsYmFja3NBZnRlclJlamVjdGVkVGVybWluYWxzIjogMiwKICAiY2FsbGJhY2tzQWZ0ZXJWYWxpZE5leHRUdXJuIjogMwp9"
+                    },
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/tmp/pr1544-base-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/test-finished-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/tmp/pr1544-base-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/video.webm"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/tmp/pr1544-base-smoke/chat-event-ownership-stale-aa0f0-id-next-turn-completes-once-mobile/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "f450dbe57742ed8dc755-cc25d34a4a91c27ed69f",
+          "file": "chat-event-ownership.spec.ts",
+          "line": 6,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-07T15:07:35.193Z",
+    "duration": 66235.875,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
