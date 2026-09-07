@@ -1,0 +1,22 @@
+:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #f3f0e9; color: #1d211f; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { min-height: 100vh; padding: 24px; display: grid; grid-template-rows: auto auto minmax(420px, 1fr); gap: 16px; }
+header, .journey, .chat-shell { border: 1px solid #d6d0c4; background: #fffdf8; border-radius: 16px; box-shadow: 0 8px 28px rgba(34, 38, 35, .07); }
+header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; gap: 20px; }
+h1 { margin: 2px 0 0; font-size: 28px; letter-spacing: -.03em; }
+.eyebrow { margin: 0; color: #63706a; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
+.counter { min-width: 190px; padding: 12px 16px; border-radius: 12px; background: #e8f3ec; color: #174c31; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.counter span, .phase span { font-size: 12px; }
+.counter strong { font-size: 30px; line-height: 1; }
+.journey { padding: 14px 20px; display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: 16px; font-size: 13px; color: #4d5651; }
+.journey p { margin: 0; }
+.phase { min-width: 220px; padding: 10px 12px; border-radius: 10px; background: #222825; color: white; display: grid; gap: 3px; }
+.chat-shell { min-height: 0; overflow: hidden; }
+@media (max-width: 700px) {
+  main { padding: 10px; grid-template-rows: auto auto minmax(520px, 1fr); gap: 10px; }
+  header { align-items: stretch; padding: 14px; flex-direction: column; }
+  h1 { font-size: 23px; }
+  .journey { padding: 12px; grid-template-columns: 1fr; }
+  .phase { min-width: 0; }
+}
