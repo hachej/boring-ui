@@ -4,7 +4,7 @@
 
 - **Actual PR base / before:** `3db6a237d0ace94c83fb4967e43407d65202706e`. This is the original PR base reported by GitHub and contains the callback-before-reducer bug. The source-backed fixture uses normal hydration (rather than the later `hydrateMessages=false` path), so the exact base can establish its event stream before the prompt without importing unrelated first-prompt behavior.
 - **Repaired production code:** `1f91c319958f0a2d37b2badb13174b4068234055`.
-- **Final exact proof/artifact head:** `fd08b2b3d3918c9a6a8ab1d49b831bbba60ae939`. Commits after the code SHA contain only Bead/proof artifacts, the bounded cold-start timeout, presentation generation, and metadata sanitization.
+- **Report-bound exact proof execution:** `fd08b2b3d3918c9a6a8ab1d49b831bbba60ae939`. Commits after the code SHA contain only Bead/proof artifacts, the bounded cold-start timeout, presentation generation, and metadata sanitization. The Bead handoff binds the later artifact-only presentation refresh to its own exact-SHA rerun.
 - **Fixture:** one redacted prompt, session `ownership-proof`, fixed model `anthropic/proof-model`, no credentials, customer data, network backend, or host paths in artifacts.
 - **Viewports:** desktop `1440×900`; mobile `390×844`. Playwright scales recorded video to its codec-safe maximum (`800×500` and `368×800` respectively); assertions run at the declared viewport.
 
@@ -71,7 +71,7 @@ Artifact integrity is recorded in [`results/SHA256SUMS`](results/SHA256SUMS) and
 
 ## Relevant package proof
 
-At final proof/artifact head `fd08b2b3d` in the same sandbox:
+At report-bound proof execution `fd08b2b3d` in the same sandbox:
 
 - focused Vitest — PASS, 3 files / 184 tests, no type errors;
 - `pnpm --filter @hachej/boring-agent typecheck` — PASS;
