@@ -546,8 +546,11 @@ queue item changes; P1-A dispatch is unaffected.
 
 ## Amendment 2026-09-05 — Workspace Evolution
 
-> The 2026-09-06 amendment below supersedes the consumer selection in this
-> section. Its premise gates and priority stand except where explicitly scoped.
+> **Historical record — do not dispatch from this section.** The 2026-09-06
+> amendment superseded its consumer selection, and the 2026-09-07 native-creation
+> amendment is now the sole current dispatch authority. The owner-ratified
+> premise gates, priority, and lifecycle substance below remain historical
+> context except where a later amendment explicitly re-rules them.
 
 **Owner-requested; effective on owner merge. Specified, not implemented by
 this PR.** Add Workspace Evolution as a named platform-consumer program:
@@ -559,8 +562,9 @@ personal-scope proof. Pricing, offer design, and vertical GTM remain tenant-side
 
 The binding scope is [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 The [execution plan](../plans/native-creation/LIFECYCLE.md) owns milestone
-acceptance, seam ownership, rollout, and proof. This amendment alone owns
-dispatch; the M0–M8 capability crosswalk is not another queue.
+acceptance, seam ownership, rollout, and proof. At adoption, this amendment
+alone owned dispatch; it no longer does, and the M0–M8 capability crosswalk
+was not another queue.
 
 | Slice | Dispatch and release dependency |
 |---|---|
@@ -589,13 +593,13 @@ them. Saved Views still wait for the complete ratified View
 contract. Early product-specific props may select existing components; they
 may not create a replacement ViewDescriptor under an overlay name.
 
-**Next work on adoption:** execute E0 against the Clinic document-dashboard
-request, including a second supported mount, no-chat navigation, and French
-review/status copy. Record missing domain operations and session-identity
-migration needs; prepare E1 against the then-current premise evidence. These
-fixture proofs do not wait for a full Meridian shell or multi-agent engine.
-No capability is closed by this plan PR, and no calendar estimate substitutes
-for a gate.
+**Historical next-work instruction at adoption — do not dispatch:** E0 was to
+run against the Clinic document-dashboard request, including a second supported
+mount, no-chat navigation, and French review/status copy. It was to record
+missing domain operations and session-identity migration needs and prepare E1
+against the then-current premise evidence. Those fixture proofs did not wait
+for a full Meridian shell or multi-agent engine. No capability was closed by
+this plan PR, and no calendar estimate substituted for a gate.
 
 The done-bar is a direct request kept through real use and a supported
 upgrade, followed by approved reuse in another private workspace. Track all
