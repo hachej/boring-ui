@@ -1,229 +1,62 @@
-# Boring — the vision, in one place
+# Boring — the vision, one edition (2026-09-07)
 
-One story, four layers, told once. Every section links down into the pack
-that owns the detail; this file never contradicts them and never re-decides
-anything. If a statement here and a ratified document disagree, the ratified
-document wins and this file has a bug.
+This is the readable, consolidated statement of what Boring is and how it is
+built, written in the present tense from every ruling in force on
+2026-09-07. It **decides nothing new**. Each chapter ends with a crosswalk to
+the ruling it restates; [`CROSSWALK.md`](CROSSWALK.md) is the full map, and the
+append-only ledgers remain the authority when wording differs:
 
-Companion files: [`explorations.md`](explorations.md) — every spike, study
-and evaluation behind these decisions, with verdicts —
-and [`../roadmap/README.md`](../roadmap/README.md) — how this sequences.
+> User/owner rulings > [`DECISIONS.md`](../DECISIONS.md) + [`RECONCILIATION.md`](../plans/long-term/ratified/RECONCILIATION.md) >
+> [`DIRECTION.md`](../direction/DIRECTION.md) for *when* > this edition for *what* > everything else.
 
----
+Earlier readable versions live in [`history/`](history/); the exploration ledger
+is [`explorations.md`](explorations.md).
 
-## The one paragraph (ratified compact thesis, 2026-08-27)
+## The one paragraph
 
-Boring is a **sovereign agent-native application platform**. Humans, agents,
-automations, and authorized external clients perform durable domain work
-through governed operations over private sources; they produce attributable
-artifacts and effects, receive human decisions and real outcomes, and can
-improve through controlled versioned revision.
+An expert creates useful software inside Seneca, uses it to do a job, changes
+its method and interface, installs it for someone else, and keeps it working
+through upstream updates — without a founder editing source. Boring is the
+substrate that makes that dependable: a governed job root (Thread), semantic
+Views over domain records, agents that act inside a durable job under one
+authority funnel, immutable releases installed per consumer and run in their
+own isolated runtime, and evidence bound to the exact software that did the
+work. Pricing, offers and go-to-market live in the tenant; the platform ships
+neutral substrate.
 
-There is **one product family hired for three jobs**: **Operate** domain
-work, **Distribute** expert capability, and **Improve** candidates or
-methods against evidence. The product may be consumed as route-first SaaS, a
-headless or channel-first agent job, a personal expert agent, an embedded
-capability, or the **flagship multi-agent workspace shell (Meridian)** — no
-one surface owns the substrate. Every visible product is an *Experience over
-the governed work substrate*; the explicit optimization loop attaches where
-a real objective and outcome signal exist.
+## Read in this order
 
-## Native creation — the first complete product journey (ratified 2026-09-07)
+| # | Chapter | Answers |
+|---|---|---|
+| 1 | [Product and journey](01-product-and-journey.md) | What is being built, for whom, and what "done" means |
+| 2 | [Jobs and Threads](02-jobs-and-threads.md) | The unit of work, conversations, runs, durability |
+| 3 | [Views and Experiences](03-views-and-experiences.md) | How people see and steer work; where a product lives |
+| 4 | [Software evolution](04-software-evolution.md) | Release, installation, activation, change, reconciliation |
+| 5 | [Agents and multi-agent](05-agents-and-multi-agent.md) | Agent packages, Seats, builder vs domain agents, teams |
+| 6 | [Authority and isolation](06-authority-and-isolation.md) | One funnel, capabilities, sandboxes, runtime modes |
+| 7 | [Data, knowledge and evidence](07-data-knowledge-evidence.md) | Records, operations, evaluation, cost |
+| 8 | [Platform, tenants and delivery](08-platform-tenants-delivery.md) | Platform/tenant split, execution home, the factory |
+| — | [Crosswalk](CROSSWALK.md) | Chapter section → ruling |
 
-An expert creates useful software **inside Seneca**, uses it to complete a
-job, changes its method and interface, installs it for a separate consumer,
-and maintains it through an upstream update, **without founder source edits**.
-Creation is itself a job: the expert supplies intent, knowledge, examples,
-judgment and authorization; the platform performs the engineering. This is
-now the first complete journey, ahead of public packaging, marketplaces or
-owned compute. Three layers make it safe: the **host** brokers identity, data
-and activation; each installed product runs in its own **product runtime**
-(in-process only for a single-tenant curator, otherwise a local or remote
-sandboxed runtime); builders work in disposable **sandboxes** that are never
-the product host. Rulings: [RECONCILIATION §13](../plans/long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey);
-pack: [`native-creation/`](../plans/native-creation/README.md). The two
-sections below are its lifecycle "how", folded from the former Workspace
-Evolution pack.
+## Vocabulary (one line each)
 
-## The software behind every Experience (owner-requested clarification, 2026-09-06)
+- **Thread** — one durable job; binds zero or more **Sessions** (runtime conversations).
+- **Run** — one admitted agent execution inside a Thread; identified by its request key.
+- **View** — a semantic descriptor (collection, record, document, dashboard…) resolved by the host; agents never see renderers.
+- **Experience** — a composed product surface over the substrate; Meridian is the flagship, not the only one.
+- **Agent** — a packaged persona with skills, knowledge and tools, identified by a content digest.
+- **Seat** — an agent's participation in a workspace; grants participation, never identity.
+- **Product** — an installable unit: agents plus operations, schema, Views and evidence, under one release identity.
+- **Release** — an immutable, content-addressed manifest of a product.
+- **Installation** — a release bound to a scope (workspace or person), resources, grants and a runtime mode.
+- **Activation** — the compare-and-set act that makes a release the installation's active one; undo is another activation.
+- **Product runtime** — the durable, isolated process serving one installation (`embedded` · `local` · `remote`).
+- **Sandbox** — a disposable environment lease for tool calls, builds and checks; never a product host.
+- **Builder** — the agent class allowed to write software inside a candidate; it never activates.
 
-**Boring lets people compose and maintain software around their work.**
-“System of record + UI + agent workflows” is a useful starting point; the
-general model also needs domain operations, knowledge that may remain in
-external/read-only sources, and work that may be deterministic or human-led.
+## What this edition is not
 
-| Responsibility | Product meaning |
-|---|---|
-| State and knowledge | What the product knows or owns: records, sources, files, drafts and artifacts, with identity, versions and provenance |
-| Domain operations | What can be done: queries, calculations, validation, transitions and effects, defined once for authorized callers |
-| Experiences | How people interact: chat, documents, tables/charts, forms, review queues, embedded or headless surfaces |
-| Durable work | What is underway: bounded jobs, status, decisions and results, with optional agent participation and conversation |
-
-**Authority, evidence and lifecycle control apply across all four.** These
-are responsibilities mapped to existing contracts, not new universal kernel
-nouns or four services. A UI must not own business rules; an agent must not
-own domain truth or grant itself authority. Ordinary browsing, manual work
-and deterministic calculation must remain useful without inference.
-
-The three adaptations expose different requirements: **Clinic** is
-document/record-led; **Charlotte Ledoux/Seneca** is a source-grounded knowledge
-product with read-only corpus and writable drafts; **ESG portfolio analysis**
-tests reproducible calculations, input freshness and scenario comparison.
-The ESG details remain a proposed stress case from the owner's description,
-not a verified implementation. None defines the universal application schema.
-
-The [software model](software-model.md) contains the ownership map, source
-scope, cross-domain proof and refutation tests. It is the §12 model retained by
-the 2026-09-07 native-creation ruling; §13 updates its first consumer and timing.
-No implementation is claimed by this documentation.
-
-## Personal software evolution (owner-requested extension, 2026-09-05)
-
-An Experience can become the user's own software: start with a minimal useful
-workspace, ask it to change its layout or permitted behavior, inspect a
-candidate, and keep or undo it. Intentional customizations survive shared
-upgrades; approved improvements can become optional reusable components or
-domain packages. A raw workspace should support useful work immediately and
-can adopt a domain starter without making the user design the application.
-
-The branch is normally a private versioned composition of shared packages,
-local settings, behavior assets, and isolated custom modules. The host keeps
-identity, authority, recovery, and activation; business records remain separate
-from software revisions. Full layout variation is a supported goal, while
-Meridian remains the flagship workspace Experience. Personalization does not
-mutate a shared expert for every subscriber or require a measurable A/B result
-for every preference.
-
-Domain resources/operations, primary surfaces, presence, triggers, and scoped
-context are independent composition choices. A French **Documents médicaux**
-dashboard, a source-grounded expert conversation, and an analytical workbench
-can compose supported units without forking operation meaning. Records,
-knowledge and admitted server work outlive browser views; status and decisions
-stay reachable outside chat. [Composition contracts and stress cases](../plans/native-creation/LIFECYCLE.md#composable-experiences-and-ambient-work)
-make this checkable across domain fixtures before generalized platform claims.
-
-This is specified future work, grounded in [RECONCILIATION
-§11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution)
-and retained by §13. [Workspace Evolution](../plans/native-creation/LIFECYCLE.md)
-defines the E0–E6 proofs; the [DIRECTION amendment of
-2026-09-07](../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
-controls current dispatch. The 2026-09-06 cross-domain preparation remains
-context for later consumers; the first live proof is the Seneca mathematics
-tutor. Clinic retains its own migration and capture obligations; commercial
-sequencing remains tenant-owned.
-
-## Layer 1 — the execution engine (built, hardening)
-
-Agents run behind **one gateway** — a single frozen session contract and a
-single construction path every consumer uses (workspace app, CLI,
-playground, delegation). One canonical workspace filesystem, no copies;
-authority that only narrows; a fleet fixed at deployment and validated at
-boot. This layer shipped (v0.1.91, Decision 29) and its next obligation is
-**durable streams**: conversations a client can always resume, which the
-multi-agent layer refuses to build without.
-
-Detail: [`../plans/agent-runtime/`](../plans/agent-runtime/README.md) ·
-binding contract `packages/agent/docs/AGENT_GATEWAY_V0.md`.
-
-**Substrate strategy — post-spike, 2026-08-27.** The published pi 0.84.3
-package contains a usable durable Session storage layer but NOT the
-operational AgentHarness runtime or v3 importer the earlier analysis assumed
-— the empirical spike proved the operational surface is scaffolding, and the
-lane model fails the posts-only isolation test as shipped. Boring therefore
-does not adopt 0.84.3. Boring proceeds now with its substrate-neutral
-gateway, admission, recovery, activity, and human-pause work behind D29 (a
-private harness backend seam underneath the gateway — components never
-depend on pi). The event-stream storage slice is built on
-**Boring's own schema** behind that seam — the pi wait gate was removed by
-owner ruling 2026-08-27 (RECONCILIATION §9c); a future pi release is adopted
-only if it beats the behavior criteria **and** the migration cost of a
-working backend. Analysis + criteria:
-[pi-v2-alignment](../plans/multiagent-shell/research/pi-v2-alignment.md) ·
-[spike report](../plans/multiagent-shell/research/pi-core-adoption-spike-report.md).
-
-## Layer 2 — the optimization kernel (the new work)
-
-Objective → Candidate → Evaluation → Outcome → Evidence: explicit optimization
-records attach where a real objective and measurable outcome exist. They
-consume attributable work; ordinary operate-mode tasks need not become
-experiments. Improvement remains a hypothesis until independent evidence
-demonstrates it. The frozen ontology ports into a clean kernel interface-first.
-
-Detail: [`../plans/long-term/ratified/VISION.md`](../plans/long-term/ratified/VISION.md)
-(the merged ratified vision) and its implementation spec beside it.
-
-## Layer 3 — the product surfaces (specified, premise-gated)
-
-Meridian, the flagship **multi-agent workspace shell**: Search on top, then Inbox / Work /
-Agents / Library over one workspace. A **Thread is one job** — the durable
-job root, binding zero or more conversations (RECONCILIATION §9a). In
-Meridian it reads like a Slack thread: **one composer, explicit
-specialists** — several named agents visibly authoring posts, with per-agent
-work logs one drill-down deeper (§9b; the earlier "workers hidden behind one
-voice" framing is retired). Threads archive, they never die. The embedded workbench is one
-component mounted four ways (thread canvas, evidence viewer, file popover,
-standalone Library). Two deliberate boundaries: artifacts are **shared**
-through the workspace; conversation is **posts-only** — agents share the
-work, never each other's minds and keys.
-
-The design is settled — an owner-iterated design canvas plus a running spike
-recomposing shipped components, ratified as specification artifacts. What the
-surface *waits on* is kernel truth: durable streams, a decided thread-storage
-model, and audit-grade who-said-what. Premises before surface.
-
-Detail: [`../plans/multiagent-shell/`](../plans/multiagent-shell/README.md)
-(front door → premises → shell → engine → consumer chapters, plus the
-absorbed north-star ruling ledger).
-
-## Layer 4 — the commercial motion (lives in the tenant repos)
-
-The platform repo deliberately holds **no** pricing, campaigns, or GTM
-sequencing. Verticals are *recipes* — domain sources and operations, supported
-views, permitted work patterns, optional objectives and participants — and the
-tenant repositories (Seneca) own which recipe sells first, to whom, at what
-price. Today that motion is real: paying subscribers on the creator side, a
-deployed client tenant, and a commercial roadmap that references these
-platform documents rather than duplicating them.
-
-Detail: the Seneca repository's `docs/COMMERCIAL-ROADMAP.md`.
-
----
-
-## What is deliberately NOT decided
-
-Honesty about open questions is part of the vision:
-
-- **Thread storage shape** — first-class Thread stream vs a projection over
-  Session records: goes to the dedicated shape spike (the competitor study
-  is done; the value-root half was ruled — RECONCILIATION §9a).
-- **Relay vs native binding vs blackboard** — how agent turns technically
-  hop: decided after durable streams land; the ratified default is the
-  native in-process binding unless an explicit amendment says otherwise.
-
-*(Resolved since first writing: the orchestrator's Seat — the owner amended
-the promise to multi-author transcripts, and the orchestrator holds its own
-Seat like any named speaker — §9b.)*
-
-The complete conflict record and how each was resolved:
-[`../plans/agent-runtime/alignment/CONTRADICTIONS.md`](../plans/agent-runtime/alignment/CONTRADICTIONS.md).
-
-**The compact product thesis above is ratified (owner ruling 2026-08-27,
-via PR #1409).** Its long-form source — the 2026-08-17 synthesis set in
-`../plans/long-term/inbox/` (the Distribution × Adaptivity matrix, the
-cross-cutting requirements: prompt-injection as untrusted data,
-deterministic domain kernels, immutable-revision promotion,
-`npx boring create`/`deploy`) — remains **reference and capability-atlas
-material, not a dispatch list**; promoting any of its detailed capabilities
-into scheduled work still goes through DIRECTION and the gates. The
-2026-08-27 full-vision review that drove this ratification is at
-[`../plans/multiagent-shell/research/full-vision-review-2026-08-27.md`](../plans/multiagent-shell/research/full-vision-review-2026-08-27.md).
-
-## Who owns what
-
-| Question | Owner |
-|---|---|
-| What is true (ontology, invariants, decisions) | `docs/plans/long-term/ratified/` + `docs/DECISIONS.md` |
-| Why things wait on each other | `docs/plans/multiagent-shell/premises.md` |
-| **When** anything runs | `docs/direction/DIRECTION.md` — alone |
-| What was tried and what it proved | [`explorations.md`](explorations.md) |
-| What sells and for how much | the Seneca tenant repository |
+Not the schedule (DIRECTION alone answers *when*), not a claim that anything
+described is built (the crosswalk marks implementation status), and not a new
+abstraction pass: the ontology frozen in 2026-08 stands, with the 2026-09-07
+rulings folded in.

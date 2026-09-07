@@ -110,7 +110,7 @@ prove private adaptation, downstream maintenance, and approved reuse:
 | E6 — approved reuse | A second workspace adopts a useful optional package | E5 + export/maintainer authority and reuse evidence |
 
 E5's configuration proof runs before expanding the catalog; it does not wait
-for generated modules. [The software model](../vision/software-model.md)
+for generated modules. [The software model](../vision/04-software-evolution.md)
 uses Clinic, Charlotte/Seneca and a labeled ESG hypothesis to test distinct
 responsibilities. One selected consumer earns the first live loop; another
 earns a claimed shared capability. Clinic retains its own migration/capture

@@ -16,7 +16,7 @@ The procedure distinguishes adopted policy from automation not yet enabled.
 
 ## Cold-start reading order (5 files)
 
-1. [`vision/README.md`](vision/README.md) — what Boring is, the ratified thesis.
+1. [`vision/README.md`](vision/README.md) — what Boring is: the consolidated 2026-09-07 edition, one chapter per aspect (jobs, Views, software evolution, agents, authority, data, platform) with a crosswalk to every ruling.
 2. [`roadmap/README.md`](roadmap/README.md) — the shape of the programs.
 3. [`direction/DIRECTION.md`](direction/DIRECTION.md) — the ONLY "when".
 4. [`plans/multiagent-shell/README.md`](plans/multiagent-shell/README.md) — the premises program pack; [`plans/native-creation/README.md`](plans/native-creation/README.md) — the native-creation program pack (its named consumer).
@@ -42,7 +42,7 @@ User/owner rulings > ratified pack ([`plans/long-term/ratified/`](plans/long-ter
 
 | Need | Read |
 | --- | --- |
-| **The whole vision, one story** (four layers, proof ledger, open questions) | [`vision/`](vision/README.md) — [`explorations.md`](vision/explorations.md) proof ledger |
+| **The whole vision, one edition** (eight chapters + crosswalk; ruling-neutral) | [`vision/`](vision/README.md) — [`CROSSWALK.md`](vision/CROSSWALK.md) · [`explorations.md`](vision/explorations.md) proof ledger · [`history/`](vision/history/) earlier editions |
 | **The roadmap, readable** (how programs relate; defers to DIRECTION for all scheduling) | [`roadmap/`](roadmap/README.md) |
 | Direction & sequencing authority (the ONLY executable ordering) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
 | Ratified long-term architecture pack (frozen; owner rulings) | [`plans/long-term/ratified/`](plans/long-term/ratified/README.md) — [`VISION.md`](plans/long-term/ratified/VISION.md) · [`ARCHITECTURE-PLAN.md`](plans/long-term/ratified/ARCHITECTURE-PLAN.md) · [`RECONCILIATION.md`](plans/long-term/ratified/RECONCILIATION.md) |

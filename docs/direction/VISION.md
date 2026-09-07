@@ -127,7 +127,7 @@ flexibility checkable rather than turning each product mode into another shell
 and runtime implementation.
 
 Normative amendment: [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
-Readable vision: [vision overview](../vision/README.md#personal-software-evolution-owner-requested-extension-2026-09-05).
+Readable vision: [vision overview](../vision/04-software-evolution.md).
 Milestones/proof: [Workspace Evolution](../plans/native-creation/LIFECYCLE.md).
 The September 5 dispatch amendment is historical; current dispatch is the
 [DIRECTION amendment of 2026-09-07](DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).
@@ -166,7 +166,7 @@ keeps its own domain acceptance criteria. Clinic's migration does not gate a
 knowledge product, and a source-corpus skin does not prove clinical readiness.
 No all-client deployment or marketplace is required for a useful private edit.
 
-The [software model](../vision/software-model.md) owns the readable synthesis
+The [software model](../vision/04-software-evolution.md) owns the readable synthesis
 and pinned source scope. [RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof)
 records the named amendment. Its bounded September 6 dispatch change is
 historical; the [2026-09-07 amendment](DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)

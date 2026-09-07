@@ -573,7 +573,7 @@ Plan and milestone acceptance: [Workspace Evolution](../../native-creation/LIFEC
 The owner requested a step back from Clinic-specific framing and a stronger
 general software model, naming the Charlotte Ledoux/Seneca adaptation and ESG
 portfolio-impact analysis. This clarifies §§8–11 and makes the consumer-scope
-change below explicit. The [software model](../../../vision/software-model.md)
+change below explicit. The [software model](../../../vision/04-software-evolution.md)
 is the readable synthesis. The September 6 DIRECTION amendment was the dispatch
 authority for this scope when adopted; §13 later supersedes its first consumer,
 timing and execution home, and the [September 7 amendment](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)

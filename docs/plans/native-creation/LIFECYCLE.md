@@ -40,7 +40,7 @@ Experiences + durable work**, under authority, evidence and lifecycle control.
 These are responsibilities over existing contracts, not a new ontology.
 Sources may remain external or read-only; deterministic calculation and manual
 work are first-class. An agent does not own domain truth or business rules.
-The [software model](../../vision/software-model.md) maps existing nouns and
+The [software model](../../vision/04-software-evolution.md) maps existing nouns and
 separates verified evidence from proposed examples.
 
 Prepare against two materially different source-backed adaptations: Clinic's
@@ -367,7 +367,7 @@ bounded builder function with relevant context; it does not inject engineering
 guidance into every clinical interaction or require a roster of agents.
 
 Seneca's creator-package publication, exact-commit validation and host
-activation are additional reuse seams ([source scope](../../vision/software-model.md#source-scope)).
+activation are additional reuse seams ([source scope](../../vision/04-software-evolution.md)).
 They do not prove generic personal overlays/reconciliation, and source
 inspection does not establish the active production digest.
 

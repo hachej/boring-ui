@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded 2026-09-07** by the consolidated edition at [`../README.md`](../README.md). Kept for the record; do not cite as current. This was the software model (2026-09-06).
+
 # [Workspace Evolution] One software model, many Experiences
 
 2026-09-06 owner-requested clarification, folded into the native-creation
