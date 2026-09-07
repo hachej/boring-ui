@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
 import type { DemoEntry, FactoryDemoPluginControl } from './demoPlugin'
 import type { FactorySupervisionPluginControl } from './supervisionPlugin'
-import { invalidateEpicSnapshot } from '../sandbox'
+import { invalidateAllEpicSnapshots } from '../sandbox'
 
 const execFileAsync = promisify(execFile)
 
@@ -79,6 +79,7 @@ export interface EpicClosureReceipt {
   epicBead?: EpicClosureBeadOutcome
   supervision?: { readonly status: 'stopped' | 'already-stopped' | 'failed'; readonly error?: string }
   snapshotInvalidation?: { readonly status: 'invalidated' | 'failed'; readonly error?: string }
+  registry?: { readonly status: 'closed' | 'failed'; readonly error?: string }
 }
 
 export interface EpicClosureDeps {
@@ -90,7 +91,8 @@ export interface EpicClosureDeps {
   readonly workspaceScopeId: string
   readonly demoControl: FactoryDemoPluginControl
   readonly supervisionControl: FactorySupervisionPluginControl
-  readonly invalidateSnapshotFn?: typeof invalidateEpicSnapshot
+  readonly markRegistryClosed: (epicKey: string) => Promise<unknown>
+  readonly invalidateSnapshotFn?: typeof invalidateAllEpicSnapshots
 }
 
 interface GhPrView {
@@ -252,8 +254,8 @@ export async function executeCloseEpic(
     }
 
     try {
-      const invalidator = deps.invalidateSnapshotFn ?? invalidateEpicSnapshot
-      await invalidator(deps.stateRoot, deps.epicKey, verifiedPr.mergeCommitSha)
+      const invalidator = deps.invalidateSnapshotFn ?? invalidateAllEpicSnapshots
+      await invalidator(deps.stateRoot, deps.epicKey)
       receipt.snapshotInvalidation = { status: 'invalidated' }
     } catch (error) {
       return textResult({
@@ -267,7 +269,7 @@ export async function executeCloseEpic(
       }, false)
     }
 
-    const demos = await deps.demoControl.listDemosForSession(callingSessionId)
+    const demos = await deps.demoControl.listDemosForEpic(deps.epicKey)
     for (const [id, entry] of Object.entries(demos)) {
       try {
         const outcome = await deps.demoControl.stopDemo(id)
@@ -323,6 +325,17 @@ export async function executeCloseEpic(
       receipt.code = 'SUPERVISION_STOP_FAILED'
       receipt.message = 'epic closed, but stopSupervision failed'
       receipt.supervision = { status: 'failed', error: safeMessage(error) }
+      return textResult(receipt as unknown as Record<string, unknown>, false)
+    }
+
+    try {
+      await deps.markRegistryClosed(deps.epicKey)
+      receipt.registry = { status: 'closed' }
+    } catch (error) {
+      receipt.overall = 'partial'
+      receipt.code = 'REGISTRY_CLOSE_FAILED'
+      receipt.message = 'epic Beads and supervision closed, but the Factory registry could not be marked closed'
+      receipt.registry = { status: 'failed', error: safeMessage(error) }
     }
 
     return textResult(receipt as unknown as Record<string, unknown>, false)

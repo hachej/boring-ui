@@ -12,6 +12,7 @@ import {
   sha256File,
   type ResolveEpicSnapshotOptions,
 } from './snapshotRegistry'
+import { normalizeRemoteUrl } from './remoteSnapshotProvider'
 import type { WarmSnapshotResult } from './warmSnapshot'
 
 const execFileAsync = promisify(execFile)
@@ -84,11 +85,18 @@ describe('resolveEpicSnapshot', () => {
     expect(result.reused).toBe(false)
     expect(result.snapshotId).toBe('snap_1')
     expect(createSnapshot).toHaveBeenCalledTimes(1)
+    const originUrl = (await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: workspaceRoot })).stdout.trim()
+    expect(createSnapshot).toHaveBeenCalledWith(expect.objectContaining({ ref: expect.stringMatching(/^[0-9a-f]{40}$/), remoteUrl: originUrl }))
 
     const lockfileSha256 = await sha256File(resolve(workspaceRoot, 'pnpm-lock.yaml'))
     const registryPath = resolve(stateRoot, 'snapshots.json')
     const stored = JSON.parse(await readFile(registryPath, 'utf8'))
     expect(stored.entries[registryKey('epic-a', lockfileSha256)].snapshotId).toBe('snap_1')
+  })
+
+  it('strips embedded origin credentials before a warm snapshot clone', () => {
+    expect(normalizeRemoteUrl('https://user:secret@example.test/org/repo.git')).toBe('https://example.test/org/repo.git')
+    expect(normalizeRemoteUrl('git@example.test:org/repo.git')).toBe('https://example.test/org/repo.git')
   })
 
   it('reuses a cached entry with the same lockfile hash even if HEAD has advanced', async () => {
