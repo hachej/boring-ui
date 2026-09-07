@@ -5,7 +5,11 @@ const repositoryRoot = resolve(import.meta.dirname, '..', '..')
 
 export default defineConfig({
   resolve: {
+    // Package tests run directly from a clean checkout, before workspace
+    // dependencies have produced dist/. Keep every imported workspace seam on
+    // source and force a single React instance across those source packages.
     alias: [
+      { find: /^@hachej\/boring-agent\/front$/, replacement: resolve(repositoryRoot, 'packages/agent/src/front/index.ts') },
       { find: /^@hachej\/boring-agent\/server$/, replacement: resolve(repositoryRoot, 'packages/agent/src/server/index.ts') },
       { find: /^@hachej\/boring-agent\/server\/agent-host\/testing\/compositionRouteProof$/, replacement: resolve(repositoryRoot, 'packages/agent/src/server/agent-host/testing/compositionRouteProof.ts') },
       { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repositoryRoot, 'packages/agent/src/shared/index.ts') },
@@ -21,7 +25,9 @@ export default defineConfig({
       { find: /^@hachej\/boring-workspace\/app\/front$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/app/front/index.ts') },
       { find: /^@hachej\/boring-workspace\/server$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/server/index.ts') },
       { find: /^@hachej\/boring-workspace$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/index.ts') },
+      { find: /^@hachej\/boring-ui-kit$/, replacement: resolve(repositoryRoot, 'packages/ui/src/index.ts') },
     ],
+    dedupe: ['react', 'react-dom'],
   },
   test: {
     globals: true,
