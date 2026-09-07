@@ -35,7 +35,7 @@ The base is intentionally asserted to reproduce two false callbacks rather than 
 
 ## Commands
 
-Executed on final head in exact-SHA sandbox lease `2f8877ef-485a-4f07-9234-cae31e17d4cd` after `git rev-parse HEAD` and `.factory-sha` both returned `fd08b2b3d3918c9a6a8ab1d49b831bbba60ae939`:
+Executed at report-bound proof head in exact-SHA sandbox lease `2f8877ef-485a-4f07-9234-cae31e17d4cd` after `git rev-parse HEAD` and `.factory-sha` both returned `fd08b2b3d3918c9a6a8ab1d49b831bbba60ae939`:
 
 ```bash
 mkdir -p /tmp/pr1544-proof-base
