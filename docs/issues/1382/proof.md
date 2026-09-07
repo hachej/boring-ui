@@ -68,15 +68,24 @@ Seams and callers inspected:
 - real non-plugin composition caller: `evals/factory/lib/harness.ts`, plus objective understanding/tool-selection/evidence/approval evals;
 - supported platform contracts only: `@hachej/boring-workspace`, `/plugin`, `/server`, and `@hachej/boring-ui-kit`; no package-private deep import.
 
-Independent exact-SHA standards/spec, thermo, and full abstraction verdict are recorded after review in the final Bead handoff. The gate is not self-approved by this document.
+Review round 2 (`70bc7fef-85fe-4d85-b9da-c6bff40a1560`, Sol xhigh) requested changes at `2d2e521027d485fb6052ee0a28013188ec0fb943`. Dispositions in `adaaa98c2f40b63ca91a954f4a5e4dd323add489` and its proof follow-up:
+
+- fail closed on malformed/unrecognized durable state and refuse mutation when invalid records would otherwise be dropped;
+- reject `clientRequestId` reuse with different normalized creation input;
+- paginate bridge/tool list responses at at most 20 records and make the front client follow cursors;
+- register every Objective failure in Agent's canonical error enum and carry stable codes through path/config/store/tool/bridge seams;
+- remove contradictory “Goal primitive” text from model- and user-facing descriptions;
+- re-run all exact-SHA proof because any fix invalidates the parent evidence.
+
+The final independent exact-SHA standards/spec, thermo, and full abstraction verdict is recorded in the Bead handoff. The gate is not self-approved by this document.
 
 ## Risk classification
 
 - Route: **protected owner merge decision**.
 - Matched trigger: durable Objective primitive / architecture decision (shared contracts/semantic ownership), explicitly owner-classified as protected.
-- Package production additions + deletions: **0** under `packages/**` in `git diff origin/main...HEAD`; no package source paths are changed.
-- Numerical exclusions: plugin production code, tests, evals, docs, `.beads/issues.jsonl`, package manifests, and `pnpm-lock.yaml` are outside `packages/**` production-source count. They remain in semantic review.
-- Total PR churn before this proof-only commit: 4,786 additions / 0 deletions across 54 files.
+- Package production additions + deletions: **10** additions / **0** deletions under `packages/**` production source: ten canonical `OBJECTIVE_*` error-code entries in `packages/agent/src/shared/error-codes.ts`.
+- Numerical exclusions: `packages/agent/docs/ERROR_CODES.md` and `packages/agent/src/shared/__tests__/error-codes.test.ts` are docs/tests; plugin production code, plugin tests, evals, docs, `.beads/issues.jsonl`, package manifests, and `pnpm-lock.yaml` are outside `packages/**` production-source count. They remain in semantic review.
+- The 10-line package count is below the >500 size trigger, but semantic architecture protection still controls the route.
 - Other triggers: no auth/permissions/tenant/secrets, billing/spend, migration/deletion, release/publish, shared design-system, global navigation, or automation-authority change.
 - Automatic MERGE-READY is forbidden because the protected architecture trigger controls even though package production count is zero.
 
