@@ -354,13 +354,23 @@ async function readOrchestratorStatuses(app: FastifyInstance, entries: readonly 
       headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID },
       payload: { sessionIds },
     })
-    if (response.statusCode !== 200) return statuses
-    for (const summary of response.json<{ summaries?: Array<{ ref?: { sessionId?: string }; status?: string }> }>().summaries ?? []) {
+    if (response.statusCode === 200) for (const summary of response.json<{ summaries?: Array<{ ref?: { sessionId?: string }; status?: string }> }>().summaries ?? []) {
       if (summary.ref?.sessionId && typeof summary.status === 'string') statuses.set(summary.ref.sessionId, summary.status)
     }
   } catch {
-    // fall through: unknown status renders as null, never blocks the listing
+    // fall through to the per-session read below
   }
+  // Sessions the batch projection has not indexed yet (freshly created ones)
+  // keep the exact previous behaviour: one state read each.
+  await Promise.all(sessionIds.filter((id) => !statuses.has(id)).map(async (id) => {
+    try {
+      const response = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${id}/state`, headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID } })
+      const status = response.statusCode === 200 ? response.json<{ state?: { status?: string } }>().state?.status : undefined
+      if (typeof status === 'string') statuses.set(id, status)
+    } catch {
+      // unknown status renders as null, never blocks the listing
+    }
+  }))
   return statuses
 }
 

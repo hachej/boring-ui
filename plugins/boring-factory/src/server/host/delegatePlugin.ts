@@ -499,18 +499,36 @@ function createDelegateTool(
         // the full-state poll saturated the host event loop and starved the UI.
         while (Date.now() < deadline) {
           if (ctx.abortSignal.aborted) throw new DelegateAbortedError()
-          const summaryResponse = await app.inject({
-            method: 'POST',
-            url: `/api/v1/agents/${targetAgentTypeId}/sessions/summaries`,
-            headers: workspaceHeader,
-            payload: { sessionIds: [sessionId] },
-          })
-          if (summaryResponse.statusCode === 200) {
-            const summary = summaryResponse.json<{ summaries?: Array<{ status?: string; turnCount?: number }> }>().summaries?.[0]
-            if (summary?.status === 'idle' && (summary.turnCount ?? 0) >= 1) {
-              status = 'completed'
-              break
+          let probe: { status?: string; turnCount?: number } | undefined
+          try {
+            const summaryResponse = await app.inject({
+              method: 'POST',
+              url: `/api/v1/agents/${targetAgentTypeId}/sessions/summaries`,
+              headers: workspaceHeader,
+              payload: { sessionIds: [sessionId] },
+            })
+            if (summaryResponse.statusCode === 200) {
+              probe = summaryResponse.json<{ summaries?: Array<{ status?: string; turnCount?: number }> }>().summaries?.[0]
             }
+          } catch {
+            probe = undefined
+          }
+          if (!probe) {
+            // Hosts without the batch projection (or a session it has not indexed
+            // yet) fall back to the full-state read so completion is never missed.
+            const stateResponse = await app.inject({
+              method: 'GET',
+              url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/state`,
+              headers: workspaceHeader,
+            })
+            if (stateResponse.statusCode === 200) {
+              lastState = stateResponse.json<DelegateSessionState>()
+              probe = { status: lastState.state?.status, turnCount: lastState.summary?.turnCount }
+            }
+          }
+          if (probe?.status === 'idle' && (probe.turnCount ?? 0) >= 1) {
+            status = 'completed'
+            break
           }
           await sleep(POLL_INTERVAL_MS, ctx.abortSignal)
         }
