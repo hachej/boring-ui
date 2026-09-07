@@ -194,10 +194,13 @@ describe('SqliteAgentRequestLedger', () => {
     // Both workers block after opening until the coordinator releases one shared
     // barrier, so their synchronous prepare calls execute on different OS threads.
     const retried = await runParallelClaims(path)
-    expect(retried.filter(({ claim }) => claim.ownership === 'reclaimed')).toHaveLength(1)
+    const reclaimed = retried.filter(({ claim }) => claim.ownership === 'reclaimed')
+    expect(reclaimed).toHaveLength(1)
+    expect(reclaimed[0]?.effectStarted).toBe(true)
     const losers = retried.filter(({ claim }) => claim.ownership === 'existing')
     expect(losers).toHaveLength(1)
     expect(losers[0]?.claim.record.state).toMatch(/^(pending-admission|admission-accepted|in-flight)$/)
+    expect(losers[0]?.effectStarted).toBe(false)
     expect(retried.filter(({ effectStarted }) => effectStarted)).toHaveLength(1)
 
     const owner = new SqliteAgentRequestLedger(path)

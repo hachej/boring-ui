@@ -552,7 +552,8 @@ stable code:
 | `AGENT_SESSION_CURSOR_AHEAD` | cursor beyond live edge (client bug / stale ref) |
 | `AGENT_SESSION_CURSOR_EXPIRED` | reserved for snapshot-registry pagination (v2 pool cursor; optional early streaming-lane adoption) — v0 keyset cursors fail as `AGENT_SESSION_CURSOR_INVALID` |
 | `AGENT_SESSION_CURSOR_INVALID` | malformed/tampered list cursor or scope/filter binding mismatch — structural invalidity only; a valid server-issued keyset cursor remains valid under mutation and may yield an empty page; indistinguishable by design |
-| `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest |
+| `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest, or an invalid ledger transition was attempted |
+| `AGENT_REQUEST_IN_PROGRESS` | same-key/same-digest request already has another active owner; retry after that request reaches a replayable terminal state |
 | `AGENT_REQUEST_OUTCOME_UNKNOWN` | effect was durably admitted but Host died before a safe completed receipt; never replay silently |
 | `AGENT_COMMAND_INVALID_STATE` | command/payload is not valid for the authoritative Pi chat status |
 | `AGENT_SESSION_RUNTIME_SCOPE_MISMATCH` | authorized actor cannot safely reuse the session's pinned runtime scope; no second writer is opened |
@@ -592,10 +593,13 @@ state guard marks the pending record `retryable: true`; it is not retained as a
 denial. A same-key/same-digest `prepare` must atomically consume that marker and
 return `ownership: 'reclaimed'` to exactly one caller. Concurrent losers return
 `ownership: 'existing'` and remain in progress, while a different digest
-conflicts. `acceptAdmission` is forbidden while the marker remains set, so only
-the reclaimed owner can advance. Unmarked pending records are never implicitly
-released after reopen. Only after an accepted receipt is durable does the Host
-advance to `in-flight`, then store the completed typed receipt before
+conflicts. `acceptAdmission` is forbidden while the marker remains set. After
+reclaim clears it, the gateway must advance only a `created` or `reclaimed`
+result and return `AGENT_REQUEST_IN_PROGRESS` for `existing`; the ledger's
+state transition prevents multiple callers from accepting, but does not encode
+caller identity in a separate ownership token. Unmarked pending records are
+never implicitly released after reopen. Only after an accepted receipt is
+durable does the Host advance to `in-flight`, then store the completed typed receipt before
 acknowledgement. A crash after external admission succeeds but before local
 receipt persistence is reconciled by the adapter with the same key—never by a
 second non-idempotent admission call. Restart of an unresolved in-flight record
@@ -670,6 +674,7 @@ interface AgentGatewayErrorDTO {
     | 'AGENT_SESSION_CURSOR_EXPIRED'
     | 'AGENT_SESSION_CURSOR_INVALID'
     | 'AGENT_REQUEST_CONFLICT'
+    | 'AGENT_REQUEST_IN_PROGRESS'
     | 'AGENT_REQUEST_OUTCOME_UNKNOWN'
     | 'AGENT_COMMAND_INVALID_STATE'
     | 'AGENT_SESSION_RUNTIME_SCOPE_MISMATCH'
@@ -746,7 +751,7 @@ session target. The canonical digest covers the complete effect payload but not
 | --- | --- |
 | `prepare` | missing → `pending-admission` + `created`; retryable same key/digest → atomically clear marker + `reclaimed` for one caller; every other same key/digest → current record + `existing`; different digest → conflict |
 | `markAdmissionRetryable` | unmarked `pending-admission` → `pending-admission, retryable: true`; every other predecessor → conflict |
-| `acceptAdmission` | claimed/unmarked `pending-admission` → `admission-accepted`; retryable pending → conflict |
+| `acceptAdmission` | unmarked `pending-admission` → `admission-accepted`; retryable pending or any concurrent second transition → conflict; callers must invoke only after their `created`/`reclaimed` prepare result |
 | strong `reject` | `pending-admission` → `rejected(kind=gateway)` |
 | `beginEffect` | `admission-accepted` → `in-flight` |
 | legacy observed reject | `in-flight` → `rejected(kind=legacy-admission)` |
