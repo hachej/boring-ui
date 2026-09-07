@@ -126,8 +126,8 @@ describe("DispatchRunExecutor durable restart saga", () => {
     })
     expect(sameInvocation.id).toBe(admitted.id)
     expect(sameInvocation).toMatchObject({
-      status: "outcome-unknown",
-      error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied",
+      status: "failed",
+      error: "Automation outcome remained unknown after host restart; releasing the occupied slot",
     })
     expect(resolve).not.toHaveBeenCalled()
     expect(dispatch).not.toHaveBeenCalled()
@@ -139,7 +139,7 @@ describe("DispatchRunExecutor durable restart saga", () => {
       trigger: "manual",
       promptSnapshot: "run again",
       modelSnapshot: "test:model",
-    })).rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
+    })).resolves.toMatchObject({ status: "queued" })
   })
 
   it("returns one durable run receipt for concurrent retries of an invocation", async () => {
