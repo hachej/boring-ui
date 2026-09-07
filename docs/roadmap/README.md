@@ -121,14 +121,15 @@ relates E-slices to M0–M8 without reopening the new-repo freeze.
 
 ## Where execution actually happens
 
-DIRECTION's current queue has two parallel waves: **Wave A — Premises** for the
-kernel work above, plus only the explicitly substrate-free shell-layout,
-shell-location, and shell-navigation tranche; and **Wave B — Commercial**, whose
-commercial ordering lives in the Seneca tenant repository while Boring supplies
-only neutral platform substrate. The older numbered waves are historical and
-superseded for dispatch. The
-[2026-09-06 amendment](../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
-adds E0 preparation and the explicitly gated evolution consumers to that
-program; it preserves the premise priority. Read [`../direction/DIRECTION.md`](../direction/DIRECTION.md)
+DIRECTION's current queue keeps **Wave A — Premises** at priority, with only
+the explicitly substrate-free shell-layout, shell-location, and shell-navigation
+tranche beside it. The [native-creation amendment of
+2026-09-07](../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+adds a separately gated implementation program in this repository: its Thread,
+View, authority, release/installation, runtime, data/evidence and first-journey
+beads consume the premises they name without reordering Wave A. Commercial
+ordering remains in the Seneca tenant repository while Boring supplies neutral
+platform substrate. The older numbered waves and the September 6 consumer
+selection are historical and superseded for dispatch. Read [`../direction/DIRECTION.md`](../direction/DIRECTION.md)
 before dispatching anything; read [`../vision/README.md`](../vision/README.md)
 first if you want the story the queue serves.

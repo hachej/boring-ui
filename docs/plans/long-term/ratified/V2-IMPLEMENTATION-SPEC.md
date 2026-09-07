@@ -163,8 +163,9 @@ tree/editor (→ navigator/document) · UI kit · Dockview (as renderer only).
 (C5-backed — the OLD dead approval states finally get their real producer).
 **Milestones:** M4 (Agent App with views) · M5 (workspace UI, team pane).
 
-**Workspace Evolution extension (2026-09-05, effective on owner merge):**
-AppComposition becomes privately revisable through the product-module release
+**Workspace Evolution extension (2026-09-05; retained contract, with
+first-consumer timing superseded by §13 on 2026-09-07):** AppComposition
+becomes privately revisable through the product-module release
 contract in [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 Use the existing View contract as a set for saved semantic compositions;
 early app-specific props do not create another ViewDescriptor. The host owns
@@ -283,15 +284,18 @@ Bead map and gates: DIRECTION amendment 2026-09-07.
 
 ## Workspace Evolution milestone extension — 2026-09-05
 
-> Consumer scope updated 2026-09-06 under RECONCILIATION §12. The rows below
-> reflect that clarification; the M0–M8 ordering and frozen port remain unchanged.
+> Consumer scope was updated 2026-09-06 under RECONCILIATION §12, then its
+> first consumer, timing and execution home were superseded by §13 on 2026-09-07.
+> The rows below remain the E0–E6 acceptance vocabulary; they are not the current
+> dispatch order.
 
-**Specified, unbuilt by this PR; effective on owner merge.** This adds a
-named product proof to the capabilities above without renumbering M0–M8,
-opening the new-repo implementation freeze, or requiring M8 Product extraction
+**Specified, unbuilt by this PR.** This adds a named product proof to the
+capabilities above without renumbering M0–M8 or requiring M8 Product extraction
 for a private change. The [execution plan](../../native-creation/LIFECYCLE.md#milestones)
-owns E0–E6 acceptance; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
-owns dispatch. M-labels below map capability dependencies, not a second queue.
+owns E0–E6 acceptance; the [DIRECTION amendment of
+2026-09-07](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+owns current dispatch. M-labels below map capability dependencies, not a second
+queue.
 
 | Extension | Capability relationship | Product proof |
 |---|---|---|

@@ -28,8 +28,8 @@ architecture.
 > for every product. The kernel remains the compounding layer; ordinary
 > operate-mode products are not forced into its ontology.
 
-> **Amendment — 2026-09-05 (owner-requested; effective on owner merge;
-> implementation pending):** personal software evolution is an explicit
+> **Amendment — 2026-09-05 (owner-requested; implementation pending;
+> first-consumer timing superseded by the 2026-09-07 amendment below):** personal software evolution is an explicit
 > product goal. A user can start with a minimal useful workspace, request
 > changes to its interface and permitted behavior, try an immutable candidate,
 > keep or undo it, and retain local intent through shared upgrades. Useful
@@ -262,11 +262,12 @@ behavior revision, isolated generated modules, upgrade reconciliation, and
 approved reuse. Clinic's document dashboard and a second supported document
 mount are the first proofs; live acceptance requires domain identity and
 server work independent of chat. Seneca is the target
-authenticated host for the personal-scope proof. This does not replace the
-first-commercial-vertical decision or renumber K1–K9/M0–M8. The
-[implementation-spec crosswalk](V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
-maps capabilities; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
-alone schedules them and preserves the relevant premise gates.
+authenticated host for the personal-scope proof. This historical extension did not replace the first-commercial-vertical
+decision or renumber K1–K9/M0–M8. The [implementation-spec
+crosswalk](V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
+maps capabilities. The 2026-09-07 native-creation ruling supersedes its first
+consumer and timing; [current DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+preserves the relevant premise gates.
 
 ## 6. Research program & kill criteria (adopted verbatim from V2)
 
@@ -345,8 +346,9 @@ excluded. Arbitrary code cannot promise conflict-free automatic upgrades.
 
 ## 11. Owner-requested clarification — 2026-09-06 (software model)
 
-**Proposed; effective on owner merge; no implementation claim.** The current
-Experience-over-governed-work north star remains. The owner requested that it
+**Retained as the §12 software model; no implementation claim.** The current
+Experience-over-governed-work north star remains; §13 supersedes this section's
+first-consumer timing. The owner requested that it
 be made concrete across Clinic, the Charlotte Ledoux/Seneca knowledge product,
 and an ESG portfolio-impact use case, instead of being defined by Clinic.
 
@@ -376,4 +378,5 @@ Rule of Three, the frozen noun set, the port doctrine or the security model.
 
 Normative detail: [RECONCILIATION §12](RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
 Readable model/evidence: [software model](../../../vision/software-model.md).
-Dispatch: [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution).
+The September 6 dispatch link is historical; §13 supersedes its first consumer
+and timing. Current dispatch: [DIRECTION 2026-09-07](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).

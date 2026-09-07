@@ -93,7 +93,10 @@ Proposed amendments queue inside the current dated snapshot under
 
 ### 2026-09-05 — Workspace Evolution
 
-**Owner-requested amendment; effective on owner merge, implementation pending.**
+> Retained product context; the 2026-09-07 native-creation ruling supersedes
+> this section's first consumer, timing and execution home.
+
+**Owner-requested amendment; implementation pending.**
 Extend the author-and-deploy vision above to the end user's own Experience.
 A user starts with a useful minimal workspace, directly requests interface,
 layout, workflow, and permitted behavior changes, then previews, keeps,
@@ -126,12 +129,15 @@ and runtime implementation.
 Normative amendment: [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 Readable vision: [vision overview](../vision/README.md#personal-software-evolution-owner-requested-extension-2026-09-05).
 Milestones/proof: [Workspace Evolution](../plans/native-creation/LIFECYCLE.md).
-Dispatch: [DIRECTION amendment](DIRECTION.md#amendment-2026-09-05--workspace-evolution).
+The September 5 dispatch amendment is historical; current dispatch is the
+[DIRECTION amendment of 2026-09-07](DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).
 
 ### 2026-09-06 — One software model, many Experiences
 
-**Owner-requested clarification; effective on owner merge, implementation
-pending.** The owner identified Clinic, Charlotte Ledoux/Seneca, and ESG
+> Retained as the §12 software model; the 2026-09-07 native-creation ruling
+> supersedes this section's first consumer and timing.
+
+**Owner-requested clarification; implementation pending.** The owner identified Clinic, Charlotte Ledoux/Seneca, and ESG
 portfolio-impact analysis as different adaptations and requested a general
 software model. This supersedes Clinic as the defining platform example and
 Seneca as merely an identity host in the 2026-09-05 extension above.
@@ -162,7 +168,7 @@ No all-client deployment or marketplace is required for a useful private edit.
 
 The [software model](../vision/software-model.md) owns the readable synthesis
 and pinned source scope. [RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof)
-records the named amendment;
-[DIRECTION](DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
-owns its bounded dispatch change. Host authority, the frozen ontology, premise
-priority, interface-first port doctrine and tenant-owned GTM remain intact.
+records the named amendment. Its bounded September 6 dispatch change is
+historical; the [2026-09-07 amendment](DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+owns current dispatch. Host authority, the frozen ontology, premise priority,
+interface-first port doctrine and tenant-owned GTM remain intact.

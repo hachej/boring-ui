@@ -424,14 +424,15 @@ room; §7 and §9 stand unaltered.
 
 ## 11. OWNER-REQUESTED AMENDMENT — 2026-09-05 (Workspace Evolution)
 
-> Consumer scope is amended by §12 below (2026-09-06). Clinic-specific
+> Consumer scope is amended by §12 below (2026-09-06), and its first consumer,
+> timing and execution home are superseded by §13 (2026-09-07). Clinic-specific
 > requirements remain binding for Clinic; they do not define all products.
 
 The owner requested that the personal, self-evolving workspace design become
-a vision, milestone, and implementation-plan PR. This amendment takes effect
-on owner merge. It specifies future behavior; no capability is marked shipped
-by this documentation change. Sequencing is recorded only in
-[DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution).
+a vision, milestone, and implementation-plan PR. It specifies future behavior;
+no capability is marked shipped by this documentation change. The September 5
+sequencing is historical; current sequencing is recorded only in the
+[2026-09-07 DIRECTION amendment](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).
 
 **(a) Product contract.** A minimal workspace is usable immediately and can
 adopt an optional domain starter. A direct user request can change its
@@ -571,11 +572,12 @@ Plan and milestone acceptance: [Workspace Evolution](../../native-creation/LIFEC
 
 The owner requested a step back from Clinic-specific framing and a stronger
 general software model, naming the Charlotte Ledoux/Seneca adaptation and ESG
-portfolio-impact analysis. **Effective on owner merge; specified and unbuilt.**
-This clarifies §§8–11 and makes the consumer-scope change below explicit.
-The [software model](../../../vision/software-model.md) is the readable
-synthesis; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
-is the only dispatch authority.
+portfolio-impact analysis. This clarifies §§8–11 and makes the consumer-scope
+change below explicit. The [software model](../../../vision/software-model.md)
+is the readable synthesis. The September 6 DIRECTION amendment was the dispatch
+authority for this scope when adopted; §13 later supersedes its first consumer,
+timing and execution home, and the [September 7 amendment](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+is the current dispatch authority.
 
 **(a) Responsibilities, not new ontology.** The application model is state
 and knowledge + domain operations + Experiences + durable work, under

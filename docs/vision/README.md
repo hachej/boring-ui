@@ -73,9 +73,9 @@ The ESG details remain a proposed stress case from the owner's description,
 not a verified implementation. None defines the universal application schema.
 
 The [software model](software-model.md) contains the ownership map, source
-scope, cross-domain proof and refutation tests. This clarification is
-**specified future work, effective on owner merge**, under
-[RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
+scope, cross-domain proof and refutation tests. It is the §12 model retained by
+the 2026-09-07 native-creation ruling; §13 updates its first consumer and timing.
+No implementation is claimed by this documentation.
 
 ## Personal software evolution (owner-requested extension, 2026-09-05)
 
@@ -102,13 +102,14 @@ knowledge and admitted server work outlive browser views; status and decisions
 stay reachable outside chat. [Composition contracts and stress cases](../plans/native-creation/LIFECYCLE.md#composable-experiences-and-ambient-work)
 make this checkable across domain fixtures before generalized platform claims.
 
-This is **specified future work, effective on owner merge**, grounded in
-[RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
-[Workspace Evolution](../plans/native-creation/LIFECYCLE.md) defines the
-E0–E6 proofs; [DIRECTION](../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
-controls when each may run. The 2026-09-06 amendment broadens preparation
-across Clinic and Charlotte/Seneca, then earns the live loop in one selected
-consumer. Clinic retains its own migration and capture obligations; commercial
+This is specified future work, grounded in [RECONCILIATION
+§11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution)
+and retained by §13. [Workspace Evolution](../plans/native-creation/LIFECYCLE.md)
+defines the E0–E6 proofs; the [DIRECTION amendment of
+2026-09-07](../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+controls current dispatch. The 2026-09-06 cross-domain preparation remains
+context for later consumers; the first live proof is the Seneca mathematics
+tutor. Clinic retains its own migration and capture obligations; commercial
 sequencing remains tenant-owned.
 
 ## Layer 1 — the execution engine (built, hardening)

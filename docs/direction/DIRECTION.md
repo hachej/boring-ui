@@ -604,7 +604,11 @@ not progress by itself.
 
 ## Amendment 2026-09-06 — Cross-domain Workspace Evolution
 
-**Owner-requested; effective on owner merge; no runtime capability is closed.**
+> The 2026-09-07 native-creation amendment below supersedes this section's
+> first consumer, timing and execution home. Its cross-domain model and later
+> consumer evidence remain context; do not dispatch from this section.
+
+**Owner-requested; no runtime capability is closed.**
 The owner requested a general software vision that covers Clinic,
 Charlotte Ledoux/Seneca and ESG portfolio-impact analysis. Binding semantics:
 [RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
