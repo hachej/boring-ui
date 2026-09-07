@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -158,6 +159,15 @@ function toolNamed(handle: ReturnType<typeof createFactoryDelegatePlugin>, seat:
 }
 
 describe('Factory host limits', () => {
+  it('identifies the delegate polling runtime with its current content version', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const handle = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings })
+
+    const expected = `sha256:${createHash('sha256').update('factory-delegate.v5.2026-09-07').digest('hex')}`
+    expect(handle.plugin.contentDigest).toBe(expected)
+  })
+
   it('polls the summary projection and reads full state only once for the final answer', async () => {
     const stateRoot = await makeStateRoot()
     const { registry, sessionBindings } = dependencies()

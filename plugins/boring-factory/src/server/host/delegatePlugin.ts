@@ -31,7 +31,7 @@ import {
 export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 
 /** Bump when this file's delegation behavior changes; hashed into the plugin's contentDigest. */
-const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v4.2026-09-06'
+const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v5.2026-09-07'
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000
 const POLL_INTERVAL_MS = 5_000
