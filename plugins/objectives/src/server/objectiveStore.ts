@@ -360,36 +360,68 @@ export class FileObjectiveStore implements ObjectiveStore {
    * that is merely empty because a live writer is mid-`writeFile` right
    * now (fresh mtime) is still waited on, not stolen.
    *
-   * Reclamation itself never unlinks. It writes the replacement to a
-   * temp file and `rename`s it over the lock path — one atomic content
-   * swap, not a delete-then-create gap. A resumed "stale" holder that
-   * wakes up and re-reads the lock to check its own token (see
-   * `releaseLock`) then sees our token, not an absence, and aborts
-   * instead of ever calling `rm` on our replacement lock.
+   * Reclamation itself is serialized by an exclusive sidecar claim. The
+   * stale check is repeated only after that claim is held, then the winner
+   * writes the replacement to a temp file and `rename`s it over the lock
+   * path. This prevents two reclaimers that observed the same stale metadata
+   * from each replacing the lock and each entering the write critical section.
+   * A loser returns false and resumes the normal acquisition loop.
+   *
+   * The claim deliberately is not itself age-reclaimed: recursively stealing
+   * a claim would recreate this same race. A process crash during the tiny
+   * reclaim window can therefore leave the store unavailable until the
+   * sidecar is removed, bounded for each caller by LOCK_ACQUIRE_TIMEOUT_MS.
+   * That availability trade-off preserves the store's primary durability
+   * invariant: uncertainty never admits two writers. Successful reclaimers
+   * release the sidecar with the same owner-token check as the main lock.
    */
   private async reclaimIfStale(lockPath: string, token: string): Promise<boolean> {
-    const meta = await this.readLockMeta(lockPath)
-    if (!meta) return false
-
-    let isStale: boolean
+    const claimPath = `${lockPath}.reclaim`
+    let claimHandle
     try {
-      const info = JSON.parse(meta.raw) as Partial<{ timestamp: number }>
-      isStale = typeof info.timestamp === "number"
-        ? Date.now() - info.timestamp > LOCK_STALE_MS
-        : Date.now() - meta.mtimeMs > LOCK_STALE_MS
-    } catch {
-      isStale = Date.now() - meta.mtimeMs > LOCK_STALE_MS
-    }
-    if (!isStale) return false
-
-    const dir = dirname(lockPath)
-    const tmp = join(dir, `.${randomUUID()}.lock.tmp`)
-    try {
-      await writeFile(tmp, JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
-      await rename(tmp, lockPath)
-      return true
+      claimHandle = await open(claimPath, "wx")
+      try {
+        await claimHandle.writeFile(JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
+      } finally {
+        await claimHandle.close()
+      }
     } catch (error) {
-      throw normalizeStoreIoError("failed to reclaim objective store lock", error)
+      if ((error as { code?: string }).code === "EEXIST") return false
+      // Once the exclusive create succeeds nobody else can own or replace
+      // this non-reclaimable sidecar, so a failed metadata write may safely
+      // remove it rather than wedging all later stale-lock recovery.
+      if (claimHandle) await rm(claimPath, { force: true }).catch(() => undefined)
+      throw normalizeStoreIoError("failed to claim objective store lock reclamation", error)
+    }
+
+    try {
+      // The pre-claim observation is only a hint. Re-read under the exclusive
+      // claim so exactly one contender can decide that this lock is stale.
+      const meta = await this.readLockMeta(lockPath)
+      if (!meta) return false
+
+      let isStale: boolean
+      try {
+        const info = JSON.parse(meta.raw) as Partial<{ timestamp: number }>
+        isStale = typeof info.timestamp === "number"
+          ? Date.now() - info.timestamp > LOCK_STALE_MS
+          : Date.now() - meta.mtimeMs > LOCK_STALE_MS
+      } catch {
+        isStale = Date.now() - meta.mtimeMs > LOCK_STALE_MS
+      }
+      if (!isStale) return false
+
+      const dir = dirname(lockPath)
+      const tmp = join(dir, `.${randomUUID()}.lock.tmp`)
+      try {
+        await writeFile(tmp, JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
+        await rename(tmp, lockPath)
+        return true
+      } catch (error) {
+        throw normalizeStoreIoError("failed to reclaim objective store lock", error)
+      }
+    } finally {
+      await this.releaseLock(claimPath, token)
     }
   }
 

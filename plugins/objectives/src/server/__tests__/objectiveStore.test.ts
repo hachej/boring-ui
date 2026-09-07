@@ -410,6 +410,77 @@ describe("FileObjectiveStore", () => {
       await rm(lockPath, { force: true })
     })
 
+    it("elects exactly one of two stale-lock reclaimers and serializes both writers without a lost commit", async () => {
+      const path = join(dir, "objectives.json")
+      const storeA = new FileObjectiveStore(path)
+      const storeB = new FileObjectiveStore(path)
+      await storeA.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+      await writeFile(
+        lockPath,
+        JSON.stringify({ pid: 999_999, token: "dead-holder", timestamp: Date.now() - 60_000 }),
+        "utf8",
+      )
+
+      type PrivateLockOps = {
+        reclaimIfStale(lockPath: string, token: string): Promise<boolean>
+      }
+      const opsA = storeA as unknown as PrivateLockOps
+      const opsB = storeB as unknown as PrivateLockOps
+      const originalA = opsA.reclaimIfStale.bind(opsA)
+      const originalB = opsB.reclaimIfStale.bind(opsB)
+      const outcomesA: boolean[] = []
+      const outcomesB: boolean[] = []
+      opsA.reclaimIfStale = async (...args) => {
+        const result = await originalA(...args)
+        outcomesA.push(result)
+        return result
+      }
+      opsB.reclaimIfStale = async (...args) => {
+        const result = await originalB(...args)
+        outcomesB.push(result)
+        return result
+      }
+
+      // Hold the elected reclaimer immediately before its atomic replacement.
+      // Writer B then deterministically observes the exclusive reclaim claim
+      // and loses that election instead of replacing A's new owner token.
+      const realRename = vi.mocked(rename).getMockImplementation()!
+      let signalReclaimRename!: () => void
+      const reclaimRenameReached = new Promise<void>((resolve) => { signalReclaimRename = resolve })
+      let allowReclaimRename!: () => void
+      const reclaimRenameAllowed = new Promise<void>((resolve) => { allowReclaimRename = resolve })
+      let held = false
+      vi.mocked(rename).mockImplementation(async (from, to) => {
+        if (!held && String(from).endsWith(".lock.tmp") && to === lockPath) {
+          held = true
+          signalReclaimRename()
+          await reclaimRenameAllowed
+        }
+        return realRename(from, to)
+      })
+
+      const writerA = storeA.create(input({ title: "Writer A" }))
+      await reclaimRenameReached
+      const writerB = storeB.create(input({ title: "Writer B" }))
+      while (!outcomesB.includes(false)) await new Promise((resolve) => setTimeout(resolve, 5))
+      allowReclaimRename()
+
+      await expect(Promise.all([writerA, writerB])).resolves.toHaveLength(2)
+      expect(outcomesA.filter(Boolean)).toHaveLength(1)
+      expect(outcomesB).toContain(false)
+      expect([...outcomesA, ...outcomesB].filter(Boolean)).toHaveLength(1)
+
+      const finalState = JSON.parse(await readFile(path, "utf8"))
+      expect(finalState.revision).toBe(3)
+      expect(finalState.objectives.map((objective: { title: string }) => objective.title).sort()).toEqual([
+        "Seed",
+        "Writer A",
+        "Writer B",
+      ])
+      await expect(readFile(`${lockPath}.reclaim`, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+    })
+
     it("rejects a symlinked lock path instead of following it (finding: lock path never symlink-checked)", async () => {
       const path = join(dir, "objectives.json")
       const s = new FileObjectiveStore(path)
