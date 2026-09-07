@@ -10,6 +10,7 @@ const workspacePending = [{
   questionId: "q-merge",
   sessionId: "orchestrator-session",
   status: "ready" as const,
+  blocking: false,
   title: "[Factory Plugin] Merge approval",
   context: "Approve the epic PR",
   artifacts: [],
@@ -48,6 +49,7 @@ describe("InboxOverlay workspace-wide pending questions", () => {
 
     expect(screen.queryByText("Inbox zero")).not.toBeInTheDocument()
     expect(screen.getByText("[Factory Plugin] Merge approval")).toBeInTheDocument()
+    expect(screen.getByText("non-blocking")).toBeInTheDocument()
     // The row names the asking agent session, so the owner knows where to answer.
     expect(screen.getByText("[Factory Plugin] Orchestrator")).toBeInTheDocument()
     expect(screen.getByLabelText("Open chat for [Factory Plugin] Orchestrator")).toBeInTheDocument()
