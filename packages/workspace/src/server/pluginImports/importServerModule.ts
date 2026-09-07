@@ -36,7 +36,13 @@ function jitiImport(serverPath: string): Promise<unknown> | null {
 export async function importServerModule(serverPath: string, hotReload: boolean): Promise<{ default?: unknown }> {
   if (hotReload) {
     const jiti = jitiImport(serverPath)
-    if (jiti) return (await jiti) as { default?: unknown }
+    if (jiti) {
+      try {
+        return (await jiti) as { default?: unknown }
+      } catch (err) {
+        warnJitiUnavailable(serverPath, err instanceof Error ? err.message : String(err))
+      }
+    }
   }
   const href = pathToFileURL(serverPath).href
   return (await import(/* @vite-ignore */ href)) as { default?: unknown }
