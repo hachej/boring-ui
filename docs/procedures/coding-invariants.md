@@ -28,8 +28,15 @@ lint, green unit tests and a working demo are necessary evidence where relevant,
 not substitutes for semantic boundary review.
 
 The reviewer reads the diff, affected package contracts/public exports and real
-callers against the [ratified architecture](../plans/long-term/ratified/ARCHITECTURE-PLAN.md)
-and [owner rulings](../plans/long-term/ratified/RECONCILIATION.md), then checks:
+callers against the [ratified architecture](https://github.com/hachej/boring-ui/blob/main/docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md)
+and [owner rulings](https://github.com/hachej/boring-ui/blob/main/docs/plans/long-term/ratified/RECONCILIATION.md).
+
+These architecture links target the canonical repository, not a vendored copy in
+portable Factory skills. In a repo checkout read the corresponding local ratified
+files at the reviewed revision; elsewhere retrieve and record the canonical
+revision. If the governing contracts cannot be read, the review is BLOCKED.
+
+The reviewer checks:
 
 - **Dependency direction and public seams:** no consumer reaches into another
   package's private source, harness backend, concrete store or implementation

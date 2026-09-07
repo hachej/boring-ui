@@ -134,7 +134,7 @@ introduced by this process.
 
 This owner amendment replaces blanket owner review for routine work and the
 old class-A eligibility description with the boundary policy above. It aligns
-with the [ratified vision](../plans/long-term/ratified/VISION.md): authority is
+with the [ratified vision](https://github.com/hachej/boring-ui/blob/main/docs/plans/long-term/ratified/VISION.md): authority is
 host-owned, approvals cannot be fabricated, verification is independent, and
 recovery preserves honest outcomes. It changes no package ownership or frozen
 architectural ruling; changing one requires an explicit owner decision and an
