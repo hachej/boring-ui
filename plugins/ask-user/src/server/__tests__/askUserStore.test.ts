@@ -76,6 +76,39 @@ describe("FileAskUserStore", () => {
     await expect(reloaded.getPending("s2")).resolves.toMatchObject({ questionId: "q3" })
   })
 
+  it("persists multiple non-blocking questions for one session", async () => {
+    await store.createPending(question({ questionId: "q1", blocking: false }))
+    await store.createPending(question({ questionId: "q2", blocking: false }))
+
+    await expect(store.listPending()).resolves.toMatchObject([
+      { questionId: "q1", blocking: false },
+      { questionId: "q2", blocking: false },
+    ])
+    const reloaded = new FileAskUserStore(join(dir, "ask-user.json"))
+    await expect(reloaded.listPending()).resolves.toHaveLength(2)
+  })
+
+  it("persists undelivered and delivered answer markers", async () => {
+    await store.createPending(question({ blocking: false }))
+    const answerPersisted = new Promise<string | undefined>((resolve) => {
+      store.subscribe((change) => {
+        if (change.reason !== "answer") return
+        void readFile(join(dir, "ask-user.json"), "utf8").then((raw) => {
+          resolve(JSON.parse(raw).questions.q1.delivery?.status)
+        })
+      })
+    })
+    await store.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() })
+    await expect(answerPersisted).resolves.toBe("undelivered")
+    await expect(store.listUndeliveredAnswers()).resolves.toMatchObject([{ question: { questionId: "q1", delivery: { status: "undelivered" } } }])
+
+    const restarted = new FileAskUserStore(join(dir, "ask-user.json"))
+    await expect(restarted.listUndeliveredAnswers()).resolves.toHaveLength(1)
+    await restarted.markAnswerDelivered("q1")
+    await expect(restarted.listUndeliveredAnswers()).resolves.toHaveLength(0)
+    await expect(restarted.getByQuestionId("q1")).resolves.toMatchObject({ delivery: { status: "delivered" } })
+  })
+
   it("rejects answers that do not match the question/session", async () => {
     await store.createPending(question())
     await expect(store.answer("q1", { questionId: "other", sessionId: "s1", values: {}, submittedAt: new Date().toISOString() })).rejects.toMatchObject({

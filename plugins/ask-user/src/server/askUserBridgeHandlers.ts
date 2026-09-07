@@ -37,6 +37,9 @@ import { QuestionsBridge, QuestionsBridgeError } from "./questionsBridge"
 export interface AskUserBridgeHandlersOptions {
   runtime: AskUserRuntime
   store: AskUserStore
+  authorizeSession?: (input: { workspaceId: string; userId: string; agentTypeId: string; sessionId: string }) => Promise<void>
+  /** Workspace that owns legacy records written before workspaceId was stored. */
+  legacyWorkspaceId?: string
 }
 
 const MAX_QUESTION_BYTES = HUMAN_ARTIFACT_LIMITS.maxSerializedMetadataBytes + 64 * 1024
@@ -159,19 +162,46 @@ function contribution<TInput, TOutput>(
   }
 }
 
-function requestHandler({ runtime }: AskUserBridgeHandlersOptions) {
+function requestHandler(options: AskUserBridgeHandlersOptions) {
+  const { runtime } = options
   return async ({ input, context, signal }: { input: AskUserBridgeRequestInput; context: WorkspaceBridgeCallContext; signal: AbortSignal }) => {
     assertRequestInput(input)
     assertRequestSessionScope(input.sessionId, context)
+    const ownerPrincipalId = ownerPrincipalIdFromRuntimeContext(context)
+    if (input.blocking === false && (!ownerPrincipalId || !input.agentTypeId || !options.authorizeSession)) {
+      throw createWorkspaceBridgeError(
+        WorkspaceBridgeErrorCode.ResourceScopeDenied,
+        "non-blocking ask-user bridge requests require verified owner and Agent coordinates",
+      )
+    }
+    if (input.blocking === false) {
+      try {
+        await options.authorizeSession!({
+          workspaceId: context.workspaceId,
+          userId: ownerPrincipalId!,
+          agentTypeId: input.agentTypeId!,
+          sessionId: input.sessionId,
+        })
+      } catch {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.ResourceScopeDenied,
+          "non-blocking ask-user bridge session is not authorized",
+        )
+      }
+    }
     try {
       return await runtime.ask({
         sessionId: input.sessionId,
+        blocking: input.blocking,
         title: input.title,
         context: input.context,
         schema: input.schema,
         artifacts: input.artifacts,
         timeoutMs: input.timeoutMs,
-        ownerPrincipalId: ownerPrincipalIdFromRuntimeContext(context),
+        ownerPrincipalId,
+        agentTypeId: input.blocking === false ? input.agentTypeId : undefined,
+        workspaceId: context.workspaceId,
+        askingUserId: ownerPrincipalId,
       }, signal)
     } catch (error) {
       throw mapAskUserError(error)
@@ -183,6 +213,7 @@ function answerHandler(options: AskUserBridgeHandlersOptions) {
   return async ({ input, context }: { input: AskUserBridgeAnswerInput; context: WorkspaceBridgeCallContext }) => {
     assertAnswerInput(input)
     assertBrowserSessionScope(input.sessionId, context)
+    await assertQuestionAccess(options, context, input.questionId)
     return await runQuestionsBridge(options, context, {
       kind: "questions.submit",
       params: {
@@ -199,6 +230,7 @@ function cancelHandler(options: AskUserBridgeHandlersOptions) {
   return async ({ input, context }: { input: AskUserBridgeCancelInput; context: WorkspaceBridgeCallContext }) => {
     assertCancelInput(input)
     assertBrowserSessionScope(input.sessionId, context)
+    await assertQuestionAccess(options, context, input.questionId)
     return await runQuestionsBridge(options, context, {
       kind: "questions.cancel",
       params: {
@@ -210,15 +242,22 @@ function cancelHandler(options: AskUserBridgeHandlersOptions) {
   }
 }
 
-function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
+function pendingHandler(options: AskUserBridgeHandlersOptions) {
+  const { store } = options
   return async ({ input, context }: { input: AskUserBridgePendingInput; context: WorkspaceBridgeCallContext }): Promise<AskUserBridgePendingOutput> => {
     if (!input || typeof input.sessionId !== "string" || input.sessionId.length === 0) {
       throw invalid("ask-user pending requires sessionId")
     }
+    if (input.questionId !== undefined && (typeof input.questionId !== "string" || input.questionId.length === 0)) {
+      throw invalid("ask-user pending questionId must be a non-empty string")
+    }
     assertBrowserSessionScope(input.sessionId, context)
     try {
-      const pending = await store.getPending(input.sessionId)
-      assertQuestionOwner(context, pending)
+      const candidate = input.questionId
+        ? await store.getByQuestionId(input.questionId)
+        : await store.getPending(input.sessionId)
+      const pending = candidate?.status === "ready" && candidate.sessionId === input.sessionId ? candidate : null
+      assertQuestionAccessForValue(options, context, pending)
       return { pending }
     } catch (error) {
       throw mapAskUserError(error)
@@ -231,20 +270,22 @@ function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
  * Worker) is still the owner's to answer, and scoping this read to the browser
  * chat session is what made those questions invisible. Ownership is still
  * enforced per question, and answer tokens are never returned here. */
-function pendingAllHandler({ store }: AskUserBridgeHandlersOptions) {
+function pendingAllHandler(options: AskUserBridgeHandlersOptions) {
+  const { store } = options
   return async ({ context }: { context: WorkspaceBridgeCallContext }): Promise<AskUserBridgePendingAllOutput> => {
     try {
       const pending = await store.listPending()
-      return { pending: pending.filter((question) => isVisibleToCaller(context, question)).map(toPendingSummary) }
+      return { pending: pending.filter((question) => isVisibleToCaller(options, context, question)).map(toPendingSummary) }
     } catch (error) {
       throw mapAskUserError(error)
     }
   }
 }
 
-function isVisibleToCaller(context: WorkspaceBridgeCallContext, question: AskUserQuestion): boolean {
+function isVisibleToCaller(options: AskUserBridgeHandlersOptions, context: WorkspaceBridgeCallContext, question: AskUserQuestion): boolean {
+  if (!isQuestionInWorkspace(options, context, question)) return false
   if (context.callerClass !== "browser") return true
-  if (question.ownerPrincipalId === "anonymous") return true
+  if (question.ownerPrincipalId === "anonymous") return question.blocking !== false
   return context.actor.performedBy?.id === question.ownerPrincipalId
 }
 
@@ -252,8 +293,10 @@ function toPendingSummary(question: AskUserQuestion): AskUserPendingSummary {
   return {
     questionId: question.questionId,
     sessionId: question.sessionId,
+    ...(question.agentTypeId ? { agentTypeId: question.agentTypeId } : {}),
     ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
     status: question.status,
+    blocking: question.blocking !== false,
     ...(question.title ? { title: question.title } : {}),
     ...(question.context ? { context: question.context } : {}),
     artifacts: question.artifacts ?? [],
@@ -265,13 +308,14 @@ function toPendingSummary(question: AskUserQuestion): AskUserPendingSummary {
 /** Workspace-wide answered history backing the Inbox's Answered tab. Like
  * `pending-all` this is deliberately not session scoped — the owner's decision
  * log spans every agent session — and it never returns answer tokens. */
-function answeredAllHandler({ store }: AskUserBridgeHandlersOptions) {
+function answeredAllHandler(options: AskUserBridgeHandlersOptions) {
+  const { store } = options
   return async ({ input, context }: { input: AskUserBridgeAnsweredAllInput; context: WorkspaceBridgeCallContext }): Promise<AskUserBridgeAnsweredAllOutput> => {
     const limit = answeredPageLimit(input?.limit)
     try {
       const resolved = await store.listResolved()
       const ordered = resolved
-        .filter((entry) => isVisibleToCaller(context, entry.question))
+        .filter((entry) => isVisibleToCaller(options, context, entry.question))
         .map(toAnsweredSummary)
         .sort(compareAnsweredNewestFirst)
       const start = input?.cursor ? cursorOffset(ordered, input.cursor) : 0
@@ -316,6 +360,7 @@ function toAnsweredSummary({ question, answer }: AskUserResolvedQuestion): AskUs
   return {
     questionId: question.questionId,
     sessionId: question.sessionId,
+    ...(question.agentTypeId ? { agentTypeId: question.agentTypeId } : {}),
     title: question.title ?? "Question",
     ...(contextFirstLine ? { contextFirstLine } : {}),
     askedAt: question.createdAt,
@@ -323,6 +368,8 @@ function toAnsweredSummary({ question, answer }: AskUserResolvedQuestion): AskUs
     ...(decisionValue(question, answer) ? { decision: decisionValue(question, answer)! } : {}),
     values: answer?.values ?? {},
     status: question.status === "answered" || question.status === "cancelled" ? question.status : "abandoned",
+    blocking: question.blocking !== false,
+    ...(question.delivery ? { deliveryStatus: question.delivery.status } : {}),
   }
 }
 
@@ -340,17 +387,30 @@ function decisionValue(question: AskUserQuestion, answer: AskUserAnswer | null):
   return typeof value === "string" && value.length > 0 ? value : undefined
 }
 
-function transcriptHandler({ store }: AskUserBridgeHandlersOptions) {
-  return async ({ input }: { input: AskUserBridgeTranscriptInput }): Promise<AskUserBridgeTranscriptOutput> => {
+function transcriptHandler(options: AskUserBridgeHandlersOptions) {
+  const { store } = options
+  return async ({ input, context }: { input: AskUserBridgeTranscriptInput; context: WorkspaceBridgeCallContext }): Promise<AskUserBridgeTranscriptOutput> => {
     if (!input || typeof input.sessionId !== "string" || input.sessionId.length === 0) {
       throw invalid("ask-user transcript requires sessionId")
     }
     try {
-      return { events: await store.listTranscriptEvents(input.sessionId) as AskUserTranscriptEvent[] }
+      const events = await store.listTranscriptEvents(input.sessionId) as AskUserTranscriptEvent[]
+      const visibleQuestionIds = new Set<string>()
+      for (const questionId of new Set(events.map(transcriptQuestionId))) {
+        const question = await store.getByQuestionId(questionId)
+        if (question && isVisibleToCaller(options, context, question)) visibleQuestionIds.add(questionId)
+      }
+      return { events: events.filter((event) => visibleQuestionIds.has(transcriptQuestionId(event))) }
     } catch (error) {
       throw mapAskUserError(error)
     }
   }
+}
+
+function transcriptQuestionId(event: AskUserTranscriptEvent): string {
+  if (event.type === "created") return event.question.questionId
+  if (event.type === "answered") return event.answer.questionId
+  return event.questionId
 }
 
 async function runQuestionsBridge(
@@ -374,6 +434,8 @@ async function runQuestionsBridge(
 function assertRequestInput(input: AskUserBridgeRequestInput): void {
   if (!input || typeof input !== "object") throw invalid("ask-user request input is required")
   if (typeof input.sessionId !== "string" || input.sessionId.length === 0) throw invalid("ask-user request requires sessionId")
+  if (input.agentTypeId !== undefined && (typeof input.agentTypeId !== "string" || input.agentTypeId.length === 0)) throw invalid("ask-user request agentTypeId must be a non-empty string")
+  if (input.blocking !== undefined && typeof input.blocking !== "boolean") throw invalid("ask-user request blocking must be a boolean")
   if (!input.schema || typeof input.schema !== "object") throw invalid("ask-user request requires schema")
   if (input.title !== undefined && typeof input.title !== "string") throw invalid("ask-user request title must be a string")
   if (input.context !== undefined && typeof input.context !== "string") throw invalid("ask-user request context must be a string")
@@ -414,16 +476,44 @@ function assertRequestSessionScope(sessionId: string, context: WorkspaceBridgeCa
   )
 }
 
-function assertQuestionOwner(context: WorkspaceBridgeCallContext, question: AskUserQuestion | null): void {
-  if (!question || context.callerClass !== "browser") return
-  if (question.ownerPrincipalId === "anonymous") return
+async function assertQuestionAccess(
+  options: AskUserBridgeHandlersOptions,
+  context: WorkspaceBridgeCallContext,
+  questionId: string,
+): Promise<void> {
+  assertQuestionAccessForValue(options, context, await options.store.getByQuestionId(questionId))
+}
+
+function assertQuestionAccessForValue(
+  options: AskUserBridgeHandlersOptions,
+  context: WorkspaceBridgeCallContext,
+  question: AskUserQuestion | null,
+): void {
+  if (!question) return
+  if (!isQuestionInWorkspace(options, context, question)) {
+    throw createWorkspaceBridgeError(
+      WorkspaceBridgeErrorCode.ResourceScopeDenied,
+      "ask-user question is not in this workspace",
+    )
+  }
+  if (context.callerClass !== "browser") return
   const principalId = context.actor.performedBy?.id
+  if (question.ownerPrincipalId === "anonymous" && question.blocking !== false && principalId === "anonymous") return
   if (!principalId || principalId !== question.ownerPrincipalId) {
     throw createWorkspaceBridgeError(
       WorkspaceBridgeErrorCode.ResourceScopeDenied,
       "ask-user question is not owned by this browser principal",
     )
   }
+}
+
+function isQuestionInWorkspace(
+  options: AskUserBridgeHandlersOptions,
+  context: WorkspaceBridgeCallContext,
+  question: AskUserQuestion,
+): boolean {
+  const workspaceId = question.workspaceId ?? options.legacyWorkspaceId
+  return workspaceId !== undefined && workspaceId === context.workspaceId
 }
 
 function commandAuthSessionId(sessionId: string, context: WorkspaceBridgeCallContext): { sessionId: string; principalId: string } {

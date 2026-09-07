@@ -4,11 +4,13 @@ import { resolve } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
+import type { FactoryEpicRegistry } from './epicRegistry'
+import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
 
 export const FACTORY_SUPERVISION_PLUGIN_ID = 'factory-supervision'
 
 /** Bump when this file's supervision behavior changes; hashed into the plugin's contentDigest. */
-const SUPERVISION_PLUGIN_VERSION = 'factory-supervision.v1.2026-09-03'
+const SUPERVISION_PLUGIN_VERSION = 'factory-supervision.v2.2026-09-05'
 
 /** The only seat this plugin ever supervises: an Orchestrator may only supervise itself. */
 const SUPERVISED_AGENT_TYPE_ID = 'boring-orchestrator'
@@ -21,10 +23,12 @@ export const SUPERVISION_DEFAULT_INTERVAL_MS = 120_000
 const DEFAULT_PROMPT =
   'Run factory_status and check the epic\'s durable end-state facts (Bead status/assignee, ' +
   'commits on the epic branch, Bead comments, sandbox releases, fresh_review provenance) ' +
-  'against the epic\'s acceptance criteria; recover any stale claim per the Recovery rule. ' +
+  'against the epic\'s acceptance criteria; when factory_status reports stale claims, call ' +
+  'recover_stale_claims. ' +
   'Report durable end-state facts only; never implement.'
 
 export interface SupervisionEntry {
+  readonly epicKey: string
   readonly agentTypeId: string
   readonly sessionId: string
   readonly intervalMs: number
@@ -44,6 +48,8 @@ export interface CreateFactorySupervisionPluginOptions {
   readonly stateRoot: string
   /** Host-owned workspace identity used on every in-process `app.inject` call. */
   readonly workspaceScopeId: string
+  readonly registry: FactoryEpicRegistry
+  readonly sessionBindings: FactorySessionBindings
   /** Default nudge interval for `start` calls that omit `intervalMs`. */
   readonly defaultIntervalMs?: number
 }
@@ -58,6 +64,8 @@ export interface FactorySupervisionPluginHandle {
   bind(app: FastifyInstance): void
   /** Read the state file and arm a timer for every persisted entry. Returns the count armed. */
   rearm(): Promise<number>
+  /** Move an epic's persisted cadence to its newly adopted Orchestrator. Idempotent. */
+  transferSupervision(epicKey: string, previousSessionId: string | undefined, adoptedSessionId: string): Promise<void>
   /** Host-only control surface for epic closure. */
   readonly control: FactorySupervisionPluginControl
   /** Clear every armed timer. Idempotent. */
@@ -74,6 +82,17 @@ function jsonResult(details: unknown, isError = false): ToolResult {
 
 function invalidInputResult(message: string): ToolResult {
   return jsonResult({ code: 'INVALID_INPUT', message }, true)
+}
+
+function epicResolutionResult(error: unknown): ToolResult {
+  if (error instanceof FactoryEpicResolutionError) return jsonResult({ code: error.code, message: error.message }, true)
+  return jsonResult({ code: 'EPIC_RESOLUTION_FAILED', message: error instanceof Error ? error.message : 'failed to resolve Factory epic' }, true)
+}
+
+function modelSelection(encoded: string | undefined): { provider: string; id: string } | undefined {
+  const separator = encoded?.indexOf(':') ?? -1
+  if (!encoded || separator <= 0 || separator === encoded.length - 1) return undefined
+  return { provider: encoded.slice(0, separator), id: encoded.slice(separator + 1) }
 }
 
 async function readState(statePath: string): Promise<SupervisionState> {
@@ -99,6 +118,46 @@ interface SupervisedSessionState {
   readonly state?: { readonly status?: string }
 }
 
+async function gate1WasRaised(app: FastifyInstance, workspaceScopeId: string, sessionId: string): Promise<boolean> {
+  const headers = {
+    'content-type': 'application/json',
+    'x-csrf-token': 'factory-hub',
+    'x-boring-workspace-id': workspaceScopeId,
+  }
+  const isGate1 = (question: { sessionId?: string; title?: string }) => (
+    question.sessionId === sessionId && /\bplan approval\b/i.test(question.title ?? '')
+  )
+  const pendingResponse = await app.inject({
+    method: 'POST',
+    url: '/api/v1/workspace-bridge/call',
+    headers,
+    payload: { op: 'ask-user.v1.pending-all', input: {} },
+  })
+  if (pendingResponse.statusCode !== 200) throw new Error(`Gate 1 pending lookup failed: HTTP ${pendingResponse.statusCode}`)
+  const pending = pendingResponse.json<{ output?: { pending?: Array<{ sessionId?: string; title?: string; status?: string }> } }>().output?.pending
+  if (!Array.isArray(pending)) throw new Error('Gate 1 pending lookup returned an invalid response')
+  if (pending.some((question) => question.status === 'ready' && isGate1(question))) return true
+
+  let cursor: string | undefined
+  const seenCursors = new Set<string>()
+  for (;;) {
+    const answeredResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call',
+      headers,
+      payload: { op: 'ask-user.v1.answered-all', input: { limit: 100, ...(cursor ? { cursor } : {}) } },
+    })
+    if (answeredResponse.statusCode !== 200) throw new Error(`Gate 1 answered lookup failed: HTTP ${answeredResponse.statusCode}`)
+    const output = answeredResponse.json<{ output?: { answered?: Array<{ sessionId?: string; title?: string; status?: string }>; nextCursor?: string } }>().output
+    if (!output || !Array.isArray(output.answered)) throw new Error('Gate 1 answered lookup returned an invalid response')
+    if (output.answered.some((question) => question.status === 'answered' && isGate1(question))) return true
+    if (!output.nextCursor) return false
+    if (seenCursors.has(output.nextCursor)) throw new Error('Gate 1 answered lookup returned a repeated cursor')
+    seenCursors.add(output.nextCursor)
+    cursor = output.nextCursor
+  }
+}
+
 export function createFactorySupervisionPlugin(
   options: CreateFactorySupervisionPluginOptions,
 ): FactorySupervisionPluginHandle {
@@ -110,6 +169,7 @@ export function createFactorySupervisionPlugin(
 
   let boundApp: FastifyInstance | undefined
   const timers = new Map<string, ReturnType<typeof setInterval>>()
+  let stateMutations = Promise.resolve()
 
   function clearTimerFor(sessionId: string): void {
     const timer = timers.get(sessionId)
@@ -120,10 +180,15 @@ export function createFactorySupervisionPlugin(
   }
 
   async function mutateState(mutator: (current: SupervisionState) => SupervisionState): Promise<SupervisionState> {
-    await mkdir(stateRoot, { recursive: true })
-    const current = await readState(statePath)
-    const next = mutator(current)
-    await writeStateAtomic(statePath, next)
+    let next!: SupervisionState
+    const operation = stateMutations.then(async () => {
+      await mkdir(stateRoot, { recursive: true })
+      const current = await readState(statePath)
+      next = mutator(current)
+      await writeStateAtomic(statePath, next)
+    })
+    stateMutations = operation.catch(() => undefined)
+    await operation
     return next
   }
 
@@ -134,6 +199,27 @@ export function createFactorySupervisionPlugin(
     const entry = beforeTick.entries[sessionId]
     if (!entry) {
       clearTimerFor(sessionId)
+      return
+    }
+
+    const [epic, boundEpic] = await Promise.all([
+      options.registry.get(entry.epicKey),
+      options.sessionBindings.get(entry.sessionId),
+    ])
+    if (
+      entry.agentTypeId !== SUPERVISED_AGENT_TYPE_ID
+      || !epic
+      || epic.status !== 'active'
+      || epic.orchestratorSessionId !== entry.sessionId
+      || boundEpic !== entry.epicKey
+    ) {
+      clearTimerFor(sessionId)
+      await mutateState((current) => {
+        if (!(sessionId in current.entries)) return current
+        const entries = { ...current.entries }
+        delete entries[sessionId]
+        return { entries }
+      })
       return
     }
 
@@ -152,6 +238,13 @@ export function createFactorySupervisionPlugin(
           outcome = 'skipped-busy'
         } else {
           const tickNumber = entry.ticks + 1
+          const selectedModel = modelSelection(epic.models?.orchestrator)
+          const deadline = epic.planDeadlineAt ? Date.parse(epic.planDeadlineAt) : Number.NaN
+          const prompt = Number.isFinite(deadline)
+            && Date.now() >= deadline
+            && !(await gate1WasRaised(app, workspaceScopeId, entry.sessionId))
+            ? 'raise Gate 1 now with what you have'
+            : entry.prompt
           const promptResponse = await app.inject({
             method: 'POST',
             url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/prompt`,
@@ -159,8 +252,9 @@ export function createFactorySupervisionPlugin(
             payload: {
               requestId: randomUUID(),
               clientNonce: randomUUID(),
-              content: `Supervision tick ${tickNumber} (${new Date().toISOString()}): ${entry.prompt}`,
+              content: `Supervision tick ${tickNumber} (${new Date().toISOString()}): ${prompt}`,
               requireIdle: true,
+              ...(selectedModel ? { model: selectedModel } : {}),
             },
           })
           outcome = promptResponse.statusCode === 202 ? 'sent' : 'error'
@@ -200,13 +294,52 @@ export function createFactorySupervisionPlugin(
   }
 
   async function rearm(): Promise<number> {
-    const state = await readState(statePath)
+    for (const sessionId of [...timers.keys()]) clearTimerFor(sessionId)
+    const [registryEntries, bindings] = await Promise.all([options.registry.list(), options.sessionBindings.load()])
+    const active = new Map(registryEntries.filter((entry) => entry.status === 'active').map((entry) => [entry.epicKey, entry]))
+    const state = await mutateState((current) => ({
+      entries: Object.fromEntries(Object.entries(current.entries).filter(([, entry]) => {
+        const epic = active.get(entry.epicKey)
+        return entry.agentTypeId === SUPERVISED_AGENT_TYPE_ID
+          && epic?.orchestratorSessionId === entry.sessionId
+          && bindings[entry.sessionId] === entry.epicKey
+      })),
+    }))
     let count = 0
     for (const entry of Object.values(state.entries)) {
       arm(entry.sessionId, entry.intervalMs)
       count += 1
     }
     return count
+  }
+
+  async function transferSupervision(
+    epicKey: string,
+    previousSessionId: string | undefined,
+    adoptedSessionId: string,
+  ): Promise<void> {
+    let transferred: SupervisionEntry | undefined
+    const removedSessionIds: string[] = []
+    await mutateState((current) => {
+      const entries = { ...current.entries }
+      const source = [
+        previousSessionId ? entries[previousSessionId] : undefined,
+        entries[adoptedSessionId],
+        ...Object.values(entries),
+      ].find((entry) => entry?.epicKey === epicKey)
+      for (const [sessionId, entry] of Object.entries(entries)) {
+        if (entry.epicKey !== epicKey && sessionId !== adoptedSessionId) continue
+        removedSessionIds.push(sessionId)
+        delete entries[sessionId]
+      }
+      if (source?.epicKey === epicKey) {
+        transferred = { ...source, agentTypeId: SUPERVISED_AGENT_TYPE_ID, sessionId: adoptedSessionId }
+        entries[adoptedSessionId] = transferred
+      }
+      return { entries }
+    })
+    for (const sessionId of removedSessionIds) clearTimerFor(sessionId)
+    if (transferred) arm(adoptedSessionId, transferred.intervalMs)
   }
 
   function close(): void {
@@ -242,6 +375,10 @@ export function createFactorySupervisionPlugin(
     parameters: {
       type: 'object',
       properties: {
+        epicKey: {
+          type: 'string',
+          description: 'Optional explicit epic override. Normally the host resolves the epic from this session binding.',
+        },
         op: {
           type: 'string',
           enum: ['start', 'stop', 'status'],
@@ -266,10 +403,17 @@ export function createFactorySupervisionPlugin(
       if (!op) return invalidInputResult('op must be one of "start", "stop", "status"')
       const sessionId = ctx.sessionId
       if (!sessionId) return invalidInputResult('supervise requires a known session id')
+      let epic
+      try {
+        epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings)
+      } catch (error) {
+        return epicResolutionResult(error)
+      }
 
       if (op === 'status') {
         const state = await readState(statePath)
-        return jsonResult(state.entries[sessionId] ?? null)
+        const entry = state.entries[sessionId]
+        return jsonResult(entry?.epicKey === epic.epicKey ? entry : null)
       }
 
       if (op === 'stop') {
@@ -291,6 +435,7 @@ export function createFactorySupervisionPlugin(
       const next = await mutateState((current) => {
         const existing = current.entries[sessionId]
         const entry: SupervisionEntry = {
+          epicKey: epic.epicKey,
           agentTypeId: SUPERVISED_AGENT_TYPE_ID,
           sessionId,
           intervalMs,
@@ -338,6 +483,7 @@ export function createFactorySupervisionPlugin(
       })
     },
     rearm,
+    transferSupervision,
     control: { stopSupervision },
     close,
   }

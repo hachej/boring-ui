@@ -30,6 +30,7 @@ describe("ask-user shared schema", () => {
     expect(
       AskUserToolInputSchema.safeParse({ title: "Pick a strategy", schema: validSchema }).success,
     ).toBe(true)
+    expect(AskUserToolInputSchema.safeParse({ title: "Queue it", blocking: false, schema: validSchema }).success).toBe(true)
   })
 
   it("accepts only the plural bounded HumanArtifact contract", () => {

@@ -14,7 +14,10 @@ blindly; it may rewrite branch-protection checks.
 A later commit makes prior signoff stale. Check with `gh signoff status`, rerun the
 relevant command, then link it from the canonical proof/owner-review card.
 
-For branch protection, prefer stable summary checks (for example `PR Fast
-Summary`) plus `signoff/local`; do not require path-filtered jobs that legitimately
-skip or every branch to be rebased merely because `main` advanced. Keep production
-deploy gates separate.
+Local signoff does not replace required GitHub checks, independent abstraction
+review or [current-main integration proof](boring-loop.md#mandatory-verification-and-review-gates).
+Use a merge queue or equivalent controlled candidate validation; if main moves,
+validate the new combination even when the feature patch is unchanged. Stable
+summary checks may account for jobs skipped by explicit path rules, never for
+missing required proof. Keep deployment gates separate. This supersedes the
+older advice that a moved main needs no further integration check.

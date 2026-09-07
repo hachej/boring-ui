@@ -93,6 +93,8 @@ export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
 // Utility
 export { cn } from "./front/lib/utils"
+export { RuntimeWebView, runtimeWebViewSandbox } from "./front/components/RuntimeWebView"
+export type { RuntimeWebViewProps, RuntimeWebViewSource } from "./front/components/RuntimeWebView"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"
