@@ -102,8 +102,9 @@ through supported cutover.
 ## 2. Edit map — where each ruling landed
 
 Applied by PR #1561 (rows below describe the target; the dated banner or
-section at each site is the authority). PR #1548's §11/§12 were merged first;
-§13 follows them.
+section at each site is the authority). PR #1548's §11/§12 material was folded
+into this branch before §13; PR #1548 itself remains open and closes as
+superseded when #1561 merges.
 
 | Target | Proposed amendment |
 | --- | --- |

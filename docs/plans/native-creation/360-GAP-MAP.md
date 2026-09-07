@@ -1,13 +1,21 @@
 # 360 gap map — native creation vs the whole spec (2026-09-07, evening)
 
+> **Historical pre-re-cut audit snapshot — do not dispatch or infer unresolved
+> decisions from this file.** The owner subsequently dispositioned these findings
+> in the [2026-09-07 DIRECTION amendment](../../direction/DIRECTION.md#second-re-cut--360-sweep-owner-2026-09-07-night):
+> six gap beads were added, premise edges became machine-checkable, and the six
+> questions in §E received defaults. In particular, bwrap/runsc is accepted only
+> for the first proof; a hardware microVM is required before shared-tenant Seneca
+> deployment. The tables below preserve what the sweep found before that re-cut.
+
 Six parallel read-only sweeps (kernel nouns · shell/premises · security/authority ·
 data/knowledge/packages · tenant/factory ops · prior plans/contradictions) of the
 ratified pack, plans, issues, beads, PRs and code against the twelve `nc-*` beads.
-Verdict: **the spine is right and the graph is a kernel-only slice.** The journey
-also needs data, authority substrate, evidence, a surface to land on, and a
-reconciliation stage — and several of those already exist as prior designs the
-bead map does not cite. Full tables live in the session transcript; this file
-keeps the load-bearing rows.
+The pre-re-cut verdict was: **the spine is right and the graph is a kernel-only
+slice.** The journey also needed data, authority substrate, evidence, a surface
+and reconciliation, with several existing designs not yet cited by the bead map.
+Full tables live in the session transcript; this file keeps the load-bearing
+historical rows.
 
 ## A. Holes with no bead at all
 
