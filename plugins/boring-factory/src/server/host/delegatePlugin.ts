@@ -34,7 +34,7 @@ export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v4.2026-09-06'
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000
-const POLL_INTERVAL_MS = 1_000
+const POLL_INTERVAL_MS = 5_000
 const BRIEF_MIN_LENGTH = 20
 const BRIEF_MAX_LENGTH = 8_000
 
@@ -494,23 +494,33 @@ function createDelegateTool(
         const deadline = Date.now() + timeoutMs
         let status: 'completed' | 'timeout' = 'timeout'
         let lastState: DelegateSessionState | undefined
+        // Poll the cheap batch-summary projection (status + turnCount) instead of
+        // serialising the child's full transcript every second: with a dozen lanes
+        // the full-state poll saturated the host event loop and starved the UI.
         while (Date.now() < deadline) {
           if (ctx.abortSignal.aborted) throw new DelegateAbortedError()
-          const stateResponse = await app.inject({
-            method: 'GET',
-            url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/state`,
+          const summaryResponse = await app.inject({
+            method: 'POST',
+            url: `/api/v1/agents/${targetAgentTypeId}/sessions/summaries`,
             headers: workspaceHeader,
+            payload: { sessionIds: [sessionId] },
           })
-          if (stateResponse.statusCode === 200) {
-            lastState = stateResponse.json<DelegateSessionState>()
-            const turnCount = lastState.summary?.turnCount ?? 0
-            if (lastState.state?.status === 'idle' && turnCount >= 1) {
+          if (summaryResponse.statusCode === 200) {
+            const summary = summaryResponse.json<{ summaries?: Array<{ status?: string; turnCount?: number }> }>().summaries?.[0]
+            if (summary?.status === 'idle' && (summary.turnCount ?? 0) >= 1) {
               status = 'completed'
               break
             }
           }
           await sleep(POLL_INTERVAL_MS, ctx.abortSignal)
         }
+        // One full-state read at the end for the model and final assistant text.
+        const finalStateResponse = await app.inject({
+          method: 'GET',
+          url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/state`,
+          headers: workspaceHeader,
+        })
+        if (finalStateResponse.statusCode === 200) lastState = finalStateResponse.json<DelegateSessionState>()
 
         const finishedAt = new Date().toISOString()
         const model = lastState?.state?.currentModel

@@ -338,7 +338,33 @@ async function readPendingQuestions(app: FastifyInstance): Promise<Map<string, {
   }
 }
 
-async function liveEpicEntry(app: FastifyInstance, entry: FactoryEpicEntry, pendingBySession: ReadonlyMap<string, { questionId: string; title?: string }>, stateRoot: string, env: NodeJS.ProcessEnv, activeDemoUrl?: string): Promise<FactoryEpicLiveEntry> {
+/**
+ * One batch-summary call for every registered Orchestrator. The previous
+ * per-epic full-state read serialised each transcript (the batch supervisor's
+ * alone was 11MB) on every workspace load, which took ~10s under load.
+ */
+async function readOrchestratorStatuses(app: FastifyInstance, entries: readonly FactoryEpicEntry[]): Promise<Map<string, string>> {
+  const sessionIds = entries.map((entry) => entry.orchestratorSessionId).filter((id): id is string => typeof id === 'string' && id.length > 0)
+  const statuses = new Map<string, string>()
+  if (sessionIds.length === 0) return statuses
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/summaries`,
+      headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID },
+      payload: { sessionIds },
+    })
+    if (response.statusCode !== 200) return statuses
+    for (const summary of response.json<{ summaries?: Array<{ ref?: { sessionId?: string }; status?: string }> }>().summaries ?? []) {
+      if (summary.ref?.sessionId && typeof summary.status === 'string') statuses.set(summary.ref.sessionId, summary.status)
+    }
+  } catch {
+    // fall through: unknown status renders as null, never blocks the listing
+  }
+  return statuses
+}
+
+async function liveEpicEntry(app: FastifyInstance, entry: FactoryEpicEntry, pendingBySession: ReadonlyMap<string, { questionId: string; title?: string }>, orchestratorStatusBySession: ReadonlyMap<string, string>, stateRoot: string, env: NodeJS.ProcessEnv, activeDemoUrl?: string): Promise<FactoryEpicLiveEntry> {
   const [headSha, beads, orchestratorStatus, sandboxSnapshot] = await Promise.all([
     gitOutput(entry.worktree, ['rev-parse', 'HEAD']).catch(() => null),
     execFileAsync('br', ['list', '--all', '--label', `epic:${entry.epicKey}`, '--json', '--no-auto-flush'], { cwd: entry.worktree, maxBuffer: 16 * 1024 * 1024 }).then(({ stdout }) => {
@@ -350,10 +376,7 @@ async function liveEpicEntry(app: FastifyInstance, entry: FactoryEpicEntry, pend
         return counts
       }, { open: 0, closed: 0 })
     }).catch(() => ({ open: 0, closed: 0 })),
-    entry.orchestratorSessionId
-      ? app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${entry.orchestratorSessionId}/state`, headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID } })
-          .then((response) => response.statusCode === 200 ? response.json<{ state?: { status?: string } }>().state?.status ?? null : null).catch(() => null)
-      : Promise.resolve(null),
+    Promise.resolve(entry.orchestratorSessionId ? orchestratorStatusBySession.get(entry.orchestratorSessionId) ?? null : null),
     getFactorySandboxSnapshotInfo({ stateRoot, epicKey: entry.epicKey, env }).catch(() => undefined),
   ])
   return {
@@ -543,8 +566,9 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
       })
       app.get('/api/v1/factory/epics', async (_request, reply) => {
         try {
-          const [pending, activeDemoUrls] = await Promise.all([readPendingQuestions(app), demo.control.listActiveDemoUrls()])
-          return await Promise.all((await registry.list()).map(async (entry) => await liveEpicEntry(app, entry, pending, stateRoot, env, activeDemoUrls[entry.epicKey])))
+          const entries = await registry.list()
+          const [pending, activeDemoUrls, statuses] = await Promise.all([readPendingQuestions(app), demo.control.listActiveDemoUrls(), readOrchestratorStatuses(app, entries)])
+          return await Promise.all(entries.map(async (entry) => await liveEpicEntry(app, entry, pending, statuses, stateRoot, env, activeDemoUrls[entry.epicKey])))
         } catch (error) { return sendError(reply, error) }
       })
       app.post('/api/v1/factory/epics/:key/adopt', async (request, reply) => {
