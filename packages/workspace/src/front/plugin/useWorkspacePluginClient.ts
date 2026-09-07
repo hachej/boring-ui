@@ -7,7 +7,7 @@ export interface WorkspacePluginClient {
   workspaceHeaders(): Record<string, string>
   getJson<T = unknown>(path: string, options?: { missingMessage?: string }): Promise<T>
   readJsonFile<T>(path: string, options?: { missingMessage?: string }): Promise<T>
-  postJson<T = unknown>(path: string, body?: unknown, options?: { headers?: Record<string, string> }): Promise<T>
+  postJson<T = unknown>(path: string, body?: unknown, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<T>
   deleteJson<T = unknown>(path: string): Promise<T>
   sendAgentPrompt(message: string, options?: { title?: string; noncePrefix?: string }): Promise<void>
 }
@@ -158,9 +158,10 @@ function createWorkspacePluginClientWithOptions(
   const postJson = async <T = unknown,>(
     path: string,
     body?: unknown,
-    options?: { headers?: Record<string, string> },
+    options?: { headers?: Record<string, string>; signal?: AbortSignal },
   ): Promise<T> => fetchJson<T>(path, {
     method: "POST",
+    signal: options?.signal,
     ...(body !== undefined
       ? {
           headers: { "content-type": "application/json", ...(options?.headers ?? {}) },
