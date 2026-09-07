@@ -15,6 +15,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repositoryRoot, 'packages/agent/src/shared/index.ts') },
       { find: /^@hachej\/boring-bash\/server$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/server/index.ts') },
       { find: /^@hachej\/boring-bash\/agent$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/agent/index.ts') },
+      { find: /^@hachej\/boring-bash\/shared$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/shared/index.ts') },
       { find: /^@hachej\/boring-sandbox\/shared$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/shared/index.ts') },
       { find: /^@hachej\/boring-sandbox\/providers\/direct$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/direct/index.ts') },
       { find: /^@hachej\/boring-sandbox\/providers\/bwrap$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/bwrap/index.ts') },
