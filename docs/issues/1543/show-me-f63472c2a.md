@@ -2,7 +2,7 @@
 
 ## Owner Review
 
-Bead / PR / issue: `wt-391-forward-civu.3` / [PR #1543](https://github.com/hachej/boring-ui/pull/1543) / issue #1543
+Bead / PR / issue: `wt-391-forward-civu.3` / [PR #1543](https://github.com/hachej/boring-ui/pull/1543) / no separate linked issue
 Lineage: `wt-391-forward-clu5.2`
 What changed / why: Runtime-loaded plugins now receive every public named export from the workspace root, plugin, and events entrypoints while continuing to share the host's singleton values. Browser-path repairs also preserve hot reload, expose actionable request failures, and prevent a failed module evaluation from being executed a second time.
 Why you are needed: The complete diff changes the CLI↔workspace package-boundary mechanism and therefore matches the protected **Shared core/contracts** boundary. It does not qualify for the automatic route even though package production churn is below the numerical threshold. The rollout also retains the existing owner gate.
