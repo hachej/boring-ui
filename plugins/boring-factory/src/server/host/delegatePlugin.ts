@@ -526,10 +526,7 @@ function createDelegateTool(
               probe = { status: lastState.state?.status, turnCount: lastState.summary?.turnCount }
             }
           }
-          if (probe?.status === 'idle' && (probe.turnCount ?? 0) >= 1) {
-            status = 'completed'
-            break
-          }
+          if (probe?.status === 'idle' && (probe.turnCount ?? 0) >= 1) break
           await sleep(POLL_INTERVAL_MS, ctx.abortSignal)
         }
         // One full-state read at the end for the model and final assistant text.
@@ -539,6 +536,9 @@ function createDelegateTool(
           headers: workspaceHeader,
         })
         if (finalStateResponse.statusCode === 200) lastState = finalStateResponse.json<DelegateSessionState>()
+        // The full state is authoritative: it both confirms completion and carries
+        // the answer. This also catches a child that became idle at the deadline.
+        if (lastState?.state?.status === 'idle' && (lastState.summary?.turnCount ?? 0) >= 1) status = 'completed'
 
         const finishedAt = new Date().toISOString()
         const model = lastState?.state?.currentModel

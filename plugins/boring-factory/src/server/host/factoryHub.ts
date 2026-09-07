@@ -339,27 +339,33 @@ async function readPendingQuestions(app: FastifyInstance): Promise<Map<string, {
 }
 
 /**
- * One batch-summary call for every registered Orchestrator. The previous
- * per-epic full-state read serialised each transcript (the batch supervisor's
- * alone was 11MB) on every workspace load, which took ~10s under load.
+ * Batched summary calls for registered Orchestrators. The previous per-epic
+ * full-state read serialised each transcript (the batch supervisor's alone was
+ * 11MB) on every workspace load, which took ~10s under load.
  */
-async function readOrchestratorStatuses(app: FastifyInstance, entries: readonly FactoryEpicEntry[]): Promise<Map<string, string>> {
-  const sessionIds = entries.map((entry) => entry.orchestratorSessionId).filter((id): id is string => typeof id === 'string' && id.length > 0)
+export async function readOrchestratorStatuses(app: FastifyInstance, entries: readonly FactoryEpicEntry[]): Promise<Map<string, string>> {
+  const sessionIds = [...new Set(entries.map((entry) => entry.orchestratorSessionId).filter((id): id is string => typeof id === 'string' && id.length > 0))]
   const statuses = new Map<string, string>()
   if (sessionIds.length === 0) return statuses
-  try {
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/summaries`,
-      headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID },
-      payload: { sessionIds },
-    })
-    if (response.statusCode === 200) for (const summary of response.json<{ summaries?: Array<{ ref?: { sessionId?: string }; status?: string }> }>().summaries ?? []) {
-      if (summary.ref?.sessionId && typeof summary.status === 'string') statuses.set(summary.ref.sessionId, summary.status)
+  // The public summaries projection accepts at most 50 addressed sessions.
+  // Keep large registries on the cheap path instead of provoking a 400 and
+  // falling back to full transcript reads for every historical epic.
+  const batches = Array.from({ length: Math.ceil(sessionIds.length / 50) }, (_, index) => sessionIds.slice(index * 50, (index + 1) * 50))
+  await Promise.all(batches.map(async (batch) => {
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/summaries`,
+        headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID },
+        payload: { sessionIds: batch },
+      })
+      if (response.statusCode === 200) for (const summary of response.json<{ summaries?: Array<{ ref?: { sessionId?: string }; status?: string }> }>().summaries ?? []) {
+        if (summary.ref?.sessionId && typeof summary.status === 'string') statuses.set(summary.ref.sessionId, summary.status)
+      }
+    } catch {
+      // This batch falls through to per-session reads below.
     }
-  } catch {
-    // fall through to the per-session read below
-  }
+  }))
   // Sessions the batch projection has not indexed yet (freshly created ones)
   // keep the exact previous behaviour: one state read each.
   await Promise.all(sessionIds.filter((id) => !statuses.has(id)).map(async (id) => {

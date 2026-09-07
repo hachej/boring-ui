@@ -73,6 +73,10 @@ interface FakeAppOptions {
   readonly workerSessionPageCount?: number
   readonly crashAfterSessionCreation?: boolean
   readonly sessionCreationStatusCode?: number
+  readonly summaryStatus?: string
+  readonly summaryTurnCount?: number
+  readonly finalStateStatus?: string
+  readonly finalStateStatusCode?: number
 }
 
 function fakeApp(
@@ -104,6 +108,18 @@ function fakeApp(
             }) as T,
           }
         }
+        if (request.method === 'POST' && request.url.endsWith('/sessions/summaries')) {
+          const sessionIds = (request.payload as { sessionIds: string[] }).sessionIds
+          return {
+            statusCode: 200,
+            body: '',
+            json: <T>() => ({ summaries: sessionIds.map((sessionId) => ({
+              ref: { sessionId },
+              status: options.summaryStatus ?? 'idle',
+              turnCount: options.summaryTurnCount ?? 1,
+            })) }) as T,
+          }
+        }
         if (request.method === 'POST' && request.url.endsWith('/sessions')) {
           const sessionId = childSessionIds[created++] ?? `child-${created}`
           return {
@@ -120,11 +136,11 @@ function fakeApp(
         }
         if (request.method === 'GET' && request.url.endsWith('/state')) {
           return {
-            statusCode: 200,
+            statusCode: options.finalStateStatusCode ?? 200,
             body: '',
             json: <T>() => ({
               summary: { turnCount: 1 },
-              state: { status: 'idle', messages: [{ role: 'assistant', parts: [{ type: 'text', text: 'done' }] }] },
+              state: { status: options.finalStateStatus ?? 'idle', messages: [{ role: 'assistant', parts: [{ type: 'text', text: 'done' }] }] },
             }) as T,
           }
         }
@@ -142,6 +158,38 @@ function toolNamed(handle: ReturnType<typeof createFactoryDelegatePlugin>, seat:
 }
 
 describe('Factory host limits', () => {
+  it('polls the summary projection and reads full state only once for the final answer', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const { app, calls } = fakeApp()
+    const handle = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr, timeoutMs: 1_000 })
+    handle.bind(app as never)
+
+    const result = await toolNamed(handle, 'boring-orchestrator', 'dispatch_worker').execute(
+      { beadId: 'br-1', brief: 'Implement the exact target Bead br-1 now.' }, context('orch'),
+    )
+
+    expect(result).toMatchObject({ isError: false, details: { status: 'completed', answer: 'done' } })
+    expect(calls.filter((call) => call.method === 'POST' && call.url.endsWith('/sessions/summaries'))).toHaveLength(1)
+    expect(calls.filter((call) => call.method === 'GET' && call.url.endsWith('/state'))).toHaveLength(1)
+  })
+
+  it('requires authoritative final state before reporting summary completion', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const { app } = fakeApp([], ['child-1'], { finalStateStatus: 'running' })
+    const handle = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr, timeoutMs: 1_000 })
+    handle.bind(app as never)
+
+    const result = await toolNamed(handle, 'boring-orchestrator', 'dispatch_worker').execute(
+      { beadId: 'br-1', brief: 'Implement the exact target Bead br-1 now.' }, context('orch'),
+    )
+
+    expect(result).toMatchObject({ isError: true, details: { status: 'timeout' } })
+  })
+
   it('classifies missing, busy, idle-under-grace, and idle-over-grace claims', async () => {
     const stateRoot = await makeStateRoot()
     const now = 2_000_000
