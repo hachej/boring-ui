@@ -16,7 +16,7 @@ The plugin is not registered in app composition, publishes nothing, creates no m
 
 ## Exact-SHA automated verification
 
-Factory sandbox `f959fb64-6db6-428f-a571-5303c9a7030b` verified both `git rev-parse HEAD` and `.factory-sha` as `5eea1451e322f4940478f28367c1cc6624951f30` and produced:
+Factory sandbox `e06f6f1f-3d71-4015-b429-29944a5f403e` verified both `git rev-parse HEAD` and `.factory-sha` as exact evidence SHA `40506e261eaec216c422f9ee5f2f6ebeea0dda3a` (containing final code `1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c`) and produced:
 
 - `CI=true pnpm install --frozen-lockfile` — PASS; only existing missing-prebuilt-bin warnings.
 - `pnpm --filter @hachej/boring-objectives typecheck` — PASS.
@@ -51,7 +51,7 @@ node docs/issues/1382/run-ui-proof.mjs <revision> <label> .handoff/objectives-ui
 
 ## Independent review and explicit abstraction PASS
 
-**Abstraction review: PASS** for the predecessor code at `5eea1451e322f4940478f28367c1cc6624951f30`; final merged-update fix is independently re-reviewed at its final SHA (Boring Reviewer session `109e9597-bf15-4529-82eb-343c3f005bbc`, `openai-codex/gpt-5.6-sol`, digest `sha256:805fd4b098d2273c82c037d94d2d7b0e99bd87a38b38e600a4f094c0dbb98673`). Standards/spec and thermo also PASS with no material findings.
+**Abstraction review: PASS** for final merged-update code at exact evidence SHA `40506e261eaec216c422f9ee5f2f6ebeea0dda3a` (Boring Reviewer session `a46b9f7f-fa08-4eea-a488-48d71b81e2ef`, `openai-codex/gpt-5.6-sol`, digest `sha256:5a997c6d66cad3e36f832084e4e349e8cd0fa6dec736860607823b774109907b`). The reviewer confirmed the prior invalid-update finding fixed and the abstraction boundary PASS; its request-changes verdict was limited to pending CI and stale proof/presentation receipts, repaired in the subsequent artifact-only commits. Earlier clean code pass: session `109e9597-bf15-4529-82eb-343c3f005bbc` at `5eea1451e322f4940478f28367c1cc6624951f30`.
 
 - Governing contracts inspected: `docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md`, `docs/plans/long-term/ratified/RECONCILIATION.md`, and `docs/procedures/coding-invariants.md`.
 - Public seams inspected: objectives front/server/shared exports; `ObjectiveStore`, `FileObjectiveStore`, `ObjectiveError`, tools, objective.v1 handlers/client; WorkspaceBridge registry/trusted handler/HTTP composition; `createWorkspaceAgentServer`; plugin composition; and `ObjectivePane`.
