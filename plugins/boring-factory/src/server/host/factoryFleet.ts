@@ -31,14 +31,16 @@ const seatSkills = {
  * Host appendix naming which host tool implements which step of the canonical `exec`/`plan`/
  * `owner-gate` skill text above (already reconciled with this Factory's topology: one shared
  * epic branch, one epic PR owned by the Orchestrator/owner, Workers that never gate or merge).
- * This appendix adds nothing the skills don't already say — it only binds tool names.
+ * This appendix binds tool names and host-enforced limits without changing canonical persona files.
  */
 const FACTORY_PRECEDENCE_CONTENT = {
   worker: [
     'The `exec` skill above is this seat\'s full loop (pull, claim, commit, push, sandbox-test,',
     '`fresh_review`, Bead-comment handoff — never a PR, never `ask_user`, never merge). The host',
     'tool that runs your adversarial review is `fresh_review`; the tools that run your exact-SHA',
-    'tests/builds are `sandbox` and `sandbox_bash`.',
+    'tests/builds are `sandbox` and `sandbox_bash`. When fresh_review returns `capReached: true`,',
+    'hand off at the current SHA and file remaining findings as follow-up Beads; do not fix forward again.',
+    'Pass your target Bead id to `fresh_review` so all fix-forward SHAs share one host round counter.',
   ].join(' '),
   orchestrator: [
     'The `plan` and `owner-gate` skills above are this seat\'s full loop (Bead graph, Gate 1,',
@@ -50,6 +52,13 @@ const FACTORY_PRECEDENCE_CONTENT = {
     'The `show-me` skill above is mandatory, not optional, at both gates: Gate 1 carries the',
     'show-me plan artifact and Gate 2\'s PR body carries a `## Show me` section, per',
     '`owner-gate`\'s SKILL.md.',
+    'The host, not persona prose, enforces stale-claim recovery and dispatch/review caps. When',
+    '`factory_status` reports a stale claim, call `recover_stale_claims`. When `dispatch_worker`',
+    'refuses at a cap, do not retry: raise the requested Inbox question with `ask_user`.',
+    'Use `ask_user` with `blocking:false` for per-item decisions (one card per item is fine, they do not stall you); use `blocking:true` only for Gate 1 and Gate 2. Continue dispatching while owner decisions are pending; when the answer arrives as a follow-up message, act on it.',
+    'Gate 2 requires a demo URL when `demo_sandbox` can provide one. If `demo_sandbox` returns',
+    'an error after the fallback, raise Gate 2 anyway and write the exact error under `Demo:`',
+    'in the card; an owner or host waiver relayed in a prompt is authoritative (AGENTS.md hard rule 1).',
   ].join(' '),
 } as const
 
@@ -80,13 +89,14 @@ function epicBindingContent(seat: keyof typeof seatSkills): string {
     return [
       shared,
       'Every Bead you create MUST carry `--labels epic:<key>` (add `--parent <epic bead id>` when you create an epic Bead first) and use the feature name from host context in its title. Inspect only with `br ready --label epic:<key>` / `br list --label epic:<key>` and pass `epicKey` to host tools when you use an explicit override.',
-      'Recovery: run `factory_status` on every supervision tick. A Bead that is `in_progress` whose ' +
-        'assignee session is `unknown` or `exists-idle` with no handoff comment and no new commit on ' +
-        'the epic branch is STALE: release it with `br update <id> --assignee "" --status open --actor ' +
-        '<your session id>`, add a Bead comment `recovered stale claim from <old session>`, then start a ' +
-        'fresh Worker with `dispatch_worker`. Never release a Bead whose assignee session is ' +
-        '`exists-busy`. Uncommitted edits left in the shared worktree by a dead Worker are handed to the ' +
-        'next Worker in its brief, never reverted by you.',
+      'Recovery: run `factory_status` on every supervision tick. The host classifies each in-progress ' +
+        'claim as missing, busy, idle, or stale. When it reports `stale: true`, call the host\'s ' +
+        '`recover_stale_claims` tool; never release claims manually and never release a busy claim. ' +
+        'Uncommitted edits left in the shared worktree by a dead Worker are handed to the next Worker ' +
+        'in its brief, never reverted by you.',
+      'Dispatch only a ready, unclaimed, dependency-unblocked Bead and pass its exact id as ' +
+        '`dispatch_worker.beadId`; name that Bead in the Worker brief. The host enforces the Worker ' +
+        'concurrency and per-Bead dispatch caps.',
     ].join('\n\n')
   }
   if (seat === 'reviewer') {
@@ -97,7 +107,7 @@ function epicBindingContent(seat: keyof typeof seatSkills): string {
   }
   return [
     shared,
-    'Discover work ONLY with `br ready --label epic:<key> --unassigned`; claim exactly one result with `br update <id> --claim --actor <your session id>`; if that command returns nothing, stop and report "no ready Bead for epic <key>" instead of running a broader `br ready`. Never claim a Bead lacking that label.',
+    'Your host context names the target Bead. Verify that exact id appears in `br ready --label epic:<key> --unassigned`, then claim it with `br update <id> --claim --actor <your session id>`; if it is absent, stop and report "target Bead is not ready for epic <key>" instead of claiming another result or running a broader `br ready`. Never claim a Bead lacking that label.',
     'If the shared worktree already holds uncommitted changes for your Bead from a previous ' +
       'Worker, inspect them, adopt what is correct, finish the work, and say so in the handoff; ' +
       'never revert them wholesale. Fix forward only: no git reset, no amend or rebase of pushed commits, no force push.',

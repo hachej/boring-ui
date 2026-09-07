@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -8,8 +9,10 @@ import {
   createFactoryDemoPlugin,
   type DemoSandboxFactory,
   type DemoSandboxHandle,
+  type LocalDemoProcessRuntime,
 } from './demoPlugin'
 import type { FactoryEpicEntry, FactoryEpicRegistry } from './epicRegistry'
+import { nodeLocalProcessRuntime } from './localDemoRuntime'
 import type { FactorySessionBindings } from './sessionBindings'
 
 const execFileAsync = promisify(execFile)
@@ -27,7 +30,17 @@ async function createGitWorkspaceRoot(): Promise<string> {
   await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: root })
   await execFileAsync('git', ['remote', 'add', 'origin', 'https://example.test/org/repo.git'], { cwd: root })
   await writeFile(resolve(root, 'tracked.txt'), 'tracked-content')
-  await execFileAsync('git', ['add', 'tracked.txt'], { cwd: root })
+  await writeFile(resolve(root, 'server.mjs'), [
+    "import { createServer } from 'node:http'",
+    "createServer((request, response) => {",
+    "  response.statusCode = request.url === '/ready' ? 200 : 404",
+    "  response.setHeader('x-boring-factory-demo-token', request.headers['x-boring-factory-demo-token'] ?? '')",
+    "  response.end('ready')",
+    '})',
+    "  .listen(Number(process.env.PORT), '127.0.0.1')",
+    '',
+  ].join('\n'))
+  await execFileAsync('git', ['add', 'tracked.txt', 'server.mjs'], { cwd: root })
   await execFileAsync('git', ['commit', '--quiet', '-m', 'initial'], { cwd: root })
   return root
 }
@@ -45,6 +58,24 @@ function vercelEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEn
     ...overrides,
   } as NodeJS.ProcessEnv
 }
+
+function localEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
+  return { BORING_FACTORY_SANDBOX_PROVIDER: 'local-simulation', ...overrides } as NodeJS.ProcessEnv
+}
+
+async function getFreePort(): Promise<number> {
+  return await new Promise((resolvePort, rejectPort) => {
+    const server = createServer()
+    server.once('error', rejectPort)
+    server.listen({ host: '127.0.0.1', port: 0 }, () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') return rejectPort(new Error('failed to allocate a test port'))
+      server.close((error) => error ? rejectPort(error) : resolvePort(address.port))
+    })
+  })
+}
+
+const loopbackSupported = await getFreePort().then(() => true, () => false)
 
 interface FakeSandbox extends DemoSandboxHandle {
   writtenFiles?: { path: string; content: string }[]
@@ -100,7 +131,45 @@ function createFakeFactory(options: {
 }
 
 function fakeFetch(status: number): typeof fetch {
-  return vi.fn(async () => new Response('', { status })) as unknown as typeof fetch
+  return vi.fn(async (_input: unknown, init?: RequestInit) => {
+    const token = new Headers(init?.headers).get('x-boring-factory-demo-token')
+    return new Response('', { status, ...(token ? { headers: { 'x-boring-factory-demo-token': token } } : {}) })
+  }) as unknown as typeof fetch
+}
+
+function createFakeLocalRuntime(): LocalDemoProcessRuntime & {
+  readonly alive: Set<number>
+  readonly starts: { command: string; cwd: string; env: Record<string, string> }[]
+  readonly runs: { command: string; cwd: string; env: Record<string, string> }[]
+} {
+  const alive = new Set<number>()
+  const starts: { command: string; cwd: string; env: Record<string, string> }[] = []
+  const runs: { command: string; cwd: string; env: Record<string, string> }[] = []
+  let nextProcessId = 10_000
+  return {
+    alive,
+    starts,
+    runs,
+    async start(command, cwd, env) {
+      const processId = nextProcessId++
+      alive.add(processId)
+      starts.push({ command, cwd, env })
+      return { processId, processStartTime: `start-${processId}` }
+    },
+    async run(command, cwd, env) {
+      runs.push({ command, cwd, env })
+      return 0
+    },
+    isAlive(identity) {
+      return identity !== undefined && alive.has(identity.processId)
+    },
+    isListeningOnLoopback() {
+      return true
+    },
+    async stop(identity) {
+      if (identity !== undefined) alive.delete(identity.processId)
+    },
+  }
 }
 
 function epicDeps(worktree: string): {
@@ -145,6 +214,48 @@ function epicDeps(worktree: string): {
 }
 
 describe('factory demo plugin', () => {
+  it('terminates the complete detached local process group', async () => {
+    const root = await mkdtemp(resolve(tmpdir(), 'factory-demo-process-'))
+    temporaryRoots.push(root)
+    const minimalEnv = { PATH: process.env.PATH ?? '/usr/bin:/bin' }
+    await expect(nodeLocalProcessRuntime.run('true', root, minimalEnv, 1_000)).resolves.toBe(0)
+    const childPidPath = resolve(root, 'child.pid')
+    await writeFile(resolve(root, 'resistant.mjs'), [
+      "import { spawn } from 'node:child_process'",
+      "import { writeFileSync } from 'node:fs'",
+      `const child = spawn(${JSON.stringify(process.execPath)}, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'ignore' })`,
+      `writeFileSync(${JSON.stringify(childPidPath)}, String(child.pid))`,
+      'setInterval(() => {}, 1000)',
+    ].join('\n'))
+    const identity = await nodeLocalProcessRuntime.start(
+      `${process.execPath} resistant.mjs`,
+      root,
+      minimalEnv,
+    )
+    await vi.waitFor(async () => await expect(access(childPidPath)).resolves.toBeUndefined())
+    const childPid = Number(await readFile(childPidPath, 'utf8'))
+    expect(nodeLocalProcessRuntime.isAlive(identity)).toBe(true)
+    await nodeLocalProcessRuntime.stop(identity)
+    expect(nodeLocalProcessRuntime.isAlive(identity)).toBe(false)
+    const childStat = await readFile(`/proc/${childPid}/stat`, 'utf8').catch(() => undefined)
+    expect(childStat === undefined || /\) Z /.test(childStat)).toBe(true)
+  })
+
+  it('rejects a reused leader pid whose /proc start time differs', async () => {
+    const current = await nodeLocalProcessRuntime.start(
+      `${process.execPath} -e "setInterval(() => {}, 1000)"`,
+      process.cwd(),
+      { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+    )
+    try {
+      expect(nodeLocalProcessRuntime.isAlive({ ...current, processStartTime: `${current.processStartTime}-reused` })).toBe(false)
+      await nodeLocalProcessRuntime.stop({ ...current, processStartTime: `${current.processStartTime}-reused` })
+      expect(nodeLocalProcessRuntime.isAlive(current)).toBe(true)
+    } finally {
+      await nodeLocalProcessRuntime.stop(current)
+    }
+  })
+
   it('grants `demo_sandbox` only to boring-orchestrator', () => {
     const { plugin } = createFactoryDemoPlugin({
       stateRoot: '/tmp/does-not-matter',
@@ -157,17 +268,40 @@ describe('factory demo plugin', () => {
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-reviewer' })).toEqual([])
   })
 
-  it('rejects every op when the vercel provider is not configured', async () => {
+  it('supports status with the local provider configured', async () => {
+    const stateRoot = await makeStateRoot()
     const { plugin } = createFactoryDemoPlugin({
-      stateRoot: '/tmp/does-not-matter',
+      stateRoot,
       ...epicDeps('/tmp/does-not-matter'),
-      env: { BORING_FACTORY_SANDBOX_PROVIDER: 'local-simulation' } as NodeJS.ProcessEnv,
+      env: localEnv(),
       workspaceScopeId: 'factory-hub',
     })
     const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute({ op: 'status' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
-    expect(result.isError).toBe(true)
-    expect(result.details).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED' })
+    expect(result.isError).toBeFalsy()
+    expect(result.details).toEqual({ demos: [] })
+  })
+
+  it('rejects wildcard and non-address owner-facing hosts before starting a local process', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const localProcessRuntime = createFakeLocalRuntime()
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv({ BORING_FACTORY_DEMO_HOST: '0.0.0.0' }),
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    const result = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: 4316 },
+      { abortSignal: new AbortController().signal, toolCallId: 'wildcard-host', sessionId: 's1' },
+    )
+    expect(result.details).toMatchObject({ code: 'LOCAL_START_FAILED', message: expect.stringContaining('non-wildcard') })
+    expect(localProcessRuntime.starts).toHaveLength(0)
+    handle.close()
   })
 
   it('start writes fetch-bootstrap files, runs bootstrap + command, polls ready, and persists demos.json', async () => {
@@ -205,6 +339,377 @@ describe('factory demo plugin', () => {
     const entry = onDisk.demos[started.id]!
     expect(entry.sandboxId).toBe(sandbox.name)
     expect(entry.sessionId).toBe('session-orch-1')
+  })
+
+  it('starts, reports, and stops a local exact-SHA demo lease', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const requestedSha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspaceRoot })).stdout.trim()
+    await writeFile(resolve(workspaceRoot, 'tracked.txt'), 'newer-content')
+    await execFileAsync('git', ['add', 'tracked.txt'], { cwd: workspaceRoot })
+    await execFileAsync('git', ['commit', '--quiet', '-m', 'newer'], { cwd: workspaceRoot })
+    const stateRoot = await makeStateRoot()
+    const requestedPort = 4317
+    const localProcessRuntime = createFakeLocalRuntime()
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv(),
+      fetchImpl: fakeFetch(200),
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+
+    const startResult = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: requestedPort, readyPath: '/ready', sha: requestedSha },
+      { abortSignal: new AbortController().signal, toolCallId: 'local-start', sessionId: 's1' },
+    )
+    expect(startResult.isError, JSON.stringify(startResult.details)).toBeFalsy()
+    const started = startResult.details as { id: string; leaseId: string; url: string; provider: string; sha: string; port: number }
+    expect(started).toMatchObject({
+      id: started.leaseId,
+      url: `http://127.0.0.1:${requestedPort}`,
+      provider: 'local',
+      port: requestedPort,
+    })
+    expect(started.sha).toBe(requestedSha)
+
+    const entry = (await handle.control.listDemos())[started.leaseId]!
+    expect(entry).toMatchObject({ provider: 'local', leaseId: started.leaseId, processId: expect.any(Number) })
+    await expect(readFile(resolve(entry.leaseRoot!, '.factory-sha'), 'utf8')).resolves.toBe(started.sha)
+    await expect(readFile(resolve(entry.leaseRoot!, 'tracked.txt'), 'utf8')).resolves.toBe('tracked-content')
+    expect(localProcessRuntime.alive.has(entry.processId!)).toBe(true)
+
+    const status = await tool!.execute(
+      { op: 'status' },
+      { abortSignal: new AbortController().signal, toolCallId: 'local-status', sessionId: 's1' },
+    )
+    expect(status.details).toMatchObject({ demos: [expect.objectContaining({ id: started.leaseId, provider: 'local', running: true })] })
+
+    const duplicate = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: requestedPort, readyPath: '/ready' },
+      { abortSignal: new AbortController().signal, toolCallId: 'local-duplicate', sessionId: 's1' },
+    )
+    expect(duplicate.details).toMatchObject({ code: 'DEMO_ALREADY_RUNNING', id: started.leaseId })
+
+    const stopResult = await tool!.execute(
+      { op: 'stop', id: started.leaseId },
+      { abortSignal: new AbortController().signal, toolCallId: 'local-stop', sessionId: 's1' },
+    )
+    expect(stopResult.details).toEqual({ id: started.leaseId, stopped: true })
+    expect(localProcessRuntime.alive.has(entry.processId!)).toBe(false)
+    await expect(access(entry.leaseRoot!)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await handle.control.listDemos()).toEqual({})
+    handle.close()
+  })
+
+  it('passes only the local demo environment allowlist and rejects shell control operators', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const localProcessRuntime = createFakeLocalRuntime()
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv({
+        PATH: '/safe/bin',
+        HOME: '/safe/home',
+        LANG: 'C.UTF-8',
+        TZ: 'UTC',
+        NODE_OPTIONS: '--no-warnings',
+        CI: '1',
+        OPENAI_API_KEY: 'must-not-pass',
+        VERCEL_TOKEN: 'must-not-pass',
+        CUSTOM_SECRET: 'must-not-pass',
+      }),
+      fetchImpl: fakeFetch(200),
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+
+    const rejected = await tool!.execute(
+      { op: 'start', command: 'node server.mjs && env', port: 4318 },
+      { abortSignal: new AbortController().signal, toolCallId: 'local-control-op', sessionId: 's1' },
+    )
+    expect(rejected.details).toMatchObject({ code: 'INVALID_COMMAND' })
+    expect(localProcessRuntime.starts).toHaveLength(0)
+
+    const started = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', install: 'pnpm install', port: 4318 },
+      { abortSignal: new AbortController().signal, toolCallId: 'local-env', sessionId: 's1' },
+    )
+    expect(started.isError).toBeFalsy()
+    expect(localProcessRuntime.starts[0]!.env).toEqual({
+      PATH: '/safe/bin',
+      HOME: '/safe/home',
+      LANG: 'C.UTF-8',
+      TZ: 'UTC',
+      NODE_OPTIONS: '--no-warnings',
+      CI: '1',
+      PORT: '4318',
+      HOST: '127.0.0.1',
+      BORING_FACTORY_DEMO_PORT: '4318',
+      BORING_FACTORY_DEMO_LEASE_ID: expect.any(String),
+      BORING_FACTORY_DEMO_SHA: expect.stringMatching(/^[0-9a-f]{40}$/),
+      BORING_FACTORY_DEMO_READY_NONCE: expect.any(String),
+    })
+    expect(localProcessRuntime.runs).toEqual([{
+      command: 'pnpm install',
+      cwd: localProcessRuntime.starts[0]!.cwd,
+      env: localProcessRuntime.starts[0]!.env,
+    }])
+    await handle.control.stopDemo((started.details as { id: string }).id)
+    handle.close()
+  })
+
+  it('aborts a readiness fetch that never responds and cleans up the local process', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const localProcessRuntime = createFakeLocalRuntime()
+    const pendingFetch = vi.fn((_input: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+    })) as unknown as typeof fetch
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv(),
+      fetchImpl: pendingFetch,
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      readyPollTimeoutMs: 25,
+      readyPollIntervalMs: 10,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    const result = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: 4319 },
+      { abortSignal: new AbortController().signal, toolCallId: 'pending-ready', sessionId: 's1' },
+    )
+    expect(result.details).toMatchObject({ code: 'READY_FAILED' })
+    expect(pendingFetch).toHaveBeenCalled()
+    expect(localProcessRuntime.alive).toEqual(new Set())
+    handle.close()
+  })
+
+  it('does not accept another server\'s HTTP 200 without the per-demo readiness token', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const localProcessRuntime = createFakeLocalRuntime()
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv(),
+      fetchImpl: vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch,
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      readyPollTimeoutMs: 20,
+      readyPollIntervalMs: 5,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    const result = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: 4320 },
+      { abortSignal: new AbortController().signal, toolCallId: 'wrong-ready-server', sessionId: 's1' },
+    )
+    expect(result.details).toMatchObject({ code: 'READY_FAILED', message: expect.stringContaining('authenticated') })
+    expect(localProcessRuntime.alive).toEqual(new Set())
+    handle.close()
+  })
+
+  it.runIf(loopbackSupported)('runs the local lifecycle against a tiny real HTTP server', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const port = await getFreePort()
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv({ BORING_FACTORY_DEMO_HOST: '::1' }),
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    const started = (await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port, readyPath: '/ready' },
+      { abortSignal: new AbortController().signal, toolCallId: 'real-local-start', sessionId: 's1' },
+    )).details as { id: string; url: string }
+    try {
+      expect(started.url).toBe(`http://[::1]:${port}`)
+      await expect(fetch(`${started.url}/ready`).then((response) => response.status)).resolves.toBe(200)
+    } finally {
+      await handle.control.stopDemo(started.id)
+      handle.close()
+    }
+  })
+
+  it('falls back to a free port in 4300-4399 when the requested local port is busy', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const occupiedPort = 4400
+    const localProcessRuntime = createFakeLocalRuntime()
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv(),
+      fetchImpl: fakeFetch(200),
+      localProcessRuntime,
+      localPortAvailable: async (port) => port === 4300,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    try {
+      const result = await tool!.execute(
+        { op: 'start', command: 'node server.mjs', port: occupiedPort, readyPath: '/ready' },
+        { abortSignal: new AbortController().signal, toolCallId: 'port-fallback', sessionId: 's1' },
+      )
+      expect(result.isError).toBeFalsy()
+      const started = result.details as { id: string; port: number }
+      expect(started.port).toBeGreaterThanOrEqual(4300)
+      expect(started.port).toBeLessThanOrEqual(4399)
+      expect(started.port).not.toBe(occupiedPort)
+      await tool!.execute(
+        { op: 'stop', id: started.id },
+        { abortSignal: new AbortController().signal, toolCallId: 'port-fallback-stop', sessionId: 's1' },
+      )
+    } finally {
+      handle.close()
+    }
+  })
+
+  it('retries another serialized, token-authenticated port when the child loses its bind', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const localProcessRuntime = createFakeLocalRuntime()
+    const originalStart = localProcessRuntime.start.bind(localProcessRuntime)
+    let starts = 0
+    vi.spyOn(localProcessRuntime, 'start').mockImplementation(async (...args) => {
+      const identity = await originalStart(...args)
+      starts += 1
+      if (starts === 1) localProcessRuntime.alive.delete(identity.processId)
+      return identity
+    })
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: localEnv(),
+      fetchImpl: fakeFetch(200),
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    const result = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: 4322 },
+      { abortSignal: new AbortController().signal, toolCallId: 'bind-retry', sessionId: 's1' },
+    )
+    expect(result.isError).toBeFalsy()
+    expect(localProcessRuntime.starts.map(({ env }) => env.PORT)).toEqual(['4322', '4300'])
+    expect(result.details).toMatchObject({ port: 4300 })
+    await handle.control.stopDemo((result.details as { id: string }).id)
+    handle.close()
+  })
+
+  it('falls back from a failed Vercel lease creation and reports the provider and reason', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const port = 4321
+    const { factory } = createFakeFactory()
+    const localProcessRuntime = createFakeLocalRuntime()
+    vi.spyOn(factory, 'create').mockRejectedValueOnce(new Error('HTTP 402: quota exceeded'))
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: vercelEnv(),
+      sandboxFactory: factory,
+      fetchImpl: fakeFetch(200),
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+
+    const result = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port, readyPath: '/ready' },
+      { abortSignal: new AbortController().signal, toolCallId: 'provider-fallback', sessionId: 's1' },
+    )
+    expect(result.isError).toBeFalsy()
+    expect(result.details).toMatchObject({
+      provider: 'local',
+      fallbackFrom: 'vercel',
+      reason: 'HTTP 402: quota exceeded',
+    })
+    const started = result.details as { id: string }
+    await handle.control.stopDemo(started.id)
+    handle.close()
+  })
+
+  it('stops an ambiguously created named Vercel lease before starting local fallback', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const { factory, sandboxes } = createFakeFactory()
+    const localProcessRuntime = createFakeLocalRuntime()
+    const realCreate = factory.create.bind(factory)
+    const realLocalStart = localProcessRuntime.start.bind(localProcessRuntime)
+    const lifecycle: string[] = []
+    vi.spyOn(localProcessRuntime, 'start').mockImplementation(async (...args) => {
+      lifecycle.push('local-start')
+      return await realLocalStart(...args)
+    })
+    vi.spyOn(factory, 'create').mockImplementationOnce(async (params) => {
+      const sandbox = await realCreate(params)
+      const realStop = sandbox.stop.bind(sandbox)
+      vi.spyOn(sandbox, 'stop').mockImplementation(async () => {
+        lifecycle.push('remote-stop')
+        return await realStop()
+      })
+      throw new Error('connection dropped after create')
+    })
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: vercelEnv(),
+      sandboxFactory: factory,
+      fetchImpl: fakeFetch(200),
+      localProcessRuntime,
+      localPortAvailable: async () => true,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    const result = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: 4323 },
+      { abortSignal: new AbortController().signal, toolCallId: 'ambiguous-create', sessionId: 's1' },
+    )
+    expect(result).toMatchObject({ isError: false, details: { provider: 'local', fallbackFrom: 'vercel' } })
+    expect([...sandboxes.values()]).toHaveLength(1)
+    expect([...sandboxes.values()][0]!.stopped).toBe(true)
+    expect(lifecycle).toEqual(['remote-stop', 'local-start'])
+    await handle.control.stopDemo((result.details as { id: string }).id)
+    handle.close()
+  })
+
+  it('does not start local fallback when the named Vercel lease cannot be classified', async () => {
+    const workspaceRoot = await createGitWorkspaceRoot()
+    const stateRoot = await makeStateRoot()
+    const { factory } = createFakeFactory()
+    const localProcessRuntime = createFakeLocalRuntime()
+    vi.spyOn(factory, 'create').mockRejectedValueOnce(new Error('create timed out'))
+    vi.spyOn(factory, 'get').mockRejectedValueOnce(new Error('control plane unavailable'))
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps(workspaceRoot),
+      env: vercelEnv(),
+      sandboxFactory: factory,
+      localProcessRuntime,
+      workspaceScopeId: 'factory-hub',
+    })
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
+    const result = await tool!.execute(
+      { op: 'start', command: 'node server.mjs', port: 4324 },
+      { abortSignal: new AbortController().signal, toolCallId: 'ambiguous-reconcile', sessionId: 's1' },
+    )
+    expect(result.details).toMatchObject({ code: 'REMOTE_RECONCILIATION_FAILED', provider: 'vercel' })
+    expect(localProcessRuntime.starts).toHaveLength(0)
+    handle.close()
   })
 
   it('rejects an out-of-range port and an unconfigured command before touching the sandbox factory', async () => {
@@ -373,6 +878,42 @@ describe('factory demo plugin', () => {
     const onDisk = JSON.parse(await readFile(resolve(stateRoot, 'demos.json'), 'utf8')) as { demos: Record<string, unknown> }
     expect(Object.keys(onDisk.demos)).toEqual(['demo-live'])
 
+    handle.close()
+  })
+
+  it('rearm() drops a persisted local demo whose process is dead and releases its lease directory', async () => {
+    const stateRoot = await makeStateRoot()
+    const leaseRoot = resolve(stateRoot, 'demo-leases', 'epic-1', 'dead-local')
+    await mkdir(leaseRoot, { recursive: true })
+    await writeFile(resolve(leaseRoot, '.factory-sha'), 'a'.repeat(40))
+    await writeFile(resolve(stateRoot, 'demos.json'), JSON.stringify({
+      demos: {
+        'dead-local': {
+          epicKey: 'epic-1',
+          sandboxId: 'dead-local',
+          provider: 'local',
+          leaseId: 'dead-local',
+          leaseRoot,
+          processId: 2_000_000_000,
+          url: 'http://127.0.0.1:4300',
+          sha: 'a'.repeat(40),
+          port: 4300,
+          command: 'node server.mjs',
+          startedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        },
+      },
+    }, null, 2))
+
+    const handle = createFactoryDemoPlugin({
+      stateRoot,
+      ...epicDeps('/tmp/does-not-matter'),
+      env: localEnv(),
+      workspaceScopeId: 'factory-hub',
+    })
+    await expect(handle.rearm()).resolves.toBe(1)
+    await expect(handle.control.listDemos()).resolves.toEqual({})
+    await expect(access(leaseRoot)).rejects.toMatchObject({ code: 'ENOENT' })
     handle.close()
   })
 })

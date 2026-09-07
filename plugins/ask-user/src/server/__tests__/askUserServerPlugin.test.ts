@@ -115,6 +115,33 @@ describe("ask-user Pi tool", () => {
     await expect(tool.execute("call", { title: "Need input", schema }, AbortSignal.timeout(1))).resolves.toMatchObject({ isError: true })
   })
 
+  it("returns immediately with a pending receipt when blocking is false", async () => {
+    const { store, runtime } = await fixture()
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
+
+    const result = await tool.execute(
+      "call",
+      { title: "Review item", schema, blocking: false },
+      undefined,
+      "s1",
+      "user-1",
+      { agentTypeId: "reviewer", workspaceId: "workspace-1", userId: "user-1" },
+    )
+
+    expect(result).toMatchObject({
+      content: [{ type: "text", text: expect.stringContaining('"status":"pending"') }],
+      details: { questionId: expect.any(String), status: "pending", blocking: false },
+    })
+    await expect(store.getPending("s1")).resolves.toMatchObject({
+      blocking: false,
+      status: "ready",
+      ownerPrincipalId: "user-1",
+      workspaceId: "workspace-1",
+      agentTypeId: "reviewer",
+      askingUserId: "user-1",
+    })
+  })
+
   it("requires schema for non-obvious multi-field requests instead of making a fake A/B form", async () => {
     const { store, runtime } = await fixture()
     const tool = createAskUserTool({ runtime, sessionId: "s1" })
@@ -167,7 +194,7 @@ describe("createAskUserServerPlugin", () => {
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
     expect(plugin.id).toBe("ask-user")
     expect(plugin.routes).toEqual(expect.any(Function))
-    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user"])
+    expect(plugin.agentToolFactory?.({ agentTypeId: "reviewer" }).map((tool) => tool.name)).toEqual(["ask_user"])
     expect(plugin.workspaceBridgeHandlers?.map((entry) => entry.definition.op)).toEqual([
       "ask-user.v1.request",
       "ask-user.v1.answer",
@@ -179,13 +206,39 @@ describe("createAskUserServerPlugin", () => {
     ])
   })
 
+  it("rejects non-blocking factory calls without trusted coordinates and persists verified coordinates", async () => {
+    const { store, runtime } = await fixture()
+    const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "fallback" })
+    const tool = plugin.agentToolFactory!({ agentTypeId: "reviewer" }).find((candidate) => candidate.name === "ask_user")!
+
+    await expect(tool.execute({ title: "Unowned", schema, blocking: false }, {
+      toolCallId: "unowned-call",
+      abortSignal: new AbortController().signal,
+    })).resolves.toMatchObject({ isError: true, details: { code: "ASK_USER_UNAUTHORIZED" } })
+    await expect(store.listPending()).resolves.toEqual([])
+
+    await expect(tool.execute({ title: "Owned", schema, blocking: false }, {
+      toolCallId: "owned-call",
+      sessionId: "session-owned",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      abortSignal: new AbortController().signal,
+    })).resolves.toMatchObject({ details: { status: "pending", blocking: false } })
+    await expect(store.getPending("session-owned")).resolves.toMatchObject({
+      ownerPrincipalId: "user-1",
+      workspaceId: "workspace-1",
+      agentTypeId: "reviewer",
+      askingUserId: "user-1",
+    })
+  })
+
   it("lazily attaches its state publisher to the server bridge before tool execution", async () => {
     const { store, runtime } = await fixture()
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "fallback" })
     const liveBridge = bridge()
     const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
     try {
-      const tool = plugin.agentTools?.find((candidate) => candidate.name === "ask_user")
+      const tool = plugin.agentToolFactory?.({ agentTypeId: "reviewer" }).find((candidate) => candidate.name === "ask_user")
       expect(tool).toBeDefined()
       const pendingResult = tool!.execute({ title: "Need live input", schema }, {
         toolCallId: "call-live",
@@ -193,6 +246,7 @@ describe("createAskUserServerPlugin", () => {
         abortSignal: new AbortController().signal,
       })
       const pending = await waitForPendingQuestion(store, "session-live")
+      expect(pending.agentTypeId).toBe("reviewer")
       await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
         hint: { questionId: pending.questionId, sessionId: "session-live", status: "ready" },
       }))
@@ -228,7 +282,7 @@ describe("createAskUserServerPlugin", () => {
         params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
       })])
 
-      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const tool = plugin.agentToolFactory!({ agentTypeId: "default" }).find((candidate) => candidate.name === "ask_user")!
       const pendingResult = tool.execute({ title: "Raised while nobody watched", schema }, {
         toolCallId: "call-headless",
         sessionId: "session-headless",
@@ -282,7 +336,7 @@ describe("createAskUserServerPlugin", () => {
       await vi.waitFor(() => expect(otherClientCommands).not.toHaveLength(0), pendingWait)
       otherClientCommands.length = 0
 
-      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const tool = plugin.agentToolFactory!({ agentTypeId: "default" }).find((candidate) => candidate.name === "ask_user")!
       const pendingResult = tool.execute({ title: "Missed by reconnecting client", schema }, {
         toolCallId: "call-other-client",
         sessionId: "session-other-client",
@@ -339,7 +393,7 @@ describe("createAskUserServerPlugin", () => {
         data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
       })
 
-      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const tool = plugin.agentToolFactory!({ agentTypeId: "default" }).find((candidate) => candidate.name === "ask_user")!
       const pendingResult = tool.execute({ title: "Requestless decision", schema }, {
         toolCallId: "call-requestless",
         sessionId: "session-requestless",
@@ -447,7 +501,7 @@ describe("createAskUserServerPlugin", () => {
     const ui = bridge()
     const plugin = createAskUserServerPlugin({ workspaceRoot: dir, bridge: ui })
     expect(plugin.id).toBe("ask-user")
-    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user"])
+    expect(plugin.agentToolFactory?.({ agentTypeId: "default" }).map((tool) => tool.name)).toEqual(["ask_user"])
     expect(existsSync(join(dir, ".boring", "ask-user.json"))).toBe(false)
   })
 })

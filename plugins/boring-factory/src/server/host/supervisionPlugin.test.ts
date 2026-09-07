@@ -23,7 +23,7 @@ async function writeSupervisionFile(stateRoot: string, entries: Record<string, u
   await writeFile(resolve(stateRoot, 'supervision.json'), JSON.stringify({ entries }, null, 2), 'utf8')
 }
 
-function epicDeps(orchestratorSessionId = 'session-orch-1'): { registry: FactoryEpicRegistry; sessionBindings: FactorySessionBindings } {
+function epicDeps(orchestratorSessionId = 'session-orch-1', planDeadlineAt?: string): { registry: FactoryEpicRegistry; sessionBindings: FactorySessionBindings } {
   const entry: FactoryEpicEntry = {
     epicKey: 'live-farewell',
     featureName: 'Live Farewell',
@@ -32,6 +32,7 @@ function epicDeps(orchestratorSessionId = 'session-orch-1'): { registry: Factory
     repositoryRoot: '/tmp/repository',
     orchestratorSessionId,
     createdAt: '2026-09-05T00:00:00.000Z',
+    ...(planDeadlineAt ? { planDeadlineAt } : {}),
     status: 'active',
   }
   const bindings: Record<string, string> = {
@@ -73,7 +74,12 @@ interface FakeInjectCall {
 }
 
 /** Minimal fastify-shaped fake: `inject` is scripted, `addHook` just records the onClose callback. */
-function createFakeApp(options: { status: string }) {
+function createFakeApp(options: {
+  status: string
+  gate1Raised?: boolean
+  gate1AnsweredPage?: 1 | 2
+  gate1AnsweredStatus?: 'answered' | 'cancelled' | 'abandoned'
+}) {
   const calls: FakeInjectCall[] = []
   const prompts: string[] = []
   let onCloseHook: (() => Promise<void> | void) | undefined
@@ -91,6 +97,29 @@ function createFakeApp(options: { status: string }) {
         const payload = request.payload as { content: string }
         prompts.push(payload.content)
         return { statusCode: 202, json: <T>() => ({}) as T }
+      }
+      if (request.method === 'POST' && request.url === '/api/v1/workspace-bridge/call') {
+        const op = (request.payload as { op?: string } | undefined)?.op
+        const input = (request.payload as { input?: { cursor?: string } } | undefined)?.input
+        const pendingGate1 = [{ sessionId: 'session-restart', title: '[Live Farewell] Plan approval', status: 'ready' }]
+        const answeredGate1 = [{
+          sessionId: 'session-restart',
+          title: '[Live Farewell] Plan approval',
+          status: options.gate1AnsweredStatus ?? 'answered',
+        }]
+        if (op === 'ask-user.v1.pending-all') {
+          return { statusCode: 200, json: <T>() => ({ output: { pending: options.gate1Raised ? pendingGate1 : [] } }) as T }
+        }
+        const answered = options.gate1AnsweredPage === 1 || (options.gate1AnsweredPage === 2 && input?.cursor === 'page-2')
+          ? answeredGate1
+          : [{ sessionId: 'someone-else', title: '[Other Feature] Merge approval', status: 'answered' }]
+        return {
+          statusCode: 200,
+          json: <T>() => ({ output: {
+            answered,
+            ...(options.gate1AnsweredPage === 2 && !input?.cursor ? { nextCursor: 'page-2' } : {}),
+          } }) as T,
+        }
       }
       return { statusCode: 404, json: <T>() => ({}) as T }
     },
@@ -199,6 +228,121 @@ describe('factory supervision plugin', () => {
     expect(prompts[0]).toContain('Supervision tick 1')
     expect(prompts[0]).toContain('restart nudge')
 
+    handle.close()
+  })
+
+  it('uses the host plan deadline to nag an idle pre-Gate-1 Orchestrator without stopping it', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts } = createFakeApp({ status: 'idle' })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot,
+      workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('raise Gate 1 now with what you have')
+    expect(prompts[0]).not.toContain('ordinary nudge')
+    handle.close()
+  })
+
+  it('keeps the ordinary prompt before the host plan deadline', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts, calls } = createFakeApp({ status: 'idle' })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2999-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('ordinary nudge')
+    expect(calls.some((call) => call.url === '/api/v1/workspace-bridge/call')).toBe(false)
+    handle.close()
+  })
+
+  it('does not nag after a pending Gate 1 has been raised', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts } = createFakeApp({ status: 'idle', gate1Raised: true })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('ordinary nudge')
+    expect(prompts[0]).not.toContain('raise Gate 1 now with what you have')
+    handle.close()
+  })
+
+  it('finds an answered Gate 1 beyond the first Inbox page', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts, calls } = createFakeApp({ status: 'idle', gate1AnsweredPage: 2 })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('ordinary nudge')
+    const answeredCalls = calls.filter((call) => (
+      call.url === '/api/v1/workspace-bridge/call'
+      && (call.payload as { op?: string } | undefined)?.op === 'ask-user.v1.answered-all'
+    ))
+    expect(answeredCalls).toHaveLength(2)
+    handle.close()
+  })
+
+  it.each(['cancelled', 'abandoned'] as const)('ignores a %s Gate 1 entry and keeps deadline nudging active', async (gate1AnsweredStatus) => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts } = createFakeApp({ status: 'idle', gate1AnsweredPage: 1, gate1AnsweredStatus })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('raise Gate 1 now with what you have')
+    expect(prompts[0]).not.toContain('ordinary nudge')
     handle.close()
   })
 
