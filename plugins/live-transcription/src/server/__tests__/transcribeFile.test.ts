@@ -42,6 +42,12 @@ class FakeSandboxWorkspace implements Workspace {
   async writeBinaryFile(relPath: string, data: Uint8Array): Promise<void> {
     this.binaryFiles.set(relPath, data)
   }
+  async createBinaryFile(relPath: string, data: Uint8Array): Promise<void> {
+    if (this.files.has(relPath) || this.binaryFiles.has(relPath)) {
+      throw Object.assign(new Error(`already exists: ${relPath}`), { code: "EEXIST" })
+    }
+    this.files.set(relPath, new TextDecoder().decode(data))
+  }
   setStatSize(relPath: string, size: number): void {
     this.binaryFiles.set(relPath, new Uint8Array())
     this.statSizes.set(relPath, size)
@@ -89,6 +95,7 @@ async function createApp(options: {
   withRefiner?: boolean
   workspaceRoot: string
   audioRecordingDirectory?: string
+  refineFetch?: typeof fetch
 }): Promise<{ app: FastifyInstance; workspace: FakeSandboxWorkspace }> {
   const workspace = new FakeSandboxWorkspace(options.workspaceRoot)
   const plugin = createLiveTranscriptServerPlugin({
@@ -100,7 +107,7 @@ async function createApp(options: {
     ...(options.withRefiner === false ? {} : {
       refineUrl: "http://127.0.0.1:1/v1",
       refineBearerToken: "r".repeat(40),
-      refineFetch: (async () => new Response(JSON.stringify(SUCCESS_PAYLOAD), { status: 200 })) as unknown as typeof fetch,
+      refineFetch: options.refineFetch ?? ((async () => new Response(JSON.stringify(SUCCESS_PAYLOAD), { status: 200 })) as unknown as typeof fetch),
     }),
   })
   const app = fastify({ logger: false })
@@ -153,6 +160,27 @@ describe("POST /live-transcripts/transcribe-file", () => {
 
     const allowed = await transcribeFile(app, { path: "live-transcripts/recording.m4a", overwrite: true })
     expect(allowed.statusCode).toBe(200)
+  })
+
+  it("does not overwrite a transcript created while refinement is running", async () => {
+    let workspace!: FakeSandboxWorkspace
+    const createdDuringRefine = "# Created during refine\n"
+    const setup = await createApp({
+      workspaceRoot: "/workspace",
+      refineFetch: (async () => {
+        await workspace.writeFile("live-transcripts/recording.transcript.md", createdDuringRefine)
+        return new Response(JSON.stringify(SUCCESS_PAYLOAD), { status: 200 })
+      }) as unknown as typeof fetch,
+    })
+    workspace = setup.workspace
+    apps.push(setup.app)
+    await workspace.writeBinaryFile("live-transcripts/recording.m4a", new Uint8Array(16))
+
+    const response = await transcribeFile(setup.app, { path: "live-transcripts/recording.m4a" })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ error: { code: "live_transcript_revision_conflict" } })
+    expect(await workspace.readFile("live-transcripts/recording.transcript.md")).toBe(createdDuringRefine)
   })
 
   it("rejects paths outside live-transcripts/, traversal, absolute paths, and unsupported extensions", async () => {

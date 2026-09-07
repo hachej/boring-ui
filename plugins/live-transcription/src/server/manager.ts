@@ -519,7 +519,7 @@ export class LiveTranscriptManager {
     refiner: TranscriptRefiner,
     input: { path: string; title?: string; overwrite?: boolean },
   ): Promise<{ transcriptPath: string; words: number; speakers: number; durationSeconds: number }> {
-    if (!workspace.readBinaryFile || !workspace.writeFileWithStat) {
+    if (!workspace.readBinaryFile || !workspace.writeFileWithStat || (!input.overwrite && !workspace.createBinaryFile)) {
       throw new LiveTranscriptError("live_transcript_disabled", "Workspace binary read and guarded write operations are unavailable.", 503)
     }
     const relPath = validateWorkspaceAudioPath(input.path)
@@ -550,7 +550,18 @@ export class LiveTranscriptManager {
       title,
       startedAt,
     })
-    await workspace.writeFileWithStat(transcriptRelPath, result.markdown)
+    try {
+      if (input.overwrite) {
+        await workspace.writeFileWithStat(transcriptRelPath, result.markdown)
+      } else {
+        await workspace.createBinaryFile!(transcriptRelPath, new TextEncoder().encode(result.markdown))
+      }
+    } catch (error) {
+      if (!input.overwrite && (error as { code?: unknown })?.code === "EEXIST") {
+        throw new LiveTranscriptError("live_transcript_revision_conflict", "A transcript already exists for this recording.", 409)
+      }
+      throw error
+    }
     return {
       transcriptPath: transcriptRelPath,
       words: result.words,

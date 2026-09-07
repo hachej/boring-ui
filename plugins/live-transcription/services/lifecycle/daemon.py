@@ -289,8 +289,8 @@ def tcp_ready_targets(raw_targets: str, auth_entries: list[dict[str, str]]) -> C
     import base64
     import socket
     targets = [urllib.parse.urlparse(item.strip()) for item in raw_targets.split(",") if item.strip()]
-    if len(targets) < 2:
-        raise ValueError("Kyutai and Sortformer authenticated readiness targets are required")
+    if len(targets) < 3:
+        raise ValueError("Kyutai, Sortformer, and refine authenticated readiness targets are required")
     if len(targets) != len(auth_entries):
         raise ValueError("readiness target/auth count mismatch")
     for auth in auth_entries:
@@ -301,18 +301,24 @@ def tcp_ready_targets(raw_targets: str, auth_entries: list[dict[str, str]]) -> C
 
     def ready() -> bool:
         for target, auth in zip(targets, auth_entries):
-            if target.scheme != "ws" or target.hostname != "127.0.0.1" or not target.port:
+            if target.scheme not in {"ws", "http"} or target.hostname != "127.0.0.1" or not target.port:
                 return False
-            key = base64.b64encode(os.urandom(16)).decode()
             path = target.path + (("?" + target.query) if target.query else "")
-            request = (f"GET {path} HTTP/1.1\r\nHost: {target.hostname}:{target.port}\r\nUpgrade: websocket\r\n"
-                       f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
-                       f"{auth['header']}: {auth['value']}\r\n\r\n").encode()
+            if target.scheme == "ws":
+                key = base64.b64encode(os.urandom(16)).decode()
+                upgrade_headers = ("Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                                   f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n")
+                expected_status = b"HTTP/1.1 101"
+            else:
+                upgrade_headers = "Connection: close\r\n"
+                expected_status = b"HTTP/1.1 200"
+            request = (f"GET {path} HTTP/1.1\r\nHost: {target.hostname}:{target.port}\r\n"
+                       f"{upgrade_headers}{auth['header']}: {auth['value']}\r\n\r\n").encode()
             try:
                 with socket.create_connection((target.hostname, target.port), timeout=3) as connection:
                     connection.sendall(request)
                     response = connection.recv(1024)
-                if not response.startswith(b"HTTP/1.1 101"):
+                if not response.startswith(expected_status):
                     return False
             except OSError:
                 return False

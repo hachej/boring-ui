@@ -24,6 +24,37 @@ class FakeProvider:
 
 
 class ReadinessTests(unittest.TestCase):
+    def test_requires_refine_target_and_checks_http_health(self):
+        auth = [
+            {"header": "kyutai-api-key", "value": "kyutai"},
+            {"header": "Authorization", "value": "Bearer sortformer"},
+            {"header": "Authorization", "value": "Bearer refine"},
+        ]
+        with self.assertRaises(ValueError):
+            MODULE.tcp_ready_targets(
+                "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b",
+                auth[:2],
+            )
+
+        class Connection:
+            def __init__(self, response): self.response, self.request = response, b""
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def sendall(self, request): self.request = request
+            def recv(self, _size): return self.response
+
+        connections = [Connection(b"HTTP/1.1 101 Switching Protocols\r\n"),
+                       Connection(b"HTTP/1.1 101 Switching Protocols\r\n"),
+                       Connection(b"HTTP/1.1 200 OK\r\n")]
+        ready = MODULE.tcp_ready_targets(
+            "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b,http://127.0.0.1:3/v1/health",
+            auth,
+        )
+        with mock.patch("socket.create_connection", side_effect=connections):
+            self.assertTrue(ready())
+        self.assertIn(b"GET /v1/health HTTP/1.1", connections[2].request)
+        self.assertIn(b"Authorization: Bearer refine", connections[2].request)
+
     def test_rejects_unsafe_authentication_headers(self):
         with self.assertRaises(ValueError):
             MODULE.tcp_ready_targets(

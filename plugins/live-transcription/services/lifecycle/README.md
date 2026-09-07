@@ -23,8 +23,9 @@ Put lifecycle secrets in `/etc/boring-gpu-lifecycle.env` (mode `0600`):
 
 ```sh
 BORING_GPU_LIFECYCLE_BEARER_TOKEN=<random 32+ byte token>
-BORING_GPU_READY_WEBSOCKETS=ws://127.0.0.1:18880/api/asr-streaming,ws://127.0.0.1:18881/v1/diarize
-BORING_GPU_READY_AUTH_JSON=[{"header":"kyutai-api-key","value":"<kyutai token>"},{"header":"Authorization","value":"Bearer <sortformer token>"}]
+# The legacy variable name is retained for compatibility; the third target is the refine HTTP health endpoint.
+BORING_GPU_READY_WEBSOCKETS=ws://127.0.0.1:18880/api/asr-streaming,ws://127.0.0.1:18881/v1/diarize,http://127.0.0.1:18883/v1/health
+BORING_GPU_READY_AUTH_JSON=[{"header":"kyutai-api-key","value":"<kyutai token>"},{"header":"Authorization","value":"Bearer <sortformer token>"},{"header":"Authorization","value":"Bearer <refine token>"}]
 ```
 
 Configure Clinic with the same lifecycle token in its root-owned environment file:
