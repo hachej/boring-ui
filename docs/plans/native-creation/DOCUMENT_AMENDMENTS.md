@@ -175,16 +175,18 @@ published or useful customer product.
 | Private correction is proposed for reuse | Authorized export, separate maintainer integration and separate downstream adoption; no private data leakage. |
 | Change affects authorization or completed effects | No fabricated approval, widening of scope, or claim that UI undo reverses disclosure/effects. |
 
-## 6. Handoff and remaining decisions
+## 6. Pre-ruling handoff (historical; superseded)
 
-The first proof consumer, default private-activation policy, upstream-adoption
-policy, and existing successor ownership are unresolved as recorded in the
-[pack index](README.md). Do not manufacture answers from the request to create
-a PR. The proposal favors a mathematics technical tracer and selective
-lifecycle/composition replacement, but neither is recorded as a new owner ruling.
+At the proposal stage, the first proof consumer, default private-activation
+policy, upstream-adoption policy, and execution home were unresolved. The owner
+subsequently settled them in [RECONCILIATION §13](../long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey),
+and the [pack index](README.md) records the adopted answers. The earlier
+recommendation of a mathematics technical tracer became the Seneca mathematics
+tutor ruling; §13 also selected this repository and the three runtime modes.
 
-Before implementation, reconcile #1548, adopt the selected clauses through the
-ratified decision process, update DIRECTION once, map the useful slices into
-existing work, and obtain the proof/review required for the actual revision.
-This document creates no scheduler, new authority, production capability, or
-permission to merge, deploy, migrate, delete, or broaden automation.
+The pre-ruling handoff required reconciliation with #1548, adoption through the
+ratified decision process, one DIRECTION update, and mapping into existing work.
+Those documentation steps are applied by this PR: #1548 is folded, and the
+2026-09-07 DIRECTION amendment is the current dispatch authority. This document
+creates no scheduler, production capability, or permission to merge, deploy,
+migrate, delete, or broaden automation.

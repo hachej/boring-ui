@@ -13,8 +13,8 @@ grants. The Clinic / Charlotte / ESG consumers below remain E0 preparation
 fixtures and later structurally different consumers; the first live proof
 consumer is the Seneca mathematics tutor product (§13(g)).
 
-[DIRECTION](../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
-alone owns dispatch. [RECONCILIATION §11](../long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution)
+The [DIRECTION amendment of 2026-09-07](../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+alone owns current dispatch. [RECONCILIATION §11](../long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution)
 owns the release contract; [§12](../long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof)
 owns the software-model and consumer-scope clarification. The
 [implementation-spec crosswalk](../long-term/ratified/V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
