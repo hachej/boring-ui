@@ -173,7 +173,6 @@ export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/env
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
 export { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
-export type { SqliteAgentRequestLedgerOptions } from './agent-host/sqliteRequestLedger'
 export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 export type {
   LegacyRequestLedgerLocation,

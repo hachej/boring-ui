@@ -1,8 +1,8 @@
 # [Gateway Retry] Plan, visually
 
-**Status:** Ready for owner plan decision  
-**Orchestrator:** session `463da74c-35e5-49cb-bb7f-78fd4d41c30f`  
-**Epic:** `pr-1545-gateway-retry` · `wt-391-forward-uchc`  
+**Status:** Ready for owner plan decision
+**Orchestrator:** session `463da74c-35e5-49cb-bb7f-78fd4d41c30f`
+**Epic:** `pr-1545-gateway-retry` · `wt-391-forward-uchc`
 **PR:** #1545 · starting head `25b2d76e39650de4b42cc75b7f19a9bfdd5f1075`
 
 The repair replaces serial-looking proof with real SQLite contention, aligns the canonical contract, and then independently validates the exact protected revision.

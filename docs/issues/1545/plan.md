@@ -67,18 +67,18 @@ The public `AgentRequestLedger` seam is protected. Delivery therefore ends at on
 
 ### Slice: Repair concurrency proof and canonical contract
 
-**Bead:** `wt-391-forward-uchc.1`  
-**Delivers:** genuine concurrent SQLite regression, canonical plan reconciliation, and current-main integration.  
-**Blocked by:** None.  
-**Proof:** focused/full agent tests, typecheck, invariants, and concurrency result at committed SHA.  
+**Bead:** `wt-391-forward-uchc.1`
+**Delivers:** genuine concurrent SQLite regression, canonical plan reconciliation, and current-main integration.
+**Blocked by:** None.
+**Proof:** focused/full agent tests, typecheck, invariants, and concurrency result at committed SHA.
 **Review budget:** inside one Worker session; repair is limited to two known findings plus merge conflicts.
 
 ### Slice: Prove and present the exact final revision
 
-**Bead:** `wt-391-forward-uchc.2`  
-**Delivers:** exact-SHA sandbox proof, independent standards/spec + thermo + explicit abstraction PASS, risk classification, present-pr/PR evidence, and merge-gate handoff.  
-**Blocked by:** `wt-391-forward-uchc.1`.  
-**Proof:** exact commands/results, reviewer provenance, GitHub check links, and current-main candidate result.  
+**Bead:** `wt-391-forward-uchc.2`
+**Delivers:** exact-SHA sandbox proof, independent standards/spec + thermo + explicit abstraction PASS, risk classification, present-pr/PR evidence, and merge-gate handoff.
+**Blocked by:** `wt-391-forward-uchc.1`.
+**Proof:** exact commands/results, reviewer provenance, GitHub check links, and current-main candidate result.
 **Review budget:** maximum four review rounds for the lane; a new repair finding returns to a new dependent repair Bead rather than being waived.
 
 ## Lineage
