@@ -547,7 +547,10 @@ stable code:
 | --- | --- |
 | `AGENT_TYPE_UNKNOWN` | `agentTypeId` not in this gateway's catalog |
 | `AGENT_SESSION_NOT_FOUND` | ref unknown **or** scope mismatch (fail closed; indistinguishable by design) |
-| `AGENT_SCOPE_DENIED` | caller's scope failed authorization |
+| `AGENT_SCOPE_DENIED` | caller's workspace/subject scope failed authorization |
+| `AGENT_ENTITLEMENT_REQUIRED` | access requires a subscription or entitlement the caller does not have |
+| `AGENT_ACCESS_FORBIDDEN` | the authoritative access policy denied this caller and Agent |
+| `AGENT_ACCESS_POLICY_UNAVAILABLE` | the authoritative access policy could not make a decision; retry according to details |
 | `AGENT_SESSION_REPLAY_GAP` | requested cursor evicted; recover via `readSessionState` then reconnect at snapshot `seq` |
 | `AGENT_SESSION_CURSOR_AHEAD` | cursor beyond live edge (client bug / stale ref) |
 | `AGENT_SESSION_CURSOR_EXPIRED` | reserved for snapshot-registry pagination (v2 pool cursor; optional early streaming-lane adoption) — v0 keyset cursors fail as `AGENT_SESSION_CURSOR_INVALID` |
@@ -555,8 +558,8 @@ stable code:
 | `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest, or an invalid ledger transition was attempted |
 | `AGENT_REQUEST_IN_PROGRESS` | same-key/same-digest request already has another active owner; retry after that request reaches a replayable terminal state |
 | `AGENT_REQUEST_OUTCOME_UNKNOWN` | effect was durably admitted but Host died before a safe completed receipt; never replay silently |
+| `AGENT_RUNTIME_RESTART_REQUIRED` | the pinned Agent runtime changed incompatibly and requires a process/session restart before reuse |
 | `AGENT_COMMAND_INVALID_STATE` | command/payload is not valid for the authoritative Pi chat status |
-| `AGENT_SESSION_RUNTIME_SCOPE_MISMATCH` | authorized actor cannot safely reuse the session's pinned runtime scope; no second writer is opened |
 | `AGENT_SHARED_ENVIRONMENT_UNAVAILABLE` | Agents requiring one canonical Workspace environment resolve incompatible placement identities/providers |
 | `AGENT_GATEWAY_CLOSED` | gateway/host shutting down; retry after reconnect |
 
@@ -624,7 +627,7 @@ ledger implementing this exact state machine and API — strictly stronger than
 today's wire, which has no command idempotency at all. HTTP callers survive a
 Host restart; for them, retry protection spans the process lifetime and a
 retry crossing a restart degrades to today's wire semantics (documented at
-each affected promise: create retention, legacy-error replay, drain
+each affected promise: create retention, stable-service-error replay, drain
 outcome-unknown). In-process embedded callers die with the process and
 recover via the documented snapshot loop. The durable file/SQLite ledger beside `sessionRoot` — with
 ≥24-hour completed-record/create-tombstone retention (config may increase,
@@ -645,12 +648,15 @@ transport DTO):
 type AgentGatewayEffect =
   | 'session.create'
   | 'session.rename'
+  | 'session.archive'
   | 'session.delete'
   | 'session.prompt'
   | 'session.followup'
   | 'session.interrupt'
   | 'session.stop'
   | 'session.queue.clear'
+  | 'agent.reload'
+  | 'session.command.execute'
 
 type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }
@@ -669,6 +675,9 @@ interface AgentGatewayErrorDTO {
     | 'AGENT_TYPE_UNKNOWN'
     | 'AGENT_SESSION_NOT_FOUND'
     | 'AGENT_SCOPE_DENIED'
+    | 'AGENT_ENTITLEMENT_REQUIRED'
+    | 'AGENT_ACCESS_FORBIDDEN'
+    | 'AGENT_ACCESS_POLICY_UNAVAILABLE'
     | 'AGENT_SESSION_REPLAY_GAP'
     | 'AGENT_SESSION_CURSOR_AHEAD'
     | 'AGENT_SESSION_CURSOR_EXPIRED'
@@ -676,24 +685,26 @@ interface AgentGatewayErrorDTO {
     | 'AGENT_REQUEST_CONFLICT'
     | 'AGENT_REQUEST_IN_PROGRESS'
     | 'AGENT_REQUEST_OUTCOME_UNKNOWN'
+    | 'AGENT_RUNTIME_RESTART_REQUIRED'
     | 'AGENT_COMMAND_INVALID_STATE'
-    | 'AGENT_SESSION_RUNTIME_SCOPE_MISMATCH'
     | 'AGENT_SHARED_ENVIRONMENT_UNAVAILABLE'
     | 'AGENT_GATEWAY_CLOSED'
   readonly message: string
   readonly details?: JsonValue
 }
 
+interface AgentStableServiceErrorDTO {
+  readonly statusCode: number
+  readonly error: {
+    readonly code: string
+    readonly message: string
+    readonly retryable?: boolean
+  }
+}
+
 type AgentRequestFailure =
   | { readonly kind: 'gateway'; readonly error: AgentGatewayErrorDTO }
-  | {
-      /** Server-only compatibility envelope; never returned by AgentGateway. */
-      readonly kind: 'legacy-admission'
-      readonly code: string
-      readonly statusCode: 500
-      readonly message: string
-      readonly details?: JsonValue
-    }
+  | { readonly kind: 'service'; readonly error: AgentStableServiceErrorDTO }
 
 interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
@@ -739,12 +750,13 @@ interface AgentRequestLedger {
   complete(key: AgentRequestKey, receipt: JsonValue): Promise<void>
   markOutcomeUnknown(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void>
   read(key: AgentRequestKey): Promise<AgentRequestLedgerRecord | undefined>
+  close?(): void | Promise<void>
 }
 ```
 
-Runtime validation enforces create → Agent target and every other effect → full
-session target. The canonical digest covers the complete effect payload but not
-`requestId`; conflicting digests under one key return
+Runtime validation enforces `session.create`/`agent.reload` → Agent target and
+every other effect → full session target. The canonical digest covers the
+complete effect payload but not `requestId`; conflicting digests under one key return
 `AGENT_REQUEST_CONFLICT`. Valid transactional transitions are exact:
 
 | Operation | Valid predecessor → result |
@@ -752,9 +764,9 @@ session target. The canonical digest covers the complete effect payload but not
 | `prepare` | missing → `pending-admission` + `created`; retryable same key/digest → atomically clear marker + `reclaimed` for one caller; every other same key/digest → current record + `existing`; different digest → conflict |
 | `markAdmissionRetryable` | unmarked `pending-admission` → `pending-admission, retryable: true`; every other predecessor → conflict |
 | `acceptAdmission` | unmarked `pending-admission` → `admission-accepted`; retryable pending or any concurrent second transition → conflict; callers must invoke only after their `created`/`reclaimed` prepare result |
-| strong `reject` | `pending-admission` → `rejected(kind=gateway)` |
+| strong `reject` | `pending-admission | admission-accepted | in-flight` → `rejected(kind=gateway)` |
 | `beginEffect` | `admission-accepted` → `in-flight` |
-| legacy observed reject | `in-flight` → `rejected(kind=legacy-admission)` |
+| stable service reject | `in-flight` → `rejected(kind=service)` |
 | `complete` | `in-flight` → `completed` |
 | `markOutcomeUnknown` | `in-flight` → `outcome-unknown` |
 
@@ -967,9 +979,10 @@ One native session has exactly one execution/writer lease keyed by its full ref,
 independent of caller/runtime-binding caches. Creation persists the selected
 `runtimeScopeIdentity`. Later Workspace-authorized actors may read through the
 same session authority, but a mutation must resolve/reuse that pinned identity;
-if actor-sensitive policy cannot authorize safe reuse it fails with
-`AGENT_SESSION_RUNTIME_SCOPE_MISMATCH` instead of opening a second harness or
-changing tools/prompt mid-session. Concurrent same-session commands across two
+if actor-sensitive policy cannot authorize safe reuse it fails closed through
+the current access-policy errors; incompatible published/runtime identity drift
+fails with `AGENT_RUNTIME_RESTART_REQUIRED` instead of opening a second harness
+or changing tools/prompt mid-session. Concurrent same-session commands across two
 subjects prove one model loop/writer and deterministic admission.
 
 Environment ownership is separate from Agent runtime bindings. One canonical
@@ -1002,22 +1015,18 @@ Existing `registerAgentRoutes` callers retain their current optional
 `({ workspaceId, requestId }) => Promise<void>` callback unchanged
 (`packages/agent/src/core/piChatSessionService.ts:73-75`): the compat wrapper
 records a built-in `legacy-at-most-once` acceptance, places that legacy callback
-*after* ledger `beginEffect` and immediately before
-the mutation, invokes it at most once, and maps any crash/ambiguous completion
-to `AGENT_REQUEST_OUTCOME_UNKNOWN` rather than retrying. A synchronous/observed
-`AgentEffectAdmissionError` becomes the server-only
-`legacy-admission` failure record. Its arbitrary code, fixed status, message,
-and details are canonicalized through the same JSON projection used by today's
-alias, then the legacy alias replays that exact shape on first response and
-same-ID retry (retry-across-restart replay requires the durable Level-D
-ledger; at Level B the record clears with the process); it never enters the
-public Gateway error union. This
-preserves existing custom failures such as
-`AGENT_HOST_ADMISSION_RECORD_FAILED`
-(`packages/agent/src/server/http/routes/__tests__/piChat.test.ts:22,494-504`).
-Retryability is unavailable at this legacy level. Golden tests preserve its
-arguments, ordering, custom code/details, and restart replay. This mapping is
-compatibility only, never advertised as the strong reconcilable level.
+*after* ledger `beginEffect` and immediately before the mutation, invokes it at
+most once, and maps any crash/ambiguous completion to
+`AGENT_REQUEST_OUTCOME_UNKNOWN` rather than retrying. An observed action failure
+is replayable only when `stableServiceActionFailure` can project it to the
+server-only `{ kind: 'service', error: AgentStableServiceErrorDTO }` record:
+the error must have a canonical shared `ErrorCode`, an integer 4xx/5xx status
+(or the canonical payment status), and optional boolean `retryable`. The same
+stable service shape is replayed on a same-ID retry; unprojectable failures
+become outcome-unknown. Retry-across-restart replay requires the durable Level-D
+ledger; at Level B the record clears with the process. Service failures never
+enter the public Gateway error union. This compatibility mapping is not
+advertised as the strong reconcilable admission level.
 
 Lifecycle ownership is single and explicit: the mounted plugin calls
 `host.drain()` from `preClose`, which rejects new work, proactively closes or
