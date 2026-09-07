@@ -87,7 +87,7 @@ this journey's "job continuity" stage consumes. Epic
 | 14 | Reconciliation: compatibility, precise conflict, quarantine, undo (`nc-r`) | Compatible upgrade keeps the retained change; incompatible base → precise conflict; quarantine; undo | after 4, 9, 12 |
 | 15 | `local` sandbox runtime adapter (`nc-4b`) | local bwrap/runsc runtime | after 12 |
 | 16 | Isolated generated View renderer (`nc-5`) | Generated UI in a sandboxed iframe | after 9, 10; UI surface |
-| 17 | First journey acceptance (`nc-7`) | Math-tutor fixture for a second learner in local mode; receipt from evidence records | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — the only bead that can close the epic |
+| 17 | First journey acceptance (`nc-7`) | Supporting math-tutor fixture, then live Seneca curator-created tutor installed for a second authorized learner; real domain operations and a bounded Job Thread retain a result/decision after chat/browser closure | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — the only bead that can close the epic; fixture-only evidence cannot close it |
 
 The lifecycle ladder E0–E6 below (folded from the former Workspace Evolution
 pack) remains the acceptance vocabulary for later classes; E1 is what `nc-7`

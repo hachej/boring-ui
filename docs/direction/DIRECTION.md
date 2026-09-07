@@ -750,9 +750,14 @@ embedded gate. Installation and learner data follow the first two. The worker
 cap of three and the single UI-surface worker rule apply (`nc-v`, `nc-l`,
 `nc-5` never run together). Zero autonomous merges holds.
 
-**Done-bar:** nc-7 passes with zero founder source edits after the fixture
-request, the installed product survives destruction of the builder sandbox
-and one upstream fixture update, and the receipt is committed under
-`docs/issues/1562/`. A configuration-only success earns its own credit and
-does not close the epic. Founder interventions per accepted retained
-adaptation is the standing metric.
+**Done-bar:** nc-7 first requires the deterministic fixture to pass with zero
+founder source edits after the fixture request, survive destruction of the
+builder sandbox and one upstream fixture update, and commit its supporting
+receipt under `docs/issues/1562/`. That fixture is supporting evidence only.
+Before nc-7 or the epic can close, the Seneca curator must create the live
+mathematics tutor, a second authorized learner must install and use it through
+real domain identity and operations, and a bounded Job Thread must retain a
+result or decision after chat and browser closure; commit the redacted live
+receipt under `docs/issues/1562/`. A configuration-only or fixture-only success
+earns its own credit and does not close the epic. Founder interventions per
+accepted retained adaptation is the standing metric.
