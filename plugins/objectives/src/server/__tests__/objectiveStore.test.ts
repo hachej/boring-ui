@@ -4,7 +4,9 @@ import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:f
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { OBJECTIVE_MAX_AGGREGATE_BYTES } from "../../shared/constants"
 import { OBJECTIVE_ERROR_CODES } from "../../shared/error-codes"
+import { validateCreateObjectiveInput } from "../../shared/schema"
 import type { CreateObjectiveInput } from "../../shared/types"
 import { FileObjectiveStore } from "../objectiveStore"
 import { WorkspacePathEscapeError } from "../pathSafety"
@@ -495,6 +497,36 @@ describe("FileObjectiveStore", () => {
       const second = await store.create(input({ clientRequestId: "b" }))
       expect(first.id).not.toBe(second.id)
       await expect(store.list()).resolves.toHaveLength(2)
+    })
+
+    it("only accepts near-limit creates whose fully materialized records remain get/list readable", async () => {
+      expect(OBJECTIVE_MAX_AGGREGATE_BYTES).toBe(24 * 1024)
+      const constraints = Array.from({ length: 48 }, () => "c".repeat(500))
+      const readableAtLimit = input({
+        title: "T",
+        objective: "o".repeat(177),
+        metric: "M",
+        baseline: 0,
+        target: 1,
+        constraints,
+      })
+      const unreadableAfterDefaults = input({ ...readableAtLimit, objective: "o".repeat(178) })
+
+      // Both caller payloads fit the input schema's 24 KiB aggregate cap.
+      // The second only crosses the cap after create adds its id, defaults,
+      // and timestamps, so the store must reject it before committing.
+      expect(validateCreateObjectiveInput(readableAtLimit).success).toBe(true)
+      expect(validateCreateObjectiveInput(unreadableAfterDefaults).success).toBe(true)
+
+      const created = await store.create(readableAtLimit)
+      await expect(store.get(created.id)).resolves.toEqual(created)
+      await expect(store.list()).resolves.toEqual([created])
+
+      await expect(store.create(unreadableAfterDefaults)).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.TOO_LARGE,
+      })
+      await expect(store.get(created.id)).resolves.toEqual(created)
+      await expect(store.list()).resolves.toEqual([created])
     })
 
     it("rejects an update whose merge with the existing record would exceed the aggregate cap, leaving the record unchanged and readable", async () => {
