@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { RuntimeBundle, RuntimeModeAdapter } from '../runtime/mode'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
@@ -11,6 +12,7 @@ export interface EnvironmentProvisioningSnapshot {
 }
 
 interface EnvironmentGeneration {
+  readonly generationId: string
   readonly bundle: RuntimeBundle
   readonly provisioning?: EnvironmentProvisioningSnapshot
 }
@@ -21,13 +23,19 @@ interface EnvironmentRecord {
   readonly abort: AbortController
   readonly generation: Promise<EnvironmentGeneration>
   references: number
+  retiring: boolean
   disposalPromise?: Promise<void>
 }
 
 export interface EnvironmentLease {
+  /** Opaque immutable identity for this exact provider/provisioning generation. */
+  readonly generationId: string
   readonly bundle: RuntimeBundle
   /** One immutable Environment-owned snapshot shared by every compatible Agent binding. */
   readonly provisioning?: EnvironmentProvisioningSnapshot
+  readonly signal: AbortSignal
+  /** Retains this exact generation; never resolves the workspace's current generation. */
+  retain(): EnvironmentLease
   release(): void
   retire(): Promise<void>
 }
@@ -86,6 +94,7 @@ export class EnvironmentLeaseManager {
         abort,
         generation,
         references: 0,
+        retiring: false,
       }
       this.records.set(key, record)
       generation.catch(() => {
@@ -104,24 +113,46 @@ export class EnvironmentLeaseManager {
       if (record.references === 0 && this.records.get(key) === record) this.records.delete(key)
       throw error
     }
+    return this.createLease(record, generation)
+  }
+
+  private createLease(record: EnvironmentRecord, generation: EnvironmentGeneration): EnvironmentLease {
     let released = false
     const release = () => {
       if (released) return
       released = true
-      record!.references = Math.max(0, record!.references - 1)
+      record.references = Math.max(0, record.references - 1)
+      if (record.retiring && record.references === 0) void this.retireRecord(record)
     }
-    return {
+    return Object.freeze({
+      generationId: generation.generationId,
       bundle: generation.bundle,
       provisioning: generation.provisioning,
+      signal: record.abort.signal,
+      retain: () => {
+        if (released || record.retiring || record.abort.signal.aborted || record.disposalPromise) {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'environment generation is no longer available',
+          )
+        }
+        record.references += 1
+        return this.createLease(record, generation)
+      },
       release,
       retire: async () => {
+        record.retiring = true
+        record.abort.abort()
         release()
-        if (record!.references !== 0) return
-        if (this.records.get(key) === record) this.records.delete(key)
-        record!.abort.abort()
-        await this.disposeRecord(record!)
+        if (record.references === 0) await this.retireRecord(record)
       },
-    }
+    })
+  }
+
+  private retireRecord(record: EnvironmentRecord): Promise<void> {
+    if (this.records.get(record.key) === record) this.records.delete(record.key)
+    record.abort.abort()
+    return this.disposeRecord(record)
   }
 
   private async createEnvironment(
@@ -145,7 +176,7 @@ export class EnvironmentLeaseManager {
         await environment.provisionRuntime?.({ runtimeBundle: bundle, signal }),
       )
       if (signal.aborted) throw closedError()
-      return { bundle, provisioning }
+      return { generationId: randomUUID(), bundle, provisioning }
     } catch (error) {
       await providerBundle.disposeRuntime?.().catch(() => {})
       throw error
