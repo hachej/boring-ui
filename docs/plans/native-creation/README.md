@@ -110,8 +110,8 @@ inherited by a fork that changes it without an applicability check.
 Documentation and beads only. It records the rulings in the ratified pack
 (§13, D33, dated banners at every superseded site), amends DIRECTION once,
 folds PR #1548, propagates the ratified §9a Thread/Session split into the two
-stale spec/handbook examples, and creates epic #1562 with nine beads meeting
-the Definition of Ready. No code, dependency, schema, Factory policy, merge
+stale spec/handbook examples, and creates epic #1562 with 18 dependency-linked
+beads (four initially ready). No code, dependency, schema, Factory policy, merge
 authority, infrastructure, customer data or production service changes here;
-the first code change is bead `nc-0`, which gates the existing in-process
-runtime default-off.
+the first implementation wave includes `nc-0`, which gates the existing
+in-process runtime default-off.
