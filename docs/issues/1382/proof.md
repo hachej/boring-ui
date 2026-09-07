@@ -4,7 +4,7 @@
 
 - Issue / epic / delivery Bead / PR: [#1382](https://github.com/hachej/boring-ui/issues/1382) / `pr-1382-objectives-plugin` / `wt-391-forward-5m2v.4` / [PR #1382](https://github.com/hachej/boring-ui/pull/1382).
 - Actual comparison base and current `origin/main`: `68dcb7db8822f721c6b45d0731e01a46fa364f28`.
-- Reviewed code head: `5eea1451e322f4940478f28367c1cc6624951f30`.
+- Reviewed code head: `1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c` (includes final review-found merged-update validation; predecessor `5eea1451e322f4940478f28367c1cc6624951f30`).
 - Integration candidate: current main is the merge-base and an ancestor of the reviewed code head; merge commits `384a89eed01f4c3521fefe1d7ba015d17ff06eb0` and `3f37b1679e1df704edd6b15a2387fe39c2824b62` integrated main without rewriting history.
 - Artifact proof/media commit: `025125fae4b779e65edbd3f5be84297b4f1b1875`; owner presentation commit: `732de74e89db2553853cb5968bdd0d3651d881b5`. The final receipt commit that updates this literal lineage is recorded in the Bead handoff and PR proof comment; all commits after the reviewed code head are docs/media only and change no product code or contract.
 
@@ -20,7 +20,7 @@ Factory sandbox `f959fb64-6db6-428f-a571-5303c9a7030b` verified both `git rev-pa
 
 - `CI=true pnpm install --frozen-lockfile` — PASS; only existing missing-prebuilt-bin warnings.
 - `pnpm --filter @hachej/boring-objectives typecheck` — PASS.
-- `pnpm --filter @hachej/boring-objectives test` — PASS, **8 files / 92 tests**.
+- `pnpm --filter @hachej/boring-objectives test` — PASS, **8 files / 93 tests**.
 - `pnpm --filter @hachej/boring-objectives build` — PASS, ESM plus declarations.
 - `pnpm audit:imports` — PASS.
 - Runtime Refactor P8 exact commands `pnpm lint:invariants` and `pnpm check:golden-path` — PASS, including no uncovered shared `node:*`, `Buffer`, or raw-path signatures.
@@ -37,8 +37,8 @@ node docs/issues/1382/run-ui-proof.mjs <revision> <label> .handoff/objectives-ui
 
 - Fixture: `obj-11111111-1111-4111-8111-111111111111`; viewport: 1280×720.
 - Base `68dcb7db8822f721c6b45d0731e01a46fa364f28`: Objective surface absent; click **Probe Objective surface**; status becomes `No Objective panel registered.` — PASS. [Video](../../../assets/objectives-plugin-final/before-68dcb7db8822.webm) · [JSON report](../../../assets/objectives-plugin-final/before-68dcb7db8822.json).
-- Candidate `5eea1451e322f4940478f28367c1cc6624951f30`: initial `2 / 10`; click **Apply server update**; ObjectivePane's actual visibility-refresh handler reaches `7 / 10`; constraint visible — PASS. [Video](../../../assets/objectives-plugin-final/candidate-5eea1451e322.webm) · [JSON report](../../../assets/objectives-plugin-final/candidate-5eea1451e322.json).
-- The same two runs passed in the exact-SHA Factory sandbox and were repeated locally to publish owner-accessible artifacts. Per the requested existing-runner scenario, this is a deterministic component harness using archived revision sources, a Workspace module shim, and fixture `fetch`; it proves ObjectivePane interaction/refresh rather than claiming an end-to-end durable-store browser path. Direct store/tool/real WorkspaceBridge registry coverage is supplied by the 92-test suite.
+- Candidate `1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c`: initial `2 / 10`; click **Apply server update**; ObjectivePane's actual visibility-refresh handler reaches `7 / 10`; constraint visible — PASS. [Video](../../../assets/objectives-plugin-final/candidate-1a6c4158dde1.webm) · [JSON report](../../../assets/objectives-plugin-final/candidate-1a6c4158dde1.json).
+- The same two runs passed in the exact-SHA Factory sandbox and were repeated locally to publish owner-accessible artifacts. Per the requested existing-runner scenario, this is a deterministic component harness using archived revision sources, a Workspace module shim, and fixture `fetch`; it proves ObjectivePane interaction/refresh rather than claiming an end-to-end durable-store browser path. Direct store/tool/real WorkspaceBridge registry coverage is supplied by the 93-test suite.
 - Mobile omitted: the plugin is unregistered and this proof targets a fixed workbench pane; responsive residual is limited to component coverage.
 
 ## CI and integration audit
@@ -51,7 +51,7 @@ node docs/issues/1382/run-ui-proof.mjs <revision> <label> .handoff/objectives-ui
 
 ## Independent review and explicit abstraction PASS
 
-**Abstraction review: PASS** at reviewed code SHA `5eea1451e322f4940478f28367c1cc6624951f30` (Boring Reviewer session `109e9597-bf15-4529-82eb-343c3f005bbc`, `openai-codex/gpt-5.6-sol`, digest `sha256:805fd4b098d2273c82c037d94d2d7b0e99bd87a38b38e600a4f094c0dbb98673`). Standards/spec and thermo also PASS with no material findings.
+**Abstraction review: PASS** for the predecessor code at `5eea1451e322f4940478f28367c1cc6624951f30`; final merged-update fix is independently re-reviewed at its final SHA (Boring Reviewer session `109e9597-bf15-4529-82eb-343c3f005bbc`, `openai-codex/gpt-5.6-sol`, digest `sha256:805fd4b098d2273c82c037d94d2d7b0e99bd87a38b38e600a4f094c0dbb98673`). Standards/spec and thermo also PASS with no material findings.
 
 - Governing contracts inspected: `docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md`, `docs/plans/long-term/ratified/RECONCILIATION.md`, and `docs/procedures/coding-invariants.md`.
 - Public seams inspected: objectives front/server/shared exports; `ObjectiveStore`, `FileObjectiveStore`, `ObjectiveError`, tools, objective.v1 handlers/client; WorkspaceBridge registry/trusted handler/HTTP composition; `createWorkspaceAgentServer`; plugin composition; and `ObjectivePane`.
@@ -62,7 +62,7 @@ node docs/issues/1382/run-ui-proof.mjs <revision> <label> .handoff/objectives-ui
 
 ## Risk route, counts, triggers, and exclusions
 
-- Full base-to-reviewed-code diff: **5,465 additions + 19 deletions = 5,484 changed lines across 55 files** (`git diff --numstat 68dcb7db...5eea1451e`). Through owner-presentation commit `732de74e8`, the PR is **7,524 additions + 19 deletions = 7,543 changed lines across 61 files**; the increase is docs/media/artifact-only and does not alter production risk.
+- Predecessor base-to-code diff: **5,465 additions + 19 deletions = 5,484 changed lines across 55 files** (`68dcb7db...5eea1451e`). Final reviewed-code counts are refreshed below after the evidence commit. Through owner-presentation commit `732de74e8`, the PR is **7,524 additions + 19 deletions = 7,543 changed lines across 61 files**; the increase is docs/media/artifact-only and does not alter production risk.
 - `packages/**` production additions + deletions: **0**; the base-to-head `packages` diff is empty.
 - Numerical exclusions from the package threshold: all plugin production code (outside `packages/**`), tests, evals, docs, `.beads/issues.jsonl`, manifests, lockfile, and generated/artifact media. Exclusion is numerical only; every area remains semantically reviewed.
 - Matched protected trigger: durable Objective primitive / architecture semantic decision. This controls the route regardless of package production count.

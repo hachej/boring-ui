@@ -1,0 +1,16 @@
+{
+  "revision": "1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c",
+  "label": "candidate",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "hasObjectiveSurface": true,
+  "assertions": [
+    "initial progress 2 / 10",
+    "server update interaction",
+    "refreshed progress 7 / 10",
+    "constraint visible"
+  ],
+  "video": "assets/objectives-plugin-final/candidate-1a6c4158dde1.webm"
+}
