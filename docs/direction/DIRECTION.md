@@ -181,9 +181,9 @@ real duplication is two replay sources. Rewrite the bead before working it.
 
 | Folder | Status |
 |---|---|
-| `docs/issues/909/` | Frozen record of what shipped + follow-up beads. Binding for the Gateway contract (§6) |
-| `docs/issues/391/` | Decision-28 detail for Waves 2+. Binding once its wave opens |
-| `docs/issues/805/` | A1 shipped; remainder absorbed into 391's F-graph. Reference only |
+| AgentGateway planning area | Historical; `packages/agent/docs/AGENT_GATEWAY_V0.md` binds the Gateway contract |
+| Fleet/environment planning area | Decision-28 detail for Waves 2+; follow #1409's canonical moved path if that PR lands |
+| A1 planning area | A1 shipped; remainder absorbed into Decision 28's F-graph. Reference only |
 | `docs/issues/808/`, `820/`, `806/`, `900/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
 
 Lane tracking issues (each with a draft seed PR): #1009 streaming, #1010 BYOK,
@@ -224,8 +224,8 @@ Decision 30 (presentation-only landings).
   (#1141); readiness/observability surface in review (#1142).
 - **Wave 3 opened early, per its own triggers firing.** BYOK: KmsBackend vault
   + local-KEK backend merged (#1132); durable credential persistence in review
-  (#1145); plans r3 ratified (#1137). External MCP: user-registered typed MCP
-  source with SSRF-safe validation (#1130), per-agent MCP grants via capability
+  (#1145); plans r3 ratified (#1137). Outbound MCP Connectors: user-registered
+  typed MCP source with SSRF-safe validation (#1130), per-agent MCP grants via capability
   projection (#1131) merged; connect-time SSRF enforcement in review (#1135).
 - **Landing lane revived within D28** (presentation-only, zero authority
   effects, per the #1153 memo): config-driven bounded hostname landings
@@ -543,3 +543,76 @@ The audit's decision filter (buyer / work-unit / feedback / reuse /
 irreversibility / complexity tests) is adopted as reviewer guidance for
 future capability proposals — a filter, not a gate. No premise, bead, or
 queue item changes; P1-A dispatch is unaffected.
+## Amendment 2026-08-26 — one coherent inbound + outbound MCP program
+
+The owner activates one coordinated **planning program**, carried by one PR,
+while preserving two distinct product planes:
+
+1. **Inbound MCP Access (#806):** an external MCP client authorizes one human
+   and one workspace, discovers available Agents and their exact resident native
+   tools, invokes qualified tools, runs Agents, and receives live same-workspace
+   artifacts. Its canonical plan is
+   [`../issues/806/external-workspace-mcp-plan.md`](../issues/806/external-workspace-mcp-plan.md).
+2. **Outbound MCP Connectors (#900/#1011):** a Boring Agent discovers and uses
+   external provider capabilities. The current sellable Composio plan is
+   [`../issues/900/plan.md`](../issues/900/plan.md); generic registration remains
+   #1011.
+
+The planes share **only** canonical kernel seams: host authority,
+Workspace/Seat projection, native-tool identity, C5 approval, C6 accepted-work,
+C2 first-class child execution, revocation, artifact/usage facts, and
+sandbox/runtime bindings. They do **not** share transport direction, OAuth
+grants, provider registration, secret custody, commercial credits/pricing, or
+product UI. Inbound bearer/grant material never becomes an outbound provider
+credential; outbound operator/provider secrets never enter inbound tokens,
+URLs, tool arguments, artifacts, or audit payloads.
+
+Cross-plane ruling: inbound Access may expose the exact resident Connector
+`AgentTool`, but it never materializes provider-catalog children, bypasses
+Connector/provider approval, creates a second runtime/store/ledger, or flattens
+C2 parent/child identity. Effectful full-catalog Connector execution remains
+blocked until C2's complete canonical predecessor closure and the Connector's
+C5×C6/C2 conformance—including artifact and usage attribution to the real
+child—is green. Generic Boring emits facts; the app owns credits, pricing, and
+checkout.
+
+This amendment supersedes prior uses of ambiguous “External MCP”: #806 is
+**inbound MCP Access**; #900/#1011 are **outbound MCP Connectors**. Landing this
+combined planning PR makes both linked plans the coherent planning authority.
+It does not waive either plan's blockers, make deferred Beads dispatchable, or
+authorize implementation before their named frozen-DAG and owner gates.
+
+### Relationship to the merged premises-first program (#1409)
+
+PR #1409 is merged and remains the ratified sequencing instrument; this
+consistency pass originally reviewed its owner-authored head
+`7732c191698fed3d940565a1c874075baa2a7a19`. DIRECTION remains the sole dispatch
+queue: this MCP amendment adds planning records only. Landing #1415 places
+neither #806 nor #900/#1011 in Wave A or Wave B; a later explicit owner
+amendment must place an exact MCP slice in the post-premises queue before
+dispatch. A plan, Bead, tracker, or
+implementation brief cannot substitute for that placement. The old Wave-3
+“External MCP complete/paused” statement describes the earlier generic source,
+registration, and read-only Connector work, not the new inbound #806 edge or
+full-catalog #900 execution plan.
+
+Applicable MCP effect/run slices consume #1409's exact
+`[durable-streams]` rollout child `wt-391-forward-9p50.2` (after Level-D child
+`.1`) and `[seat-audit-attribution]` projection child
+`wt-391-forward-shell-ngfs.14.2` (after host-catalog child `.14.1`) rather than
+creating parallel stores or display-only provenance. These rows exist at
+#1409's exact reviewed head; MCP dependencies must target the completion
+children, not their non-dispatchable program epics.
+
+Neither MCP plan selects the unresolved Thread storage representation, creates
+an A2A/MCP loopback, widens the frozen seven-method `AgentGateway`, or adds a
+second `createAgentHost()` construction funnel. #1409's canonical
+`docs/vision/` and non-scheduling `docs/roadmap/` layers remain above these
+issue details; this amendment neither duplicates nor contradicts them. Exact
+synthetic merge analysis reports content conflicts in `.beads/issues.jsonl`,
+this file, and the #806/#807 tombstones; merge resolution must preserve both
+dated amendments, both tombstones, all #1409 Beads, the eight gh900 Beads, and
+#1409's path migrations. The resolved tree must contain
+`docs/plans/agent-runtime/gateway/plan.md` and
+`docs/plans/agent-runtime/fleet-and-environments/plan.md`; retaining their old
+issue-folder locations as canonical is a failed merge.
