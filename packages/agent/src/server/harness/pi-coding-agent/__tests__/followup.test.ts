@@ -49,11 +49,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     create: () => ({ getSessionFile: () => null }),
     open: () => ({ getSessionFile: () => null }),
   },
-  AuthStorage: { inMemory: () => ({}), create: () => ({}) },
-  ModelRegistry: {
-    inMemory: () => ({ find: vi.fn(), getAvailable: () => [] }),
-    create: () => ({ find: vi.fn(), getAvailable: () => [], hasConfiguredAuth: () => true, isUsingOAuth: () => false }),
-  },
+  ModelRuntime: { create: async () => ({ getModel: vi.fn(), getAvailableSnapshot: () => [], registerProvider: vi.fn(), refresh: vi.fn(async () => ({})) }) },
   getAgentDir: () => "/tmp/test-agent-dir",
   DefaultResourceLoader: class {
     constructor(_opts: unknown) {}

@@ -25,11 +25,11 @@ export type {
   AgentRuntimeAdapter,
   AgentStartReceipt,
   AgentStreamOptions,
+  SessionStreamIdentity,
 } from './events'
 export {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
-  sessionStreamPath,
 } from './events'
 export type {
   LeaseBoundWorkspaceAgent,
@@ -98,15 +98,7 @@ export {
   EnvSchema,
   validateConfig,
 } from './config-schema'
-export type { AgentConfig, AgentEnv } from './config-schema'
-export {
-  BUILTIN_RUNTIME_MODE_IDS,
-  isBuiltinRuntimeModeId,
-} from './runtime-mode'
-export type {
-  BuiltinRuntimeModeId,
-  BuiltinRuntimeModeId as RuntimeModeId,
-} from './runtime-mode'
+export type { RuntimeModeId, AgentConfig, AgentEnv } from './config-schema'
 export {
   AgentConsumptionErrorCode,
   AgentDefinitionErrorCode,

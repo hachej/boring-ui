@@ -13,6 +13,7 @@ COPY packages/boring-sandbox/package.json packages/boring-sandbox/package.json
 COPY plugins/boring-mcp/package.json plugins/boring-mcp/package.json
 COPY plugins/boring-governance/package.json plugins/boring-governance/package.json
 COPY plugins/boring-automation/package.json plugins/boring-automation/package.json
+COPY plugins/browser/package.json plugins/browser/package.json
 COPY apps/full-app/package.json apps/full-app/package.json
 RUN pnpm install --frozen-lockfile
 
@@ -23,6 +24,7 @@ COPY packages/ packages/
 COPY plugins/boring-mcp/ plugins/boring-mcp/
 COPY plugins/boring-governance/ plugins/boring-governance/
 COPY plugins/boring-automation/ plugins/boring-automation/
+COPY plugins/browser/ plugins/browser/
 COPY apps/full-app/ apps/full-app/
 
 # Build packages in dependency order.
@@ -47,6 +49,8 @@ RUN pnpm --filter @hachej/boring-agent run build
 RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
   && pnpm --filter @hachej/boring-workspace exec vite build \
   && pnpm --filter @hachej/boring-workspace exec node scripts/build-workspace-css.mjs
+
+RUN pnpm --filter @hachej/boring-browser run build
 
 RUN pnpm --filter @hachej/boring-mcp exec tsup --no-dts
 
@@ -121,6 +125,10 @@ COPY --from=build /app/plugins/boring-governance/node_modules/ plugins/boring-go
 COPY --from=build /app/plugins/boring-automation/dist/ plugins/boring-automation/dist/
 COPY --from=build /app/plugins/boring-automation/package.json plugins/boring-automation/package.json
 COPY --from=build /app/plugins/boring-automation/node_modules/ plugins/boring-automation/node_modules/
+
+COPY --from=build /app/plugins/browser/dist/ plugins/browser/dist/
+COPY --from=build /app/plugins/browser/package.json plugins/browser/package.json
+COPY --from=build /app/plugins/browser/node_modules/ plugins/browser/node_modules/
 
 COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
 COPY --from=build /app/apps/full-app/boring.app.toml apps/full-app/boring.app.toml

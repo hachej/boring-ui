@@ -94,8 +94,23 @@ function normalizePromptInput(input: PiAgentPromptInput): { text: string; option
   return input;
 }
 
+interface PiSessionCancellationState {
+  abortRequested: boolean;
+}
+
+const cancellationStateBySession = new WeakMap<PiAgentSessionLike, PiSessionCancellationState>();
+
+function cancellationStateFor(session: PiAgentSessionLike): PiSessionCancellationState {
+  const existing = cancellationStateBySession.get(session);
+  if (existing) return existing;
+  const created = { abortRequested: false };
+  cancellationStateBySession.set(session, created);
+  return created;
+}
+
 export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options: PiAgentSessionAdapterOptions = {}): PiAgentSessionAdapter {
   const followUpQueue = followUpQueueFor(session);
+  const cancellationState = cancellationStateFor(session);
   const adapter: PiAgentSessionAdapter = {
     readSnapshot() {
       return {
@@ -121,7 +136,31 @@ export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options
     },
 
     subscribe(listener) {
-      return session.subscribe(listener);
+      return session.subscribe((event) => {
+        if (event.type === "agent_start") cancellationState.abortRequested = false;
+        if (!cancellationState.abortRequested) {
+          listener(event);
+          return;
+        }
+        // Pi 0.84 can surface a tool-execution AbortError as an errored final
+        // assistant even when the host explicitly requested cancellation.
+        // Keep Boring's established cancellation contract at this narrow SDK
+        // boundary by marking both the final message and agent result aborted.
+        if (event.type === "message_end" && event.message.role === "assistant") {
+          listener({ ...event, message: { ...event.message, stopReason: "aborted" } });
+          return;
+        }
+        if (event.type === "agent_end") {
+          const messages = event.messages.map((message, index) =>
+            index === event.messages.length - 1 && message.role === "assistant"
+              ? { ...message, stopReason: "aborted" as const }
+              : message,
+          );
+          listener({ ...event, messages });
+          return;
+        }
+        listener(event);
+      });
     },
 
     async prompt(input) {
@@ -145,6 +184,7 @@ export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options
     },
 
     async abort() {
+      cancellationState.abortRequested = true;
       await session.abort();
     },
   };

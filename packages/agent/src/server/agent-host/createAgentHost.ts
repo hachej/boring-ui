@@ -6,6 +6,7 @@ import {
   AgentGatewayErrorCode,
   type AgentAccessDecision,
   type AgentAccessOperation,
+  type AgentSessionRef,
   type AuthorizedAgentScope,
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
@@ -39,6 +40,7 @@ import type {
   CreateAgentHostOptions,
   AgentHostDirectProjectionOptions,
   AgentHostEnvironmentLease,
+  AgentHostSessionEnvironmentLease,
   AgentHostEnvironmentScope,
   AuthorizedEnvironmentIntent,
   LeaseBoundWorkspaceAgent,
@@ -245,6 +247,24 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
     throw new TypeError('resolved environment identity must be non-empty')
   }
   if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
+}
+
+function assertPublishedBindingMatchesResolvedScope(
+  binding: RuntimeBinding,
+  resolved: ResolvedAgentRuntimeScope,
+): void {
+  const currentPhysicalBindingIdentity = binding.scope.physicalBindingIdentity ?? binding.scope.identity
+  const candidatePhysicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
+  if (
+    binding.scope.identity !== resolved.identity
+    || binding.scope.environment.provisioningFingerprint !== resolved.environment.provisioningFingerprint
+    || currentPhysicalBindingIdentity !== candidatePhysicalBindingIdentity
+  ) {
+    throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+      'Agent runtime identity changed; process restart is required',
+    )
+  }
 }
 
 /**
@@ -486,11 +506,18 @@ function createRuntime(
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
-        if (current) return current
+        if (current) {
+          assertPublishedBindingMatchesResolvedScope(current, resolved)
+          return current
+        }
         const reservedKey = currentBindingReservations.get(currentKey)
         if (reservedKey && reservedKey !== key) {
           const reserved = bindings.get(reservedKey)
-          if (reserved) return await reserved
+          if (reserved) {
+            const binding = await reserved
+            assertPublishedBindingMatchesResolvedScope(binding, resolved)
+            return binding
+          }
         } else if (!reservedKey) {
           currentBindingReservations.set(currentKey, key)
         }
@@ -678,8 +705,8 @@ function createRuntime(
       const tail = previous.then(() => current)
       bindingOperationTails.set(bindingKey, tail)
       await previous
-      runtime.assertOpen()
       try {
+        runtime.assertOpen()
         return await operation()
       } finally {
         release()
@@ -892,12 +919,68 @@ export async function createAgentHost(
     }
   }
 
+  const acquireSessionEnvironment = async (input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease> => {
+    if (!input.requestId.trim()) throw new TypeError('requestId is required')
+    const { binding } = await gateway.resolveHostSessionBinding(input.authorizedScope, input.ref)
+    const providerLease = binding.environmentLease.retain()
+    const abort = new AbortController()
+    let active = true
+    let unregister = runtime.registerSubscription(() => release())
+    const onGenerationAbort = () => release()
+    providerLease.signal.addEventListener('abort', onGenerationAbort, { once: true })
+    function release() {
+      if (!active) return
+      active = false
+      abort.abort()
+      providerLease.signal.removeEventListener('abort', onGenerationAbort)
+      unregister()
+      unregister = () => {}
+      providerLease.release()
+    }
+    return Object.freeze({
+      environmentGenerationId: providerLease.generationId,
+      bindingGeneration: binding.generation,
+      signal: abort.signal,
+      async acquireTrustedService({ leaseId, idleTtlMs, absoluteTtlMs }: {
+        readonly leaseId: string
+        readonly idleTtlMs: number
+        readonly absoluteTtlMs: number
+      }) {
+        if (!active || abort.signal.aborted) throw bindingDisposedError()
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(leaseId)) throw new TypeError('leaseId is invalid')
+        if (!Number.isInteger(idleTtlMs) || idleTtlMs < 1_000 || idleTtlMs > 15 * 60_000) {
+          throw new TypeError('idleTtlMs must be between 1000 and 900000')
+        }
+        if (!Number.isInteger(absoluteTtlMs) || absoluteTtlMs < idleTtlMs || absoluteTtlMs > 60 * 60_000) {
+          throw new TypeError('absoluteTtlMs must be between idleTtlMs and 3600000')
+        }
+        const mechanism = providerLease.bundle.trustedServiceV1
+        if (!mechanism
+          || mechanism.qualification.serviceRef !== 'trusted-service-v1'
+          || mechanism.qualification.isolation !== 'dedicated-uid-private-channel'
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.protocolDigest)
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.imageDigest)) {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'qualified trusted-service-v1 is unavailable for this Environment generation',
+          )
+        }
+        return await mechanism.acquire({ leaseId, idleTtlMs, absoluteTtlMs, signal: abort.signal })
+      },
+      release,
+    })
+  }
+
   const runWithWorkspaceAgent = (
     input: import('./types').AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
   ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
 
-  const resolveProjectionPiChatService = async (
+  const resolveHarnessBackendForRequest = async (
     authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,
     request: import('fastify').FastifyRequest,
     agentTypeId: string,
@@ -907,7 +990,7 @@ export async function createAgentHost(
     const binding = (await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })).binding
     return {
       scope,
-      service: binding.composition.service,
+      backend: binding.composition.backend,
     }
   }
 
@@ -915,6 +998,7 @@ export async function createAgentHost(
     host,
     gateway,
     acquireEnvironment: acquireAppEnvironment,
+    acquireSessionEnvironment,
     runWithWorkspaceAgent,
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
       assertStrongLedger()
@@ -928,8 +1012,8 @@ export async function createAgentHost(
           const scope = await projectionOptions.authorizeAgentRequest(request)
           return (await runtime.verify(scope)).workspaceScopeId
         },
-        resolveAddressedPiChatService(request, agentTypeId, sessionId) {
-          return resolveProjectionPiChatService(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
+        resolveHarnessBackend(request, agentTypeId, sessionId) {
+          return resolveHarnessBackendForRequest(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
       })
     },

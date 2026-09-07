@@ -4,11 +4,9 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import {
-  compactPiPackages,
   autoDetectMode,
   createAgentHost,
   createEnvironmentProvisioningFingerprint,
-  findSandboxRuntimeModeDescriptor,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   createRemoteWorkerModeAdapter,
@@ -37,7 +35,6 @@ import {
   type RuntimeEnvContributionContext,
   type RuntimeFilesystemBinding,
   type RuntimeModeAdapter,
-  type SandboxRuntimeHostPolicyV1,
   type RuntimeModeId,
   type RuntimeProvisioningContribution,
   type VerifiedAgentScopeClaim,
@@ -68,6 +65,7 @@ import {
 import {
   createWorkspaceUiTools,
   discoverRepositoryAgentPackages,
+  runtimeProjectionRoutes,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -76,7 +74,16 @@ import {
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRuntimeEnvOptions,
   type WorkspaceServerPlugin,
+  type RuntimeProjectionRoutesOptions,
 } from '@hachej/boring-workspace/server'
+import {
+  applyRuntimePiExtensionIsolation,
+  composeAddressedAgentRuntimeScope,
+  mergePiOptions,
+  normalizeAgentPiCapabilityOptions,
+  type AddressedAgentCapabilityContext,
+  type AgentPiCapabilityOptions,
+} from './addressedAgentRuntimeScope.js'
 import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
 import { registerCoreAgentHostEnvironmentRoutes } from './coreAgentHostEnvironmentRoutes.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
@@ -210,36 +217,6 @@ export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWork
 
 type CoreWorkspaceBridgeExtraTool = AgentTool
 
-function canonicalToolContractValue(value: unknown, field: string): string {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
-  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value)
-  if (Array.isArray(value)) {
-    return `[${value.map((entry, index) => canonicalToolContractValue(entry, `${field}[${index}]`)).join(',')}]`
-  }
-  if (!value || typeof value !== 'object' || value instanceof URL) {
-    throw new Error(`${field} contains an opaque value without a stable tool contract`)
-  }
-  const prototype = Object.getPrototypeOf(value)
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new Error(`${field} contains an opaque value without a stable tool contract`)
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right))
-  return `{${entries.map(([key, entry]) => (
-    `${JSON.stringify(key)}:${canonicalToolContractValue(entry, `${field}.${key}`)}`
-  )).join(',')}}`
-}
-
-function addressedToolContractDigests(tools: readonly AgentTool[]): string[] {
-  return tools.map((tool) => {
-    const { execute: _execute, ...contract } = tool
-    return createHash('sha256')
-      .update(canonicalToolContractValue(contract, `agentTool.${tool.name}`))
-      .digest('hex')
-  }).sort()
-}
-
 export interface CoreWorkspaceBridgeExtraToolsContext {
   workspaceId: string
   workspaceRoot: string
@@ -260,6 +237,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   mode?: RuntimeModeId
   runtimeModeAdapter?: RuntimeModeAdapter
   runtimeHost?: AgentRuntimeHostOperations
+  /** Explicit Host-owned same-origin projection authority; absent by default. */
+  runtimeProjection?: RuntimeProjectionRoutesOptions
   extraTools?: AgentTool[]
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -286,6 +265,20 @@ export interface CreateCoreWorkspaceAgentServerOptions {
     workspaceRoot: string
     request?: FastifyRequest
   }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
+  /**
+   * Trusted host Pi capability policy for one already-authorized Agent seat.
+   * Authored agent directories cannot enable packages/extensions themselves.
+   * Paths must remain under the workspace, plugin roots, or an explicitly
+   * configured `piResourceAuthorizedRoots` entry. Grant changes alter semantic
+   * identity and therefore require a Host process restart once a binding has
+   * been published. In isolated modes, static, authored, and hot-reloaded host
+   * extensions remain blocked; explicit resources returned here are trusted
+   * app composition for this addressed seat. Scoped skills and packages remain
+   * supported.
+   */
+  getAgentPi?: (
+    ctx: AddressedAgentCapabilityContext,
+  ) => AgentPiCapabilityOptions | undefined | Promise<AgentPiCapabilityOptions | undefined>
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -308,16 +301,10 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   /**
    * Trusted host tools granted to one addressed agent type only. These are
    * composed after Host authorization, so a fleet sibling never receives or
-   * advertises another agent's capabilities.
+   * advertises another agent's capabilities. Tool contract changes alter
+   * semantic identity and require a Host process restart once published.
    */
-  getAgentExtraTools?: (ctx: {
-    agentTypeId: string
-    workspaceId: string
-    workspaceRoot: string
-    runtimeMode: RuntimeModeId
-    workspaceFsCapability?: RuntimeModeAdapter['workspaceFsCapability']
-    authSubject?: string
-  }) => AgentTool[] | Promise<AgentTool[]>
+  getAgentExtraTools?: (ctx: AddressedAgentCapabilityContext) => AgentTool[] | Promise<AgentTool[]>
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
     workspaceId: string
@@ -334,7 +321,7 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   appRoot?: string
   /** Opt into host-local auth callback URLs for an exact host allowlist. */
   authBaseURL?: CoreDynamicAuthBaseURL
-  /** Trusted app-owned server resolver for initial signup Seat intent. */
+  /** Trusted app-owned resolver for an additional specialist signup Seat. */
   resolveInitialAgentSeat?: ResolveInitialAgentSeat
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
@@ -494,11 +481,8 @@ function createCoreAgentScopeAuthority(input: {
   }
 }
 
-function inferSessionRootForWorkspaceRoot(
-  workspaceRoot: string,
-  runtimeHostPolicy: SandboxRuntimeHostPolicyV1 | undefined,
-): string | undefined {
-  if (!runtimeHostPolicy?.inferSiblingSessionRoot) return undefined
+function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
+  if (runtimeMode !== 'vercel-sandbox' && runtimeMode !== 'blaxel') return undefined
   const resolvedRoot = path.resolve(workspaceRoot)
   if (path.basename(resolvedRoot) !== 'workspaces') return undefined
   return path.join(path.dirname(resolvedRoot), 'pi-sessions')
@@ -520,10 +504,6 @@ export function resolveCoreLoadConfigOptions(
   }
 }
 
-function dedupeStrings(values: string[]): string[] {
-  return Array.from(new Set(values))
-}
-
 function isDirPluginEntry(entry: unknown): entry is DirPluginEntry {
   return typeof entry === 'object' && entry !== null && 'dir' in entry
 }
@@ -535,33 +515,6 @@ function assertCoreStaticPluginEntries(entries: readonly unknown[] | undefined):
         'createCoreWorkspaceAgentServer does not support hotReload yet; directory plugin entries must omit hotReload or set hotReload: false. Use createWorkspaceAgentServer for standalone hot reload.',
       )
     }
-  }
-}
-
-function mergePiOptions(
-  base?: AgentPiOptions,
-  override?: AgentPiOptions,
-): AgentPiOptions {
-  if (!base && !override) return undefined
-  return {
-    ...base,
-    ...override,
-    additionalSkillPaths: dedupeStrings([
-      ...(base?.additionalSkillPaths ?? []),
-      ...(override?.additionalSkillPaths ?? []),
-    ]),
-    packages: compactPiPackages([
-      ...(base?.packages ?? []),
-      ...(override?.packages ?? []),
-    ]),
-    extensionPaths: dedupeStrings([
-      ...(base?.extensionPaths ?? []),
-      ...(override?.extensionPaths ?? []),
-    ]),
-    extensionFactories: [
-      ...(base?.extensionFactories ?? []),
-      ...(override?.extensionFactories ?? []),
-    ],
   }
 }
 
@@ -977,8 +930,8 @@ function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: Teleme
   })
 }
 
-async function registerFrontendAuthPages(
-  app: CoreWorkspaceAgentServer,
+export async function registerFrontendAuthPages(
+  app: FastifyInstance,
   appRoot: string,
   telemetry: TelemetrySink,
 ) {
@@ -988,6 +941,18 @@ async function registerFrontendAuthPages(
   for (const pagePath of FRONTEND_AUTH_PAGES) {
     app.get(pagePath, async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
   }
+
+  // No route is registered here for better-auth's default path-token
+  // reset-password shape (/auth/reset-password/<token>): that path is a real
+  // better-auth endpoint (`resetPasswordCallback` in
+  // better-auth/dist/api/routes/password.mjs) that validates the token's
+  // existence/expiry against the DB and redirects to callbackURL. Shadowing
+  // it here — as an earlier version of this change did — would silently
+  // "succeed" for invalid/expired tokens and discard callbackURL. Leave it to
+  // registerAuthProxy's /auth/* proxy so better-auth's own validated
+  // redirect runs. The Vite-dev-only compatibility redirect for this shape
+  // lives client-side instead (CoreFront.tsx's ResetPasswordLegacyRedirect),
+  // where it never intercepts a real server-validated request.
 }
 
 export async function registerFrontendFallback(
@@ -1042,6 +1007,7 @@ export async function registerFrontendFallback(
 async function createCoreRuntime(
   config: CoreConfig,
   signupAgentDefaults: ValidatedSignupAgentDefaults,
+  applicationAgentTypeIds: readonly string[],
   customTelemetry?: TelemetrySink,
   requestScopeResolver?: CoreRequestScopeResolver,
   authBaseURL?: CoreDynamicAuthBaseURL,
@@ -1079,6 +1045,7 @@ async function createCoreRuntime(
     baseURL: authBaseURL,
     workspaceStore,
     signupAgentDefaults,
+    applicationAgentTypeIds,
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
@@ -1172,9 +1139,9 @@ export async function createCoreWorkspaceAgentServer(
     agentTypeIds,
     rawConfig.security?.trustedProxy,
   )
-  // Decision 28 hook: validate all trusted signup/default config before
-  // allocating DB or HTTP resources. Every initialized Workspace persists a
-  // real regular Agent as its default.
+  // Validate trusted signup/default config before allocating DB or HTTP
+  // resources. Every Workspace persists the application default; a mapped
+  // signup intent adds a specialist Seat without replacing it.
   const config: CoreConfig = {
     ...rawConfig,
     defaultAgentTypeId: applicationDefaultAgentTypeId,
@@ -1183,6 +1150,7 @@ export async function createCoreWorkspaceAgentServer(
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
     config,
     signupAgentDefaults,
+    agentTypeIds,
     options.telemetry,
     options.requestScopeResolver,
     options.authBaseURL,
@@ -1193,6 +1161,10 @@ export async function createCoreWorkspaceAgentServer(
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const pluginWorkspaceRoot = process.cwd()
   const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+  const agentRuntimeMode = options.runtimeModeAdapter?.id ?? options.mode ?? process.env.BORING_AGENT_MODE
+  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
+    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
+    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -1211,6 +1183,10 @@ export async function createCoreWorkspaceAgentServer(
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: pluginWorkspaceRoot,
     defaultPluginPackages: options.defaultPluginPackages,
+    // Anchor npm-name resolution on the host app's own root so plugin
+    // packages resolve through the app's node_modules regardless of the
+    // process cwd (production hosts often chdir before boot).
+    anchorDir: appRoot,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
   const defaultPackageRuntimePlugins = readWorkspacePluginPackageRuntimePlugins(defaultPluginPackagePaths)
@@ -1225,6 +1201,14 @@ export async function createCoreWorkspaceAgentServer(
     ...defaultPluginDirEntries,
     ...(options.plugins ?? []),
   ]
+  const pluginEntryDirs = pluginEntries.flatMap((entry) => isDirPluginEntry(entry) ? [entry.dir] : [])
+  const resolvePiResourceAuthorizedRoots = (runtimeWorkspaceRoot: string): string[] => Array.from(new Set([
+    runtimeWorkspaceRoot,
+    pluginWorkspaceRoot,
+    ...defaultPluginPackagePaths,
+    ...pluginEntryDirs,
+    ...(options.piResourceAuthorizedRoots ?? []),
+  ]))
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
     async runWithWorkspaceAgent(input, run) {
@@ -1372,29 +1356,25 @@ export async function createCoreWorkspaceAgentServer(
 
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
   const selectedMode = options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()
-  const selectedDescriptor = findSandboxRuntimeModeDescriptor(selectedMode)
-  const handle = selectedDescriptor?.host.sandboxHandle
+  const handleProvider = selectedMode === 'blaxel'
+    ? 'blaxel'
+    : selectedMode === 'vercel-sandbox' ? 'vercel' : undefined
   const sandboxHandleStore = options.sandboxHandleStore
-    ?? (handle
-      ? new WorkspaceRuntimeSandboxHandleStore(
-          workspaceStore,
-          handle.provider,
-          handle.defaultPersistenceMode,
-        )
-      : undefined)
+    ?? (handleProvider ? new WorkspaceRuntimeSandboxHandleStore(workspaceStore, handleProvider) : undefined)
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
-    ?? createSandboxRuntimeModeAdapter(
-      selectedMode,
-      { sandboxHandleStore },
-    )
-  const runtimeHostPolicy = runtimeModeAdapter.runtimeHostPolicy
-  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
-    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
-    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, runtimeHostPolicy)
+    ?? createSandboxRuntimeModeAdapter(selectedMode, { sandboxHandleStore })
+  // Static app/plugin Pi configuration is known at construction time. Reject
+  // invalid remote host extensions before serving requests; dynamic policies
+  // are rechecked when their workspace-scoped values are resolved.
+  applyRuntimePiExtensionIsolation(
+    pluginCollection.agentOptions.pi ?? {},
+    runtimeModeAdapter.id,
+    'static Core Pi options',
+  )
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
@@ -1421,7 +1401,7 @@ export async function createCoreWorkspaceAgentServer(
     // not scan per-workspace Pi skills/plugins from the public host path — it
     // can be stale after volume cutover and would reintroduce split-brain. Keep
     // only static app/plugin Pi config plus explicit caller overrides.
-    const pluginOptions = runtimeHostPolicy?.loadWorkspacePiResources === false
+    const pluginOptions = remoteWorkerModeAdapter
       ? pluginCollection.agentOptions.pi
       : getPluginPiOptions(ctx.workspaceRoot)
     const bridgePiOptions = options.getWorkspaceBridgePi
@@ -1514,9 +1494,11 @@ export async function createCoreWorkspaceAgentServer(
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
     const resolvedPi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
-    const pi: PiHarnessOptions = runtimeHostPolicy?.allowPiExtensions === false
-      ? { ...resolvedPi, noExtensions: true }
-      : resolvedPi
+    const pi = applyRuntimePiExtensionIsolation(
+      resolvedPi,
+      runtimeModeAdapter.id,
+      'resolved Core Pi options',
+    )
     const sessionNamespace = await resolveSessionNamespace({
       workspaceId,
       workspaceRoot: root,
@@ -1579,7 +1561,7 @@ export async function createCoreWorkspaceAgentServer(
     const identity = createResolvedRuntimeScopeIdentity({
       artifacts: pluginArtifacts,
       validatedConfig: piIdentity,
-      grants: options.getExtraTools || options.getAgentExtraTools ? [userId] : [],
+      grants: options.getExtraTools || options.getAgentExtraTools || options.getAgentPi ? [userId] : [],
       placementClassIdentity: runtimeModeAdapter.id,
       isolationMode: runtimeModeAdapter.id,
       toolContractDigests: extraTools.map((tool) => tool.name),
@@ -1591,6 +1573,7 @@ export async function createCoreWorkspaceAgentServer(
       placementIdentity,
       provisioningFingerprint,
     })).digest('hex')
+    const authorizedPiResourceRoots = resolvePiResourceAuthorizedRoots(root)
     const buildResourceDigestInput = async () => {
       const hotResources = pi.getHotReloadableResources?.()
       return createPiResourceDigestInput({
@@ -1615,13 +1598,7 @@ export async function createCoreWorkspaceAgentServer(
             ...(hotResources?.extensionPaths ?? []),
           ],
         }],
-        authorizedRoots: [
-          root,
-          pluginWorkspaceRoot,
-          ...defaultPluginPackagePaths,
-          ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
-          ...(options.piResourceAuthorizedRoots ?? []),
-        ],
+        authorizedRoots: authorizedPiResourceRoots,
       })
     }
     const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
@@ -1666,7 +1643,7 @@ export async function createCoreWorkspaceAgentServer(
               }),
             )
             const result = await provisionWorkspaceRuntime({
-              plugins: runtimeHostPolicy?.includePluginAuthoringProvisioning === false
+              plugins: runtimeModeAdapter.id === 'direct'
                 ? omitPluginAuthoringProvisioning(runtimePlugins)
                 : runtimePlugins,
               adapter: runtimeBundle.provisioningAdapter,
@@ -1828,35 +1805,48 @@ export async function createCoreWorkspaceAgentServer(
       environment,
     }) {
       const runtime = scopeAuthority.resolveAgentRuntime(authorizedScope)
-      if (!options.getAgentExtraTools) return runtime
-
-      const agentTools = await options.getAgentExtraTools({
+      if (!options.getAgentExtraTools && !options.getAgentPi) return runtime
+      const context = {
         agentTypeId,
         workspaceId: environment.runtimeWorkspaceId ?? verifiedClaim.workspaceScopeId,
         workspaceRoot: environment.workspaceRoot,
         runtimeMode: runtimeModeAdapter.id,
         workspaceFsCapability: runtimeModeAdapter.workspaceFsCapability,
         authSubject: verifiedClaim.authSubjectId,
+      }
+      const [agentTools, agentPi] = await Promise.all([
+        options.getAgentExtraTools?.(context) ?? [],
+        options.getAgentPi?.(context),
+      ])
+      const addressedPi = normalizeAgentPiCapabilityOptions(agentPi, runtimeModeAdapter.id)
+      const addressedResourceFence = addressedPi
+        ? await createPiResourceDigestFence(async () => createPiResourceDigestInput({
+            piCwd: environment.workspaceRoot,
+            // Addressed options are the explicit resources below; do not scan
+            // ambient workspace skills/context while building this supplemental fence.
+            noSkills: true,
+            noContextFiles: true,
+            resourceSets: [addressedPi],
+            authorizedRoots: resolvePiResourceAuthorizedRoots(environment.workspaceRoot),
+          }))
+        : undefined
+      const composition = composeAddressedAgentRuntimeScope({
+        runtime,
+        agentTypeId,
+        agentTools,
+        addressedPi,
+        addressedPiResourceInputDigest: addressedResourceFence?.resourceInputDigest,
       })
-      const extraTools = [...(runtime.extraTools ?? []), ...agentTools]
-      const toolContractDigests = addressedToolContractDigests(agentTools)
-      const scopedToolIdentity = JSON.stringify({
-        baseIdentity: runtime.identity,
-        agentTypeId,
-        toolContractDigests,
-      })
-      const identity = createHash('sha256').update(scopedToolIdentity).digest('hex')
-      const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
-        basePhysicalBindingIdentity: runtime.physicalBindingIdentity ?? runtime.identity,
-        agentTypeId,
-        toolContractDigests,
-      })).digest('hex')
-      const resourceInputDigest = `sha256:${createHash('sha256').update(JSON.stringify({
-        baseResourceInputDigest: runtime.resourceInputDigest ?? null,
-        agentTypeId,
-        toolContractDigests,
-      })).digest('hex')}`
-      return { ...runtime, identity, physicalBindingIdentity, resourceInputDigest, extraTools }
+      return {
+        ...runtime,
+        ...composition,
+        revalidateResourceInputs: addressedResourceFence
+          ? async () => {
+              await runtime.revalidateResourceInputs?.()
+              await addressedResourceFence.revalidateResourceInputs()
+            }
+          : runtime.revalidateResourceInputs,
+      }
     },
   })
 
@@ -2170,6 +2160,9 @@ export async function createCoreWorkspaceAgentServer(
       getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
       preserveStateKeys: pluginCollection.preservedUiStateKeys,
     })
+    if (options.runtimeProjection) {
+      await app.register(runtimeProjectionRoutes, options.runtimeProjection)
+    }
 
     await coreBridge.registerHttpRoutes(app)
 

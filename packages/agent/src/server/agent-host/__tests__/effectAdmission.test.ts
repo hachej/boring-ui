@@ -77,6 +77,46 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({ ref })
   })
 
+  it('joins selected-plugin cleanup once after successful session deletion', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const calls: unknown[] = []
+    fixture.setSessionDeleteHook(async (input) => { calls.push(input) })
+
+    await fixture.gateway.deleteSession({ scope, ref, requestId: 'delete-with-cleanup' })
+
+    expect(calls).toEqual([{
+      workspaceScopeId: 'workspace',
+      agentTypeId: 'alpha',
+      sessionId: ref.sessionId,
+    }])
+  })
+
+  it('does not run selected-plugin cleanup when deletion is denied', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const calls: unknown[] = []
+    fixture.setSessionDeleteHook(async (input) => { calls.push(input) })
+    fixture.queueAdmission('session.delete', 'strong-reject')
+
+    await expect(fixture.gateway.deleteSession({
+      scope,
+      ref,
+      requestId: 'denied-delete-cleanup',
+    })).rejects.toMatchObject(denied)
+
+    expect(calls).toEqual([])
+  })
+
+  it('keeps selected-plugin cleanup failure visible instead of returning success', async () => {
+    const { fixture, scope, ref } = await createSession()
+    fixture.setSessionDeleteHook(async () => { throw new Error('cleanup failed') })
+
+    await expect(fixture.gateway.deleteSession({
+      scope,
+      ref,
+      requestId: 'failed-delete-cleanup',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN })
+  })
+
   it('executes archive through inventory with replay and digest-conflict semantics', async () => {
     const { fixture, scope, ref } = await createSession()
     const input = { scope, ref, requestId: 'archive-once', archived: true }

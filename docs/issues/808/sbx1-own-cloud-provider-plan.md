@@ -1,13 +1,21 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/808
 issue: 808
-state: ready-for-human
-updated: 2026-07-20
+state: superseded
+updated: 2026-08-31
 flag: not-needed
 track: owner
 ---
 
-# gh-808 SBX1 own-cloud sandbox provider
+# gh-808 SBX1 own-cloud sandbox provider (superseded archive)
+
+> **Do not implement this runsc design.** Decision 31 superseded its isolation
+> and storage architecture with the sovereign Kata + Firecracker + SeaweedFS
+> design in [`../1081/tech-choice.md`](../1081/tech-choice.md) and
+> [`../1081/sandbox-sovereign-design.md`](../1081/sandbox-sovereign-design.md).
+> The historical body remains for audit context only. The 2026-08-31 amendment
+> below retains provider-neutral lifecycle and authority lessons; it does not
+> revive runsc as a public tenant boundary.
 
 ## Authority
 
@@ -53,9 +61,108 @@ isolation = Docker + runsc (gVisor, systrap)
 control-plane provider seam = SandboxProviderV1
 ```
 
-Vercel sandbox is a bridge and remains a supported provider. Firecracker is
-rejected for this work package because its current operational weight is not
-earned by a demonstrated need.
+Vercel sandbox remains a supported provider. This historical plan rejected
+Firecracker for its then-assumed work package; Decision 31 later reversed that
+choice and supersedes every runsc isolation, host-root, and storage prescription
+below.
+
+## 2026-08-31 owner deferral and retained multi-lease contract
+
+The owner has deferred the remaining self-hosted implementation. The initial
+**Seneca Factory milestone** is Vercel-only; this narrow delivery choice does
+not amend Decision 31's broader Blaxel bridge or sovereign Firecracker target.
+PRs [#1480](https://github.com/hachej/boring-ui/pull/1480),
+[#1481](https://github.com/hachej/boring-ui/pull/1481), and
+[#1482](https://github.com/hachej/boring-ui/pull/1482) were closed without a
+production-readiness claim. PR
+[#1479](https://github.com/hachej/boring-ui/pull/1479) merged the bounded root
+lifecycle into the sandbox-lease feature branch, not into `main`. Git history
+preserves the implementation research; preserving it is not authorization to
+ship or activate it.
+
+Decision 31 and issue #1081 are the only current own-cloud architecture and
+build plan. The historical body below is not a future implementation plan. The
+closed slices contribute only these provider-neutral requirements to that newer
+work:
+
+1. **Provider and mechanism remain distinct.** The host selects one admitted
+   `SandboxProviderV1`; runtime, VMM, storage, root, image, and qualification
+   mechanisms remain provider-internal and are never model-selectable.
+2. **One authorized workspace may own several explicit leases.** Workspace
+   identity remains the tenant authorization and aggregate-quota key. An opaque
+   sandbox identity selects one isolated runtime/filesystem namespace beneath
+   it and never grants authority by itself. There is no mutable "current
+   sandbox".
+3. **Replay and operation keys are unambiguous.** Create replay is keyed by
+   `(workspaceId, clientLeaseId)`; active operations, pinning, retirement, and
+   deletion are keyed by `(workspaceId, sandboxId)`. Decision 31 forbids the
+   old host-directory bind-mount/root derivation; `/workspace` comes from the
+   sandbox's tenant-scoped SeaweedFS namespace.
+4. **Capabilities are negotiated, not inferred.** Multi-lease support may be
+   advertised only through an authenticated, versioned, provider-identity-bound
+   handshake. Trusted host composition explicitly admits the capability before
+   any effect. Missing, stale, or unverifiable qualification fails closed.
+5. **Every request carries attenuated authority.** Health, create, files,
+   events, exec, renew, and delete use short-lived replay-protected capabilities
+   bound to the exact provider/worker audience, workspace, sandbox when
+   applicable, operation, canonical request digest, and expiry. Nonces are
+   single-use where the operation is not a resumable stream. Provider- or
+   worker-reported identity is observation only and never grants authority.
+6. **Admission precedes acquisition.** Owned leases, pending creates, and
+   cleanup debt all consume bounded quota. Create reserves capacity before
+   acquisition and releases the reservation on every settled failure. Startup
+   recovery is single-flight and cannot race an owned lease or create
+   reservation.
+7. **Accepted effects are never guessed or replayed.** Remote create and delete
+   use the accepted-effect protocol. An `outcome-unknown` create/delete is
+   immutable and is not reinvoked by the model/tool path. Response fields are
+   observations until authenticated against the request and selected provider.
+8. **Pin before use; drain before delete.** Active operations pin the exact
+   `(workspaceId, sandboxId)` lease. Retirement blocks new pins, drains or
+   aborts bounded active work, and only then destroys compute and releases its
+   namespace. Provider shutdown must not delete a published pair beneath active
+   pins.
+9. **Cleanup has exactly one owner.** The provider owns unpublished resources;
+   authority transfers with a successfully published pair. Stream closure is
+   not delete authority. Ambiguous cleanup remains visible, retryable,
+   quota-counted maintenance debt and never rewrites the original receipt. A
+   response-provided sandbox ID cannot authorize deletion before its binding is
+   verified.
+
+The closed runsc branch also established a negative result: its tested gVisor
+profile returned `ENOSYS` for required `openat2` containment. It was therefore
+unqualified even under the superseded design. This is archived evidence, not a
+reactivation gate and not a reason to weaken Decision 31's hardware-microVM
+boundary.
+
+### Reactivation gates
+
+Future sovereign implementation proceeds only through Decision 31 and #1081,
+not by reopening this runsc plan. In addition to #1081's Gate 0 and build-plan
+proof, activation requires:
+
+- a concrete cost, compliance, performance, data-residency, or hosted-provider
+  limit that earns owned operation;
+- an operator who owns patching, credentials, qualification, cleanup debt,
+  capacity, SeaweedFS, backup, and incident response;
+- merged and released native sandbox leases plus accepted-effect provenance;
+- an addressed Core/Agent composition proof granting sandbox capabilities only
+  to the intended Worker seat;
+- an exact qualified `containerd -> Kata -> Firecracker` cohort and the
+  tenant-scoped SeaweedFS data plane required by Decision 31;
+- authenticated end-to-end tests covering two workspaces, concurrent leases,
+  swapped identities, expiry, ambiguous create/delete, pin/drain, crash
+  recovery, quota exhaustion, and unpublished-output protection; and
+- an owner-approved cutover plan. Until then the Seneca Factory uses Vercel,
+  and no self-hosted capability advertisement or production mode is permitted.
+
+---
+
+## Archived 2026-07-20 runsc plan — do not implement
+
+The remainder is retained unchanged as historical review evidence. Its runsc,
+Docker, host-root, static-fleet, storage, and SaaS-default prescriptions are
+superseded by Decision 31 and #1081.
 
 ## Problem
 

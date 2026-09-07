@@ -8,51 +8,43 @@ vi.mock('@hachej/boring-sandbox/providers/bwrap', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@hachej/boring-sandbox/providers/bwrap')>()
   return {
     ...actual,
-    createLocalRuntimeDescriptor(options: unknown) {
+    createBwrapSandboxProvider(options: unknown) {
       providerOptions.push(options)
-      const descriptor = actual.createLocalRuntimeDescriptor(
-        options as Parameters<typeof actual.createLocalRuntimeDescriptor>[0],
-      )
       const provider = actual.createBwrapSandboxProvider()
       return {
-        ...descriptor,
-        async createPairFactory() {
+        ...provider,
+        async create() {
+          const runtimeContext = { runtimeCwd: '/workspace' }
           return {
-            ...provider,
-            async create() {
-              const runtimeContext = { runtimeCwd: '/workspace' }
-              return {
-                workspace: {
-                  root: '/workspace',
-                  runtimeContext,
-                  fsCapability: 'strong' as const,
-                  async readFile() { return '' },
-                  async writeFile() {},
-                  async unlink() {},
-                  async readdir() { return [] },
-                  async stat() { return { kind: 'file' as const, size: 0, mtimeMs: 0 } },
-                  async mkdir() {},
-                  async rename() {},
-                },
-                sandbox: {
-                  id: 'captured-bwrap',
-                  placement: 'server' as const,
-                  provider: 'bwrap',
-                  capabilities: ['exec'] as const,
-                  runtimeContext,
-                  async exec() {
-                    return {
-                      stdout: new Uint8Array(),
-                      stderr: new Uint8Array(),
-                      exitCode: 0,
-                      durationMs: 0,
-                      truncated: false,
-                    }
-                  },
-                },
-                async dispose() {},
-              }
+            workspace: {
+              root: '/workspace',
+              runtimeContext,
+              fsCapability: 'strong' as const,
+              async readFile() { return '' },
+              async writeFile() {},
+              async unlink() {},
+              async readdir() { return [] },
+              async stat() { return { kind: 'file' as const, size: 0, mtimeMs: 0 } },
+              async mkdir() {},
+              async rename() {},
             },
+            sandbox: {
+              id: 'captured-bwrap',
+              placement: 'server' as const,
+              provider: 'bwrap',
+              capabilities: ['exec'] as const,
+              runtimeContext,
+              async exec() {
+                return {
+                  stdout: new Uint8Array(),
+                  stderr: new Uint8Array(),
+                  exitCode: 0,
+                  durationMs: 0,
+                  truncated: false,
+                }
+              },
+            },
+            async dispose() {},
           }
         },
       }

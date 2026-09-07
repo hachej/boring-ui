@@ -24,23 +24,48 @@ canonical contracts: `docs/procedures/{boring-loop.md,MODEL-CARD.md}` and
 
 ## Rules
 
+Every rule below is a default. The host and the owner decide. A host notice, a host tool result, or an owner instruction relayed in a prompt overrides any default in this skill; comply in the same turn and record the override in the gate card or handoff (AGENTS.md hard rule 1).
+
 - GitHub owns issues/PRs; Beads own local dependencies; Work Queue owns runs,
   artifacts, Inbox projections, and provenance only.
 - Keep one slice when possible. APR is advisory; accepted revisions enter the
   canonical plan.
-- Materialize slices as beads meeting `docs/procedures/bead-ready.md` (WHAT,
-  proof path, file scope, fits one session), and set bead priority at plan time.
+- Choose the feature name once, at epic creation, per
+  `docs/procedures/naming-conventions.md`; every title from here on (epic Bead,
+  child Beads, Inbox, PR, commits, sessions) leads with it.
+- Materialize the Bead graph with `br create ... --labels epic:<key>` (the
+  epic Bead first, `--parent <epic bead id>` on children where useful); titles
+  follow the naming convention. Slices meet `docs/procedures/bead-ready.md`
+  (WHAT, proof path, file scope, fits one session); set bead priority at plan
+  time.
 - Before Beads handoff run `br dep cycles` and `bv --robot-insights`; never bare
   `bv`.
-- Use `/skill:fresh-eyes` as tier 1, then continue the required Model Card ladder.
-  Use `ask_user` for unresolved intent, risk, or approval. A plan-approval
-  intention links the visual plan doc from `docs/procedures/visual-review-doc.md`.
-- **The Steward never self-certifies: an adversarial plan review
-  (cross-model per the Model Card) runs BEFORE the owner gate, always** — even
-  when every design decision was pre-ratified by the owner via grill. Grill →
+- Plan ceremony scales to the epic: one short plan note under
+  `docs/issues/<issue>/`, at most one adversarial review, no HTML review page
+  unless the epic changes UI — reach Gate 1 within minutes, not hours.
+- Request at most one tier-1 fresh-eyes review through the host-provided
+  independent-review mechanism (`/skill:fresh-eyes` when that command is
+  explicitly granted), then continue the required Model Card ladder. If no
+  independent-review mechanism is available, say so in the Gate 1 card and raise
+  the gate anyway; the owner decides. For review-only or docs-only epics (the
+  request says so) the request file is the plan and the plan review is skipped. Use `ask_user` for unresolved
+  intent, risk, or approval. A plan-approval intention links the visual plan doc
+  from `docs/procedures/visual-review-doc.md`. Gate 1 also carries the
+  mandatory show-me plan artifact per `.agents/skills/owner-gate/SKILL.md`.
+- **The Steward never self-certifies: by default one adversarial plan review
+  (cross-model per the Model Card) runs BEFORE the owner gate** — even when
+  every design decision was pre-ratified by the owner via grill. Grill →
   draft → adversarial review → fold findings → gate. Material changes after
   ratification go back to the owner; editorial ones fold silently.
+- Gate 1 is raised in the owner's Inbox via `/skill:owner-gate` and blocks;
+  nothing is dispatched before approve. The host may set a plan budget (a Gate 1
+  deadline in the kickoff or a supervision nudge): when it is reached, raise
+  Gate 1 with what you have. After approve, arm durable supervision
+  and dispatch Workers with `dispatch_worker` when that tool is available —
+  the brief names the epic and the pull protocol, never a specific Bead, since
+  Workers pull their own work. Use `/skill:exec <target>` only as the fallback
+  when no dispatch tool exists.
 - Provider command names are advisory; translate legacy `/implement` to `/exec`.
 
 Return the canonical artifact/URL, method, slices/Beads, blockers, proof path, and
-next action—normally `/skill:exec <target>`.
+next action—normally `dispatch_worker` (fallback `/skill:exec <target>`).

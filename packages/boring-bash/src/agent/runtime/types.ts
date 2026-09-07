@@ -57,10 +57,23 @@ export interface RuntimeFilesystemBindingOperations {
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
+export interface RuntimeFilesystemCatalogPresentation {
+  readonly visible?: boolean
+  readonly label?: string
+  readonly rootDir?: '.' | `/${string}`
+}
+
 export interface RuntimeFilesystemBinding {
   readonly filesystem: string
   readonly access: 'readonly' | 'readwrite'
   readonly operations: RuntimeFilesystemBindingOperations
+  /**
+   * User-facing catalog projection for file pickers. This never changes the
+   * internal filesystem id used by tools/routes.
+   */
+  readonly catalog?: RuntimeFilesystemCatalogPresentation
+  /** When present, only these addressed Agents receive this user-visible binding. */
+  readonly agentTypeIds?: readonly string[]
 }
 
 export interface RuntimeHostOperations {

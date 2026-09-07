@@ -171,6 +171,21 @@ describe('packageTemplate', () => {
     expect(uploadFn).toHaveBeenCalledWith(result.hash, expect.any(Buffer))
   })
 
+  test('never serializes template hashes or upload URLs to stderr', async () => {
+    await seedFiles({ 'secret-name.txt': 'secret-content' })
+    const url = 'https://blob.example.com/raw-secret-url.tar.gz'
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const result = await packageTemplate(fixtureDir, { uploadFn: async () => url })
+      const serialized = JSON.stringify(stderr.mock.calls)
+      expect(serialized).not.toContain(url)
+      expect(serialized).not.toContain(result.hash)
+      expect(serialized).not.toContain('secret-name.txt')
+    } finally {
+      stderr.mockRestore()
+    }
+  })
+
   test('returns cached URL on second call with same content', async () => {
     await seedFiles({ 'a.txt': 'content' })
 

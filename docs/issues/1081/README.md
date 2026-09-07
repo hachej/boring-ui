@@ -35,10 +35,14 @@ SeaweedFS sandbox fleet:
 - Transient files use zip copy-in/extract. A guest inotify daemon feeds the
   required live watch stream, event-driven publication, and artifact-to-inbox routing;
   external changes arrive through S3 notifications.
-- The provider adapter supplies one sandbox per user session, tagging,
-  idempotent create, a session pool, 60-second idle suspension, fast resume,
-  network-off with SeaweedFS-only egress, metering, and optional-runtime
-  graceful degradation. Warm pools are scale work, not M0.
+- The provider adapter supplies one sandbox per explicit lease and permits
+  several bounded concurrent leases per authorized Agent session. Every lease
+  gets an independent microVM, mutable SeaweedFS prefix, and `/scratch`; the
+  primary Workspace changes only through explicit publication. Leases use keyed
+  idempotent create, explicit tool targeting, request-bound authority,
+  accepted-effect receipts, pin/drain teardown, visible cleanup debt, roughly
+  60-second idle suspension, fast resume, network-off with SeaweedFS-only
+  egress, and metering. Warm pools are scale work, not M0.
 - gVisor is optional inner defense-in-depth, not a tenant boundary.
 - microsandbox/libkrun is rejected for v1 because of its mode-0 seccomp,
   unmeasured fuzz/CVE posture, and pre-1.0 maturity.

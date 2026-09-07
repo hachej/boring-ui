@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "definitionId": "boring-worker",
+  "version": "1.0.0",
+  "label": "Boring Worker",
+  "instructionsRef": "instructions.md"
+}

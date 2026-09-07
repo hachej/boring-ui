@@ -19,10 +19,13 @@ import { evalAgentPrompt } from '../src/eval/evalPrompt'
 import { EvalRegex } from '../src/eval/types'
 import { createStandaloneAgentHostApp } from '../src/server/createStandaloneAgentHostApp'
 import type { RuntimeModeAdapter } from '../src/server/runtime/mode'
+import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 import {
-  agentSandboxRuntimeHostOperations,
-  createSandboxRuntimeModeAdapter,
-} from '../host/sandbox'
+  createVercelSandboxProvider,
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from '@hachej/boring-sandbox/providers/vercel-sandbox'
+import { agentSandboxRuntimeHostOperations } from '../host/sandbox'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -68,7 +71,12 @@ async function main(): Promise<number> {
   let operationError: unknown
 
   try {
-    adapter = createSandboxRuntimeModeAdapter('vercel-sandbox')
+    adapter = createVercelSandboxModeAdapter({
+      provider: createVercelSandboxProvider(),
+      runtimeHost: agentSandboxRuntimeHostOperations,
+      remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
+      workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+    })
     setupBundle = await adapter.create({
       workspaceRoot,
       sessionId: workspaceRoot,

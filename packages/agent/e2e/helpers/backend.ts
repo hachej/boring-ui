@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import type { BuiltinRuntimeModeId } from '../../src/shared/runtime-mode'
 
 const DEFAULT_BOOT_TIMEOUT_MS = 30_000
 const HEALTH_POLL_INTERVAL_MS = 200
@@ -30,7 +29,7 @@ export interface SpawnBackendOptions {
   repoRoot: string
   port?: number
   timeoutMs?: number
-  mode?: BuiltinRuntimeModeId
+  mode?: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
   env?: Record<string, string>
 }
 

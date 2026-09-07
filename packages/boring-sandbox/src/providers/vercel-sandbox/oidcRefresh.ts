@@ -1,4 +1,7 @@
 import { createLogger, type ProviderLogger } from '../runtimeSupport'
+import { extractHttpStatus } from './httpError'
+
+export { extractHttpStatus } from './httpError'
 
 const DEFAULT_MIN_TTL_MS = 30_000
 const OIDC_AUTH_ERROR_STATUSES = new Set([401, 403])
@@ -106,36 +109,6 @@ export class OidcTokenRefresher {
 
     return await this.inFlightRefresh
   }
-}
-
-function coerceHttpStatus(value: unknown): number | null {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null
-  }
-  if (typeof value === 'string') {
-    // Some HTTP clients surface numeric status codes as strings.
-    const normalized = value.trim()
-    if (!/^\d+$/.test(normalized)) {
-      return null
-    }
-    const parsed = Number.parseInt(normalized, 10)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-  return null
-}
-
-export function extractHttpStatus(error: unknown): number | null {
-  const directStatus = coerceHttpStatus(
-    (error as { status?: unknown } | null)?.status,
-  )
-  if (directStatus !== null) {
-    return directStatus
-  }
-
-  const responseStatus = coerceHttpStatus(
-    (error as { response?: { status?: unknown } } | null)?.response?.status,
-  )
-  return responseStatus
 }
 
 export function isOidcAuthError(error: unknown): boolean {

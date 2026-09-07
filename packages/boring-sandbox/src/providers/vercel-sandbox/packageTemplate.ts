@@ -145,13 +145,12 @@ export async function packageTemplate(
 
   const cached = urlCache.get(hash)
   if (cached) {
-    log('cache hit', { hash, fileCount: files.length })
+    log('cache hit', { fileCount: files.length })
     return { url: cached, hash }
   }
 
   const tarball = await buildTarGz(files)
   log('tarball built', {
-    hash,
     fileCount: files.length,
     sizeBytes: tarball.length,
     buildMs: Date.now() - startMs,
@@ -161,7 +160,7 @@ export async function packageTemplate(
   const url = await upload(hash, tarball)
   urlCache.set(hash, url)
 
-  log('uploaded', { hash, url, totalMs: Date.now() - startMs })
+  log('uploaded', { totalMs: Date.now() - startMs })
   return { url, hash }
 }
 

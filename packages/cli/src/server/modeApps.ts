@@ -178,7 +178,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
   provisionWorkspace?: boolean
   plugins?: ProvisionWorkspaceRuntimeOptions["plugins"]
   adapter?: WorkspaceProvisioningAdapter
-  modeAdapter?: Pick<RuntimeModeAdapter, "create" | "runtimeHost" | "workspaceFsCapability">
+  modeAdapter?: Pick<RuntimeModeAdapter, "create" | "runtimeHost">
   runtimeLayout?: BoringAgentRuntimePaths
 }): Promise<WorkspaceProvisioningResult | undefined> {
   if (opts.provisionWorkspace === false) return undefined
@@ -188,12 +188,9 @@ export async function provisionCliWorkspaceRuntime(opts: {
   let operationError: unknown
   try {
     let adapter = opts.adapter
-    const modeAdapter = opts.modeAdapter
-      ?? (adapter ? undefined : agent.createSandboxRuntimeModeAdapter(opts.mode))
-    const workspaceFsCapability = modeAdapter?.workspaceFsCapability
-      ?? agent.findSandboxRuntimeModeDescriptor(opts.mode)?.adapter.workspaceFsCapability
     if (!adapter) {
-      if (!modeAdapter) throw new Error(`runtime mode ${opts.mode} has no mode adapter`)
+      const modeAdapter = opts.modeAdapter
+        ?? agent.createSandboxRuntimeModeAdapter(opts.mode)
       scopedRuntime = await modeAdapter.create({
         workspaceRoot: opts.workspaceRoot,
         workspaceId: opts.workspaceRoot,
@@ -214,7 +211,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
       ...result,
       env: {
         ...result.env,
-        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
+        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: opts.mode === "direct" || opts.mode === "local" ? "1" : "0",
       },
     }
   } catch (error) {
@@ -445,11 +442,53 @@ export async function createFolderModeApp(opts: {
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
-  const [{ createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins }, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
+  const [
+    { createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins },
+    workspaceServer,
+    agentServer,
+    { createPluginFrontRuntimeHost },
+    pluginDiscovery,
+  ] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
+    import("@hachej/boring-workspace/server"),
+    import("@hachej/boring-agent/server"),
     import("./pluginFrontRuntime.js"),
     import("./pluginDiscovery.js"),
   ])
+  const rootAgentPackage = (await workspaceServer.discoverAgentPackagesAtRoots([workspaceRoot]))
+    .find((descriptor) => resolve(descriptor.rootDir) === workspaceRoot)
+  let authoredAgent: Awaited<ReturnType<typeof agentServer.createConfiguredAgentHostAgentSpec>> | undefined
+  let authoredAgentResourcePlugin: {
+    id: string
+    contentDigest: string
+    packageResources: Array<{ packageName: string; packageRoot: string }>
+  } | undefined
+  if (rootAgentPackage) {
+    if (!rootAgentPackage.preflight.ok) {
+      throw new Error(`authored agent package is invalid: ${rootAgentPackage.preflight.errors.map((entry) => entry.message).join('; ')}`)
+    }
+    const source = await agentServer.materializeAgentDirectory({
+      directory: workspaceRoot,
+      expectedAgentTypeId: rootAgentPackage.manifest.boring.agent.definitionId,
+      manifest: "package.json",
+    })
+    const packageName = packageNameAtRoot(workspaceRoot)
+    const resourcePluginId = rootAgentPackage.pluginId
+    authoredAgentResourcePlugin = packageName
+      ? {
+          id: resourcePluginId,
+          contentDigest: source.definitionDigest ?? `${resourcePluginId}:v1`,
+          packageResources: [{ packageName, packageRoot: workspaceRoot }],
+        }
+      : undefined
+    authoredAgent = await agentServer.createConfiguredAgentHostAgentSpec({
+      source,
+      policy: {
+        fallbackLabel: rootAgentPackage.manifest.boring.agent.label ?? projectName,
+        ...(authoredAgentResourcePlugin ? { plugins: [{ name: resourcePluginId }] } : {}),
+      },
+    })
+  }
   const liveTranscriptEnabled = opts.liveTranscripts?.enabled ?? process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
   if (liveTranscriptEnabled && !opts.liveTranscripts) {
     throw new Error("live_transcript_local_only: folder-mode live transcripts require explicit listener and canonical browser authority")
@@ -468,7 +507,7 @@ export async function createFolderModeApp(opts: {
   const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
     ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
         dispatcherResolver: liveTranscriptDispatcherProxy,
-        agentTypeId: "default",
+        agentTypeId: authoredAgent?.agentTypeId ?? "default",
         actorResolver: () => ({ workspaceId: "default", userId: "local" }),
         authority: {
           listenerHost: opts.liveTranscripts.listenerHost,
@@ -485,7 +524,10 @@ export async function createFolderModeApp(opts: {
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined
-  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
+  const pluginDirs = [
+    ...(authoredAgent ? [{ rootDir: workspaceRoot, kind: "internal" as const, registered: true }] : []),
+    ...pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true }),
+  ]
   const defaultPluginPackagePaths = pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true })
   const tasksPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-tasks")
   const taskProviders = await detectFolderModeTaskProviders(workspaceRoot)
@@ -508,6 +550,7 @@ export async function createFolderModeApp(opts: {
       workspaceRoot,
       mode: opts.mode,
       logger: false,
+      ...(authoredAgent ? { agents: [authoredAgent], defaultAgentTypeId: authoredAgent.agentTypeId } : {}),
       provisionWorkspace: false,
       runtimeProvisioning,
       // Agent governance lives in `.agents`: readable by agents, never writable
@@ -532,6 +575,7 @@ export async function createFolderModeApp(opts: {
       // leaving arbitrary/workspace-local plugins on the explicit binding path.
       workspaceScopedDefaultPluginAgentContributions: true,
       plugins: [
+        ...(authoredAgentResourcePlugin ? [authoredAgentResourcePlugin] : []),
         ...(tasksPluginPackage
           ? [{
               dir: tasksPluginPackage,
@@ -599,6 +643,7 @@ export async function createFolderModeApp(opts: {
     workspaceId: "default",
     workspaceRoot,
     projectName,
+    defaultAgentTypeId: authoredAgent?.agentTypeId ?? "default",
     version: CLI_VERSION,
     runtimePluginFrontLoadingEnabled: true,
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
@@ -686,7 +731,7 @@ export async function createWorkspacesModeApp(opts: {
   type WorkspaceBridgeCore = {
     registry: ReturnType<typeof workspaceServer.createWorkspaceBridgeRuntimeCore>["registry"]
     idempotencyStore: InstanceType<typeof workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore>
-    extraTools: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["agentOptions"]["extraTools"]>
+    projectAgentTools: ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["projectAgentTools"]
     preservedUiStateKeys: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["preservedUiStateKeys"]>
     packageResources: ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["packageResources"]
   }
@@ -738,10 +783,18 @@ export async function createWorkspacesModeApp(opts: {
         ownerWorkspaceId: workspace.id,
         handlers: pluginCollection.workspaceBridgeHandlers ?? [],
       })
+      const agentToolsByAgentTypeId = new Map<string, ReturnType<typeof pluginCollection.projectAgentTools>>()
       return {
         registry: bridgeCore.registry,
         idempotencyStore: new workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore(),
-        extraTools: pluginCollection.agentOptions.extraTools ?? [],
+        projectAgentTools(agentTypeId) {
+          let tools = agentToolsByAgentTypeId.get(agentTypeId)
+          if (!tools) {
+            tools = pluginCollection.projectAgentTools(agentTypeId)
+            agentToolsByAgentTypeId.set(agentTypeId, tools)
+          }
+          return tools
+        },
         preservedUiStateKeys: pluginCollection.preservedUiStateKeys ?? [],
         packageResources: pluginCollection.packageResources,
       }
@@ -1051,7 +1104,7 @@ export async function createWorkspacesModeApp(opts: {
         },
       }
     },
-    async resolveAuthorizedAgentRuntimeScope({ authorizedScope, intent }) {
+    async resolveAuthorizedAgentRuntimeScope({ authorizedScope, agentTypeId, intent }) {
       const workspace = trustedLocalScope.workspace(authorizedScope)
       if (intent.operation === "reload") {
         const buildResourceDigestInput = () => {
@@ -1112,7 +1165,7 @@ export async function createWorkspacesModeApp(opts: {
         ...workspaceServer.createWorkspaceUiTools(getBridge(workspace.id), {
           workspaceRoot: sandboxRuntimeAdapter.workspaceFsCapability === "strong" ? workspace.path : undefined,
         }),
-        ...(await getWorkspaceBridgeCore(workspace)).extraTools,
+        ...(await getWorkspaceBridgeCore(workspace)).projectAgentTools(agentTypeId),
         automationTool(),
         agentServer.createPluginDiagnosticsTool({
           getLastReloadDiagnostics: () => lastReloadDiagnostics.get(pluginRuntimeKey(workspace)) ?? [],
@@ -1380,6 +1433,7 @@ export async function createWorkspacesModeApp(opts: {
   app.get("/api/v1/workspace/meta", async () => ({
     projectName: "Boring UI",
     workspacesMode: true,
+    defaultAgentTypeId: "default",
     version: CLI_VERSION,
     runtimePluginFrontLoadingEnabled: true,
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,

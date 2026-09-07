@@ -1,5 +1,4 @@
 import type { ErrorCode } from './errors.js'
-import type { BuiltinRuntimeModeId } from '@hachej/boring-agent/shared'
 
 export type MemberRole = 'owner' | 'editor' | 'viewer'
 
@@ -182,11 +181,10 @@ export interface CoreConfig {
   defaultAgentTypeId: string
 
   /**
-   * Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.
-   * Trusted host configuration (env/server option) validated against the
-   * fleet at boot; consumed only when initializing a newly created default
-   * Workspace at signup. The hostname has no continuing routing, membership,
-   * selection, or authorization effect and is never persisted.
+   * Exact trusted signup hostname -> additional specialist Agent Seat.
+   * The historical option name is retained for compatibility. Configuration
+   * is fleet-validated at boot and consumed only when initializing a new
+   * default Workspace; the application Default Agent remains primary.
    */
   signupAgentDefaults?: Readonly<Record<string, string>>
 
@@ -213,6 +211,10 @@ export interface CoreConfig {
   auth: {
     secret: string
     url: string
+    /** Public origin of the SPA front-end used to build user-facing email links
+     * (invite accept, password reset). Falls back to `url` when the front is
+     * served from the same origin as the API (the default in production). */
+    frontUrl?: string
     github?: { clientId: string; clientSecret: string }
     google?: { clientId: string; clientSecret: string }
     mail?: { from: string; transportUrl: string }
@@ -272,7 +274,7 @@ export type CoreCapabilities = {
 export type CapabilitiesResponse = {
   core: CoreCapabilities
   agent?: {
-    runtimeMode: BuiltinRuntimeModeId
+    runtimeMode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
     tools: string[]
     modelProviders: string[]
   }

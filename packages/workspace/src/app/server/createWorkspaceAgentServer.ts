@@ -96,6 +96,10 @@ import { registerWorkspaceUiBridge } from "../../shared/plugins/uiBridgeRegistry
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
+  runtimeProjectionRoutes,
+  type RuntimeProjectionRoutesOptions,
+} from "../../server/runtimeProjection/runtimeProjectionRoutes"
+import {
   createLocalCliBridgeAuthPolicy,
   createWorkspaceBridgeRuntimeCore,
   InMemoryWorkspaceBridgeIdempotencyStore,
@@ -110,6 +114,7 @@ import {
 import {
   bootstrapServer,
   compactPiPackages,
+  type ServerBootstrapResult,
   type ServerBootstrapOptions,
   type WorkspacePackageResourceRecord,
   type WorkspacePiPackageSource,
@@ -151,6 +156,10 @@ interface WorkspaceReloadHookResult {
 
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
+  /** Disable ambient Pi extensions while preserving explicitly composed package/extension grants. */
+  noExtensions?: boolean
+  /** Ignore packages from user/project Pi settings while preserving explicit host package grants. */
+  noAmbientPackages?: boolean
   noSkills?: boolean
   additionalSkillPaths?: string[]
   packages?: WorkspacePiPackageSource[]
@@ -272,6 +281,8 @@ export interface CreateWorkspaceAgentServerOptions
    * when explicitly marked `trust: "internal"`.
    */
   plugins?: WorkspacePluginEntry[]
+  /** Explicit Host-owned same-origin projection authority; absent by default. */
+  runtimeProjection?: RuntimeProjectionRoutesOptions
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
@@ -606,6 +617,11 @@ export interface AgentSpecPluginArtifactProjection {
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "pi"
   >
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
 }
 
 type IdentityJson = null | boolean | number | string | IdentityJson[] | { [key: string]: IdentityJson }
@@ -618,6 +634,7 @@ interface NormalizedAgentRuntimeContribution {
   readonly bindingInputs: IdentityJson
   readonly runtimePlugins: readonly WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
+  readonly onSessionDelete?: AgentSpecPluginArtifactProjection["onSessionDelete"]
   readonly includeAllDiscoveredPluginResources: boolean
 }
 
@@ -690,6 +707,8 @@ function pluginHasAgentRuntimeContribution(plugin: WorkspaceServerPlugin): boole
   return Boolean(
     plugin.systemPrompt
     || plugin.agentTools?.length
+    || plugin.agentToolFactory
+    || plugin.onAgentSessionDelete
     || plugin.piPackages?.length
     || plugin.extensionPaths?.length
     || plugin.skills?.length
@@ -799,6 +818,51 @@ export class AgentSpecPluginProjectionError extends Error {
 }
 
 /**
+ * Materialize the Agent tools collected from trusted server plugins for one
+ * canonical Agent identity. Hosts that compose their own Agent runtime use
+ * this same projection as the workspace Agent host, so selected-Agent tool
+ * factories cannot disappear at a host boundary.
+ */
+function projectWorkspaceAgentTools(
+  agentTypeId: string,
+  projection: Pick<ServerBootstrapResult, "agentTools" | "agentToolFactories">,
+  existingTools: readonly AgentTool[] = [],
+): AgentTool[] {
+  const generatedTools = projection.agentToolFactories.flatMap(({ id, createTools }) => {
+    const tools = createTools({ agentTypeId })
+    if (!Array.isArray(tools)) {
+      throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory must return an array`)
+    }
+    return tools.map((tool, index) => {
+      if (
+        !tool
+        || typeof tool !== "object"
+        || typeof tool.name !== "string"
+        || !tool.name
+        || typeof tool.description !== "string"
+        || !tool.parameters
+        || typeof tool.parameters !== "object"
+        || typeof tool.execute !== "function"
+      ) {
+        throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory returned an invalid tool at index ${index}`)
+      }
+      return tool
+    })
+  })
+  const occupiedToolNames = new Set([
+    ...existingTools.map((tool) => tool.name),
+    ...projection.agentTools.map((tool) => tool.name),
+  ])
+  for (const tool of generatedTools) {
+    if (occupiedToolNames.has(tool.name)) {
+      throw new AgentSpecPluginProjectionError(`generated Agent tool collides with existing tool "${tool.name}"`)
+    }
+    occupiedToolNames.add(tool.name)
+  }
+  return [...projection.agentTools, ...generatedTools]
+}
+
+/**
  * Projects only Agent-site contributions from canonical artifacts that the app
  * resolver already imported and preflighted. It never discovers or loads a
  * package, so Workspace and fleet activation cannot grow separate machinery.
@@ -808,6 +872,7 @@ export function projectAgentSpecPluginArtifacts(
   artifacts: readonly ResolvedWorkspacePluginArtifact[],
   workspaceScopedArtifacts: readonly ResolvedWorkspacePluginArtifact[] = [],
   hostDefaults: Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> = {},
+  existingTools: readonly AgentTool[] = [],
 ): AgentSpecPluginArtifactProjection {
   const byId = new Map<string, ResolvedWorkspacePluginArtifact>()
   for (const artifact of artifacts) {
@@ -853,17 +918,38 @@ export function projectAgentSpecPluginArtifacts(
     ...hostDefaults,
     plugins: selected.map((artifact) => artifact.plugin),
   })
+  const agentTools = projectWorkspaceAgentTools(agent.agentTypeId, projected, existingTools)
+  const deleteContributions = projected.agentSessionDeleteContributions
   return {
     artifacts: selected,
     runtimePlugins: projected.runtimePlugins,
     agentOptions: {
-      extraTools: projected.agentTools,
+      extraTools: agentTools,
       systemPromptAppend: projected.systemPromptAppend || undefined,
       pi: {
         packages: projected.piPackages,
         extensionPaths: projected.extensionPaths,
       },
     },
+    ...(deleteContributions.length > 0
+      ? {
+          async onSessionDelete(input: {
+            readonly workspaceScopeId: string
+            readonly agentTypeId: string
+            readonly sessionId: string
+          }) {
+            const results = await Promise.allSettled(
+              deleteContributions.map(async (contribution) => await contribution.onDelete(input)),
+            )
+            const failures = results
+              .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+              .map((result) => result.reason)
+            if (failures.length > 0) {
+              throw new AggregateError(failures, "selected plugin session cleanup failed")
+            }
+          },
+        }
+      : {}),
   }
 }
 
@@ -877,6 +963,8 @@ export interface WorkspaceAgentServerPluginCollection {
   agentReloadBlockers: WorkspaceAgentReloadBlocker[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
+  /** Project static and selected-Agent factory tools for a host-owned runtime. */
+  projectAgentTools(agentTypeId: string, existingTools?: readonly AgentTool[]): AgentTool[]
   defaultPluginPackagePaths: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
@@ -973,6 +1061,8 @@ export function collectWorkspaceAgentServerPlugins(
     agentReloadBlockers: result.agentReloadBlockers,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
+    projectAgentTools: (agentTypeId, existingTools) =>
+      projectWorkspaceAgentTools(agentTypeId, result, existingTools),
     defaultPluginPackagePaths: [],
     agentOptions: {
       extraTools: result.agentTools,
@@ -1206,7 +1296,9 @@ function resolveWorkspaceBridgeBrowserAuthPolicy(
 
   emitLocalCliBridgeAuthWarning()
   return createLocalCliBridgeAuthPolicy({
-    workspaceId: "default",
+    // The owner workspace is the host scope agents stamp on their records; a literal "default" would
+    // never match records written by scoped agent sessions (e.g. the Factory hub).
+    workspaceId: opts.sessionId ?? "default",
     capabilities: registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
     forceOwnerWorkspaceId: true,
   })
@@ -1261,7 +1353,7 @@ function registerWorkspaceHealthRoutes(
 }
 
 function emitLocalCliBridgeAuthWarning(): void {
-  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
+  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to the fixed local principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
   if (typeof process.emitWarning === "function") {
     process.emitWarning(message, { code: "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH" })
     return
@@ -1301,10 +1393,7 @@ export async function createWorkspaceAgentServer(
   }
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
-    resolvedMode,
-  )
-  const runtimeHostPolicy = modeAdapter.runtimeHostPolicy
+  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1362,6 +1451,23 @@ export async function createWorkspaceAgentServer(
         ...agents.slice(1),
       ]
     : agents
+  const humanKnowledgeBindingsPromise = Promise.all(hostAgents.flatMap((agent) => {
+    if (!("knowledge" in agent) || !agent.knowledge?.rootDir) return []
+    return [runtimeHost.createAgentResourceFilesystemBinding(
+      `agent_knowledge:${agent.agentTypeId}`,
+      [{ logicalRoot: "/", sourceRoot: agent.knowledge.rootDir }],
+    ).then((binding) => ({
+      ...binding,
+      catalog: {
+        visible: true,
+        label: agent.definition.label ?? agent.agentTypeId,
+        rootDir: "/" as const,
+      },
+      // Human routes expose this alias. Agent composition filters it and
+      // mounts only the addressed Agent's canonical `agent_knowledge` binding.
+      agentTypeIds: [] as readonly string[],
+    }))]
+  }))
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
   const allPluginEntries: WorkspacePluginEntry[] = pluginCollection.resolvedPluginArtifacts
@@ -1369,7 +1475,7 @@ export async function createWorkspaceAgentServer(
 
   const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
     registry: opts.workspaceBridge?.registry,
-    ownerWorkspaceId: "default",
+    ownerWorkspaceId: opts.sessionId ?? "default",
     handlers: [
       ...(opts.workspaceBridge?.handlers ?? []),
       ...(pluginCollection.workspaceBridgeHandlers ?? []),
@@ -1391,7 +1497,7 @@ export async function createWorkspaceAgentServer(
   const builtInBoringPiSkillPaths = pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []
   const baseStaticPiSkillPaths = [
     ...builtInBoringPiSkillPaths,
-    runtimeUserSkillsPath,
+    ...(opts.pi?.noSkills === true ? [] : [runtimeUserSkillsPath]),
     ...(opts.pi?.additionalSkillPaths ?? []),
   ]
   const baseStaticPiPackages = [workspacePackagePiPackage, ...(opts.pi?.packages ?? [])]
@@ -1437,6 +1543,11 @@ export async function createWorkspaceAgentServer(
         ...discovered.additionalSkillPaths.filter((path) => !registry || !packageResourceHandlesPath(path, registry.handledPackageRoots)),
         ...(registry?.additionalSkillPaths ?? []),
       ]),
+      // Package-registry extensions are executable and selected per Agent
+      // below; never reintroduce them through the ambient discovery path.
+      extensionPaths: discovered.extensionPaths.filter((path) =>
+        !registry || !packageResourceHandlesPath(path, registry.handledPackageRoots),
+      ),
     }
   }
 
@@ -1459,9 +1570,7 @@ export async function createWorkspaceAgentServer(
       ...pluginCollection.runtimePlugins,
       ...scanned,
     ])
-    if (runtimeHostPolicy?.includePluginAuthoringProvisioning === false) {
-      return omitPluginAuthoringProvisioning(inputs)
-    }
+    if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
     return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
@@ -1555,6 +1664,7 @@ export async function createWorkspaceAgentServer(
           receivesHostOwnedComposition
             ? { defaults: opts.defaults, excludeDefaults: opts.excludeDefaults }
             : undefined,
+          baseExtraTools,
         )
         const pluginIds = projection.artifacts.map((artifact) => artifact.id)
         const resolvedPolicy = {
@@ -1572,6 +1682,7 @@ export async function createWorkspaceAgentServer(
           }),
           runtimePlugins: projection.runtimePlugins,
           agentOptions: projection.agentOptions,
+          onSessionDelete: projection.onSessionDelete,
           includeAllDiscoveredPluginResources: receivesHostOwnedComposition,
         })
         return { ...agent, resolvedPolicy }
@@ -1766,6 +1877,7 @@ export async function createWorkspaceAgentServer(
             userId: verifiedClaim.authSubjectId,
             requestId,
           }) ?? []
+          const humanKnowledgeBindings = await humanKnowledgeBindingsPromise
           const packageRegistry = currentPackageResourceSnapshot?.registry
           const packageBinding = hostOwnedDefaultAgentTypeId && packageRegistry?.readonlyMounts.length
             ? await runtimeHost.createAgentResourceFilesystemBinding(
@@ -1773,7 +1885,7 @@ export async function createWorkspaceAgentServer(
                 packageRegistry.readonlyMounts,
               )
             : undefined
-          return [...callerBindings, ...(packageBinding ? [packageBinding] : [])]
+          return [...callerBindings, ...humanKnowledgeBindings, ...(packageBinding ? [packageBinding] : [])]
         },
       }
     },
@@ -1786,7 +1898,12 @@ export async function createWorkspaceAgentServer(
     }) {
       scopeIssuer.context(authorizedScope)
       const contribution = normalizedRuntimeContributions.get(agentTypeId)
-      if (!contribution) throw new Error(`Agent runtime contribution was not compiled: ${agentTypeId}`)
+      if (!contribution) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN,
+          `Unknown agent type: ${agentTypeId}`,
+        )
+      }
       // Reload resolves one immutable package candidate before admission. The
       // same candidate drives digest, prompt, locator, binding, and commit.
       const stagedPackageResourceSnapshot = intent.operation === "reload"
@@ -1847,6 +1964,8 @@ export async function createWorkspaceAgentServer(
         systemPromptAppend: baseSystemPromptAppend ?? null,
         piHarnessPolicy: {
           noContextFiles: resolvedBasePi.noContextFiles ?? null,
+          noExtensions: resolvedBasePi.noExtensions ?? null,
+          noAmbientPackages: resolvedBasePi.noAmbientPackages ?? null,
           noSkills: resolvedBasePi.noSkills ?? null,
         },
         toolContractOrder: baseExtraTools.map(toolContractDigest),
@@ -1880,6 +1999,7 @@ export async function createWorkspaceAgentServer(
               ]),
               extensionPaths: uniqueStrings([
                 ...(baseHot.extensionPaths ?? []),
+                ...(packageView?.extensionPaths ?? []),
                 ...discovered.extensionPaths,
               ]),
             }
@@ -1997,6 +2117,7 @@ export async function createWorkspaceAgentServer(
           ...baseExtraTools,
           ...(contribution.agentOptions.extraTools ?? []),
         ],
+        onSessionDelete: contribution.onSessionDelete,
         includeFilesystemTools: opts.disableDefaultFileTools !== true,
         includeUploadTools: true,
         getFilesystemBindings: async ({ scope, sessionId, requestId }) => {
@@ -2164,12 +2285,18 @@ export async function createWorkspaceAgentServer(
     refreshBoringPluginDirs()
     await boringAssetManager.load()
     await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-    await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
+    await app.register(uiRoutes, {
+      bridge,
+      preserveStateKeys: pluginCollection.preservedUiStateKeys,
+    })
+    if (opts.runtimeProjection) {
+      await app.register(runtimeProjectionRoutes, opts.runtimeProjection)
+    }
     await app.register(workspaceBridgeHttpRoutes, {
       registry: workspaceBridgeRegistry,
       runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
       runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
-      ownerWorkspaceId: "default",
+      ownerWorkspaceId: opts.sessionId ?? "default",
       idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
       browserAuthPolicy: resolveWorkspaceBridgeBrowserAuthPolicy(opts, workspaceBridgeRegistry),
     })

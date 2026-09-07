@@ -4,15 +4,8 @@
  * runtime source remains provider-neutral (enforced by package invariants).
  */
 export {
-  createRemoteWorkerModeAdapter,
-  createSandboxRuntimeDescriptorAdapter,
   createSandboxRuntimeModeAdapter,
-  findSandboxRuntimeModeDescriptor,
-  getSandboxRuntimeModeDescriptor,
   resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
 } from '../../../host/sandbox'
-export type {
-  RemoteWorkerModeAdapterOptions,
-  SandboxRuntimeModeOptions,
-} from '../../../host/sandbox'
+export type { SandboxRuntimeModeOptions } from '../../../host/sandbox'

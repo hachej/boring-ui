@@ -18,6 +18,11 @@ PROTOCOL = "boring.sortformer.v1"
 FRAME_BYTES = 3_200
 MAX_MESSAGE_BYTES = 1_000_000
 MAX_SEGMENTS = 2_000
+MAX_SPEAKERS = 2
+SPEECH_THRESHOLD = 0.50
+NEW_SPEAKER_THRESHOLD = 0.70
+SWITCH_MARGIN = 0.12
+SWITCH_CONFIRM_FRAMES = 5
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,13 @@ class Segment:
     speaker: int
     startSeconds: float
     endSeconds: float
+
+
+@dataclass(frozen=True)
+class SimpleSpeakerSegment:
+    speaker: int
+    start: float
+    end: float
 
 
 def parse_start(raw: str) -> None:
@@ -52,6 +64,74 @@ def parse_stop(raw: str) -> int:
     if not isinstance(value, dict) or value.get("type") != "stop" or not isinstance(value.get("id"), int):
         raise ValueError("unsupported control message")
     return value["id"]
+
+
+class TwoSpeakerStabilizer:
+    """Convert four raw Sortformer channels into two stable session labels."""
+
+    def __init__(self) -> None:
+        self.raw_slots: list[int] = []
+        self.current_raw: int | None = None
+        self.pending_raw: int | None = None
+        self.pending_frames = 0
+
+    def assign(self, scores: np.ndarray) -> list[int]:
+        if scores.ndim != 2 or scores.shape[1] < MAX_SPEAKERS:
+            raise ValueError("Sortformer returned invalid speaker scores")
+        labels: list[int] = []
+        for frame in scores:
+            candidate = int(np.argmax(frame))
+            candidate_score = float(frame[candidate])
+            if candidate_score < SPEECH_THRESHOLD:
+                self._clear_pending()
+                labels.append(-1)
+                continue
+
+            if self.current_raw is None:
+                self._admit(candidate)
+                self.current_raw = candidate
+
+            allowed = self.raw_slots
+            if candidate not in allowed:
+                current_score = float(frame[self.current_raw])
+                if len(allowed) < MAX_SPEAKERS and candidate_score >= NEW_SPEAKER_THRESHOLD and candidate_score - current_score >= SWITCH_MARGIN:
+                    if self._confirm(candidate):
+                        self._admit(candidate)
+                        self.current_raw = candidate
+                else:
+                    self._clear_pending()
+            elif candidate != self.current_raw:
+                current_score = float(frame[self.current_raw])
+                if candidate_score >= SPEECH_THRESHOLD and candidate_score - current_score >= SWITCH_MARGIN:
+                    if self._confirm(candidate):
+                        self.current_raw = candidate
+                else:
+                    self._clear_pending()
+            else:
+                self._clear_pending()
+
+            labels.append(self.raw_slots.index(self.current_raw))
+        return labels
+
+    def _admit(self, raw_speaker: int) -> None:
+        if raw_speaker not in self.raw_slots and len(self.raw_slots) < MAX_SPEAKERS:
+            self.raw_slots.append(raw_speaker)
+        self._clear_pending()
+
+    def _confirm(self, raw_speaker: int) -> bool:
+        if self.pending_raw == raw_speaker:
+            self.pending_frames += 1
+        else:
+            self.pending_raw = raw_speaker
+            self.pending_frames = 1
+        if self.pending_frames < SWITCH_CONFIRM_FRAMES:
+            return False
+        self._clear_pending()
+        return True
+
+    def _clear_pending(self) -> None:
+        self.pending_raw = None
+        self.pending_frames = 0
 
 
 def append_segments(segments: list[Segment], new_segments, audio_through: float) -> None:
@@ -82,7 +162,37 @@ class Sidecar:
             SortformerDiarization,
             SortformerDiarizationOnline,
         )
-        self.online_type = SortformerDiarizationOnline
+
+        class StableSortformerDiarizationOnline(SortformerDiarizationOnline):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.two_speaker_stabilizer = TwoSpeakerStabilizer()
+
+            def _process_predictions(self):
+                predictions = self.total_preds[0].cpu().numpy()
+                if self._len_prediction is None:
+                    self._len_prediction = len(predictions)
+                frame_count = self._len_prediction
+                current_scores = predictions[-frame_count:]
+                labels = self.two_speaker_stabilizer.assign(current_scores)
+                frame_duration = self.chunk_duration_seconds / frame_count
+                base_time = self._chunk_index * self.chunk_duration_seconds + self.global_time_offset
+                output = []
+                current = None
+                start = None
+                for index, speaker in enumerate(labels):
+                    frame_start = base_time + index * frame_duration
+                    if speaker == current:
+                        continue
+                    if current is not None and current >= 0 and start is not None:
+                        output.append(SimpleSpeakerSegment(current, start, frame_start))
+                    current = speaker
+                    start = frame_start
+                if current is not None and current >= 0 and start is not None:
+                    output.append(SimpleSpeakerSegment(current, start, base_time + frame_count * frame_duration))
+                return output
+
+        self.online_type = StableSortformerDiarizationOnline
         self.shared_model = SortformerDiarization(model_path=model_path) if model_path else SortformerDiarization()
         self.token = token
         self.session = asyncio.Semaphore(1)
@@ -114,7 +224,7 @@ class Sidecar:
                 raise ValueError("start message must be text")
             parse_start(first)
             online = self.online_type(shared_model=self.shared_model)
-            await socket.send(json.dumps({"type": "ready", "protocol": PROTOCOL, "maxSpeakers": 4}))
+            await socket.send(json.dumps({"type": "ready", "protocol": PROTOCOL, "maxSpeakers": MAX_SPEAKERS}))
             segments: list[Segment] = []
             revision = 0
             samples = 0

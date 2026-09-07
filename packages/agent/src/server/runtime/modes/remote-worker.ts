@@ -1,6 +1,5 @@
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { RuntimeModeAdapter } from '../mode'
-import type { AgentRuntimeHostOperations } from '../runtimeHost'
 import { createRemoteWorkerSandbox } from '../../sandbox/remote-worker/createRemoteWorkerSandbox'
 import { RemoteWorkerClient, type RemoteWorkerClientOptions } from '../../sandbox/remote-worker/workerClient'
 import { createRemoteWorkerWorkspace } from '../../workspace/createRemoteWorkerWorkspace'
@@ -15,9 +14,6 @@ export interface RemoteWorkerModeAdapterOptions {
   baseUrl?: string
   token?: string
   fetchImpl?: RemoteWorkerClientOptions['fetchImpl']
-  requestTimeoutMs?: RemoteWorkerClientOptions['requestTimeoutMs']
-  execTimeoutMs?: RemoteWorkerClientOptions['execTimeoutMs']
-  execRequestGraceMs?: RemoteWorkerClientOptions['execRequestGraceMs']
 }
 
 function requireOption(value: string | undefined, name: string): string {
@@ -26,24 +22,11 @@ function requireOption(value: string | undefined, name: string): string {
   return trimmed
 }
 
-export function createRemoteWorkerModeAdapter(
-  opts: RemoteWorkerModeAdapterOptions,
-  runtimeHost: AgentRuntimeHostOperations,
-): RuntimeModeAdapter {
+export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptions = {}): RuntimeModeAdapter {
   return {
     id: REMOTE_WORKER_PROVIDER,
-    runtimeHost,
     workspaceFsCapability: 'best-effort',
     getRuntimeLayoutRoot: () => REMOTE_WORKER_RUNTIME_CWD,
-    runtimeHostPolicy: {
-      productionSafe: false,
-      inferSiblingSessionRoot: false,
-      allowPiExtensions: true,
-      loadWorkspacePiResources: false,
-      includePluginAuthoringProvisioning: true,
-      resolveCompanyContextFromHostWorkspace: true,
-      httpWorkspaceScope: 'session',
-    },
     async create(ctx) {
       const workspaceId = requireOption(ctx.workspaceId ?? ctx.sessionId, 'workspaceId')
       const client = new RemoteWorkerClient({
@@ -52,9 +35,6 @@ export function createRemoteWorkerModeAdapter(
         workspaceId,
         requestId: ctx.requestId,
         fetchImpl: opts.fetchImpl,
-        requestTimeoutMs: opts.requestTimeoutMs,
-        execTimeoutMs: opts.execTimeoutMs,
-        execRequestGraceMs: opts.execRequestGraceMs,
       })
       const health = await client.health()
       const workspace = createRemoteWorkerWorkspace(
@@ -71,8 +51,6 @@ export function createRemoteWorkerModeAdapter(
         workspace,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),
-        runtimeHost,
-        disposeRuntime: async () => workspace.closeWatcher(),
       }
     },
   }

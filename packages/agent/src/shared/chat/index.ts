@@ -1,4 +1,5 @@
 export type { BoringChatMessage, BoringChatMessageRole, BoringChatMessageStatus, BoringChatPart } from './boringChatMessage'
+export type { AgentPromptPayload } from './agentPromptPayload'
 export type { ChatError } from './chatError'
 export {
   chatErrorFromUnknown,
@@ -20,6 +21,7 @@ export type {
   StopReceipt,
 } from './piChatCommand'
 export type { PiChatEvent, PiChatHeartbeatFrame, PiChatStreamFrame } from './piChatEvent'
+export type { PiChatAttachmentResult } from './piChatAttachment'
 export type { PiChatSnapshot, PiChatStatus, QueuedUserMessage } from './piChatSnapshot'
 export {
   BoringChatMessageSchema,

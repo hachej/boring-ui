@@ -2,7 +2,6 @@ import type { TelemetrySink } from '../../../shared/telemetry'
 import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import type { ProvisioningLogger } from './errors'
 import type { AgentRuntimeHostOperations } from '../../runtime/runtimeHost'
-import type { BuiltinRuntimeModeId } from '../../../shared/runtime-mode'
 
 export interface PluginSkillSource {
   name: string
@@ -59,7 +58,7 @@ export interface ResolveInstallSourceOpts {
 }
 
 export interface WorkspaceProvisioningAdapter {
-  mode: BuiltinRuntimeModeId
+  mode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
 
   exec(command: string, args: string[], opts?: {
     cwd?: string

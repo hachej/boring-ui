@@ -13,7 +13,6 @@ import {
   type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../shared/index'
-import type { PiChatSessionService } from '../../core/piChatSessionService'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHostDirectProjectionOptions, AgentHostHandle } from './types'
 import type { AgentSessionActivityIndex, AgentSessionActivityUpdate } from './sessionInventory'
@@ -23,6 +22,7 @@ import {
 } from './runtimeCapabilityProjection'
 import { statusForGatewayError } from './gatewayHttpStatus'
 import { projectStableServiceError } from './stableServiceError'
+import type { AgentHarnessBackend } from './harnessBackend/types'
 
 const ADDRESSED_HEARTBEAT_INTERVAL_MS = 25_000
 const MAX_BATCH_SESSION_SUMMARY_SCAN_PAGES = 10
@@ -34,11 +34,11 @@ interface ProjectionInput {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
   readonly options: ProjectionOptions
-  readonly resolveAddressedPiChatService: (
+  readonly resolveHarnessBackend: (
     request: FastifyRequest,
     agentTypeId: string,
     sessionId: string,
-  ) => Promise<{ readonly scope: import('../../shared/index').AuthorizedAgentScope; readonly service: PiChatSessionService }>
+  ) => Promise<{ readonly scope: import('../../shared/index').AuthorizedAgentScope; readonly backend: AgentHarnessBackend }>
   readonly runtimeCapabilities?: AgentHostRuntimeCapabilityProjection
   readonly activity: AgentSessionActivityIndex
   readonly resolveActivityWorkspaceScope: (request: FastifyRequest) => Promise<string>
@@ -371,26 +371,20 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
     try {
-      // The service comes from the authorized existing-session binding;
+      // The backend comes from the authorized existing-session binding;
       // never re-resolve another binding after authorization.
-      const { scope, service } = await input.resolveAddressedPiChatService(
+      const { scope, backend } = await input.resolveHarnessBackend(
         request,
         params.agentTypeId,
         params.sessionId,
       )
-      if (!service.readAttachment) {
-        throw new AgentGatewayError(
-          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
-          'attachment not found',
-        )
-      }
-      const attachment = await service.readAttachment({
-        workspaceId: scope.workspaceScopeId,
-        storageScope: scope.workspaceScopeId,
-        authSubject: scope.authSubjectId,
-        sessionAuthority: 'workspace-scope',
+      const attachment = await backend.readAttachment({
+        workspaceScopeId: scope.workspaceScopeId,
+        ref: { agentTypeId: params.agentTypeId, sessionId: params.sessionId },
+      }, {
+        authSubjectId: scope.authSubjectId,
         requestId: request.id,
-      }, params.sessionId, params.messageId, params.index)
+      }, params.messageId, params.index)
       if (!attachment.mediaType.startsWith('image/')) {
         throw new AgentGatewayError(
           AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,

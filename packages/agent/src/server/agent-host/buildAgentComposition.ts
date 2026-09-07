@@ -9,7 +9,6 @@ import type { AgentTool } from '../../shared/tool'
 import type { SessionStore } from '../../shared/session'
 import { withPiHarnessDefaults, type ResolvedPiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
 import { parseEncodedModelSelection } from '../models/modelConfig'
-import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding } from '../runtime/mode'
@@ -27,6 +26,8 @@ import {
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
+import type { AgentHarnessBackend } from './harnessBackend/types'
+import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -76,17 +77,21 @@ export function openDurableEventStore(input: {
     throw new DurableStreamUnavailableError('(no host-resolvable root)', reason)
   }
   const path = join(root, EVENT_STORE_FILE_NAME)
-  let opened: OpenDatabaseResult
+  let opened: OpenDatabaseResult | undefined
   try {
     opened = openDatabase(path)
+    const store = new SqliteEventStreamStore(opened.sql, opened.runTransaction, {
+      telemetry: input.telemetry,
+    })
+    return {
+      store,
+      close: () => opened?.db.close(),
+    }
   } catch (error) {
+    opened?.db.close()
     const reason = error instanceof Error ? error.message : String(error)
     reportEventStoreOpenFailure(input.telemetry, path, reason)
     throw new DurableStreamUnavailableError(path, reason, error)
-  }
-  return {
-    store: new SqliteEventStreamStore(opened.sql, opened.runTransaction),
-    close: () => opened.db.close(),
   }
 }
 
@@ -132,11 +137,12 @@ export interface BuildAgentCompositionInput {
 export interface BuiltAgentComposition {
   readonly harness: AgentHarness
   readonly sessionStore: SessionStore
-  readonly service: HarnessPiChatService
+  readonly backend: AgentHarnessBackend
   readonly tools: readonly AgentTool[]
   readonly pi: ResolvedPiHarnessOptions
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
+  readonly getFilesystemBindings?: (ctx: { sessionId?: string; userId?: string; requestId?: string }) => Promise<readonly RuntimeFilesystemBinding[]>
   dispose(): Promise<void>
 }
 
@@ -157,7 +163,12 @@ export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
   const { runtimeScope, options } = input
-  const runtimeBundle = input.runtimeBundle
+  const bindingIsVisible = (binding: RuntimeFilesystemBinding) =>
+    binding.agentTypeIds === undefined || binding.agentTypeIds.includes(input.agent.agentTypeId)
+  const visibleBindings = input.runtimeBundle.filesystemBindings?.filter(bindingIsVisible)
+  const runtimeBundle = visibleBindings === input.runtimeBundle.filesystemBindings
+    ? input.runtimeBundle
+    : { ...input.runtimeBundle, filesystemBindings: visibleBindings }
   // Resource loading is host authority: only the mode adapter's explicit
   // storageRoot proves that guest workspace bytes are mirrored on this host.
   const hostStorageRoot = runtimeBundle.storageRoot
@@ -171,9 +182,10 @@ export async function buildAgentComposition(
   // gets it without per-host wiring, and sibling agents never see it. A
   // declared-but-unmountable knowledge folder fails this agent's composition
   // closed.
-  const knowledgeRootDir = input.agent.knowledge?.rootDir
+  const authoredAgent = input.agent
+  const knowledgeRootDir = authoredAgent.knowledge?.rootDir
   let knowledgeBinding: RuntimeFilesystemBinding | undefined
-  if (knowledgeRootDir !== undefined) {
+  if (knowledgeRootDir !== undefined && authoredAgent) {
     const runtimeHostOperations = options.runtimeHost ?? runtimeBundle.runtimeHost
     if (!runtimeHostOperations) {
       throw Object.assign(
@@ -186,6 +198,11 @@ export async function buildAgentComposition(
         AGENT_KNOWLEDGE_FILESYSTEM_ID,
         [{ logicalRoot: '/', sourceRoot: knowledgeRootDir }],
       ),
+      catalog: {
+        visible: true,
+        label: authoredAgent.definition.label,
+        rootDir: '/' as const,
+      },
     })
   }
   const scopedKnowledgeBinding = knowledgeBinding
@@ -195,7 +212,7 @@ export async function buildAgentComposition(
   // filesystem — same merge seam as origin/feat/1107-s1-discovery.
   const getFilesystemBindings = runtimeScope.getFilesystemBindings || scopedKnowledgeBinding
     ? async (ctx: { sessionId?: string; userId?: string; requestId?: string }) => [
-        ...mergeRuntimeFilesystemBindings(
+        ...(mergeRuntimeFilesystemBindings(
           runtimeBundle.filesystemBindings,
           [
             ...await runtimeScope.getFilesystemBindings?.({
@@ -208,7 +225,7 @@ export async function buildAgentComposition(
             }) ?? [],
             ...(scopedKnowledgeBinding ? [scopedKnowledgeBinding] : []),
           ],
-        ) ?? [],
+        ) ?? []).filter(bindingIsVisible),
       ]
     : undefined
   const standardTools: AgentTool[] = [
@@ -315,7 +332,8 @@ export async function buildAgentComposition(
         telemetry: options.telemetry,
       })
     : undefined
-  const service = new HarnessPiChatService({
+  const backend = createPiSessionHarnessBackend({
+    agentTypeId: input.agent.agentTypeId,
     harness,
     sessionStore,
     workdir: runtimeBundle.workspace.root,
@@ -331,13 +349,14 @@ export async function buildAgentComposition(
   return {
     harness,
     sessionStore,
-    service,
+    backend,
     tools,
     pi,
     runtimeBundle,
     readyTracker,
+    ...(getFilesystemBindings ? { getFilesystemBindings } : {}),
     dispose() {
-      disposed ??= service.dispose().finally(() => durableEventStore?.close())
+      disposed ??= backend.close().finally(() => durableEventStore?.close())
       return disposed
     },
   }

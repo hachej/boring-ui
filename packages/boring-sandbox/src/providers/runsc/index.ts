@@ -141,4 +141,3 @@ export {
   type RunscSessionRuntimeOptionsV1,
 } from "./runtime/sessionRuntime";
 export { RunscWorkspaceHelperClientV1 } from "./runtime/workspaceHelperClient";
-export { remoteWorkerRuntimeDescriptor as runscRemoteWorkerRuntimeDescriptor } from '../remote-worker/runtimeDescriptor'

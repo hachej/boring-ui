@@ -34,8 +34,6 @@ describe('request-scoped post-signup workspace creation', () => {
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', config.appId, {
       isDefault: true,
       defaultAgentTypeId: 'default',
-      initialAgentSeatSource: 'generic-default',
-      enrolledByUserId: user.id,
     })
   })
 

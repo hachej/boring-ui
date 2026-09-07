@@ -3,11 +3,7 @@ import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rm, 
 import os from 'node:os'
 import path from 'node:path'
 import type { FastifyRequest } from 'fastify'
-import {
-  findSandboxRuntimeModeDescriptor,
-  type RuntimeFilesystemBinding,
-  type RuntimeFilesystemBindingOperations,
-} from '@hachej/boring-agent/server'
+import type { RuntimeFilesystemBinding, RuntimeFilesystemBindingOperations } from '@hachej/boring-agent/server'
 import { ErrorCode } from '@hachej/boring-agent/shared'
 import type { CreateCoreWorkspaceAgentServerOptions } from '@hachej/boring-core/app/server'
 import {
@@ -213,9 +209,7 @@ function asRuntimeOperations(ops: ReadonlyProjectionOperations): RuntimeFilesyst
 export function createDefaultCompanyContextRootResolver(env: NodeJS.ProcessEnv = process.env): CompanyContextRootResolver | undefined {
   const explicitSourceRoot = env[GOVERNANCE_COMPANY_CONTEXT_ROOT_ENV]?.trim()
   if (explicitSourceRoot) return () => path.resolve(explicitSourceRoot)
-  const runtimeMode = env[AGENT_MODE_ENV]?.trim()
-  if (runtimeMode && findSandboxRuntimeModeDescriptor(runtimeMode)
-    ?.host.resolveCompanyContextFromHostWorkspace === false) return undefined
+  if (env[AGENT_MODE_ENV]?.trim() === 'vercel-sandbox') return undefined
   const workspaceStorageRoot = env[AGENT_WORKSPACE_ROOT_ENV]?.trim() || process.cwd()
   return (_ctx, companyContextWorkspaceId) => path.resolve(workspaceStorageRoot, companyContextWorkspaceId)
 }

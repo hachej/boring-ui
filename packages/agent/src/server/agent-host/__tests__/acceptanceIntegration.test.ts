@@ -3,12 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentGatewayErrorCode, type AgentTool, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../../shared/index'
+import { sessionStreamPath } from '../../../shared/events'
 import type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { DEFAULT_AGENT_FLEET } from '../../agentDefinition/resolveDefaultAgentFleet'
 import { createAgentHost } from '../createAgentHost'
+import { DURABLE_STREAM_ENV_FLAG, EVENT_STORE_FILE_NAME } from '../buildAgentComposition'
+import { openDatabase } from '../../events/sqlStorage'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -55,6 +58,101 @@ function actorTool(subject: string, root: string): AgentTool {
 }
 
 describe('createAgentHost AH0 acceptance integration', () => {
+  it('keeps cross-agent addressing at AGENT_SESSION_NOT_FOUND before and after v1 stream migration', async () => {
+    const sessionRoot = await temporaryRoot('agent-host-migrated-addressing-')
+    const previousFlag = process.env[DURABLE_STREAM_ENV_FLAG]
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const options = {
+      agents: [
+        { agentTypeId: 'alpha', definition: { label: 'Alpha', instructions: 'alpha' } },
+        { agentTypeId: 'beta', definition: { label: 'Beta', instructions: 'beta' } },
+      ],
+      fleetCompiler: { async compile({ agents }: { agents: readonly unknown[] }) { return agents as never } },
+      scopeVerifier: {
+        async verify(authorizedScope: AuthorizedAgentScope) {
+          return {
+            workspaceScopeId: authorizedScope.workspaceScopeId,
+            authSubjectId: authorizedScope.authSubjectId,
+          }
+        },
+      },
+      runtimeModeAdapter: baseAdapter,
+      sessionRoot,
+      harnessFactory: persistedScriptedHarness([]),
+      async resolveAuthorizedEnvironmentScope() {
+        return {
+          placementIdentity: 'direct:workspace-a',
+          workspaceRoot: sessionRoot,
+          provisioningFingerprint: 'migration-addressing-v1',
+        }
+      },
+      async resolveAuthorizedAgentRuntimeScope({ agentTypeId }: { agentTypeId: string }) {
+        return {
+          identity: `${agentTypeId}:workspace-a`,
+          physicalBindingIdentity: `${agentTypeId}:workspace-a`,
+          resourceInputDigest: `${agentTypeId}:workspace-a`,
+          sessionNamespace: 'migration-addressing',
+        }
+      },
+    }
+
+    try {
+      delete process.env[DURABLE_STREAM_ENV_FLAG]
+      const before = await createAgentHost(options)
+      const ref = await before.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'create-before-migration',
+      })
+      await expect(before.gateway.readSessionState({
+        scope,
+        ref: { agentTypeId: 'beta', sessionId: ref.sessionId },
+      })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND })
+      await before.host.close()
+
+      const dbPath = join(sessionRoot, EVENT_STORE_FILE_NAME)
+      const v1 = openDatabase(dbPath)
+      const oldPath = `sessions/${JSON.stringify([ref.sessionId, scope.workspaceScopeId, ''])}`
+      v1.sql.exec(`CREATE TABLE boring_event_stream_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+      v1.sql.exec(`INSERT INTO boring_event_stream_meta (key, value) VALUES ('schema_version', '1')`)
+      v1.sql.exec(`CREATE TABLE boring_event_streams (path TEXT PRIMARY KEY, next_offset INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0)`)
+      v1.sql.exec(`CREATE TABLE boring_event_stream_entries (path TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (path, seq))`)
+      v1.sql.exec(`CREATE TABLE boring_event_stream_keys (path TEXT NOT NULL, idempotency_key TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (path, idempotency_key), UNIQUE (path, seq))`)
+      v1.sql.exec('INSERT INTO boring_event_streams (path, next_offset) VALUES (?, 1)', oldPath)
+      v1.sql.exec('INSERT INTO boring_event_stream_entries (path, seq, data) VALUES (?, 0, ?)', oldPath, JSON.stringify({
+        v: 1,
+        eventIndex: 0,
+        timestamp: 1,
+        sessionId: ref.sessionId,
+        chunk: { type: 'agent-start', seq: 1, turnId: 'legacy-turn' },
+      }))
+      v1.db.close()
+
+      process.env[DURABLE_STREAM_ENV_FLAG] = '1'
+      const after = await createAgentHost(options)
+      await expect(after.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({ ref })
+      await expect(after.gateway.readSessionState({
+        scope,
+        ref: { agentTypeId: 'beta', sessionId: ref.sessionId },
+      })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND })
+      await after.host.close()
+
+      const migrated = openDatabase(dbPath)
+      expect(migrated.sql.exec(`SELECT value FROM boring_event_stream_meta WHERE key = 'schema_version'`).toArray())
+        .toEqual([{ value: '2' }])
+      expect(migrated.sql.exec('SELECT path, agent_type_id FROM boring_event_stream_owners').toArray())
+        .toEqual([{
+          path: sessionStreamPath({ workspaceScopeId: scope.workspaceScopeId, sessionId: ref.sessionId }),
+          agent_type_id: 'alpha',
+        }])
+      migrated.db.close()
+    } finally {
+      if (previousFlag === undefined) delete process.env[DURABLE_STREAM_ENV_FLAG]
+      else process.env[DURABLE_STREAM_ENV_FLAG] = previousFlag
+    }
+  }, 30_000)
+
   it('partitions the full workspace/agent/storage/subject matrix while sharing compatible Environments', async () => {
     const sessionRoot = await temporaryRoot('agent-host-acceptance-sessions-')
     const workspaceRoots = new Map<string, string>()

@@ -579,6 +579,162 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND })
     })
 
+    it('#1463: deleting the only default workspace then recreating one does not collide on idx_workspaces_default_per_user_app', async () => {
+      const userId = await seedUser()
+      const original = await createWorkspace(userId, 'Default WS', APP_ID, { isDefault: true })
+      expect(original.isDefault).toBe(true)
+
+      // Simulate the DELETE /api/v1/workspaces/:id route's soft-delete step.
+      const result = await store.delete(original.id)
+      expect(result).toEqual({ removed: true })
+      expect(await store.list(userId, APP_ID)).toHaveLength(0)
+
+      // Simulate the auto-recreate on the next GET /api/v1/workspaces: before
+      // the migration this insert failed with a duplicate-key error against
+      // idx_workspaces_default_per_user_app because the old tombstoned
+      // default row still satisfied the (unpartitioned-by-deleted_at) index.
+      const recreated = await createWorkspace(userId, 'Default workspace', APP_ID, { isDefault: true })
+      expect(recreated.isDefault).toBe(true)
+      expect(recreated.id).not.toBe(original.id)
+
+      // The user ends up with exactly one active default — never zero, never two.
+      const active = await store.list(userId, APP_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).toBe(recreated.id)
+      expect(active[0].isDefault).toBe(true)
+    })
+
+    it('#1463 migration safety: the narrowed index still rejects two live defaults for the same (created_by, app_id)', async () => {
+      const userId = await seedUser()
+      await createWorkspace(userId, 'First', APP_ID, { isDefault: true })
+      // The old, broader index already rejected this (two live defaults, or a
+      // live default alongside a tombstoned one) — narrowing the predicate to
+      // also require deleted_at IS NULL only stops excluding the tombstoned
+      // case; it does not loosen the still-live-rows invariant.
+      let caught: unknown
+      try {
+        await createWorkspace(userId, 'Second', APP_ID, { isDefault: true })
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).toBeDefined()
+      const cause = (caught as { cause?: { message?: string; code?: string } } | undefined)?.cause
+      expect(cause?.code).toBe('23505') // unique_violation
+      expect(cause?.message).toMatch(/idx_workspaces_default_per_user_app/)
+
+      // Exactly one live default survives — the rejected insert didn't
+      // partially commit anything.
+      const active = await store.list(userId, APP_ID)
+      expect(active.filter((w) => w.isDefault)).toHaveLength(1)
+    })
+  })
+
+  describe('deleteAndRecreateDefaultIfEmpty', () => {
+    it('happy path: soft-deletes the only workspace and creates+installs a replacement default, atomically', async () => {
+      const userId = await seedUser()
+      const ws = await createWorkspace(userId, 'Solo', APP_ID, { isDefault: true })
+
+      const result = await store.deleteAndRecreateDefaultIfEmpty(ws.id, userId, {
+        name: 'Default workspace',
+        defaultAgentTypeId: 'default',
+      })
+
+      expect(result.removed).toBe(true)
+      expect(result.recreated).not.toBeNull()
+      expect(result.recreated!.id).not.toBe(ws.id)
+      expect(result.recreated!.isDefault).toBe(true)
+      expect(result.recreated!.createdBy).toBe(userId)
+
+      expect(await store.get(ws.id)).toBeNull()
+      const active = await store.list(userId, APP_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).toBe(result.recreated!.id)
+
+      // The replacement got its owner-member row and initial Agent seat too —
+      // not just a bare workspace row.
+      expect(await store.getMemberRole(result.recreated!.id, userId)).toBe('owner')
+      expect(await store.hasAgentSeat(result.recreated!.id, 'default')).toBe(true)
+    })
+
+    it('does not recreate when the acting user still has another active workspace in the app', async () => {
+      const userId = await seedUser()
+      await createWorkspace(userId, 'Kept', APP_ID)
+      const ws = await createWorkspace(userId, 'Delete Me', APP_ID)
+
+      const result = await store.deleteAndRecreateDefaultIfEmpty(ws.id, userId, {
+        name: 'Default workspace',
+        defaultAgentTypeId: 'default',
+      })
+
+      expect(result.removed).toBe(true)
+      expect(result.recreated).toBeNull()
+      expect(await store.list(userId, APP_ID)).toHaveLength(1)
+    })
+
+    it('returns NOT_FOUND for an unknown or already-deleted id, without touching anything', async () => {
+      const missing = await store.deleteAndRecreateDefaultIfEmpty(
+        '00000000-0000-0000-0000-000000000000',
+        await seedUser(),
+        { name: 'x', defaultAgentTypeId: 'default' },
+      )
+      expect(missing).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null })
+    })
+
+    it('#1463 blocking-finding fix: a genuine DB failure during the replacement insert rolls back the WHOLE transaction — the original workspace is never left deleted with no replacement', async () => {
+      const userId = await seedUser()
+      const ws = await createWorkspace(userId, 'Solo Default', APP_ID, { isDefault: true })
+
+      // A user id with no row in `users` at all: the replacement insert's
+      // created_by foreign key will genuinely fail at the Postgres level —
+      // this is a real DB failure, not a mocked/simulated one. Membership
+      // lookups for this bogus id also come back empty, so the "is the
+      // acting user now workspace-less" check still says yes and the
+      // recreate is attempted (and fails).
+      const bogusActingUserId = randomUUID()
+
+      await expect(
+        store.deleteAndRecreateDefaultIfEmpty(ws.id, bogusActingUserId, {
+          name: 'Replacement',
+          defaultAgentTypeId: 'default',
+        }),
+      ).rejects.toThrow()
+
+      // Rolled back in full: the original workspace is exactly as it was —
+      // not deleted, not orphaned, account never at zero active workspaces.
+      expect(await store.get(ws.id)).not.toBeNull()
+      const [row] = await sqlClient`SELECT deleted_at FROM workspaces WHERE id = ${ws.id}`
+      expect(row.deleted_at).toBeNull()
+      expect(await store.list(userId, APP_ID)).toHaveLength(1)
+
+      // And no half-created replacement was left behind either.
+      const [{ count }] = await sqlClient`
+        SELECT count(*)::int AS count FROM workspaces WHERE created_by = ${bogusActingUserId}
+      `
+      expect(Number(count)).toBe(0)
+    })
+
+    it('#1463 concurrency: deleting two workspaces owned by the same user at the same time never deadlocks and never double-creates a replacement', async () => {
+      const userId = await seedUser()
+      const wsA = await createWorkspace(userId, 'A', APP_ID, { isDefault: true })
+      const wsB = await createWorkspace(userId, 'B', APP_ID)
+
+      const [resultA, resultB] = await Promise.all([
+        store.deleteAndRecreateDefaultIfEmpty(wsA.id, userId, { name: 'Replacement', defaultAgentTypeId: 'default' }),
+        store.deleteAndRecreateDefaultIfEmpty(wsB.id, userId, { name: 'Replacement', defaultAgentTypeId: 'default' }),
+      ])
+
+      expect(resultA.removed).toBe(true)
+      expect(resultB.removed).toBe(true)
+
+      // Exactly one of the two concurrent calls recreated a default — never
+      // both (duplicate-default collision) and never neither (zero-workspace
+      // account, the original bug).
+      const recreatedCount = [resultA.recreated, resultB.recreated].filter((r) => r !== null).length
+      expect(recreatedCount).toBe(1)
+
+      const active = await store.list(userId, APP_ID)
+      expect(active).toHaveLength(1)
+    })
   })
 
   describe('isMember / getMemberRole', () => {

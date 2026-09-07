@@ -105,6 +105,39 @@ function mockWorkspaceStore(): WorkspaceStore {
       workspaces.delete(id)
       return { removed: true }
     },
+    deleteAndRecreateDefaultIfEmpty: async (
+      id: string,
+      actingUserId: string,
+      recreate: { name: string; defaultAgentTypeId: string },
+    ) => {
+      const ws = workspaces.get(id)
+      if (!ws) return { removed: false as const, code: ERROR_CODES.NOT_FOUND, recreated: null }
+      const appId = ws.appId
+      workspaces.delete(id)
+      memberDb.delete(id)
+
+      const remaining = [...workspaces.values()].filter(
+        (w) => w.appId === appId && memberDb.get(w.id)?.has(actingUserId),
+      )
+      if (remaining.length > 0) return { removed: true as const, recreated: null }
+
+      const newId = `ws-${nextWsId++}`
+      const recreatedWs: Workspace = {
+        id: newId, appId, workspaceTypeId: 'default', name: recreate.name, createdBy: actingUserId,
+        createdAt: new Date().toISOString(), deletedAt: null,
+        isDefault: true, defaultAgentTypeId: recreate.defaultAgentTypeId,
+      }
+      workspaces.set(newId, recreatedWs)
+      const wsMembers = new Map<string, MemberRole>()
+      wsMembers.set(actingUserId, 'owner')
+      memberDb.set(newId, wsMembers)
+      wsRuntimes.set(newId, {
+        workspaceId: newId, spriteUrl: null, spriteName: null,
+        state: 'ready', lastError: null, volumePath: null, lastErrorOp: null,
+        provisioningStep: null, stepStartedAt: null, updatedAt: new Date().toISOString(),
+      })
+      return { removed: true as const, recreated: recreatedWs }
+    },
     getWorkspacesWhereSoleOwner: async () => [],
     getMemberRole: async (wsId: string, userId: string) =>
       memberDb.get(wsId)?.get(userId) ?? null,

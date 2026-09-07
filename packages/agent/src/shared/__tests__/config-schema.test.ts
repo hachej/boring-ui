@@ -5,14 +5,13 @@ import {
   RuntimeModeSchema,
   validateConfig,
 } from "../config-schema"
-import { BUILTIN_RUNTIME_MODE_IDS, isBuiltinRuntimeModeId } from '../runtime-mode'
 
 describe("RuntimeModeSchema", () => {
   it("accepts valid modes", () => {
-    for (const mode of BUILTIN_RUNTIME_MODE_IDS) {
-      expect(RuntimeModeSchema.parse(mode)).toBe(mode)
-      expect(isBuiltinRuntimeModeId(mode)).toBe(true)
-    }
+    expect(RuntimeModeSchema.parse("direct")).toBe("direct")
+    expect(RuntimeModeSchema.parse("local")).toBe("local")
+    expect(RuntimeModeSchema.parse("blaxel")).toBe("blaxel")
+    expect(RuntimeModeSchema.parse("vercel-sandbox")).toBe("vercel-sandbox")
   })
 
   it("rejects invalid modes", () => {

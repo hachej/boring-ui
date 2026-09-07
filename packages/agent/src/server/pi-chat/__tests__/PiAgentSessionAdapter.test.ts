@@ -4,6 +4,7 @@ import {
   createPiAgentSessionAdapter,
   type PiAgentSessionLike,
 } from "../PiAgentSessionAdapter.js";
+import { PiChatEventMapper } from "../piChatEvents.js";
 
 function createFakeSession(overrides: Partial<PiAgentSessionLike> = {}) {
   const listeners = new Set<(event: AgentSessionEvent) => void>();
@@ -92,6 +93,50 @@ describe("PiAgentSessionAdapter", () => {
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     expect(listeners.size).toBe(0);
+    expect(seen).toEqual([event]);
+  });
+
+  it("shares cancellation normalization across wrappers for one Pi session", async () => {
+    const { session, emit } = createFakeSession();
+    const subscriber = createPiAgentSessionAdapter(session);
+    const controller = createPiAgentSessionAdapter(session);
+    const mapper = new PiChatEventMapper({ sessionId: "pi-session-1" });
+    const seen = [] as ReturnType<PiChatEventMapper["map"]>;
+
+    subscriber.subscribe((event) => seen.push(...mapper.map(event)));
+    emit({ type: "agent_start", turnId: "turn-1" } as unknown as AgentSessionEvent);
+    await controller.abort();
+    emit({
+      type: "agent_end",
+      messages: [{
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "AbortError: tool execution was cancelled",
+      }],
+      willRetry: false,
+    } as unknown as AgentSessionEvent);
+
+    expect(session.abort).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "agent-end", status: "aborted" }),
+    ]));
+    expect(seen.some((event) => event.type === "error")).toBe(false);
+  });
+
+  it("leaves normal events unchanged when cancellation was not requested", () => {
+    const { session, emit } = createFakeSession();
+    const adapter = createPiAgentSessionAdapter(session);
+    const seen: AgentSessionEvent[] = [];
+    const event = {
+      type: "agent_end",
+      messages: [{ role: "assistant", content: [], stopReason: "error" }],
+      willRetry: false,
+    } as unknown as AgentSessionEvent;
+
+    adapter.subscribe((value) => seen.push(value));
+    emit(event);
+
     expect(seen).toEqual([event]);
   });
 

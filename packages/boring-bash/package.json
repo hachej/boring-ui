@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bash",
-  "version": "0.1.106",
+  "version": "0.1.109",
   "type": "module",
   "license": "MIT",
   "description": "Filesystem and shell binding contracts for Boring runtimes.",
@@ -39,7 +39,7 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7"
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.3"
   },
   "peerDependencies": {
     "@hachej/boring-agent": "workspace:*",

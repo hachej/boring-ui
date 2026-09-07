@@ -30,6 +30,7 @@ export type BoringPluginSourceInput = string | BoringPluginSource
 
 export interface DiscoveredBoringAgentPackage {
   readonly rootDir: string
+  readonly pluginId: string
   readonly manifest: {
     readonly boring: { readonly agent: NonNullable<BoringPackageBoringField["agent"]> }
     readonly pi?: { readonly skills?: readonly string[] }

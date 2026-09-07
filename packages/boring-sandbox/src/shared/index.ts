@@ -73,8 +73,11 @@ export {
   QUALIFICATION_BUNDLE_SCHEMA_VERSION,
 } from "./qualificationBundle";
 export type {
+  DisposableSandboxProviderProfileV1,
+  DisposableSandboxProviderV1,
   ExtractedSandboxProviderIdV1,
   SandboxPairHealthV1,
+  SandboxProviderCreateCleanupDebtV1,
   SandboxProviderCreateContextV1,
   SandboxProviderInvalidateContextV1,
   SandboxProviderV1,
@@ -86,23 +89,11 @@ export type {
   SandboxRuntimeModeIdV1,
   WorkspaceSandboxPairV1,
 } from "./providerV1";
-export { SandboxProviderError } from "./providerV1";
-export type {
-  SandboxRuntimeAdapterProfileV1,
-  SandboxRuntimeBashStrategyV1,
-  SandboxRuntimeFilesystemStrategyV1,
-  SandboxRuntimeHostPolicyV1,
-  SandboxRuntimeModeDescriptorV1,
-  SandboxRuntimePairFactoryOptionsV1,
-  SandboxRuntimeReadinessV1,
-  SandboxRuntimeRemotePathOptionsV1,
-} from './runtimeDescriptor'
-export type { SandboxRuntimeModeRegistryV1 } from './runtimeDescriptor'
 export {
-  BUILTIN_RUNTIME_MODE_IDS,
-  isBuiltinRuntimeModeId,
-} from './runtimeModeCatalog'
-export type { BuiltinRuntimeModeId } from './runtimeModeCatalog'
+  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
+  SandboxProviderError,
+  isDisposableSandboxProviderV1,
+} from "./providerV1";
 export type {
   RemoteWorkerBindingReceiptPayloadV1,
   RemoteWorkerBindingReceiptV1,

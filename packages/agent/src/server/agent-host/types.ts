@@ -17,6 +17,7 @@ import type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeModeAdapter,
+  RuntimeTrustedServiceLeaseV1,
 } from '../runtime/mode'
 import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
@@ -267,6 +268,12 @@ export interface ResolvedAgentRuntimeScope {
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
+  /** Joined trusted-plugin cleanup invoked after backend session deletion succeeds. */
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
   readonly includeFilesystemTools?: boolean
   readonly includeUploadTools?: boolean
   readonly sessionDir?: string
@@ -319,6 +326,18 @@ export interface AgentHostEnvironmentScope extends ResolvedEnvironmentScope {
     readonly verifiedClaim: VerifiedAgentScopeClaim
     readonly requestId: string
   }) => Promise<readonly RuntimeFilesystemBinding[] | undefined>
+}
+
+export interface AgentHostSessionEnvironmentLease {
+  readonly environmentGenerationId: string
+  readonly bindingGeneration: number
+  readonly signal: AbortSignal
+  acquireTrustedService(input: {
+    readonly leaseId: string
+    readonly idleTtlMs: number
+    readonly absoluteTtlMs: number
+  }): Promise<RuntimeTrustedServiceLeaseV1>
+  release(): void
 }
 
 export interface AgentHostEnvironmentLease {
@@ -410,6 +429,12 @@ export interface CreatedAgentHost {
     readonly authorizedScope: AuthorizedAgentScope
     readonly intent: AuthorizedEnvironmentIntent
   }): Promise<AgentHostEnvironmentLease>
+  /** Trusted composition-only acquisition of the addressed session's exact Environment generation. */
+  acquireSessionEnvironment(input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease>
   runWithWorkspaceAgent(
     input: AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,

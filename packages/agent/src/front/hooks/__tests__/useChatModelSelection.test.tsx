@@ -147,6 +147,122 @@ describe('useChatModelSelection', () => {
     expect(result.current.model).toBeNull()
   })
 
+  it('resolves the agent default model for a pre-seeded/directly-created session with no stored model (#1469)', async () => {
+    // Sessions created outside the primary new-chat flow (pre-seeded scripted
+    // sessions, sessions created via a direct POST .../sessions call) hydrate
+    // with no session.currentModel and are never "new" (sessionIsNew is false
+    // once the session already carries history/queue state or was created
+    // out of band). Composer authority must still resolve a model from the
+    // agent's server-side default so the composer isn't disabled forever.
+    const defaultModel = { provider: 'anthropic', id: 'claude-sonnet' } as const
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      models: [
+        { provider: 'anthropic', id: 'claude-sonnet', label: 'Sonnet', available: true },
+      ],
+      defaultModel,
+    }))) as unknown as typeof fetch
+
+    const store = storage()
+    const { result } = renderHook(() => useChatModelSelection({
+      sessionId: 'pre-seeded-no-model',
+      sessionHydrated: true,
+      sessionIsNew: false,
+      storageScope: 'scope-a',
+      storage: store,
+      fetch: fetchImpl,
+      enabled: true,
+    }))
+
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+    await waitFor(() => expect(result.current.model).toEqual(defaultModel))
+    expect(result.current.sessionModel).toBeUndefined()
+  })
+
+  it('never trusts a leftover browser-stored default over the server default for an existing session with no stored model (#1469 review)', async () => {
+    // Regression for a review finding on the #1469 fix: a prior tab/session in
+    // this storage scope left model A selected in browser storage. A is still
+    // a valid, available model per discovery — so the old "already available,
+    // keep it" shortcut would happily resolve to A. But this session has no
+    // sessionModel of its own (sessionIsNew: false), so A is not this
+    // session's model; it is unrelated leftover state. The server's own
+    // default (B) must win, never a coincidentally-available browser choice.
+    const browserStoredModelA = { provider: 'anthropic', id: 'claude-haiku' } as const
+    const serverDefaultB = { provider: 'anthropic', id: 'claude-opus' } as const
+    const store = storage({
+      [scopedComposerStorageKey('scope-a', 'model')]: JSON.stringify(browserStoredModelA),
+      [scopedComposerStorageKey('scope-a', 'model:user-selected')]: '1',
+    })
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      models: [
+        { provider: 'anthropic', id: 'claude-haiku', label: 'Haiku', available: true },
+        { provider: 'anthropic', id: 'claude-opus', label: 'Opus', available: true },
+      ],
+      defaultModel: serverDefaultB,
+    }))) as unknown as typeof fetch
+
+    const { result } = renderHook(() => useChatModelSelection({
+      sessionId: 'pre-seeded-with-stale-browser-default',
+      sessionHydrated: true,
+      sessionIsNew: false,
+      storageScope: 'scope-a',
+      storage: store,
+      fetch: fetchImpl,
+      enabled: true,
+    }))
+
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+    await waitFor(() => expect(result.current.model).toEqual(serverDefaultB))
+    expect(result.current.model).not.toEqual(browserStoredModelA)
+    expect(result.current.sessionModel).toBeUndefined()
+  })
+
+  it('does not expose or submit the local/server default while a session with a stored model is still hydrating, even after discovery completes first (#1319 ordering)', async () => {
+    // Regression for a review finding: discovery can complete before an
+    // existing session finishes hydrating. sessionAuthorityReady must stay
+    // gated on sessionHydrated so a session that WILL report a stored model
+    // never briefly presents (or could submit with) the discovery default in
+    // that window — canonical hydration assigns currentModel and
+    // hydrated:true atomically, so there is no intermediate "hydrated with no
+    // model yet" state for such a session, but the hook must not race ahead
+    // of hydration to guess one anyway.
+    const localDefault = { provider: 'anthropic', id: 'claude-local-default' } as const
+    const storedSessionModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      models: [
+        { provider: 'anthropic', id: 'claude-local-default', label: 'Local default', available: true },
+        { provider: 'openai-codex', id: 'gpt-5.6-sol', label: 'Sol', available: true },
+      ],
+      defaultModel: localDefault,
+    }))) as unknown as typeof fetch
+    const store = storage()
+
+    const { result, rerender } = renderHook(
+      ({ sessionHydrated, sessionModel }) => useChatModelSelection({
+        sessionId: 'deferred-hydration-existing',
+        sessionHydrated,
+        sessionIsNew: false,
+        sessionModel,
+        storageScope: 'scope-a',
+        storage: store,
+        fetch: fetchImpl,
+        enabled: true,
+      }),
+      { initialProps: { sessionHydrated: false, sessionModel: undefined as ModelSelection | undefined } },
+    )
+
+    // Discovery finishes while the session is still unhydrated.
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+    // Authority must not be ready yet: no model to display, nothing a caller
+    // could submit with.
+    expect(result.current.model).toBeNull()
+
+    // Hydration lands atomically with the session's real stored model.
+    rerender({ sessionHydrated: true, sessionModel: storedSessionModel })
+
+    await waitFor(() => expect(result.current.model).toEqual(storedSessionModel))
+    expect(result.current.model).not.toEqual(localDefault)
+  })
+
   it('normalizes discovered model metadata before storing a prompt selection', async () => {
     const store = storage()
     const { result } = renderHook(() => useChatModelSelection({

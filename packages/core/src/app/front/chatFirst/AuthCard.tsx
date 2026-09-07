@@ -52,7 +52,7 @@ export function AuthCard({
   }
 
   return (
-    <div className="w-full max-w-xs rounded-2xl border border-border bg-card p-3 shadow-2xl">
+    <div className="public-auth-card w-full max-w-xs rounded-2xl border border-border bg-card p-3 shadow-2xl" data-boring-core-part="auth-card">
       {onClose ? (
         <div className="mb-3 flex justify-end">
           <button type="button" className="rounded-full px-2 py-1 text-sm text-muted-foreground hover:bg-muted" onClick={onClose} aria-label="Close sign in">×</button>

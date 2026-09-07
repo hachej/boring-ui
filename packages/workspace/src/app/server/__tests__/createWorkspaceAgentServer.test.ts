@@ -1503,9 +1503,10 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       const packageRoot = await makeTempDir(`boring-agent-${name}-resource-`)
       await mkdir(join(packageRoot, "skills", name), { recursive: true })
       await writeFile(join(packageRoot, "skills", name, "SKILL.md"), `---\nname: ${name}-skill\ndescription: ${name}.\n---\n`)
+      await writeFile(join(packageRoot, `${name}-extension.ts`), `export default function () {}\n`)
       await writeFile(join(packageRoot, "package.json"), JSON.stringify({
         name: `@example/${name}`,
-        pi: { skills: [`skills/${name}`], systemPrompt: prompt },
+        pi: { extensions: [`${name}-extension.ts`], skills: [`skills/${name}`], systemPrompt: prompt },
       }))
       return packageRoot
     }
@@ -1579,7 +1580,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
             packages?: unknown[]
             extensionPaths?: string[]
             additionalSkillPaths?: string[]
-            getHotReloadableResources?: () => { additionalSkillPaths?: string[] }
+            getHotReloadableResources?: () => { additionalSkillPaths?: string[]; extensionPaths?: string[] }
             locateSkillResource?: (filePath: string) => { filesystem: string; path: string } | undefined
           }
           getFilesystemBindings?: (ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }) => Promise<Array<{
@@ -1597,6 +1598,8 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "beta", scope }),
         hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "default", scope }),
       ])
+      await expect(hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "missing", scope }))
+        .rejects.toMatchObject({ code: "AGENT_TYPE_UNKNOWN" })
 
       expect(alpha.extraTools?.map((tool) => tool.name)).toContain("alpha_tool")
       expect(alpha.extraTools?.map((tool) => tool.name)).not.toContain("beta_tool")
@@ -1614,6 +1617,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(alphaSkillPaths).not.toContain(join(betaPackageRoot, "skills", "beta"))
       expect(alphaSkillPaths.some((path) => path.endsWith("/beta-plugin/beta-runtime"))).toBe(false)
       expect(alphaSkillPaths.some((path) => path.endsWith("/.boring-agent/skills"))).toBe(false)
+      const alphaExtensions = alpha.pi?.getHotReloadableResources?.().extensionPaths ?? []
+      expect(alphaExtensions).toContain(join(alphaPackageRoot, "alpha-extension.ts"))
+      expect(alphaExtensions).not.toContain(join(betaPackageRoot, "beta-extension.ts"))
       expect(await alpha.loadSystemPromptAppend?.()).toContain("ALPHA_MANIFEST_PROMPT")
       expect(await alpha.loadSystemPromptAppend?.()).not.toContain("BETA_MANIFEST_PROMPT")
       const alphaSkillFile = join(alphaPackageRoot, "skills", "alpha", "SKILL.md")
@@ -1650,6 +1656,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(betaSkillPaths).not.toContain(join(alphaPackageRoot, "skills", "alpha"))
       expect(betaSkillPaths.some((path) => path.endsWith("/alpha-plugin/alpha-runtime"))).toBe(false)
       expect(betaSkillPaths.some((path) => path.endsWith("/.boring-agent/skills"))).toBe(false)
+      const betaExtensions = beta.pi?.getHotReloadableResources?.().extensionPaths ?? []
+      expect(betaExtensions).toContain(join(betaPackageRoot, "beta-extension.ts"))
+      expect(betaExtensions).not.toContain(join(alphaPackageRoot, "alpha-extension.ts"))
       expect(await beta.loadSystemPromptAppend?.()).toContain("BETA_MANIFEST_PROMPT")
       expect(await beta.loadSystemPromptAppend?.()).not.toContain("ALPHA_MANIFEST_PROMPT")
       expect(beta.pi?.locateSkillResource?.(join(betaPackageRoot, "skills", "beta", "SKILL.md"))).toEqual({
@@ -1665,6 +1674,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(legacy.systemPromptAppend).toContain("ALPHA_PLUGIN_PROMPT")
       expect(legacy.systemPromptAppend).toContain("BETA_PLUGIN_PROMPT")
       expect(legacy.pi?.packages).toEqual(expect.arrayContaining(["npm:alpha-pi", "npm:beta-pi"]))
+      const legacyExtensions = legacy.pi?.getHotReloadableResources?.().extensionPaths ?? []
+      expect(legacyExtensions).toEqual(expect.arrayContaining([
+        join(alphaPackageRoot, "alpha-extension.ts"),
+        join(betaPackageRoot, "beta-extension.ts"),
+      ]))
     } finally {
       await app.close()
     }
@@ -1702,6 +1716,99 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(() => projectAgentSpecPluginArtifacts(agent, [artifact], [unpreflighted])).toThrow(
       'receives workspace-scoped plugin "unpreflighted-plugin" without a preflighted artifact',
     )
+  })
+
+  test("selected Agent tool factories and delete hooks stay scoped to the selected artifact", async () => {
+    const onDelete = vi.fn(async () => {})
+    const plugin = {
+      id: "selected-factory",
+      contentDigest: "selected-factory-v1",
+      agentToolFactory: ({ agentTypeId }: { agentTypeId: string }) => [{
+        name: `selected_${agentTypeId}`,
+        description: "selected factory tool",
+        parameters: { type: "object" },
+        async execute() { return { content: [] } },
+      }],
+      onAgentSessionDelete: onDelete,
+    }
+    const artifact = { id: plugin.id, contentDigest: plugin.contentDigest, plugin, entry: plugin }
+    const selected = projectAgentSpecPluginArtifacts({
+      agentTypeId: "worker",
+      definition: { label: "Worker", instructions: "work" },
+      plugins: [{ name: plugin.id }],
+    }, [artifact])
+    const sibling = projectAgentSpecPluginArtifacts({
+      agentTypeId: "sibling",
+      definition: { label: "Sibling", instructions: "work" },
+    }, [artifact])
+
+    expect(selected.agentOptions.extraTools?.map((tool) => tool.name)).toEqual(["selected_worker"])
+    expect(sibling.agentOptions.extraTools).toEqual([])
+    expect(sibling.onSessionDelete).toBeUndefined()
+    await selected.onSessionDelete?.({ workspaceScopeId: "workspace", agentTypeId: "worker", sessionId: "session" })
+    expect(onDelete).toHaveBeenCalledOnce()
+  })
+
+  test("selected session-delete hooks all settle before aggregate failure is reported", async () => {
+    const first = vi.fn(async () => { throw new Error("first cleanup failed") })
+    const second = vi.fn(async () => {})
+    const plugins = [
+      { id: "first-cleanup", contentDigest: "first-cleanup-v1", onAgentSessionDelete: first },
+      { id: "second-cleanup", contentDigest: "second-cleanup-v1", onAgentSessionDelete: second },
+    ]
+    const artifacts = plugins.map((plugin) => ({
+      id: plugin.id,
+      contentDigest: plugin.contentDigest,
+      plugin,
+      entry: plugin,
+    }))
+    const projection = projectAgentSpecPluginArtifacts({
+      agentTypeId: "worker",
+      definition: { label: "Worker", instructions: "work" },
+      plugins: plugins.map((plugin) => ({ name: plugin.id })),
+    }, artifacts)
+    const input = { workspaceScopeId: "workspace", agentTypeId: "worker", sessionId: "session" }
+
+    await expect(projection.onSessionDelete?.(input)).rejects.toBeInstanceOf(AggregateError)
+    expect(first).toHaveBeenCalledWith(input)
+    expect(second).toHaveBeenCalledWith(input)
+  })
+
+  test("selected Agent factories fail closed on host denial and generated tool collisions", () => {
+    const deniedPlugin = {
+      id: "host-denied",
+      contentDigest: "host-denied-v1",
+      agentToolFactory() { throw new Error("host grant denied") },
+    }
+    const deniedArtifact = { id: deniedPlugin.id, contentDigest: deniedPlugin.contentDigest, plugin: deniedPlugin, entry: deniedPlugin }
+    expect(() => projectAgentSpecPluginArtifacts({
+      agentTypeId: "worker",
+      definition: { label: "Worker", instructions: "work" },
+      plugins: [{ name: deniedPlugin.id }],
+    }, [deniedArtifact])).toThrow("host grant denied")
+
+    const collisionPlugin = {
+      id: "factory-collision",
+      contentDigest: "factory-collision-v1",
+      agentTools: [{
+        name: "sandbox",
+        description: "static",
+        parameters: { type: "object" },
+        async execute() { return { content: [] } },
+      }],
+      agentToolFactory: () => [{
+        name: "sandbox",
+        description: "generated",
+        parameters: { type: "object" },
+        async execute() { return { content: [] } },
+      }],
+    }
+    const collisionArtifact = { id: collisionPlugin.id, contentDigest: collisionPlugin.contentDigest, plugin: collisionPlugin, entry: collisionPlugin }
+    expect(() => projectAgentSpecPluginArtifacts({
+      agentTypeId: "worker",
+      definition: { label: "Worker", instructions: "work" },
+      plugins: [{ name: collisionPlugin.id }],
+    }, [collisionArtifact])).toThrow('generated Agent tool collides with existing tool "sandbox"')
   })
 
   // M3 fix round 1 (gh-1106 slice 3): global single-Agent plugin contributions
@@ -2810,6 +2917,36 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     } finally {
       await app.close()
     }
+  })
+
+  test("prebuilt executable factory and lifecycle contributions require contentDigest", async () => {
+    const workspaceRoot = await makeTempDir("workspace-executable-plugin-identity-")
+    const base = {
+      workspaceRoot,
+      bridge: {} as never,
+      installPluginAuthoring: false,
+    }
+
+    await expect(resolveWorkspaceAgentServerPluginCollection({
+      ...base,
+      plugins: [{
+        id: "factory-without-digest",
+        agentToolFactory: () => [{
+          name: "generated_tool",
+          description: "generated",
+          parameters: { type: "object" },
+          async execute() { return { content: [] } },
+        }],
+      }],
+    })).rejects.toThrow('prebuilt plugin "factory-without-digest" contributes Agent/runtime bindings without contentDigest')
+
+    await expect(resolveWorkspaceAgentServerPluginCollection({
+      ...base,
+      plugins: [{
+        id: "cleanup-without-digest",
+        async onAgentSessionDelete() {},
+      }],
+    })).rejects.toThrow('prebuilt plugin "cleanup-without-digest" contributes Agent/runtime bindings without contentDigest')
   })
 
   test("a package-resource-only prebuilt plugin is not misclassified as contribution:none (identity fence)", async () => {

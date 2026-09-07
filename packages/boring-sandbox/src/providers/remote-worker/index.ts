@@ -36,7 +36,3 @@ export {
   type RemoteWorkerTransportRequestV1,
   type RemoteWorkerTransportV1,
 } from "./transport";
-export {
-  createRemoteWorkerRuntimeDescriptor,
-  remoteWorkerRuntimeDescriptor,
-} from './runtimeDescriptor'

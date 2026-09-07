@@ -1,6 +1,16 @@
 import { expect, test, type Page, type Response } from "@playwright/test"
 
-const operationPath = /\/api\/v1\/agents\/default\/sessions(?:$|\?|\/[^/]+\/(?:events|prompt|followup|queue\/clear|interrupt|stop|rename))/
+// Every addressed session route carries the agent type id in its path. The
+// playground boots the scripted two-Agent fleet (`alpha` + `beta`), so the
+// golden route is checked against the seat the app actually addresses rather
+// than a hardcoded id — the exact expected paths are still asserted below.
+const operationPath = /\/api\/v1\/agents\/[^/]+\/sessions(?:$|\?|\/[^/]+\/(?:events|prompt|followup|queue\/clear|interrupt|stop|rename))/
+
+/** The composition apps/workspace-playground boots for e2e (see twoAgentFleet.ts). */
+const EXPECTED_AGENT_CATALOG = [
+  { agentTypeId: "alpha", label: "Alpha", pluginIds: ["scripted-alpha-capability"] },
+  { agentTypeId: "beta", label: "Beta", pluginIds: ["scripted-beta-capability"] },
+]
 
 async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press("ControlOrMeta+KeyK")
@@ -35,11 +45,17 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     await expect(composer).toBeVisible()
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 10_000 })
 
-    const workspaceMeta = await (await page.request.get("/api/v1/workspace/meta")).json() as { workspaceId: string }
+    const workspaceMeta = await (await page.request.get("/api/v1/workspace/meta")).json() as {
+      workspaceId: string
+      defaultAgentTypeId: string
+    }
     const workspaceHeaders = { "x-boring-workspace-id": workspaceMeta.workspaceId }
     const catalog = await page.request.get("/api/v1/agents", { headers: workspaceHeaders })
     expect(catalog.status()).toBe(200)
-    expect(await catalog.json()).toEqual([{ agentTypeId: "default", label: "Agent" }])
+    expect(await catalog.json()).toEqual(EXPECTED_AGENT_CATALOG)
+    const agentTypeId = workspaceMeta.defaultAgentTypeId
+    expect(EXPECTED_AGENT_CATALOG.map((agent) => agent.agentTypeId)).toContain(agentTypeId)
+    const sessionsRoute = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`
 
     const initialSessionId = await chat.getAttribute("data-pi-chat-session-id")
     await runCommand(page, "New Chat")
@@ -66,7 +82,7 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     await expect(page.getByLabel("Agent conversation").getByText(prompt)).toBeVisible({ timeout: 10_000 })
 
     const renamed = `Golden addressed ${Date.now()}`
-    const rename = await page.request.post(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}/rename`, {
+    const rename = await page.request.post(`${sessionsRoute}/${encodeURIComponent(sessionId!)}/rename`, {
       headers: workspaceHeaders,
       data: { requestId: `rename-${Date.now()}`, title: renamed },
     })
@@ -75,30 +91,30 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     expect(JSON.parse(renameBody)).toMatchObject({ title: renamed })
     responses.push({
       method: "POST",
-      path: `/api/v1/agents/default/sessions/${sessionId}/rename`,
+      path: `${sessionsRoute}/${sessionId}/rename`,
       status: rename.status(),
     })
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.locator('[data-boring-workspace-part="app-session-row"]').filter({ hasText: renamed })).toBeVisible({ timeout: 10_000 })
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 10_000 })
 
-    const deletion = await page.request.delete(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}`, {
+    const deletion = await page.request.delete(`${sessionsRoute}/${encodeURIComponent(sessionId!)}`, {
       headers: workspaceHeaders,
     })
     expect(deletion.status(), await deletion.text()).toBe(204)
     responses.push({
       method: "DELETE",
-      path: `/api/v1/agents/default/sessions/${sessionId}`,
+      path: `${sessionsRoute}/${sessionId}`,
       status: deletion.status(),
     })
 
     const expectedOperations = [
-      ["GET", "/api/v1/agents/default/sessions", 200],
-      ["POST", "/api/v1/agents/default/sessions", 201],
-      ["GET", `/api/v1/agents/default/sessions/${sessionId}/events`, 200],
-      ["POST", `/api/v1/agents/default/sessions/${sessionId}/prompt`, 202],
-      ["POST", `/api/v1/agents/default/sessions/${sessionId}/rename`, 200],
-      ["DELETE", `/api/v1/agents/default/sessions/${sessionId}`, 204],
+      ["GET", sessionsRoute, 200],
+      ["POST", sessionsRoute, 201],
+      ["GET", `${sessionsRoute}/${sessionId}/events`, 200],
+      ["POST", `${sessionsRoute}/${sessionId}/prompt`, 202],
+      ["POST", `${sessionsRoute}/${sessionId}/rename`, 200],
+      ["DELETE", `${sessionsRoute}/${sessionId}`, 204],
     ] as const
     for (const [method, path, status] of expectedOperations) {
       expect(responses.some((item) => item.method === method && item.path === path && item.status === status), JSON.stringify(responses, null, 2)).toBe(true)
