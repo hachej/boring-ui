@@ -2,7 +2,7 @@
 <style>body{font:15px/1.5 system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#1a1a1a}.strip{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;border-bottom:1px solid #ddd;padding-bottom:.75rem}.pill{background:#1f6f43;color:#fff;border-radius:999px;padding:.1rem .6rem;font-size:.85rem}table{border-collapse:collapse;width:100%;margin:1rem 0}td,th{border:1px solid #ddd;padding:.4rem .6rem;vertical-align:top;text-align:left}.hi{background:#fde2e2}.md{background:#fff3cd}.lo{background:#e2f0d9}code{font-size:.9em}</style>
 <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true});</script></head><body>
 <div class="strip"><strong>gh-1562 Native creation: first Seneca product journey</strong><span class="pill">gate 1 — plan approval</span><span>Steward: Claude (session 2026-09-07)</span><span>Epic label <code>epic:native-creation</code></span></div>
-<p><strong>TL;DR:</strong> spine first — release identity, Thread identity (no session keys), installation/activation, builder, bridge — then the first View slice and the product's place in Library as a Thread in Work; isolation (runtime seam, local sandbox, iframe renderer) gates a second consumer on a shared host. First journey proven on a math-tutor fixture.</p>
+<p><strong>TL;DR:</strong> spine first — release identity, Thread identity (no session keys), installation/activation, builder, bridge — then the first View slice and the product's place in Library as a Thread in Work; isolation (runtime seam, local sandbox, iframe renderer) gates a second consumer on a shared host. The math-tutor fixture supplies deterministic supporting proof only. Before this epic closes, the live Seneca mathematics tutor must be created by the Seneca curator, installed for a second authorized learner, and prove real domain identity and operations plus a bounded Job Thread that retains a result or decision after chat and browser closure.</p>
 <h2>Architecture</h2>
 <pre class="mermaid">flowchart TB
   subgraph Host["Host — control plane + broker"]
@@ -62,11 +62,21 @@
   participant H as host bridge
   participant I as installation store
   participant P as product runtime
+  participant C as Seneca curator
+  participant L as second authorized learner
   B->>H: propose(releaseDigest)
   H->>I: activate(expectedGeneration, requestKey)
   I-->>H: committed | aborted(stale)
   H->>P: start(release) + register ops
+  Note over B,P: fixture receipt = deterministic supporting evidence only
+  C->>H: create live Seneca mathematics tutor
+  H->>I: install for authorized learner
+  L->>P: use real tutor domain operations
+  L->>H: close chat/browser, then resume bounded Job Thread
+  H-->>L: retained result or decision
 </pre>
+<h2>Epic-closing acceptance</h2>
+<table><tr><th>Supporting proof</th><th>Mandatory live acceptance before closure</th></tr><tr><td>The math-tutor playground fixture and its committed receipt provide deterministic end-to-end evidence, but cannot close the epic.</td><td>The Seneca curator creates the live Seneca mathematics tutor; a second authorized learner installs and uses it; real domain identity and operations work; and a bounded Job Thread retains a result or decision after chat and browser closure. nc-7 is the only epic closer and cannot close on fixture-only evidence.</td></tr></table>
 <h2>Owner defaults (360 re-cut)</h2>
 <table><tr><th>Question</th><th>Default</th></tr><tr><td>Separate consumer</td><td>workspace member with a personal-scope installation</td></tr><tr><td>Tutor persona path</td><td>agent-package install for the first proof; digest pinned in the release</td></tr><tr><td>local mode floor</td><td>bwrap/runsc for the first proof; microVM before shared-tenant Seneca</td></tr><tr><td>Id space</td><td>A1 owns session ids, nc-t owns thread ids</td></tr><tr><td>Release path to Seneca</td><td>pull by digest; out of epic scope</td></tr></table>
 <h2>Decisions</h2>
