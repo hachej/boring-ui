@@ -15,16 +15,20 @@ this says HOW it reaches them.
 Never substitute a chat message, a bead comment, or a "let me know" for a gate.
 A gate that did not become an inbox item did not happen.
 
+Everything below is a default. The host and the owner decide. A host notice, a host tool result, or an owner instruction relayed in a prompt overrides any default in this skill; comply in the same turn and record the override in the gate card or handoff (AGENTS.md hard rule 1).
+Owner-owned Beads (assignee `owner`) never block a gate.
+
 Titles follow `docs/procedures/naming-conventions.md`: `[Feature Name] Plan
 approval` / `[Feature Name] Merge approval` — never lead with a bead id.
 
 ## The two gates
 
-The visual is mandatory at both gates, not optional — read `../show-me/SKILL.md`
+The visual is expected at both gates — read `../show-me/SKILL.md`
 for its view-selection table before producing either artifact below.
 
 - **Gate 1 — plan approval** (Orchestrator). Raised after the Bead graph is
-  materialized and the adversarial plan review is done, never before. Links
+  materialized and the (at most one) adversarial plan review is done, or when
+  the host's plan budget is reached, or when the epic is review-only/docs-only. Links
   the plan doc. Also write `docs/issues/<issue>/show-me-plan.md` with at most
   three views selected from show-me's table: the structure view (a shallow
   file tree or component tree of what the epic touches), the behavior view
@@ -48,8 +52,11 @@ for its view-selection table before producing either artifact below.
   card from `docs/procedures/owner-review-card.md`, then a `## Show me`
   section, then `## Handover`), start a `demo_sandbox` at the exact SHA when
   that tool is available, and put its URL on the card's `Artifact:` line and
-  again in `context` with its expiry. Must name the exact SHA and the
-  expected target head. The `## Show me` section carries diff-shaped views
+  again in `context` with its expiry. When `demo_sandbox` returns an error after
+  its fallback, raise the gate anyway and put the exact error under `Demo:`.
+  Must name the exact SHA and the expected target head; a docs-only commit of
+  the show-me/presentation artifacts after the reviewed SHA does not void the
+  review — cite both SHAs. The `## Show me` section carries diff-shaped views
   (component/call/file tree diff) plus one sequence diagram of the shipped
   flow, derived from the actual commits — never from memory of the plan.
   Write the same views to `docs/issues/<issue>/show-me-<short sha>.md` and
@@ -139,8 +146,9 @@ the workspace — it, not chat, is the decision record.
   never merge.
 - `changes`/`defer`/`reject` at Gate 1 → revise the plan and re-raise, or stop
   and report.
-- In every case, only at the SHA/plan you named. If the head moved, the
-  approval is void; re-raise.
+- In every case, only at the SHA/plan you named. If the head moved with code,
+  the approval is void; re-raise. Docs-only artifact commits are cited, not
+  re-gated.
 
 If the tool errors or is unavailable, fall back to a GitHub comment on the PR
 carrying the same card, and say in your handoff that the fallback was used.

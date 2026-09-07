@@ -46,6 +46,7 @@ function pendingStateForMany(questions: AskUserQuestion[]) {
     "questions.pending": {
       hint: questions[0] ? { questionId: questions[0].questionId, sessionId: questions[0].sessionId, status: questions[0].status } : null,
       hintsBySession: Object.fromEntries(questions.map((q) => [q.sessionId, { questionId: q.questionId, sessionId: q.sessionId, status: q.status }])),
+      hintsByQuestion: Object.fromEntries(questions.map((q) => [q.questionId, { questionId: q.questionId, sessionId: q.sessionId, status: q.status, ...(q.blocking === false ? { blocking: false } : {}) }])),
     },
   }
 }
@@ -671,6 +672,39 @@ describe("askUserPlugin front shell", () => {
     })))
   })
 
+  it("does not turn a non-blocking question into a composer blocker", async () => {
+    const seen: unknown[] = []
+    const nonBlockingQuestion = { ...question, blocking: false }
+    function AttentionProbe() {
+      const { blockers } = useWorkspaceAttention()
+      seen.splice(0, seen.length, ...blockers)
+      return null
+    }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: nonBlockingQuestion } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({
+        "questions.pending": {
+          hint: { questionId: question.questionId, sessionId: question.sessionId, status: question.status, blocking: false },
+          hintsBySession: { [question.sessionId]: { questionId: question.questionId, sessionId: question.sessionId, status: question.status, blocking: false } },
+        },
+      })
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+
+    render(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
+          <AttentionProbe />
+        </Provider>
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(seen).not.toContainEqual(expect.objectContaining({ id: "ask-user:default:q1" }))
+  })
+
   it("generic attention cancel action cancels the matching ask-user question", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
@@ -742,6 +776,54 @@ describe("askUserPlugin front shell", () => {
 
     rerender(<Provider apiBaseUrl="" activeSessionId="other"><>{renderer.render({ toolCallId: "another-call" })}</></Provider>)
     expect(screen.queryByTestId("ask-user-inline-question")).not.toBeInTheDocument()
+  })
+
+  it("renders non-blocking receipts as pending and hydrates same-session questions by id", async () => {
+    const first = { ...question, questionId: "receipt-q1", toolCallId: "shared-receipt-call", title: "First hydrated", blocking: false as const }
+    const second = { ...question, questionId: "receipt-q2", toolCallId: "shared-receipt-call", title: "Second hydrated", blocking: false as const }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
+      if (String(url).endsWith("/api/v1/workspace-bridge/call")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { questionId?: string } }
+        const pending = body.input?.questionId === first.questionId ? first : body.input?.questionId === second.questionId ? second : null
+        return Response.json({ ok: true, output: { pending } })
+      }
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    const receipt = (questionId: string) => ({ details: { questionId, status: "pending", blocking: false } })
+
+    render(<Provider apiBaseUrl="" activeSessionId="default"><>
+      {renderer.render({ toolCallId: first.toolCallId, state: "output-available", input: { title: "First receipt", schema: first.schema }, output: receipt(first.questionId) })}
+      {renderer.render({ toolCallId: second.toolCallId, state: "output-available", input: { title: "Second receipt", schema: second.schema }, output: receipt(second.questionId) })}
+    </></Provider>)
+
+    expect(screen.getByText("First receipt")).toBeInTheDocument()
+    expect(screen.getByText("Second receipt")).toBeInTheDocument()
+    expect(screen.getAllByText("Question pending")).toHaveLength(2)
+    expect(screen.queryByText("Answer submitted")).not.toBeInTheDocument()
+    expect(await screen.findByText("First hydrated")).toBeInTheDocument()
+    expect(await screen.findByText("Second hydrated")).toBeInTheDocument()
+    const hydratedIds = fetchMock.mock.calls
+      .filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))
+      .map(([, init]) => (JSON.parse(String(init?.body)) as { input: { questionId?: string } }).input.questionId)
+    expect(hydratedIds).toEqual(expect.arrayContaining([first.questionId, second.questionId]))
+    expect(hydratedIds).not.toContain(undefined)
+  })
+
+  it("does not treat pending-shaped details on a failed tool part as a pending receipt", () => {
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    render(<Provider apiBaseUrl=""><>{renderer.render({
+      state: "output-error",
+      input: { title: "Failed question", schema: question.schema },
+      output: { details: { questionId: "stale-q", status: "pending", blocking: false } },
+    })}</></Provider>)
+
+    expect(screen.getByText("Question cancelled")).toBeInTheDocument()
+    expect(screen.queryByText("Question pending")).not.toBeInTheDocument()
   })
 
   it("renders the authored artifact list while pending and after resolution, with host-specific routing", async () => {

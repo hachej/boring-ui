@@ -1,8 +1,11 @@
 # Visual Review
 
 This is the operating policy for UI review, improvement packets, and owner visual
-handoff. Evidence follows [`proof-of-work.md`](proof-of-work.md); owner decisions
-follow [`owner-review-card.md`](owner-review-card.md).
+handoff. Evidence follows [`proof-of-work.md`](proof-of-work.md), including the
+required Playwright before/after video; risk and merge routing follow
+[`boring-loop.md`](boring-loop.md). Owner decisions, when required, follow
+[`owner-review-card.md`](owner-review-card.md). Existing report/screenshot output
+alone is not a claim that the video requirement is implemented.
 
 ## Registered review-spec loop
 
@@ -77,8 +80,11 @@ packet's registered spec with
 gates are green and no material high-confidence fix remains, the score/delta
 stalls, remaining work is subjective or out of scope, two rounds complete, or
 review budget is exhausted. Open `report.html` through `workspace.open.path`,
-then finish with the packet's spot-check playbook and an Inbox/`ask_user` owner
-handoff. Never merge without explicit approval.
+then finish with the packet's spot-check playbook, before/after video, and
+revision-bound review evidence. Use an Inbox/`ask_user` handoff only for a
+protected-boundary decision or a gate still required during rollout; otherwise
+use the verified automatic route in boring-loop. Plugin UI does not wait for
+owner viewing/approval. The packet itself never grants merge authority.
 
 ## Provider index
 
@@ -94,6 +100,7 @@ proof, or review policy.
 | [shadcn `improve`](https://github.com/shadcn/improve/blob/main/skills/improve/SKILL.md) | Read-only audit and executor-ready improvement plans. Indexed only. |
 
 For user-facing changes, preserve desktop/mobile behavior, accessibility,
-performance, and visual proof. The owner card must include exact checks,
-risk/rollback, and approve/request-changes choices. Never auto-approve mutable
-source or create a second visual-review workflow.
+performance, and visual proof. When an owner card is required, include exact
+checks, risk/rollback, and approve/request-changes choices. Never auto-approve
+mutable source or create a second visual-review workflow. Automatic merge
+requires evidence for the exact revision and a passing abstraction gate.

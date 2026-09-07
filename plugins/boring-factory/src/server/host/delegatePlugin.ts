@@ -1,23 +1,47 @@
-import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
+import type { FactoryEpicRegistry } from './epicRegistry'
+import {
+  FactoryEpicResolutionError,
+  resolveFactoryEpic,
+  type FactorySessionBindings,
+} from './sessionBindings'
+import {
+  createFactoryDispatchLedger,
+  positiveInteger,
+  type FactoryDispatchLedger,
+  type FactoryDispatchRecord,
+  type FactoryReviewRecord,
+} from './dispatchLedger'
+import {
+  createFactoryStatusTools,
+  defaultRunBr,
+  isBusySession,
+  listWorkerSessions,
+  loadEpicBeads,
+  resolveEpicWorkerSessionIds,
+  type BrIssue,
+  type FactoryBrRunner,
+  type FactoryGitStatus,
+  type FactoryHostLimits,
+} from './factoryStatus'
 
 export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 
 /** Bump when this file's delegation behavior changes; hashed into the plugin's contentDigest. */
-const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v1.2026-09-03'
+const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v4.2026-09-06'
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000
 const POLL_INTERVAL_MS = 1_000
 const BRIEF_MIN_LENGTH = 20
 const BRIEF_MAX_LENGTH = 8_000
-const MAX_DIRTY_PATHS = 50
-const MAX_WORKER_SESSION_PAGES = 5
 
-const execFileAsync = promisify(execFile)
+export const FACTORY_DEFAULT_STALE_IDLE_MS = 10 * 60_000
+export const FACTORY_DEFAULT_MAX_CONCURRENT_WORKERS = 2
+export const FACTORY_DEFAULT_MAX_DISPATCHES_PER_BEAD = 2
+export const FACTORY_DEFAULT_MAX_REVIEW_ROUNDS = 4
 
 /**
  * Host-owned grant table: which seat may dispatch which other seat, and under
@@ -30,19 +54,23 @@ const DELEGATE_GRANTS: Readonly<Record<string, { readonly toolName: string; read
 
 /** Seat granted the host status readback tool. Never derived from Agent-authored config. */
 const FACTORY_STATUS_AGENT_TYPE_ID = 'boring-orchestrator'
-const FACTORY_STATUS_WORKER_AGENT_TYPE_ID = 'boring-worker'
 
 export interface CreateFactoryDelegatePluginOptions {
+  /** Directory holding the host-owned `dispatches.json` ledger. */
+  readonly stateRoot: string
   /** Host-owned workspace identity used on every in-process `app.inject` call. */
   readonly workspaceScopeId: string
   /** Deadline for the child session to go idle after one turn. Default 15 minutes. */
   readonly timeoutMs?: number
-  /** Epic label (`epic:<epicKey>`) this Factory instance is bound to; read by `factory_status`. */
-  readonly epicKey: string
-  /** Feature name per docs/procedures/naming-conventions.md, used to title delegated sessions. */
-  readonly featureName: string
-  /** Shared epic worktree root; `git` and `br` for `factory_status` run here. */
-  readonly workspaceRoot: string
+  readonly registry: FactoryEpicRegistry
+  readonly sessionBindings: FactorySessionBindings
+  readonly env?: NodeJS.ProcessEnv
+  /** Test seam for deterministic Bead command responses. */
+  readonly runBr?: FactoryBrRunner
+  /** Test seam for stale-age and persisted timestamps. */
+  readonly now?: () => number
+  /** Test seam for the read-only git projection used by factory_status. */
+  readonly readGitStatus?: (workspaceRoot: string) => Promise<FactoryGitStatus>
 }
 
 export interface FactoryDelegatePluginHandle {
@@ -70,6 +98,20 @@ function invalidInputResult(message: string): ToolResult {
   return textResult({ code: 'INVALID_INPUT', message }, true)
 }
 
+function epicResolutionResult(error: unknown): ToolResult {
+  if (error instanceof FactoryEpicResolutionError) {
+    return textResult({ code: error.code, message: error.message }, true)
+  }
+  const message = error instanceof Error ? error.message : 'failed to resolve Factory epic'
+  return textResult({ code: 'EPIC_RESOLUTION_FAILED', message }, true)
+}
+
+function modelSelection(encoded: string | undefined): { provider: string; id: string } | undefined {
+  const separator = encoded?.indexOf(':') ?? -1
+  if (!encoded || separator <= 0 || separator === encoded.length - 1) return undefined
+  return { provider: encoded.slice(0, separator), id: encoded.slice(separator + 1) }
+}
+
 function unboundResult(toolName: string): ToolResult {
   return textResult(
     { code: 'HOST_NOT_BOUND', message: `${toolName} is not bound to a running host` },
@@ -87,6 +129,12 @@ function parseBrief(params: Record<string, unknown>): { brief: string; title?: s
     return { error: 'title must be a string when provided' }
   }
   return { brief, title }
+}
+
+function parseOptionalBeadId(value: unknown): string | undefined | { error: string } {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !value.trim()) return { error: 'beadId must be a non-empty string when provided' }
+  return value.trim()
 }
 
 /** Session title label per docs/procedures/naming-conventions.md, keyed by the delegating tool. */
@@ -146,11 +194,85 @@ interface DelegateSessionState {
   }
 }
 
+interface StartedDelegation {
+  readonly sessionId: string
+  readonly dispatchRecord?: FactoryDispatchRecord
+  readonly reviewRecord?: FactoryReviewRecord
+  readonly capReached: boolean
+}
+
+function dispatchTargetFrom(
+  requestedBeadId: string | undefined,
+  brief: string,
+  beads: readonly BrIssue[],
+): { beadId: string } | { error: string } {
+  const openBeads = beads.filter((bead) => bead.status !== 'closed')
+  if (requestedBeadId) {
+    if (!openBeads.some((bead) => bead.id === requestedBeadId)) {
+      return { error: `beadId ${requestedBeadId} is not an open Bead labelled for this epic` }
+    }
+    return { beadId: requestedBeadId }
+  }
+  const named = openBeads.filter((bead) => brief.includes(bead.id))
+  if (named.length === 1) return { beadId: named[0]!.id }
+  if (named.length > 1) return { error: 'brief names more than one open Bead; pass beadId explicitly' }
+  return { error: 'dispatch_worker requires beadId, or the brief must name exactly one open Bead in this epic' }
+}
+
+async function markBeadBlockedForCap(
+  run: FactoryBrRunner,
+  epic: { readonly worktree: string; readonly featureName: string },
+  beadId: string,
+  actor: string,
+  message: string,
+): Promise<void> {
+  await run(['update', beadId, '--status', 'blocked', '--actor', actor, '--json', '--no-auto-flush'], epic.worktree)
+  await run([
+    'comments', 'add', beadId, '-m',
+    `[${epic.featureName}] Factory dispatch blocked · ${beadId}\n\n${message}\n\nRaise an Inbox question with ask_user describing this blocker; do not retry dispatch_worker.`,
+    '--actor', actor, '--json', '--no-auto-flush',
+  ], epic.worktree)
+}
+
+function capRefusal(
+  code: 'WORKER_CONCURRENCY_CAP_REACHED' | 'BEAD_DISPATCH_CAP_REACHED',
+  beadId: string,
+  current: number,
+  maximum: number,
+): ToolResult {
+  const subject = code === 'WORKER_CONCURRENCY_CAP_REACHED'
+    ? 'busy Worker concurrency'
+    : `dispatches for Bead ${beadId}`
+  return textResult({
+    code,
+    beadId,
+    current,
+    maximum,
+    blocked: true,
+    message: `Factory host refused dispatch: ${subject} is at the cap (${current}/${maximum}). The Bead is blocked. Raise an Inbox question with ask_user describing this blocker; do not retry dispatch_worker.`,
+  }, true)
+}
+
+function reviewCapRefusal(targetKey: string, current: number, maximum: number): ToolResult {
+  return textResult({
+    code: 'REVIEW_ROUND_CAP_REACHED',
+    reviewTarget: targetKey,
+    current,
+    maximum,
+    blocked: true,
+    message: `Factory host refused review: the review-round cap is reached (${current}/${maximum}). Do not infer approval or create another review. The Worker must hand off the current SHA with unresolved findings; the Orchestrator must escalate them to the owner.`,
+  }, true)
+}
+
 function createDelegateTool(
   toolName: string,
   targetAgentTypeId: string,
   getApp: () => FastifyInstance | undefined,
   options: CreateFactoryDelegatePluginOptions,
+  ledger: FactoryDispatchLedger,
+  limits: FactoryHostLimits,
+  run: FactoryBrRunner,
+  admitSessionMutation: <T>(operation: () => Promise<T>) => Promise<T>,
 ): AgentTool {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const workspaceHeader = { 'x-boring-workspace-id': options.workspaceScopeId }
@@ -161,6 +283,10 @@ function createDelegateTool(
     parameters: {
       type: 'object',
       properties: {
+        epicKey: {
+          type: 'string',
+          description: 'Optional explicit epic override. Normally the host resolves the epic from this session binding.',
+        },
         brief: {
           type: 'string',
           minLength: BRIEF_MIN_LENGTH,
@@ -171,6 +297,12 @@ function createDelegateTool(
           type: 'string',
           description: 'Ignored: the host titles the session per docs/procedures/naming-conventions.md.',
         },
+        beadId: {
+          type: 'string',
+          description: toolName === 'dispatch_worker'
+            ? 'Target Bead. Required unless the brief names exactly one open Bead in this epic.'
+            : 'Optional reviewed Bead. When present, review rounds stay on this Bead across fix-forward SHAs.',
+        },
       },
       required: ['brief'],
       additionalProperties: false,
@@ -179,46 +311,185 @@ function createDelegateTool(
       const parsed = parseBrief(params)
       if ('error' in parsed) return invalidInputResult(parsed.error)
       const { brief } = parsed
+      const parsedBeadId = parseOptionalBeadId(params.beadId)
+      if (typeof parsedBeadId === 'object') return invalidInputResult(parsedBeadId.error)
 
       const app = getApp()
       if (!app) return unboundResult(toolName)
 
-      const startedAt = new Date().toISOString()
+      let epic
+      try {
+        epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings)
+      } catch (error) {
+        return epicResolutionResult(error)
+      }
+
       const parentSessionId = ctx.sessionId ?? 'unknown'
-      const sessionTitle = sessionTitleFor(toolName, options.featureName, brief, parentSessionId)
+      const sessionTitle = sessionTitleFor(toolName, epic.featureName, brief, parentSessionId)
+      let started: StartedDelegation | undefined
 
       try {
-        const createResponse = await app.inject({
-          method: 'POST',
-          url: `/api/v1/agents/${targetAgentTypeId}/sessions`,
-          headers: workspaceHeader,
-          payload: { requestId: randomUUID(), title: sessionTitle },
-        })
-        if (createResponse.statusCode !== 201) {
-          return textResult(
-            { code: 'CREATE_SESSION_FAILED', status: createResponse.statusCode, body: createResponse.body },
-            true,
-          )
-        }
-        const { sessionId } = createResponse.json<{ sessionId: string }>()
+        const startDelegation = async (): Promise<StartedDelegation | ToolResult> => {
+          let beadId = parsedBeadId
+          let reviewTargetKey: string | undefined
+          let reviewSha: string | undefined
+          if (toolName === 'dispatch_worker') {
+            const beads = await loadEpicBeads(epic.worktree, epic.epicKey, run)
+            const target = dispatchTargetFrom(beadId, brief, beads)
+            if ('error' in target) return invalidInputResult(target.error)
+            beadId = target.beadId
 
-        const promptResponse = await app.inject({
-          method: 'POST',
-          url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/prompt`,
-          headers: workspaceHeader,
-          payload: {
-            requestId: randomUUID(),
-            clientNonce: randomUUID(),
-            content: `Host context: your session id is ${sessionId} (use it as your br actor). Parent session: ${ctx.sessionId}.\n\n${brief}`,
-            requireIdle: true,
-          },
-        })
-        if (promptResponse.statusCode !== 202) {
-          return textResult(
-            { code: 'PROMPT_FAILED', delegationId: sessionId, status: promptResponse.statusCode, body: promptResponse.body },
-            true,
-          )
+            const [sessions, bindings, dispatchState] = await Promise.all([
+              listWorkerSessions(app, workspaceHeader),
+              options.sessionBindings.load(),
+              ledger.read(),
+            ])
+            const epicWorkerIds = resolveEpicWorkerSessionIds({
+              epicKey: epic.epicKey,
+              bindings,
+              beads,
+              dispatches: dispatchState.dispatches,
+            })
+            const busyWorkers = sessions.filter((session) => (
+              epicWorkerIds.has(session.sessionId) && isBusySession(session.status)
+            )).length
+            const dispatchCount = dispatchState.dispatches.filter((record) => (
+              record.epicKey === epic.epicKey && record.beadId === beadId
+            )).length
+            const actor = ctx.sessionId ?? 'factory-host'
+            if (busyWorkers >= limits.maxConcurrentWorkers) {
+              const message = `Busy Worker concurrency reached ${busyWorkers}/${limits.maxConcurrentWorkers} for epic ${epic.epicKey}.`
+              const refusal = await ledger.markRefusal({
+                epicKey: epic.epicKey,
+                beadId,
+                cap: 'worker-concurrency',
+                timestamp: new Date(options.now?.() ?? Date.now()).toISOString(),
+              })
+              if (refusal.created) await markBeadBlockedForCap(run, epic, beadId, actor, message)
+              return capRefusal('WORKER_CONCURRENCY_CAP_REACHED', beadId, busyWorkers, limits.maxConcurrentWorkers)
+            }
+            if (dispatchCount >= limits.maxDispatchesPerBead) {
+              const message = `Dispatch history reached ${dispatchCount}/${limits.maxDispatchesPerBead} for Bead ${beadId}.`
+              const refusal = await ledger.markRefusal({
+                epicKey: epic.epicKey,
+                beadId,
+                cap: 'bead-dispatch',
+                timestamp: new Date(options.now?.() ?? Date.now()).toISOString(),
+              })
+              if (refusal.created) await markBeadBlockedForCap(run, epic, beadId, actor, message)
+              return capRefusal('BEAD_DISPATCH_CAP_REACHED', beadId, dispatchCount, limits.maxDispatchesPerBead)
+            }
+          } else {
+            const sha = brief.match(SHA_RE)?.[0]
+            if (!beadId && ctx.sessionId) {
+              const dispatches = (await ledger.read()).dispatches
+              for (let index = dispatches.length - 1; index >= 0; index -= 1) {
+                const dispatch = dispatches[index]!
+                if (dispatch.epicKey === epic.epicKey && dispatch.childSessionId === ctx.sessionId) {
+                  beadId = dispatch.beadId
+                  break
+                }
+              }
+            }
+            if (!beadId && !sha) return invalidInputResult('fresh_review requires beadId or a SHA in the brief')
+            if (beadId) {
+              const beads = await loadEpicBeads(epic.worktree, epic.epicKey, run)
+              if (!beads.some((bead) => bead.id === beadId && bead.status !== 'closed')) {
+                return invalidInputResult(`beadId ${beadId} is not an open Bead labelled for this epic`)
+              }
+              reviewTargetKey = `bead:${beadId}`
+            } else {
+              reviewSha = sha
+              reviewTargetKey = `sha-lineage:${sha}`
+            }
+          }
+
+          const timestamp = new Date(options.now?.() ?? Date.now()).toISOString()
+          let dispatchRecord: FactoryDispatchRecord | undefined
+          let reviewRecord: FactoryReviewRecord | undefined
+          if (toolName === 'dispatch_worker') {
+            dispatchRecord = await ledger.reserveDispatch({ epicKey: epic.epicKey, beadId: beadId!, timestamp })
+          } else {
+            const reservation = await ledger.reserveReview({
+              epicKey: epic.epicKey,
+              targetKey: reviewTargetKey!,
+              ...(beadId ? { beadId } : {}),
+              ...(reviewSha ? { sha: reviewSha } : {}),
+              ...(ctx.sessionId ? { parentSessionId: ctx.sessionId } : {}),
+              timestamp,
+            }, limits.maxReviewRounds)
+            if (!reservation.accepted) {
+              return reviewCapRefusal(reservation.targetKey, reservation.current, reservation.maximum)
+            }
+            reviewRecord = reservation.record
+          }
+          const createResponse = await app.inject({
+            method: 'POST',
+            url: `/api/v1/agents/${targetAgentTypeId}/sessions`,
+            headers: workspaceHeader,
+            payload: { requestId: randomUUID(), title: sessionTitle },
+          })
+          if (createResponse.statusCode !== 201) {
+            if (dispatchRecord) await ledger.updateDispatch(dispatchRecord.id, 'failed')
+            if (reviewRecord) await ledger.updateReview(reviewRecord.id, 'failed')
+            return textResult(
+              { code: 'CREATE_SESSION_FAILED', status: createResponse.statusCode, body: createResponse.body },
+              true,
+            )
+          }
+          const { sessionId } = createResponse.json<{ sessionId: string }>()
+          if (toolName === 'dispatch_worker') {
+            dispatchRecord = await ledger.attachDispatch(dispatchRecord!.id, sessionId, 'created')
+          } else {
+            reviewRecord = await ledger.attachReview(reviewRecord!.id, sessionId, 'created')
+          }
+
+          try {
+            await options.sessionBindings.bind(sessionId, epic.epicKey)
+          } catch (error) {
+            if (dispatchRecord) await ledger.updateDispatch(dispatchRecord.id, 'bind-failed')
+            if (reviewRecord) await ledger.updateReview(reviewRecord.id, 'bind-failed')
+            throw error
+          }
+
+          const selectedModel = modelSelection(toolName === 'dispatch_worker' ? epic.models?.worker : epic.models?.reviewer)
+          const promptResponse = await app.inject({
+            method: 'POST',
+            url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/prompt`,
+            headers: workspaceHeader,
+            payload: {
+              requestId: randomUUID(),
+              clientNonce: randomUUID(),
+              content: `Host context: epic ${epic.epicKey} ([${epic.featureName}]) worktree ${epic.worktree} branch ${epic.branch}. Your session id is ${sessionId} (use it as your br actor). Parent session: ${ctx.sessionId}.${beadId ? ` Target Bead: ${beadId}.` : ''}\n\n${brief}`,
+              requireIdle: true,
+              ...(selectedModel ? { model: selectedModel } : {}),
+            },
+          })
+          if (promptResponse.statusCode !== 202) {
+            await options.sessionBindings.unbind(sessionId)
+            if (dispatchRecord) await ledger.updateDispatch(dispatchRecord.id, 'prompt-failed')
+            if (reviewRecord) await ledger.updateReview(reviewRecord.id, 'prompt-failed')
+            return textResult(
+              { code: 'PROMPT_FAILED', delegationId: sessionId, status: promptResponse.statusCode, body: promptResponse.body },
+              true,
+            )
+          }
+          if (dispatchRecord) dispatchRecord = await ledger.updateDispatch(dispatchRecord.id, 'running')
+          if (reviewRecord) reviewRecord = await ledger.updateReview(reviewRecord.id, 'running')
+          return {
+            sessionId,
+            ...(dispatchRecord ? { dispatchRecord } : {}),
+            ...(reviewRecord ? { reviewRecord } : {}),
+            capReached: !!reviewRecord && reviewRecord.round >= limits.maxReviewRounds,
+          }
         }
+
+        const admission = toolName === 'dispatch_worker'
+          ? await admitSessionMutation(startDelegation)
+          : await startDelegation()
+        if ('content' in admission) return admission
+        started = admission
+        const { sessionId } = started
 
         const deadline = Date.now() + timeoutMs
         let status: 'completed' | 'timeout' = 'timeout'
@@ -244,208 +515,43 @@ function createDelegateTool(
         const finishedAt = new Date().toISOString()
         const model = lastState?.state?.currentModel
         const answer = lastAssistantText(lastState?.state?.messages ?? [])
+        if (started.dispatchRecord) await ledger.updateDispatch(started.dispatchRecord.id, status)
+        if (started.reviewRecord) await ledger.updateReview(started.reviewRecord.id, status)
         const details = {
           delegationId: sessionId,
           targetAgentTypeId,
           model,
           status,
           answer,
+          ...(started.dispatchRecord ? { beadId: started.dispatchRecord.beadId } : {}),
+          ...(started.reviewRecord ? {
+            reviewRound: started.reviewRecord.round,
+            reviewTarget: started.reviewRecord.targetKey,
+            capReached: started.capReached,
+            ...(started.capReached ? {
+              capInstructions: `Review-round cap reached (${started.reviewRecord.round}/${limits.maxReviewRounds}). Do not infer approval or fix forward again. The Worker must hand off the current SHA with unresolved findings; the Orchestrator must escalate them to the owner.`,
+            } : {}),
+          } : {}),
           provenance: {
             sessionId,
             agentTypeId: targetAgentTypeId,
             model,
             briefDigest: sha256(brief),
-            startedAt,
+            startedAt: started.dispatchRecord?.timestamp ?? started.reviewRecord?.timestamp ?? finishedAt,
             finishedAt,
           },
         }
         return textResult(details, false)
       } catch (error) {
         if (error instanceof DelegateAbortedError) {
+          if (started?.dispatchRecord) await ledger.updateDispatch(started.dispatchRecord.id, 'aborted')
+          if (started?.reviewRecord) await ledger.updateReview(started.reviewRecord.id, 'aborted')
           return textResult({ code: 'ABORTED', message: 'delegation aborted before the child session finished' }, true)
         }
+        if (started?.dispatchRecord) await ledger.updateDispatch(started.dispatchRecord.id, 'failed')
+        if (started?.reviewRecord) await ledger.updateReview(started.reviewRecord.id, 'failed')
         const message = error instanceof Error ? error.message : 'delegation failed'
         return textResult({ code: 'DELEGATE_FAILED', message }, true)
-      }
-    },
-  }
-}
-
-interface BrIssue {
-  readonly id: string
-  readonly title?: string
-  readonly status?: string
-  readonly assignee?: string | null
-  readonly labels?: readonly string[]
-  readonly updated_at?: string
-}
-
-interface BrComment {
-  readonly created_at: string
-}
-
-async function runBr(args: readonly string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync('br', args, { cwd, maxBuffer: 16 * 1024 * 1024 })
-  return stdout
-}
-
-function parseBrIssues(stdout: string): BrIssue[] {
-  const parsed: unknown = JSON.parse(stdout)
-  if (Array.isArray(parsed)) return parsed as BrIssue[]
-  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { issues?: unknown }).issues)) {
-    return (parsed as { issues: BrIssue[] }).issues
-  }
-  return []
-}
-
-async function loadEpicBeads(workspaceRoot: string, epicKey: string): Promise<BrIssue[]> {
-  const stdout = await runBr(['list', '--label', `epic:${epicKey}`, '--json', '--no-auto-flush'], workspaceRoot)
-  return parseBrIssues(stdout)
-}
-
-async function commentStatsFor(workspaceRoot: string, issueId: string): Promise<{ commentCount: number; lastCommentAt?: string }> {
-  try {
-    const stdout = await runBr(['comments', 'list', issueId, '--json', '--no-auto-flush'], workspaceRoot)
-    const parsed: unknown = JSON.parse(stdout)
-    const comments = Array.isArray(parsed) ? (parsed as BrComment[]) : []
-    if (comments.length === 0) return { commentCount: 0 }
-    const lastCommentAt = comments
-      .map((comment) => comment.created_at)
-      .filter((value): value is string => typeof value === 'string')
-      .sort()
-      .at(-1)
-    return { commentCount: comments.length, ...(lastCommentAt ? { lastCommentAt } : {}) }
-  } catch {
-    return { commentCount: 0 }
-  }
-}
-
-async function gitOutput(args: readonly string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 })
-  return stdout.trim()
-}
-
-async function readGitStatus(workspaceRoot: string): Promise<{ branch: string; head: string; remoteHead: string | null; dirtyPaths: string[] }> {
-  const [branch, head, statusOutput] = await Promise.all([
-    gitOutput(['rev-parse', '--abbrev-ref', 'HEAD'], workspaceRoot),
-    gitOutput(['rev-parse', 'HEAD'], workspaceRoot),
-    execFileAsync('git', ['status', '--short'], { cwd: workspaceRoot, maxBuffer: 16 * 1024 * 1024 }).then((r) => r.stdout),
-  ])
-  const dirtyPaths = statusOutput
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .slice(0, MAX_DIRTY_PATHS)
-  let remoteHead: string | null = null
-  try {
-    const lsRemote = await gitOutput(['ls-remote', '--heads', 'origin', branch], workspaceRoot)
-    const sha = lsRemote.split(/\s+/)[0]
-    remoteHead = sha && /^[a-f0-9]{40}$/.test(sha) ? sha : null
-  } catch {
-    remoteHead = null
-  }
-  return { branch, head, remoteHead, dirtyPaths }
-}
-
-type SessionLiveness = 'none' | 'unknown' | 'exists-idle' | 'exists-busy'
-
-function computeLiveness(assignee: string | null | undefined, workerStatusBySessionId: ReadonlyMap<string, string>): SessionLiveness {
-  if (!assignee) return 'none'
-  const status = workerStatusBySessionId.get(assignee)
-  if (status === undefined) return 'unknown'
-  return status === 'idle' ? 'exists-idle' : 'exists-busy'
-}
-
-interface WorkerSessionSummary {
-  readonly sessionId: string
-  readonly status?: string
-  readonly turnCount?: number
-  readonly title?: string
-  readonly updatedAt?: number
-}
-
-async function listWorkerSessions(app: FastifyInstance, workspaceHeader: Record<string, string>): Promise<WorkerSessionSummary[]> {
-  const sessions: WorkerSessionSummary[] = []
-  let cursor: string | undefined
-  for (let page = 0; page < MAX_WORKER_SESSION_PAGES; page += 1) {
-    const url = cursor
-      ? `/api/v1/agents/${FACTORY_STATUS_WORKER_AGENT_TYPE_ID}/sessions?cursor=${encodeURIComponent(cursor)}`
-      : `/api/v1/agents/${FACTORY_STATUS_WORKER_AGENT_TYPE_ID}/sessions`
-    const response = await app.inject({ method: 'GET', url, headers: workspaceHeader })
-    if (response.statusCode !== 200) break
-    const body = response.json<{ sessions: Array<{ ref: { sessionId: string }; status?: string; turnCount?: number; title?: string; updatedAt?: number }>; nextCursor?: string }>()
-    for (const session of body.sessions) {
-      sessions.push({ sessionId: session.ref.sessionId, status: session.status, turnCount: session.turnCount, title: session.title, updatedAt: session.updatedAt })
-    }
-    if (!body.nextCursor) break
-    cursor = body.nextCursor
-  }
-  return sessions
-}
-
-function createFactoryStatusTool(
-  getApp: () => FastifyInstance | undefined,
-  options: CreateFactoryDelegatePluginOptions,
-): AgentTool {
-  const workspaceHeader = { 'x-boring-workspace-id': options.workspaceScopeId }
-  return {
-    name: 'factory_status',
-    description:
-      'Read the durable end-state of this epic: git branch/head/remote-head/dirty paths in the shared ' +
-      'worktree, every Bead labelled `epic:<key>` with its status/assignee/labels/comment activity and ' +
-      'whether its assignee is a known Worker session (and whether that session is idle or busy), and ' +
-      'the raw list of Worker sessions. Read-only; never mutates anything.',
-    parameters: {
-      type: 'object',
-      properties: {
-        epicKey: {
-          type: 'string',
-          description: 'Ignored: the epic key is fixed by the host for this Factory instance.',
-        },
-      },
-      additionalProperties: false,
-    },
-    async execute(): Promise<ToolResult> {
-      const app = getApp()
-      if (!app) return unboundResult('factory_status')
-      try {
-        const [git, beads, workerSessions] = await Promise.all([
-          readGitStatus(options.workspaceRoot),
-          loadEpicBeads(options.workspaceRoot, options.epicKey),
-          listWorkerSessions(app, workspaceHeader),
-        ])
-        const workerStatusBySessionId = new Map(workerSessions.map((session) => [session.sessionId, session.status ?? 'idle']))
-        const beadsWithComments = await Promise.all(beads.map(async (issue) => {
-          const commentStats = await commentStatsFor(options.workspaceRoot, issue.id)
-          return {
-            id: issue.id,
-            status: issue.status,
-            assignee: issue.assignee ?? null,
-            labels: issue.labels ?? [],
-            title: issue.title,
-            updatedAt: issue.updated_at,
-            commentCount: commentStats.commentCount,
-            ...(commentStats.lastCommentAt ? { lastCommentAt: commentStats.lastCommentAt } : {}),
-            sessionLiveness: computeLiveness(issue.assignee, workerStatusBySessionId),
-          }
-        }))
-        const details = {
-          epicKey: options.epicKey,
-          workspaceRoot: options.workspaceRoot,
-          git,
-          beads: beadsWithComments,
-          workerSessions: workerSessions.map((session) => ({
-            sessionId: session.sessionId,
-            status: session.status,
-            turnCount: session.turnCount,
-            title: session.title,
-            updatedAt: session.updatedAt,
-          })),
-        }
-        return textResult(details, false)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'factory_status failed'
-        return textResult({ code: 'FACTORY_STATUS_FAILED', message }, true)
       }
     },
   }
@@ -454,13 +560,26 @@ function createFactoryStatusTool(
 export function createFactoryDelegatePlugin(
   options: CreateFactoryDelegatePluginOptions,
 ): FactoryDelegatePluginHandle {
+  if (!options.stateRoot.trim()) throw new TypeError('factory-delegate stateRoot is required')
   if (!options.workspaceScopeId.trim()) throw new TypeError('factory-delegate workspaceScopeId is required')
-  if (!options.epicKey.trim()) throw new TypeError('factory-delegate epicKey is required')
-  if (!options.featureName.trim()) throw new TypeError('factory-delegate featureName is required')
-  if (!options.workspaceRoot.trim()) throw new TypeError('factory-delegate workspaceRoot is required')
 
+  const env = options.env ?? process.env
+  const limits: FactoryHostLimits = {
+    maxConcurrentWorkers: positiveInteger(env.BORING_FACTORY_MAX_CONCURRENT_WORKERS, FACTORY_DEFAULT_MAX_CONCURRENT_WORKERS),
+    maxDispatchesPerBead: positiveInteger(env.BORING_FACTORY_MAX_DISPATCHES_PER_BEAD, FACTORY_DEFAULT_MAX_DISPATCHES_PER_BEAD),
+    maxReviewRounds: positiveInteger(env.BORING_FACTORY_MAX_REVIEW_ROUNDS, FACTORY_DEFAULT_MAX_REVIEW_ROUNDS),
+  }
+  const staleIdleMs = positiveInteger(env.BORING_FACTORY_STALE_IDLE_MS, FACTORY_DEFAULT_STALE_IDLE_MS)
+  const ledger = createFactoryDispatchLedger(options.stateRoot)
+  const run = options.runBr ?? defaultRunBr
   let boundApp: FastifyInstance | undefined
   const getApp = () => boundApp
+  let sessionAdmissions = Promise.resolve()
+  async function admitSessionMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = sessionAdmissions.then(operation)
+    sessionAdmissions = next.then(() => undefined, () => undefined)
+    return await next
+  }
 
   const plugin = defineServerPlugin({
     id: FACTORY_DELEGATE_PLUGIN_ID,
@@ -470,8 +589,10 @@ export function createFactoryDelegatePlugin(
     agentToolFactory({ agentTypeId }) {
       const tools: AgentTool[] = []
       const grant = DELEGATE_GRANTS[agentTypeId]
-      if (grant) tools.push(createDelegateTool(grant.toolName, grant.targetAgentTypeId, getApp, options))
-      if (agentTypeId === FACTORY_STATUS_AGENT_TYPE_ID) tools.push(createFactoryStatusTool(getApp, options))
+      if (grant) tools.push(createDelegateTool(grant.toolName, grant.targetAgentTypeId, getApp, options, ledger, limits, run, admitSessionMutation))
+      if (agentTypeId === FACTORY_STATUS_AGENT_TYPE_ID) {
+        tools.push(...createFactoryStatusTools(getApp, options, ledger, limits, staleIdleMs, admitSessionMutation))
+      }
       return tools
     },
   })
