@@ -75,9 +75,9 @@ boring-ui-plugin remove --local --workspace . my-agent-plugin-id
 ```
 
 Then restart. Remove the roster seat before removing its registration. If the
-roster still names the removed definition, startup fails with
-`AGENT_FLEET_SEAT_PERSONA_INVALID` instead of silently publishing a partial
-fleet.
+roster still names the removed definition, that Agent is excluded with
+`AGENT_FLEET_SEAT_PERSONA_INVALID` while the default and valid sibling seats
+continue to boot.
 
 ## v1 distribution boundary
 

@@ -99,7 +99,6 @@ export type {
   TrustedAuthoredAgentPolicy,
 } from './agentDefinition/createConfiguredAgentHostAgentSpec'
 export {
-  ConfiguredFleetSeatError,
   FleetConfigError,
   loadConfiguredAgentFleet,
 } from './agentDefinition/loadConfiguredAgentFleet'
