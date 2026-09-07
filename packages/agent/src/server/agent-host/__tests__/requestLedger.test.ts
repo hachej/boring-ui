@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import { rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
+import { build } from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
@@ -29,13 +31,13 @@ interface ParallelClaimResult {
 }
 
 function runClaimWorker(
+  workerPath: string,
   dbPath: string,
   barrier: SharedArrayBuffer,
 ): Promise<ParallelClaimResult> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(claimWorkerPath, {
+    const worker = new Worker(workerPath, {
       workerData: { dbPath, key, digest: 'digest-a', barrier },
-      execArgv: ['--import', 'tsx'],
     })
     worker.once('message', (message: ParallelClaimResult & { error?: { message: string; stack?: string } }) => {
       void worker.terminate()
@@ -57,18 +59,37 @@ function runClaimWorker(
 }
 
 async function runParallelClaims(dbPath: string): Promise<[ParallelClaimResult, ParallelClaimResult]> {
-  // Slot 0 counts ready workers; slot 1 releases both from a deterministic barrier.
-  const barrier = new SharedArrayBuffer(8)
-  const sync = new Int32Array(barrier)
-  const claims = [runClaimWorker(dbPath, barrier), runClaimWorker(dbPath, barrier)] as const
-  const deadline = Date.now() + 10_000
-  while (Atomics.load(sync, 0) < 2) {
-    if (Date.now() >= deadline) throw new Error(`only ${Atomics.load(sync, 0)}/2 claim workers reached the start barrier`)
-    await new Promise((resolve) => setTimeout(resolve, 5))
+  // Bundle the fixture with the production ledger source because bare Node's
+  // worker ESM resolver cannot load that source's extensionless TS imports.
+  const workerBundlePath = join(tmpdir(), `request-ledger-claim-worker-${randomUUID()}.mjs`)
+  await build({
+    entryPoints: [claimWorkerPath],
+    outfile: workerBundlePath,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node22',
+  })
+
+  try {
+    // Slot 0 counts ready workers; slot 1 releases both from a deterministic barrier.
+    const barrier = new SharedArrayBuffer(8)
+    const sync = new Int32Array(barrier)
+    const claims = [
+      runClaimWorker(workerBundlePath, dbPath, barrier),
+      runClaimWorker(workerBundlePath, dbPath, barrier),
+    ] as const
+    const deadline = Date.now() + 10_000
+    while (Atomics.load(sync, 0) < 2) {
+      if (Date.now() >= deadline) throw new Error(`only ${Atomics.load(sync, 0)}/2 claim workers reached the start barrier`)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    Atomics.store(sync, 1, 1)
+    Atomics.notify(sync, 1, 2)
+    return await Promise.all(claims)
+  } finally {
+    rmSync(workerBundlePath, { force: true })
   }
-  Atomics.store(sync, 1, 1)
-  Atomics.notify(sync, 1, 2)
-  return Promise.all(claims)
 }
 
 describe('InMemoryAgentRequestLedger', () => {
