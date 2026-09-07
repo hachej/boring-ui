@@ -125,14 +125,14 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
     this.transition(key, ['pending-admission'], (record) => {
       if (record.state !== 'pending-admission' || record.retryable) conflict('request admission is already retryable')
-      return { ...record, retryable: true, updatedAt: Date.now() }
+      return { ...record, retryable: true, updatedAt: this.now() }
     })
   }
 
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
     this.transition(key, ['pending-admission'], (record) => {
       if (record.state !== 'pending-admission' || record.retryable) conflict('request admission must be claimed before accepting')
-      return { ...record, state: 'admission-accepted', admissionReceipt, updatedAt: Date.now() }
+      return { ...record, state: 'admission-accepted', admissionReceipt, updatedAt: this.now() }
     })
   }
 
@@ -141,7 +141,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       key: record.key,
       digest: record.digest,
       state: 'in-flight',
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
@@ -154,7 +154,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       digest: record.digest,
       state: 'rejected',
       failure,
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
@@ -164,7 +164,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       digest: record.digest,
       state: 'completed',
       receipt,
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
@@ -177,7 +177,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       digest: record.digest,
       state: 'outcome-unknown',
       error,
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
