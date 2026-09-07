@@ -120,8 +120,7 @@ export class TranscriptRefiner {
     form.set("file", new Blob([new Uint8Array(bytes)]), filename)
     form.set("language", input.language?.trim() || "fr")
 
-    const response = await this.postRefineWithRetry(form)
-    const payload = await response.json().catch(() => null)
+    const payload = await this.postRefineWithRetry(form)
     const parsed = parseRefineResponse(payload)
 
     const displaySpeakers = new Map<number, number>()
@@ -169,9 +168,11 @@ export class TranscriptRefiner {
    * these are the transient failure modes worth a retry), gets one retry
    * after a fixed delay before the caller sees an error.
    */
-  private async postRefineWithRetry(form: FormData): Promise<Response> {
+  private async postRefineWithRetry(form: FormData): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
       let response: Response
+      let successPayload: unknown
+      let errorBody: { text: string; payload: { error?: unknown } | null } | undefined
       const controller = new AbortController()
       const timeout = setTimeout(
         () => controller.abort(),
@@ -184,6 +185,11 @@ export class TranscriptRefiner {
           body: form,
           signal: controller.signal,
         })
+        if (response.ok) {
+          successPayload = await readSuccessBody(response, controller.signal)
+        } else {
+          errorBody = await readErrorBody(response, controller.signal)
+        }
       } catch {
         if (controller.signal.aborted) {
           throw new LiveTranscriptError("live_transcript_upstream_failed", "Transcript refine service timed out.", 504)
@@ -196,13 +202,12 @@ export class TranscriptRefiner {
       } finally {
         clearTimeout(timeout)
       }
-      if (response.ok) return response
-      const { text, payload } = await readErrorBody(response)
-      if (attempt === 0 && isRetryableFailure(response.status, text)) {
+      if (response.ok) return successPayload
+      if (attempt === 0 && isRetryableFailure(response.status, errorBody!.text)) {
         await this.delay(RETRY_DELAY_MS)
         continue
       }
-      throw mapError(response.status, payload)
+      throw mapError(response.status, errorBody!.payload)
     }
   }
 
@@ -219,8 +224,23 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function readErrorBody(response: Response): Promise<{ text: string; payload: { error?: unknown } | null }> {
-  const text = await response.text().catch(() => "")
+async function readSuccessBody(response: Response, signal: AbortSignal): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (signal.aborted) throw error
+    return null
+  }
+}
+
+async function readErrorBody(response: Response, signal: AbortSignal): Promise<{ text: string; payload: { error?: unknown } | null }> {
+  let text: string
+  try {
+    text = await response.text()
+  } catch (error) {
+    if (signal.aborted) throw error
+    text = ""
+  }
   let payload: { error?: unknown } | null = null
   try {
     payload = JSON.parse(text) as { error?: unknown }

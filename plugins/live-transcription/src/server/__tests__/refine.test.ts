@@ -334,6 +334,58 @@ describe("TranscriptRefiner", () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    { status: 200, kind: "success" },
+    { status: 500, kind: "error" },
+  ])("keeps the deadline active while a $kind response body stalls", async ({ status }) => {
+    vi.useFakeTimers()
+    let observedSignal: AbortSignal | null | undefined
+    const headersArrived = vi.fn()
+    const fetchMock: typeof fetch = vi.fn(async (_url, init) => {
+      observedSignal = init?.signal
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener(
+            "abort",
+            () => controller.error(new DOMException("aborted", "AbortError")),
+            { once: true },
+          )
+        },
+      })
+      headersArrived()
+      return new Response(body, { status, headers: { "content-type": "application/json" } })
+    })
+    const refiner = new TranscriptRefiner({
+      refineUrl: "http://127.0.0.1:18884/v1",
+      bearerToken: "s".repeat(40),
+      fetch: fetchMock,
+      requestTimeoutMs: 10,
+    })
+
+    const settlement = refiner.refine({
+      audioBytes: new Uint8Array(16),
+      audioFilename: "session.m4a",
+      title: "Consult",
+      startedAt: "2026-09-05T09:30:00.000Z",
+    }).then(
+      () => ({ state: "fulfilled" as const }),
+      (error: unknown) => ({ state: "rejected" as const, error }),
+    )
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(headersArrived).toHaveBeenCalledOnce()
+    expect(observedSignal?.aborted).toBe(true)
+    await expect(settlement).resolves.toMatchObject({
+      state: "rejected",
+      error: {
+        code: "live_transcript_upstream_failed",
+        statusCode: 504,
+        message: "Transcript refine service timed out.",
+      },
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it("rejects a missing audio file without contacting the service", async () => {
     const refiner = new TranscriptRefiner({ refineUrl: "http://127.0.0.1:1/v1", bearerToken: "s".repeat(40) })
     await expect(refiner.refine({ audioAbsolutePath: "/no/such/file.m4a", title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" }))
