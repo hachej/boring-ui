@@ -52,14 +52,16 @@ native re-execution.
 
 ## Risk and classification
 
-The complete PR changes 416 added/deleted production lines under `packages/`
-when tests and the test harness are excluded (`packages/cli/package.json`,
-generator, runtime implementation, and generated metadata). The numerical
-protected-boundary trigger is not met (≤500); final routing still remains the
-Orchestrator's responsibility under the rollout's retained gates. UI video is N/A for this
-proof slice: it changes module identity/loading semantics and diagnostics, not
-visible appearance; the real Chromium hot-load/reload assertions are the
-runtime evidence.
+The complete PR changes 223 added/deleted production-code lines under
+`packages/`: `packages/cli/package.json` (3), the generator (63), and the
+runtime shim (157). The numerical rule excludes 111 test/harness lines and 193
+generated-metadata lines; both exclusions remain in semantic review. The
+numerical protected-boundary trigger is not met (≤500), but the changed
+CLI↔workspace package-boundary mechanism independently requires the protected
+owner route. The rollout's retained gate points the same way. UI video is N/A
+for this proof slice: it changes module identity/loading semantics and
+diagnostics, not visible appearance; the real Chromium hot-load/reload
+assertions are the runtime evidence.
 
 Residual risk: ordinary CI does not run the focused Chromium file; its 2/2 result
 comes from the exact-SHA sandbox. No blocker or major review finding remains.

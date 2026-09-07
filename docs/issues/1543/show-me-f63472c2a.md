@@ -67,8 +67,8 @@ sequenceDiagram
 ## Handover
 
 - PR: https://github.com/hachej/boring-ui/pull/1543
-- Complete diff: 9 files, +431/-161 at implementation head; package production code is **416 additions + deletions**.
-- Production count includes `packages/cli/package.json` (3), generator (63), runtime shim (157), and generated metadata (193). It excludes 111 test/harness lines from the numerical trigger only; docs are outside `packages/`.
+- Complete implementation diff: 9 files, +431/-161; package production code is **223 additions + deletions**.
+- Production count includes `packages/cli/package.json` (3), generator (63), and runtime shim (157). The numerical rule excludes 111 test/harness lines and 193 generated-metadata lines; both remain in semantic review. Docs are outside `packages/`.
 - Route: **protected owner review**, because the package-boundary mechanism changed. The >500 size trigger is not met, but that does not negate the semantic boundary trigger. Unknown/automatic fallback is not permitted.
 - Current-main integration: base/main `68dcb7db8822f721c6b45d0731e01a46fa364f28` is an ancestor of implementation head; GitHub reported OPEN, MERGEABLE, CLEAN with all final-head required checks green.
 - UI video: N/A; no visual appearance/interaction changed. The user-observable runtime path is covered by deterministic real-Chromium assertions.
