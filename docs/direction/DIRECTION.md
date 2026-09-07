@@ -616,3 +616,58 @@ dated amendments, both tombstones, all #1409 Beads, the eight gh900 Beads, and
 `docs/plans/agent-runtime/gateway/plan.md` and
 `docs/plans/agent-runtime/fleet-and-environments/plan.md`; retaining their old
 issue-folder locations as canonical is a failed merge.
+
+---
+
+## Amendment 2026-09-07 — first post-premises MCP wave
+
+The owner-approved combined MCP plan is now placed behind the premises-first
+program without merging its two product planes. **Inbound MCP Access (#806)**
+remains the external-client edge into one authorized human and workspace;
+**outbound MCP Connectors (#900/#1011)** remain Agent-initiated access to
+external providers. The separation, shared-seams-only rule, secret boundaries,
+and all protected authority and policy boundaries in the preceding amendment
+continue to bind. #1409 remains the premises and sequencing authority above
+this wave; this placement neither shortens its active premise work nor changes
+any frozen architecture dependency.
+
+### Post-premises MCP wave — exact first placements
+
+Only these two bounded entries are placed. Placement permits the Orchestrator
+to undefer a matching Definition-of-Ready tracker after all gates named below
+are represented; it is not an implementation claim, proof waiver, merge, or
+permission to revive PR #1309 or create substitute kernel trackers.
+
+1. **Inbound MCP Access #806 Slice 0 — removal-only cleanup.** Run the exact
+   reference, symbol, path, configuration, and deployment audit, then remove
+   only the dark app-specific `/mcp/managed-agent` tracer integration authorized
+   by the accepted #806 plan. This slice deletes no generic Agent MCP/share
+   module, runtime, data, credential, session, run, artifact, or authority seam
+   and adds no feature seam. It is explicitly independent of the frozen `P-1`
+   feature-implementation barrier. It remains gated by the landed and accepted
+   combined plan and pointer migration, this exact DIRECTION placement, its
+   separately approved implementation tracker/brief, and the plan's exact audit
+   and deletion boundary. #806 feature Slices 1–8 are **not placed** here and
+   retain `P-1` plus every slice-specific predecessor and protected owner gate.
+2. **Outbound MCP Connectors #900.1 — discovery only, serially
+   `900.1a → 900.1b → 900.1c`.** `900.1a` first establishes shared private
+   Composio protocol custody for curated and catalog Session consumers; it
+   remains blocked on provider-supported create reconciliation (or the accepted
+   finite-TTL operator proof) against the approved host control-plane durable
+   store with versioned opaque secret handles. The approved shared transport
+   hardening does not merge curated and catalog product semantics. `900.1b`
+   follows only after `900.1a` and adds the host-authoritative, bounded fair
+   search tracer. `900.1c` follows only after `900.1b` and adds exact describe
+   plus sanitized live discovery qualification. All three remain search/
+   describe discovery: execution is blocked, account authority is not inferred,
+   and no provider child is materialized or dispatched.
+
+The Architecture Steward remains the sole owner of exact C2 frozen-DAG
+predecessor and conformance tracking. This wave creates no local replacement.
+Outbound `900.2+`, account migration/relink execution, approval, accepted work,
+provider dispatch, and UI are **not placed**; they retain the approved explicit-
+relink policy, C2's complete canonical predecessor closure, A7/A8, C5/C6/C7,
+#1409's exact `[durable-streams]` and `[seat-audit-attribution]` completion
+children, their serial #900 predecessors, and every other plan-named gate.
+Inbound MCP Access never bypasses those Connector gates when it exposes a
+resident Connector-facing `AgentTool`.
