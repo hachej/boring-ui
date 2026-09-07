@@ -128,23 +128,40 @@ describe('createAgentHost', () => {
     const sessionRoot = await root()
     const ledgerPath = join(sessionRoot, 'abrupt-request-ledger.sqlite')
     const firstLedger = new SqliteAgentRequestLedger(ledgerPath)
-    let signalHarnessStarted!: () => void
-    const harnessStarted = new Promise<void>((resolve) => { signalHarnessStarted = resolve })
-    let releaseHarness!: () => void
-    const harnessGate = new Promise<void>((resolve) => { releaseHarness = resolve })
+    let signalEffectStarted!: () => void
+    const effectStarted = new Promise<void>((resolve) => { signalEffectStarted = resolve })
+    let releaseEffect!: () => void
+    const effectGate = new Promise<void>((resolve) => { releaseEffect = resolve })
     const input = { scope, agentTypeId: 'alpha', requestId: 'abrupt-create' }
+    const requestKey = {
+      workspaceScopeId: scope.workspaceScopeId,
+      authSubjectId: scope.authSubjectId,
+      operation: 'session.create' as const,
+      target: { kind: 'agent' as const, agentTypeId: 'alpha' },
+      requestId: input.requestId,
+    }
     const first = await createAgentHost({
       ...options(sessionRoot),
       requestLedger: firstLedger,
       harnessFactory: async (harnessInput) => {
-        signalHarnessStarted()
-        await harnessGate
-        return createScriptedPiHarness(harnessInput)
+        const harness = createScriptedPiHarness(harnessInput)
+        return {
+          ...harness,
+          sessions: {
+            ...harness.sessions,
+            async create(...args: Parameters<typeof harness.sessions.create>) {
+              signalEffectStarted()
+              await effectGate
+              return await harness.sessions.create(...args)
+            },
+          },
+        }
       },
     })
     const pending = first.gateway.createSession(input)
     pending.catch(() => {})
-    await harnessStarted
+    await effectStarted
+    await expect(firstLedger.read(requestKey)).resolves.toMatchObject({ state: 'in-flight' })
 
     // Model abrupt process loss: the durable connection disappears without
     // host.drain(), so no live owner can prove a terminal outcome.
@@ -159,7 +176,7 @@ describe('createAgentHost', () => {
     })
     await restarted.host.close()
 
-    releaseHarness()
+    releaseEffect()
     await pending.catch(() => {})
     await first.host.close().catch(() => {})
   })

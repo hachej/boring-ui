@@ -248,6 +248,9 @@ describe('SqliteAgentRequestLedger', () => {
         await expect(reopened.prepare(key, 'digest-b')).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
       } finally {
         reopened.close()
+        rmSync(path, { force: true })
+        rmSync(`${path}-wal`, { force: true })
+        rmSync(`${path}-shm`, { force: true })
       }
     },
   )
