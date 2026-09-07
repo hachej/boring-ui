@@ -16,7 +16,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v5",
+  specRevision: "workspace-command-palette-v6",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -104,6 +104,7 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       if (!palette || typeof palette !== "object" || Array.isArray(palette)) return state
       const durablePalette = { ...palette } as Record<string, unknown>
       delete durablePalette.workspaceReady
+      delete durablePalette.rootLayoutAligned
       delete durablePalette.lastActionWasPaletteOpen
       delete durablePalette.lastActionWasNavigationOpen
       delete durablePalette.lastActionWasInitial

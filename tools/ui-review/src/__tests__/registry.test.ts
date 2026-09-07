@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { uiReviewSpecs, UiReviewSpecRegistry } from "../registry"
 import type { UiReviewExplorationState, UiReviewSpec } from "../core/reviewSpec"
+import {
+  COMMAND_PALETTE_COMPACT_MAX_WIDTH,
+  COMMAND_PALETTE_SHELL_SELECTOR,
+} from "../review-specs/workspace-command-palette/scenarioActions"
 
 function spec(id: string, targetRoot: UiReviewSpec["target"]["root"]): UiReviewSpec {
   return {
@@ -47,6 +51,19 @@ describe("UI review spec registry", () => {
     for (const id of uiReviewSpecs.ids()) {
       expect(uiReviewSpecs.get(id).target.serverCommand.slice(-3)).toEqual(["--host", "127.0.0.1", "--strictPort"])
     }
+  })
+
+  it("pins the command-palette replay viewport/shell boot contract", () => {
+    const commandPalette = uiReviewSpecs.get("workspace-command-palette")
+    expect(commandPalette.specRevision).toBe("workspace-command-palette-v6")
+    expect(COMMAND_PALETTE_COMPACT_MAX_WIDTH).toBe(639)
+    expect(COMMAND_PALETTE_SHELL_SELECTOR).toBe(
+      '[data-boring-workspace-part="plugin-tabs-shell"][data-mobile-shell]',
+    )
+    expect(commandPalette.viewports.find(({ name }) => name === "mobile")?.width)
+      .toBeLessThanOrEqual(COMMAND_PALETTE_COMPACT_MAX_WIDTH)
+    expect(commandPalette.viewports.find(({ name }) => name === "desktop")?.width)
+      .toBeGreaterThan(COMMAND_PALETTE_COMPACT_MAX_WIDTH)
   })
 
   it("registers specs targeting all current playgrounds without changing core", () => {

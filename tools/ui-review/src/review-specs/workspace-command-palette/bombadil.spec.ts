@@ -13,7 +13,13 @@ import {
   noUnhandledPromiseRejections,
 } from "@antithesishq/bombadil/browser/defaults/properties"
 import { observeCommandPaletteDocument } from "./browserObservation.ts"
-import { createSafeCommandPaletteActions, isCommandPaletteDialogName, isSafeCommandPaletteControl } from "./scenarioActions.ts"
+import {
+  COMMAND_PALETTE_COMPACT_MAX_WIDTH,
+  COMMAND_PALETTE_SHELL_SELECTOR,
+  createSafeCommandPaletteActions,
+  isCommandPaletteDialogName,
+  isSafeCommandPaletteControl,
+} from "./scenarioActions.ts"
 import { COMMAND_PALETTE_TOUCH_EXEMPTIONS } from "./touchPolicy.ts"
 
 export {
@@ -25,6 +31,7 @@ export {
 
 type SafePaletteState = {
   workspaceReady: boolean
+  rootLayoutAligned: boolean
   dialogVisible: boolean
   inputFocused: boolean
   mode: string
@@ -68,6 +75,16 @@ const palette = extract((state): SafePaletteState => {
     && completedResources.some((url) => url.includes("/api/v1/agents"))
     && completedResources.some((url) => url.includes("/api/v1/tree"))
     && completedResources.some((url) => url.includes("/api/v1/ui/state"))
+  const shell = state.document.querySelector(COMMAND_PALETTE_SHELL_SELECTOR)
+  const viewportIsCompact = state.window.innerWidth <= COMMAND_PALETTE_COMPACT_MAX_WIDTH
+  const rootLayoutAligned = shell !== null
+    && (shell.getAttribute("data-mobile-shell") === "true") === viewportIsCompact
+  if (!rootLayoutAligned && shell !== null) {
+    // The shell already reconciles responsive state from resize. Dispatching
+    // one idempotent signal per mismatched observation prevents Bombadil from
+    // enumerating controls from a stale layout while preserving fail-closed waits.
+    state.window.dispatchEvent(new Event("resize"))
+  }
   const dialogs = visibleElements('[role="dialog"], [aria-modal="true"]')
     .filter((element, index, all) => all.indexOf(element) === index)
   const dialog = dialogs.find((element) => isCommandPaletteDialogName(accessibleName(element))) ?? null
@@ -108,7 +125,7 @@ const palette = extract((state): SafePaletteState => {
     })
   }
 
-  if (!dialog) {
+  if (!dialog && rootLayoutAligned) {
     for (const control of rootControls) {
       const identity = control.matches(
         'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"]',
@@ -157,6 +174,7 @@ const palette = extract((state): SafePaletteState => {
     .map(normalizedText)[0] ?? "none"
   return {
     workspaceReady,
+    rootLayoutAligned,
     dialogVisible: Boolean(dialog && visible(dialog)),
     inputFocused: active instanceof HTMLInputElement && Boolean(dialog?.contains(active)),
     mode: selectedMode,

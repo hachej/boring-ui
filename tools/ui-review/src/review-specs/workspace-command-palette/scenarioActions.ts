@@ -17,8 +17,12 @@ type ScenarioActionControl = {
 }
 export type ScenarioAction = ActionTemplate
 
+export const COMMAND_PALETTE_COMPACT_MAX_WIDTH = 639
+export const COMMAND_PALETTE_SHELL_SELECTOR = '[data-boring-workspace-part="plugin-tabs-shell"][data-mobile-shell]'
+
 export type ScenarioActionState = {
   dialogVisible: boolean
+  rootLayoutAligned: boolean
   inputFocused: boolean
   lastActionWasPaletteOpen: boolean
   lastActionWasNavigationOpen: boolean
@@ -50,6 +54,7 @@ export function createSafeCommandPaletteActions(state: ScenarioActionState): Sce
   })
 
   if (state.lastActionWasInitial) return ["Wait"]
+  if (!state.dialogVisible && !state.rootLayoutAligned) return ["Wait"]
   if (!state.dialogVisible && state.lastActionWasNavigationOpen) return ["Wait"]
   const openPalette = state.controls.find((control) => control.name === "open-command-palette")
   if (!state.dialogVisible && openPalette) return ["Wait", click(openPalette)]
