@@ -17,7 +17,7 @@ describe('full-app factory automation composition', () => {
     const policyRoot = await mkdtemp(join(tmpdir(), 'full-app-factory-policy-'))
     await mkdir(join(policyRoot, '.agents', 'factory'), { recursive: true })
     await mkdir(join(policyRoot, '.agents', 'automation'), { recursive: true })
-    await writeFile(join(policyRoot, '.agents', 'factory', 'policy.yaml'), 'beadle:\n  worker_cap: 5\nmodels:\n  seats:\n    worker: T3\n    orchestrator: T1\n')
+    await writeFile(join(policyRoot, '.agents', 'factory', 'policy.yaml'), 'beadle:\n  worker_cap: 5\nmodels:\n  seats:\n    worker: T3\n    orchestrator: T1\n    triage: T3\n')
     await writeFile(join(policyRoot, '.agents', 'factory', 'fleet.yaml'), 'models:\n  tiers:\n    T1:\n      - provider: google\n        id: gemini-pro\n    T3:\n      - provider: google\n        id: gemini-worker\n')
     await writeFile(join(policyRoot, '.agents', 'automation', 'worker-slot.md'), 'worker prompt')
     await writeFile(join(policyRoot, '.agents', 'automation', 'triage-slot.md'), 'triage prompt')

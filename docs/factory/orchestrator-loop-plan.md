@@ -27,27 +27,28 @@ being started, did anything stall or need the owner. When in doubt about
 whether something is the orchestrator's job: if it produces work product, it
 is not.
 
-**The whole factory is two personas and two plugins.**
+**The current-main factory is three personas and two plugins.**
 
 | | |
 | --- | --- |
 | `orchestrator` persona | keeps it on track |
-| `worker` persona | does the work — exec, plan, triage, review via fresh-eyes subagents |
+| `worker` persona | does implementation, planning, and review via fresh-eyes subagents |
+| `triage` persona | classifies incoming work through the triage automation slot |
 | `boring-automation` plugin | when things run and how they are started, watched, nudged, cancelled |
 | `ask-user` plugin | how anything reaches the owner |
 
-Those four are the complete primitive set. The `boring-triage` seat is retired
-from the roster (`fleet.yaml`) — its skill survives as the triage slot's
-standing prompt. Anything the factory later needs should be expressible in
-these four before a new primitive is considered.
+Those five are the complete primitive set. Current main retains the dedicated
+`boring-triage` seat in `fleet.yaml`; the triage automation addresses that seat
+rather than impersonating it through a worker. Anything the factory later needs
+should be expressible in these five before a new primitive is considered.
 
 ## Today
 
 The pre-change factory baseline booted for real on 2026-08-14 (folder mode,
 `:5300`, published CLI 0.1.98, clean worktree). At that baseline, all three
-then-configured seats composed with pinned digests and carried `ask_user` +
-`boring_automation`; this plan retires the triage seat in favor of the worker
-automation slot described above.
+configured seats composed with pinned digests and carried `ask_user` +
+`boring_automation`; current-main reconciliation retains that three-seat roster
+while replacing harness-child dispatch with durable automation runs.
 
 One supervised tick ran. It did real work: broke **23 stale leases** with
 evidence and returned them to ready, **refused** an underspecified bead
@@ -140,7 +141,7 @@ code, which is the point.
 | --- | --- | --- |
 | `orchestrator-tick` | `*/10` | orchestrator persona · the tick loop (this plan) |
 | `worker-slot-1..3` | none (dispatch-only) | worker persona · claim the top ready bead you are allowed to take, work it, hand off |
-| `triage` | none (dispatch-only) | worker persona · triage untriaged GitHub issues per the triage skill — classification is work, so a worker does it |
+| `triage` | none (dispatch-only) | triage persona · classify untriaged GitHub issues per the triage skill |
 
 A dispatch run may carry an optional per-dispatch brief; worker slots normally
 run on their standing prompt alone. The **UI-collision lane is enforced by the

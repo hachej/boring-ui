@@ -15,7 +15,7 @@ export interface FactoryAutomationSeed {
   readonly cron: string | null
   readonly timezone: 'UTC'
   readonly model: string
-  readonly agentTypeId: 'boring-worker' | 'boring-orchestrator'
+  readonly agentTypeId: 'boring-worker' | 'boring-orchestrator' | 'boring-triage'
   readonly promptRef: `.agents/automation/${string}.md`
   readonly promptBody: string
 }
@@ -39,9 +39,10 @@ export function createFactoryAutomationSeedProvider(
     const warn = options.warn ?? context.warn
     const workerCap = await readWorkerCap(options.policyRoot, warn)
     const env = options.env ?? process.env
-    const [workerModel, orchestratorModel] = await Promise.all([
+    const [workerModel, orchestratorModel, triageModel] = await Promise.all([
       resolveSeatModel(options.policyRoot, 'worker', env, warn),
       resolveSeatModel(options.policyRoot, 'orchestrator', env, warn),
+      resolveSeatModel(options.policyRoot, 'triage', env, warn),
     ])
     const [workerPrompt, triagePrompt, orchestratorPrompt] = await Promise.all([
       readFile(join(options.policyRoot, '.agents', 'automation', 'worker-slot.md'), 'utf8'),
@@ -49,19 +50,20 @@ export function createFactoryAutomationSeedProvider(
       readFile(join(options.policyRoot, '.agents', 'automation', 'orchestrator-tick.md'), 'utf8'),
     ])
     await pruneSurplusWorkerSlots(context, workerCap, warn)
-    return createFactoryAutomationSeeds(workerCap, { workerModel, orchestratorModel, workerPrompt, triagePrompt, orchestratorPrompt })
+    return createFactoryAutomationSeeds(workerCap, { workerModel, orchestratorModel, triageModel, workerPrompt, triagePrompt, orchestratorPrompt })
   }
 }
 
 export function createFactoryAutomationSeeds(
   workerCap: number,
-  options: { workerModel?: string; orchestratorModel?: string; workerPrompt?: string; triagePrompt?: string; orchestratorPrompt?: string } = {},
+  options: { workerModel?: string; orchestratorModel?: string; triageModel?: string; workerPrompt?: string; triagePrompt?: string; orchestratorPrompt?: string } = {},
 ): readonly FactoryAutomationSeed[] {
   if (!Number.isSafeInteger(workerCap) || workerCap < 1 || workerCap > MAX_FACTORY_WORKER_CAP) {
     throw new TypeError(`factory worker_cap must be an integer from 1 to ${MAX_FACTORY_WORKER_CAP}`)
   }
   const workerModel = options.workerModel ?? DEFAULT_FACTORY_MODEL
   const orchestratorModel = options.orchestratorModel ?? DEFAULT_FACTORY_MODEL
+  const triageModel = options.triageModel ?? workerModel
   return Object.freeze([
     Object.freeze({
       key: 'orchestrator-tick', title: 'orchestrator-tick', enabled: true as const,
@@ -77,8 +79,8 @@ export function createFactoryAutomationSeeds(
       enabled: true as const,
       cron: null,
       timezone: 'UTC' as const,
-      model: workerModel,
-      agentTypeId: 'boring-worker' as const,
+      model: triageModel,
+      agentTypeId: 'boring-triage' as const,
       promptRef: '.agents/automation/triage.md' as const,
       promptBody: options.triagePrompt ?? '',
     }),
@@ -101,7 +103,7 @@ async function readWorkerCap(workspaceRoot: string, warn: (message: string) => v
   }
 }
 
-async function resolveSeatModel(root: string, seat: 'worker' | 'orchestrator', env: NodeJS.ProcessEnv, warn: (message: string) => void): Promise<string> {
+async function resolveSeatModel(root: string, seat: 'worker' | 'orchestrator' | 'triage', env: NodeJS.ProcessEnv, warn: (message: string) => void): Promise<string> {
   try {
     const [policyRaw, fleetRaw] = await Promise.all([
       readFile(join(root, '.agents', 'factory', 'policy.yaml'), 'utf8'),
@@ -113,12 +115,11 @@ async function resolveSeatModel(root: string, seat: 'worker' | 'orchestrator', e
     const candidates = tier ? fleet.models?.tiers?.[tier] ?? [] : []
     const available = candidates.find((candidate) => candidate.provider && candidate.id && (!candidate.envVar || env[candidate.envVar]))
     if (available?.provider && available.id) return `${available.provider}:${available.id}`
-    const configured = candidates.find((candidate) => candidate.provider && candidate.id)
-    if (configured?.provider && configured.id) return `${configured.provider}:${configured.id}`
-    throw new Error(`${seat} model tier has no configured candidates`)
+    throw new Error(`${seat} model tier has no available candidates`)
   } catch (error) {
-    warn(`[boring-automation] could not resolve ${seat} model from factory fleet; using ${DEFAULT_FACTORY_MODEL}: ${error instanceof Error ? error.message : String(error)}`)
-    return DEFAULT_FACTORY_MODEL
+    const message = `[boring-automation] no available ${seat} model in the host-authorized factory tier: ${error instanceof Error ? error.message : String(error)}`
+    warn(message)
+    throw new Error(message, { cause: error })
   }
 }
 

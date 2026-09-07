@@ -18,4 +18,4 @@ Human request: <ask_user id or comment URL, if any>
 Notes: <only material context>
 ```
 
-Use `ask_user` for a specific human decision and `wait:false` for any factory escalation; otherwise post questions on the issue/PR. Route ready work into the factory loop, and unclear intent or risk to planning or the owner gate. Do not invent scope, merge, implement product work, or act as a separate triage persona. Report the bounded sweep and exit.
+Use `ask_user` for a specific human decision and `blocking:false` for any factory escalation; otherwise post questions on the issue/PR. Route ready work into the factory loop, and unclear intent or risk to planning or the owner gate. Do not invent scope, merge, implement product work, or act as a separate triage persona. Report the bounded sweep and exit.
