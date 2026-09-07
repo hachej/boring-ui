@@ -58,17 +58,17 @@ Lineage: canonical batch Bead `wt-391-forward-clu5.10` under `pr-review-batch`; 
 ## Slices
 
 ### Slice: Integrate main and capture UI proof
-**Bead:** `wt-391-forward-2o4d.1`  
-**Delivers:** Current-main integration and revision-bound before/after Playwright evidence.  
-**Blocked by:** None.  
-**Proof:** Clean merge candidate, package checks, deterministic assertions, videos, and independent exact-SHA review.  
+**Bead:** `wt-391-forward-2o4d.1`
+**Delivers:** Current-main integration and revision-bound before/after Playwright evidence.
+**Blocked by:** None.
+**Proof:** Clean merge candidate, package checks, deterministic assertions, videos, and independent exact-SHA review.
 **Review budget:** Inside; first of at most four review rounds.
 
 ### Slice: Re-verify, present, and classify delivery
-**Bead:** `wt-391-forward-2o4d.2`  
-**Delivers:** Exact-SHA re-verification/review, present-pr artifact, full proof record, and risk-based terminal route.  
-**Blocked by:** `wt-391-forward-2o4d.1`.  
-**Proof:** CI and sandbox links, review provenance, artifact path, package churn count, current-main candidate proof, and terminal PR comment/card.  
+**Bead:** `wt-391-forward-2o4d.2`
+**Delivers:** Exact-SHA re-verification/review, present-pr artifact, full proof record, and risk-based terminal route.
+**Blocked by:** `wt-391-forward-2o4d.1`.
+**Proof:** CI and sandbox links, review provenance, artifact path, package churn count, current-main candidate proof, and terminal PR comment/card.
 **Review budget:** Inside; remaining rounds are reserved for concrete findings.
 
 ## Out of Scope

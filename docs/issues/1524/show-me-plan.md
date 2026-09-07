@@ -1,7 +1,7 @@
 # [Transcription Quality] Plan, visually
 
-**Status:** Awaiting plan approval  
-**Epic:** `pr-1524-transcription-quality` · **Bead:** `wt-391-forward-2o4d`  
+**Status:** Awaiting plan approval
+**Epic:** `pr-1524-transcription-quality` · **Bead:** `wt-391-forward-2o4d`
 **TL;DR:** Refresh the existing green PR against main, add exact-revision UI video proof, then independently re-review and route the unchanged candidate.
 
 ## Structure — what this lane touches
