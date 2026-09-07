@@ -1,9 +1,9 @@
 # [Package Cleanup] What changed, visually
 
-Implementation revision: `59f1934f72ef641b6af01227c15ee17d7de21096`  
-Base revision: `68dcb7db8822f721c6b45d0731e01a46fa364f28`  
-PR: [#1540](https://github.com/hachej/boring-ui/pull/1540)  
-Historical lineage: `wt-391-forward-clu5.7`
+- Implementation revision: `59f1934f72ef641b6af01227c15ee17d7de21096`
+- Base revision: `68dcb7db8822f721c6b45d0731e01a46fa364f28`
+- PR: [#1540](https://github.com/hachej/boring-ui/pull/1540)
+- Historical lineage: `wt-391-forward-clu5.7`
 
 ## Review shape
 
