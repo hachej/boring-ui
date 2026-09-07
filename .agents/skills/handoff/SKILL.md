@@ -34,7 +34,11 @@ block) of what changed; a single-file Bead may skip it and say so in the
 handoff. For bead work, put the handoff
 artifact pointer and a one-line `friction` note on the bead.
 
-In the Factory, the "receiver" is never a person waiting in chat: the durable
+In the Factory, a Bead you were dispatched to must carry its handoff comment
+before your turn ends, even when the work is incomplete or blocked (say what is
+done, what is not, and why); the host treats a claim whose Worker went idle
+without a handoff as stale and releases it. The "receiver" is never a person
+waiting in chat: the durable
 handoff IS the Bead comment (`[Feature Name] handoff · <bead id> · <short
 sha>` per `docs/procedures/naming-conventions.md`), and the next Worker or
 Orchestrator that claims the bead reads it to re-prime — there is no other

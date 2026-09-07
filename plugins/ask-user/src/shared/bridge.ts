@@ -12,6 +12,8 @@ export const ASK_USER_BRIDGE_OPS = {
   answer: "ask-user.v1.answer",
   cancel: "ask-user.v1.cancel",
   pending: "ask-user.v1.pending",
+  pendingAll: "ask-user.v1.pending-all",
+  answeredAll: "ask-user.v1.answered-all",
   transcript: "ask-user.v1.transcript",
 } as const
 
@@ -20,11 +22,16 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
   answer: "ask-user:answer",
   cancel: "ask-user:cancel",
   pending: "ask-user:pending",
+  pendingAll: "ask-user:pending-all",
+  answeredAll: "ask-user:answered-all",
   transcriptRead: "ask-user:transcript.read",
 } as const
 
 export type AskUserBridgeRequestInput = {
   sessionId: string
+  /** Proposed Agent address; trusted only after server-side session authorization. */
+  agentTypeId?: string
+  blocking?: boolean
   title?: string
   context?: string
   schema: AskUserFormSchema
@@ -47,11 +54,67 @@ export type AskUserBridgeCancelInput = {
 
 export type AskUserBridgePendingInput = {
   sessionId: string
+  questionId?: string
 }
 
 export type AskUserBridgeTranscriptInput = {
   sessionId: string
 }
+
+/** Workspace-wide read: no session scope, because the Inbox is one owner queue
+ * across every agent session, not a per-chat view. */
+export type AskUserBridgePendingAllInput = Record<string, never>
+
+/** Answer tokens stay out of the workspace-wide listing: the Inbox only needs
+ * to show and route to a question, and answering re-reads the owning session's
+ * `pending` payload (which carries the token) before it mutates anything. */
+export type AskUserPendingSummary = {
+  questionId: string
+  sessionId: string
+  toolCallId?: string
+  status: AskUserQuestion["status"]
+  /** Missing on legacy payloads means true. */
+  blocking?: boolean
+  agentTypeId?: string
+  title?: string
+  context?: string
+  artifacts: AskUserQuestion["artifacts"]
+  createdAt: string
+  updatedAt: string
+}
+
+/** Workspace-wide answered history, newest first. Paginated because the owner's
+ * decision log grows without bound while the Inbox only ever shows a page. */
+export type AskUserBridgeAnsweredAllInput = {
+  limit?: number
+  cursor?: string
+}
+
+export type AskUserAnsweredSummary = {
+  questionId: string
+  sessionId: string
+  agentTypeId?: string
+  sessionTitle?: string
+  title: string
+  contextFirstLine?: string
+  askedAt: string
+  answeredAt: string
+  /** Value of the question's first radio/select field — the owner's verdict
+   * (approve / changes / defer / reject) when the question posed one. */
+  decision?: string
+  values: Record<string, AskUserAnswerValue>
+  status: "answered" | "cancelled" | "abandoned"
+  /** Missing on legacy payloads means true. */
+  blocking?: boolean
+  deliveryStatus?: "undelivered" | "delivered"
+}
+
+export type AskUserBridgeAnsweredAllOutput = {
+  answered: AskUserAnsweredSummary[]
+  nextCursor?: string
+}
+
+export const ASK_USER_ANSWERED_PAGE_LIMIT = { default: 50, max: 200 } as const
 
 export type AskUserBridgeRequestOutput = AskUserToolResult
 
@@ -66,7 +129,10 @@ export type AskUserBridgePendingOutput = {
   pending: AskUserQuestion | null
 }
 
+export type AskUserBridgePendingAllOutput = {
+  pending: AskUserPendingSummary[]
+}
+
 export type AskUserBridgeTranscriptOutput = {
   events: AskUserTranscriptEvent[]
 }
-

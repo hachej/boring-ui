@@ -11,7 +11,7 @@ import {
   createExactShaTemplateProvider,
   gitFetchAuthShellSetup,
   resolveFactoryGitToken,
-} from './remoteSnapshotProvider'
+} from '@hachej/boring-factory/server/sandbox'
 
 const execFileAsync = promisify(execFile)
 const SECRET_TOKEN = 'ghp_super_secret_do_not_leak_1234567890'

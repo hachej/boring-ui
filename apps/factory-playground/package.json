@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-sandbox-plugin build",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-sandbox-plugin build && pnpm --filter @hachej/boring-factory build",
     "dev": "pnpm run build:deps && pnpm run dev:app",
     "dev:app": "vite",
     "build": "pnpm run build:deps && vite build",
@@ -12,6 +12,7 @@
     "test": "vitest run",
     "simulate": "tsx scripts/simulate-feature.mts",
     "epic": "node scripts/factory-epic.mjs",
+    "smoke:factory-single-bead": "node scripts/hub-single-bead-smoke.mjs",
     "snapshot:vercel": "tsx scripts/vercel-snapshot.mts",
     "sandbox:sweep": "tsx scripts/vercel-sweep.mts",
     "snapshot:sweep": "tsx scripts/vercel-sweep-snapshots.mts"
@@ -26,6 +27,7 @@
     "@hachej/boring-sandbox-plugin": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@hachej/boring-factory": "workspace:*",
     "@vercel/sandbox": "3.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

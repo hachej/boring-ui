@@ -15,11 +15,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 
-import {
-  compileAgentDirectory,
-  compilePersonaPackageDirectory,
-} from '@hachej/boring-agent/server'
-import { describe, expect, it } from 'vitest'
+import { createPerEpicVercelProvider } from './sandbox/sandboxComposition'
+import { describe, expect, it, vi } from 'vitest'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -76,6 +73,9 @@ describe('private Boring Factory tarball', () => {
           '@hachej/boring-factory': 'file:factory.tgz',
         },
       }))
+      // pnpm 10 exits non-zero when transitive dependencies carry ignored build scripts; the consumer never runs them.
+      // The consumer never runs transitive build scripts; declaring that keeps pnpm 10 from failing the install.
+      await writeFile(path.join(consumerRoot, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies: []\nstrictDepBuilds: false\nshamefullyHoist: true\n')
       runPnpm(['install', '--lockfile-only'], consumerRoot)
       runPnpm(['fetch'], consumerRoot)
       runPnpm(['install', '--frozen-lockfile', '--offline'], consumerRoot)
@@ -84,23 +84,99 @@ describe('private Boring Factory tarball', () => {
         consumerRoot,
         'node_modules/@hachej/boring-factory/dist/server/index.js',
       )
+      const installedSandbox = path.join(
+        consumerRoot,
+        'node_modules/@hachej/boring-factory/dist/server/sandbox/index.js',
+      )
       const installed = await import(`${pathToFileURL(installedServer).href}?test=${Date.now()}`) as {
         BORING_FACTORY_RESOURCE_ERROR_CODES: Record<string, string>
+        createFactoryHost: unknown
+        createFactoryHostedApp: unknown
+        deriveFactoryWorkspaceScopeId: unknown
         resolveBoringFactoryResources(): {
           resourceRoot: string
           skillRoot: string
           agentSources: Record<string, string>
         }
       }
+      const resolveSnapshotFn = vi.fn(async () => ({
+        snapshotId: 'snap_test',
+        baseSha: 'deadbeef',
+        lockfileSha256: 'sha256:test' as const,
+        builtAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        epicKey: 'pack-test',
+        reused: true,
+      }))
+      const buildInnerProvider = vi.fn(() => ({
+        contractVersion: 'boring-sandbox-provider.v1' as const,
+        providerId: 'vercel-sandbox',
+        capabilities: {},
+        resolveRuntimeRoot: (context: { workspaceRoot: string }) => context.workspaceRoot,
+        disposableProfile: {
+          contractVersion: 'boring-sandbox.disposable-provider.v1' as const,
+          resume: false as const,
+          publishedCleanupOwner: 'returned-pair',
+          ambiguousCreate: 'correlated-reconciliation',
+          providerConfigDigest: `sha256:${'0'.repeat(64)}`,
+        },
+        async create() {
+          return {
+            workspace: {},
+            sandbox: {
+              exec: async () => ({
+                stdout: new Uint8Array(),
+                stderr: new Uint8Array(),
+                exitCode: 0,
+                durationMs: 1,
+                truncated: false,
+              }),
+            },
+            async dispose() {},
+          }
+        },
+      }))
+      const sandbox = await import(`${pathToFileURL(installedSandbox).href}?test=${Date.now()}`) as {
+        FACTORY_WORKER_AGENT_TYPE_ID: string
+        createLocalDisposableProvider: (...args: never[]) => unknown
+      }
+      expect(typeof installed.createFactoryHost).toBe('function')
+      expect(typeof installed.createFactoryHostedApp).toBe('function')
+      expect(typeof installed.deriveFactoryWorkspaceScopeId).toBe('function')
+      const lazyProvider = createPerEpicVercelProvider({
+        workspaceRoot: consumerRoot,
+        stateRoot: consumerRoot,
+        epicKey: 'pack-test',
+        env: { VERCEL_TOKEN: 'tok', VERCEL_TEAM_ID: 'team', VERCEL_PROJECT_ID: 'proj' },
+        leaseTimeoutMs: 1000,
+        telemetrySalt: undefined,
+        scratchRoot: consumerRoot,
+        remoteSource: 'fetch',
+        log: () => {},
+        buildInnerProvider: buildInnerProvider as never,
+        resolveSnapshotFn,
+      })
+      expect(lazyProvider.disposableProfile.providerConfigDigest).toMatch(/^sha256:[a-f0-9]{64}$/)
+      expect(resolveSnapshotFn).not.toHaveBeenCalled()
+      expect(sandbox.FACTORY_WORKER_AGENT_TYPE_ID).toBe('boring-worker')
+      expect(typeof sandbox.createLocalDisposableProvider).toBe('function')
       const resources = installed.resolveBoringFactoryResources()
-      await expect(compileAgentDirectory(resources.agentSources['factory-orchestrator']))
-        .resolves.toMatchObject({ definition: { definitionId: 'factory-orchestrator' } })
-      await expect(compileAgentDirectory(resources.agentSources['factory-worker']))
-        .resolves.toMatchObject({ definition: { definitionId: 'factory-worker' } })
-      await expect(compilePersonaPackageDirectory(resources.agentSources['factory-orchestrator']))
-        .resolves.toMatchObject({ definition: { definitionId: 'factory-orchestrator' } })
-      await expect(compilePersonaPackageDirectory(resources.agentSources['factory-worker']))
-        .resolves.toMatchObject({ definition: { definitionId: 'factory-worker' } })
+      const compileAgentDirectoryFn = (await import(`${pathToFileURL(path.join(consumerRoot, 'node_modules/@hachej/boring-agent/dist/server/index.js')).href}?test=${Date.now()}`) as {
+        compileAgentDirectory: (dir: string) => Promise<{ definition: { definitionId: string } }>
+        compilePersonaPackageDirectory: (dir: string) => Promise<{ definition: { definitionId: string } }>
+      })
+      await expect(compileAgentDirectoryFn.compileAgentDirectory(resources.agentSources['boring-orchestrator']))
+        .resolves.toMatchObject({ definition: { definitionId: 'boring-orchestrator' } })
+      await expect(compileAgentDirectoryFn.compileAgentDirectory(resources.agentSources['boring-worker']))
+        .resolves.toMatchObject({ definition: { definitionId: 'boring-worker' } })
+      await expect(compileAgentDirectoryFn.compileAgentDirectory(resources.agentSources['boring-reviewer']))
+        .resolves.toMatchObject({ definition: { definitionId: 'boring-reviewer' } })
+      await expect(compileAgentDirectoryFn.compilePersonaPackageDirectory(resources.agentSources['boring-orchestrator']))
+        .resolves.toMatchObject({ definition: { definitionId: 'boring-orchestrator' } })
+      await expect(compileAgentDirectoryFn.compilePersonaPackageDirectory(resources.agentSources['boring-worker']))
+        .resolves.toMatchObject({ definition: { definitionId: 'boring-worker' } })
+      await expect(compileAgentDirectoryFn.compilePersonaPackageDirectory(resources.agentSources['boring-reviewer']))
+        .resolves.toMatchObject({ definition: { definitionId: 'boring-reviewer' } })
 
       const presentPrSkill = path.join(resources.skillRoot, 'exec/.agents/skills/present-pr/SKILL.md')
       const presentPrScript = path.resolve(path.dirname(presentPrSkill), '../../../scripts/present-pr.mjs')
@@ -145,5 +221,5 @@ describe('private Boring Factory tarball', () => {
         rm(cleanPluginRoot, { recursive: true, force: true }),
       ])
     }
-  }, 60_000)
+  }, 240_000)
 })

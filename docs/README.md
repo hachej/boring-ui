@@ -8,7 +8,11 @@ only into the package you're working on.
 
 Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
 `CLAUDE.md`). Agent workflow, coding process, review history, and proof
-procedures live in [`procedures/`](procedures/README.md).
+procedures live in [`procedures/`](procedures/README.md). Start with
+[risk-based delivery](procedures/boring-loop.md) for the owner-review boundaries
+(>500 changed package production lines), the mandatory cross-package abstraction
+gate, and automatic-eligible plugin UI with Playwright before/after evidence.
+The procedure distinguishes adopted policy from automation not yet enabled.
 
 ## Cold-start reading order (5 files)
 
