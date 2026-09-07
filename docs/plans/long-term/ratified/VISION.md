@@ -44,6 +44,8 @@ architecture.
 > one document unit in both document-first and chat-first compositions.
 > Binding scope and amendments: [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 
+> **Readable edition (2026-09-07):** the consolidated, ruling-neutral statement of everything below plus the amendments is [`docs/vision/`](../../../vision/README.md) (one chapter per aspect, with a crosswalk). This file remains the ledger; where wording differs, this file and RECONCILIATION win.
+
 > **Amendment — 2026-09-07 (owner ruling, ratified via #1561; RECONCILIATION §13):**
 > native creation of expert software is the **first complete product
 > journey**: create → immutable release → install for a separate consumer →
@@ -377,6 +379,6 @@ for every selected consumer. This changes neither K/M commercial ordering nor
 Rule of Three, the frozen noun set, the port doctrine or the security model.
 
 Normative detail: [RECONCILIATION §12](RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
-Readable model/evidence: [software model](../../../vision/software-model.md).
+Readable model/evidence: [software model](../../../vision/04-software-evolution.md).
 The September 6 dispatch link is historical; §13 supersedes its first consumer
 and timing. Current dispatch: [DIRECTION 2026-09-07](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).

@@ -1,9 +1,11 @@
+> **HISTORICAL — superseded 2026-09-07** by the consolidated edition at [`../README.md`](../README.md). Kept for the record; do not cite as current. This was the software model (2026-09-06).
+
 # [Workspace Evolution] One software model, many Experiences
 
 2026-09-06 owner-requested clarification, folded into the native-creation
-ruling on 2026-09-07. [RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof)
+ruling on 2026-09-07. [RECONCILIATION §12](../../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof)
 owns this model; §13 updates its first consumer and timing. The [DIRECTION
-amendment of 2026-09-07](../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+amendment of 2026-09-07](../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
 alone owns current dispatch. This is a product model over existing contracts,
 not a new kernel ontology, package reorganization, or universal application
 language.

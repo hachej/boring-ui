@@ -616,7 +616,7 @@ not progress by itself.
 The owner requested a general software vision that covers Clinic,
 Charlotte Ledoux/Seneca and ESG portfolio-impact analysis. Binding semantics:
 [RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
-Readable model and evidence: [software model](../vision/software-model.md).
+Readable model and evidence: [software model](../vision/04-software-evolution.md).
 
 **Explicit scope change:** the 2026-09-05 E0/E1 consumer selection is no longer
 Clinic-only, and Seneca is more than an identity proof host. Select one useful
