@@ -105,19 +105,18 @@ describe("importServerModule", () => {
     }
   })
 
-  test("hotReload=true falls back to native import when jiti import rejects", async () => {
+  test("hotReload=true propagates jiti evaluation failures without executing the module again", async () => {
     const dir = await tmp("boring-server-import-rejected-jiti-")
     const serverPath = join(dir, "server.mjs")
-    await writeFile(serverPath, "export default { value: 'native-after-rejection' }\n", "utf8")
+    await writeFile(serverPath, "export default { value: 'must-not-run' }\n", "utf8")
 
     const restoreLoad = mockJitiLoad("import-rejected")
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     try {
       const { importServerModule } = await importFreshServerModule()
 
-      await expect(importServerModule(serverPath, true)).resolves.toMatchObject({ default: { value: "native-after-rejection" } })
-      expect(warn).toHaveBeenCalledTimes(1)
-      expect(warn.mock.calls[0]?.[0]).toContain("simulated jiti import rejection")
+      await expect(importServerModule(serverPath, true)).rejects.toThrow("simulated jiti import rejection")
+      expect(warn).not.toHaveBeenCalled()
     } finally {
       restoreLoad()
     }
