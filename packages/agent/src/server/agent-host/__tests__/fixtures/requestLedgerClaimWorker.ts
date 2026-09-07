@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { SqliteAgentRequestLedger } from '../../sqliteRequestLedger'
-import type { AgentRequestKey } from '../../types'
+import type { AgentRequestKey, AgentRequestLedgerPrepareResult } from '../../types'
 
 interface ClaimWorkerInput {
   dbPath: string
@@ -9,9 +9,14 @@ interface ClaimWorkerInput {
   barrier: SharedArrayBuffer
 }
 
+type ClaimWorkerMessage =
+  | { claim: AgentRequestLedgerPrepareResult; effectStarted: boolean }
+  | { error: { name: string; message: string; stack?: string } }
+
 const input = workerData as ClaimWorkerInput
 const sync = new Int32Array(input.barrier)
 const ledger = new SqliteAgentRequestLedger(input.dbPath)
+let message: ClaimWorkerMessage
 
 try {
   Atomics.add(sync, 0, 1)
@@ -25,13 +30,17 @@ try {
     await ledger.beginEffect(input.key)
     effectStarted = true
   }
-  parentPort?.postMessage({ claim, effectStarted })
+  message = { claim, effectStarted }
 } catch (error) {
-  parentPort?.postMessage({
+  message = {
     error: error instanceof Error
       ? { name: error.name, message: error.message, stack: error.stack }
       : { name: 'Error', message: String(error) },
-  })
+  }
 } finally {
   ledger.close()
 }
+
+// Report only after closing the worker's connection, so the coordinator's
+// replay check cannot race connection teardown or terminate a held lock.
+parentPort?.postMessage(message)

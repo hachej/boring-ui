@@ -40,7 +40,6 @@ function runClaimWorker(
       workerData: { dbPath, key, digest: 'digest-a', barrier },
     })
     worker.once('message', (message: ParallelClaimResult & { error?: { message: string; stack?: string } }) => {
-      void worker.terminate()
       if (message.error) {
         const error = new Error(message.error.message)
         error.stack = message.error.stack
