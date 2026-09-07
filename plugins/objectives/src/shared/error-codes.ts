@@ -15,7 +15,7 @@ export type ObjectiveErrorCode = (typeof OBJECTIVE_ERROR_CODES)[keyof typeof OBJ
 
 export const OBJECTIVE_ERROR_CODE_VALUES = Object.values(OBJECTIVE_ERROR_CODES) as ObjectiveErrorCode[]
 
-/** Every Objective failure carries a stable code registered in Agent's canonical ErrorCode enum. */
+/** Every Objective failure carries a stable code from the plugin-owned ObjectiveErrorCode enum. */
 export class ObjectiveError extends Error {
   constructor(
     public readonly code: ObjectiveErrorCode,
