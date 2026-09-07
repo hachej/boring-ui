@@ -7,9 +7,9 @@ VISION.md (north star) · V2-PORT-HANDBOOK.md (design inputs + quarry) ·
 ARCHITECTURE-PLAN v3 (frozen engineering spec).
 
 Locked decisions: single-package repo, folders-as-modules, dependency-cruiser
-DAG (packages extracted only on publish pressure) · shard = per-thread records +
-workspace envelope/kernel DBs *(shard shape suspended pending the
-thread-storage spike, RECONCILIATION §8)* · first vertical = creator growth · repo =
+DAG (packages extracted only on publish pressure) · per-Session runtime records +
+workspace envelope/kernel DBs *(2026-09-05 reconciliation with §9a: Thread is
+the job root with 0..n Sessions; only its timeline storage shape remains spiked)* · first vertical = creator growth · repo =
 `hachej/boring-v2` private · M1 = headless `runtime.run()`.
 
 ---
@@ -74,7 +74,7 @@ AgentRef         { agentId; definitionDigest }
 AgentDefinition  // instructions · skills · knowledge refs · model policy ·
                  // declared capabilities · evaluation history refs  (content-addressed)
 AgentRuntime     { run(input, ctx): Run }          // pi harness behind the seam
-ThreadRecord     // per-thread SQLite; append-only; seq owned here; checkpoints;
+SessionRecord    // per-Session runtime record; append-only; seq owned here; checkpoints;
                  // event kinds: user/assistant/tool-call/tool-result/queue-admitted/
                  // prompt-assembled/grant-snapshot/pause/approval/checkpoint
 Capability<I,O>  { effect: observe|propose|mutate|external-effect; authorize; execute }
@@ -85,7 +85,7 @@ AgentState       // RESERVED, empty until pulled
 0.80.7) · boring-sandbox (direct+bwrap first) · multi-FS bindings (renamed
 `RuntimeFilesystem`) · skills/knowledge loading.
 **New:** effect-classed capability wrapper · A7 ModelCapabilityIssuer ·
-per-thread record store · durable pause as record events.
+per-Session record store · durable pause as record events.
 **Milestones:** M1 (headless run) · M3 (Bare Agent npx product).
 
 ## L2 — Data
@@ -120,10 +120,11 @@ Workspace        { workspaceId; mounts; seats; threads; sharedState; artifacts }
 Seat             { seatId; workspaceId; agentId; role?; budget?; permissions?; bindingState }
                  // grants participation, NOT identity (invariant 5); type is kernel-level,
                  // lifecycle is workspace-level (ratified Q4)
-Thread           { threadId; workspaceId; title; participants; workingSet }  // durable job root
-                 // RECONCILIATION §9a (2026-08-27): one Thread binds 0..n Sessions.
-                 // Session = one runtime conversation; headless jobs may have none.
-                 // Timeline storage shape (first-class stream vs projection) remains spiked.
+Thread           { threadId; workspaceId; title; participants; workingSet; sessionRefs }
+                 // durable job root — RECONCILIATION §9a (2026-08-27): one Thread binds
+                 // 0..n runtime Sessions; Session = one runtime conversation; headless
+                 // jobs have none. sessionRefs expresses the relationship, not a
+                 // storage-schema ruling; timeline shape (stream vs projection) stays spiked.
 Activity         // what happened: runs, delegations, approvals, interventions
                  // (envelope projection — no second event system)
 SessionCatalog   // host-authoritative ownership/placement (C7); seats ledger;
@@ -161,6 +162,28 @@ tree/editor (→ navigator/document) · UI kit · Dockview (as renderer only).
 **New:** resolver · ViewContext plumbing · ambient-agent surface · approval UI
 (C5-backed — the OLD dead approval states finally get their real producer).
 **Milestones:** M4 (Agent App with views) · M5 (workspace UI, team pane).
+
+**Workspace Evolution extension (2026-09-05, effective on owner merge):**
+AppComposition becomes privately revisable through the product-module release
+contract in [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+Use the existing View contract as a set for saved semantic compositions;
+early app-specific props do not create another ViewDescriptor. The host owns
+revision activation, current grants, and durable receipts; the Experience
+owns presentation and domain adapters. See the milestone crosswalk below.
+
+**Ambient/composability clarification (2026-09-05):** AppComposition combines
+domain capabilities, primary surfaces/navigation, presence, triggers, and
+scoped context/state independently. An ambient Experience may expose a
+temporary contextual drawer using §10's existing vocabulary. Clinic's primary
+surface is Documents médicaux; it must support document tasks without mounting
+chat or creating a Session. The same document unit also mounts beside chat;
+compatible mounts share domain operations, not entire shells. Domain records
+retain their own identity and versioning; admitted server work and non-chat
+status/decisions outlive a browser. Session-keyed consumers need a trusted
+adapter/migration before that live proof. The SessionRecord/Thread annotations
+above explicitly correct the stale one-object terminology under the already
+ratified §9a; they do not decide the outstanding Thread timeline storage shape.
+Contracts and stress cases: [execution plan](../../workspace-evolution/README.md#composable-experiences-and-ambient-work).
 
 ## L5 — Optimization
 
@@ -244,6 +267,36 @@ milestone; the kill criteria (handbook Part VII) can stop the line at M2 or M6.
 
 Old repo in parallel, unchanged: P0.6 · A7 (ports into M1's L0) · P0.2 ·
 AR1-003/004 (ports into M2's L2) · result→runId · keep selling.
+
+## Workspace Evolution milestone extension — 2026-09-05
+
+> Consumer scope updated 2026-09-06 under RECONCILIATION §12. The rows below
+> reflect that clarification; the M0–M8 ordering and frozen port remain unchanged.
+
+**Specified, unbuilt by this PR; effective on owner merge.** This adds a
+named product proof to the capabilities above without renumbering M0–M8,
+opening the new-repo implementation freeze, or requiring M8 Product extraction
+for a private change. The [execution plan](../../workspace-evolution/README.md#milestones)
+owns E0–E6 acceptance; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
+owns dispatch. M-labels below map capability dependencies, not a second queue.
+
+| Extension | Capability relationship | Product proof |
+|---|---|---|
+| E0 — request and preview preparation | Registered units plus fixture-only adapter/extraction; no new runtime/storage premise | Two mounts and Clinic + Charlotte/Seneca synthetic fixtures; ESG is a labeled hypothesis; no live data-path claim. |
+| E1 — durable workspace revision | E1a: M1 host/admission/recovery + M4 composition, current-repo P1 and consumed gates. E1b adds selected domain migration as needed, mandatory [thread-storage-spike] and [seat-audit-attribution] | E1a activation/undo survives restart. E1b proves selected live domain work and bounded Job Thread with non-chat results/decisions. Both complete E1; Clinic selection requires its identity migration. |
+| E2 — personal scope | M4 workspace bindings + relevant M5 identity/membership substrate | Two authenticated users keep different presentations over shared work; personal UI state does not mutate content; parallel subjects remain isolated. Multi-seat UI is not a prerequisite. |
+| E3 — behavior revision | M1 agent identity/provenance + E1/E2; relevant M6 evaluation machinery where present | Permitted personal behavior survives a shared expert update and is attributable to the work that used it. |
+| E4 — isolated private module | E1/E2 + admitted C4 isolation and capability contracts | A novel component runs with scoped data and can be removed without breaking recovery. |
+| E5 — upgrade and reconciliation | E1/E2 + supported package/state compatibility; E3/E4 when those classes are included | Real update and conflict proof; a second structurally different live consumer exercises a capability before a cross-domain claim. Kernel promotion retains its existing gate. |
+| E6 — approved reuse and broader autonomy | E5 + repeat-use evidence and maintainer/export authority | A second private workspace adopts an optional generalized package and retains its own choices. |
+
+E5's ordinary configuration upgrade proof should run before expanding the
+catalog; it need not wait for E4. Behavior/module upgrades extend that proof
+when those lanes exist. L7 owns reusable distribution and entitlements, while
+private activation belongs to the host and Experience. Cross-domain
+preparation uses Clinic and Charlotte/Seneca; one selected consumer earns the
+first live loop. ESG remains a proposed stress case until inspected. This is
+a platform acceptance choice, not a new commercial-vertical ordering.
 
 # PART D — repo tree (full vision, single package)
 
