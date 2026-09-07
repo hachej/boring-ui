@@ -416,7 +416,9 @@ export function PiChatPanel<
   const [resumeQueuedPendingSessionIds, setResumeQueuedPendingSessionIds] = useState<Set<string>>(() => new Set())
   const [resumeQueuedErrorsBySessionId, setResumeQueuedErrorsBySessionId] = useState<Map<string, PanelNotice>>(() => new Map())
   const resumeQueuedInFlightRef = useRef(new Map<string, Promise<unknown>>())
-  const resumeQueuedOwnerBySessionIdRef = useRef(new Map<string, RemotePiSession>())
+  const resumeQueuedOwnerTokenBySessionIdRef = useRef(new Map<string, number>())
+  const resumeQueuedSessionTokensRef = useRef(new WeakMap<RemotePiSession, number>())
+  const resumeQueuedSessionTokenSeqRef = useRef(0)
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -510,8 +512,13 @@ export function PiChatPanel<
   // transport; clear only when that id is rebound to a replacement transport.
   useEffect(() => {
     if (!activeChatSessionId || !selectedPiSession) return
-    if (resumeQueuedOwnerBySessionIdRef.current.get(activeChatSessionId) === selectedPiSession) return
-    resumeQueuedOwnerBySessionIdRef.current.set(activeChatSessionId, selectedPiSession)
+    let ownerToken = resumeQueuedSessionTokensRef.current.get(selectedPiSession)
+    if (ownerToken === undefined) {
+      ownerToken = ++resumeQueuedSessionTokenSeqRef.current
+      resumeQueuedSessionTokensRef.current.set(selectedPiSession, ownerToken)
+    }
+    if (resumeQueuedOwnerTokenBySessionIdRef.current.get(activeChatSessionId) === ownerToken) return
+    resumeQueuedOwnerTokenBySessionIdRef.current.set(activeChatSessionId, ownerToken)
     setQueueMutationPending(false)
     setResumeQueuedPendingSessionIds((previous) => {
       if (!previous.has(activeChatSessionId)) return previous
