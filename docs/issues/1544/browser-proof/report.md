@@ -4,7 +4,7 @@
 
 - **Actual PR base / before:** `3db6a237d0ace94c83fb4967e43407d65202706e`. This is the original PR base reported by GitHub and contains the callback-before-reducer bug. The source-backed fixture uses normal hydration (rather than the later `hydrateMessages=false` path), so the exact base can establish its event stream before the prompt without importing unrelated first-prompt behavior.
 - **Repaired production code:** `1f91c319958f0a2d37b2badb13174b4068234055`.
-- **Exact proof head:** `0e888054d324bb054c6cfd48e30d9fc32ba046c4`. Commits after the code SHA contain only Bead/proof artifacts and the bounded cold-start timeout.
+- **Final exact proof/artifact head:** `fd08b2b3d3918c9a6a8ab1d49b831bbba60ae939`. Commits after the code SHA contain only Bead/proof artifacts, the bounded cold-start timeout, presentation generation, and metadata sanitization.
 - **Fixture:** one redacted prompt, session `ownership-proof`, fixed model `anthropic/proof-model`, no credentials, customer data, network backend, or host paths in artifacts.
 - **Viewports:** desktop `1440×900`; mobile `390×844`. Playwright scales recorded video to its codec-safe maximum (`800×500` and `368×800` respectively); assertions run at the declared viewport.
 
@@ -35,7 +35,7 @@ The base is intentionally asserted to reproduce two false callbacks rather than 
 
 ## Commands
 
-Executed in exact-SHA sandbox lease `eb74e455-df8e-40f8-b519-cd909155c6a7` after `git rev-parse HEAD` and `.factory-sha` both returned the proof head:
+Executed on final head in exact-SHA sandbox lease `2f8877ef-485a-4f07-9234-cae31e17d4cd` after `git rev-parse HEAD` and `.factory-sha` both returned `fd08b2b3d3918c9a6a8ab1d49b831bbba60ae939`:
 
 ```bash
 mkdir -p /tmp/pr1544-proof-base
@@ -71,7 +71,7 @@ Artifact integrity is recorded in [`results/SHA256SUMS`](results/SHA256SUMS) and
 
 ## Relevant package proof
 
-At proof head `0e888054d` in the same sandbox:
+At final proof/artifact head `fd08b2b3d` in the same sandbox:
 
 - focused Vitest — PASS, 3 files / 184 tests, no type errors;
 - `pnpm --filter @hachej/boring-agent typecheck` — PASS;
