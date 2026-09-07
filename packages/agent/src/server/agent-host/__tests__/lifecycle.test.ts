@@ -288,8 +288,8 @@ describe('Agent Host lifecycle', () => {
 
     const reopened = new SqliteAgentRequestLedger(join(fixture.value.sessionRoot!, '.agent-request-ledger.sqlite'))
     await expect(reopened.read(createRequestKey('harness-stuck'))).resolves.toMatchObject({
-      state: 'outcome-unknown',
-      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED } },
     })
     reopened.close()
 

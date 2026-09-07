@@ -10,6 +10,7 @@ import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
+import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
@@ -28,6 +29,16 @@ async function root() {
 }
 
 const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
+
+const persistedScriptedHarness: AgentHarnessFactory = async (input) => ({
+  ...createScriptedPiHarness(input),
+  sessions: new PiSessionStore(input.cwd, {
+    sessionDir: input.sessionDir,
+    sessionRoot: input.sessionRoot,
+    sessionNamespace: input.sessionNamespace,
+    storageCwd: input.cwd,
+  }),
+})
 
 function options(sessionRoot: string) {
   return {
@@ -98,14 +109,14 @@ describe('createAgentHost', () => {
 
     const first = await createAgentHost({
       ...options(sessionRoot),
-      harnessFactory: createScriptedPiHarness,
+      harnessFactory: persistedScriptedHarness,
     })
     const ref = await first.gateway.createSession(input)
     await first.host.close()
 
     const restarted = await createAgentHost({
       ...options(sessionRoot),
-      harnessFactory: createScriptedPiHarness,
+      harnessFactory: persistedScriptedHarness,
     })
     await expect(restarted.gateway.createSession(input)).resolves.toEqual(ref)
     await expect(restarted.gateway.listSessions({ scope })).resolves.toMatchObject({
@@ -1395,7 +1406,7 @@ describe('createAgentHost', () => {
         ...options(workspaceRoot),
         // Metering rejects this request before harness execution. Keep the test
         // on that causal seam instead of paying real-provider discovery.
-        harnessFactory: createScriptedPiHarness,
+        harnessFactory: persistedScriptedHarness,
         metering: {
           isEnabled: () => true,
           reserveRun,
