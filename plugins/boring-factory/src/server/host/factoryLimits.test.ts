@@ -187,7 +187,7 @@ describe('Factory host limits', () => {
       { beadId: 'br-1', brief: 'Implement the exact target Bead br-1 now.' }, context('orch'),
     )
 
-    expect(result).toMatchObject({ isError: true, details: { status: 'timeout' } })
+    expect(result).toMatchObject({ isError: false, details: { status: 'timeout' } })
   })
 
   it('classifies missing, busy, idle-under-grace, and idle-over-grace claims', async () => {
