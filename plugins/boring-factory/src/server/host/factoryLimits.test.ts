@@ -72,6 +72,7 @@ interface FakeAppOptions {
   readonly repeatWorkerCursor?: boolean
   readonly workerSessionPageCount?: number
   readonly crashAfterSessionCreation?: boolean
+  readonly sessionCreationStatusCode?: number
 }
 
 function fakeApp(
@@ -106,8 +107,8 @@ function fakeApp(
         if (request.method === 'POST' && request.url.endsWith('/sessions')) {
           const sessionId = childSessionIds[created++] ?? `child-${created}`
           return {
-            statusCode: 201,
-            body: '',
+            statusCode: options.sessionCreationStatusCode ?? 201,
+            body: options.sessionCreationStatusCode && options.sessionCreationStatusCode !== 201 ? 'session unavailable' : '',
             json: <T>() => {
               if (options.crashAfterSessionCreation) throw new Error('simulated host crash before ledger attach')
               return { sessionId } as T
@@ -412,11 +413,11 @@ describe('Factory host limits', () => {
     expect(brCalls.some((args) => args[0] === 'comments' && String(args[4]).includes('2/2'))).toBe(true)
   })
 
-  it('flags the review-round cap while still running the capped review', async () => {
+  it('runs the last allowed review and refuses sequential N+1 before creating a session', async () => {
     const stateRoot = await makeStateRoot()
     const { registry, sessionBindings } = dependencies()
     const { runBr } = fakeBr()
-    const { app } = fakeApp([], ['review-1', 'review-2'])
+    const { app, calls } = fakeApp([], ['review-1', 'review-2', 'review-3'])
     const handle = createFactoryDelegatePlugin({
       stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
       env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '2' }, timeoutMs: 1_000,
@@ -426,9 +427,130 @@ describe('Factory host limits', () => {
 
     const first = await tool.execute({ beadId: 'br-1', brief: 'Review Bead br-1 at abcdef1 and report findings.' }, context('worker', 'r1'))
     const second = await tool.execute({ beadId: 'br-1', brief: 'Review Bead br-1 at abcdef2 and report findings.' }, context('worker', 'r2'))
+    const refused = await tool.execute({ beadId: 'br-1', brief: 'Review Bead br-1 at abcdef3 and report findings.' }, context('worker', 'r3'))
+
     expect(first.details).toMatchObject({ reviewRound: 1, capReached: false })
     expect(second.details).toMatchObject({ reviewRound: 2, capReached: true })
-    expect((second.details as { capInstructions: string }).capInstructions).toContain('Hand off at the current SHA')
+    expect((second.details as { capInstructions: string }).capInstructions).toContain('Orchestrator must escalate')
+    expect(refused).toMatchObject({
+      isError: true,
+      details: { code: 'REVIEW_ROUND_CAP_REACHED', reviewTarget: 'bead:br-1', current: 2, maximum: 2, blocked: true },
+    })
+    expect((refused.details as { message: string }).message).toContain('Do not infer approval')
+    expect(calls.filter((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toHaveLength(2)
+    expect(calls.filter((call) => call.method === 'POST' && call.url.endsWith('/prompt'))).toHaveLength(2)
+  })
+
+  it('serializes concurrent review admissions at the final slot', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const { app, calls } = fakeApp([], ['review-only'])
+    const handle = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    handle.bind(app as never)
+    const tool = toolNamed(handle, 'boring-worker', 'fresh_review')
+
+    const results = await Promise.all([
+      tool.execute({ beadId: 'br-1', brief: 'Review Bead br-1 at abcdef1 in final slot A.' }, context('worker', 'r1')),
+      tool.execute({ beadId: 'br-1', brief: 'Review Bead br-1 at abcdef2 in final slot B.' }, context('worker', 'r2')),
+    ])
+
+    expect(results.filter((result) => result.isError)).toHaveLength(1)
+    expect(results.filter((result) => !result.isError)[0]?.details).toMatchObject({ reviewRound: 1, capReached: true })
+    expect(results.filter((result) => result.isError)[0]?.details).toMatchObject({ code: 'REVIEW_ROUND_CAP_REACHED', current: 1, maximum: 1 })
+    expect(calls.filter((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toHaveLength(1)
+  })
+
+  it('enforces the persisted review cap after host restart', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const firstApp = fakeApp([], ['review-1'])
+    const firstHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    firstHost.bind(firstApp.app as never)
+    await toolNamed(firstHost, 'boring-worker', 'fresh_review').execute(
+      { beadId: 'br-1', brief: 'Review Bead br-1 at abcdef1 before restart.' }, context('worker', 'r1'),
+    )
+
+    const restartedApp = fakeApp([], ['review-2'])
+    const restartedHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    restartedHost.bind(restartedApp.app as never)
+    const refused = await toolNamed(restartedHost, 'boring-worker', 'fresh_review').execute(
+      { beadId: 'br-1', brief: 'Review Bead br-1 at abcdef2 after restart.' }, context('worker', 'r2'),
+    )
+
+    expect(refused.details).toMatchObject({ code: 'REVIEW_ROUND_CAP_REACHED', current: 1, maximum: 1 })
+    expect(restartedApp.calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(false)
+  })
+
+  it('counts a review reserved before a crash-before-attach and refuses after restart', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const crashingApp = fakeApp([], ['orphan-review'], { crashAfterSessionCreation: true })
+    const firstHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    firstHost.bind(crashingApp.app as never)
+    const crashed = await toolNamed(firstHost, 'boring-worker', 'fresh_review').execute(
+      { beadId: 'br-1', brief: 'Review Bead br-1 at abcdef1 then crash before attach.' }, context('worker', 'r1'),
+    )
+    expect(crashed).toMatchObject({ isError: true, details: { code: 'DELEGATE_FAILED' } })
+    const persisted = JSON.parse(await readFile(resolve(stateRoot, 'dispatches.json'), 'utf8')) as {
+      reviews: Array<{ outcome: string; childSessionId?: string; round: number }>
+    }
+    expect(persisted.reviews).toEqual([expect.objectContaining({ outcome: 'reserved', round: 1 })])
+    expect(persisted.reviews[0]!.childSessionId).toBeUndefined()
+
+    const restartedApp = fakeApp([], ['review-2'])
+    const restartedHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    restartedHost.bind(restartedApp.app as never)
+    const refused = await toolNamed(restartedHost, 'boring-worker', 'fresh_review').execute(
+      { beadId: 'br-1', brief: 'Retry review Bead br-1 at abcdef2 after crash.' }, context('worker', 'r2'),
+    )
+    expect(refused.details).toMatchObject({ code: 'REVIEW_ROUND_CAP_REACHED', current: 1, maximum: 1 })
+    expect(restartedApp.calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(false)
+  })
+
+  it('counts a failed review-session creation against the cap', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const failingApp = fakeApp([], ['failed-review'], { sessionCreationStatusCode: 503 })
+    const firstHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    firstHost.bind(failingApp.app as never)
+    const failed = await toolNamed(firstHost, 'boring-worker', 'fresh_review').execute(
+      { beadId: 'br-1', brief: 'Review Bead br-1 at abcdef1 despite transport failure.' }, context('worker', 'r1'),
+    )
+    expect(failed).toMatchObject({ isError: true, details: { code: 'CREATE_SESSION_FAILED', status: 503 } })
+
+    const restartedApp = fakeApp([], ['review-2'])
+    const restartedHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    restartedHost.bind(restartedApp.app as never)
+    const refused = await toolNamed(restartedHost, 'boring-worker', 'fresh_review').execute(
+      { beadId: 'br-1', brief: 'Retry failed review Bead br-1 at abcdef2.' }, context('worker', 'r2'),
+    )
+    expect(refused.details).toMatchObject({ code: 'REVIEW_ROUND_CAP_REACHED', current: 1, maximum: 1 })
+    expect(restartedApp.calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(false)
   })
 
   it('serializes SHA-lineage resolution with concurrent review appends that omit beadId', async () => {
@@ -449,6 +571,38 @@ describe('Factory host limits', () => {
 
     expect(results.map((result) => (result.details as { reviewRound: number }).reviewRound).sort()).toEqual([1, 2])
     expect(new Set(results.map((result) => (result.details as { reviewTarget: string }).reviewTarget)).size).toBe(1)
+  })
+
+  it('preserves an inferred no-Bead SHA lineage across changed SHAs and restart', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const firstApp = fakeApp([], ['review-1'])
+    const firstHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    firstHost.bind(firstApp.app as never)
+    const first = await toolNamed(firstHost, 'boring-worker', 'fresh_review').execute(
+      { brief: 'Review the untracked target at abcdef1 without a Bead id.' }, context('worker', 'r1'),
+    )
+    expect(first.details).toMatchObject({ reviewRound: 1, reviewTarget: 'sha-lineage:abcdef1', capReached: true })
+
+    const restartedApp = fakeApp([], ['review-2'])
+    const restartedHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr,
+      env: { BORING_FACTORY_MAX_REVIEW_ROUNDS: '1' }, timeoutMs: 1_000,
+    })
+    restartedHost.bind(restartedApp.app as never)
+    const refused = await toolNamed(restartedHost, 'boring-worker', 'fresh_review').execute(
+      { brief: 'Review the changed untracked target at abcdef2 without a Bead id.' }, context('worker', 'r2'),
+    )
+
+    expect(refused).toMatchObject({
+      isError: true,
+      details: { code: 'REVIEW_ROUND_CAP_REACHED', reviewTarget: 'sha-lineage:abcdef1', current: 1, maximum: 1 },
+    })
+    expect(restartedApp.calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(false)
   })
 
   it('fails closed when a Bead or ledger inference conflicts with an authoritative binding', async () => {

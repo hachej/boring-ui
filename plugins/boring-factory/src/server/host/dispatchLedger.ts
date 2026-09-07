@@ -42,12 +42,17 @@ export interface FactoryReviewRecord {
   readonly beadId?: string
   readonly sha?: string
   readonly parentSessionId?: string
-  readonly childSessionId: string
+  /** Absent while admission is durably reserved before child-session creation. */
+  readonly childSessionId?: string
   readonly round: number
   readonly timestamp: string
   readonly updatedAt: string
   readonly outcome: FactoryReviewOutcome
 }
+
+export type FactoryReviewReservation =
+  | { readonly accepted: true; readonly record: FactoryReviewRecord }
+  | { readonly accepted: false; readonly targetKey: string; readonly current: number; readonly maximum: number }
 
 export interface FactoryDispatchState {
   readonly version: 1
@@ -61,7 +66,11 @@ export interface FactoryDispatchLedger {
   reserveDispatch(record: Pick<FactoryDispatchRecord, 'epicKey' | 'beadId' | 'timestamp'>): Promise<FactoryDispatchRecord>
   attachDispatch(id: string, childSessionId: string, outcome: FactoryDispatchOutcome): Promise<FactoryDispatchRecord>
   updateDispatch(id: string, outcome: FactoryDispatchOutcome): Promise<FactoryDispatchRecord>
-  appendReview(record: Omit<FactoryReviewRecord, 'id' | 'updatedAt' | 'round'>): Promise<FactoryReviewRecord>
+  reserveReview(
+    record: Omit<FactoryReviewRecord, 'id' | 'updatedAt' | 'round' | 'childSessionId' | 'outcome'>,
+    maximum: number,
+  ): Promise<FactoryReviewReservation>
+  attachReview(id: string, childSessionId: string, outcome: FactoryReviewOutcome): Promise<FactoryReviewRecord>
   updateReview(id: string, outcome: FactoryReviewOutcome): Promise<FactoryReviewRecord>
   markRefusal(input: Omit<FactoryCapRefusalMarker, 'id'>): Promise<{ readonly marker: FactoryCapRefusalMarker; readonly created: boolean }>
 }
@@ -158,8 +167,8 @@ export function createFactoryDispatchLedger(stateRoot: string): FactoryDispatchL
         return { state: { ...state, dispatches }, result: updated }
       })
     },
-    async appendReview(record) {
-      return await mutate((state) => {
+    async reserveReview(record, maximum) {
+      return await mutate<FactoryReviewReservation>((state) => {
         const priorTarget = record.beadId === undefined
           ? state.reviews.find((candidate) => (
               candidate.epicKey === record.epicKey
@@ -168,11 +177,33 @@ export function createFactoryDispatchLedger(stateRoot: string): FactoryDispatchL
             ))?.targetKey
           : undefined
         const targetKey = priorTarget ?? record.targetKey
-        const round = state.reviews.filter((candidate) => (
+        const current = state.reviews.filter((candidate) => (
           candidate.epicKey === record.epicKey && candidate.targetKey === targetKey
-        )).length + 1
-        const stored: FactoryReviewRecord = { ...record, targetKey, id: randomUUID(), round, updatedAt: record.timestamp }
-        return { state: { ...state, reviews: [...state.reviews, stored] }, result: stored }
+        )).length
+        if (current >= maximum) {
+          return { state, result: { accepted: false, targetKey, current, maximum } }
+        }
+        const stored: FactoryReviewRecord = {
+          ...record,
+          targetKey,
+          id: randomUUID(),
+          round: current + 1,
+          updatedAt: record.timestamp,
+          outcome: 'reserved',
+        }
+        return { state: { ...state, reviews: [...state.reviews, stored] }, result: { accepted: true, record: stored } }
+      })
+    },
+    async attachReview(id, childSessionId, outcome) {
+      return await mutate((state) => {
+        let updated: FactoryReviewRecord | undefined
+        const reviews = state.reviews.map((record) => {
+          if (record.id !== id) return record
+          updated = { ...record, childSessionId, outcome, updatedAt: new Date().toISOString() }
+          return updated
+        })
+        if (!updated) throw new Error(`review record ${id} was not found`)
+        return { state: { ...state, reviews }, result: updated }
       })
     },
     async updateReview(id, outcome) {
