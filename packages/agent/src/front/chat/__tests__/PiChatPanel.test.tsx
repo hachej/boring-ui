@@ -1105,6 +1105,45 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByText('Old scope resume failed')).toBeNull()
   })
 
+  test('transfers Resume ownership when apiBaseUrl replaces the external transport', async () => {
+    const queue = { followUps: [{ id: 'q1', kind: 'followup' as const, displayText: 'queued message', clientNonce: 'nonce-1', clientSeq: 1 }] }
+    const oldTransport = new FakeRemotePiSession(remoteState({ sessionId: 'pi-1', queue }))
+    const replacementTransport = new FakeRemotePiSession(remoteState({ sessionId: 'pi-1', queue }))
+    const oldResume = deferred<{ accepted: true; cursor: number }>()
+    const replacementResume = deferred<{ accepted: true; cursor: number }>()
+    oldTransport.interrupt.mockImplementationOnce(() => oldResume.promise)
+    replacementTransport.interrupt.mockImplementationOnce(() => replacementResume.promise)
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
+      (options.apiBaseUrl === 'https://old.test' ? oldTransport : replacementTransport) as unknown as RemotePiSession
+    ))
+    const props = {
+      sessionId: 'pi-1',
+      agentTypeId: 'default',
+      workspaceId: 'workspace-1',
+      storageScope: 'scope-1',
+      serverResourcesEnabled: false,
+      createRemoteSession,
+    }
+    const nudge = () => screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }) as HTMLButtonElement
+    const { rerender } = render(<PiChatPanel {...props} apiBaseUrl="https://old.test" />)
+    await screen.findByText('queued message')
+    fireEvent.click(nudge())
+    await waitFor(() => expect(oldTransport.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
+
+    rerender(<PiChatPanel {...props} apiBaseUrl="https://replacement.test" />)
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(nudge().disabled).toBe(false))
+    fireEvent.click(nudge())
+    await waitFor(() => expect(replacementTransport.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
+
+    await act(async () => { oldResume.reject(new Error('Disposed transport Resume failed')) })
+    expect(screen.queryByText('Disposed transport Resume failed')).toBeNull()
+    expect(nudge().disabled).toBe(true)
+    await act(async () => { replacementResume.resolve({ accepted: true, cursor: 8 }) })
+    await waitFor(() => expect(nudge().disabled).toBe(false))
+    expect(screen.queryByText('Disposed transport Resume failed')).toBeNull()
+  })
+
   test('renders optimistic queued follow-ups in the composer banner before server queue metadata arrives', async () => {
     const remote = new FakeRemotePiSession(remoteState({
       status: 'streaming',
