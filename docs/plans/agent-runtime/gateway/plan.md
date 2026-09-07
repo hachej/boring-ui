@@ -342,12 +342,12 @@ interface CreateAgentSessionInput extends AuthorizedAgentScope {
   readonly requestId: string         // caller-generated idempotency key
   readonly title?: string
 }
-// Within the active ledger's published retention window, the same requestId
-// yields the same AgentSessionRef and never a second transcript. The window
-// is level-defined: process-lifetime at Level B — an HTTP retry that crosses
-// a Host restart therefore degrades to today's wire semantics (a new
-// session), an explicitly accepted Level-B limitation — and ≥24h durable at
-// Level D (streaming lane).
+// For as long as its ledger record is retained, the same requestId yields the
+// same AgentSessionRef and never a second transcript. Production Level B uses
+// the durable transactional request ledger, so completed create receipts
+// survive Host restart. Request-ledger durability is independent of Level D's
+// durable event offsets; a bounded eviction policy is a separate retention
+// contract and is not implied by the B/D replay level.
 
 interface RenameAgentSessionInput extends AuthorizedAgentScope {
   readonly ref: AgentSessionRef
@@ -579,8 +579,9 @@ revocation and forged/cross-scope values fail closed; create/rename/delete/
 send/control/queue-clear idempotency (same `(scope, operation, target,
 requestId)` + digest ⇒
 same typed receipt, conflicting digest ⇒ `AGENT_REQUEST_CONFLICT`); command
-receipts survive Host restart at Level D; close-is-unsubscribe; current status/queue transitions;
-monotonic `seq` with no duplicates at Level D and documented-gap at Level B;
+receipts survive Host restart with the production durable ledger at Level B and
+Level D; close-is-unsubscribe; current status/queue transitions; monotonic `seq`
+with no duplicates at Level D and documented-gap at Level B;
 pagination conformance parameterized separately from replay level — Level B
 asserts keyset total order, scope/filter cursor binding, and the documented
 mutation semantics (a moved/updated row may shift relative to the traversal,
@@ -604,15 +605,20 @@ caller identity in a separate ownership token. Unmarked pending records are
 never implicitly released after reopen. Only after an accepted receipt is
 durable does the Host advance to `in-flight`, then store the completed typed receipt before
 acknowledgement. A crash after external admission succeeds but before local
-receipt persistence is reconciled by the adapter with the same key—never by a
-second non-idempotent admission call. Restart of an unresolved in-flight record
-returns `AGENT_REQUEST_OUTCOME_UNKNOWN`; it never repeats the effect. Completed
-create records/tombstones outlive session deletion
-for the configured Host idempotency-retention window, so delete + retry cannot
-create a second transcript. Conformance covers concurrent retry, cross-scope,
-cross-Agent and cross-session same IDs, acknowledgement loss, and crashes at
-admission/effect/receipt boundaries. Level D stream cases remain skipped for the
-streaming lane.
+receipt persistence must never cause a second non-idempotent admission call.
+The shipped Host has no startup reconciler: after abrupt restart, an unmarked
+`pending-admission`, `admission-accepted`, or `in-flight` record remains in that
+state and a same-key retry returns `AGENT_REQUEST_IN_PROGRESS`. It becomes
+`AGENT_REQUEST_OUTCOME_UNKNOWN` only when the live Host explicitly records that
+terminal state after an ambiguous action failure or a bounded graceful-drain
+timeout. Completed create records/tombstones outlive session deletion while the
+record is retained, so delete + retry cannot create a second transcript.
+Level-B conformance covers concurrent retry, cross-scope, cross-Agent and
+cross-session same IDs, acknowledgement loss, explicit retryable-admission
+reclaim across reopen, terminal replay across reopen, and preservation (without
+reclaim or implicit terminalization) of unresolved records across reopen. The
+automatic crash-reconciliation matrix and Level D stream cases remain skipped
+for the streaming lane.
 
 `AgentRequestLedger` has durable `prepare(key,digest)`,
 `markAdmissionRetryable(key)`, `acceptAdmission(key,admissionReceipt)`,
@@ -620,20 +626,24 @@ streaming lane.
 `markOutcomeUnknown(key,error)`, and `read(key)` operations
 over `pending-admission | admission-accepted | in-flight | rejected | completed
 | outcome-unknown` records. Same-digest retries return the same terminal
-rejection. Pending admission is safe to reconcile/retry after restart; only
-unresolved in-flight work becomes outcome-unknown. Production Host composition
+rejection. Only a `pending-admission` record explicitly marked `retryable` is
+safe to reclaim after restart. Unmarked pending, accepted, and in-flight records
+remain nonterminal/in-progress until an owner with evidence transitions them;
+reopening the ledger does not itself convert in-flight work to outcome-unknown.
+Production Host composition
 requires a transactional durable ledger: omission of `requestLedger` constructs
 the built-in SQLite ledger at `requestLedgerPath`, or at a Host-owned path
 derived from `sessionRoot`. An injected ledger must also report
 `durable-transactional`. The in-memory implementation remains available only
 through an explicit `inMemoryRequestLedgerMode: 'test' | 'development'` opt-in;
 it is never an implicit production fallback. The durable ledger provides
-restart receipt/service-error replay, completed-record/create-tombstone
-retention, and active `AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation. Level-B
-conformance covers admission rejection before mutation, concurrent retry,
-retryable adapter failure, conflict, and durable restart behavior. Level D adds
-durable stream offsets and retention semantics; it does not defer request-ledger
-durability.
+restart receipt/service-error replay and persistence of completed records/create
+tombstones; the current SQLite implementation does not perform startup state
+reconciliation or automatic eviction. Level-B conformance covers admission
+rejection before mutation, concurrent retry, retryable adapter failure,
+conflict, and the exact durable reopen behavior above. Level D adds durable
+stream offsets plus a separately implemented/proven crash reconciler and
+retention policy; it does not defer request-ledger durability.
 
 The server-only ledger/admission contract is exact (none of these records is a
 transport DTO):
@@ -1022,17 +1032,21 @@ server-only `{ kind: 'service', error: AgentStableServiceErrorDTO }` record:
 the error must have a canonical shared `ErrorCode`, an integer 4xx/5xx status
 (or the canonical payment status), and optional boolean `retryable`. The same
 stable service shape is replayed on a same-ID retry; unprojectable failures
-become outcome-unknown. Retry-across-restart replay requires the durable Level-D
-ledger; at Level B the record clears with the process. Service failures never
-enter the public Gateway error union. This compatibility mapping is not
-advertised as the strong reconcilable admission level.
+become outcome-unknown. In production Level B, the durable ledger replays a
+persisted service failure across Host restart; only the explicit test/development
+in-memory mode clears records with the process. Service failures never enter the
+public Gateway error union. This compatibility mapping is not advertised as the
+strong reconcilable admission level.
 
 Lifecycle ownership is single and explicit: the mounted plugin calls
 `host.drain()` from `preClose`, which rejects new work, proactively closes or
 cancels unbounded event subscriptions, waits for finite effects only until
-`shutdownGraceMs`, then marks remaining effects outcome-unknown (durably at
-Level D; process-lifetime at Level B, where a subsequent restart clears the
-record — same accepted limitation as create retention) and force-aborts them. Resource generations are fenced: late callbacks cannot write
+`shutdownGraceMs`, then uses the production durable ledger to reject still
+pre-effect records with `AGENT_GATEWAY_CLOSED` and mark tracked `in-flight`
+effects `AGENT_REQUEST_OUTCOME_UNKNOWN`; explicit test/development in-memory
+mode retains those terminalizations only for that process. Abrupt process death
+cannot run this drain path and receives no startup terminalization in Level B.
+Resource generations are fenced: late callbacks cannot write
 receipts, mutate a recycled lease, or acknowledge success. An adapter that
 ignores cancellation is safely detached before `preClose` returns. `onClose`
 calls `host.close()` to dispose bindings, Environment leases, then the mode
@@ -1189,7 +1203,8 @@ recorded on the epic; graph creation is not approval.
    trusted-proxy compatibility sentinel unless a separately approved migration
    proves a real collision.
 9. Proof: full Agent suites + Level B + request-ledger ack-loss/conflict/
-   concurrent-retry tests at the process-lifetime floor + pre-AH0 legacy
+   concurrent-retry and durable-reopen tests (terminal replay plus unresolved
+   state preservation without implicit reconciliation) + pre-AH0 legacy
    transcript read/list/stream fixture + golden HTTP contracts + two
    Workspaces × two Agents through one gateway, with independent scope
    roots/session namespaces and no actor bleed + fleet/prompt compilation
@@ -1212,17 +1227,17 @@ maps the old callback.
 
 1. **Streaming** (first): wire `SqliteEventStreamStore` into
    `buildAgentComposition`, unconditional durable append, offset reconnect,
-   collapse `AgentLiveEventBuffer`; flip conformance to Level D. Level D also
-   activates the owner-descoped durability set: the durable request ledger
-   (restart receipt replay, ≥24h tombstones, active
-   `AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation, crash-boundary matrix) and
-   the durable checkpointed activity index with startup reconciliation. The
+   collapse `AgentLiveEventBuffer`; flip conformance to Level D. The production
+   request ledger is already durable at Level B (including restart replay of
+   terminal receipts); Level D adds the still-unshipped request-ledger recovery
+   set: a specified retention policy, startup reconciliation backed by external
+   admission/effect evidence, and the full crash-boundary matrix. It must not
+   infer `outcome-unknown` merely from finding `in-flight`. The durable
+   checkpointed activity index also gains startup reconciliation. The
    snapshot-registry pagination MAY land here or wait for the v2 pool cursor.
-   Upgrade boundary: Level-D retention guarantees apply to requests admitted
-   at Level D; activation occurs across a Host restart, so the empty durable
-   ledger has the same semantics as any Level-B restart. One conformance case
-   covers a pre-upgrade requestId retried post-upgrade (treated as a new
-   admission; documented).
+   Upgrade changes event replay/recovery capability without emptying or
+   reinterpreting existing request-ledger rows; a pre-upgrade unresolved row
+   remains in progress until the new reconciler proves a safe terminal state.
 2. **Catalog revival**: `AgentHostAgentSpec.definition` backed by
    `materializeAgentDirectory`/digests; `AgentSummary.definition` populated.
 3. **#861**: remove Bash/Sandbox→Agent back-edges (required before v2 package
@@ -1297,10 +1312,11 @@ intended for external authors.**
       remains an unforgeable app capability.
 - [ ] Request receipts pass concurrent retry, cross-scope same-ID,
       cross-Agent/session same-ID, acknowledgement-loss, retryable-admission,
-      and conflict tests at the Level-B process-lifetime floor; effect
-      admission rejects before mutation for every Gateway effect. The
-      crash-reconciliation/Host-restart matrix is a Level D requirement
-      (streaming lane).
+      conflict, and durable reopen tests at Level B; effect admission rejects
+      before mutation for every Gateway effect. Level-B reopen proves terminal
+      replay and preserves unresolved rows as in-progress without implicit
+      conversion. Automatic startup reconciliation and the complete abrupt-crash
+      boundary matrix are Level D requirements (streaming lane).
 - [ ] Host fleet startup rejects duplicate/unsafe Agent IDs and unknown
       plugin/config bindings; a declared model policy with no app compiler
       fails closed (`AGENT_FLEET_MODEL_POLICY_UNCOMPILED`); prompt precedence
@@ -1352,11 +1368,15 @@ wrappers/legacy routes (contraction approval); #861.
 
 ## 13. Adversarial review findings and status
 
-> **Note (2026-07-23):** the dispositions below record the pre-O-R23 review
-> state. Where a disposition names durable-ledger/rename-journal/
-> snapshot-pagination/activity-checkpoint machinery in the present tense, the
-> normative v0 behavior is the owner-descope delta in §6/§8/§10; those
-> dispositions describe the Level D/v2 form of the fix.
+> **Note (updated 2026-09-07):** the dispositions below are historical review
+> records, not the current runtime contract. O-R23/DS-R1 originally deferred the
+> durable request ledger to Level D; the subsequently shipped AH0 production
+> composition requires SQLite (or another transactional durable ledger) at
+> Level B. The normative current behavior is §6.8/§8/§10 above: terminal replay
+> survives reopen, unresolved rows are preserved without startup reconciliation,
+> and Level D still owns evidence-backed crash reconciliation and its matrix.
+> Other references below to rename journals, snapshot pagination, or activity
+> checkpoints continue to describe their Level D/v2 form.
 
 Concrete consolidated findings (duplicate reviewer reports share one row):
 

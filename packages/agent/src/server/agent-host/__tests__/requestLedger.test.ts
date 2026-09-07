@@ -219,18 +219,26 @@ describe('SqliteAgentRequestLedger', () => {
     reopened.close()
   }, 20_000)
 
-  it.each(['pending-admission', 'admission-accepted', 'in-flight', 'outcome-unknown'] as const)(
-    'does not reclaim %s after reopen without a proven safe release',
+  it.each(['pending-admission', 'admission-accepted', 'in-flight', 'rejected', 'completed', 'outcome-unknown'] as const)(
+    'preserves %s across reopen without implicit reclaim or reconciliation',
     async (state) => {
       const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
       const initial = new SqliteAgentRequestLedger(path)
       try {
         await initial.prepare(key, 'digest-a')
-        if (state !== 'pending-admission') await initial.acceptAdmission(key, 'admitted')
-        if (state === 'in-flight' || state === 'outcome-unknown') await initial.beginEffect(key)
-        if (state === 'outcome-unknown') await initial.markOutcomeUnknown(key, {
-          code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN, message: 'unknown',
-        })
+        if (state === 'rejected') {
+          await initial.reject(key, {
+            kind: 'gateway',
+            error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED, message: 'denied' },
+          })
+        } else if (state !== 'pending-admission') {
+          await initial.acceptAdmission(key, 'admitted')
+          if (state !== 'admission-accepted') await initial.beginEffect(key)
+          if (state === 'completed') await initial.complete(key, { accepted: true })
+          if (state === 'outcome-unknown') await initial.markOutcomeUnknown(key, {
+            code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN, message: 'unknown',
+          })
+        }
       } finally {
         initial.close()
       }
