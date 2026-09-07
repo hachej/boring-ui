@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
+const CI = process.env.CI === "true" || process.env.CI === "1"
 const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
 const E2E_COMPANY_CONTEXT_ROOT = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || resolve(APP_DIR, "e2e/fixtures/company-context"))
 const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
@@ -20,7 +21,9 @@ export default defineConfig({
     "apps/workspace-playground/e2e/**/*.spec.ts",
     "plugins/ask-user/e2e/**/*.spec.ts",
   ],
+  globalTimeout: CI ? 1_200_000 : undefined,
   timeout: 30_000,
+  forbidOnly: CI,
   // The playground tests share a single Vite dev server (one HMR socket,
   // one mockApi state, one localStorage origin). Running tests in
   // parallel makes them step on each other — resize handles get
@@ -29,10 +32,13 @@ export default defineConfig({
   // deterministic.
   workers: 1,
   fullyParallel: false,
-  retries: process.env.CI ? 1 : 0,
+  retries: CI ? 1 : 0,
+  reporter: CI ? [["line"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: `http://127.0.0.1:${VITE_PORT}`,
     headless: true,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   webServer: {
     // Pin to a non-default port so playwright never reuses an unrelated
