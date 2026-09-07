@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       workspace_bundle: ${{ steps.filter.outputs.workspace_bundle }}
+      cli_bundle: ${{ steps.filter.outputs.cli_bundle }}
       core_bundle: ${{ steps.filter.outputs.core_bundle }}
       e2e: ${{ steps.filter.outputs.e2e }}
       ui_review: ${{ steps.filter.outputs.ui_review }}
@@ -45,6 +46,7 @@ jobs:
           fi
 
           workspace_bundle=false
+          cli_bundle=false
           core_bundle=false
           e2e=false
           ui_review=false
@@ -55,6 +57,11 @@ jobs:
             case "$file" in
               pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|packages/workspace/*|packages/workspace/**|packages/ui/*|packages/ui/**|plugins/*/src/*.tsx|plugins/*/src/**/*.tsx|apps/workspace-playground/*|apps/workspace-playground/**)
                 workspace_bundle=true
+                ;;
+            esac
+            case "$file" in
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|packages/*|packages/**|plugins/*|plugins/**)
+                cli_bundle=true
                 ;;
             esac
             case "$file" in
@@ -80,6 +87,7 @@ jobs:
           done <<< "$files"
 
           echo "workspace_bundle=$workspace_bundle" >> "$GITHUB_OUTPUT"
+          echo "cli_bundle=$cli_bundle" >> "$GITHUB_OUTPUT"
           echo "core_bundle=$core_bundle" >> "$GITHUB_OUTPUT"
           echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
           echo "ui_review=$ui_review" >> "$GITHUB_OUTPUT"
@@ -195,6 +203,37 @@ jobs:
           BUNDLE_TARGET_INITIAL_KB: "150"
           BUNDLE_TARGET_TOTAL_KB: "800"
         run: pnpm ci:bundle-size
+
+  cli-bundle-budget:
+    name: CLI Front Resource Budget
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.cli_bundle == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build CLI front, report resources, and enforce JS/CSS budgets
+        env:
+          CLI_ENTRY_BUDGET_BYTES: "1000000"
+          CLI_EAGER_BUDGET_BYTES: "1000000"
+          CLI_STARTUP_BUDGET_BYTES: "2500000"
+          CLI_PRE_CHAT_JS_BUDGET_BYTES: "4000000"
+          CLI_PRE_CHAT_CSS_BUDGET_BYTES: "400000"
+          CLI_PRE_CHAT_RESOURCE_BUDGET_BYTES: "4100000"
+        run: pnpm ci:cli-bundle-size
 
   core-bundle-budget:
     name: Core Bundle Budget
@@ -672,7 +711,7 @@ jobs:
     name: PR Fast Summary
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    needs: [action-pins, lint, typecheck, unit-summary, invariants, bundle-budget, core-bundle-budget, e2e, remote-worker-smoke]
+    needs: [action-pins, lint, typecheck, unit-summary, invariants, bundle-budget, cli-bundle-budget, core-bundle-budget, e2e, remote-worker-smoke]
     steps:
       - name: Verify PR checks
         run: |
@@ -683,6 +722,7 @@ jobs:
             "unit=${{ needs.unit-summary.result }}" \
             "invariants=${{ needs.invariants.result }}" \
             "bundle=${{ needs.bundle-budget.result }}" \
+            "cli-bundle=${{ needs.cli-bundle-budget.result }}" \
             "core-bundle=${{ needs.core-bundle-budget.result }}" \
             "e2e=${{ needs.e2e.result }}" \
             "worker-smoke=${{ needs.remote-worker-smoke.result }}"; do
@@ -699,7 +739,7 @@ jobs:
     name: Main Green Summary
     if: always() && github.event_name == 'push'
     runs-on: ubuntu-latest
-    needs: [action-pins, lint, typecheck, bundle-budget, core-bundle-budget, unit-summary, invariants, e2e, remote-worker-smoke]
+    needs: [action-pins, lint, typecheck, bundle-budget, cli-bundle-budget, core-bundle-budget, unit-summary, invariants, e2e, remote-worker-smoke]
     steps:
       - name: Verify main checks
         run: |
@@ -708,6 +748,7 @@ jobs:
             "lint=${{ needs.lint.result }}" \
             "typecheck=${{ needs.typecheck.result }}" \
             "bundle=${{ needs.bundle-budget.result }}" \
+            "cli-bundle=${{ needs.cli-bundle-budget.result }}" \
             "core-bundle=${{ needs.core-bundle-budget.result }}" \
             "unit=${{ needs.unit-summary.result }}" \
             "invariants=${{ needs.invariants.result }}" \
@@ -725,7 +766,7 @@ jobs:
   publish-ci:
     name: Publish CI packages to npm
     needs: [main-green-summary]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: ${{ always() && needs.main-green-summary.result == 'success' && github.ref_name == 'main' && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -9,6 +9,7 @@ import { PostgresUserStore } from '../PostgresUserStore'
 import { ERROR_CODES } from '../../../../shared/errors'
 import type { CoreConfig } from '../../../../shared/types'
 import { describeWorkspaceStoreConformance } from '../../__tests__/storeConformance'
+import type { WorkspaceStoreCreateOptions } from '../../../app/types'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const ENCRYPTION_KEY_A = 'a'.repeat(64)
@@ -23,6 +24,7 @@ const BASE_CONFIG: CoreConfig = {
   staticDir: null,
   databaseUrl: TEST_DB_URL,
   stores: 'postgres',
+  defaultAgentTypeId: 'default',
   cors: { origins: ['http://localhost:3000'], credentials: true },
   bodyLimit: 16 * 1024 * 1024,
   logLevel: 'silent' as CoreConfig['logLevel'],
@@ -50,8 +52,8 @@ async function seedWorkspace(appId = 'orm1-app') {
   `
 
   const [workspace] = await sqlClient`
-    INSERT INTO workspaces (app_id, name, created_by, is_default)
-    VALUES (${appId}, 'ORM1 Workspace', ${owner.id}, false)
+    INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+    VALUES (${appId}, 'ORM1 Workspace', ${owner.id}, false, 'default')
     RETURNING id, app_id
   `
 
@@ -404,11 +406,23 @@ async function seedUser(tag?: string): Promise<string> {
   return row.id as string
 }
 
+function createWorkspace(
+  userId: string,
+  name: string,
+  appId: string,
+  options: Partial<WorkspaceStoreCreateOptions> = {},
+) {
+  return store.create(userId, name, appId, {
+    defaultAgentTypeId: 'default',
+    ...options,
+  })
+}
+
 describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('create', () => {
     it('returns a Workspace and auto-inserts the creator as owner member', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'My WS', APP_ID)
+      const ws = await createWorkspace(userId, 'My WS', APP_ID)
 
       expect(ws.id).toBeDefined()
       expect(ws.appId).toBe(APP_ID)
@@ -423,7 +437,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('is transactional — no orphan workspace when create fails', async () => {
       const fakeUser = '00000000-0000-0000-0000-ffffffffffff'
-      await expect(store.create(fakeUser, 'Bad', APP_ID)).rejects.toThrow()
+      await expect(createWorkspace(fakeUser, 'Bad', APP_ID)).rejects.toThrow()
 
       const [row] = await sqlClient`
         SELECT count(*)::int AS count FROM workspaces
@@ -464,8 +478,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       const userA = await seedUser('list-a')
       const userB = await seedUser('list-b')
 
-      await store.create(userA, 'WS-A', APP_ID)
-      await store.create(userB, 'WS-B', APP_ID)
+      await createWorkspace(userA, 'WS-A', APP_ID)
+      await createWorkspace(userB, 'WS-B', APP_ID)
 
       const listA = await store.list(userA, APP_ID)
       expect(listA).toHaveLength(1)
@@ -474,8 +488,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('filters by appId', async () => {
       const userId = await seedUser('list-app')
-      await store.create(userId, 'WS-App1', APP_ID)
-      await store.create(userId, 'WS-App2', APP_ID_2)
+      await createWorkspace(userId, 'WS-App1', APP_ID)
+      await createWorkspace(userId, 'WS-App2', APP_ID_2)
 
       const list1 = await store.list(userId, APP_ID)
       expect(list1).toHaveLength(1)
@@ -488,7 +502,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('excludes soft-deleted workspaces', async () => {
       const userId = await seedUser('list-del')
-      const ws = await store.create(userId, 'Gone', APP_ID)
+      const ws = await createWorkspace(userId, 'Gone', APP_ID)
       await store.delete(ws.id)
 
       const list = await store.list(userId, APP_ID)
@@ -497,8 +511,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('orders isDefault DESC, then createdAt DESC', async () => {
       const userId = await seedUser('list-ord')
-      const ws1 = await store.create(userId, 'First', APP_ID)
-      const ws2 = await store.create(userId, 'Second', APP_ID)
+      const ws1 = await createWorkspace(userId, 'First', APP_ID)
+      const ws2 = await createWorkspace(userId, 'Second', APP_ID)
 
       await sqlClient`UPDATE workspaces SET is_default = true WHERE id = ${ws1.id}`
 
@@ -511,7 +525,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('get', () => {
     it('returns workspace by id', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'GetMe', APP_ID)
+      const ws = await createWorkspace(userId, 'GetMe', APP_ID)
       const got = await store.get(ws.id)
       expect(got).not.toBeNull()
       expect(got!.name).toBe('GetMe')
@@ -524,7 +538,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns null for soft-deleted workspace', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'SoftDel', APP_ID)
+      const ws = await createWorkspace(userId, 'SoftDel', APP_ID)
       await store.delete(ws.id)
       expect(await store.get(ws.id)).toBeNull()
     })
@@ -533,7 +547,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('update', () => {
     it('updates name and returns updated workspace', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'Old', APP_ID)
+      const ws = await createWorkspace(userId, 'Old', APP_ID)
       const updated = await store.update(ws.id, { name: 'New' })
       expect(updated).not.toBeNull()
       expect(updated!.name).toBe('New')
@@ -541,7 +555,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns null for soft-deleted workspace', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'Del', APP_ID)
+      const ws = await createWorkspace(userId, 'Del', APP_ID)
       await store.delete(ws.id)
       expect(await store.update(ws.id, { name: 'Nope' })).toBeNull()
     })
@@ -550,7 +564,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('delete', () => {
     it('soft-deletes and sets deletedAt', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'ToDelete', APP_ID)
+      const ws = await createWorkspace(userId, 'ToDelete', APP_ID)
       const result = await store.delete(ws.id)
       expect(result).toEqual({ removed: true })
 
@@ -565,13 +579,169 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND })
     })
 
+    it('#1463: deleting the only default workspace then recreating one does not collide on idx_workspaces_default_per_user_app', async () => {
+      const userId = await seedUser()
+      const original = await createWorkspace(userId, 'Default WS', APP_ID, { isDefault: true })
+      expect(original.isDefault).toBe(true)
+
+      // Simulate the DELETE /api/v1/workspaces/:id route's soft-delete step.
+      const result = await store.delete(original.id)
+      expect(result).toEqual({ removed: true })
+      expect(await store.list(userId, APP_ID)).toHaveLength(0)
+
+      // Simulate the auto-recreate on the next GET /api/v1/workspaces: before
+      // the migration this insert failed with a duplicate-key error against
+      // idx_workspaces_default_per_user_app because the old tombstoned
+      // default row still satisfied the (unpartitioned-by-deleted_at) index.
+      const recreated = await createWorkspace(userId, 'Default workspace', APP_ID, { isDefault: true })
+      expect(recreated.isDefault).toBe(true)
+      expect(recreated.id).not.toBe(original.id)
+
+      // The user ends up with exactly one active default — never zero, never two.
+      const active = await store.list(userId, APP_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).toBe(recreated.id)
+      expect(active[0].isDefault).toBe(true)
+    })
+
+    it('#1463 migration safety: the narrowed index still rejects two live defaults for the same (created_by, app_id)', async () => {
+      const userId = await seedUser()
+      await createWorkspace(userId, 'First', APP_ID, { isDefault: true })
+      // The old, broader index already rejected this (two live defaults, or a
+      // live default alongside a tombstoned one) — narrowing the predicate to
+      // also require deleted_at IS NULL only stops excluding the tombstoned
+      // case; it does not loosen the still-live-rows invariant.
+      let caught: unknown
+      try {
+        await createWorkspace(userId, 'Second', APP_ID, { isDefault: true })
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).toBeDefined()
+      const cause = (caught as { cause?: { message?: string; code?: string } } | undefined)?.cause
+      expect(cause?.code).toBe('23505') // unique_violation
+      expect(cause?.message).toMatch(/idx_workspaces_default_per_user_app/)
+
+      // Exactly one live default survives — the rejected insert didn't
+      // partially commit anything.
+      const active = await store.list(userId, APP_ID)
+      expect(active.filter((w) => w.isDefault)).toHaveLength(1)
+    })
+  })
+
+  describe('deleteAndRecreateDefaultIfEmpty', () => {
+    it('happy path: soft-deletes the only workspace and creates+installs a replacement default, atomically', async () => {
+      const userId = await seedUser()
+      const ws = await createWorkspace(userId, 'Solo', APP_ID, { isDefault: true })
+
+      const result = await store.deleteAndRecreateDefaultIfEmpty(ws.id, userId, {
+        name: 'Default workspace',
+        defaultAgentTypeId: 'default',
+      })
+
+      expect(result.removed).toBe(true)
+      expect(result.recreated).not.toBeNull()
+      expect(result.recreated!.id).not.toBe(ws.id)
+      expect(result.recreated!.isDefault).toBe(true)
+      expect(result.recreated!.createdBy).toBe(userId)
+
+      expect(await store.get(ws.id)).toBeNull()
+      const active = await store.list(userId, APP_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).toBe(result.recreated!.id)
+
+      // The replacement got its owner-member row and initial Agent seat too —
+      // not just a bare workspace row.
+      expect(await store.getMemberRole(result.recreated!.id, userId)).toBe('owner')
+      expect(await store.hasAgentSeat(result.recreated!.id, 'default')).toBe(true)
+    })
+
+    it('does not recreate when the acting user still has another active workspace in the app', async () => {
+      const userId = await seedUser()
+      await createWorkspace(userId, 'Kept', APP_ID)
+      const ws = await createWorkspace(userId, 'Delete Me', APP_ID)
+
+      const result = await store.deleteAndRecreateDefaultIfEmpty(ws.id, userId, {
+        name: 'Default workspace',
+        defaultAgentTypeId: 'default',
+      })
+
+      expect(result.removed).toBe(true)
+      expect(result.recreated).toBeNull()
+      expect(await store.list(userId, APP_ID)).toHaveLength(1)
+    })
+
+    it('returns NOT_FOUND for an unknown or already-deleted id, without touching anything', async () => {
+      const missing = await store.deleteAndRecreateDefaultIfEmpty(
+        '00000000-0000-0000-0000-000000000000',
+        await seedUser(),
+        { name: 'x', defaultAgentTypeId: 'default' },
+      )
+      expect(missing).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null })
+    })
+
+    it('#1463 blocking-finding fix: a genuine DB failure during the replacement insert rolls back the WHOLE transaction — the original workspace is never left deleted with no replacement', async () => {
+      const userId = await seedUser()
+      const ws = await createWorkspace(userId, 'Solo Default', APP_ID, { isDefault: true })
+
+      // A user id with no row in `users` at all: the replacement insert's
+      // created_by foreign key will genuinely fail at the Postgres level —
+      // this is a real DB failure, not a mocked/simulated one. Membership
+      // lookups for this bogus id also come back empty, so the "is the
+      // acting user now workspace-less" check still says yes and the
+      // recreate is attempted (and fails).
+      const bogusActingUserId = randomUUID()
+
+      await expect(
+        store.deleteAndRecreateDefaultIfEmpty(ws.id, bogusActingUserId, {
+          name: 'Replacement',
+          defaultAgentTypeId: 'default',
+        }),
+      ).rejects.toThrow()
+
+      // Rolled back in full: the original workspace is exactly as it was —
+      // not deleted, not orphaned, account never at zero active workspaces.
+      expect(await store.get(ws.id)).not.toBeNull()
+      const [row] = await sqlClient`SELECT deleted_at FROM workspaces WHERE id = ${ws.id}`
+      expect(row.deleted_at).toBeNull()
+      expect(await store.list(userId, APP_ID)).toHaveLength(1)
+
+      // And no half-created replacement was left behind either.
+      const [{ count }] = await sqlClient`
+        SELECT count(*)::int AS count FROM workspaces WHERE created_by = ${bogusActingUserId}
+      `
+      expect(Number(count)).toBe(0)
+    })
+
+    it('#1463 concurrency: deleting two workspaces owned by the same user at the same time never deadlocks and never double-creates a replacement', async () => {
+      const userId = await seedUser()
+      const wsA = await createWorkspace(userId, 'A', APP_ID, { isDefault: true })
+      const wsB = await createWorkspace(userId, 'B', APP_ID)
+
+      const [resultA, resultB] = await Promise.all([
+        store.deleteAndRecreateDefaultIfEmpty(wsA.id, userId, { name: 'Replacement', defaultAgentTypeId: 'default' }),
+        store.deleteAndRecreateDefaultIfEmpty(wsB.id, userId, { name: 'Replacement', defaultAgentTypeId: 'default' }),
+      ])
+
+      expect(resultA.removed).toBe(true)
+      expect(resultB.removed).toBe(true)
+
+      // Exactly one of the two concurrent calls recreated a default — never
+      // both (duplicate-default collision) and never neither (zero-workspace
+      // account, the original bug).
+      const recreatedCount = [resultA.recreated, resultB.recreated].filter((r) => r !== null).length
+      expect(recreatedCount).toBe(1)
+
+      const active = await store.list(userId, APP_ID)
+      expect(active).toHaveLength(1)
+    })
   })
 
   describe('isMember / getMemberRole', () => {
     it('isMember returns true/false correctly', async () => {
       const userA = await seedUser('mem-a')
       const userB = await seedUser('mem-b')
-      const ws = await store.create(userA, 'MemberTest', APP_ID)
+      const ws = await createWorkspace(userA, 'MemberTest', APP_ID)
 
       expect(await store.isMember(ws.id, userA)).toBe(true)
       expect(await store.isMember(ws.id, userB)).toBe(false)
@@ -579,7 +749,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('getMemberRole returns role or null', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'RoleTest', APP_ID)
+      const ws = await createWorkspace(userId, 'RoleTest', APP_ID)
 
       expect(await store.getMemberRole(ws.id, userId)).toBe('owner')
       expect(await store.getMemberRole(ws.id, '00000000-0000-0000-0000-000000000000')).toBeNull()
@@ -589,7 +759,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('listMembers', () => {
     it('returns members enriched with user info', async () => {
       const userId = await seedUser('lm')
-      const ws = await store.create(userId, 'ListM', APP_ID)
+      const ws = await createWorkspace(userId, 'ListM', APP_ID)
 
       const members = await store.listMembers(ws.id)
       expect(members).toHaveLength(1)
@@ -605,7 +775,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('inserts a new member', async () => {
       const owner = await seedUser('ups-own')
       const editor = await seedUser('ups-ed')
-      const ws = await store.create(owner, 'Upsert', APP_ID)
+      const ws = await createWorkspace(owner, 'Upsert', APP_ID)
 
       const member = await store.upsertMember(ws.id, editor, 'editor')
       expect(member.role).toBe('editor')
@@ -615,7 +785,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('updates role on conflict', async () => {
       const owner = await seedUser('ups-upd')
-      const ws = await store.create(owner, 'Upsert2', APP_ID)
+      const ws = await createWorkspace(owner, 'Upsert2', APP_ID)
 
       await store.upsertMember(ws.id, owner, 'editor')
       const role = await store.getMemberRole(ws.id, owner)
@@ -627,7 +797,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('removes an existing member', async () => {
       const owner = await seedUser('rm-own')
       const editor = await seedUser('rm-ed')
-      const ws = await store.create(owner, 'Remove', APP_ID)
+      const ws = await createWorkspace(owner, 'Remove', APP_ID)
       await store.upsertMember(ws.id, editor, 'editor')
 
       const result = await store.removeMember(ws.id, editor)
@@ -637,7 +807,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns NOT_MEMBER for non-member', async () => {
       const owner = await seedUser('rm-nm')
-      const ws = await store.create(owner, 'RemoveNM', APP_ID)
+      const ws = await createWorkspace(owner, 'RemoveNM', APP_ID)
 
       const result = await store.removeMember(ws.id, '00000000-0000-0000-0000-000000000000')
       expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_MEMBER })
@@ -645,7 +815,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns LAST_OWNER when removing the sole owner', async () => {
       const owner = await seedUser('rm-lo')
-      const ws = await store.create(owner, 'LastOwner', APP_ID)
+      const ws = await createWorkspace(owner, 'LastOwner', APP_ID)
 
       const result = await store.removeMember(ws.id, owner)
       expect(result).toEqual({ removed: false, code: ERROR_CODES.LAST_OWNER })
@@ -654,7 +824,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('allows removing an owner when another co-owner exists', async () => {
       const ownerA = await seedUser('rm-coa')
       const ownerB = await seedUser('rm-cob')
-      const ws = await store.create(ownerA, 'CoOwner', APP_ID)
+      const ws = await createWorkspace(ownerA, 'CoOwner', APP_ID)
       await store.upsertMember(ws.id, ownerB, 'owner')
 
       const result = await store.removeMember(ws.id, ownerA)
@@ -672,7 +842,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns workspace where user is the sole owner', async () => {
       const userId = await seedUser('sole-one')
-      const ws = await store.create(userId, 'SoleWS', APP_ID)
+      const ws = await createWorkspace(userId, 'SoleWS', APP_ID)
 
       const result = await store.getWorkspacesWhereSoleOwner(userId)
       expect(result).toHaveLength(1)
@@ -682,7 +852,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('excludes workspace with a co-owner', async () => {
       const userA = await seedUser('sole-co-a')
       const userB = await seedUser('sole-co-b')
-      const ws = await store.create(userA, 'CoOwnedWS', APP_ID)
+      const ws = await createWorkspace(userA, 'CoOwnedWS', APP_ID)
       await store.upsertMember(ws.id, userB, 'owner')
 
       const result = await store.getWorkspacesWhereSoleOwner(userA)
@@ -691,7 +861,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('excludes soft-deleted workspaces', async () => {
       const userId = await seedUser('sole-del')
-      const ws = await store.create(userId, 'DeletedSole', APP_ID)
+      const ws = await createWorkspace(userId, 'DeletedSole', APP_ID)
       await store.delete(ws.id)
 
       const result = await store.getWorkspacesWhereSoleOwner(userId)
@@ -701,7 +871,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('excludes workspace where user is editor (not owner)', async () => {
       const owner = await seedUser('sole-ed-own')
       const editor = await seedUser('sole-ed-ed')
-      const ws = await store.create(owner, 'EditorWS', APP_ID)
+      const ws = await createWorkspace(owner, 'EditorWS', APP_ID)
       await store.upsertMember(ws.id, editor, 'editor')
 
       const result = await store.getWorkspacesWhereSoleOwner(editor)
@@ -711,8 +881,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('mixed: returns sole-owned but not co-owned', async () => {
       const userA = await seedUser('sole-mix-a')
       const userB = await seedUser('sole-mix-b')
-      const wsSole = await store.create(userA, 'Sole', APP_ID)
-      const wsShared = await store.create(userA, 'Shared', APP_ID)
+      const wsSole = await createWorkspace(userA, 'Sole', APP_ID)
+      const wsShared = await createWorkspace(userA, 'Shared', APP_ID)
       await store.upsertMember(wsShared.id, userB, 'owner')
 
       const result = await store.getWorkspacesWhereSoleOwner(userA)
@@ -735,6 +905,22 @@ describeWorkspaceStoreConformance(
         SET expires_at = NOW() - interval '1 minute'
         WHERE workspace_id = ${workspaceId} AND id = ${inviteId}
       `
+    },
+    seedLegacyNullDefaultAgentTypeIds: async (_workspaceStore, workspaceIds) => {
+      // Seat rollout is additive: legacy writers may still create NULL
+      // defaults until the later enforcement cutover. Manufacture that cohort
+      // directly so conformance can exercise the NULL-only CAS.
+      await sqlClient.begin(async (transaction) => {
+        await transaction`
+          ALTER TABLE workspaces
+          DROP CONSTRAINT IF EXISTS workspaces_default_agent_type_id_required_check
+        `
+        await transaction`
+          UPDATE workspaces
+          SET default_agent_type_id = NULL
+          WHERE id = ANY(${workspaceIds}::uuid[])
+        `
+      })
     },
     makeAppIds: () => ({ appId: APP_ID, otherAppId: APP_ID_2 }),
     emailDomain: 'orm1-test.dev',

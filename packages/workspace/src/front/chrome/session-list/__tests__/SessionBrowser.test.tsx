@@ -288,6 +288,41 @@ describe("SessionBrowser", () => {
     expect(onTogglePin).toHaveBeenCalledWith("s1")
   })
 
+  it("shows a static failed badge only for an explicit error row", () => {
+    const sessions: SessionItem[] = [
+      { id: "failed", title: "Failed session", status: "error" },
+      { id: "idle", title: "Idle session", status: "idle" },
+    ]
+    render(<SessionBrowser sessions={sessions} />)
+
+    const badge = document.querySelector('[data-boring-badge="failed"]')
+    expect(badge).toHaveTextContent("failed")
+    expect(badge).toHaveClass("rounded-full", "bg-destructive/12", "text-destructive")
+    expect(badge?.querySelector('[aria-hidden="true"]')).not.toHaveClass("animate-pulse")
+    expect(badge?.closest("li")).toHaveTextContent("Failed session")
+    expect(screen.getByText("Idle session").closest("li")?.querySelector('[data-boring-badge="failed"]')).toBeNull()
+  })
+
+  it("leaves an ordinary idle row without a status badge", () => {
+    render(<SessionBrowser sessions={[{ id: "idle", title: "Idle session", status: "idle" }]} />)
+
+    expect(screen.getByText("Idle session").closest("li")
+      ?.querySelector('[data-boring-workspace-part="session-badge"]')).toBeNull()
+  })
+
+  it("keeps working precedence over an explicit error row", () => {
+    render(<SessionBrowser sessions={[{ id: "failed", title: "Retrying session", status: "error" }]} />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "failed", working: true },
+      }))
+    })
+
+    expect(document.querySelector('[data-boring-badge="working"]')?.closest("li")).toHaveTextContent("Retrying session")
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
+  })
+
   it("shows a working badge while a session's chat panel streams", () => {
     render(<SessionBrowser sessions={sample} activeId="s1" />)
 
@@ -370,7 +405,7 @@ describe("SessionBrowser", () => {
     expect(rollup).toHaveTextContent("1")
   })
 
-  it("shows a plugin-provided attention badge for session-scoped blockers", () => {
+  it("keeps plugin-provided attention precedence over working and failed", () => {
     function BlockSession({ sessionId }: { sessionId: string }) {
       const { addBlocker, removeBlocker } = useWorkspaceAttention()
       useEffect(() => {
@@ -388,11 +423,14 @@ describe("SessionBrowser", () => {
     render(
       <WorkspaceAttentionProvider>
         <BlockSession sessionId="s3" />
-        <SessionBrowser sessions={sample} activeId="s1" />
+        <SessionBrowser
+          sessions={sample.map((session) => session.id === "s3" ? { ...session, status: "error" as const } : session)}
+          activeId="s1"
+        />
       </WorkspaceAttentionProvider>,
     )
 
-    // A plugin attention badge outranks "working": send both signals for s3.
+    // A plugin attention badge outranks both the live working state and the row's error status.
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
         detail: { sessionId: "s3", working: true },
@@ -403,5 +441,6 @@ describe("SessionBrowser", () => {
     expect(badge).toHaveTextContent("question")
     expect(badge?.closest("li")?.textContent).toContain("Third session")
     expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
   })
 })

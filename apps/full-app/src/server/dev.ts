@@ -99,7 +99,6 @@ startCoreWorkspaceAgentDevServer({
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
-      defaultAgentTypeId: 'default',
       plugins: [...pluginComposition.plugins],
       defaultPluginPackages: [...pluginComposition.defaultPluginPackages],
       externalPlugins: false,

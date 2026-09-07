@@ -11,6 +11,7 @@ import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
+  OPTIMISTIC_CREATE_ACK_WINDOW_MS,
   WorkspaceAgentFront as RawWorkspaceAgentFront,
   type UseWorkspaceAgentSessions,
   type WorkspaceAgentFrontProps,
@@ -70,6 +71,20 @@ function TextareaChatPanel(props: WorkspaceChatPanelProps) {
 
 function visibleChatSessionIds(): string[] {
   return screen.getAllByTestId("chat-pane").map((node) => node.getAttribute("data-session-id") ?? "")
+}
+
+/** Records every distinct (agentTypeId, sessionId) the single active chat
+ * pane renders with, across every commit — not just the final settled one.
+ * A `waitFor` on the end state cannot see a value that appears and then gets
+ * corrected before the assertion runs; this catches it. */
+function makeObservingChatPanel() {
+  const observed: string[] = []
+  function ObservingChatPanel(props: WorkspaceChatPanelProps) {
+    const key = `${props.agentTypeId}:${props.sessionId}`
+    if (observed[observed.length - 1] !== key) observed.push(key)
+    return <div data-testid="chat-pane" data-agent-type-id={props.agentTypeId} data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
+  }
+  return { ObservingChatPanel, observed }
 }
 
 function addressedSession(sessionId: string, title: string) {
@@ -180,7 +195,7 @@ describe("WorkspaceAgentFront", () => {
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
   })
 
-  it("externalPlugins=true preserves explicit front and chat plugin reload UX", () => {
+  it("externalPlugins=true preserves explicit front and chat plugin reload UX", async () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)
     let captured: WorkspaceChatPanelProps | undefined
@@ -200,10 +215,12 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(1)
-    expect(captured?.hotReloadEnabled).toBe(true)
+    // The chat pane mounts under the code-split dock stage, so capture lands
+    // one microtask after render.
+    await waitFor(() => expect(captured?.hotReloadEnabled).toBe(true))
   })
 
-  it("externalPlugins=false disables front and chat plugin reload UX", () => {
+  it("externalPlugins=false disables front and chat plugin reload UX", async () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)
     let captured: WorkspaceChatPanelProps | undefined
@@ -223,7 +240,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
-    expect(captured?.hotReloadEnabled).toBe(false)
+    await waitFor(() => expect(captured?.hotReloadEnabled).toBe(false))
   })
 
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
@@ -340,67 +357,7 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  it("refreshes the addressed Agent when fleet activity reports an unknown scheduled session", async () => {
-    MockEventSource.instances = []
-    vi.stubGlobal("EventSource", MockEventSource)
-    const alphaRefresh = vi.fn()
-    const betaRefresh = vi.fn()
-    const useAgentSelection = () => ({
-      agents: [
-        { agentTypeId: "alpha", label: "Alpha" },
-        { agentTypeId: "beta", label: "Beta" },
-      ],
-      selectedAgentTypeId: "alpha",
-      loading: false,
-      error: undefined,
-      selectAgentTypeId: vi.fn(),
-    })
-    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
-      const session = {
-        id: `${options.agentTypeId}-known`,
-        agentTypeId: options.agentTypeId,
-        title: `${options.agentTypeId} known`,
-        status: "idle" as const,
-      }
-      return {
-        sourceIdentity: options.sourceIdentity,
-        sessions: [session],
-        activeSession: options.agentTypeId === "alpha" ? session : undefined,
-        activeSessionId: options.agentTypeId === "alpha" ? session.id : undefined,
-        activeSessionAgentTypeId: options.agentTypeId === "alpha" ? "alpha" : undefined,
-        loading: false,
-        error: undefined,
-        create: vi.fn(async () => session),
-        switch: vi.fn(),
-        delete: vi.fn(),
-        refresh: options.agentTypeId === "alpha" ? alphaRefresh : betaRefresh,
-      }
-    }
-
-    render(
-      <WorkspaceAgentFront
-        workspaceId="fleet-scheduled-session-stream"
-        agentTypeId="alpha"
-        workspaceLayout="plugin-tabs"
-        chatPanel={SessionIdChatPanel}
-        addressedAgentSelection
-        useAddressedAgentSelection={useAgentSelection}
-        useSessions={useFleetSessions}
-        persistenceEnabled={false}
-      />,
-    )
-
-    await waitFor(() => expect(MockEventSource.instances.some((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))).toBe(true))
-    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
-    act(() => {
-      stream?.emit("activity", { ref: { agentTypeId: "beta", sessionId: "scheduled-beta" }, status: "running" })
-    })
-
-    expect(betaRefresh).toHaveBeenCalledWith({ background: true })
-    expect(alphaRefresh).not.toHaveBeenCalled()
-  })
-
-  it("renders a known active session while remote sessions are still loading", () => {
+  it("renders a known active session while remote sessions are still loading", async () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -422,11 +379,11 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat known-active hydrate=true")
+    expect(await screen.findByTestId("chat-panel")).toHaveTextContent("Chat known-active hydrate=true")
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
-  it("renders the chat shell when remote sessions fail instead of pinning loading", () => {
+  it("renders the chat shell when remote sessions fail instead of pinning loading", async () => {
     const FailedChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -448,7 +405,7 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
+    expect(await screen.findByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
   })
 
   it("keeps session history closed by default and opens it from the rail button", async () => {
@@ -674,6 +631,41 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByRole("button", { name: "Start new chat with Alpha" })).not.toBeInTheDocument()
   })
 
+  it("shows the Agent nav action for an actual single-agent catalog", () => {
+    const useAgentSelection = () => ({
+      agents: [{ agentTypeId: "alpha", label: "Alpha" }],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useSingleAgentSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => ({
+      sessions: [],
+      loading: false,
+      activeSessionId: undefined,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: undefined,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="single-agent-catalog"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useSingleAgentSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Agent" })).toBeInTheDocument()
+  })
+
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
     const user = userEvent.setup()
     const createdBy = vi.fn()
@@ -755,6 +747,21 @@ describe("WorkspaceAgentFront", () => {
       ["beta", "fleet-ui:beta"],
     ]))
 
+    // Agent-details reload is agent-scoped. With Alpha still active, reloading
+    // Beta must not combine Beta with Alpha's unrelated session id.
+    await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
+    await user.click(await screen.findByRole("button", { name: "Reload Beta" }, { timeout: 5_000 }))
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) =>
+      String(input).endsWith("/api/v1/agents/beta/reload"))).toBe(true))
+    const betaReloadCall = vi.mocked(fetch).mock.calls.find(([input]) =>
+      String(input).endsWith("/api/v1/agents/beta/reload"))
+    expect(JSON.parse(String(betaReloadCall?.[1]?.body))).toEqual({ requestId: expect.any(String) })
+    await user.click(screen.getByRole("button", { name: "Close Beta details" }))
+
+    const workspaceNavigationBeforeAgentSwitch = screen.getByLabelText("App navigation")
+    const workspaceBootCallsBeforeAgentSwitch = vi.mocked(fetch).mock.calls.filter(([input]) =>
+      String(input).includes("/api/v1/tree"),
+    ).length
     const betaSessionButton = screen.getByText("Beta one").closest("button")
     expect(betaSessionButton).toBeInstanceOf(HTMLButtonElement)
     await user.click(betaSessionButton!)
@@ -762,14 +769,23 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-one")
     })
+    // Agent/session selection is pane-local. It must neither remount the shell
+    // nor rerun Workspace boot as though its transport identity had changed.
+    expect(screen.getByLabelText("App navigation")).toBe(workspaceNavigationBeforeAgentSwitch)
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) =>
+      String(input).includes("/api/v1/tree"),
+    )).toHaveLength(workspaceBootCallsBeforeAgentSwitch)
 
     await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
     await waitFor(() => expect(createdBy).toHaveBeenCalledWith("beta"))
     expect(selected).toHaveBeenCalledWith("beta")
 
     await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
-    const detailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
-    expect(detailsOverlay).not.toBeNull()
+    const detailsOverlay = await waitFor(() => {
+      const overlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
+      expect(overlay).not.toBeNull()
+      return overlay
+    })
     expect(detailsOverlay).toHaveTextContent("Beta")
     expect(detailsOverlay).toHaveTextContent("Plugins")
     expect(detailsOverlay).toHaveTextContent("ask-user")
@@ -785,6 +801,222 @@ describe("WorkspaceAgentFront", () => {
     expect(unifiedDetailsOverlay).toHaveTextContent("MCP access")
     expect(unifiedDetailsOverlay).not.toHaveTextContent("Runtime plugins explicitly bound")
     expect(within(unifiedDetailsOverlay as HTMLElement).queryByRole("tab")).not.toBeInTheDocument()
+  }, 30_000)
+
+  // #1470: "Start new chat with <Agent>" (the New chat Agent picker) creates
+  // the session but must land the main pane on it too, exactly like the
+  // per-Agent card's "New chat with <Agent>" button does.
+  it("focuses the session created via the New chat Agent picker", async () => {
+    const user = userEvent.setup()
+    const agents = [
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    const useAgentSelection = () => {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      return {
+        agents,
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const { ObservingChatPanel, observed } = makeObservingChatPanel()
+    // Deliberately decouples "the create() promise the transaction awaits
+    // resolves" from "Beta's OWN session snapshot catches up" — exactly the
+    // ordering `addressedFleetSessions.tsx` cannot guarantee: its per-Agent
+    // `FleetSessionSource` only republishes an updated controller from a
+    // passive effect, a render or more after this hook's own state update,
+    // while `createChatPaneTransaction`'s success callback (which flips the
+    // addressed Agent) runs off the SAME resolved promise. Holding this gate
+    // open reproduces the worst case deterministically instead of hoping a
+    // microtask-count race lands the same way twice.
+    let releaseBetaSnapshot: (() => void) | undefined
+    const betaSnapshotGate = new Promise<void>((resolve) => { releaseBetaSnapshot = resolve })
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+      const owner = options.agentTypeId
+      const [owned, setOwned] = useState(() => [{
+        id: `${owner}-one`,
+        agentTypeId: owner,
+        title: `${owner} one`,
+        updatedAt: 1,
+      }])
+      return {
+        sessions: owned,
+        loading: false,
+        activeSessionId: owned[0]?.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: owned[0],
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: async () => {
+          const session = { id: `${owner}-new`, agentTypeId: owner, title: `${owner} new`, updatedAt: 2 }
+          if (owner === "beta") {
+            // The transaction sees the created session and addresses Beta
+            // immediately; Beta's own controller only reflects it once this
+            // gate is released, below.
+            void betaSnapshotGate.then(() => setOwned((current) => [session, ...current]))
+          } else {
+            setOwned((current) => [session, ...current])
+          }
+          return session
+        },
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="picker-focus"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ObservingChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "alpha")
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "alpha-one")
+    })
+
+    // Retarget the picker to Beta without ever addressing/opening a Beta chat.
+    // Beta already owns an untouched "beta-one" session at this point — the
+    // ONLY way it can appear below is the addressed-Agent switch racing
+    // ahead of Beta's own session snapshot and getting judged "uncontrolled".
+    await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Beta" }))
+    await user.click(await screen.findByRole("button", { name: "Start new chat with Beta" }))
+
+    // Mid-race: the addressed Agent has already flipped to Beta and the
+    // create() promise has resolved, but Beta's own snapshot is still
+    // deliberately held back (gate not yet released). This is the exact
+    // frame the reviewer flagged — assert it directly, not just the eventual
+    // settled state a `waitFor` would otherwise paper over.
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
+    })
+    expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-new")
+
+    await act(async () => {
+      releaseBetaSnapshot?.()
+      await betaSnapshotGate
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-new")
+    })
+
+    // Sequence-sensitive: the picker's Beta chat must never have painted as
+    // "beta-one" (Beta's PREVIOUS session) on its way to "beta-new". A final
+    // waitFor on the settled state alone cannot catch a corrected frame.
+    expect(observed).not.toContain("beta:beta-one")
+    expect(observed).toEqual(["alpha:alpha-one", "beta:beta-new"])
+  })
+
+  // #1472 review: optimisticCreatedPaneKeysRef's ONLY removal path used to be
+  // "the owning Agent's session snapshot contains the key" — the normal,
+  // fast-acknowledgment case the previous test covers. If the created
+  // session is instead deleted before that ever happens (or a provider
+  // returns an id that never materializes — indistinguishable from
+  // reconciliation's point of view: the key just never appears in
+  // resolvedSessionsByKey), the key never cleared, the stale flag kept
+  // bypassing both the controlled-session and inventory gates forever, and
+  // the nonexistent optimistic pane stayed active indefinitely — the phantom
+  // pane suppressed legitimate reconciliation to the real session sitting
+  // right there. This proves the bounded ack-window fallback actually fires
+  // and hands the pane back to a real, authoritative session.
+  it("ages out a never-acknowledged optimistic create and falls back to a real session", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime })
+      const agents = [
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ]
+      const useAgentSelection = () => {
+        const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+        return {
+          agents,
+          selectedAgentTypeId,
+          loading: false,
+          error: undefined,
+          selectAgentTypeId: setSelectedAgentTypeId,
+        }
+      }
+      const { ObservingChatPanel } = makeObservingChatPanel()
+      const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+        const owner = options.agentTypeId
+        const [owned] = useState(() => (
+          owner === "alpha" ? [{ id: "alpha-one", agentTypeId: "alpha", title: "alpha one", updatedAt: 1 }] : []
+        ))
+        return {
+          sessions: owned,
+          loading: false,
+          activeSessionId: owned[0]?.id,
+          activeSessionAgentTypeId: owner,
+          activeSession: owned[0],
+          workspaceId: options.workspaceId,
+          switch: vi.fn(),
+          create: async () => (
+            // Beta's create() resolves — the transaction gets a real id and
+            // addresses Beta — but Beta's OWN session list never comes to
+            // include it: a session deleted (in app or out of band) before
+            // its first acknowledgment, or a phantom id a provider never
+            // materializes, looks IDENTICAL from here.
+            { id: "beta-phantom", agentTypeId: "beta", title: "beta phantom", updatedAt: 2 }
+          ),
+          delete: vi.fn(),
+        }
+      }
+
+      render(
+        <WorkspaceAgentFront
+          workspaceId="picker-phantom"
+          workspaceLayout="plugin-tabs"
+          chatPanel={ObservingChatPanel}
+          addressedAgentSelection
+          useAddressedAgentSelection={useAgentSelection}
+          useSessions={useFleetSessions}
+          persistenceEnabled={false}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "alpha-one")
+      })
+
+      await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+      await user.click(await screen.findByRole("menuitem", { name: "Beta" }))
+      await user.click(await screen.findByRole("button", { name: "Start new chat with Beta" }))
+
+      // Optimistic protection holds: the phantom pane is shown and stays put
+      // well within the ack window, since nothing ever acknowledges it.
+      await waitFor(() => {
+        expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-phantom")
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(OPTIMISTIC_CREATE_ACK_WINDOW_MS - 1_000)
+      })
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-phantom")
+
+      // Past the ack window: the never-acknowledged key ages out and
+      // reconciliation falls back to the real authoritative session
+      // (Alpha's, the only one that actually exists) instead of leaving the
+      // phantom pane active forever.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+      await waitFor(() => {
+        expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "alpha-one")
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
@@ -1202,6 +1434,46 @@ describe("WorkspaceAgentFront", () => {
     fireEvent.click(within(appNav).getByRole("button", { name: "Collapse Project Alpha" }))
     expect(within(appNav).getByRole("button", { name: "Expand Project Alpha" })).toHaveAttribute("aria-expanded", "false")
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
+  })
+
+  it("collapses a split layout when a primary New chat action creates a session", async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      "boring-workspace:chat-panes:project-new-chat-replaces",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session" },
+        { id: "s2", title: "Second session" },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s2")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="project-new-chat-replaces"
+          workspaceLayout="plugin-tabs"
+          appLeftLayoutMode="multi-project"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          appLeftProjects={[{ id: "project-new-chat-replaces", name: "Project Alpha" }]}
+          onCreateSession={() => {
+            const created = { id: "created", title: "Created session" }
+            setSessions((previous) => [created, ...previous])
+            setActiveSessionId(created.id)
+            return Promise.resolve(created)
+          }}
+        />
+      )
+    }
+
+    render(<Harness />)
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "s2"]))
+    await user.click(screen.getByRole("button", { name: "New chat in Project Alpha" }))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["created"]))
   })
 
   it("keeps classic workspace sources available outside plugin-tabs mode", async () => {
@@ -2346,6 +2618,47 @@ describe("WorkspaceAgentFront", () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 
+  it("keeps remote sessions when provisioning is disabled but remoteSessionsEnabled is set", async () => {
+    const onWarmup = vi.fn()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) {
+        return new Response(JSON.stringify({ sessions: [{ id: "sess-remote-known", title: "Known remote" }] }), { status: 200 })
+      }
+
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="no-provision-remote-sessions"
+        provisionWorkspace={false}
+        remoteSessionsEnabled
+        persistenceEnabled={false}
+        onWorkspaceWarmupStatusChange={onWarmup}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true),
+    )
+    // The known server session must be consumed as an existing remote session, not treated as an
+    // empty list: the front must not create a replacement local session behind the user's back.
+    // (Deeper chat-props/state-route adoption evidence is warmup-gated here — with provisioning
+    // disabled the panel never mounts in jsdom — so hydration-on-adopt is pinned instead by the
+    // injected-hook tests above.)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).includes("/agents/default/sessions") && (init?.method === "POST" || init?.method === "DELETE"),
+    )).toBe(false)
+
+  })
+
   it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {
     let capturedChatProps: unknown
     const getCapturedChatProps = () => capturedChatProps as CapturedChatPanelProps | undefined
@@ -2496,6 +2809,82 @@ describe("WorkspaceAgentFront", () => {
       autoSubmitInitialDraft: true,
     })
     expect(createOwners).toEqual(["default"])
+  })
+
+  it("resolves extra slash commands from each split pane's owning Agent", async () => {
+    const capturedByOwner = new Map<string, WorkspaceChatPanelProps>()
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      capturedByOwner.set(props.agentTypeId ?? "", props)
+      return <div data-testid={`commands-${props.agentTypeId}`}>Commands for {props.agentTypeId}</div>
+    }
+    localStorage.setItem(
+      "boring-workspace:chat-panes:fleet-agent-commands",
+      JSON.stringify({
+        version: 2,
+        refs: [
+          { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+          { kind: "addressed", sessionId: "beta-one", agentTypeId: "beta" },
+        ],
+        activeRef: { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+      }),
+    )
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Boring Alpha" },
+        { agentTypeId: "beta", label: "Boring Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const session = {
+        id: `${options.agentTypeId}-one`,
+        agentTypeId: options.agentTypeId,
+        title: `${options.agentTypeId} session`,
+      }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: [session],
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: options.agentTypeId,
+        activeSession: session,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: vi.fn(),
+      }
+    }
+    const alphaCommand = {
+      name: "alpha-only",
+      description: "Only Alpha gets this command",
+      handler: vi.fn(),
+    }
+    const getExtraCommandsForAgent = vi.fn((agentTypeId: string) =>
+      agentTypeId === "alpha" ? [alphaCommand] : [],
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-agent-commands"
+        workspaceLayout="plugin-tabs"
+        chatPanel={CapturingChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={useFleetSessions}
+        getExtraCommandsForAgent={getExtraCommandsForAgent}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(capturedByOwner.has("alpha")).toBe(true)
+      expect(capturedByOwner.has("beta")).toBe(true)
+    })
+    expect(capturedByOwner.get("alpha")?.extraCommands).toEqual([alphaCommand])
+    expect(capturedByOwner.get("beta")?.extraCommands).toEqual([])
+    expect(getExtraCommandsForAgent).toHaveBeenCalledWith("alpha")
+    expect(getExtraCommandsForAgent).toHaveBeenCalledWith("beta")
   })
 
   it("splits a pane into a chat owned by THAT pane's Agent, not the picker target", async () => {
@@ -3451,6 +3840,34 @@ describe("WorkspaceAgentFront", () => {
     await act(async () => { releaseCreate() })
   })
 
+  it("does not send a synthetic Agent owner when creating a single-Agent quick chat", async () => {
+    const create = vi.fn(async () => ({ id: "quick", agentTypeId: "default", title: "Quick", updatedAt: Date.now(), turnCount: 0 }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="single-agent-quick-create"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 }],
+          activeSessionId: "existing",
+          activeSession: { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 },
+          loading: false,
+          create,
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Quick chat" }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create).toHaveBeenCalledWith({ title: "New session" })
+    expect(await screen.findByRole("button", { name: "Dock panel" })).toBeInTheDocument()
+  })
+
   it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 
@@ -3992,5 +4409,62 @@ describe("WorkspaceAgentFront", () => {
     expect(captured.some((props) => props.sessionId === "default")).toBe(false)
     expect(captured.at(-1)?.hydrateMessages).toBe(true)
     expect(captured.at(-1)?.allowPromptDuringInitialHydration).toBe(true)
+  })
+
+  describe("compact top-bar gating", () => {
+    function setViewport(width: number) {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width })
+      window.dispatchEvent(new Event("resize"))
+    }
+
+    afterEach(() => {
+      setViewport(1024)
+    })
+
+    function renderFront(props: Partial<Parameters<typeof WorkspaceAgentFront>[0]>) {
+      return render(
+        <WorkspaceAgentFront
+          workspaceId="topbar-gating"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={[{ id: "s1", title: "Focused session" }]}
+          activeSessionId="s1"
+          {...props}
+        />,
+      )
+    }
+
+    it("drops the top bar at compact and relocates its actions into the mobile chat bar", () => {
+      setViewport(390)
+      renderFront({})
+
+      // No second title row above the mobile bar.
+      expect(screen.queryByTestId("topbar"))?.toBeNull()
+      const bar = document.querySelector('[data-boring-workspace-part="mobile-chat-bar"]')
+      expect(bar).not.toBeNull()
+      // A phone has no ⌘K: the palette button and theme toggle live in the bar.
+      expect(within(bar as HTMLElement).getByRole("button", { name: "Search catalogs and commands" })).toBeInTheDocument()
+      expect(within(bar as HTMLElement).getByRole("button", { name: "Toggle theme" })).toBeInTheDocument()
+    })
+
+    it("keeps host-supplied top-bar chrome alive at compact instead of dropping it", () => {
+      setViewport(390)
+      renderFront({ topBarRight: <button type="button">Sign in</button> })
+
+      // The relocated actions are NOT duplicated into the chat bar when the
+      // host supplied its own chrome.
+      expect(screen.queryByRole("button", { name: "Search catalogs and commands" })).toBeNull()
+      // Host chrome is opaque and lives nowhere else: it stays reachable inside
+      // the app-navigation drawer (Sheet mounts it lazily, so open first).
+      fireEvent.click(screen.getByRole("button", { name: "Open app navigation" }))
+      expect(document.body.textContent).toContain("Sign in")
+    })
+
+    it("keeps the classic top bar on desktop widths", () => {
+      renderFront({ workspaceLayout: "classic" })
+
+      expect(document.querySelector('[data-boring-workspace-part="topbar"]')).not.toBeNull()
+      expect(document.querySelector('[data-boring-workspace-part="mobile-chat-bar"]')).toBeNull()
+    })
   })
 })

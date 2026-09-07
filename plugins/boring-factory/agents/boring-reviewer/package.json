@@ -1,0 +1,13 @@
+{
+  "name": "@hachej/boring-persona-reviewer",
+  "private": true,
+  "version": "2026.09.03",
+  "boring": {
+    "agent": {
+      "definitionId": "boring-reviewer",
+      "version": "2026.09.03",
+      "label": "Boring Reviewer",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}

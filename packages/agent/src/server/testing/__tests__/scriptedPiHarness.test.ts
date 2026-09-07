@@ -5,6 +5,17 @@ import { PiChatEventMapper } from '../../pi-chat/piChatEvents'
 import { createScriptedPiHarness } from '../scriptedPiHarness'
 
 describe('createScriptedPiHarness', () => {
+  it('tracks the requested model as addressed session authority', async () => {
+    const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
+    const model = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '', model }, {
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+    })
+
+    expect(adapter.currentModel?.()).toEqual(model)
+  })
+
   it('clears the selected queued follow-up by client selector', async () => {
     const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
     const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {

@@ -2,10 +2,10 @@
 github: https://github.com/hachej/boring-ui/issues/1082
 issue: 1082 (follow-on: pi provider onboarding)
 state: ready-for-human
-updated: 2026-08-08
-revision: r3.1
+updated: 2026-08-31
+revision: r3.2
 track: owner
-depends: PR #1132 (vault crypto, merged), PR #1145 (durable Postgres persistence, branch 196d22bd9 — not yet on main), [`plan.md`](plan.md) r3 (PR #1137)
+depends: PR #1132 (vault crypto, merged), PR #1145 (durable Postgres persistence, branch 196d22bd9 — not yet on main), [`plan.md`](plan.md) r3 (PR #1137), [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md)
 ---
 
 # gh-1082 pi provider onboarding workflow — BYOK key → usable pi runtime provider
@@ -27,12 +27,15 @@ the possibility to set a credential workspace-wide.**
 Owner rulings folded into this revision; the rest of the plan is
 interpreted through them.
 
-- **(a) Maximal pi reuse.** pi's `AuthStorage`, OAuth login flows, token
-  refresh, and `ModelRegistry` are used **out of the box**. Net-new code is
-  **only**: (1) the vault-backed `AuthStorageBackend` keyed `(workspaceId,
-  userId, providerId)`, (2) the personal → workspace → env scoping rule,
-  and (3) the settings menu (My providers / Workspace providers). Anything
-  else a slice appears to build is wiring, not construction.
+- **(a) Maximal pi reuse, amended 2026-08-31.** Upgrade the coordinated Pi
+  packages from 0.80.7 to 0.84.3 and use Pi's asynchronous `CredentialStore`
+  plus `ModelRuntime`. Net-new code is **only**: (1) an actor-bound vault
+  `CredentialStore` whose immutable scope contains `(workspaceId, userId)`,
+  (2) the personal → workspace → env scoping rule, and (3) the settings menu
+  (My providers / Workspace providers). Do not implement the earlier remote
+  `AuthStorageBackend` plan; its synchronous methods cannot correctly perform
+  Postgres/KMS I/O. See
+  [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md).
 - **(b) Subscription posture.** **Subscriptions are interactive-only and
   personal-only; anything that runs without the user present requires an
   API key.** OAuth subscription tokens (Claude Pro/Max, Codex) are never
@@ -55,7 +58,7 @@ interpreted through them.
 This plan is the *onboarding-workflow* specialization of 1082 plan-r3 slices
 S3 (registry + routes) and S4 (credential UI), extended with the two pieces
 r3 leaves abstract: **credential validation** and **per-session resolution
-into the pi ModelRegistry**.
+into Pi's actor-bound `ModelRuntime`**.
 
 **r2 principle (owner feedback on r1): leverage pi as much as possible per
 provider.** pi already owns credential typing (`api_key` | `oauth`), OAuth
@@ -63,48 +66,38 @@ login/refresh machinery, provider registration, and auth-status enumeration.
 We do not hand-roll any of that; we supply pi a **vault-backed credential
 storage backend** and broker its interactive flows over our routes.
 
-## What pi already provides (verified against `@earendil-works/pi-coding-agent` 0.80.7 / `pi-ai` 0.80.x dist)
+## What pi provides (target verified against `@earendil-works/pi-coding-agent` / `pi-ai` 0.84.3)
 
-- **`AuthStorage`** (`dist/core/auth-storage.d.ts`) stores one credential per
-  provider: `ApiKeyCredential { type:"api_key", key, env? }` or
-  `OAuthCredential { type:"oauth", access, refresh, expires, … }`. Storage is
-  pluggable: `AuthStorageBackend { withLock, withLockAsync }` +
-  `AuthStorage.fromStorage(backend)` (file and in-memory backends ship; a
-  custom backend is the supported extension point).
-- **OAuth login flows ship with pi.** `AuthStorage.login(providerId,
-  callbacks)` runs the provider's flow headlessly via `OAuthLoginCallbacks`
-  (`onAuth{url}`, `onDeviceCode{userCode,verificationUri}`, `onPrompt`,
-  `onManualCodeInput`, `onSelect`, `onProgress`, `signal`) — no TTY
-  required, so a host can broker it to a browser UI. pi-ai ships provider
-  implementations (`dist/auth/oauth/`): **anthropic (Claude Pro/Max, PKCE),
-  openai-codex, github-copilot, xai, radius**, plus PKCE/device-code helpers
-  and a local callback page. `ProviderAuth { apiKey?, oauth? }` with
-  `OAuthAuth.login/refresh/toAuth` is the per-provider contract.
-- **Token refresh is pi-owned and lock-serialized.**
-  `AuthStorage.getApiKey()` auto-refreshes expired OAuth tokens under the
-  backend lock (`refreshOAuthTokenWithLock`) and **persists the rotated
-  token through the backend** — so a vault-backed backend receives refresh
-  writes for free.
-- **ModelRegistry is the provider catalog + status source.**
-  `getAvailable()` (models whose provider has auth configured, no refresh),
-  `hasConfiguredAuth(model)`, `getProviderAuthStatus(provider)` (`{configured,
-  source, label}` — no secret values), `getProviderDisplayName`,
-  `isUsingOAuth(model)`, and `registerProvider(name, config)` for custom
-  OpenAI-compatible providers — including an `oauth` field for custom OAuth.
-- **No dedicated "test this key" API.** The pi-native probe is: resolve auth
-  (`getApiKeyAndHeaders`) and hit the provider's model-list endpoint using
-  the provider's own base URL/header config; for OAuth, completing pi's
-  login flow *is* the validation.
+- **Asynchronous `CredentialStore`.** `read`, `list`, `modify`, and `delete`
+  all return promises. `modify(providerId, fn)` is the only write path and
+  serializes the complete read-modify-write operation, allowing Pi's OAuth
+  refresh to execute under the store's cross-process lock.
+- **Injectable `ModelRuntime`.** `ModelRuntime.create({ credentials })`
+  accepts any Pi `CredentialStore`; production need not use `auth.json`.
+- **OAuth login flows ship with Pi.** `ModelRuntime.login()` uses provider
+  implementations including `openai-codex`; the host supplies an
+  `AuthInteraction` and brokers only safe auth URL/device/manual-code/progress
+  events to the browser.
+- **Token refresh remains Pi-owned.** Pi checks expiry, invokes the provider's
+  refresh implementation inside `CredentialStore.modify()`, derives request
+  auth, and persists rotated credentials through the injected store.
+- **Provider/model status remains Pi-owned.** `ModelRuntime` exposes provider
+  registration, auth status, available models, request auth, login, logout,
+  and catalog refresh.
+- **Scope remains Seneca-owned.** A store instance is closed over the verified
+  `(workspaceId, userId)`; Pi's `providerId` key is resolved only inside that
+  immutable scope. See the companion async-store decision for lock, AAD, and
+  migration requirements.
 
 ## Today vs Delta
 
 | Area | Today | Delta |
 |---|---|---|
 | Where credentials come from | Instance `process.env` only. `packages/agent/src/server/models/modelConfig.ts` reads `ANTHROPIC_API_KEY` etc. via `getEnv`, plus `BORING_AGENT_CUSTOM_MODEL_*` / Infomaniak env blocks; pi `AuthStorage.create()` reads pi's own env/settings/auth files (comment in `createHarness.ts`: "Auth/model credentials are Pi-owned"). | Vault credentials (API key **or** pi OAuth token) take precedence, resolved per actor: personal `(workspaceId, userId, providerId)` → workspace-wide → instance env, per Decision 27 tombstone semantics. |
-| Per-session registry | `createPiSession` (packages/agent/src/server/harness/pi-coding-agent/createHarness.ts ~L548) builds `AuthStorage.create()` → `ModelRegistry.create(authStorage)` → `registerConfiguredModelProviders(modelRegistry)`; all env-derived, workspace-blind. | Same construction site swaps in `AuthStorage.fromStorage(vaultBackend)` — a workspace-scoped `AuthStorageBackend` bridging pi's lock protocol to the vault via the host-side credential resolver (16f.1 `createHostSideCredentialResolverV1` / `withResolvedCredential`), with env-backed fallback. |
+| Per-session runtime | `createPiSession` builds Pi 0.80.7 `AuthStorage` + `ModelRegistry`; all env-derived and workspace-blind. | Upgrade to Pi 0.84.3, build actor-bound `ModelRuntime.create({ credentials: vaultCredentialStore })`, and preserve verified `userId` in session/cache identity. |
 | OAuth | None (env keys only). | pi's built-in OAuth providers (anthropic Claude Pro/Max, openai-codex, github-copilot, …) become connectable per workspace: login brokered host-side, tokens vault-stored, refresh via pi's own machinery writing through the vault backend. |
 | Vault | Crypto core merged (#1132): `packages/agent/src/server/credentials/vault/` (envelopeCrypto, local-KEK KmsBackend, vaultStoreBackend, persistence port). #1145 adds Postgres persistence + versionAnchor (branch, not on main). | Consumed as-is. Onboarding writes through `CredentialStoreBackendV1.writeCredentialFields` (fresh `credentialVersion` each write — including pi-initiated OAuth refresh writes). |
-| Provider registry | `ProviderRegistryV1` / `ProviderDefinitionV1` contract exists in `packages/agent/src/shared/credentials/registry.ts` (category `"llm"`, api-key field defs, consumer bindings, sandboxEgressOrigins) but only test registries construct it. | Startup registry **derived from pi**: LLM provider definitions generated from pi's `ModelRegistry` provider set + `getOAuthProviders()` (auth kinds, display names), annotated with vault consumer binding `llm-model-call.v1` and egress origins — not a hand-maintained list. |
+| Provider registry | `ProviderRegistryV1` / `ProviderDefinitionV1` contract exists in `packages/agent/src/shared/credentials/registry.ts` (category `"llm"`, api-key field defs, consumer bindings, sandboxEgressOrigins) but only test registries construct it. | Startup registry **derived from Pi**: LLM provider definitions generated from `ModelRuntime.getProviders()` and provider auth metadata, annotated with vault consumer binding `llm-model-call.v1` and egress origins — not a hand-maintained list. |
 | Routes/UI | No credential routes, no credential UI. | Member-scoped connect (OAuth broker + API-key), status, revoke routes for personal credentials; owner-only workspace-scope + promote; "My providers" and "Workspace providers" surfaces rendered from the pi-derived registry. |
 | Fleet tiers | `resolveSeatModel()` / `MODEL_TIER_CANDIDATES` in `loadConfiguredAgentFleet.ts` check instance env presence only. | Consult workspace credential presence via the resolver (r3 S5, bead wt-391-forward-703w). |
 | Validation | None. | OAuth: completing pi's login flow. API key: pi auth resolution + provider model-list probe before commit; re-probe on demand. |
@@ -224,14 +217,12 @@ No hand-rolled per-provider probe adapters. Two cases:
   (`getApiKeyAndHeaders` on a cheap model of the provider), which exercises
   refresh if the token is expired.
 - **API-key providers:** thin wrapper in `packages/agent/src/server/
-  credentials/validation/` that (a) constructs a throwaway in-memory pi
-  `AuthStorage` holding only the pending key, (b) resolves auth through
-  pi's `ModelRegistry` for that provider — so base URLs, headers, and
-  custom-provider config all come from pi's provider definitions, including
-  workspace custom providers registered via `registerProvider` — and (c)
-  issues the provider's model-list request with the resolved auth; providers
-  whose gateway lacks a model-list endpoint fall back to a 1-token
-  completion probe flagged in the definition.
+  credentials/validation/` that (a) constructs a throwaway Pi
+  `InMemoryCredentialStore` holding only the pending key, (b) injects it into
+  `ModelRuntime` so base URLs, headers, and custom-provider config come from
+  Pi's provider definitions, and (c) issues the provider's model-list request
+  with the resolved auth; providers whose gateway lacks a model-list endpoint
+  fall back to a 1-token completion probe flagged in the definition.
 
 Rules (unchanged from r1):
 - Probe/login runs **host-side only** (never in sandbox), egress restricted
@@ -251,9 +242,9 @@ Rules (unchanged from r1):
 
 Exactly the #1132/#1145 path, no new crypto:
 
-- Write: the vault-backed `AuthStorageBackend` (below) and the API-key route
-  call `vaultStoreBackend.writeCredentialFields(workspaceId, providerId,
-  fields)` → fresh `credentialVersion`, AES-256-GCM field envelopes,
+- Write: the actor-bound async `CredentialStore` and the API-key route call
+  `vaultStoreBackend.writeCredentialFields(scope, providerId, fields)` →
+  fresh `credentialVersion`, AES-256-GCM field envelopes,
   AAD-bound, DEK wrapped by the selected `WorkspaceKekProviderV1` (local-KEK
   now; KMS backends later behind the same port). OAuth credentials store the
   full pi `OAuthCredential` JSON (`access`, `refresh`, `expires`, provider
@@ -285,9 +276,8 @@ Two layers:
 **(a) Startup registry (r3 S3), derived from pi.**
 `packages/agent/src/server/credentials/startupRegistry.ts` builds
 `ProviderDefinitionV1` entries **from pi's provider surface** — the provider
-ids/display names/auth kinds that `ModelRegistry` +
-`authStorage.getOAuthProviders()` expose, plus the workspace custom
-OpenAI-compatible definition — annotated with consumer binding
+ids/display names/auth kinds that `ModelRuntime.getProviders()` and provider
+auth metadata expose, plus the workspace custom OpenAI-compatible definition — annotated with consumer binding
 `llm-model-call.v1` and egress origins, composed with the authority verifier
 + vault backend into `createHostSideCredentialResolverV1` inside
 `buildAgentComposition.ts`. Adding a provider pi supports must not require a
@@ -296,7 +286,8 @@ hand-edited list here. Env selection of the KMS backend
 fail-closed.
 
 **(b) Per-session injection.** In `createPiSession` (createHarness.ts),
-replace `AuthStorage.create()` with:
+replace the Pi 0.80.7 `AuthStorage` + `ModelRegistry` construction with an
+actor-bound Pi 0.84.3 `ModelRuntime`:
 
 - **Actor-aware resolution.** Session creation resolves an actor first:
   interactive → acting member's `userId`; background/automation → the
@@ -306,33 +297,30 @@ replace `AuthStorage.create()` with:
   revoked-tombstone rule applying at each layer. If nothing resolves for
   an automation run, it fails closed with `CREDENTIAL_UNRESOLVED`: the run
   pauses and an Inbox Human Intention item is raised.
-- `createVaultAuthStorageBackend(actorScope, resolver)` — implements pi's
-  `AuthStorageBackend` (`withLock`/`withLockAsync`) over the vault:
-  serialized read-modify-write per workspace, exposing the workspace's
-  decrypted credentials to pi in pi's own `AuthStorageData` shape and
-  persisting pi's writes (OAuth refresh, logout) back as versioned vault
-  writes. Compose via `AuthStorage.fromStorage(backend)`. Fallback
-  layering per provider: actor's personal credential → workspace-wide
-  credential → env-backed instance credential, **unless** a credential in
-  the chain is revoked-tombstoned, in which case the chain stops there
-  (fail closed, stable error `CREDENTIAL_REVOKED` surfaces as
-  model-unavailable in the picker). This replaces r1's
-  read-only `createWorkspaceAuthStorage` wrapper — a full backend is
-  required so **pi's OAuth refresh writes land in the vault** instead of
-  being lost.
+- `createVaultCredentialStore(actorScope, resolver)` implements Pi's async
+  `CredentialStore` over the vault. Each instance is immutably bound to the
+  verified workspace/user. `modify()` holds a cross-process advisory/fenced
+  lock across decrypt → Pi refresh → encrypted versioned write, so rotated
+  OAuth credentials are durable before the caller continues. Compose via
+  `ModelRuntime.create({ credentials: vaultCredentialStore })`. Fallback
+  layering per provider is actor personal → workspace-wide → env-backed
+  instance credential, **unless** the chain reaches a revoked tombstone, in
+  which case it stops fail-closed with `CREDENTIAL_REVOKED`. This supersedes
+  both the r1 read-only wrapper and the r3.1 synchronous
+  `createVaultAuthStorageBackend` proposal.
 - `registerConfiguredModelProviders` gains a workspace-aware variant that
-  also registers the workspace's custom OpenAI-compatible provider via pi's
-  `registerProvider` (baseUrl/model metadata from non-secret credential
-  metadata, key via the backend).
+  also registers the workspace's custom OpenAI-compatible provider through
+  `ModelRuntime.registerProvider` (base URL/model metadata from non-secret
+  credential metadata, key through the injected store).
 - Decrypted material is resolved lazily inside the backend under a
   short-lived lease; plaintext lives only inside pi's auth path for that
   session. Live sessions keep the credential they started with; rotation
   applies to new sessions (documented in UI) — except pi-initiated OAuth
   refresh, which updates the vault and the running session's in-memory
   token (pi's normal behavior).
-- Model picker (`routes/models.ts`) becomes actor-aware by asking pi:
-  `getAvailable()` over the actor-resolved AuthStorage (personal →
-  workspace-wide → non-suppressed instance fallback).
+- Model picker (`routes/models.ts`) becomes actor-aware by asking the
+  actor-bound `ModelRuntime` for available models over personal →
+  workspace-wide → non-suppressed instance fallback.
 
 Invariant compliance: all of this is server-side (`packages/agent/src/server`),
 shared contract stays `node:`-free and Uint8Array-only; routes receive
@@ -395,26 +383,20 @@ catalog — slices below build only the vault backend, the scoping rule, and
 the menu; everything else is wiring pi surfaces to routes/UI. Expected
 sizes shrink accordingly.
 
-3. **PR-C — vault AuthStorage backend + routes** (the one real net-new
-   module): `createVaultAuthStorageBackend` (scope rows, versioned refresh
-   writes + advisory lock) and thin routes that call pi — member-scoped
-   `connect`(api-key)/`status`/`disable`/`revoke`/`delete`, owner-gated
-   workspace scope + promote (API-key only), metadata-only GET/list,
-   **host-brokered pi `login()` event stream**. Validation is pi auth
-   resolution + model-list call, no custom adapters. Tests: scope gating,
-   probe/login-before-write, refresh mints new version under lock, no
-   secret in any response/log/event, tombstone semantics. *Expected size:
-   medium — backend + route shells; the auth logic is pi's.*
-4. **PR-D — per-session wiring**: actor resolution + persisted
-   `creatorUserId` (API-key-only rule for unattended runs),
-   `AuthStorage.fromStorage(vaultBackend)` swapped into `createPiSession`,
-   actor-aware model list via pi `getAvailable()`. No changes to pi's
-   registry/refresh machinery. Tests: personal > workspace > env, creator
-   API key funds automation, subscription never funds unattended runs,
-   OAuth refresh persists to vault, revoked stops the chain, unresolved
-   automation pauses + inbox item, keyless workspace identical to today.
-   *Expected size: small — a swap at one construction site + resolution
-   rule.*
+3. **PR-C — Pi 0.84.3 compatibility migration:** upgrade the coordinated Pi
+   package family, replace `AuthStorage` + `ModelRegistry` construction with
+   `ModelRuntime`, and preserve existing env/file behavior before enabling the
+   vault. Tests: interactive streaming, tools, model selection, custom
+   providers, cancellation, and session resume.
+4. **PR-D — async vault store + actor wiring:** implement
+   `createVaultCredentialStore` with scope rows, versioned refresh writes,
+   advisory/fenced lock, actor resolution, and preserved `userId`; inject it
+   through `ModelRuntime.create({ credentials })`. Add thin connect/status/
+   disable/revoke/delete routes and the host-brokered Pi login event stream.
+   Tests: personal > workspace > env, subscription never funds unattended
+   runs, concurrent refresh produces one durable outcome, revoked stops the
+   chain, no secret in responses/logs/events, and keyless workspaces retain
+   today's behavior.
 5. **PR-E — settings menu + picker/chip**: "My providers" (all members) +
    "Workspace providers" (owner-only) rendered from pi's registry with v1
    connectable set (Anthropic, OpenAI, Google; rest listed as not yet
@@ -431,15 +413,15 @@ sizes shrink accordingly.
    `resolveSeatModel()` consults workspace credential presence. Tests per
    r3. *Expected size: small.*
 
-Order: A → B → C → D → E → F (C precedes D since the vault backend lives
-in C; B itself shrinks to composition/wiring since the provider catalog is
-pi's). Each slice green-gated and independently revertible; UI (E) ships
-only after C+D so the flow is real end-to-end.
+Order: A → B → C → D → E → F. C establishes the async Pi seam before D
+adds remote credential custody. Each slice is green-gated and independently
+revertible; UI (E) ships only after C+D so the flow is real end-to-end.
 
 ## Open questions (owner)
 
-- Plan-r3 Q1 of [`plan.md`](plan.md) (local-KEK vs OVH-KMS custody for
-  production) — unchanged, does not block.
+- OVH KMS is the selected production KEK custody path. Exact regional API,
+  least-privilege IAM, `datakey`/`datakey-decrypt`, outage, deletion, and audit
+  behavior still require live qualification against disposable resources.
 - Fallback default for workspaces with an instance key but no workspace
   credential at UI launch (show "instance fallback" chip vs hide) —
   recommend show, it makes revoke semantics legible.

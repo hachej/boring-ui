@@ -1,6 +1,8 @@
 export { CoreWorkspaceAgentFront, DefaultTopBarRight } from './CoreWorkspaceAgentFront.js'
 export type { CoreWorkspaceAgentFrontProps } from './CoreWorkspaceAgentFront.js'
 export type { ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
+export { WorkspaceDefaultAgentRecovery } from './WorkspaceDefaultAgentRecovery.js'
+export type { WorkspaceDefaultAgentRecoveryProps } from './WorkspaceDefaultAgentRecovery.js'
 export { CreditBalanceBadge } from './credits/CreditBalanceBadge.js'
 export type { CreditBalanceBadgeProps } from './credits/CreditBalanceBadge.js'
 export { CreditsSettingsPanel } from './credits/CreditsSettingsPanel.js'

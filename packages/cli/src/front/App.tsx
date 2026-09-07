@@ -1,35 +1,11 @@
-import * as React from "react"
-import * as ReactDom from "react-dom"
-import * as ReactDomClient from "react-dom/client"
-import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
-import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
-import { boringAutomationPlugin } from "@hachej/boring-automation/front"
-import { diagramPlugin } from "@hachej/boring-diagram/front"
-import { liveTranscriptPlugin } from "@hachej/boring-transcription/front"
-import { createTasksPlugin } from "@hachej/boring-tasks/front"
-import * as WorkspaceSingleton from "@hachej/boring-workspace"
-import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
-import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
+import { WorkspaceLoadingState } from "@hachej/boring-workspace/loading"
+import type { BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
+import { installCliRuntimeSingletons, loadWorkspaceRuntimeSingleton } from "./runtimeSingletons"
 
-declare global {
-  var __BORING_RUNTIME_SINGLETONS__: Record<string, unknown> | undefined
-}
-
-globalThis.__BORING_RUNTIME_SINGLETONS__ = {
-  ...globalThis.__BORING_RUNTIME_SINGLETONS__,
-  react: React,
-  "react-dom": ReactDom,
-  "react-dom/client": ReactDomClient,
-  "react/jsx-dev-runtime": ReactJsxDevRuntime,
-  "react/jsx-runtime": ReactJsxRuntime,
-  "@hachej/boring-workspace": WorkspaceSingleton,
-  "@hachej/boring-workspace/events": WorkspaceEventsSingleton,
-  "@hachej/boring-workspace/plugin": WorkspacePluginSingleton,
-}
+installCliRuntimeSingletons()
 
 interface WorkspaceMeta {
   projectName?: string
@@ -60,6 +36,71 @@ interface ProjectSessionOverview {
 
 const PROJECT_SESSION_PREVIEW_INITIAL_LIMIT = 5
 const PROJECT_SESSION_PREVIEW_FETCH_LIMIT = 25
+
+/** Keep in sync with CLI_DEFAULT_PLUGIN_PACKAGES in server/pluginDiscovery.ts. */
+const CLI_DEFAULT_PLUGIN_LOADERS: ReadonlyArray<() => Promise<BoringFrontFactoryWithId>> = [
+  () => import("@hachej/boring-ask-user/front").then((module) => module.createAskUserPlugin({ appLeftInbox: true })),
+  () => import("@hachej/boring-automation/front/descriptor").then((module) => module.boringAutomationPlugin),
+  () => import("@hachej/boring-diagram/front").then((module) => module.diagramPlugin),
+  () => import("@hachej/boring-tasks/front/descriptor").then((module) => module.createTasksPlugin()),
+  () => import("@hachej/boring-transcription/front").then((module) => module.liveTranscriptPlugin),
+]
+
+export async function loadCliDefaultPlugins(
+  loaders: ReadonlyArray<() => Promise<BoringFrontFactoryWithId>> = CLI_DEFAULT_PLUGIN_LOADERS,
+): Promise<BoringFrontFactoryWithId[]> {
+  return Promise.all(loaders.map((load) => load()))
+}
+
+export interface CliFrontLoaders {
+  loadDefaultPlugins: () => Promise<BoringFrontFactoryWithId[]>
+  loadWorkspaceRuntimeSingleton: () => Promise<void>
+}
+
+const DEFAULT_CLI_FRONT_LOADERS: CliFrontLoaders = {
+  loadDefaultPlugins: () => loadCliDefaultPlugins(),
+  loadWorkspaceRuntimeSingleton,
+}
+
+type CliFrontLoadState =
+  | { status: "loading"; plugins: BoringFrontFactoryWithId[]; error: null }
+  | { status: "ready"; plugins: BoringFrontFactoryWithId[]; error: null }
+  | { status: "error"; plugins: BoringFrontFactoryWithId[]; error: Error }
+
+/** Resolve the required provider topology atomically before the first front mount. */
+function useCliDefaultPlugins(
+  enabled: boolean,
+  runtimePluginFrontLoadingEnabled: boolean,
+  loaders: CliFrontLoaders,
+): CliFrontLoadState & { retry: () => void } {
+  const [attempt, setAttempt] = useState(0)
+  const [state, setState] = useState<CliFrontLoadState>({ status: "loading", plugins: [], error: null })
+
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    setState({ status: "loading", plugins: [], error: null })
+    const runtimeLoad = runtimePluginFrontLoadingEnabled
+      ? loaders.loadWorkspaceRuntimeSingleton()
+      : Promise.resolve()
+    void Promise.all([loaders.loadDefaultPlugins(), runtimeLoad])
+      .then(([plugins]) => {
+        if (!cancelled) setState({ status: "ready", plugins, error: null })
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setState({
+          status: "error",
+          plugins: [],
+          error: error instanceof Error ? error : new Error(String(error)),
+        })
+      })
+    return () => { cancelled = true }
+  }, [attempt, enabled, loaders, runtimePluginFrontLoadingEnabled])
+
+  const retry = useCallback(() => setAttempt((current) => current + 1), [])
+  return { ...state, retry }
+}
 
 export function workspaceIdFromCliUrl(pathname: string): string | null {
   const match = pathname.match(/^\/workspace\/([^/?#]+)/)
@@ -162,7 +203,7 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
   )
 }
 
-export function CliWorkspaceShell() {
+export function CliWorkspaceShell({ frontLoaders = DEFAULT_CLI_FRONT_LOADERS }: { frontLoaders?: CliFrontLoaders } = {}) {
   const [projectName, setProjectName] = useState("Workspace")
   const [workspacesMode, setWorkspacesMode] = useState(false)
   const [cliVersion, setCliVersion] = useState<string | null>(null)
@@ -313,15 +354,15 @@ export function CliWorkspaceShell() {
     return () => window.clearInterval(timer)
   }, [workspacesMode, activeWorkspaceId, workspaces, refreshWorkspaces])
 
-  // CLI-default plugins are app code: statically imported, composed once.
-  // Keep in sync with CLI_DEFAULT_PLUGIN_PACKAGES in server/pluginDiscovery.ts.
-  const plugins = useMemo(() => [
-    createAskUserPlugin({ appLeftInbox: true }),
-    boringAutomationPlugin,
-    diagramPlugin,
-    createTasksPlugin(),
-    liveTranscriptPlugin,
-  ], [workspacesMode])
+  // Resolve required defaults as soon as metadata lands, independently of a
+  // selected workspace's availability. The front must never mount with a
+  // partial provider topology and remount when a cold workspace becomes ready.
+  const pluginLoad = useCliDefaultPlugins(
+    metaLoaded,
+    runtimePluginFrontLoadingEnabled,
+    frontLoaders,
+  )
+  const plugins = pluginLoad.plugins
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],
@@ -394,11 +435,35 @@ export function CliWorkspaceShell() {
 
   if (!metaLoaded) {
     return (
-      <WorkspaceSingleton.WorkspaceLoadingState
+      <WorkspaceLoadingState
         title="Loading CLI workspace…"
         description="Preparing the workspace shell."
         status="Loading workspace metadata"
       />
+    )
+  }
+
+  if (pluginLoad.status === "loading") {
+    return (
+      <WorkspaceLoadingState
+        title="Loading CLI workspace…"
+        description="Preparing default workspace capabilities."
+        status="Loading workspace plugins"
+      />
+    )
+  }
+
+  if (pluginLoad.status === "error") {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
+        <div role="alert" className="max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold">Could not load workspace capabilities</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{pluginLoad.error.message}</p>
+          <button type="button" className="mt-4 rounded-md border border-border px-3 py-2 text-sm" onClick={pluginLoad.retry}>
+            Retry
+          </button>
+        </div>
+      </div>
     )
   }
 
@@ -410,7 +475,7 @@ export function CliWorkspaceShell() {
       // show a loading state while the poll above resolves it instead of an error screen.
       if (activeWorkspaceId) {
         return (
-          <WorkspaceSingleton.WorkspaceLoadingState
+          <WorkspaceLoadingState
             title="Loading workspace…"
             description={`Preparing ${activeWorkspaceId}. This can take a moment on first load.`}
             status="Waiting for the workspace runtime"
@@ -424,7 +489,7 @@ export function CliWorkspaceShell() {
       // though the API does return workspaces.
       if (!workspacesLoaded && workspaces.length === 0) {
         return (
-          <WorkspaceSingleton.WorkspaceLoadingState
+          <WorkspaceLoadingState
             title="Loading workspaces…"
             description="Reading the local workspace registry."
             status="Finding workspaces"

@@ -48,10 +48,13 @@ function transcript(id: string, title: string, workspaceScopeId: string, timesta
 }
 
 describe('no-boot addressed session inventory', () => {
-  it('repeatedly lists authoritative existing and legacy transcript metadata without booting a binding', async () => {
+  it('repeatedly lists authoritative existing and historical transcript metadata without booting a binding', async () => {
     const sessionRoot = await temporaryRoot()
     const agents: readonly AgentHostAgentSpec[] = [
-      { agentTypeId: 'default', legacyDefault: true },
+      {
+        agentTypeId: 'default',
+        definition: { instructions: 'default', label: 'Agent' },
+      },
       { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
     ]
     const workspaceScopeId = 'workspace-a:storage-a'

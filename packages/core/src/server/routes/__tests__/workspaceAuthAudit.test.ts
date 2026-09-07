@@ -71,12 +71,12 @@ function resetState() {
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
-    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean }) => {
+    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean; defaultAgentTypeId?: string }) => {
       const id = `ws-${nextWsId++}`
       const ws: Workspace = {
         id, appId, workspaceTypeId: 'default', name, createdBy: userId,
         createdAt: new Date().toISOString(), deletedAt: null,
-        isDefault: opts?.isDefault ?? false,
+        isDefault: opts?.isDefault ?? false, defaultAgentTypeId: opts?.defaultAgentTypeId,
       }
       workspaces.set(id, ws)
       const wsMembers = new Map<string, MemberRole>()
@@ -104,6 +104,39 @@ function mockWorkspaceStore(): WorkspaceStore {
       if (!workspaces.has(id)) return { removed: false as const, code: ERROR_CODES.NOT_FOUND }
       workspaces.delete(id)
       return { removed: true }
+    },
+    deleteAndRecreateDefaultIfEmpty: async (
+      id: string,
+      actingUserId: string,
+      recreate: { name: string; defaultAgentTypeId: string },
+    ) => {
+      const ws = workspaces.get(id)
+      if (!ws) return { removed: false as const, code: ERROR_CODES.NOT_FOUND, recreated: null }
+      const appId = ws.appId
+      workspaces.delete(id)
+      memberDb.delete(id)
+
+      const remaining = [...workspaces.values()].filter(
+        (w) => w.appId === appId && memberDb.get(w.id)?.has(actingUserId),
+      )
+      if (remaining.length > 0) return { removed: true as const, recreated: null }
+
+      const newId = `ws-${nextWsId++}`
+      const recreatedWs: Workspace = {
+        id: newId, appId, workspaceTypeId: 'default', name: recreate.name, createdBy: actingUserId,
+        createdAt: new Date().toISOString(), deletedAt: null,
+        isDefault: true, defaultAgentTypeId: recreate.defaultAgentTypeId,
+      }
+      workspaces.set(newId, recreatedWs)
+      const wsMembers = new Map<string, MemberRole>()
+      wsMembers.set(actingUserId, 'owner')
+      memberDb.set(newId, wsMembers)
+      wsRuntimes.set(newId, {
+        workspaceId: newId, spriteUrl: null, spriteName: null,
+        state: 'ready', lastError: null, volumePath: null, lastErrorOp: null,
+        provisioningStep: null, stepStartedAt: null, updatedAt: new Date().toISOString(),
+      })
+      return { removed: true as const, recreated: recreatedWs }
     },
     getWorkspacesWhereSoleOwner: async () => [],
     getMemberRole: async (wsId: string, userId: string) =>
@@ -251,7 +284,7 @@ const capturedRoutes: Array<{ method: string; url: string; hasPreHandler: boolea
 
 beforeAll(async () => {
   app = Fastify({ logger: false })
-  app.decorate('config', { appId: APP_ID, auth: { url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
+  app.decorate('config', { appId: APP_ID, defaultAgentTypeId: 'default', auth: { url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   registerErrorHandler(app)
 

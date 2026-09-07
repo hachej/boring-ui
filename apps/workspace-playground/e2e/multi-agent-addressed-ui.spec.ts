@@ -125,9 +125,10 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
     window as Window & { __boringChatLoadingTransitions?: number }
   ).__boringChatLoadingTransitions ?? 0)).toBeGreaterThan(0)
 
+  // Opening a session in a second pane moved out of the row's overflow menu
+  // into the hover action strip in #1176; the capability is unchanged.
   await betaRow.hover()
-  await betaRow.getByRole("button", { name: "Chat actions for Scripted baseline" }).click()
-  await page.getByRole("menuitem", { name: "Open in new chat pane" }).click()
+  await betaRow.getByRole("button", { name: "Open Scripted baseline in a split pane" }).click()
   await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(2)
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId!)
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="beta"]')).toHaveAttribute("data-pi-chat-session-id", betaSessionId!)

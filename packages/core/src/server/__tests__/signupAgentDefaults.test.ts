@@ -217,7 +217,7 @@ async function runSignup(opts: {
   return { create, acceptInvite }
 }
 
-describe('signup-domain default-agent initialization (Decision 28 hook)', () => {
+describe('signup-domain additive Agent Seat initialization', () => {
   it('does not consume an uncompiled mapping directly from CoreConfig', async () => {
     const config = makeConfig()
     const { store, create } = makeFakeStore()
@@ -231,33 +231,125 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     })
   })
 
-  it('initializes the new default workspace from the exact trusted host mapping', async () => {
+  it('keeps the general Default Agent and adds the exact trusted host Agent as a specialist Seat', async () => {
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' } })
     expect(create).toHaveBeenCalledTimes(1)
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
       isDefault: true,
-      defaultAgentTypeId: 'legal',
+      defaultAgentTypeId: 'boring-v2',
+      additionalAgentSeat: { agentTypeId: 'legal', source: 'signup-intent' },
     })
+  })
+
+  it('prefers a trusted app-resolved signup intent over hostname and boot defaults', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const resolveInitialAgentSeat = vi.fn(async ({ context }: { context: PostSignupContext | null }) => {
+      expect(context?.getHeader?.('cookie')).toBe('agent-intent=opaque')
+      return 'charlotteledoux'
+    })
+    const hook = createPostSignupHook({
+      config,
+      signupAgentDefaults: compileSignupAgentDefaults(
+        config.signupAgentDefaults,
+        ['boring-v2', 'legal', 'charlotteledoux'],
+        config.security?.trustedProxy,
+      ),
+      applicationAgentTypeIds: ['boring-v2', 'legal', 'charlotteledoux'],
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat,
+    })
+
+    await hook(user, ctxWithHeaders({
+      cookie: 'agent-intent=opaque',
+      [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example',
+    }))
+
+    expect(resolveInitialAgentSeat).toHaveBeenCalledOnce()
+    expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+      additionalAgentSeat: { agentTypeId: 'charlotteledoux', source: 'signup-intent' },
+    })
+  })
+
+  it('does not duplicate the application Default when the resolved specialist matches it', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({
+      config,
+      applicationAgentTypeIds: ['boring-v2', 'legal'],
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat: async () => 'boring-v2',
+    })
+
+    await hook(user, null)
+
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+    })
+  })
+
+  it('rejects an app-resolved specialist outside the compiled fleet before workspace creation', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({
+      config,
+      applicationAgentTypeIds: ['boring-v2', 'legal'],
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat: async () => 'ghost-agent',
+    })
+
+    await expect(hook(user, null)).rejects.toMatchObject({
+      code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+    })
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('fails closed before workspace creation when the trusted intent resolver fails', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({
+      config,
+      applicationAgentTypeIds: ['boring-v2', 'legal'],
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat: async () => { throw new Error('intent store unavailable') },
+    })
+
+    await expect(hook(user, null)).rejects.toThrow('intent store unavailable')
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('normalizes the host (case/port) before the exact lookup', async () => {
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'Legal.Example:443' } })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'legal' })
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+      additionalAgentSeat: { agentTypeId: 'legal', source: 'signup-intent' },
+    })
   })
 
   it('falls back to the boot default for unmapped hosts; email domain never selects', async () => {
     // User email is someone@legal.example, but the request host is unmapped:
     // the email domain must have no effect on seat selection.
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'unmapped.example' } })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+    })
   })
 
-  it('persists no default when neither mapping nor boot default apply', async () => {
-    const { create } = await runSignup({
-      config: makeConfig({ defaultAgentTypeId: undefined, signupAgentDefaults: undefined }),
-      headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' },
-    })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true })
+  it('rejects a missing application default before signup can initialize a Workspace', () => {
+    const config = makeConfig({ defaultAgentTypeId: undefined as unknown as string, signupAgentDefaults: undefined })
+    const { store } = makeFakeStore()
+
+    expect(() => createPostSignupHook({ config, workspaceStore: store, transport: null }))
+      .toThrowError(expect.objectContaining({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID }))
   })
 
   it('never reads the hostname or agent id from caller-controlled headers', async () => {
@@ -273,7 +365,10 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
         query: { hostname: 'legal.example', agentTypeId: 'legal' },
       },
     })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+    })
   })
 
   it('does not persist the signup hostname as product identity', async () => {
@@ -281,7 +376,11 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     const [, name, appId, options] = create.mock.calls[0]!
     expect(name).toBe('Default workspace')
     expect(appId).toBe('test-app')
-    expect(Object.keys(options as object).sort()).toEqual(['defaultAgentTypeId', 'isDefault'])
+    expect(Object.keys(options as object).sort()).toEqual([
+      'additionalAgentSeat',
+      'defaultAgentTypeId',
+      'isDefault',
+    ])
     expect(JSON.stringify(create.mock.calls[0])).not.toContain('legal.example')
   })
 

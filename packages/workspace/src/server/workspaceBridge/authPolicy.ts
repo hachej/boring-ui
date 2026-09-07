@@ -151,7 +151,7 @@ export function createBrowserBridgeAuthPolicy(
 /**
  * Dev/local CLI only. This policy performs no user authentication and grants
  * the configured capabilities (defaulting to the op's own) to a fixed
- * trusted local user principal. Do not use it for exposed or production servers; pass a
+ * local principal. Do not use it for exposed or production servers; pass a
  * host-owned createBrowserBridgeAuthPolicy-style policy instead.
  */
 export function createLocalCliBridgeAuthPolicy(

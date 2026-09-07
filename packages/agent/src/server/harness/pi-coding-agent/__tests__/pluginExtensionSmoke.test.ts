@@ -20,14 +20,6 @@ vi.mock("@mariozechner/pi-coding-agent", async () => {
     ...actual,
     createAgentSession: mockCreateAgentSession,
     SessionManager: { inMemory: () => ({}), create: () => ({ getSessionFile: () => null }), open: () => ({ getSessionFile: () => null }) },
-    AuthStorage: {
-      inMemory: () => ({}),
-      create: () => ({}),
-    },
-    ModelRegistry: {
-      inMemory: () => ({ find: () => undefined }),
-      create: () => ({ find: () => undefined }),
-    },
   };
 });
 

@@ -1,7 +1,7 @@
 import type { FunctionComponent } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { SurfaceShell, type SurfaceShellApi, type SurfaceShellProps } from "../SurfaceShell"
+import { MAX_OPEN_FILE_TABS, SurfaceShell, type SurfaceShellApi, type SurfaceShellProps } from "../SurfaceShell"
 import { RegistryProvider } from "../../../registry"
 import { PanelRegistry } from "../../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
@@ -140,6 +140,77 @@ describe("SurfaceShell", () => {
     expect(screen.getByRole("button", { name: "Close workbench" })).toBeInTheDocument()
   })
 
+  it("hides the pinned activity rail and empty header strip on mobile full-bleed takeover", () => {
+    renderSurface("workspace-a", { hideLevelOneHeader: true })
+
+    const shell = screen.getByTestId("surface-shell")
+    const header = shell.querySelector('[data-boring-workspace-part="workbench-level-one-header"]')
+    const rail = shell.querySelector<HTMLElement>('[data-boring-workspace-part="surface-sidebar"]')
+
+    // No level-one header is rendered at all.
+    expect(header).toBeNull()
+    // The collapsed rail collapses to nothing so the workbench content spans
+    // the full viewport width instead of leaving a dead icon sliver.
+    expect(rail).not.toBeNull()
+    expect(rail).toHaveStyle({ width: "0px" })
+    expect(rail).toHaveClass("hidden")
+    expect(rail).toHaveAttribute("aria-hidden", "true")
+  })
+
+  it("gives the compact empty workbench a real tap target that opens the sources", () => {
+    renderSurface("workspace-a", { hideLevelOneHeader: true })
+
+    const shell = screen.getByTestId("surface-shell")
+    const emptyState = screen.getByTestId("empty-workbench")
+    const cta = screen.getByTestId("empty-workbench-cta")
+
+    // The overlay stays inert, but the one action on it must be tappable.
+    expect(emptyState).toHaveClass("pointer-events-none")
+    expect(cta).toHaveClass("pointer-events-auto")
+    expect(cta).toHaveClass("min-h-11")
+    expect(emptyState).toHaveClass("items-center", "text-center", "px-4")
+    expect(emptyState).not.toHaveClass("pb-10")
+    // Copy must not name affordances the takeover removed.
+    expect(emptyState.textContent).not.toContain("Open a source item")
+
+    const rail = shell.querySelector<HTMLElement>('[data-boring-workspace-part="surface-sidebar"]')
+    expect(rail).toHaveAttribute("aria-hidden", "true")
+
+    fireEvent.click(cta)
+
+    // Sources take over the whole surface rather than splitting a phone width.
+    expect(rail).not.toHaveAttribute("aria-hidden")
+    expect(rail).not.toHaveAttribute("inert")
+    expect(rail).not.toHaveClass("hidden")
+    expect(rail).toHaveClass("absolute", "inset-0")
+    expect(rail).toHaveStyle({ width: "100%" })
+    expect(capturedWorkbenchProps.railOnly).toBe(false)
+    // No drag handle: there is no split to resize.
+    expect(shell.querySelector('[data-boring-workspace-part="workbench-source-resize"]')).toBeNull()
+  })
+
+  it("keeps the desktop empty workbench free of the compact call to action", () => {
+    renderSurface("workspace-a")
+
+    const emptyState = screen.getByTestId("empty-workbench")
+    expect(screen.queryByTestId("empty-workbench-cta")).toBeNull()
+    expect(emptyState).toHaveClass("items-start", "px-6", "pb-10")
+    expect(emptyState.textContent).toContain("Open a source item")
+  })
+
+  it("only reserves the header-actions gutter on the dockview strip when a header is rendered", () => {
+    const { unmount } = renderSurface("workspace-a")
+    const tabs = () =>
+      screen.getByTestId("surface-shell").querySelector('[data-boring-workspace-part="surface-tabs"]')
+
+    expect(tabs()).toHaveClass("workbench-dockview")
+    expect(tabs()).not.toHaveAttribute("data-full-bleed")
+    unmount()
+
+    renderSurface("workspace-a", { hideLevelOneHeader: true })
+    expect(tabs()).toHaveAttribute("data-full-bleed", "true")
+  })
+
   it("lets the collapsed activity rail fill the host and reopen the Workbench", () => {
     const onHostExpand = vi.fn()
     renderSurface("workspace-a", { hostRailOnly: true, onHostExpand })
@@ -153,6 +224,10 @@ describe("SurfaceShell", () => {
     expect(body).toHaveStyle({ height: "100%" })
     expect(rail).toHaveStyle({ height: "calc(100% - 44px)" })
     expect(rail).toHaveAttribute("data-boring-state", "host-collapsed")
+    // The desktop rail remains an interactive source/page launcher even while
+    // the editor body is collapsed; only the mobile full-bleed takeover is inert.
+    expect(rail).not.toHaveAttribute("aria-hidden")
+    expect(rail).not.toHaveAttribute("inert")
     expect(rail).toHaveClass("border-border")
     expect(rail?.parentElement).toBe(body)
     expect(header).toHaveClass("border-border")
@@ -232,6 +307,161 @@ describe("SurfaceShell", () => {
       component: "hot-csv.panel",
       params: expect.objectContaining({ path: "data.csv", filesystem: "company_context" }),
     }))
+  })
+
+  it("retains persistent file opens as distinct tabs while focusing each one", async () => {
+    let surface: SurfaceShellApi | undefined
+    mockAddPanel.mockImplementation((config: any) => {
+      const panel = {
+        ...config,
+        api: {
+          setActive: () => { mockActivePanel = panel },
+          updateParameters: (params: Record<string, unknown>) => { panel.params = params },
+          close: vi.fn(),
+        },
+      }
+      mockPanels.push(panel)
+      mockActivePanel = panel
+      return panel
+    })
+    mockGetPanel = (id: string) => mockPanels.find((panel) => panel.id === id)
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openFile("one.md", { preview: false })
+      surface?.openFile("two.md", { preview: false })
+      surface?.openFile("three.md", { preview: false })
+    })
+
+    expect(surface?.getSnapshot()).toEqual({
+      openTabs: [
+        expect.objectContaining({ id: "file:user:one.md", params: expect.objectContaining({ __workbenchPreview: false }) }),
+        expect.objectContaining({ id: "file:user:two.md", params: expect.objectContaining({ __workbenchPreview: false }) }),
+        expect.objectContaining({ id: "file:user:three.md", params: expect.objectContaining({ __workbenchPreview: false }) }),
+      ],
+      activeTab: "file:user:three.md",
+    })
+  })
+
+  it("bounds persistent file tabs so a looping agent cannot pin hundreds", async () => {
+    let surface: SurfaceShellApi | undefined
+    mockAddPanel.mockImplementation((config: any) => {
+      const panel = {
+        ...config,
+        api: {
+          setActive: () => { mockActivePanel = panel },
+          updateParameters: (params: Record<string, unknown>) => { panel.params = params },
+          close: () => {
+            // Mutate in place: SurfaceShell captured this exact array as
+            // `api.panels`, so reassigning would hide the close from it.
+            const index = mockPanels.indexOf(panel)
+            if (index >= 0) mockPanels.splice(index, 1)
+            if (mockActivePanel === panel) mockActivePanel = null
+          },
+        },
+      }
+      mockPanels.push(panel)
+      mockActivePanel = panel
+      return panel
+    })
+    mockGetPanel = (id: string) => mockPanels.find((panel) => panel.id === id)
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    const paths = Array.from({ length: MAX_OPEN_FILE_TABS + 3 }, (_, index) => `file-${index}.md`)
+    act(() => {
+      for (const path of paths) surface?.openFile(path, { preview: false })
+    })
+
+    const snapshot = surface?.getSnapshot()
+    expect(snapshot?.openTabs).toHaveLength(MAX_OPEN_FILE_TABS)
+    // The three oldest tabs are evicted; every newer one, including the last
+    // file the agent asked for, is still open and focused.
+    expect(snapshot?.openTabs.map((tab) => tab.id)).toEqual(
+      paths.slice(3).map((path) => `file:user:${path}`),
+    )
+    expect(snapshot?.activeTab).toBe(`file:user:${paths[paths.length - 1]}`)
+  })
+
+  it("promotes an existing preview when an agent persistently opens the same file", async () => {
+    let surface: SurfaceShellApi | undefined
+    const updateParameters = vi.fn()
+    const setActive = vi.fn()
+    mockPanels = [{
+      id: "file:user:README.md",
+      component: "editor",
+      title: "README.md",
+      params: { path: "README.md", filesystem: "user", __workbenchPreview: true },
+      api: { updateParameters, setActive, close: vi.fn() },
+    }]
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+    act(() => { surface?.openFile("README.md", { preview: false }) })
+
+    expect(mockAddPanel).not.toHaveBeenCalled()
+    expect(updateParameters).toHaveBeenCalledWith(expect.objectContaining({ __workbenchPreview: false }))
+    expect(setActive).toHaveBeenCalledOnce()
+  })
+
+  it("never demotes an existing persistent tab during a direct preview reopen", async () => {
+    let surface: SurfaceShellApi | undefined
+    const updateParameters = vi.fn()
+    const setActive = vi.fn()
+    mockPanels = [{
+      id: "file:user:README.md",
+      component: "editor",
+      title: "README.md",
+      params: { path: "README.md", filesystem: "user", __workbenchPreview: false },
+      api: { updateParameters, setActive, close: vi.fn() },
+    }]
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+    act(() => { surface?.openFile("README.md") })
+
+    expect(mockAddPanel).not.toHaveBeenCalled()
+    expect(updateParameters).toHaveBeenCalledWith(expect.not.objectContaining({ __workbenchPreview: true }))
+    expect(setActive).toHaveBeenCalledOnce()
   })
 
   it("reactivates legacy user file panels instead of duplicating default workspace opens", async () => {

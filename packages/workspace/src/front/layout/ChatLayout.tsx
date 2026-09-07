@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { Maximize2, MessageSquare, Minimize2, PanelRightClose, PanelRightOpen } from "lucide-react"
 import { cn } from "../lib/utils"
@@ -139,10 +139,48 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const commandRegistry = useCommandRegistry()
   const mobileShell = props.mobileShellEnabled === true && isCompactViewport(viewport)
-  const effectiveNavWidth = mobileShell ? Math.min(Math.max(280, Math.floor(viewport * 0.86)), 360) : clamp(navWidth, 200, 360)
-  const effectiveSidebarWidth = mobileShell ? viewport : clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
-  const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
-  const effectiveSurfaceWidth = mobileShell ? viewport : clamp(surfaceWidth, 480, surfaceMax)
+  // Desktop-only widths. The mobile drawers are `absolute` boxes pinned by
+  // their insets, so they size themselves from the real containing block —
+  // measuring `window.innerWidth` in JS instead both fought the right inset and
+  // hard-floored the nav drawer at 280px, overflowing any narrower host.
+  const effectiveNavWidth = clamp(navWidth, 200, 360)
+  const effectiveSidebarWidth = clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
+  const sidebarOpen = Boolean(props.sidebar)
+  // `viewport` is the full browser window width. Hosts that wrap ChatLayout
+  // in their own persistent chrome (e.g. the plugin-tabs shell's app-left
+  // rail/pane) consume some of that width before ChatLayout's own row ever
+  // starts, so `viewport` overstates how much room the chat+workbench row
+  // actually has. `rowWidth` is the real figure: it prefers a live
+  // measurement of ChatLayout's own chat+workbench row (`rowRef`, attached
+  // below to the flex row that actually holds `<main>`/`<aside>` — NOT the
+  // outer shell, which also contains the session/workbench-left drawers and
+  // so overstates the row just as much as `viewport` did) and falls back,
+  // before that measurement lands, to `viewport` minus this component's own
+  // known drawer widths (nav + workbench-left), which are already known
+  // synchronously from persisted state on the very first render.
+  // `surfaceMax`/`effectiveSurfaceWidth` used to size the workbench purely
+  // off `viewport`, so on medium desktop widths a wide persisted workbench
+  // could consume the entire real row, squeezing the chat column (and any
+  // mandatory chat overlay like Tasks/Skills) down toward 0 width while
+  // editor tabs stayed open — ChatLayout deliberately skips the
+  // auto-collapse-chat-on-narrow-viewport effect below whenever an overlay
+  // is active, so the overlay's flex wrapper was the thing left computing
+  // to ~0 width. See #1451.
+  const [measuredRowWidth, setMeasuredRowWidth] = useState<number | null>(null)
+  const rowWidthEstimate = mobileShell
+    ? viewport
+    : Math.max(0, viewport - (navOpen ? effectiveNavWidth : 0) - (sidebarOpen ? effectiveSidebarWidth : 0))
+  const rowWidth = measuredRowWidth ?? rowWidthEstimate
+  const MIN_CHAT_OVERLAY_WIDTH = 280
+  const chatOverlayReserve = !mobileShell && props.chatOverlay && surfaceOpen && !chatCollapsed
+    ? MIN_CHAT_OVERLAY_WIDTH
+    : 0
+  const surfaceMax = mobileShell
+    ? viewport
+    : Math.max(480, Math.floor(rowWidth * 0.72))
+  const effectiveSurfaceWidth = mobileShell
+    ? viewport
+    : Math.max(200, Math.min(clamp(surfaceWidth, 480, surfaceMax), rowWidth - chatOverlayReserve))
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
   const uiIsWorkbenchOpen = getFunction<() => boolean>(props.centerParams, "isWorkbenchOpen")
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
@@ -158,14 +196,102 @@ export function ChatLayout(props: ChatLayoutProps) {
   const activeMobileChatPane = hasChatPanes
     ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
     : undefined
-  const sidebarOpen = Boolean(props.sidebar)
   const shellRef = useRef<HTMLDivElement | null>(null)
+  const rowRef = useRef<HTMLDivElement | null>(null)
   const navDrawerRef = useRef<HTMLElement | null>(null)
   const sidebarDrawerRef = useRef<HTMLElement | null>(null)
   const scheduleLocalComposerFocus = useCallback(() => {
     const shell = shellRef.current
     if (shell) scheduleComposerFocus(shell)
   }, [])
+  // Explicit "give the composer the keyboard" intent (the Focus Chat command),
+  // as opposed to the opportunistic focus fallbacks above: it must land even
+  // when something else currently holds focus. See #1391/focusChat below.
+  const forceLocalComposerFocus = useCallback(() => {
+    const shell = shellRef.current
+    if (shell) scheduleComposerFocus(shell, { force: true })
+  }, [])
+  // Feeds `measuredRowWidth` above with the chat+workbench row's real
+  // content width — see the #1451 note at its declaration. Attached to
+  // `rowRef` (the flex row that directly holds `<main>`/`<aside>` below),
+  // not `shellRef` (the outer shell, which also contains the session and
+  // workbench-left drawers and so overstates the row width by however much
+  // of those is open).
+  //
+  // `useLayoutEffect`, not `useEffect`: this measurement feeds a width that
+  // is itself rendered as a fixed CSS px value a few lines down, so reading
+  // it after paint (as a passive effect would) can let the browser paint one
+  // frame at the stale/estimated width before snapping to the measured one
+  // — most visible on first mount with a wide persisted workbench width and
+  // an overlay already open. Layout effects run synchronously after DOM
+  // mutations but before the browser paints, so the corrected width is what
+  // actually reaches the screen.
+  useLayoutEffect(() => {
+    const el = rowRef.current
+    if (!el) return
+    const measure = () => {
+      const width = el.getBoundingClientRect().width
+      // A real, mounted, visible row is never legitimately 0px wide. Treat 0
+      // as "no usable measurement yet" (environments with no real layout —
+      // jsdom's ResizeObserver polyfill is a no-op that never calls back, and
+      // `getBoundingClientRect` always reports zeros — or a momentarily
+      // display:none ancestor) rather than let it override `rowWidthEstimate`
+      // with a value that would floor every width computation below at 200.
+      if (width <= 0) return
+      setMeasuredRowWidth((previous) => (previous === width ? previous : width))
+    }
+    measure()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => measure())
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  // #1457 finding-2 follow-up: `useLayoutEffect` guarantees no *painted*
+  // frame shows the pre-measurement estimate, but it does not guarantee no
+  // *animated* one. `measure()` above reads `getBoundingClientRect()`,
+  // which forces a synchronous layout/style pass against whatever style is
+  // on the DOM at that instant (the first render's `effectiveSurfaceWidth`,
+  // computed from `rowWidthEstimate` — which cannot see host chrome outside
+  // this component, e.g. the plugin-tabs app-left pane). If the corrected
+  // width is applied in the same commit as a `transition-duration` that is
+  // already active on that property, the browser can still treat the
+  // forced-layout value as the transition's start point and animate through
+  // it, even though it was never actually painted. So the workbench's width
+  // transition is intentionally withheld (`surfaceTransitionEnabled` below,
+  // gated in the JSX) until a real measurement has landed, and even then it
+  // is armed one frame *later*, in this separate effect — never in the same
+  // commit as a width correction — so "transition turns on" and "width
+  // changes" can never be the same style recalculation.
+  //
+  // The gate's source of truth is `surfaceTransitionEnabled` alone — no
+  // separate "armed" ref. An earlier version set a ref to `true` *before*
+  // scheduling the frame, then never reset it if that frame's schedule was
+  // cancelled (e.g. a second, distinct `measuredRowWidth` arrives before the
+  // first frame runs — the effect's cleanup cancels the pending callback,
+  // but the ref stayed `true`, so the next effect run bailed out at its
+  // first line and never rescheduled — `surfaceTransitionEnabled` then
+  // stayed `false` for the component's entire lifetime, permanently
+  // disabling this transition for every later legitimate change too:
+  // collapse/restore, fullscreen, drag-resize, a genuine host-chrome
+  // resize). Gating on the state value itself instead means every effect
+  // run that hasn't yet enabled it will (re)schedule a frame — including
+  // one whose predecessor's frame was cancelled — and once
+  // `surfaceTransitionEnabled` flips `true` the guard's own dependency stops
+  // any further scheduling. See #1457.
+  const [surfaceTransitionEnabled, setSurfaceTransitionEnabled] = useState(false)
+  useEffect(() => {
+    if (surfaceTransitionEnabled) return
+    // No real measurement yet, and one is still possible — wait for it
+    // rather than arming against the unmeasured estimate.
+    if (measuredRowWidth === null && typeof ResizeObserver !== "undefined") return
+    const raf = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(() => setSurfaceTransitionEnabled(true))
+      : (setTimeout(() => setSurfaceTransitionEnabled(true), 0) as unknown as number)
+    return () => {
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf)
+      else clearTimeout(raf as unknown as ReturnType<typeof setTimeout>)
+    }
+  }, [measuredRowWidth, surfaceTransitionEnabled])
   const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
   const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
   useModalDrawer({ active: navIsTopDrawer, containerRef: navDrawerRef, onDismiss: closeNav, focusFallback: scheduleLocalComposerFocus, lifecycleKey: sidebarOpen })
@@ -189,6 +315,11 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (chatCollapsed) setChatCollapsed(false)
     closeSurface?.()
   }, [chatCollapsed, closeSurface, setChatCollapsed])
+  // Hoisted so ChatPaneStageDock's memoized StageContext value (which captures
+  // renderPane) stays stable across ChatLayout re-renders.
+  const renderChatPane = useCallback((pane: { panel?: string; params?: Record<string, unknown> }) => (
+    <PanelSlot id={pane.panel ?? centerId} params={pane.params ?? props.centerParams} />
+  ), [centerId, props.centerParams])
   const toggleSurface = useCallback(() => {
     if (surfaceOpen) {
       collapseWorkbench()
@@ -208,8 +339,18 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (navOpen) closeNav?.()
     if (surfaceOpen) closeSurface?.()
     focusAgentComposer(shellRef.current)
-    scheduleLocalComposerFocus()
-  }, [chatCollapsed, closeNav, closeSurface, navOpen, scheduleLocalComposerFocus, setChatCollapsed, surfaceOpen])
+    // Deferred AND forced, not just the opportunistic `onlyFromBody` retry.
+    // When Focus Chat is run from the command palette the Radix dialog is
+    // still mounted and focus-trapped, so the synchronous focus above is
+    // yanked straight back into the palette by its FocusScope; then the
+    // dialog's close-auto-focus restores focus to whatever opened it (the
+    // app-left Search button in the smoke test). Both of those land after
+    // this callback returns and neither leaves focus on <body>, so the
+    // opportunistic retry declined to fire and the command silently did
+    // nothing. The forced retry re-claims the composer once the palette has
+    // finished closing.
+    forceLocalComposerFocus()
+  }, [chatCollapsed, closeNav, closeSurface, forceLocalComposerFocus, navOpen, setChatCollapsed, surfaceOpen])
   const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
     const collapsing = !chatCollapsed
@@ -227,6 +368,19 @@ export function ChatLayout(props: ChatLayoutProps) {
     setChatRailPulse(false)
   }, [chatCollapsed, props.chatOverlay, props.onOpenSurface, setChatCollapsed, surfaceOpen])
 
+  // Identity-stable workbench PanelSlot params: a fresh object literal here
+  // would re-render the whole surface pane on every ChatLayout render.
+  const fullBleedSurfaceParams = useMemo(() => ({ ...props.surfaceParams, hideLevelOneHeader: true }), [props.surfaceParams])
+  const railOnlySurfaceParams = useMemo(() => ({
+    ...props.surfaceParams,
+    hostRailOnly: !surfaceOpen,
+    showCloseAction: true,
+    onClose: collapseWorkbench,
+    onHostExpand: openWorkbenchSplit,
+    hostFullscreen: chatCollapsed,
+    onHostToggleFullscreen: toggleChatCollapsed,
+  }), [props.surfaceParams, surfaceOpen, collapseWorkbench, openWorkbenchSplit, chatCollapsed, toggleChatCollapsed])
+
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {
       const shortcuts: ShortcutBinding[] = []
@@ -240,7 +394,18 @@ export function ChatLayout(props: ChatLayoutProps) {
         shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
       }
       if (!sidebarOpen && !navOpen && centerId === "chat") {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
+        shortcuts.push({
+          key: "Escape",
+          allowInEditable: true,
+          // An open dropdown/dialog/popover should get first crack at
+          // Escape and close itself. Without this guard, this shortcut's
+          // unconditional preventDefault() fires before Radix's own
+          // Escape handling ever runs (both listen on `document` in the
+          // capture phase, and this one mounts first), so the overlay
+          // silently never closes. See #1391.
+          shouldHandle: () => !isDismissableOverlayOpen(),
+          handler: focusChat,
+        })
       }
       if (centerId === "chat") {
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
@@ -448,14 +613,29 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-modal={navIsTopDrawer}
         tabIndex={-1}
         className={cn(
-          mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          mobileShell
+            // Compact: a sheet. `inset-y-0 left-0` + a CSS width places it, and
+            // it slides on `transform` — animating `width` here relaid out the
+            // whole viewport every frame for 280ms.
+            ? cn(
+                "absolute inset-y-0 left-0 z-50 h-full w-[min(86%,360px)] shadow-2xl",
+                // `visibility` rides the same transition: painted while it
+                // slides out, properly hidden once off-screen — a translated-
+                // but-"visible" dialog violates the UI-review modal gates at
+                // the closed checkpoint.
+                "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                navOpen ? "translate-x-0 visible" : "-translate-x-full invisible",
+              )
+            : cn(
+                "relative h-full shrink-0",
+                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              ),
           navOpen
             ? "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
             : "pointer-events-none z-0",
         )}
-        style={{
+        style={mobileShell ? undefined : {
           width: navOpen ? effectiveNavWidth : 0,
           minWidth: navOpen ? effectiveNavWidth : 0,
           maxWidth: navOpen ? effectiveNavWidth : 0,
@@ -465,6 +645,11 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
+            // Full-bleed on a phone means the last session row would sit under
+            // the home indicator / rounded corners without these. The keyboard
+            // inset matters on iOS, where the layout viewport never shrinks:
+            // without it the drawer's bottom rows hide behind the keyboard.
+            mobileShell && "pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))] pl-[var(--sa-left,0px)]",
             "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
           )}
@@ -490,12 +675,20 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-modal={sidebarIsTopDrawer}
         tabIndex={-1}
         className={cn(
-          mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          mobileShell
+            ? cn(
+                "absolute inset-0 z-40 h-full",
+                "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                sidebarOpen ? "translate-x-0 visible" : "-translate-x-full pointer-events-none invisible",
+              )
+            : cn(
+                "relative h-full shrink-0",
+                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              ),
           sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
         )}
-        style={{
+        style={mobileShell ? undefined : {
           width: sidebarOpen ? effectiveSidebarWidth : 0,
           minWidth: sidebarOpen ? effectiveSidebarWidth : 0,
           maxWidth: sidebarOpen ? effectiveSidebarWidth : 0,
@@ -505,6 +698,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
+            mobileShell && "pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))] pl-[var(--sa-left,0px)] pr-[var(--sa-right,0px)]",
             "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             sidebarOpen ? "opacity-100" : "opacity-0",
           )}
@@ -520,7 +714,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         ) : null}
       </aside>
 
-      <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+      <div ref={rowRef} data-boring-workspace-part="chat-workbench-row" className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
         <main
           data-boring-workspace-part="chat-stage"
           data-boring-state={chatHidden ? "collapsed" : "expanded"}
@@ -531,21 +725,32 @@ export function ChatLayout(props: ChatLayoutProps) {
             // z-index 999) so the chat-left overlay can stack above them
             // without escaping into page-level chrome.
             "relative isolate h-full min-h-0 min-w-0 overflow-hidden bg-background",
-            mobileShell && !chatHidden && "flex flex-col",
-            // Animate flex-grow (not just width) so the chat slides open/closed
-            // like the fixed-width nav/workbench panes instead of snapping.
-            "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-            chatHidden
-              ? "min-w-0 flex-[0_0_0px]"
-              : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+            mobileShell
+              // Compact: the workbench takes over as an `inset-0` overlay above
+              // this stage, so there is nothing to resize — no layout-property
+              // animation of a full-viewport element.
+              ? "flex min-w-0 flex-1 flex-col"
+              : cn(
+                  // Animate flex-grow (not just width) so the chat slides
+                  // open/closed like the fixed-width nav/workbench panes
+                  // instead of snapping.
+                  "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                  chatHidden
+                    ? "min-w-0 flex-[0_0_0px]"
+                    : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+                ),
           )}
         >
           {mobileShell && !chatHidden ? (
             <MobileChatBar
+              pane={activeMobileChatPane}
+              totalPanes={chatPanes.length}
               canOpenNav={Boolean(props.onOpenNav)}
               canOpenWorkspace={canControlSurface}
               onOpenNav={props.onOpenNav}
               onOpenWorkspace={toggleSurface}
+              actions={props.chatTopActions}
+              onClosePane={props.onCloseChatPane}
             />
           ) : null}
           <div
@@ -558,15 +763,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             {hasChatPanes && mobileShell && activeMobileChatPane ? (
               <MobileSingleChatPane
                 pane={activeMobileChatPane}
-                totalPanes={chatPanes.length}
-                topActions={props.chatTopActions}
-                onClosePane={props.onCloseChatPane}
-                renderPane={(pane) => (
-                  <PanelSlot
-                    id={pane.panel ?? centerId}
-                    params={pane.params ?? props.centerParams}
-                  />
-                )}
+                renderPane={renderChatPane}
               />
             ) : hasChatPanes ? (
               <ChatPaneStage
@@ -583,12 +780,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 flashPaneId={props.flashChatPaneId}
                 storageKey={props.storageKey}
                 onDropSession={props.onDropChatSession}
-                renderPane={(pane) => (
-                  <PanelSlot
-                    id={pane.panel ?? centerId}
-                    params={pane.params ?? props.centerParams}
-                  />
-                )}
+                renderPane={renderChatPane}
               />
             ) : (
               <PanelSlot id={centerId} params={props.centerParams} />
@@ -604,22 +796,43 @@ export function ChatLayout(props: ChatLayoutProps) {
             aria-label={surfaceOpen ? "Workbench" : "Workbench activity rail"}
             aria-hidden={mobileShell && !surfaceOpen}
             className={cn(
-              mobileShell ? "absolute inset-0 z-40" : "relative",
               "h-full min-h-0 overflow-hidden bg-background",
-              // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
-              (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
-              "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              !mobileShell && surfaceOpen && "border-l border-border",
+              mobileShell
+                // Compact: an `inset-0` sheet that slides in on `transform`.
+                // It is the full viewport, so animating its width repainted and
+                // relaid out every pixel on screen — dockview grid included —
+                // for 280ms on every open/close.
+                ? cn(
+                    "absolute inset-0 z-40",
+                    "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    surfaceOpen ? "translate-x-0 visible" : "pointer-events-none invisible translate-x-full",
+                  )
+                : cn(
+                    "relative",
+                    // Collapsed workbench fills available width; otherwise it is a side panel.
+                    chatCollapsed && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
+                    // Withheld until `surfaceTransitionEnabled` arms (see the
+                    // effect above) so the very first width correction —
+                    // driven by a real `rowRef` measurement replacing the
+                    // pre-measurement `rowWidthEstimate` — never animates.
+                    // Legitimate later changes (drag-resize, collapse
+                    // toggle, a real host-chrome resize) do animate, same as
+                    // before.
+                    surfaceTransitionEnabled && "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    surfaceOpen && "border-l border-border",
+                  ),
             )}
             style={
-              (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen
-                ? { width: "auto", minWidth: 0, maxWidth: "none", flex: "1 1 0%", willChange: "width" }
-                : {
-                    width: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
-                    minWidth: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
-                    maxWidth: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
-                    willChange: "width",
-                  }
+              mobileShell
+                ? undefined
+                : chatCollapsed && surfaceOpen
+                  ? { width: "auto", minWidth: 0, maxWidth: "none", flex: "1 1 0%", willChange: "width" }
+                  : {
+                      width: surfaceOpen ? effectiveSurfaceWidth : 44,
+                      minWidth: surfaceOpen ? effectiveSurfaceWidth : 44,
+                      maxWidth: surfaceOpen ? effectiveSurfaceWidth : 44,
+                      willChange: "width",
+                    }
             }
           >
             <div
@@ -632,14 +845,21 @@ export function ChatLayout(props: ChatLayoutProps) {
               {mobileWorkspaceOpen ? (
                 <div className="flex h-full min-h-0 flex-col">
                   <MobileWorkspaceBar onBack={focusChat} />
-                  <div className="min-h-0 flex-1 overflow-hidden">
+                  {/* The takeover is full-bleed, which is exactly what puts the
+                      last row of a tree/diff under the home indicator and the
+                      edges under the rounded corners. Padding (not
+                      `scroll-padding-bottom`) because the scroll containers are
+                      nested inside arbitrary panels this level cannot reach,
+                      and `scroll-padding` only affects programmatic/snap
+                      scrolling — it would not clear a resting last row. */}
+                  <div className="min-h-0 flex-1 overflow-hidden pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))] pl-[var(--sa-left,0px)] pr-[var(--sa-right,0px)]">
                     {props.surfaceOverlay ? (
                       <div className="relative h-full min-h-0">
                         {props.surfaceOverlay}
                       </div>
                     ) : <PanelSlot
                       id={surfaceId}
-                      params={{ ...props.surfaceParams, hideLevelOneHeader: true }}
+                      params={fullBleedSurfaceParams}
                     />}
                   </div>
                 </div>
@@ -655,15 +875,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 </WorkbenchOverlayFrame>
               ) : <PanelSlot
                 id={surfaceId}
-                params={{
-                  ...props.surfaceParams,
-                  hostRailOnly: !surfaceOpen,
-                  showCloseAction: true,
-                  onClose: collapseWorkbench,
-                  onHostExpand: openWorkbenchSplit,
-                  hostFullscreen: chatCollapsed,
-                  onHostToggleFullscreen: toggleChatCollapsed,
-                }}
+                params={railOnlySurfaceParams}
               />}
             </div>
             {surfaceOpen && !chatCollapsed && !mobileShell ? (
@@ -720,6 +932,17 @@ export function ChatLayout(props: ChatLayoutProps) {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
+}
+
+// Radix (dropdown menu, dialog, popover, ...) renders open overlays via a
+// portal and marks them with these attributes. When one is open, Escape
+// belongs to it — not to the "focus chat" shortcut below. See #1391.
+const DISMISSABLE_OVERLAY_OPEN_SELECTOR =
+  '[data-radix-popper-content-wrapper], [role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+
+function isDismissableOverlayOpen(): boolean {
+  if (typeof document === "undefined") return false
+  return document.querySelector(DISMISSABLE_OVERLAY_OPEN_SELECTOR) !== null
 }
 
 type StoredNumberUpdate = number | ((previous: number) => number)
@@ -873,11 +1096,18 @@ function focusAgentComposer(
   textarea?.focus()
 }
 
-function scheduleComposerFocus(root: HTMLElement | null = null): void {
+function scheduleComposerFocus(
+  root: HTMLElement | null = null,
+  options: { force?: boolean } = {},
+): void {
   if (typeof window === "undefined") return
+  // `onlyFromBody` keeps the opportunistic fallbacks (drawer dismiss, blocker
+  // clear) from stealing focus from wherever the user actually is. A forced
+  // schedule is the explicit-intent path and claims the composer regardless.
+  const focusOptions = { onlyFromBody: !options.force }
   window.requestAnimationFrame(() => {
-    focusAgentComposer(root, { onlyFromBody: true })
-    window.setTimeout(() => focusAgentComposer(root, { onlyFromBody: true }), 320)
+    focusAgentComposer(root, focusOptions)
+    window.setTimeout(() => focusAgentComposer(root, focusOptions), 320)
   })
 }
 
@@ -892,11 +1122,15 @@ function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown
   const components = useMemo(() => registry.getComponents(), [registry, registrySnapshot])
   const Component = components[id] as ComponentType<PaneProps<Record<string, unknown> | undefined>> | undefined
   const api = useMemo(() => createPanelApi(id), [id])
+  // Stable merged params: a fresh object literal here would defeat every
+  // downstream React.memo/useMemo keyed on `params` and re-render the whole
+  // pane tree on each ChatLayout render (resize, streaming state, …).
+  const mergedParams = useMemo(() => ({ ...params, debug }), [params, debug])
   if (!Component) return null
   return (
     <Suspense fallback={<LoadingState centered />}>
       <Component
-        params={{ ...params, debug }}
+        params={mergedParams}
         api={api as PaneProps["api"]}
         containerApi={{} as PaneProps["containerApi"]}
       />

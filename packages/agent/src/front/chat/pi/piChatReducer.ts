@@ -69,6 +69,7 @@ export interface PiChatState {
   workspaceId?: string
   storageScope: string
   status: PiChatStatus
+  currentModel?: PiChatSnapshot['currentModel']
   turnId?: string
   lastSeq: number
   committedMessages: BoringChatMessage[]
@@ -92,6 +93,7 @@ export interface PiChatState {
 export type PiChatReducerAction =
   | { type: 'hydrate'; snapshot: PiChatSnapshot; allowSeqRewind?: boolean }
   | { type: 'cursor-sync'; cursor: number }
+  | { type: 'model-confirmed'; model: NonNullable<PiChatSnapshot['currentModel']> }
   | { type: 'event'; event: PiChatEvent }
   | { type: 'optimistic-user-message'; message: OptimisticUserMessage }
   | { type: 'remove-optimistic-user-message'; clientNonce: string }
@@ -133,6 +135,8 @@ export function piChatReducer(state: PiChatState, action: PiChatReducerAction): 
       return hydrateFromSnapshot(state, action.snapshot, { allowSeqRewind: action.allowSeqRewind })
     case 'cursor-sync':
       return syncCursor(state, action.cursor)
+    case 'model-confirmed':
+      return { ...state, currentModel: action.model }
     case 'event':
       return applySequencedEvent(state, action.event)
     case 'optimistic-user-message':
@@ -259,6 +263,7 @@ function hydrateFromSnapshot(
     ...state,
     sessionId: snapshot.sessionId,
     status: snapshot.status,
+    currentModel: snapshot.currentModel,
     turnId: snapshot.activeTurnId,
     lastSeq: snapshot.seq,
     committedMessages,
@@ -330,6 +335,8 @@ function applySequencedEvent(state: PiChatState, event: PiChatEvent): PiChatStat
 
 function reduceEvent(state: PiChatState, event: PiChatEvent): PiChatState {
   switch (event.type) {
+    case 'model-changed':
+      return { ...state, currentModel: event.currentModel }
     case 'agent-start':
       return { ...state, status: 'streaming', turnId: event.turnId, error: undefined, streamingPreservedTextPartKeys: undefined }
     case 'agent-end':

@@ -15,7 +15,8 @@ import {
   renderResetPassword,
   renderMagicLink,
 } from '../mail/templates/index.js'
-import { createPostSignupHook } from './postSignupHook.js'
+import { buildResetPasswordUrl } from '../mail/links.js'
+import { createPostSignupHook, type ResolveInitialAgentSeat } from './postSignupHook.js'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 import type { ValidatedSignupAgentDefaults } from '../signupAgentDefaults.js'
@@ -117,10 +118,13 @@ export interface CreateAuthOptions {
   workspaceStore?: WorkspaceStore
   /** Boot-compiled, fleet-validated signup map from the full server composer. */
   signupAgentDefaults?: ValidatedSignupAgentDefaults
+  /** Boot-compiled fleet required by an initial specialist resolver. */
+  applicationAgentTypeIds?: readonly string[]
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
   disableDefaultWorkspaceCreation?: boolean
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat
 }
 
 async function createReplayableRequest(request: Request): Promise<Request> {
@@ -177,7 +181,10 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     ? async (data: any) => {
         const email = await renderResetPassword({
           to: data.user.email,
-          resetUrl: data.url,
+          // better-auth's own `data.url` is its default path-token shape
+          // (/auth/reset-password/<token>), which doesn't match the SPA's
+          // query-string route. Build the SPA link from the raw token instead.
+          resetUrl: buildResetPasswordUrl(config, data.token),
           appName: config.appName,
           expiresInHours: 1,
         })
@@ -205,10 +212,12 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       ? createPostSignupHook({
         config,
         signupAgentDefaults: opts.signupAgentDefaults,
+        applicationAgentTypeIds: opts.applicationAgentTypeIds,
         workspaceStore: opts.workspaceStore,
         transport,
         logger: opts.logger,
         disableDefaultWorkspaceCreation: opts.disableDefaultWorkspaceCreation,
+        resolveInitialAgentSeat: opts.resolveInitialAgentSeat,
       })
     : undefined
 

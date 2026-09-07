@@ -89,6 +89,8 @@ export type AskUserFormSchema = {
 
 export type AskUserRequest = {
   sessionId: string
+  /** Defaults to true. Non-blocking asks return as soon as the question is durable. */
+  blocking?: boolean
   title?: string
   context?: string
   schema?: AskUserFormSchema
@@ -100,10 +102,15 @@ export type AskUserRequest = {
   toolCallId?: string
   /** Trusted server/runtime attribution. Not accepted from browser bridge inputs. */
   ownerPrincipalId?: string
+  /** Trusted delivery coordinates for non-blocking answer follow-ups. */
+  agentTypeId?: string
+  workspaceId?: string
+  askingUserId?: string
 }
 
 export type AskUserToolInput = {
   title: string
+  blocking?: boolean
   context?: string
   schema: AskUserFormSchema
   artifacts?: HumanArtifact[]
@@ -120,6 +127,16 @@ export type AskUserQuestion = {
   /** Optional so persisted questions created before #1086 remain readable. */
   toolCallId?: string
   ownerPrincipalId: string
+  /** Missing on legacy records means true. */
+  blocking?: boolean
+  /** Trusted runtime address used only for non-blocking answer delivery. */
+  agentTypeId?: string
+  workspaceId?: string
+  askingUserId?: string
+  delivery?: {
+    status: "undelivered" | "delivered"
+    updatedAt: string
+  }
   status: AskUserQuestionStatus
   /** False means this durable question intentionally has no in-process waiter. */
   wait?: boolean
@@ -153,6 +170,7 @@ export type AskUserCancelReason =
 export type AskUserToolResult =
   | { status: "filed"; questionId: string; sessionId: string }
   | { status: "answered"; answer: AskUserAnswer }
+  | { questionId: string; status: "pending"; blocking: false }
   | {
       status: "cancelled"
       questionId: string

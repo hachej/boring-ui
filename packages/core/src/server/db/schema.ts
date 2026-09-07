@@ -57,9 +57,13 @@ export const workspaces = pgTable(
   },
   (table) => [
     index('workspaces_created_by_idx').on(table.createdBy),
+    // Partial on deleted_at IS NULL too: a soft-deleted default row must not
+    // block the auto-recreate insert when a user deletes their only workspace
+    // (issue #1463 — the old index let a tombstoned default collide with the
+    // fresh one, bricking the account with zero active workspaces).
     uniqueIndex('idx_workspaces_default_per_user_app')
       .on(table.createdBy, table.appId)
-      .where(sql`${table.isDefault} = true`),
+      .where(sql`${table.isDefault} = true AND ${table.deletedAt} IS NULL`),
     check(
       'workspaces_workspace_type_id_check',
       sql`${table.workspaceTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,
@@ -68,12 +72,55 @@ export const workspaces = pgTable(
       'workspaces_default_agent_type_id_check',
       sql`${table.defaultAgentTypeId} IS NULL OR ${table.defaultAgentTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,
     ),
+    check(
+      'workspaces_default_agent_type_id_required_check',
+      sql`${table.defaultAgentTypeId} IS NOT NULL`,
+    ),
   ],
 )
 
 export const workspacesRelations = relations(workspaces, ({ one }) => ({
   creator: one(users, {
     fields: [workspaces.createdBy],
+    references: [users.id],
+  }),
+}))
+
+export const workspaceAgentSeats = pgTable(
+  'workspace_agent_seats',
+  {
+    seatId: uuid('seat_id').default(sql`gen_random_uuid()`).primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    agentTypeId: text('agent_type_id').notNull(),
+    source: text('source').notNull(),
+    enrolledByUserId: uuid('enrolled_by_user_id')
+      .references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('workspace_agent_seats_workspace_agent_idx')
+      .on(table.workspaceId, table.agentTypeId),
+    index('workspace_agent_seats_workspace_id_idx').on(table.workspaceId),
+    check(
+      'workspace_agent_seats_agent_type_id_check',
+      sql`${table.agentTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,
+    ),
+    check(
+      'workspace_agent_seats_source_check',
+      sql`${table.source} IN ('signup-intent', 'generic-default', 'user-add', 'migration-default', 'migration-session', 'operator')`,
+    ),
+  ],
+)
+
+export const workspaceAgentSeatsRelations = relations(workspaceAgentSeats, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [workspaceAgentSeats.workspaceId],
+    references: [workspaces.id],
+  }),
+  enrolledBy: one(users, {
+    fields: [workspaceAgentSeats.enrolledByUserId],
     references: [users.id],
   }),
 }))

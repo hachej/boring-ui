@@ -1,5 +1,11 @@
 export type { BoringChatMessage, BoringChatMessageRole, BoringChatMessageStatus, BoringChatPart } from './boringChatMessage'
+export type { AgentPromptPayload } from './agentPromptPayload'
 export type { ChatError } from './chatError'
+export {
+  chatErrorFromUnknown,
+  isModelContextWindowError,
+  MODEL_CONTEXT_RECOVERY_MESSAGE,
+} from './modelContextError'
 export type { ChatAttachmentPayload, ChatModelSelection, ChatSubmitPayload, ThinkingLevel } from './chatSubmitPayload'
 export type {
   CommandReceipt,
@@ -15,6 +21,7 @@ export type {
   StopReceipt,
 } from './piChatCommand'
 export type { PiChatEvent, PiChatHeartbeatFrame, PiChatStreamFrame } from './piChatEvent'
+export type { PiChatAttachmentResult } from './piChatAttachment'
 export type { PiChatSnapshot, PiChatStatus, QueuedUserMessage } from './piChatSnapshot'
 export {
   BoringChatMessageSchema,

@@ -14,9 +14,10 @@ function mergeInjectedProjectPackages(
   settingsJson: string | undefined,
   piPackages: PiPackageSource[],
   includePackage?: (source: PiPackageSource) => boolean,
+  includeConfiguredPackages = true,
 ): string {
   const settings = settingsJson ? JSON.parse(settingsJson) : {};
-  const configuredPackages = Array.isArray(settings.packages)
+  const configuredPackages = includeConfiguredPackages && Array.isArray(settings.packages)
     ? settings.packages
     : [];
   return JSON.stringify({
@@ -30,9 +31,14 @@ export function createResourceSettingsManager(
   cwd: string,
   agentDir: string,
   piPackages: PiPackageSource[],
-  options: { includePackage?: (source: PiPackageSource) => boolean } = {},
+  options: {
+    includePackage?: (source: PiPackageSource) => boolean;
+    includeConfiguredPackages?: boolean;
+  } = {},
 ): SettingsManager {
-  if (piPackages.length === 0 && !options.includePackage) return SettingsManager.create(cwd, agentDir);
+  if (piPackages.length === 0 && !options.includePackage && options.includeConfiguredPackages !== false) {
+    return SettingsManager.create(cwd, agentDir);
+  }
 
   const globalSettingsPath = join(agentDir, "settings.json");
   const projectSettingsPath = join(cwd, ".pi", "settings.json");
@@ -46,14 +52,24 @@ export function createResourceSettingsManager(
     withLock(scope, fn) {
       if (scope === "global") {
         const current = globalSettingsOverrideJson
-          ?? mergeInjectedProjectPackages(readSettingsFileIfPresent(globalSettingsPath), [], options.includePackage);
+          ?? mergeInjectedProjectPackages(
+            readSettingsFileIfPresent(globalSettingsPath),
+            [],
+            options.includePackage,
+            options.includeConfiguredPackages,
+          );
         const next = fn(current);
         if (next !== undefined) globalSettingsOverrideJson = next;
         return;
       }
 
       const current = projectSettingsOverrideJson
-        ?? mergeInjectedProjectPackages(readSettingsFileIfPresent(projectSettingsPath), piPackages, options.includePackage);
+        ?? mergeInjectedProjectPackages(
+          readSettingsFileIfPresent(projectSettingsPath),
+          piPackages,
+          options.includePackage,
+          options.includeConfiguredPackages,
+        );
       const next = fn(current);
       if (next !== undefined) projectSettingsOverrideJson = next;
     },

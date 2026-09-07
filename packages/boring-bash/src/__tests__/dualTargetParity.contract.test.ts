@@ -394,6 +394,10 @@ describe.each(targets)('$name frozen contract', (target) => {
     expect(observation.metadata.harness.map((tool) => tool.name)).toEqual([
       'bash', 'execute_isolated_code',
     ])
+    const bashPrompt = observation.metadata.harness.find((tool) => tool.name === 'bash')?.promptSnippet
+    expect(bashPrompt).toContain('user runtime workspace')
+    expect(bashPrompt).toContain('named filesystem bindings are not shell paths')
+    expect(bashPrompt).not.toContain('bash commands (ls, grep, find')
     expect(observation.metadata.upload.map((tool) => tool.name)).toEqual(['upload_file'])
     expect(observation.results.readResult.isError).toBe(false)
     expect(observation.results.bashResult.isError).toBe(false)
@@ -433,6 +437,23 @@ describe.each(targets)('$name frozen contract', (target) => {
       payload: expect.stringContaining('event: unsupported'),
     })
   })
+})
+
+test('file tools explain named filesystem bindings generically', () => {
+  const bundle: TestRuntimeBundle = {
+    storageRoot: '/workspace',
+    workspace: inMemoryWorkspace(),
+    sandbox: fakeSandbox(),
+    fileSearch: { async search() { return [] } },
+    filesystem: { kind: 'remote-workspace' },
+  }
+  const [read] = buildFilesystemAgentTools(bundle, { getFilesystemBindings: async () => [] })
+
+  expect(read!.promptSnippet).toContain(
+    'Named filesystem bindings are logical filesystems exposed through first-class file tools; they are not shell paths.',
+  )
+  expect(read!.promptSnippet).toContain('File tools default to the user workspace when filesystem is omitted.')
+  expect(read!.promptSnippet).toContain('Use the filesystem parameter explicitly for named context')
 })
 
 test('upload_file falls back to the host storage root when binary reads are unavailable', async () => {

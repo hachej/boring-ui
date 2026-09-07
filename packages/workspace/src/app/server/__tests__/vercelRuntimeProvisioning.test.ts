@@ -22,7 +22,7 @@ import { defineServerPlugin } from "../../../server/plugins/defineServerPlugin"
 const tempDirs: string[] = []
 
 test("sandbox runtime host rejects unknown modes with the stable resolver error", () => {
-  expect(() => createSandboxRuntimeModeAdapter("custom-sandbox" as "direct"))
+  expect(() => createSandboxRuntimeModeAdapter("custom-sandbox"))
     .toThrow('Runtime mode "custom-sandbox" has no built-in adapter')
 })
 
@@ -163,6 +163,7 @@ function createFakeVercelMode(state: {
 
   return {
     id: "vercel-sandbox",
+    getRuntimeLayoutRoot: () => workspaceRoot,
     workspaceFsCapability: "best-effort",
     async create(ctx) {
       if (state.acquisitions !== undefined) state.acquisitions += 1

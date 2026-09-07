@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content: Android Chrome >= 108 otherwise
+         leaves the layout viewport at full height when the software keyboard
+         opens, so the composer of a fixed-height `overflow: hidden` shell ends
+         up underneath it. iOS ignores the key; `useKeyboardInset()` covers it
+         there via `--keyboard-inset`. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Boring UI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,7 +30,9 @@
       :root[data-theme="light"] { color-scheme: light; --boot-bg: #fbfaf8; --boot-sidebar: #f7f6f3; --boot-fg: #25231f; --boot-border: #e7e4de; --boot-skeleton: #efede9; --boot-muted: #77716a; }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--boot-bg); color: var(--boot-fg); font-family: Geist, system-ui, sans-serif; }
-      .boot-shell { display: flex; min-height: 100vh; overflow: hidden; background: var(--boot-bg); }
+      /* dvh, not vh: `100vh` is the *large* viewport on mobile, so with the URL
+         bar showing the boot shell overflows the visible area by its height. */
+      .boot-shell { display: flex; min-height: 100vh; min-height: 100dvh; overflow: hidden; background: var(--boot-bg); }
       .boot-sidebar { width: 268px; flex: none; padding: 16px; border-right: 1px solid var(--boot-border); background: var(--boot-sidebar); }
       .boot-brand, .boot-row { display: flex; align-items: center; gap: 12px; }
       .boot-brand { height: 32px; padding-left: 32px; }

@@ -1,18 +1,20 @@
 import type {
+  AgentPromptPayload,
   ChatModelSelection,
   CommandReceipt,
   FollowUpPayload,
   FollowUpReceipt,
   InterruptPayload,
   PiChatEvent,
+  PiChatAttachmentResult,
   PiChatSnapshot,
-  PromptPayload,
   PromptReceipt,
   QueueClearPayload,
   QueueClearReceipt,
   StopPayload,
   StopReceipt,
 } from '../shared/chat'
+export type { AgentPromptPayload, PiChatAttachmentResult } from '../shared/chat'
 import type { SessionListOptions, SessionSummary } from '../shared/session'
 
 export interface PiSessionRequestContext {
@@ -31,9 +33,6 @@ export interface PiSessionCreateInit {
   modelDefault?: ChatModelSelection
 }
 
-/** Server-only prompt admission selector; browser schemas never accept requireIdle. */
-export type AgentPromptPayload = PromptPayload & { readonly requireIdle?: true }
-
 export type PiChatReplayRangeError =
   | { type: 'replay_gap'; latestSeq: number; minReplaySeq: number }
   | { type: 'cursor_ahead'; latestSeq: number; minReplaySeq: number }
@@ -48,12 +47,6 @@ export interface PiChatEventStreamSubscription {
 export type PiChatEventStreamResult = PiChatEventStreamSubscription | PiChatReplayRangeError
 
 export type PiChatEventSubscriber = (event: PiChatEvent) => void
-
-export interface PiChatAttachmentResult {
-  data: Uint8Array
-  mediaType: string
-  filename?: string
-}
 
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>

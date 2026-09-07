@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto"
-import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { expect, test, type Page } from "@playwright/test"
 import {
@@ -29,6 +28,8 @@ import {
 import { createCalibrationRecord, createExecutionPacket } from "../src/core/improvement"
 import { pairWithLocalBaseline } from "../src/core/pairing"
 import { renderUiReviewHtml, renderUiReviewMarkdown } from "../src/core/report"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../src/core/tempRoot"
+import { withStableBrowserCapture } from "../src/core/captureStability"
 import {
   checkpointAppliesToViewport,
   type UiReviewBrowserErrors,
@@ -36,6 +37,10 @@ import {
   type UiReviewVisualBaselineResult,
 } from "../src/core/reviewSpec"
 import { getUiReviewSpec } from "../src/registry"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+test.afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const TOOL_ROOT = resolve(import.meta.dirname, "..")
 const REPO_ROOT = resolve(TOOL_ROOT, "../..")
@@ -203,26 +208,28 @@ async function capture(
   results: UiHardGateReport["results"],
   visualBaseline?: UiReviewVisualBaselineResult,
 ): Promise<void> {
-  const screenshotPath = `selected/${viewport.name}/${String(states.length + 1).padStart(3, "0")}-${checkpoint}.png`
-  const absolutePath = resolve(outputRoot, screenshotPath)
-  await mkdir(dirname(absolutePath), { recursive: true })
-  const screenshot = await page.screenshot({ animations: "disabled" })
-  await writeFile(absolutePath, screenshot)
-  const screenshotDigest = createHash("sha256").update(screenshot).digest("hex")
-  const stateId = createUiReviewStateId({ runId, scenarioId: spec.id, role: "candidate", viewport, checkpoint, screenshotDigest })
-  states.push({
-    id: stateId,
-    scenarioId: spec.id,
-    role: "candidate",
-    checkpoint,
-    viewport,
-    screenshotPath,
-    screenshotDigest,
-    screenshotBytes: screenshot.byteLength,
-    source: "known",
+  await withStableBrowserCapture(page, async () => {
+    const screenshotPath = `selected/${viewport.name}/${String(states.length + 1).padStart(3, "0")}-${checkpoint}.png`
+    const absolutePath = resolve(outputRoot, screenshotPath)
+    await mkdir(dirname(absolutePath), { recursive: true })
+    const screenshot = await page.screenshot({ animations: "disabled" })
+    await writeFile(absolutePath, screenshot)
+    const screenshotDigest = createHash("sha256").update(screenshot).digest("hex")
+    const stateId = createUiReviewStateId({ runId, scenarioId: spec.id, role: "candidate", viewport, checkpoint, screenshotDigest })
+    states.push({
+      id: stateId,
+      scenarioId: spec.id,
+      role: "candidate",
+      checkpoint,
+      viewport,
+      screenshotPath,
+      screenshotDigest,
+      screenshotBytes: screenshot.byteLength,
+      source: "known",
+    })
+    const snapshot = await spec.hardGates.collect(page, stateId, checkpoint, viewport, copyErrors(errors), visualBaseline)
+    results.push(...spec.hardGates.evaluate(snapshot).results)
   })
-  const snapshot = await spec.hardGates.collect(page, stateId, checkpoint, viewport, copyErrors(errors), visualBaseline)
-  results.push(...spec.hardGates.evaluate(snapshot).results)
 }
 
 function explorationGateResults(selection: UiReviewSelection | null): UiHardGateReport["results"] {
@@ -266,8 +273,8 @@ async function resolveCritic(manifest: UiReviewManifest) {
   }
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("UI_REVIEW_CRITIC_CREDENTIAL_MISSING")
-  const tempHome = await mkdtemp(resolve(tmpdir(), "ui-review-home."))
-  const tempConfig = await mkdtemp(resolve(tmpdir(), "ui-review-config."))
+  const tempHome = await createUiReviewTempDir("ui-review-home.")
+  const tempConfig = await createUiReviewTempDir("ui-review-config.")
   const criticPromptPath = resolve(outputRoot, "critic-prompt.md")
   await writeFile(criticPromptPath, spec.criticPrompt, "utf8")
   const invocation = buildPiCriticInvocation({

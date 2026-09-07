@@ -48,6 +48,60 @@ export type RuntimeFilesystemStrategy =
   | { kind: 'host' }
   | { kind: 'remote-workspace'; pathOptions?: RuntimeRemoteWorkspacePathOptions }
 
+export interface RuntimeProjectionRequest {
+  /** Server-private endpoint coordinates. Never expose this request to plugin/front/model code. */
+  port: number
+  path?: string
+}
+
+export interface RuntimeProjectionLease {
+  /** Sealed upstream consumed only by the Host projection broker. */
+  readonly url: string
+  readonly expiresAt: string
+  revoke(): Promise<void>
+}
+
+export type RuntimeTrustedServiceOperation =
+  | 'start'
+  | 'observe'
+  | 'act'
+  | 'takeover'
+  | 'return-control'
+  | 'stop'
+
+export interface RuntimeTrustedServiceQualificationV1 {
+  readonly serviceRef: 'trusted-service-v1'
+  readonly protocolDigest: string
+  readonly imageDigest: string
+  readonly isolation: 'dedicated-uid-private-channel'
+}
+
+export interface RuntimeTrustedServiceLeaseV1 {
+  readonly qualification: RuntimeTrustedServiceQualificationV1
+  invoke(input: {
+    readonly operation: RuntimeTrustedServiceOperation
+    readonly payload?: Uint8Array
+    readonly timeoutMs: number
+    readonly signal: AbortSignal
+  }): Promise<{ readonly status: 'ok' | 'rejected' | 'unknown-outcome'; readonly payload?: Uint8Array }>
+  /** Host-only fixed endpoint lookup. No host, port, URL, or provider identity crosses this seam. */
+  createProjection(input: {
+    readonly mode: 'observe' | 'control'
+    readonly expiresAt: Date
+  }): Promise<RuntimeProjectionLease>
+  close(): Promise<void>
+}
+
+export interface RuntimeTrustedServiceMechanismV1 {
+  readonly qualification: RuntimeTrustedServiceQualificationV1
+  acquire(input: {
+    readonly leaseId: string
+    readonly idleTtlMs: number
+    readonly absoluteTtlMs: number
+    readonly signal: AbortSignal
+  }): Promise<RuntimeTrustedServiceLeaseV1>
+}
+
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
   readonly runtimeHost?: AgentRuntimeHostOperations
@@ -60,7 +114,8 @@ export interface RuntimeModeAdapter {
   readonly readiness?: RuntimeModeReadinessHooks
   readonly cachedBindingHealthCheck?: RuntimeCachedBindingHealthCheck
   create(ctx: ModeContext): Promise<RuntimeBundle>
-  getRuntimeLayoutRoot?(ctx: ModeContext): string
+  /** Resolves the provider-owned workspace root in runtime coordinates. */
+  getRuntimeLayoutRoot(ctx: ModeContext): string
   evictCachedRuntime?(ctx: { workspaceId: string }): void | Promise<void>
   dispose?(): Promise<void>
 }
@@ -97,17 +152,29 @@ export interface RuntimeFilesystemBindingOperations {
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
+export interface RuntimeFilesystemCatalogPresentation {
+  readonly visible?: boolean
+  readonly label?: string
+  readonly rootDir?: '.' | `/${string}`
+}
+
 export interface RuntimeFilesystemBinding {
   readonly filesystem: string
   readonly access: 'readonly' | 'readwrite'
   readonly operations: RuntimeFilesystemBindingOperations
+  /** User-facing catalog projection; internal routing continues to use filesystem. */
+  readonly catalog?: RuntimeFilesystemCatalogPresentation
+  /** When present, only these addressed Agents receive this user-visible binding. */
+  readonly agentTypeIds?: readonly string[]
 }
 
 
 export interface RuntimeBundle {
   runtimeContext?: WorkspaceRuntimeContext
   /**
-   * Server-private host/storage root for host-side filesystem work. Do not use
+   * Server-private host/storage root for host-side filesystem work. Required
+   * when runtime-coordinate workspace resources have an explicit host mirror;
+   * absence means composition must not infer or project a host path. Do not use
    * this as the agent-visible cwd; Workspace.root remains the public runtime
    * namespace shown to tools/model.
    */
@@ -125,6 +192,10 @@ export interface RuntimeBundle {
   filesystem?: RuntimeFilesystemStrategy
   /** Optional filesystem bindings prepared for this runtime/session. */
   filesystemBindings?: RuntimeFilesystemBinding[]
+  /** Pair-local projection authority captured with this exact RuntimeBundle generation. */
+  createRuntimeProjection?: (request: RuntimeProjectionRequest) => Promise<RuntimeProjectionLease>
+  /** Qualified fixed service channel. Ordinary Agent tools never receive this field. */
+  trustedServiceV1?: RuntimeTrustedServiceMechanismV1
   /**
    * Workspace-relative prefixes the host protects from mutation. Carried on the
    * bundle so shell/provisioning enforcement uses the same policy as the

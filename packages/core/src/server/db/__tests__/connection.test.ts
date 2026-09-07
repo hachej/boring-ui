@@ -11,6 +11,7 @@ const BASE_CONFIG: CoreConfig = {
   staticDir: null,
   databaseUrl: null,
   stores: 'local',
+  defaultAgentTypeId: 'default',
   cors: { origins: ['http://localhost:3000'], credentials: true },
   bodyLimit: 16 * 1024 * 1024,
   logLevel: 'silent' as CoreConfig['logLevel'],

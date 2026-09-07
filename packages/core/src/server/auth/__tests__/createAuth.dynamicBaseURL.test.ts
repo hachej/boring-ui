@@ -17,6 +17,7 @@ function makeConfig(): CoreConfig {
     staticDir: null,
     databaseUrl: TEST_DB_URL,
     stores: 'postgres',
+    defaultAgentTypeId: 'default',
     cors: {
       origins: ['https://app.example.test', 'https://agent.example.test'],
       credentials: true,

@@ -21,4 +21,10 @@ describe("pi built-in tools opt-out", () => {
     expect(harnessSource).not.toContain("includeDefaultTools")
     expect(harnessSource).not.toContain("useBuiltinTools")
   })
+
+  it("passes ModelRuntime instead of legacy auth and registry options", () => {
+    expect(harnessSource).toContain("modelRuntime,")
+    expect(harnessSource).not.toContain(["auth", "Storage:"].join(""))
+    expect(harnessSource).not.toContain(["model", "Registry:"].join(""))
+  })
 })

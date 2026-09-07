@@ -225,6 +225,7 @@ export const AskUserFormSchemaSchema = z
 export const AskUserToolInputSchema = z
   .object({
     title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).min(1),
+    blocking: z.boolean().optional(),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema,
     artifacts: HumanArtifactListSchema.optional(),
@@ -241,6 +242,7 @@ export const AskUserToolInputSchema = z
 export const AskUserRequestSchema = z
   .object({
     sessionId: z.string().min(1),
+    blocking: z.boolean().optional(),
     title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).optional(),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema.optional(),

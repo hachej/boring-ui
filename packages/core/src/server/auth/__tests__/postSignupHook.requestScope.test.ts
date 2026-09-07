@@ -6,6 +6,7 @@ import { REQUEST_SCOPE_WORKSPACE_HEADER } from '../requestWorkspaceScope'
 
 const config = {
   appId: 'test-app',
+  defaultAgentTypeId: 'default',
   auth: { url: 'https://app.example.test' },
   features: { sendWelcomeEmail: false },
 } as CoreConfig
@@ -30,7 +31,10 @@ describe('request-scoped post-signup workspace creation', () => {
 
     await hook(user, null)
 
-    expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', config.appId, { isDefault: true })
+    expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', config.appId, {
+      isDefault: true,
+      defaultAgentTypeId: 'default',
+    })
   })
 
   it('accepts a valid invite without creating a personal default', async () => {

@@ -53,7 +53,9 @@ Resumable unit of work ("ACME proposal", "Why is EZ inflation sticky?",
 interface Thread { threadId: string; workspaceId: string; title?: string; participants?: ParticipantRef[]; workingSet?: ResourceRef[] }
 ```
 Implementation: recasts AgentGateway session machinery; owns one per-session
-record (A2a) and many Runs.
+record (A2a) and many Runs. *(Storage-shape note, 2026-08-26: the one-record
+backing shape is suspended pending the thread-storage spike — RECONCILIATION
+§8; the ontology stands.)*
 
 ### Mount
 Addressable governed namespace exposing data/resources/capabilities to a

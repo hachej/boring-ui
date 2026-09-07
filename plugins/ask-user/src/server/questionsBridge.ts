@@ -48,12 +48,7 @@ export class QuestionsBridge {
     if (question.status !== "ready" || !question.schema) throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready", 409)
     validateAnswerValues(question.schema.fields, command.params.values)
     try {
-      const status = await this.options.runtime.submitAnswer(question.questionId, question.sessionId, command.params.values)
-      if (status === "abandoned") {
-        const latest = await this.options.store.getByQuestionId(question.questionId)
-        if (latest?.status === "answered") return { ok: true, status: "answered" }
-        throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question waiter is no longer available", 409)
-      }
+      await this.options.runtime.submitAnswer(question.questionId, question.sessionId, command.params.values)
     } catch (error) {
       if (isCode(error, ASK_USER_ERROR_CODES.ALREADY_ANSWERED)) return { ok: true, status: "answered" }
       throw error
@@ -75,7 +70,10 @@ export class QuestionsBridge {
     if (question.sessionId !== browserSessionId || auth.sessionId !== browserSessionId) {
       throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.SESSION_MISMATCH, "session mismatch", 403)
     }
-    if (question.ownerPrincipalId !== "anonymous" && question.ownerPrincipalId !== auth.principalId) {
+    const anonymousBlockingOwner = question.ownerPrincipalId === "anonymous"
+      && question.blocking !== false
+      && auth.principalId === "anonymous"
+    if (!anonymousBlockingOwner && question.ownerPrincipalId !== auth.principalId) {
       throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.UNAUTHORIZED, "principal mismatch", 403)
     }
   }

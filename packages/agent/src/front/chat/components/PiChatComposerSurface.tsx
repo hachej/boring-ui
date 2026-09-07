@@ -82,6 +82,10 @@ export interface PiChatComposerSurfaceProps<
   onComposerBlockerAction?: (blocker: TComposerBlocker, action: string) => void
   queuePreview: QueuedUserMessage[]
   onEditQueued: () => void
+  onResumeQueued: () => void
+  resumeQueuedPending: boolean
+  onRemoveQueued?: () => void
+  queueMutationPending: boolean
   hotReloadEnabled: boolean
   pluginUpdateState: PluginUpdateState | null
   onDismissPluginUpdate: () => void
@@ -103,6 +107,8 @@ export interface PiChatComposerSurfaceProps<
   onDismissSlash: () => void
   modelPickerOpen: boolean
   selectedModel: ModelSelection | null
+  sessionModel?: ModelSelection
+  modelOverride: boolean
   modelOptions: AvailableModel[]
   modelControlled: boolean
   hideDefaultModelOption?: boolean
@@ -145,6 +151,10 @@ export function PiChatComposerSurface<
   onComposerBlockerAction,
   queuePreview,
   onEditQueued,
+  onResumeQueued,
+  resumeQueuedPending,
+  onRemoveQueued,
+  queueMutationPending,
   hotReloadEnabled,
   pluginUpdateState,
   onDismissPluginUpdate,
@@ -166,6 +176,8 @@ export function PiChatComposerSurface<
   onDismissSlash,
   modelPickerOpen,
   selectedModel,
+  sessionModel,
+  modelOverride,
   modelOptions,
   modelControlled,
   hideDefaultModelOption = false,
@@ -194,9 +206,10 @@ export function PiChatComposerSurface<
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,
     workspaceRequestId,
+    requestHeaders,
     responseUrl: 'raw',
     fetch,
-  }), [apiBaseUrl, fetch, workspaceRequestId])
+  }), [apiBaseUrl, fetch, requestHeaders, workspaceRequestId])
 
   const resizeTextarea = useCallback((node: HTMLTextAreaElement | null) => {
     if (!node) return
@@ -266,7 +279,14 @@ export function PiChatComposerSurface<
         />
       ) : null}
       {queuePreview.length > 0 ? (
-        <QueuedComposerNotice followUps={queuePreview} onEdit={onEditQueued} />
+        <QueuedComposerNotice
+          followUps={queuePreview}
+          onEdit={onEditQueued}
+          onResume={onResumeQueued}
+          resumePending={resumeQueuedPending}
+          onRemove={onRemoveQueued}
+          actionPending={queueMutationPending}
+        />
       ) : null}
       {hotReloadEnabled ? (
         <PluginUpdateStatus
@@ -467,6 +487,8 @@ export function PiChatComposerSurface<
         <div className="flex min-w-0 items-center justify-center gap-1">
         <ModelSelectTrigger
           value={selectedModel}
+          sessionModel={sessionModel}
+          isOverride={modelOverride}
           options={modelOptions}
           disabled={isStreaming || modelControlled}
           trigger="slash"

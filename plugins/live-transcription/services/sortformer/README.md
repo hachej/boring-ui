@@ -40,8 +40,11 @@ diarizer URL and restart the app for immediate rollback.
    revisions and `{speaker,startSeconds,endSeconds}` segments.
 5. Client sends `{ "type": "stop", "id": N }`; server replies `stopped`.
 
-Speaker slots are anonymous, arrival-ordered, session-local, and capped at four
-by the model. The follow-up LLM may infer conversational roles; the sidecar does
-not claim biometric identity. MacWhisper uses the same anonymous-label product
+Speaker slots are anonymous, arrival-ordered, session-local, and deliberately
+capped at two for clinic consultations. The sidecar applies confidence gating
+and requires sustained evidence before changing speakers; this suppresses brief
+four-channel Sortformer fluctuations that would otherwise create false speaker
+turns. The follow-up LLM may infer conversational roles; the sidecar does not
+claim biometric identity. MacWhisper uses the same anonymous-label product
 pattern but performs local speaker recognition after transcription completes;
 this PoC emits revisable labels during `/live` capture.

@@ -83,7 +83,6 @@ export function createValidatingAgentFleetCompiler(
 
   const validateBindings = (agents: readonly AgentHostAgentSpec[]): void => {
     for (const agent of agents) {
-      if ('legacyDefault' in agent) continue
       for (const plugin of agent.plugins ?? []) {
         const configKeys = plugins.get(plugin.name)
         if (!configKeys) {

@@ -28,6 +28,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
     type MockSessionState = {
       seq: number
       status: 'idle' | 'streaming'
+      currentModel: { provider: string; id: string }
       messages: Array<{ id: string; role: 'user' | 'assistant'; status?: string; clientSeq?: number; clientNonce?: string; parts: unknown[] }>
       queue: { followUps: Array<{ id: string; kind: 'followup'; displayText: string; clientSeq?: number; clientNonce?: string }> }
       prompts: Array<Record<string, unknown>>
@@ -64,6 +65,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
     const initial = (): MockState => ({
       seq: 0,
       status: 'idle',
+      currentModel: { provider: 'anthropic', id: 'claude-sonnet' },
       messages: [],
       queue: { followUps: [] },
       prompts: [],
@@ -136,6 +138,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         sessionId,
         seq: state.seq,
         status: state.status,
+        currentModel: state.currentModel,
         messages: state.messages,
         queue: state.queue,
         followUpMode: 'one-at-a-time',
@@ -272,6 +275,14 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         const toolId = `tool-${turnIndex}`
         const textId = `t${turnIndex}`
         state.status = 'streaming'
+        if (payload.model && typeof payload.model === 'object') {
+          const model = payload.model as { provider?: unknown; id?: unknown }
+          if (typeof model.provider === 'string' && typeof model.id === 'string'
+            && (state.currentModel.provider !== model.provider || state.currentModel.id !== model.id)) {
+            state.currentModel = { provider: model.provider, id: model.id }
+            nextSeq(state); emitPiE2E({ type: 'model-changed', seq: state.seq, currentModel: state.currentModel })
+          }
+        }
         nextSeq(state); emitPiE2E({ type: 'agent-start', seq: state.seq, turnId: `turn-${turnIndex}` })
         nextSeq(state); emitPiE2E({ type: 'message-start', seq: state.seq, messageId: userId, role: 'user', clientNonce: payload.clientNonce, text: payload.content })
         nextSeq(state); emitPiE2E({ type: 'message-start', seq: state.seq, messageId: assistantId, role: 'assistant' })

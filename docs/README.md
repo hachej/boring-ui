@@ -8,11 +8,34 @@ only into the package you're working on.
 
 Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
 `CLAUDE.md`). Agent workflow, coding process, review history, and proof
-procedures live in [`kanzen/`](kanzen/).
+procedures live in [`procedures/`](procedures/README.md). Start with
+[risk-based delivery](procedures/boring-loop.md) for the owner-review boundaries
+(>500 changed package production lines), the mandatory cross-package abstraction
+gate, and automatic-eligible plugin UI with Playwright before/after evidence.
+The procedure distinguishes adopted policy from automation not yet enabled.
+
+## Cold-start reading order (5 files)
+
+1. [`vision/README.md`](vision/README.md) — what Boring is, the ratified thesis.
+2. [`roadmap/README.md`](roadmap/README.md) — the shape of the programs.
+3. [`direction/DIRECTION.md`](direction/DIRECTION.md) — the ONLY "when".
+4. [`plans/multiagent-shell/README.md`](plans/multiagent-shell/README.md) — the active program pack.
+5. [`plans/agent-runtime/alignment/CONTRADICTIONS.md`](plans/agent-runtime/alignment/CONTRADICTIONS.md) — what was fought over and resolved.
+
+## Precedence (who wins)
+
+User/owner rulings > ratified pack ([`plans/long-term/ratified/`](plans/long-term/ratified/README.md) + [`DECISIONS.md`](DECISIONS.md)) >
+[`DIRECTION.md`](direction/DIRECTION.md) for sequencing > pack chapters for scope/rationale >
+`research/` folders for evidence (each has its own index naming supersessions) >
+`archive/` and issue folders — history, never a required read.
 
 | Need | Read |
 | --- | --- |
-| Direction & vision (sequencing authority, living vision, completion tracker) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
+| **The whole vision, one story** (four layers, proof ledger, open questions) | [`vision/`](vision/README.md) — [`explorations.md`](vision/explorations.md) proof ledger |
+| **The roadmap, readable** (how programs relate; defers to DIRECTION for all scheduling) | [`roadmap/`](roadmap/README.md) |
+| Direction & sequencing authority (the ONLY executable ordering) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
+| Ratified long-term architecture pack (frozen; owner rulings) | [`plans/long-term/ratified/`](plans/long-term/ratified/README.md) — [`VISION.md`](plans/long-term/ratified/VISION.md) · [`ARCHITECTURE-PLAN.md`](plans/long-term/ratified/ARCHITECTURE-PLAN.md) · [`RECONCILIATION.md`](plans/long-term/ratified/RECONCILIATION.md) |
+| Boring Factory (chassis-first product built on boring-ui) | [`factory/VISION.md`](factory/VISION.md) · [`factory/TODO.md`](factory/TODO.md) · stage contract `.agents/factory/README.md` |
 | Visual architecture (package map and runtime layers) | [`visual/`](visual/README.md) |
 
 ## What this is
@@ -59,12 +82,25 @@ standalone (`createAgentApp`) with zero core dependency.
 | `agent-playground` | Minimal chat-only playground for the agent package: in-process Fastify agent (`createAgentApp`, mode `direct`) behind Vite with agent-front source HMR. | [README](../apps/agent-playground/README.md) |
 | `workspace-playground` | Full IDE workbench playground for plugin development: Vite front proxying to an in-process `createWorkspaceAgentServer`, fixture-seeded workspace, demo plugins, Playwright e2e + agent evals. | [README](../apps/workspace-playground/README.md) |
 | `full-app` | Production-shaped local reference composing core + agent + workspace: better-auth and Postgres workspaces with roles/invites. | [README](../apps/full-app/README.md) |
+| `factory-playground` | Native local Factory dogfood app: Orchestrator-only `/loop`, Worker-only disposable sandboxes, Tasks/Inbox/Automations watch plane, and deterministic two-Worker feature simulation. | [README](../apps/factory-playground/README.md) |
 
 ## Repository tools
 
 | Tool | What it is | Docs |
 | --- | --- | --- |
 | `@hachej/boring-ui-review-tools` (`tools/ui-review`) | Private scenario-driven UI review engine. Registered behavior specs target local apps; component specs use tool-owned fixture hosts. Deterministic gates remain authoritative and visual criticism advisory. | [README](../tools/ui-review/README.md) |
+
+## The canonical-completeness rule
+
+**A fresh agent reading only the canonical files — this index, `vision/`,
+`roadmap/`, `direction/`, `DECISIONS.md`, and the `plans/` packs — must know
+exactly where the project is and where it is going.** `docs/issues/` is
+execution history, never a required read. Therefore: if a canonical document
+needs a fact that lives in an issue folder, the *fact* gets promoted — an
+owner ruling becomes a `DECISIONS.md` entry, a spike verdict becomes a
+[`vision/explorations.md`](vision/explorations.md) row, a living plan moves
+into `plans/` — and the issue folder keeps only the working tree behind a
+pointer. Citing into `docs/issues/` from a canonical doc is a bug.
 
 ## Cross-cutting docs (this folder)
 
@@ -74,7 +110,8 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
 - [`FIXES.md`](FIXES.md) — production/runtime fix ledger for recurring incidents and deploy bugs.
-- [`kanzen/`](kanzen/) — agent workflow, maintainer loop, coding practices,
+- [`plans/agent-runtime/`](plans/agent-runtime/README.md) — the absorbed #391/#909 agent-runtime planning pack.
+- [`procedures/`](procedures/README.md) — agent workflow, maintainer loop, coding practices,
   review history, procedures, proof gates, owner decisions, and budgeted
   autonomy.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.
@@ -89,7 +126,7 @@ is how a "frozen" contract drifted from its own types for a full release.
 |---|---|---|
 | **Why** are we building this | issue [#391](https://github.com/hachej/boring-ui/issues/391) | The long-form vision |
 | **What** did we rule, and what did it kill | [`DECISIONS.md`](DECISIONS.md) | Ratified, append-only, supersession stated explicitly |
-| **When** — order and triggers | [`DIRECTION.md`](DIRECTION.md) | Owner-ratified waves. Wins over any issue plan on sequencing |
+| **When** — order and triggers | [`DIRECTION.md`](direction/DIRECTION.md) | Owner-ratified waves. Wins over any issue plan on sequencing |
 | **How** it works — contracts | package `docs/` beside the code | e.g. [`AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md), `PLUGIN_SYSTEM.md` |
 | **What now** — dispatchable work | beads + GitHub issues | Must be reachable from a DIRECTION wave |
 
@@ -106,7 +143,7 @@ Rules that follow from this:
 
 ## Normative specs (code cites these)
 
-- [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md) — the AgentGateway v0 session contract (7 methods, branded scope, 13 error codes, conformance levels). Supersedes `docs/issues/909/plan.md` §6.
+- [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md) — the AgentGateway v0 session contract (7 methods, branded scope, 13 error codes, conformance levels). Supersedes `docs/plans/agent-runtime/gateway/plan.md` §6.
 - [`packages/workspace/docs/PLUGIN_SYSTEM.md`](../packages/workspace/docs/PLUGIN_SYSTEM.md) — the plugin/agent-layer spec; source cites it as `Per PLUGIN_SYSTEM.md §X`. Keep section numbering stable.
 - [`packages/workspace/docs/PLUGIN_STRUCTURE.md`](../packages/workspace/docs/PLUGIN_STRUCTURE.md) — canonical layout + code patterns for new plugins.
 

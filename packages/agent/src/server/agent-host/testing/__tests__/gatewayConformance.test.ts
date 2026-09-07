@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
+  compareSessionOrder,
   type AgentGateway,
   type AgentGatewayErrorDTO,
   type AgentSessionActivity,
@@ -46,7 +47,7 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
     const current = this.records.get(identity)
     if (current !== undefined) {
       if (current.digest !== digest) {
-        throw new AgentGatewayError('AGENT_REQUEST_CONFLICT', 'request id reused with a different payload')
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with a different payload')
       }
       return { ownership: 'existing', record: current }
     }
@@ -325,6 +326,7 @@ interface FakeSession {
   readonly workspaceScopeId: string
   readonly ref: AgentSessionRef
   title: string
+  archived: boolean
   activity: AgentSessionActivity
   readonly createdAt: number
   updatedAt: number
@@ -389,6 +391,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
           workspaceScopeId: claim.workspaceScopeId,
           ref,
           title: input.title ?? 'Untitled',
+          archived: false,
           activity: 'idle',
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -430,6 +433,21 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
         this.applyAdmission('session.rename', key, digest)
         session.title = input.title
         session.updatedAt = this.tick()
+        const summary = this.summary(session)
+        this.requests.set(key, { digest, receipt: summary })
+        return summary
+      },
+      setSessionArchived: async (input) => {
+        this.assertOpen()
+        const claim = this.verify(input.scope)
+        const target = this.targetIdentity(input.ref)
+        const key = this.requestIdentity(claim, 'session.archive', target, input.requestId)
+        const digest = JSON.stringify({ archived: input.archived })
+        const replay = this.replayRequest<AgentSessionSummary>(key, digest)
+        if (replay !== undefined) return replay
+        const session = this.requireSession(claim, input.ref)
+        this.applyAdmission('session.archive', key, digest)
+        session.archived = input.archived
         const summary = this.summary(session)
         this.requests.set(key, { digest, receipt: summary })
         return summary
@@ -497,7 +515,9 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     this.assertOpen()
     const claim = this.verify(input.scope)
     const limit = input.limit ?? 50
-    const filter = input.agentTypeId ?? ''
+    const agentFilter = input.agentTypeId ?? ''
+    const archiveFilter = input.archived ?? 'all'
+    const filter = JSON.stringify([agentFilter, archiveFilter])
     let after: readonly [number, string, string] | undefined
     if (input.cursor !== undefined) {
       const parsed = this.parseCursor(input.cursor)
@@ -512,7 +532,8 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     }
     const ordered = [...this.sessions.values()]
       .filter((session) => session.workspaceScopeId === claim.workspaceScopeId)
-      .filter((session) => filter === '' || session.ref.agentTypeId === filter)
+      .filter((session) => agentFilter === '' || session.ref.agentTypeId === agentFilter)
+      .filter((session) => archiveFilter === 'all' || session.archived === (archiveFilter === 'archived'))
       .sort((left, right) => this.compareSessions(left, right))
       .filter((session) => after === undefined || this.compareTuple(session, after) > 0)
     const sessions = ordered.slice(0, limit).map((session) => this.summary(session))
@@ -712,6 +733,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       status: session.activity,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
+      ...(session.archived ? { archived: true as const } : {}),
     }
   }
 
@@ -811,15 +833,17 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
   }
 
   private compareSessions(left: FakeSession, right: FakeSession): number {
-    return right.updatedAt - left.updatedAt
-      || left.ref.agentTypeId.localeCompare(right.ref.agentTypeId)
-      || left.ref.sessionId.localeCompare(right.ref.sessionId)
+    return compareSessionOrder(
+      [left.updatedAt, left.ref.agentTypeId, left.ref.sessionId],
+      [right.updatedAt, right.ref.agentTypeId, right.ref.sessionId],
+    )
   }
 
   private compareTuple(session: FakeSession, tuple: readonly [number, string, string]): number {
-    return tuple[0] - session.updatedAt
-      || session.ref.agentTypeId.localeCompare(tuple[1])
-      || session.ref.sessionId.localeCompare(tuple[2])
+    return compareSessionOrder(
+      [session.updatedAt, session.ref.agentTypeId, session.ref.sessionId],
+      tuple,
+    )
   }
 
   private createCursor(payload: {

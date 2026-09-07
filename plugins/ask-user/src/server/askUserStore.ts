@@ -20,18 +20,28 @@ export class AskUserStoreError extends Error {
 export type AskUserStoreChange = {
   sessionId: string
   questionId?: string
-  reason: "create" | "answer" | "cancel" | "abandon" | "clear" | "transcript"
+  reason: "create" | "answer" | "cancel" | "abandon" | "clear" | "transcript" | "delivery"
 }
 
 export type AskUserStoreListener = (change: AskUserStoreChange) => void
 
+/** A question the owner has already dealt with, paired with the answer they
+ * submitted (absent for cancelled/abandoned questions). */
+export type AskUserResolvedQuestion = {
+  question: AskUserQuestion
+  answer: AskUserAnswer | null
+}
+
 export interface AskUserStore {
   getPending(sessionId: string): Promise<AskUserQuestion | null>
   listPending(): Promise<AskUserQuestion[]>
+  /** Every non-pending question in the workspace, across sessions. */
+  listResolved(): Promise<AskUserResolvedQuestion[]>
+  listUndeliveredAnswers(): Promise<AskUserResolvedQuestion[]>
   getByQuestionId(questionId: string): Promise<AskUserQuestion | null>
-  getAnswer(questionId: string): Promise<AskUserAnswer | null>
   createPending(question: AskUserQuestion): Promise<void>
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
+  markAnswerDelivered(questionId: string): Promise<void>
   cancel(questionId: string): Promise<void>
   markAbandoned(questionId: string): Promise<void>
   clearPending(sessionId: string): Promise<void>
@@ -43,7 +53,8 @@ export interface AskUserStore {
 
 type StoredAskUserState = {
   questions: Record<string, AskUserQuestion>
-  pendingBySession: Record<string, string>
+  /** String entries are accepted when reading stores written before non-blocking asks. */
+  pendingBySession: Record<string, string | string[]>
   answers: Record<string, AskUserAnswer>
   transcriptsBySession: Record<string, AskUserTranscriptEvent[]>
 }
@@ -60,23 +71,37 @@ export class FileAskUserStore implements AskUserStore {
   private loadInFlight: Promise<StoredAskUserState> | null = null
   private writeChain = Promise.resolve()
   private readonly listeners = new Set<AskUserStoreListener>()
+  private stagedChanges: AskUserStoreChange[] | null = null
 
   constructor(private readonly filePath: string) {}
 
   async getPending(sessionId: string): Promise<AskUserQuestion | null> {
     const state = await this.load()
-    const questionId = state.pendingBySession[sessionId]
-    if (!questionId) return null
-    const question = state.questions[questionId]
-    if (!question || !isPending(question)) return null
-    return clone(question)
+    const pending = pendingQuestionsForSession(state, sessionId)
+    const question = preferredPending(pending)
+    return question ? clone(question) : null
   }
 
   async listPending(): Promise<AskUserQuestion[]> {
     const state = await this.load()
-    return Object.values(state.questions)
+    return [...new Set(Object.values(state.pendingBySession).flatMap(pendingIds))]
+      .map((questionId) => state.questions[questionId])
       .filter(isPending)
       .map((question) => clone(question))
+  }
+
+  async listResolved(): Promise<AskUserResolvedQuestion[]> {
+    const state = await this.load()
+    return Object.values(state.questions)
+      .filter((question) => question.status !== "ready")
+      .map((question) => ({ question: clone(question), answer: state.answers[question.questionId] ? clone(state.answers[question.questionId]) : null }))
+  }
+
+  async listUndeliveredAnswers(): Promise<AskUserResolvedQuestion[]> {
+    const state = await this.load()
+    return Object.values(state.questions)
+      .filter((question) => question.status === "answered" && question.blocking === false && question.delivery?.status === "undelivered")
+      .map((question) => ({ question: clone(question), answer: state.answers[question.questionId] ? clone(state.answers[question.questionId]) : null }))
   }
 
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {
@@ -84,20 +109,19 @@ export class FileAskUserStore implements AskUserStore {
     return state.questions[questionId] ? clone(state.questions[questionId]) : null
   }
 
-  async getAnswer(questionId: string): Promise<AskUserAnswer | null> {
-    const state = await this.load()
-    return state.answers[questionId] ? clone(state.answers[questionId]) : null
-  }
-
   async createPending(question: AskUserQuestion): Promise<void> {
     await this.mutate(async (state) => {
-      const existing = state.pendingBySession[question.sessionId]
-      const existingQuestion = existing ? state.questions[existing] : undefined
-      if (existingQuestion && isPending(existingQuestion) && (question.wait !== false || existingQuestion.wait !== false)) {
+      const existing = pendingQuestionsForSession(state, question.sessionId)
+      if (question.blocking !== false && existing.some((candidate) => candidate.blocking !== false)) {
         throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
       }
       state.questions[question.questionId] = clone(question)
-      if (isPending(question)) state.pendingBySession[question.sessionId] = question.questionId
+      if (isPending(question)) {
+        const existingIds = pendingIds(state.pendingBySession[question.sessionId])
+        state.pendingBySession[question.sessionId] = existingIds.length === 0
+          ? question.questionId
+          : [...existingIds, question.questionId]
+      }
       this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })
     })
   }
@@ -113,9 +137,22 @@ export class FileAskUserStore implements AskUserStore {
       if (question.status !== "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready")
       question.status = "answered"
       question.updatedAt = nowIso()
+      if (question.blocking === false) question.delivery = { status: "undelivered", updatedAt: question.updatedAt }
       state.answers[questionId] = clone(answer)
-      promotePendingForSession(state, question.sessionId, questionId)
+      removePendingId(state, question.sessionId, questionId)
       this.emit({ sessionId: question.sessionId, questionId, reason: "answer" })
+    })
+  }
+
+  async markAnswerDelivered(questionId: string): Promise<void> {
+    await this.mutate(async (state) => {
+      const question = requireQuestion(state, questionId)
+      if (question.status !== "answered" || question.blocking !== false) {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "only answered non-blocking questions have delivery state")
+      }
+      if (question.delivery?.status === "delivered") return
+      question.delivery = { status: "delivered", updatedAt: nowIso() }
+      this.emit({ sessionId: question.sessionId, questionId, reason: "delivery" })
     })
   }
 
@@ -127,7 +164,7 @@ export class FileAskUserStore implements AskUserStore {
       if (!isPending(question)) throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question is not pending")
       question.status = "cancelled"
       question.updatedAt = nowIso()
-      promotePendingForSession(state, question.sessionId, questionId)
+      removePendingId(state, question.sessionId, questionId)
       this.emit({ sessionId: question.sessionId, questionId, reason: "cancel" })
     })
   }
@@ -138,14 +175,14 @@ export class FileAskUserStore implements AskUserStore {
       if (!isPending(question)) return
       question.status = "abandoned"
       question.updatedAt = nowIso()
-      promotePendingForSession(state, question.sessionId, questionId)
+      removePendingId(state, question.sessionId, questionId)
       this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
     })
   }
 
   async clearPending(sessionId: string): Promise<void> {
     await this.mutate(async (state) => {
-      const questionId = state.pendingBySession[sessionId]
+      const questionId = pendingIds(state.pendingBySession[sessionId])[0]
       if (!questionId) return
       delete state.pendingBySession[sessionId]
       this.emit({ sessionId, questionId, reason: "clear" })
@@ -179,8 +216,15 @@ export class FileAskUserStore implements AskUserStore {
   private async mutate(fn: (state: StoredAskUserState) => Promise<void> | void): Promise<void> {
     const run = this.writeChain.then(async () => {
       const state = await this.load()
-      await fn(state)
-      await this.save(state)
+      const changes: AskUserStoreChange[] = []
+      this.stagedChanges = changes
+      try {
+        await fn(state)
+        await this.save(state)
+      } finally {
+        this.stagedChanges = null
+      }
+      for (const change of changes) this.notify(change)
     })
     this.writeChain = run.catch(() => undefined)
     return run
@@ -213,6 +257,14 @@ export class FileAskUserStore implements AskUserStore {
   }
 
   private emit(change: AskUserStoreChange): void {
+    if (this.stagedChanges) {
+      this.stagedChanges.push(change)
+      return
+    }
+    this.notify(change)
+  }
+
+  private notify(change: AskUserStoreChange): void {
     for (const listener of this.listeners) {
       try {
         const result = listener(change) as unknown
@@ -232,12 +284,25 @@ function isPending(question: AskUserQuestion | undefined): question is AskUserQu
   return question?.status === "ready"
 }
 
-function promotePendingForSession(state: StoredAskUserState, sessionId: string, completedQuestionId: string): void {
-  if (state.pendingBySession[sessionId] !== completedQuestionId) return
-  const next = Object.values(state.questions)
-    .filter((question) => question.sessionId === sessionId && isPending(question) && question.questionId !== completedQuestionId)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]
-  if (next) state.pendingBySession[sessionId] = next.questionId
+function pendingIds(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value
+  return value ? [value] : []
+}
+
+function pendingQuestionsForSession(state: StoredAskUserState, sessionId: string): AskUserQuestion[] {
+  return pendingIds(state.pendingBySession[sessionId])
+    .map((questionId) => state.questions[questionId])
+    .filter(isPending)
+}
+
+function preferredPending(questions: AskUserQuestion[]): AskUserQuestion | undefined {
+  return questions.find((question) => question.blocking !== false) ?? questions.at(-1)
+}
+
+function removePendingId(state: StoredAskUserState, sessionId: string, questionId: string): void {
+  const remaining = pendingIds(state.pendingBySession[sessionId]).filter((candidate) => candidate !== questionId)
+  if (remaining.length === 1) state.pendingBySession[sessionId] = remaining[0]!
+  else if (remaining.length > 1) state.pendingBySession[sessionId] = remaining
   else delete state.pendingBySession[sessionId]
 }
 

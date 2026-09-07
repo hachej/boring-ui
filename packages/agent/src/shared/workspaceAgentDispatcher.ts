@@ -27,6 +27,8 @@ export interface WorkspaceAgentDispatcherDispatchInput extends WorkspaceAgentDis
   clientNonce?: string
   /** Defaults to prompt; follow-up requires a non-negative clientSeq. */
   kind?: 'prompt' | 'followup'
+  /** Server-only atomic admission for durable background prompt delivery. */
+  requireIdle?: true
   clientSeq?: number
 }
 

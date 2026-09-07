@@ -1,9 +1,13 @@
-import type { ModelSelection } from "../chatPanelSettings"
-
 export type SlashCommandHandlerResult = string | void | {
   message?: string
   preserveDraft?: boolean
-  tone?: "info" | "error"
+  /**
+   * Result text the agent must see. When set, the command's outcome is also
+   * submitted as an expanded-text turn, so it lands in the model's context the
+   * same way a skill command's expansion does — a browser-only notice is
+   * invisible to the agent. Keep it a short structured summary, not a dump.
+   */
+  modelMessage?: string
 }
 export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => SlashCommandHandlerResult | Promise<SlashCommandHandlerResult>
 export type SlashCommandClickBehavior = 'execute' | 'insert' | 'disabled'
@@ -39,10 +43,6 @@ export interface SlashCommand {
 
 export interface SlashCommandContext {
   sessionId: string
-  /** Invocation-local owner; avoids stale plugin-provider identity in multi-pane fleets. */
-  agentTypeId: string
-  /** Exact composer selection used by the active pane. */
-  model: ModelSelection | null
   clearMessages: () => void
   resetSession: () => void
   listCommands: () => SlashCommand[]

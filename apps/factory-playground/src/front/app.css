@@ -1,0 +1,24 @@
+/* The factory shell is a fixed-height, non-scrolling frame; every scroll region
+ * lives inside it. Without this the React root has no height to fill, so the
+ * whole app renders as a content-sized band at the top of a taller window and
+ * wide panes (an artifact HTML preview) push the page sideways instead of
+ * scrolling inside their own container.
+ *
+ * `html` sizes to the *dynamic* viewport rather than `100%` so mobile browser
+ * chrome cannot push the composer below the fold. */
+html {
+  height: 100%;
+  height: 100dvh;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  overflow: hidden;
+}
+
+body,
+#root {
+  height: 100%;
+}

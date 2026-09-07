@@ -2,7 +2,7 @@
 
 import { ComposerContributionProvider, type ComposerContribution } from "@hachej/boring-agent/front"
 import { createContext, useContext, useMemo, type ReactNode } from "react"
-import type { PluginProviderProps } from "@hachej/boring-workspace"
+import type { PluginProviderProps } from "@hachej/boring-workspace/plugin"
 import { createAutomationClient, type AutomationClient } from "./client"
 import { createScheduleSlashCommand } from "./scheduleCommand"
 

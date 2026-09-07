@@ -25,11 +25,11 @@ export type {
   AgentRuntimeAdapter,
   AgentStartReceipt,
   AgentStreamOptions,
+  SessionStreamIdentity,
 } from './events'
 export {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
-  sessionStreamPath,
 } from './events'
 export type {
   AgentSendIfIdleReceipt,
@@ -74,11 +74,13 @@ export type { AgentTool, ToolExecContext, ToolResult, JSONSchema } from './tool'
 export type { ToolUiMetadata } from './tool-ui'
 export { isToolUiMetadata, extractToolUiMetadata } from './tool-ui'
 export type { CatalogDeps, ToolCatalog } from './catalog'
-export { SAFE_NATIVE_SESSION_ID } from './session'
+export { SAFE_NATIVE_SESSION_ID, compareSessionOrder } from './session'
 export { safeRandomUUID } from './random-id'
 export type {
+  SessionOrderTuple,
   SessionStore,
   SessionCtx,
+  SessionArchiveFilter,
   SessionListOptions,
   SessionSummary,
   SessionDetail,
@@ -195,6 +197,8 @@ export {
 } from './gateway/errors'
 export type { AgentGatewayErrorDTO } from './gateway/errors'
 export type {
+  AgentAccessDecision,
+  AgentAccessOperation,
   AgentFollowUpCommand,
   AgentGateway,
   AgentPromptCommand,
@@ -215,6 +219,7 @@ export type {
   DeleteAgentSessionInput,
   IdempotentAgentControl,
   IdempotentAgentSend,
+  IdempotentInterruptControl,
   IdempotentQueueClear,
   JsonPrimitive,
   JsonSafe,
@@ -222,6 +227,8 @@ export type {
   ListAgentsInput,
   ReadAgentSessionStateInput,
   RenameAgentSessionInput,
+  ResolveAgentAccess,
+  ResolveAgentAccessInput,
   VerifiedAgentScopeClaim,
   WorkspaceScopeId,
 } from './gateway/types'

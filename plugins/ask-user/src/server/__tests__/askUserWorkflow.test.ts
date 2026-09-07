@@ -39,7 +39,9 @@ describe("ask-user full workflow", () => {
     new AskUserStatePublisher(store, bridge).start()
 
     const registry = createWorkspaceBridgeRegistry()
-    for (const entry of createAskUserBridgeHandlers({ store, runtime })) {
+    // This test models one legacy store file whose pre-workspace records belong
+    // to workspace-1. New host wiring stamps workspaceId at creation time.
+    for (const entry of createAskUserBridgeHandlers({ store, runtime, legacyWorkspaceId: "workspace-1" })) {
       registry.registerHandler(entry.definition, entry.handler)
     }
     const browserContext: WorkspaceBridgeCallContext = {
@@ -68,10 +70,13 @@ describe("ask-user full workflow", () => {
     })
     const pending = (await store.getPending("s1"))!
 
-    // A question is published to Inbox/session attention state. The user
-    // explicitly opens Questions only when they choose to.
+    // A question is published to Inbox/session attention state. The server
+    // invalidates the pending-state slot, but never opens Questions for the user.
     await vi.waitFor(() => {
-      expect(bridge.commands).toEqual([])
+      expect(bridge.commands).toEqual([
+        { kind: "invalidateUiState", params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+        { kind: "invalidateUiState", params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      ])
     })
     await vi.waitFor(async () => {
       const slot = (await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]

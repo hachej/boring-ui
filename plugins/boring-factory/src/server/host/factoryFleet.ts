@@ -1,0 +1,184 @@
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import {
+  createConfiguredAgentHostAgentSpec,
+  materializeAgentDirectory,
+  type AgentHostAgentSpec,
+  type TrustedAgentInstructionAppendix,
+} from '@hachej/boring-agent/server'
+import { createAgentAssetDigest } from '@hachej/boring-agent/shared'
+import { FACTORY_DELEGATE_PLUGIN_ID } from './delegatePlugin'
+import { FACTORY_SUPERVISION_PLUGIN_ID } from './supervisionPlugin'
+import { FACTORY_DEMO_PLUGIN_ID } from './demoPlugin'
+import {
+  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+  FACTORY_WORKER_AGENT_TYPE_ID,
+} from '../../shared/constants'
+export {
+  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+  FACTORY_WORKER_AGENT_TYPE_ID,
+}
+
+const seatSkills = {
+  orchestrator: ['plan', 'feedback', 'owner-gate', 'handoff', 'show-me'],
+  worker: ['exec', 'fresh-eyes', 'handoff'],
+  reviewer: ['fresh-eyes'],
+} as const
+
+/**
+ * Host appendix naming which host tool implements which step of the canonical `exec`/`plan`/
+ * `owner-gate` skill text above (already reconciled with this Factory's topology: one shared
+ * epic branch, one epic PR owned by the Orchestrator/owner, Workers that never gate or merge).
+ * This appendix binds tool names and host-enforced limits without changing canonical persona files.
+ */
+const FACTORY_PRECEDENCE_CONTENT = {
+  worker: [
+    'The `exec` skill above is this seat\'s full loop (pull, claim, commit, push, sandbox-test,',
+    '`fresh_review`, Bead-comment handoff — never a PR, never `ask_user`, never merge). The host',
+    'tool that runs your adversarial review is `fresh_review`; the tools that run your exact-SHA',
+    'tests/builds are `sandbox` and `sandbox_bash`. When fresh_review returns `capReached: true`,',
+    'hand off at the current SHA and file remaining findings as follow-up Beads; do not fix forward again.',
+    'Pass your target Bead id to `fresh_review` so all fix-forward SHAs share one host round counter.',
+  ].join(' '),
+  orchestrator: [
+    'The `plan` and `owner-gate` skills above are this seat\'s full loop (Bead graph, Gate 1,',
+    'dispatch, Gate 2, never merge). The host tools implementing those steps: `dispatch_worker`',
+    '(the plan block\'s "dispatch Workers" step — start a fresh Worker session), `factory_status`',
+    '(read epic Bead/git/session state before every gate or recovery decision), `supervise`',
+    '(arm the durable tick that replaces held-open sessions/timers), and `demo_sandbox` (Gate 2\'s',
+    'exact-SHA live demo). Use each exactly where its matching skill step names it.',
+    'The `show-me` skill above is mandatory, not optional, at both gates: Gate 1 carries the',
+    'show-me plan artifact and Gate 2\'s PR body carries a `## Show me` section, per',
+    '`owner-gate`\'s SKILL.md.',
+    'The host, not persona prose, enforces stale-claim recovery and dispatch/review caps. When',
+    '`factory_status` reports a stale claim, call `recover_stale_claims`. When `dispatch_worker`',
+    'refuses at a cap, do not retry: raise the requested Inbox question with `ask_user`.',
+    'Use `ask_user` with `blocking:false` for per-item decisions (one card per item is fine, they do not stall you); use `blocking:true` only for Gate 1 and Gate 2. Continue dispatching while owner decisions are pending; when the answer arrives as a follow-up message, act on it.',
+    'Gate 2 requires a demo URL when `demo_sandbox` can provide one. If `demo_sandbox` returns',
+    'an error after the fallback, raise Gate 2 anyway and write the exact error under `Demo:`',
+    'in the card; an owner or host waiver relayed in a prompt is authoritative (AGENTS.md hard rule 1).',
+  ].join(' '),
+} as const
+
+async function factoryPrecedenceAppendix(seat: 'worker' | 'orchestrator'): Promise<TrustedAgentInstructionAppendix> {
+  const content = FACTORY_PRECEDENCE_CONTENT[seat]
+  return { name: 'factory-precedence', content, digest: await createAgentAssetDigest(content) }
+}
+
+async function loadAppendices(repositoryRoot: string, names: readonly string[]): Promise<TrustedAgentInstructionAppendix[]> {
+  return await Promise.all(names.map(async (name) => {
+    const content = await readFile(resolve(repositoryRoot, '.agents/skills', name, 'SKILL.md'), 'utf8')
+    return { name, content, digest: await createAgentAssetDigest(content) }
+  }))
+}
+
+/** `BORING_FACTORY_FEATURE_NAME` when set, else the epic key's words title-cased. */
+export function deriveFeatureName(epicKey: string, env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.BORING_FACTORY_FEATURE_NAME?.trim()
+  if (configured) return configured
+  const words = epicKey.split(/[-_/]+/).filter((word) => word.length > 0)
+  if (words.length === 0) return epicKey
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
+function epicBindingContent(seat: keyof typeof seatSkills): string {
+  const shared = 'Your epic is given in the host context of your first message. Use that epic key, feature name, worktree, and branch for every tool call and every `br --label epic:<key>` command; never assume the host workspace root is the epic worktree.'
+  if (seat === 'orchestrator') {
+    return [
+      shared,
+      'Every Bead you create MUST carry `--labels epic:<key>` (add `--parent <epic bead id>` when you create an epic Bead first) and use the feature name from host context in its title. Inspect only with `br ready --label epic:<key>` / `br list --label epic:<key>` and pass `epicKey` to host tools when you use an explicit override.',
+      'Recovery: run `factory_status` on every supervision tick. The host classifies each in-progress ' +
+        'claim as missing, busy, idle, or stale. When it reports `stale: true`, call the host\'s ' +
+        '`recover_stale_claims` tool; never release claims manually and never release a busy claim. ' +
+        'Uncommitted edits left in the shared worktree by a dead Worker are handed to the next Worker ' +
+        'in its brief, never reverted by you.',
+      'Dispatch only a ready, unclaimed, dependency-unblocked Bead and pass its exact id as ' +
+        '`dispatch_worker.beadId`; name that Bead in the Worker brief. The host enforces the Worker ' +
+        'concurrency and per-Bead dispatch caps.',
+    ].join('\n\n')
+  }
+  if (seat === 'reviewer') {
+    return [
+      shared,
+      'Review only Beads labelled `epic:<key>` for the epic in host context; report, never edit.',
+    ].join('\n\n')
+  }
+  return [
+    shared,
+    'Your host context names the target Bead. Verify that exact id appears in `br ready --label epic:<key> --unassigned`, then claim it with `br update <id> --claim --actor <your session id>`; if it is absent, stop and report "target Bead is not ready for epic <key>" instead of claiming another result or running a broader `br ready`. Never claim a Bead lacking that label.',
+    'If the shared worktree already holds uncommitted changes for your Bead from a previous ' +
+      'Worker, inspect them, adopt what is correct, finish the work, and say so in the handoff; ' +
+      'never revert them wholesale. Fix forward only: no git reset, no amend or rebase of pushed commits, no force push.',
+  ].join('\n\n')
+}
+
+async function epicBindingAppendix(seat: keyof typeof seatSkills): Promise<TrustedAgentInstructionAppendix> {
+  const content = epicBindingContent(seat)
+  return { name: 'epic-binding', content, digest: await createAgentAssetDigest(content) }
+}
+
+async function createSeat(input: {
+  repositoryRoot: string
+  seat: keyof typeof seatSkills
+  agentTypeId: string
+  plugins: readonly string[]
+  preferredModel?: string
+}): Promise<AgentHostAgentSpec> {
+  const directory = resolve(input.repositoryRoot, '.agents/personas', input.seat)
+  const source = await materializeAgentDirectory({
+    directory,
+    manifest: 'package.json',
+    expectedAgentTypeId: input.agentTypeId,
+  })
+  return await createConfiguredAgentHostAgentSpec({
+    source,
+    policy: {
+      instructionSources: [{ role: 'persona', absolutePath: resolve(directory, 'instructions.md') }],
+      instructionAppendices: [
+        ...await loadAppendices(input.repositoryRoot, seatSkills[input.seat]),
+        ...(input.seat === 'worker' || input.seat === 'orchestrator' ? [await factoryPrecedenceAppendix(input.seat)] : []),
+        await epicBindingAppendix(input.seat),
+      ],
+      plugins: input.plugins.map((name) => ({ name })),
+      preferredModel: input.preferredModel,
+    },
+  })
+}
+
+/** Load canonical persona and skill sources from this checkout; no packaged or vendored copies. */
+export interface FactoryFleetOptions {
+  readonly orchestrator?: string
+  readonly worker?: string
+  readonly reviewer?: string
+}
+
+export async function loadNativeFactoryFleet(
+  repositoryRoot: string,
+  options: FactoryFleetOptions,
+): Promise<readonly AgentHostAgentSpec[]> {
+  return await Promise.all([
+    createSeat({
+      repositoryRoot,
+      seat: 'orchestrator',
+      agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+      plugins: [FACTORY_SUPERVISION_PLUGIN_ID, FACTORY_DEMO_PLUGIN_ID, 'boring-automation', FACTORY_DELEGATE_PLUGIN_ID],
+      preferredModel: options.orchestrator,
+    }),
+    createSeat({
+      repositoryRoot,
+      seat: 'worker',
+      agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID,
+      plugins: ['sandbox', FACTORY_DELEGATE_PLUGIN_ID],
+      preferredModel: options.worker,
+    }),
+    createSeat({
+      repositoryRoot,
+      seat: 'reviewer',
+      agentTypeId: FACTORY_REVIEWER_AGENT_TYPE_ID,
+      plugins: [],
+      preferredModel: options.reviewer,
+    }),
+  ])
+}

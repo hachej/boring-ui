@@ -83,6 +83,8 @@ export interface PluginProviderProps {
   workspaceTimezone?: string
   activeSessionId?: string | null
   openSessionIds?: readonly string[]
+  /** Trusted addressed session inventory for plugins that publish session-scoped UI. */
+  sessionRefs?: readonly { sessionId: string; agentTypeId?: string }[]
   children: ReactNode
 }
 

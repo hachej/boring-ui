@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
+import {
+  AgentGatewayError,
+  AgentGatewayErrorCode,
+  type AgentAccessDecision,
+  type AgentAccessOperation,
+  type AgentSessionRef,
+  type AuthorizedAgentScope,
+  type VerifiedAgentScopeClaim,
+} from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
@@ -9,6 +17,7 @@ import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
+import { resolveRequestLedgerPath } from './requestLedgerPath'
 import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
 import {
   createAgentHostRuntimeCapabilityProjection,
@@ -31,6 +40,7 @@ import type {
   CreateAgentHostOptions,
   AgentHostDirectProjectionOptions,
   AgentHostEnvironmentLease,
+  AgentHostSessionEnvironmentLease,
   AgentHostEnvironmentScope,
   AuthorizedEnvironmentIntent,
   LeaseBoundWorkspaceAgent,
@@ -63,10 +73,30 @@ export interface AgentHostRuntime {
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
+    options?: import('../../shared/session').SessionListOptions,
   ): Promise<readonly import('../../shared/session').SessionSummary[]>
+  setSessionArchived?(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    sessionId: string,
+    archived: boolean,
+  ): Promise<import('../../shared/session').SessionSummary>
   isDraining(): boolean
   assertOpen(): void
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
+  resolveAgentAccess?(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<AgentAccessDecision>
+  assertAgentAccess?(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<void>
   resolveEnvironmentScope(
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
@@ -219,6 +249,39 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
   if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
 }
 
+function assertPublishedBindingMatchesResolvedScope(
+  binding: RuntimeBinding,
+  resolved: ResolvedAgentRuntimeScope,
+): void {
+  const currentPhysicalBindingIdentity = binding.scope.physicalBindingIdentity ?? binding.scope.identity
+  const candidatePhysicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
+  if (
+    binding.scope.identity !== resolved.identity
+    || binding.scope.environment.provisioningFingerprint !== resolved.environment.provisioningFingerprint
+    || currentPhysicalBindingIdentity !== candidatePhysicalBindingIdentity
+  ) {
+    throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+      'Agent runtime identity changed; process restart is required',
+    )
+  }
+}
+
+/**
+ * Durable ledger file this host will open, or `undefined` when it was given
+ * neither an explicit path nor a session root.
+ *
+ * `createAgentHost` is the innermost host. It delegates explicit-path and
+ * session-root normalization to the canonical resolver, but has no in-workspace
+ * fallback — a host with nothing host-owned to write to fails closed.
+ */
+function resolveHostLedgerPath(options: CreateAgentHostOptions): string | undefined {
+  return resolveRequestLedgerPath({
+    requestLedgerPath: options.requestLedgerPath,
+    sessionRoot: options.sessionRoot,
+  })
+}
+
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
@@ -233,6 +296,7 @@ function createRuntime(
     requestId: string,
     sessionId?: string,
   ): Promise<ResolvedAgentRuntimeScope> => {
+    await assertAgentAccess(agentTypeId, scope, claim, 'runtime.bind')
     if (options.resolveAuthorizedEnvironmentScope && options.resolveAuthorizedAgentRuntimeScope) {
       const environment = await options.resolveAuthorizedEnvironmentScope({
         authorizedScope: scope,
@@ -256,6 +320,54 @@ function createRuntime(
       return Object.freeze({ ...resolved, environment })
     }
     throw new TypeError('createAgentHost requires direct Environment and Agent runtime scope resolvers')
+  }
+  const resolveAgentAccess = async (
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<AgentAccessDecision> => {
+    if (!compiledById.has(agentTypeId)) return { state: 'not-available', reason: 'not-deployed' }
+    if (!options.resolveAgentAccess) return { state: 'allowed' }
+    try {
+      return await options.resolveAgentAccess({
+        authorizedScope: scope,
+        verifiedClaim: claim,
+        agentTypeId,
+        operation,
+      })
+    } catch {
+      return { state: 'policy-unavailable' }
+    }
+  }
+  const assertAgentAccess = async (
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<void> => {
+    const decision = await resolveAgentAccess(agentTypeId, scope, claim, operation)
+    if (decision.state === 'allowed') return
+    if (decision.state === 'not-available') {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+    }
+    if (decision.state === 'entitlement-denied') {
+      throw new AgentGatewayError(
+        decision.denial === 'subscription-required'
+          ? AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED
+          : AgentGatewayErrorCode.AGENT_ACCESS_FORBIDDEN,
+        decision.denial === 'subscription-required'
+          ? 'agent subscription is required'
+          : 'agent access is forbidden',
+      )
+    }
+    throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE,
+      'agent access policy is unavailable',
+      decision.retryAfterSeconds === undefined
+        ? undefined
+        : { retryAfterSeconds: decision.retryAfterSeconds },
+    )
   }
   const inventory = new AgentSessionInventory(
     options.sessionRoot,
@@ -284,12 +396,11 @@ function createRuntime(
   let draining = false
   let drainPromise: Promise<void> | undefined
   let closePromise: Promise<void> | undefined
+  const durableLedgerPath = resolveHostLedgerPath(options)
   const ledger: import('./types').AgentRequestLedger = options.requestLedger
-    ?? (options.inMemoryRequestLedgerMode
+    ?? (options.inMemoryRequestLedgerMode || !durableLedgerPath
       ? new InMemoryAgentRequestLedger()
-      : options.requestLedgerPath || options.sessionRoot
-        ? new SqliteAgentRequestLedger(options.requestLedgerPath ?? join(options.sessionRoot!, '.agent-request-ledger.sqlite'))
-        : new InMemoryAgentRequestLedger())
+      : new SqliteAgentRequestLedger(durableLedgerPath))
 
   const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
     let disposal = bindingDisposals.get(binding)
@@ -319,9 +430,13 @@ function createRuntime(
     },
     activity,
     shutdownGraceMs: graceMs,
-    listSessionSummaries(agentTypeId, scope, claim) {
+    listSessionSummaries(agentTypeId, scope, claim, options) {
       runtime.assertOpen()
-      return inventory.list(agentTypeId, scope, claim)
+      return inventory.list(agentTypeId, scope, claim, options)
+    },
+    setSessionArchived(agentTypeId, scope, claim, sessionId, archived) {
+      runtime.assertOpen()
+      return inventory.setArchived(agentTypeId, scope, claim, sessionId, archived)
     },
     isDraining: () => draining,
     assertOpen() {
@@ -335,6 +450,8 @@ function createRuntime(
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'agent scope is not authorized')
       }
     },
+    resolveAgentAccess,
+    assertAgentAccess,
     async resolveEnvironmentScope(scope, claim, intent) {
       runtime.assertOpen()
       if (!options.resolveAuthorizedEnvironmentScope) {
@@ -358,6 +475,7 @@ function createRuntime(
     },
     async resolveSessionRuntime(agentTypeId, scope, claim, sessionId) {
       runtime.assertOpen()
+      await assertAgentAccess(agentTypeId, scope, claim, 'session.read')
       const resolved = await inventory.resolveSessionRuntime(agentTypeId, scope, claim, sessionId)
       if (resolved) validateResolvedRuntimeScope(resolved)
       return resolved
@@ -365,6 +483,7 @@ function createRuntime(
     resolveAgentRuntimeScope,
     async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope) {
       runtime.assertOpen()
+      await assertAgentAccess(agentTypeId, scope, claim, 'runtime.bind')
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       const resolved = resolvedRuntimeScope ?? await runtime.resolveAgentRuntimeScope(
@@ -387,11 +506,18 @@ function createRuntime(
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
-        if (current) return current
+        if (current) {
+          assertPublishedBindingMatchesResolvedScope(current, resolved)
+          return current
+        }
         const reservedKey = currentBindingReservations.get(currentKey)
         if (reservedKey && reservedKey !== key) {
           const reserved = bindings.get(reservedKey)
-          if (reserved) return await reserved
+          if (reserved) {
+            const binding = await reserved
+            assertPublishedBindingMatchesResolvedScope(binding, resolved)
+            return binding
+          }
         } else if (!reservedKey) {
           currentBindingReservations.set(currentKey, key)
         }
@@ -579,8 +705,8 @@ function createRuntime(
       const tail = previous.then(() => current)
       bindingOperationTails.set(bindingKey, tail)
       await previous
-      runtime.assertOpen()
       try {
+        runtime.assertOpen()
         return await operation()
       } finally {
         release()
@@ -661,8 +787,7 @@ export async function createAgentHost(
   }
   const compiledAgents = await compileFleet(options)
   const hostId = await resolveHostId(options)
-  const durableLedgerPath = options.requestLedgerPath
-    ?? (options.sessionRoot ? join(options.sessionRoot, '.agent-request-ledger.sqlite') : undefined)
+  const durableLedgerPath = resolveHostLedgerPath(options)
   if (!options.requestLedger && !options.inMemoryRequestLedgerMode && !durableLedgerPath) {
     throw new TypeError(
       'createAgentHost requires requestLedgerPath or sessionRoot for its durable transactional ledger',
@@ -700,8 +825,8 @@ export async function createAgentHost(
         hostId,
         agents: compiledAgents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
-          label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
-          ...('legacyDefault' in agent || agent.definition.digest === undefined
+          label: agent.definition.label,
+          ...(agent.definition.digest === undefined
             ? {}
             : { definitionDigest: agent.definition.digest }),
         })),
@@ -794,12 +919,68 @@ export async function createAgentHost(
     }
   }
 
+  const acquireSessionEnvironment = async (input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease> => {
+    if (!input.requestId.trim()) throw new TypeError('requestId is required')
+    const { binding } = await gateway.resolveHostSessionBinding(input.authorizedScope, input.ref)
+    const providerLease = binding.environmentLease.retain()
+    const abort = new AbortController()
+    let active = true
+    let unregister = runtime.registerSubscription(() => release())
+    const onGenerationAbort = () => release()
+    providerLease.signal.addEventListener('abort', onGenerationAbort, { once: true })
+    function release() {
+      if (!active) return
+      active = false
+      abort.abort()
+      providerLease.signal.removeEventListener('abort', onGenerationAbort)
+      unregister()
+      unregister = () => {}
+      providerLease.release()
+    }
+    return Object.freeze({
+      environmentGenerationId: providerLease.generationId,
+      bindingGeneration: binding.generation,
+      signal: abort.signal,
+      async acquireTrustedService({ leaseId, idleTtlMs, absoluteTtlMs }: {
+        readonly leaseId: string
+        readonly idleTtlMs: number
+        readonly absoluteTtlMs: number
+      }) {
+        if (!active || abort.signal.aborted) throw bindingDisposedError()
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(leaseId)) throw new TypeError('leaseId is invalid')
+        if (!Number.isInteger(idleTtlMs) || idleTtlMs < 1_000 || idleTtlMs > 15 * 60_000) {
+          throw new TypeError('idleTtlMs must be between 1000 and 900000')
+        }
+        if (!Number.isInteger(absoluteTtlMs) || absoluteTtlMs < idleTtlMs || absoluteTtlMs > 60 * 60_000) {
+          throw new TypeError('absoluteTtlMs must be between idleTtlMs and 3600000')
+        }
+        const mechanism = providerLease.bundle.trustedServiceV1
+        if (!mechanism
+          || mechanism.qualification.serviceRef !== 'trusted-service-v1'
+          || mechanism.qualification.isolation !== 'dedicated-uid-private-channel'
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.protocolDigest)
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.imageDigest)) {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'qualified trusted-service-v1 is unavailable for this Environment generation',
+          )
+        }
+        return await mechanism.acquire({ leaseId, idleTtlMs, absoluteTtlMs, signal: abort.signal })
+      },
+      release,
+    })
+  }
+
   const runWithWorkspaceAgent = (
     input: import('./types').AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
   ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
 
-  const resolveProjectionPiChatService = async (
+  const resolveHarnessBackendForRequest = async (
     authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,
     request: import('fastify').FastifyRequest,
     agentTypeId: string,
@@ -809,7 +990,7 @@ export async function createAgentHost(
     const binding = (await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })).binding
     return {
       scope,
-      service: binding.composition.service,
+      backend: binding.composition.backend,
     }
   }
 
@@ -817,6 +998,7 @@ export async function createAgentHost(
     host,
     gateway,
     acquireEnvironment: acquireAppEnvironment,
+    acquireSessionEnvironment,
     runWithWorkspaceAgent,
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
       assertStrongLedger()
@@ -830,8 +1012,8 @@ export async function createAgentHost(
           const scope = await projectionOptions.authorizeAgentRequest(request)
           return (await runtime.verify(scope)).workspaceScopeId
         },
-        resolveAddressedPiChatService(request, agentTypeId, sessionId) {
-          return resolveProjectionPiChatService(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
+        resolveHarnessBackend(request, agentTypeId, sessionId) {
+          return resolveHarnessBackendForRequest(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
       })
     },

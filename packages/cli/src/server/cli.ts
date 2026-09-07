@@ -139,13 +139,12 @@ const AUTH_GUIDE = [
   "",
 ].join("\n")
 
-async function checkAuth(): Promise<number> {
+export async function checkAuth(): Promise<number> {
   // Keep pi-coding-agent out of the CLI's top-level module graph so help and
   // workspace-management commands stay lightweight.
-  const { AuthStorage, ModelRegistry } = await import("@mariozechner/pi-coding-agent")
-  const authStorage = AuthStorage.create()
-  const registry = ModelRegistry.create(authStorage)
-  return registry.getAvailable().length
+  const { ModelRuntime } = await import("@mariozechner/pi-coding-agent")
+  const modelRuntime = await ModelRuntime.create()
+  return modelRuntime.getAvailableSnapshot().length
 }
 
 function isLoopbackHost(host: string): boolean {
