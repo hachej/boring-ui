@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace"
+import { OBJECTIVE_ERROR_CODES } from "../../shared"
 import { createObjectiveTools } from "../objectiveTools"
 import { FileObjectiveStore } from "../objectiveStore"
 
@@ -72,16 +73,19 @@ describe("objective agent tools", () => {
     const result = await tool("create_objective").execute({ title: "Missing fields" }, ctx)
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toMatch(/Invalid create_objective input/)
+    expect(result.details).toEqual({ code: OBJECTIVE_ERROR_CODES.VALIDATION_INVALID })
   })
 
   it("returns an error result for get_objective on an unknown id", async () => {
     const result = await tool("get_objective").execute({ id: "missing" }, ctx)
     expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: OBJECTIVE_ERROR_CODES.NOT_FOUND, objective: null })
   })
 
   it("returns an error result for update_objective on an unknown id", async () => {
     const result = await tool("update_objective").execute({ id: "missing", current: 1 }, ctx)
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toMatch(/update_objective failed/)
+    expect(result.details).toEqual({ code: OBJECTIVE_ERROR_CODES.NOT_FOUND })
   })
 })

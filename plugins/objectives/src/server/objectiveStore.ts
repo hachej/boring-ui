@@ -454,7 +454,19 @@ export class FileObjectiveStore implements ObjectiveStore {
         diagnostics.push({ index, reason: result.error.issues[0]?.message ?? "invalid objective record" })
         return
       }
-      objectives.set(result.data.id, result.data as Objective)
+      const objective = result.data as Objective
+      if (objectives.has(objective.id)) {
+        diagnostics.push({ index, reason: `duplicate objective id ${objective.id}` })
+        return
+      }
+      if (
+        objective.clientRequestId
+        && [...objectives.values()].some((existing) => existing.clientRequestId === objective.clientRequestId)
+      ) {
+        diagnostics.push({ index, reason: `duplicate clientRequestId ${objective.clientRequestId}` })
+        return
+      }
+      objectives.set(objective.id, objective)
     })
 
     this.diagnostics = diagnostics

@@ -9,6 +9,7 @@ import {
 import {
   OBJECTIVES_PLUGIN_ID,
   OBJECTIVE_BRIDGE_CAPABILITIES,
+  OBJECTIVE_ERROR_CODES,
   OBJECTIVE_BRIDGE_OPS,
   validateCreateObjectiveInput,
   validateGetObjectiveInput,
@@ -176,7 +177,12 @@ function firstIssue(error: { issues: Array<{ message: string }> }): string {
 
 function mapObjectiveError(error: unknown): never {
   if (error instanceof ObjectiveError) {
-    throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidRequest, error.message, { objectiveCode: error.code })
+    const code = error.code === OBJECTIVE_ERROR_CODES.IDEMPOTENCY_CONFLICT
+      ? WorkspaceBridgeErrorCode.IdempotencyConflict
+      : error.code === OBJECTIVE_ERROR_CODES.STORE_CORRUPT || error.code === OBJECTIVE_ERROR_CODES.STORE_IO
+        ? WorkspaceBridgeErrorCode.HandlerFailed
+        : WorkspaceBridgeErrorCode.InvalidRequest
+    throw createWorkspaceBridgeError(code, error.message)
   }
   throw error
 }

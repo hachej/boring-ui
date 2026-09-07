@@ -1,6 +1,6 @@
 import type { AgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace"
 import { OBJECTIVE_STATUSES } from "../shared/constants"
-import { ObjectiveError } from "../shared/error-codes"
+import { ObjectiveError, OBJECTIVE_ERROR_CODES } from "../shared/error-codes"
 import {
   validateCreateObjectiveInput,
   validateGetObjectiveInput,
@@ -17,6 +17,10 @@ const statusEnum = { type: "string", enum: [...OBJECTIVE_STATUSES] }
 
 function textResult(text: string, details: unknown, isError = false): ToolResult {
   return { content: [{ type: "text", text }], details, isError }
+}
+
+function invalidFailure(prefix: string, message: string): ToolResult {
+  return textResult(`${prefix}: ${message}`, { code: OBJECTIVE_ERROR_CODES.VALIDATION_INVALID }, true)
 }
 
 function failure(prefix: string, error: unknown): ToolResult {
@@ -45,12 +49,12 @@ export function createObjectiveTools(options: CreateObjectiveToolsOptions): Agen
       },
       async execute(params: Record<string, unknown>, _ctx: ToolExecContext) {
         const parsed = validateListObjectivesInput(params)
-        if (!parsed.success) return textResult(`Invalid list_objectives input: ${parsed.error.issues[0]?.message ?? parsed.error.message}`, undefined, true)
+        if (!parsed.success) return invalidFailure("Invalid list_objectives input", parsed.error.issues[0]?.message ?? parsed.error.message)
         try {
           const all = await store.list(parsed.data.status)
           const offset = parsed.data.cursor ? Number(parsed.data.cursor) : 0
           if (!Number.isSafeInteger(offset) || offset > all.length) {
-            return textResult("Invalid list_objectives input: cursor is out of range", undefined, true)
+            return invalidFailure("Invalid list_objectives input", "cursor is out of range")
           }
           const limit = parsed.data.limit ?? 20
           const objectives = all.slice(offset, offset + limit)
@@ -76,10 +80,16 @@ export function createObjectiveTools(options: CreateObjectiveToolsOptions): Agen
       },
       async execute(params: Record<string, unknown>, _ctx: ToolExecContext) {
         const parsed = validateGetObjectiveInput(params)
-        if (!parsed.success) return textResult(`Invalid get_objective input: ${parsed.error.issues[0]?.message ?? parsed.error.message}`, undefined, true)
+        if (!parsed.success) return invalidFailure("Invalid get_objective input", parsed.error.issues[0]?.message ?? parsed.error.message)
         try {
           const objective = await store.get(parsed.data.id)
-          if (!objective) return textResult(`Objective ${parsed.data.id} not found.`, { objective: null }, true)
+          if (!objective) {
+            return textResult(
+              `Objective ${parsed.data.id} not found.`,
+              { code: OBJECTIVE_ERROR_CODES.NOT_FOUND, objective: null },
+              true,
+            )
+          }
           return textResult(`Objective ${objective.id}: ${objective.title}.`, { objective })
         } catch (error) {
           return failure("get_objective failed", error)
@@ -109,7 +119,7 @@ export function createObjectiveTools(options: CreateObjectiveToolsOptions): Agen
       },
       async execute(params: Record<string, unknown>, _ctx: ToolExecContext) {
         const parsed = validateCreateObjectiveInput(params)
-        if (!parsed.success) return textResult(`Invalid create_objective input: ${parsed.error.issues[0]?.message ?? parsed.error.message}`, undefined, true)
+        if (!parsed.success) return invalidFailure("Invalid create_objective input", parsed.error.issues[0]?.message ?? parsed.error.message)
         try {
           const objective = await store.create(parsed.data)
           return textResult(`Created objective ${objective.id}: ${objective.title}.`, { objective })
@@ -141,7 +151,7 @@ export function createObjectiveTools(options: CreateObjectiveToolsOptions): Agen
       },
       async execute(params: Record<string, unknown>, _ctx: ToolExecContext) {
         const parsed = validateUpdateObjectiveInput(params)
-        if (!parsed.success) return textResult(`Invalid update_objective input: ${parsed.error.issues[0]?.message ?? parsed.error.message}`, undefined, true)
+        if (!parsed.success) return invalidFailure("Invalid update_objective input", parsed.error.issues[0]?.message ?? parsed.error.message)
         try {
           const objective = await store.update(parsed.data)
           return textResult(`Updated objective ${objective.id}.`, { objective })

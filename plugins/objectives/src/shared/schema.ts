@@ -35,8 +35,8 @@ function withAggregateSizeLimit<T extends z.ZodTypeAny>(schema: T) {
   )
 }
 
-export const ObjectiveSchema = z
-  .object({
+export const ObjectiveSchema = withAggregateSizeLimit(
+  z.object({
     id: ObjectiveIdSchema,
     title: titleSchema,
     objective: objectiveStatementSchema,
@@ -51,8 +51,8 @@ export const ObjectiveSchema = z
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
     clientRequestId: clientRequestIdSchema.optional(),
-  })
-  .strict()
+  }).strict(),
+)
 
 export const CreateObjectiveInputSchema = withAggregateSizeLimit(
   z

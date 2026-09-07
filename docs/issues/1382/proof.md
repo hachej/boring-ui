@@ -4,9 +4,9 @@
 
 - Issue / Bead / PR: #1382 / `wt-391-forward-5m2v.1` / https://github.com/hachej/boring-ui/pull/1382
 - Original branch head: `9fcadae0719e5677f458eff99094391714fb777b`
-- Current main and merge base: `d19b04d357ea7d2caae20a44a657edb3ee4c582e`
-- Candidate before this proof-only commit: `c3419ccb94b204872de41f9f3ed866bbc47a59ad`
-- Branch integration: merge commit `384a89eed01f4c3521fefe1d7ba015d17ff06eb0`; no history rewrite or force push.
+- Current main and final integration base: `68dcb7db8822f721c6b45d0731e01a46fa364f28`
+- Final candidate: the immutable commit containing this proof file; its exact SHA is recorded in the Bead handoff and generated `present-pr` artifact after commit.
+- Branch integration: merge commits `384a89eed01f4c3521fefe1d7ba015d17ff06eb0` and `3f37b1679e1df704edd6b15a2387fe39c2824b62` (the latter before final fixes); no history rewrite or force push.
 
 ## What changed
 
@@ -16,7 +16,7 @@ The plugin is not registered in app composition, does not publish/release anythi
 
 ## Automated verification
 
-Dedicated sandbox `bebdb362-7eb7-41f0-8580-4fb3596a5202`, exact snapshot `c3419ccb94b204872de41f9f3ed866bbc47a59ad`, Node/pnpm environment provisioned by the Factory:
+The final commit is re-run in a dedicated exact-SHA Factory sandbox after this file is committed. Earlier complete green integration evidence at `3f37b1679e1df704edd6b15a2387fe39c2824b62` used sandbox `49f285ca-cb00-4f5b-8eb6-0f3006b4e58f`; final sandbox id, SHA, and results are recorded in the Bead handoff.
 
 - `pnpm install --frozen-lockfile` — PASS.
 - `pnpm --filter @hachej/boring-objectives typecheck` — PASS.
@@ -37,9 +37,9 @@ node docs/issues/1382/run-ui-proof.mjs <revision> <label> .handoff/objectives-ui
 
 Both runs use fixture record `obj-11111111-1111-4111-8111-111111111111`, viewport 1280×720, and the same local isolated Vite/Playwright harness.
 
-- Before `d19b04d357ea7d2caae20a44a657edb3ee4c582e`: PASS; asserts Objective surface absence, clicks **Probe Objective surface**, and observes `No Objective panel registered.`
-- Candidate `c3419ccb94b204872de41f9f3ed866bbc47a59ad`: PASS; asserts `2 / 10`, clicks **Apply server update**, triggers the pane's real visibility refresh path, observes `7 / 10`, and verifies the constraint text.
-- Factory sandbox generated labeled WebM clips and JSON assertion reports. Final-revision owner-accessible copies are generated after the final proof-only revision is fixed and linked from the Bead handoff.
+- Before/current-main `68dcb7db8822f721c6b45d0731e01a46fa364f28`: PASS; asserts Objective surface absence, clicks **Probe Objective surface**, and observes `No Objective panel registered.`
+- Final candidate: PASS; asserts `2 / 10`, clicks **Apply server update**, triggers the pane's real visibility refresh path, observes `7 / 10`, and verifies the constraint text.
+- The exact final candidate SHA, labeled WebM clips, JSON assertion reports, and owner-accessible artifact links are recorded in the Bead handoff after commit so they cannot stale this tracked proof again.
 - Mobile omitted: this is an unregistered fixed workbench pane and acceptance requested one deterministic viewport; residual responsive-layout coverage is limited to component tests.
 
 ## CI audit trail
@@ -73,9 +73,11 @@ Review round 2 (`70bc7fef-85fe-4d85-b9da-c6bff40a1560`, Sol xhigh) requested cha
 - fail closed on malformed/unrecognized durable state and refuse mutation when invalid records would otherwise be dropped;
 - reject `clientRequestId` reuse with different normalized creation input;
 - paginate bridge/tool list responses at at most 20 records and make the front client follow cursors;
-- register every Objective failure in Agent's canonical error enum and carry stable codes through path/config/store/tool/bridge seams;
+- introduce plugin-owned stable Objective error codes and carry them through path/config/store/tool/bridge seams without coupling Agent core to plugin vocabulary;
 - remove contradictory “Goal primitive” text from model- and user-facing descriptions;
 - re-run all exact-SHA proof because any fix invalidates the parent evidence.
+
+Review round 3 (`9dafa19e-a676-4096-9965-66e046f5d7d3`, Sol xhigh) requested changes at `3f37b1679e1df704edd6b15a2387fe39c2824b62`. Final dispositions: remove the Objective special-case from Agent core; propagate plugin-owned validation/not-found/store codes through tools, bridge details, and front errors; diagnose duplicate ids and idempotency keys and refuse mutation; apply the 24 KiB aggregate cap to loaded `ObjectiveSchema` records; and refresh final-main proof/presentation artifacts.
 
 The final independent exact-SHA standards/spec, thermo, and full abstraction verdict is recorded in the Bead handoff. The gate is not self-approved by this document.
 
@@ -83,15 +85,14 @@ The final independent exact-SHA standards/spec, thermo, and full abstraction ver
 
 - Route: **protected owner merge decision**.
 - Matched trigger: durable Objective primitive / architecture decision (shared contracts/semantic ownership), explicitly owner-classified as protected.
-- Package production additions + deletions: **10** additions / **0** deletions under `packages/**` production source: ten canonical `OBJECTIVE_*` error-code entries in `packages/agent/src/shared/error-codes.ts`.
-- Numerical exclusions: `packages/agent/docs/ERROR_CODES.md` and `packages/agent/src/shared/__tests__/error-codes.test.ts` are docs/tests; plugin production code, plugin tests, evals, docs, `.beads/issues.jsonl`, package manifests, and `pnpm-lock.yaml` are outside `packages/**` production-source count. They remain in semantic review.
-- The 10-line package count is below the >500 size trigger, but semantic architecture protection still controls the route.
+- Package production additions + deletions: **0**. The attempted Agent-registry special-case was removed; no package production source remains in the base-to-head diff.
+- Numerical exclusions: plugin production code, tests, evals, docs, `.beads/issues.jsonl`, package manifests, and `pnpm-lock.yaml` are outside `packages/**` production-source count. They remain in semantic review.
 - Other triggers: no auth/permissions/tenant/secrets, billing/spend, migration/deletion, release/publish, shared design-system, global navigation, or automation-authority change.
 - Automatic MERGE-READY is forbidden because the protected architecture trigger controls even though package production count is zero.
 
 ## Integration, rollback, and residuals
 
-- `origin/main` fetched and confirmed at `d19b04d357ea7d2caae20a44a657edb3ee4c582e`; it equals the candidate merge base.
+- `origin/main` fetched and confirmed at `68dcb7db8822f721c6b45d0731e01a46fa364f28`; it is an ancestor of the final candidate through the final integration merge.
 - GitHub reports the PR conflict-free; final checks and current-main equality are re-read at handoff.
 - Rollback before merge: reject the candidate. After authorized merge: revert the PR merge commit. No migration or release exists; plugin remains unregistered.
 - Known implementation residuals retained from prior review: narrow pre-lock-lock-path symlink swap window, release read-then-unlink window, and a documented single-live-writer/restart-overlap contract rather than arbitrary N-writer serializability.

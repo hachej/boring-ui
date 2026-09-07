@@ -400,6 +400,27 @@ describe("FileObjectiveStore", () => {
       expect(diagnostics[0]).toMatchObject({ index: 1 })
     })
 
+    it("reports duplicate ids and refuses to collapse them on mutation", async () => {
+      await mkdir(dir, { recursive: true })
+      const record = { id: canonicalId, title: "First", objective: "Do a thing", metric: "m", baseline: 0, target: 1, current: 0, status: "active", constraints: [], evidenceRefs: [], createdAt: "x", updatedAt: "x" }
+      const filePath = join(dir, "objectives.json")
+      await writeFile(filePath, JSON.stringify({ version: 1, revision: 1, objectives: [record, { ...record, title: "Second" }] }), "utf8")
+      await expect(store.list()).resolves.toMatchObject([{ title: "First" }])
+      expect(store.getLoadDiagnostics()).toEqual([expect.objectContaining({ index: 1, reason: expect.stringContaining("duplicate objective id") })])
+      await expect(store.create(input())).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.STORE_CORRUPT })
+      expect(JSON.parse(await readFile(filePath, "utf8")).objectives).toHaveLength(2)
+    })
+
+    it("reports duplicate clientRequestIds and refuses mutation", async () => {
+      await mkdir(dir, { recursive: true })
+      const first = { id: canonicalId, title: "First", objective: "Do a thing", metric: "m", baseline: 0, target: 1, current: 0, status: "active", constraints: [], evidenceRefs: [], createdAt: "x", updatedAt: "x", clientRequestId: "duplicate" }
+      const second = { ...first, id: "obj-22222222-2222-4222-8222-222222222222", title: "Second" }
+      await writeFile(join(dir, "objectives.json"), JSON.stringify({ version: 1, revision: 1, objectives: [first, second] }), "utf8")
+      await expect(store.list()).resolves.toMatchObject([{ title: "First" }])
+      expect(store.getLoadDiagnostics()).toEqual([expect.objectContaining({ index: 1, reason: expect.stringContaining("duplicate clientRequestId") })])
+      await expect(store.update({ id: canonicalId, current: 1 })).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.STORE_CORRUPT })
+    })
+
     it("rejects a __proto__ id as an invalid canonical id and does not pollute Object.prototype", async () => {
       await mkdir(dir, { recursive: true })
       await writeFile(

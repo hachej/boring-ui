@@ -75,6 +75,24 @@ describe("objectives schema", () => {
     expect(result.success).toBe(false)
   })
 
+  it("rejects a stored Objective that exceeds the bridge-safe aggregate cap", () => {
+    const result = ObjectiveSchema.safeParse({
+      id: "obj-11111111-1111-4111-8111-111111111111",
+      title: "Ship v2",
+      objective: "Ship the v2 rewrite",
+      metric: "WAU",
+      baseline: 0,
+      target: 1,
+      current: 0,
+      status: "active",
+      constraints: Array.from({ length: 50 }, () => "é".repeat(340)),
+      evidenceRefs: [],
+      createdAt: "2026-09-07T00:00:00.000Z",
+      updatedAt: "2026-09-07T00:00:00.000Z",
+    })
+    expect(result.success).toBe(false)
+  })
+
   it("accepts a create input at the field limits when it stays under the aggregate cap", () => {
     const result = validateCreateObjectiveInput({
       title: "Ship v2",

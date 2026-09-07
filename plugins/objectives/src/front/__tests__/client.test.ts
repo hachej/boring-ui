@@ -86,7 +86,7 @@ describe("createObjectivesClient", () => {
     await expect(client.update({ id: "obj_1", current: 250 })).resolves.toMatchObject({ current: 250 })
   })
 
-  it("throws ObjectivesClientError on a bridge error response", async () => {
+  it("throws ObjectivesClientError with the stable bridge code", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: false, error: { code: "BRIDGE_INVALID_REQUEST", message: "bad input" } }, 400))
     vi.stubGlobal("fetch", fetchMock)
 
