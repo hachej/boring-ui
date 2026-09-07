@@ -106,22 +106,21 @@ describe('createAgentHost', () => {
   it('replays a completed create receipt across Host restart without a second transcript', async () => {
     const sessionRoot = await root()
     const input = { scope, agentTypeId: 'alpha', requestId: 'restart-create' }
+    const harnessFactory = vi.fn(persistedScriptedHarness)
 
     const first = await createAgentHost({
       ...options(sessionRoot),
-      harnessFactory: persistedScriptedHarness,
+      harnessFactory,
     })
     const ref = await first.gateway.createSession(input)
     await first.host.close()
 
     const restarted = await createAgentHost({
       ...options(sessionRoot),
-      harnessFactory: persistedScriptedHarness,
+      harnessFactory,
     })
     await expect(restarted.gateway.createSession(input)).resolves.toEqual(ref)
-    await expect(restarted.gateway.listSessions({ scope })).resolves.toMatchObject({
-      sessions: [{ ref }],
-    })
+    expect(harnessFactory).toHaveBeenCalledOnce()
     await restarted.host.close()
   })
 
