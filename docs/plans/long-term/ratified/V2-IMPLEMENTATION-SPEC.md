@@ -120,10 +120,10 @@ Workspace        { workspaceId; mounts; seats; threads; sharedState; artifacts }
 Seat             { seatId; workspaceId; agentId; role?; budget?; permissions?; bindingState }
                  // grants participation, NOT identity (invariant 5); type is kernel-level,
                  // lifecycle is workspace-level (ratified Q4)
-Thread           { threadId; workspaceId; title; participants; workingSet }  // = session
-                 // storage-shape note 2026-08-26: the per-session one-record backing
-                 // shape is suspended pending the thread-storage spike (RECONCILIATION §8);
-                 // the noun and this interface stand
+Thread           { threadId; workspaceId; title; participants; workingSet }  // durable job root
+                 // RECONCILIATION §9a (2026-08-27): one Thread binds 0..n Sessions.
+                 // Session = one runtime conversation; headless jobs may have none.
+                 // Timeline storage shape (first-class stream vs projection) remains spiked.
 Activity         // what happened: runs, delegations, approvals, interventions
                  // (envelope projection — no second event system)
 SessionCatalog   // host-authoritative ownership/placement (C7); seats ledger;
@@ -132,8 +132,9 @@ Delegation       // agent.call({target: AgentRef, task, resources, budget}) —
                  // local gateway impl now; resolver seam for remote later
 EffectiveCapability = agentDeclared ∩ workspaceGrants ∩ seatBinding ∩ threadRestriction
 ```
-**Ports:** AgentGateway session machinery (as Thread impl) · workspace scope
-issuance (rebuilt claim-based) · fleet compilation idea (deployment-static seats).
+**Ports:** AgentGateway session machinery (for a Thread's runtime Session bindings) ·
+workspace scope issuance (rebuilt claim-based) · fleet compilation idea
+(deployment-static seats).
 **New:** Seat entity · SessionCatalog/C7 · Activity projection · effective-
 capability intersection compiler (eve vocabulary: disable/alias/wrap/replace,
 compiled immutable).

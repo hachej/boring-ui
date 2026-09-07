@@ -22,6 +22,16 @@ The procedure distinguishes adopted policy from automation not yet enabled.
 4. [`plans/multiagent-shell/README.md`](plans/multiagent-shell/README.md) — the active program pack.
 5. [`plans/agent-runtime/alignment/CONTRADICTIONS.md`](plans/agent-runtime/alignment/CONTRADICTIONS.md) — what was fought over and resolved.
 
+## Proposal under review: native creation
+
+[`plans/native-creation/`](plans/native-creation/README.md) reassesses the
+program against creating, installing, adapting, and maintaining expert
+software inside Seneca without founder source edits. It includes proposed
+amendments, failure-first acceptance, unresolved owner choices, and pinned
+source/coverage limits. **Proposed and non-dispatchable:** it does not supersede
+ratified decisions, change the active queue, or authorize runtime/Factory
+policy changes. DIRECTION remains the only executable ordering.
+
 ## Precedence (who wins)
 
 User/owner rulings > ratified pack ([`plans/long-term/ratified/`](plans/long-term/ratified/README.md) + [`DECISIONS.md`](DECISIONS.md)) >
