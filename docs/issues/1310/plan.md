@@ -56,24 +56,24 @@ Merge current `origin/main` into `exec/wt-391-forward-xp3s.4`, repair every outs
 ## Slices
 
 ### Slice: Repair lifecycle contracts and tests
-**Bead:** `wt-391-forward-0ms8.1`  
-**Delivers:** Current-main merge, review repairs, regression tests, green affected checks, pushed exact SHA, complete handoff.  
-**Blocked by:** None.  
-**Proof:** Affected package tests/typechecks, import/invariant checks, diff check, PR checks, adversarial exact-SHA review.  
+**Bead:** `wt-391-forward-0ms8.1`
+**Delivers:** Current-main merge, review repairs, regression tests, green affected checks, pushed exact SHA, complete handoff.
+**Blocked by:** None.
+**Proof:** Affected package tests/typechecks, import/invariant checks, diff check, PR checks, adversarial exact-SHA review.
 **Review budget:** Inside one Worker session; first of at most four review rounds.
 
 ### Slice: Review final package abstraction and integration candidate
-**Bead:** `wt-391-forward-0ms8.2`  
-**Delivers:** Independent standards/spec and thermo verdicts, explicit abstraction PASS, review repairs if needed, current-main integration validation.  
-**Blocked by:** `wt-391-forward-0ms8.1`.  
-**Proof:** Revision-bound review record, real producer/consumer inspection, commands/results, clean mergeability.  
+**Bead:** `wt-391-forward-0ms8.2`
+**Delivers:** Independent standards/spec and thermo verdicts, explicit abstraction PASS, review repairs if needed, current-main integration validation.
+**Blocked by:** `wt-391-forward-0ms8.1`.
+**Proof:** Revision-bound review record, real producer/consumer inspection, commands/results, clean mergeability.
 **Review budget:** Inside one Worker session; total epic review cap remains four.
 
 ### Slice: Package proof and delivery handoff
-**Bead:** `wt-391-forward-0ms8.3`  
-**Delivers:** Canonical present-pr artifact, PR proof/card, deterministic risk classification, exact-SHA handoff to the Orchestrator.  
-**Blocked by:** `wt-391-forward-0ms8.2`.  
-**Proof:** Owner-facing artifacts resolve, CI and review links match the exact SHA, risk calculation is reproducible.  
+**Bead:** `wt-391-forward-0ms8.3`
+**Delivers:** Canonical present-pr artifact, PR proof/card, deterministic risk classification, exact-SHA handoff to the Orchestrator.
+**Blocked by:** `wt-391-forward-0ms8.2`.
+**Proof:** Owner-facing artifacts resolve, CI and review links match the exact SHA, risk calculation is reproducible.
 **Review budget:** Inside one Worker session.
 
 ## Out of Scope

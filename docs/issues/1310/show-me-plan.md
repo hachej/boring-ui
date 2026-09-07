@@ -1,6 +1,6 @@
 # [Agent Package Lifecycle] Plan, visually
 
-**Status:** Ready for Gate 1 · **Epic:** `wt-391-forward-0ms8` · **PR:** #1310  
+**Status:** Ready for Gate 1 · **Epic:** `wt-391-forward-0ms8` · **PR:** #1310
 **TL;DR:** Repair the existing package lifecycle PR against current main, independently prove its public seams, then prepare one revision-bound delivery decision.
 
 ## 1. Structure — where the work lands
