@@ -22,7 +22,7 @@ import { groupKyutaiTranscriptSnapshot } from "./kyutaiTranscript"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
 import { LiveReviewBroker } from "./reviewBroker"
 import { LocalAudioRecorder } from "./audioRecorder"
-import type { TranscriptRefiner } from "./refine"
+import { MAX_REFINE_AUDIO_BYTES, type TranscriptRefiner } from "./refine"
 
 interface UpstreamConnection {
   connect(): Promise<void>
@@ -525,8 +525,14 @@ export class LiveTranscriptManager {
     const relPath = validateWorkspaceAudioPath(input.path)
     let audioBytes: Uint8Array
     try {
+      const audioStat = await workspace.stat(relPath)
+      if (audioStat.kind !== "file") throw new Error("not a file")
+      if (audioStat.size > MAX_REFINE_AUDIO_BYTES) {
+        throw new LiveTranscriptError("live_transcript_limit_exceeded", "Recording exceeded the offline refine size limit.", 413)
+      }
       audioBytes = await workspace.readBinaryFile(relPath)
-    } catch {
+    } catch (error) {
+      if (error instanceof LiveTranscriptError) throw error
       throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file was not found or is inaccessible.", 400)
     }
     const transcriptRelPath = `${relPath.replace(/\.[^./\\]+$/, "")}.transcript.md`

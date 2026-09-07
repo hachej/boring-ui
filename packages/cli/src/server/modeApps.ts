@@ -417,6 +417,20 @@ function parseFrontErrorReport(pluginId: string, body: unknown): RuntimePluginFr
     reportedAt: Date.now(),
   }
 }
+export function forwardLiveTranscriptServiceOptions(options: {
+  refineUrl?: string
+  refineBearerToken?: string
+  audioRecordingDirectory?: string
+  audioRecordingFfmpegPath?: string
+}) {
+  return {
+    refineUrl: options.refineUrl,
+    refineBearerToken: options.refineBearerToken,
+    audioRecordingDirectory: options.audioRecordingDirectory,
+    audioRecordingFfmpegPath: options.audioRecordingFfmpegPath,
+  }
+}
+
 export async function createFolderModeApp(opts: {
   workspaceRoot: string
   mode: RuntimeMode
@@ -525,10 +539,7 @@ export async function createFolderModeApp(opts: {
         diarizerBearerToken: opts.liveTranscripts.diarizerBearerToken,
         lifecycleUrl: opts.liveTranscripts.lifecycleUrl,
         lifecycleBearerToken: opts.liveTranscripts.lifecycleBearerToken,
-        refineUrl: opts.liveTranscripts.refineUrl,
-        refineBearerToken: opts.liveTranscripts.refineBearerToken,
-        audioRecordingDirectory: opts.liveTranscripts.audioRecordingDirectory,
-        audioRecordingFfmpegPath: opts.liveTranscripts.audioRecordingFfmpegPath,
+        ...forwardLiveTranscriptServiceOptions(opts.liveTranscripts),
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined

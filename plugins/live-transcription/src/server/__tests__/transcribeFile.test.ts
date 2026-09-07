@@ -15,6 +15,8 @@ class FakeSandboxWorkspace implements Workspace {
   readonly runtimeContext: { runtimeCwd: string; mode: "direct" }
   private readonly files = new Map<string, string>()
   private readonly binaryFiles = new Map<string, Uint8Array>()
+  private readonly statSizes = new Map<string, number>()
+  binaryReadCount = 0
   constructor(readonly root: string) {
     this.runtimeContext = { runtimeCwd: root, mode: "direct" }
   }
@@ -25,6 +27,7 @@ class FakeSandboxWorkspace implements Workspace {
     return value
   }
   async readBinaryFile(relPath: string): Promise<Uint8Array> {
+    this.binaryReadCount += 1
     const value = this.binaryFiles.get(relPath)
     if (!value) throw new Error(`not found: ${relPath}`)
     return value
@@ -39,12 +42,16 @@ class FakeSandboxWorkspace implements Workspace {
   async writeBinaryFile(relPath: string, data: Uint8Array): Promise<void> {
     this.binaryFiles.set(relPath, data)
   }
+  setStatSize(relPath: string, size: number): void {
+    this.binaryFiles.set(relPath, new Uint8Array())
+    this.statSizes.set(relPath, size)
+  }
   async unlink(relPath: string): Promise<void> { this.files.delete(relPath) }
   async readdir(): Promise<Entry[]> { return [] }
   async stat(relPath: string): Promise<Stat> {
     const value = this.files.get(relPath) ?? this.binaryFiles.get(relPath)
     if (value === undefined) throw new Error(`not found: ${relPath}`)
-    return { size: typeof value === "string" ? value.length : value.byteLength, mtimeMs: 0, kind: "file" }
+    return { size: this.statSizes.get(relPath) ?? (typeof value === "string" ? value.length : value.byteLength), mtimeMs: 0, kind: "file" }
   }
   async mkdir(): Promise<void> {}
   async rename(): Promise<void> {}
@@ -186,6 +193,17 @@ describe("POST /live-transcripts/transcribe-file", () => {
     const response = await transcribeFile(app, { path: "live-transcripts/recording.m4a" })
     expect(response.statusCode).toBe(503)
     expect(response.json()).toMatchObject({ error: { code: "live_transcript_disabled" } })
+  })
+
+  it("rejects an oversized workspace recording before allocating its bytes", async () => {
+    const { app, workspace } = await createApp({ workspaceRoot: "/workspace" })
+    apps.push(app)
+    workspace.setStatSize("live-transcripts/recording.m4a", 200 * 1024 * 1024 + 1)
+
+    const response = await transcribeFile(app, { path: "live-transcripts/recording.m4a" })
+    expect(response.statusCode).toBe(413)
+    expect(response.json()).toMatchObject({ error: { code: "live_transcript_limit_exceeded" } })
+    expect(workspace.binaryReadCount).toBe(0)
   })
 
   it("does not require ambient host recording-directory configuration", async () => {

@@ -8,7 +8,7 @@ import { renderTranscriptMarkdown, type ProjectedTranscriptLine, type Transcript
 import type { WhisperLiveKitLine } from "./whisperLiveKit"
 
 /** Refuse to stream recordings larger than this to the offline refine service. */
-const MAX_AUDIO_BYTES = 200 * 1024 * 1024
+export const MAX_REFINE_AUDIO_BYTES = 200 * 1024 * 1024
 const HEARTBEAT_INTERVAL_MS = 30_000
 const RETRY_DELAY_MS = 5_000
 
@@ -78,7 +78,7 @@ export class TranscriptRefiner {
         throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file was not found.", 400)
       }
     }
-    if (size > MAX_AUDIO_BYTES) {
+    if (size > MAX_REFINE_AUDIO_BYTES) {
       throw new LiveTranscriptError("live_transcript_limit_exceeded", "Recording exceeded the offline refine size limit.", 413)
     }
 

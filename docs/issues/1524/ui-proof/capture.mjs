@@ -149,7 +149,7 @@ async function capture({ label, sha }) {
 async function writeFixture(root, label, sha) {
   await writeFile(join(root, "index.html"), '<div id="root"></div><script type="module" src="/entry.tsx"></script>')
   await writeFile(join(root, "mock-agent.tsx"), `import React from "react"\nexport const ChatMessageContributionProvider=({children})=>children\nexport const ComposerContributionProvider=({children})=>children\nexport const Message=({children})=><div>{children}</div>\nexport const MessageContent=({children})=><div>{children}</div>\nexport const Tool=({children})=><div>{children}</div>\nexport const ToolContent=({children})=><div>{children}</div>\nexport const ToolHeader=({children})=><div>{children}</div>\nexport const useOpenArtifact=()=>()=>{}\n`)
-  await writeFile(join(root, "mock-workspace.tsx"), `import React,{useEffect,useState} from "react"\nexport const MarkdownEditorPane=({params})=>{const[,render]=useState(0);useEffect(()=>{const listener=()=>render(v=>v+1);addEventListener("proof-transcript",listener);return()=>removeEventListener("proof-transcript",listener)},[]);return <article data-testid="markdown-editor" data-mode={params?.mode}><h2>Consultation transcript</h2>{(window.__transcript??[]).map((line,index)=><p key={index}>{line}</p>)}</article>}\n`)
+  await writeFile(join(root, "mock-workspace.tsx"), `import React,{useEffect,useState} from "react"\nexport const MarkdownEditorPane=({params})=>{const[lines,setLines]=useState([]);useEffect(()=>{const load=()=>fetch("/api/v1/workspace/file?path="+encodeURIComponent(params?.path??"")).then(r=>r.json()).then(v=>setLines(v.lines));load();addEventListener("proof-workspace-write",load);return()=>removeEventListener("proof-workspace-write",load)},[params?.path]);return <article data-testid="markdown-editor" data-path={params?.path} data-mode={params?.mode}><h2>Consultation transcript</h2>{lines.map((line,index)=><p key={index}>{line}</p>)}</article>}\n`)
   await writeFile(join(root, "mock-workspace-plugin.ts"), `export const definePlugin=(value)=>value\nexport const postUiCommand=(command)=>{ window.__uiCommands.push(command) }\n`)
   await writeFile(join(root, "entry.tsx"), `
 import React, { useEffect, useSyncExternalStore } from "react"
@@ -159,16 +159,18 @@ import { LIVE_PCM_FRAME_BYTES } from "/plugins/live-transcription/src/shared/ind
 window.__uiCommands=[]
 window.__networkTrace=[]
 window.__terminal=false
-window.__transcript=[]
-window.__setTranscript=(lines)=>{window.__transcript=lines;dispatchEvent(new Event("proof-transcript"))}
+window.__workspaceFiles={"live-transcripts/consultation.md":[]}
+window.__writeWorkspace=(path,lines)=>{window.__workspaceFiles[path]=lines;dispatchEvent(new Event("proof-workspace-write"))}
 const ok=(value)=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{"content-type":"application/json"}}))
 window.fetch=async(input,init={})=>{
- const path=typeof input==="string"?input:new URL(input.url).pathname
+ const requestUrl=new URL(typeof input==="string"?input:input.url,location.origin)
+ const path=requestUrl.pathname
  window.__networkTrace.push((init.method??"GET")+" "+path)
+ if(path==="/api/v1/workspace/file") return ok({lines:window.__workspaceFiles[requestUrl.searchParams.get("path")]??[]})
  if(path.endsWith("/compute/prepare")) return ok({preparationId:"prepare-1",state:"ready"})
  if(path==="/api/v1/live-transcripts") return ok({liveSessionId:"live-1",transcriptPath:"live-transcripts/consultation.md",socketNonce:"nonce-1",reviewIntervalMs:180000})
  if(path.endsWith("/review")) return ok({status:"dispatched"})
- if(path.endsWith("/stop")){ window.__terminal=true; await new Promise(r=>setTimeout(r,350)); window.__setTranscript(["Refined: large-v3-turbo, 8 words, 2 speakers","Speaker 1: Bonjour, comment allez-vous ?","Speaker 2: Très bien, merci docteur."]); return ok({transcriptPath:"live-transcripts/consultation.md"}) }
+ if(path.endsWith("/stop")){ window.__terminal=true; window.__writeWorkspace("live-transcripts/consultation.md",["State: complete","Speaker 1: Bonjour","Speaker 2: Bonjour docteur"]); await new Promise(r=>setTimeout(r,1000)); setTimeout(()=>window.__writeWorkspace("live-transcripts/consultation.md",["Refined: large-v3-turbo, 8 words, 2 speakers","Speaker 1: Bonjour, comment allez-vous ?","Speaker 2: Très bien, merci docteur."]),450); return ok({transcriptPath:"live-transcripts/consultation.md"}) }
  return ok({})
 }
 class FakeSocket extends EventTarget{
@@ -182,7 +184,7 @@ class FakeAudioContext{constructor(){} audioWorklet={addModule:async()=>{}};dest
 class FakeWorklet{constructor(){window.__worklet=this;this.port={onmessage:null,postMessage(){}}}connect(){}disconnect(){}}
 window.AudioContext=FakeAudioContext
 window.AudioWorkletNode=FakeWorklet
-window.__emitAudioFrame=()=>{window.__worklet.port.onmessage({data:{type:"frame",data:new ArrayBuffer(LIVE_PCM_FRAME_BYTES)}});window.__setTranscript(["Speaker 1: Bonjour","Speaker 2: Bonjour docteur"])}
+window.__emitAudioFrame=()=>{window.__worklet.port.onmessage({data:{type:"frame",data:new ArrayBuffer(LIVE_PCM_FRAME_BYTES)}});window.__writeWorkspace("live-transcripts/consultation.md",["Speaker 1: Bonjour","Speaker 2: Bonjour docteur"])}
 function App(){
  const recording=useSyncExternalStore(liveTranscriptBrowserState.subscribe,liveTranscriptBrowserState.getSnapshot,liveTranscriptBrowserState.getSnapshot)
  useEffect(()=>{void liveTranscriptController.start("chat-1","Consultation")},[])
