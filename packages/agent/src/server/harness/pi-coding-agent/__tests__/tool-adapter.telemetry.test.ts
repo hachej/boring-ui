@@ -115,8 +115,7 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
     create: () => ({ getSessionFile: () => null }),
     open: () => ({ getSessionFile: () => null }),
   },
-  AuthStorage: { create: () => ({}) },
-  ModelRegistry: { create: () => ({ find: vi.fn(), getAvailable: () => [], registerProvider: vi.fn() }) },
+  ModelRuntime: { create: async () => ({ getModel: vi.fn(), getAvailableSnapshot: () => [], registerProvider: vi.fn(), refresh: vi.fn(async () => ({})) }) },
   DefaultResourceLoader: class {
     private readonly commandName = `cmd-${++loaderSeq}`
     async reload() {}

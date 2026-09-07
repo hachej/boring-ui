@@ -31,7 +31,7 @@ describe("FetchClient filesystem catalog", () => {
     ]))
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.test/api/v1/filesystems",
-      expect.objectContaining({ method: "GET", credentials: "include", signal: expect.any(AbortSignal), headers: { Authorization: "Bearer token" } }),
+      expect.objectContaining({ method: "GET", credentials: "include", cache: "no-store", signal: expect.any(AbortSignal), headers: { Authorization: "Bearer token" } }),
     )
   })
 

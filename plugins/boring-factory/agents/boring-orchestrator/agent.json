@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "definitionId": "boring-orchestrator",
+  "version": "1.0.0",
+  "label": "Boring Orchestrator",
+  "instructionsRef": "instructions.md"
+}

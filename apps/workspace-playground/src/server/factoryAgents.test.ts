@@ -27,7 +27,7 @@ const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
 // The ratified 3-seat roster (gh-1187 S0), in fleet.yaml order.
 const EXPECTED = [
   { role: 'triage', id: 'boring-triage', skills: ['triage', 'owner-gate', 'handoff'] },
-  { role: 'orchestrator', id: 'boring-orchestrator', skills: ['plan', 'feedback', 'owner-gate', 'handoff'] },
+  { role: 'orchestrator', id: 'boring-orchestrator', skills: ['plan', 'feedback', 'owner-gate', 'handoff', 'show-me'] },
   { role: 'worker', id: 'boring-worker', skills: ['exec', 'fresh-eyes', 'owner-gate', 'handoff'] },
 ] as const
 

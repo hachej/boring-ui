@@ -2,7 +2,8 @@ import { mkdtempSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { ModelRuntime } from '@mariozechner/pi-coding-agent'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   readConfiguredDefaultModel,
@@ -111,36 +112,36 @@ describe('agent model env config', () => {
     })
   })
 
-  it('resolves the Infomaniak API key through pi-coding-agent 0.80.7', async () => {
+  it('resolves the Infomaniak API key through Pi 0.84.3 ModelRuntime', async () => {
     process.env.BORING_AGENT_INFOMANIAK_PRODUCT_ID = '108321'
     process.env.BORING_AGENT_INFOMANIAK_MODEL = 'Qwen/Qwen3.5-122B-A10B-FP8'
     process.env.INFOMANIAK_API_TOKEN = 'super-secret-token'
 
-    const registry = ModelRegistry.inMemory(AuthStorage.inMemory())
-    registerConfiguredModelProviders(registry)
+    const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })
+    registerConfiguredModelProviders(runtime)
+    await runtime.refresh({ allowNetwork: false })
 
-    const model = registry.find('infomaniak', 'Qwen/Qwen3.5-122B-A10B-FP8')
+    const model = runtime.getModel('infomaniak', 'Qwen/Qwen3.5-122B-A10B-FP8')
     expect(model).toBeDefined()
-    await expect(registry.getApiKeyAndHeaders(model!)).resolves.toMatchObject({
-      ok: true,
-      apiKey: 'super-secret-token',
+    await expect(runtime.getAuth(model!)).resolves.toMatchObject({
+      auth: { apiKey: 'super-secret-token' },
     })
   })
 
-  it('resolves a custom provider API key through pi-coding-agent 0.80.7', async () => {
+  it('resolves a custom provider API key through Pi 0.84.3 ModelRuntime', async () => {
     process.env.BORING_AGENT_CUSTOM_MODEL_PROVIDER = 'custom'
     process.env.BORING_AGENT_CUSTOM_MODEL_ID = 'custom-model'
     process.env.BORING_AGENT_CUSTOM_MODEL_BASE_URL = 'https://models.example.test/v1'
     process.env.BORING_AGENT_CUSTOM_MODEL_API_KEY = 'custom-secret-token'
 
-    const registry = ModelRegistry.inMemory(AuthStorage.inMemory())
-    registerConfiguredModelProviders(registry)
+    const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })
+    registerConfiguredModelProviders(runtime)
+    await runtime.refresh({ allowNetwork: false })
 
-    const model = registry.find('custom', 'custom-model')
+    const model = runtime.getModel('custom', 'custom-model')
     expect(model).toBeDefined()
-    await expect(registry.getApiKeyAndHeaders(model!)).resolves.toMatchObject({
-      ok: true,
-      apiKey: 'custom-secret-token',
+    await expect(runtime.getAuth(model!)).resolves.toMatchObject({
+      auth: { apiKey: 'custom-secret-token' },
     })
   })
 

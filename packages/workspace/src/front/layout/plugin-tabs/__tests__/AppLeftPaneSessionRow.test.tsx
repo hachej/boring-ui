@@ -44,7 +44,7 @@ describe("AppSessionRow native actions", () => {
     expect(screen.queryByText("Delete")).not.toBeInTheDocument()
   })
 
-  it("offers Unarchive and Delete only once a session is archived", () => {
+  it("offers Restore and Delete only once a session is archived", () => {
     const onDelete = vi.fn()
     const onToggleArchived = vi.fn()
     row({
@@ -54,7 +54,7 @@ describe("AppSessionRow native actions", () => {
       onRename: vi.fn(),
     })
     openMenu()
-    fireEvent.click(screen.getByText("Unarchive session"))
+    fireEvent.click(screen.getByText("Restore session"))
     expect(onToggleArchived).toHaveBeenCalledWith("native-1", false)
     openMenu()
     fireEvent.click(screen.getByText("Delete"))
@@ -182,7 +182,7 @@ describe("AppSessionRow native actions", () => {
     })
     openMenu()
     expect(screen.queryByText("Archive session")).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText("Unarchive session"))
+    fireEvent.click(screen.getByText("Restore session"))
     expect(onToggleArchived).toHaveBeenCalledWith("native-1", false)
   })
 

@@ -1,6 +1,7 @@
 export interface UploadFileOptions {
   apiBaseUrl?: string
   workspaceRequestId?: string | null
+  requestHeaders?: Record<string, string | undefined>
   directory?: string
   sourcePath?: string
   responseUrl?: 'markdown' | 'raw'
@@ -25,14 +26,18 @@ export async function uploadFile(
   file: File,
   opts: UploadFileOptions = {},
 ): Promise<UploadFileResult> {
-  const { apiBaseUrl = '', workspaceRequestId, directory, sourcePath, responseUrl = 'markdown', fetch: fetchImpl = globalThis.fetch } = opts
+  const { apiBaseUrl = '', workspaceRequestId, requestHeaders, directory, sourcePath, responseUrl = 'markdown', fetch: fetchImpl = globalThis.fetch } = opts
 
   const dataUrl = await readAsDataUrl(file)
   const comma = dataUrl.indexOf(',')
   const contentBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : ''
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (workspaceRequestId) headers['x-boring-workspace-id'] = workspaceRequestId
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(requestHeaders ?? {})) {
+    if (value !== undefined) headers.set(name, value)
+  }
+  headers.set('content-type', 'application/json')
+  if (workspaceRequestId) headers.set('x-boring-workspace-id', workspaceRequestId)
 
   const base = apiBaseUrl.replace(/\/$/, '')
   const res = await fetchImpl(`${base}/api/v1/files/upload`, {

@@ -169,6 +169,9 @@ ingress is hardcoded off in every released host.
 `sessions/<sessionId>` — `agentTypeId` is in the URL but in neither. Not a
 live defect (ids are minted unique; cross-agent addressing is rejected), but
 durable rows would bake the omission in.
+*A1 errata (2026-08-30): the `userId` slot is already empty on every addressed
+route, and the durable stream path is now
+`sessions/<enc(workspaceScopeId)>/<enc(sessionId)>`.*
 
 **Bookkeeping correction:** bead `0jpy.15` ("duplicate AgentLiveEventBuffer")
 has a false premise — there is one such class with no external consumers. The
@@ -415,7 +418,8 @@ model is not decided**. Full program:
    Does not block a view library over files and built-in views.
 5. **[merge-queue]** (formerly P5) — a standing obligation, not a bead: this
    list gets a pass **before any premise bead is dispatched**. Current path
-   items: #1382 (and the eval suite stacked behind it), #1343, #1376, #1386;
+   items: #1382 (and the eval suite stacked behind it) — the sole remaining
+   item as of 2026-08-31 (#1343 closed superseded; #1376, #1386 merged);
    kernel-adjacent but off-path: #1145, #1166, #1288. #1409 is MERGED and
    #1416 is closed-absorbed into it — neither is a queue item. Also decide
    the two orphaned weekend branches (`weekend/k7-agent-packages`,

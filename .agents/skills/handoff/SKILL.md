@@ -28,9 +28,22 @@ An empty, incomplete, or unknown branch returns this usage and stops:
 If a human owes the next decision, use
 `docs/procedures/owner-review-card.md` instead. When that handoff or decision is
 hard to understand in prose, read `../show-me/SKILL.md` and follow its visual
-composition guidance. Do not load `show-me` for a handoff that is already clear.
-For bead work, put the handoff
+composition guidance. Every Worker handoff comment for a Bead touching more
+than one file includes one diff-shaped show-me view (a fenced `text`/`diff`
+block) of what changed; a single-file Bead may skip it and say so in the
+handoff. For bead work, put the handoff
 artifact pointer and a one-line `friction` note on the bead.
+
+In the Factory, a Bead you were dispatched to must carry its handoff comment
+before your turn ends, even when the work is incomplete or blocked (say what is
+done, what is not, and why); the host treats a claim whose Worker went idle
+without a handoff as stale and releases it. The "receiver" is never a person
+waiting in chat: the durable
+handoff IS the Bead comment (`[Feature Name] handoff · <bead id> · <short
+sha>` per `docs/procedures/naming-conventions.md`), and the next Worker or
+Orchestrator that claims the bead reads it to re-prime — there is no other
+delivery step. Follow the naming convention for every title this skill
+produces (session titles, comments, artifacts).
 
 Return branch-specific evidence:
 

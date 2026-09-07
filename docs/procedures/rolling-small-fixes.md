@@ -6,6 +6,12 @@ review scheduling for one branch and one worktree, while keeping every fix its
 own bead, its own commit, and its own reviewed decision — never a single batch
 approval standing in for individual review.
 
+**Retained exception, 2026-09-07:** [risk-based delivery](boring-loop.md) makes
+routine single-change PRs automatic-eligible, but does not graduate this lane.
+Rolling batches still require per-fix owner intentions and an owner flush.
+Every code fix also needs the explicit [abstraction gate](coding-invariants.md#cross-package-abstraction-review-hard-gate);
+UI fixes need [Playwright before/after evidence](proof-of-work.md#ui-proof-playwright-before-and-after).
+
 ## Admission bar
 
 A candidate must be:
@@ -61,8 +67,9 @@ that an item was reviewed.
 Stop adding fixes and hand the batch to the owner when any of these is true:
 
 - the owner asks to review;
-- the diff approaches the normal review budget (about 1,500 added production
-  lines, excluding tests and docs);
+- the aggregate diff exceeds the package production-code threshold in
+  [boring-loop](boring-loop.md#where-the-owner-reviews), or is no longer a small,
+  independently reviewable batch even when plugin-only;
 - fixes stop being independently understandable or revertible;
 - a conflict requires cross-issue redesign;
 - CI or focused proof is not green; or
@@ -79,7 +86,8 @@ Before the flush:
 
 1. update the branch from `main` without force-pushing;
 2. run focused proof for each fix and the relevant changed-workspace gates;
-3. run independent standards and spec review on the final SHA;
+3. run independent standards/spec review and obtain the explicit cross-package
+   abstraction PASS on the final SHA;
 4. ensure the ledger matches the commits, beads, and intentions, and links all
    proof;
 5. summarize dropped candidates and active-PR dependencies; and

@@ -13,7 +13,7 @@ import {
   type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../../shared/index'
-import type { PiChatSessionService } from '../../../core/piChatSessionService'
+import type { AgentHarnessBackend } from '../harnessBackend/types'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHostHandle } from '../types'
 import { createAgentHostRoutes } from '../httpProjection'
@@ -149,7 +149,13 @@ class DeferredConnectGateway extends FakeGateway {
   }
 }
 
-function sessionService(): PiChatSessionService {
+function sessionBackend(
+  readAttachment: AgentHarnessBackend['readAttachment'] = async () => ({
+    data: new TextEncoder().encode('image-bytes'),
+    mediaType: 'image/png',
+    filename: 'image.png',
+  }),
+): AgentHarnessBackend {
   return {
     async listSessions() {
       return [{ id: 'session-1', title: 'Legacy', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:01.000Z', turnCount: 1 }]
@@ -158,20 +164,18 @@ function sessionService(): PiChatSessionService {
       return { id: 'session-new', title: 'New', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', turnCount: 0 }
     },
     async deleteSession() {},
-    async readAttachment() {
-      return { data: new TextEncoder().encode('image-bytes'), mediaType: 'image/png', filename: 'image.png' }
-    },
-    async readState() {
+    readAttachment,
+    async readSnapshot() {
       return snapshot.state
     },
-    async subscribe(_ctx, _sessionId, _cursor, subscriber) {
+    async watchEvents(_address, _ctx, _cursor, subscriber) {
       subscriber({ type: 'agent-start', seq: 8, turnId: 'turn-1' })
       return { type: 'ok', unsubscribe: vi.fn(), closed: Promise.resolve() }
     },
-    async prompt(_ctx, _sessionId, payload) {
+    async submitPrompt(_address, _ctx, payload) {
       return { accepted: true, cursor: 9, clientNonce: payload.clientNonce }
     },
-    async followUp(_ctx, _sessionId, payload) {
+    async submitFollowUp(_address, _ctx, payload) {
       return { accepted: true, cursor: 9, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true }
     },
     async clearQueue() {
@@ -183,13 +187,17 @@ function sessionService(): PiChatSessionService {
     async stop() {
       return { accepted: true, cursor: 9, stopped: true, clearedQueue: [] }
     },
+    async renameSession(_address, _ctx, title) {
+      return { id: 'session-1', title, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:01.000Z', turnCount: 1 }
+    },
+    async close() {},
   }
 }
 
 async function buildApp(options: {
   gateway?: FakeGateway
   authorizeAgentRequest?: () => Promise<AuthorizedAgentScope>
-  resolveAddressedPiChatService?: Parameters<typeof createAgentHostRoutes>[0]['resolveAddressedPiChatService']
+  resolveHarnessBackend?: Parameters<typeof createAgentHostRoutes>[0]['resolveHarnessBackend']
 } = {}) {
   const gateway = options.gateway ?? new FakeGateway()
   const host: AgentHostHandle = {
@@ -208,9 +216,9 @@ async function buildApp(options: {
     },
     activity,
     resolveActivityWorkspaceScope: async () => scope.workspaceScopeId,
-    resolveAddressedPiChatService: options.resolveAddressedPiChatService ?? (async () => ({
+    resolveHarnessBackend: options.resolveHarnessBackend ?? (async () => ({
       scope,
-      service: sessionService(),
+      backend: sessionBackend(),
     })),
   }))
   await app.ready()
@@ -254,7 +262,19 @@ describe('addressed Agent Host HTTP projection', () => {
   })
 
   it('projects catalog and every addressed session/command route onto typed Gateway inputs', async () => {
-    const { app, gateway } = await buildApp()
+    const readAttachment = vi.fn<AgentHarnessBackend['readAttachment']>(async () => ({
+      data: new TextEncoder().encode('image-bytes'),
+      mediaType: 'image/png',
+      filename: 'image.png',
+    }))
+    const backend = sessionBackend(readAttachment)
+    let attachmentRequestId: string | undefined
+    const { app, gateway } = await buildApp({
+      async resolveHarnessBackend(request) {
+        attachmentRequestId = request.id
+        return { scope, backend }
+      },
+    })
 
     expect((await app.inject({ method: 'GET', url: '/api/v1/agents' })).json()).toEqual([
       { agentTypeId: 'alpha', label: 'Alpha' },
@@ -288,6 +308,20 @@ describe('addressed Agent Host HTTP projection', () => {
       'cache-control': 'private, max-age=300',
       'x-content-type-options': 'nosniff',
     })
+    expect(attachmentRequestId).toBeTypeOf('string')
+    expect(readAttachment).toHaveBeenCalledOnce()
+    expect(readAttachment).toHaveBeenCalledWith(
+      {
+        workspaceScopeId: 'workspace-a',
+        ref: { agentTypeId: 'alpha', sessionId: 'session-1' },
+      },
+      {
+        authSubjectId: 'subject-a',
+        requestId: attachmentRequestId,
+      },
+      'message-1',
+      0,
+    )
     expect((await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/rename',
@@ -406,11 +440,11 @@ describe('addressed Agent Host HTTP projection', () => {
 
   it('fails addressed attachment access closed before resolving raw bytes', async () => {
     const gateway = new FakeGateway()
-    const resolveAddressedPiChatService = vi.fn(async () => { throw new AgentGatewayError(
+    const resolveHarnessBackend = vi.fn(async () => { throw new AgentGatewayError(
       AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
       'session was not found',
     ) })
-    const { app } = await buildApp({ gateway, resolveAddressedPiChatService })
+    const { app } = await buildApp({ gateway, resolveHarnessBackend })
     const response = await app.inject({
       method: 'GET',
       url: '/api/v1/agents/beta/sessions/session-1/attachments/message-1/0',
@@ -419,7 +453,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(response.json()).toMatchObject({
       error: { code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND },
     })
-    expect(resolveAddressedPiChatService).toHaveBeenCalledWith(
+    expect(resolveHarnessBackend).toHaveBeenCalledWith(
       expect.anything(),
       'beta',
       'session-1',

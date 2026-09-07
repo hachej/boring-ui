@@ -178,6 +178,87 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("folder mode activates a launched authored agent package with scoped skills and knowledge", async () => {
+    const home = await temporaryRoot("boring-cli-authored-home-")
+    const workspaceRoot = await temporaryRoot("boring-cli-authored-workspace-")
+    process.env.HOME = home
+    await mkdir(join(workspaceRoot, "knowledge"))
+    await mkdir(join(workspaceRoot, "plugin", "agent"), { recursive: true })
+    await mkdir(join(workspaceRoot, "plugin", "front"), { recursive: true })
+    await mkdir(join(workspaceRoot, "skills", "local"), { recursive: true })
+    await writeFile(join(workspaceRoot, "instructions.md"), "You are Alpha.\n")
+    await writeFile(join(workspaceRoot, "knowledge", "facts.md"), "alpha knowledge\n")
+    await writeFile(join(workspaceRoot, "skills", "local", "SKILL.md"), "---\nname: local\ndescription: Local skill\n---\n\nUse local knowledge.\n")
+    await writeFile(join(workspaceRoot, "plugin", "agent", "index.ts"), `export default function (pi: any) { pi.registerCommand("book-alpha", { description: "Book alpha", handler: async () => undefined }) }\n`)
+    await writeFile(join(workspaceRoot, "plugin", "front", "index.tsx"), `import { definePlugin } from "@hachej/boring-workspace/plugin"\nexport default definePlugin({ id: "alpha-agent" })\n`)
+    await writeFile(join(workspaceRoot, "package.json"), JSON.stringify({
+      name: "alpha-agent",
+      version: "1.0.0",
+      boring: {
+        agent: { definitionId: "alpha", version: "1.0.0", label: "Alpha", instructionsRef: "instructions.md" },
+        front: "plugin/front/index.tsx",
+      },
+      pi: { extensions: ["plugin/agent/index.ts"], skills: ["skills/local"] },
+    }))
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+      loadAmbientContext: false,
+    })
+    try {
+      const meta = await app.inject({ method: "GET", url: "/api/v1/workspace/meta" })
+      expect(meta.json<{ defaultAgentTypeId: string }>().defaultAgentTypeId).toBe("alpha")
+      const agents = await app.inject({ method: "GET", url: "/api/v1/agents" })
+      expect(agents.json<Array<{ agentTypeId: string }>>().map(({ agentTypeId }) => agentTypeId)).toEqual(["alpha"])
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/alpha/sessions",
+        payload: { requestId: "create-alpha" },
+      })
+      const sessionId = created.json<{ sessionId: string }>().sessionId
+      const commands = await app.inject({
+        method: "GET",
+        url: `/api/v1/agents/alpha/commands?sessionId=${sessionId}`,
+      })
+      expect(commands.json().commands).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "book-alpha", source: "extension" }),
+        expect.objectContaining({ name: "skill:local", source: "skill" }),
+      ]))
+      const commandResult = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/alpha/commands/execute",
+        payload: { requestId: "execute-alpha", sessionId, name: "book-alpha", args: "" },
+      })
+      expect(commandResult.json()).toEqual({ ok: true, sessionId, name: "book-alpha" })
+      const skills = await app.inject({ method: "GET", url: "/api/v1/agents/alpha/skills" })
+      expect(skills.json().skills).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "local" }),
+      ]))
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/skills" })).statusCode)
+        .toBeGreaterThanOrEqual(400)
+      const humanFilesystems = await app.inject({ method: "GET", url: "/api/v1/filesystems" })
+      expect(humanFilesystems.json().filesystems).toEqual(expect.arrayContaining([
+        expect.objectContaining({ filesystem: "user", access: "readwrite" }),
+        expect.objectContaining({ filesystem: "agent_knowledge:alpha", label: "Alpha", access: "readonly" }),
+      ]))
+      const humanKnowledge = await app.inject({
+        method: "GET",
+        url: "/api/v1/files?filesystem=agent_knowledge%3Aalpha&path=facts.md",
+      })
+      expect(humanKnowledge.json()).toMatchObject({ content: "alpha knowledge\n", access: "readonly" })
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/commands" })).statusCode).toBeGreaterThanOrEqual(400)
+      expect((await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/commands/execute",
+        payload: { requestId: "wrong-agent-skill", sessionId, name: "skill:local", args: "" },
+      })).statusCode).toBeGreaterThanOrEqual(400)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
   it("folder mode resolves workspace AGENTS.md into Pi context by default", async () => {
     const home = await temporaryRoot("boring-cli-folder-context-home-")
     const workspaceRoot = await temporaryRoot("boring-cli-folder-context-workspace-")
@@ -346,6 +427,7 @@ describe.sequential("CLI Agent Host composition", () => {
     const localPackageRoot = join(workspaceARoot, "agents", "local-worker")
     const duplicatePackageRoot = join(workspaceARoot, "agents", "duplicate-repository-worker")
     const repositoryPackageRoot = join(fleetRoot, ".agents", "personas", "repository-worker")
+    const defaultPluginRoot = await temporaryRoot("boring-cli-agent-factory-plugin-")
     const registryPath = join(registryRoot, "workspaces.yaml")
     const registry = createLocalWorkspaceRegistry(registryPath)
     await registry.add(workspaceARoot)
@@ -353,6 +435,7 @@ describe.sequential("CLI Agent Host composition", () => {
     await mkdir(localPackageRoot, { recursive: true })
     await mkdir(join(duplicatePackageRoot, "knowledge"), { recursive: true })
     await mkdir(join(repositoryPackageRoot, "knowledge"), { recursive: true })
+    await mkdir(join(defaultPluginRoot, "server"), { recursive: true })
     await mkdir(join(workspaceARoot, ".pi"), { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
     await writeFile(join(localPackageRoot, "instructions.md"), "CLI local worker.\n", "utf8")
@@ -399,6 +482,24 @@ describe.sequential("CLI Agent Host composition", () => {
       },
       pi: { skills: [] },
     }), "utf8")
+    await writeFile(join(defaultPluginRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-agent-factory-plugin",
+      version: "1.0.0",
+      type: "module",
+      private: true,
+      boring: { server: "server/index.mjs" },
+    }), "utf8")
+    await writeFile(join(defaultPluginRoot, "server", "index.mjs"), `
+      export default {
+        id: "fixture-cli-agent-factory-plugin",
+        agentToolFactory: ({ agentTypeId }) => [{
+          name: \`factory_tool_\${agentTypeId}\`,
+          description: "Fixture Agent factory tool.",
+          parameters: { type: "object", properties: {} },
+          async execute() { return { content: [] } },
+        }],
+      }
+    `, "utf8")
     await writeFile(
       join(workspaceARoot, ".pi", "settings.json"),
       JSON.stringify({ packages: ["../agents/local-worker", "../agents/duplicate-repository-worker"] }),
@@ -430,6 +531,7 @@ describe.sequential("CLI Agent Host composition", () => {
     const previousFlag = process.env.BORING_AGENT_FLEET
     process.chdir(fleetRoot)
     process.env.BORING_AGENT_FLEET = "1"
+    cliDefaultPluginPackages.paths = [defaultPluginRoot]
     const createAgentHost = vi.spyOn(agentServer, "createAgentHost")
     let app: FastifyInstance | undefined
     try {
@@ -475,6 +577,16 @@ describe.sequential("CLI Agent Host composition", () => {
       expect(workspaceBAgents.json()).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
       ]))
+
+      const [defaultTools, repositoryWorkerTools] = await Promise.all([
+        app.inject({ method: "GET", url: "/api/v1/agents/default/tools", headers: { "x-boring-workspace-id": workspaceB.id } }),
+        app.inject({ method: "GET", url: "/api/v1/agents/fixture-cli-repository-worker/tools", headers: { "x-boring-workspace-id": workspaceB.id } }),
+      ])
+      expect(defaultTools.statusCode, defaultTools.body).toBe(200)
+      expect(repositoryWorkerTools.statusCode, repositoryWorkerTools.body).toBe(200)
+      expect(defaultTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("factory_tool_default")
+      expect(repositoryWorkerTools.json().tools.map((tool: { name: string }) => tool.name))
+        .toContain("factory_tool_fixture-cli-repository-worker")
     } finally {
       if (app) await app.close()
       process.chdir(previousCwd)

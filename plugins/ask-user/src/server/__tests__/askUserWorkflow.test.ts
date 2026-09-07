@@ -38,7 +38,9 @@ describe("ask-user full workflow", () => {
     new AskUserStatePublisher(store, bridge).start()
 
     const registry = createWorkspaceBridgeRegistry()
-    for (const entry of createAskUserBridgeHandlers({ store, runtime })) {
+    // This test models one legacy store file whose pre-workspace records belong
+    // to workspace-1. New host wiring stamps workspaceId at creation time.
+    for (const entry of createAskUserBridgeHandlers({ store, runtime, legacyWorkspaceId: "workspace-1" })) {
       registry.registerHandler(entry.definition, entry.handler)
     }
     const browserContext: WorkspaceBridgeCallContext = {

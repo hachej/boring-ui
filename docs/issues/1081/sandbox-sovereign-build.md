@@ -2,7 +2,7 @@
 github: https://github.com/hachej/boring-ui/issues/1081
 issue: 1081
 state: needs-owner-approval
-updated: 2026-08-13
+updated: 2026-08-31
 flag: BORING_AGENT_MODE=remote-worker
 track: owner
 ---
@@ -74,7 +74,55 @@ The critical path is Gate 0 -> Phase 1 -> Phases 2 and 3 -> Phase 4 -> Phase 5
 -> Phase 6. Runtime and storage work may proceed in parallel after the host
 baseline is pinned. Phase 4 may use fakes before both are ready, but its real
 integration acceptance is blocked by Phases 2 and 3. No untrusted admission is
-allowed before Phase 5 passes on the exact cohort.
+allowed before Phase 5 passes on the exact cohort. The native lease prerequisite
+below may proceed in parallel with Gate 0–Phase 3, but Phase 4 integration cannot
+complete until it passes.
+
+## Prerequisite — native lease service and canonical tool projection
+
+This is a distinct app-facing slice, not Firecracker provider code. It must land
+before Phase 4 can claim multi-lease support.
+
+### Tasks
+
+- [ ] Add an Agent-owned lease service that mints and persists a high-entropy
+  `clientLeaseId` before provider acquisition, retains it through ambiguous
+  responses/restart, and exposes create/list/status/release through the
+  canonical sandbox lease tool.
+- [ ] Extend the provider create context/result additively so the trusted lease
+  service supplies the replay key and receives an opaque sandbox handle without
+  exposing provider, image, root, resources, credentials, network, TTL, quota,
+  or qualification controls to the caller/model.
+- [ ] Add optional explicit sandbox targeting to canonical bash and filesystem
+  tools. Resolve the opaque handle through the owning session/lease service;
+  omission follows the byte-for-byte primary Workspace path and no operation
+  mutates a current/default sandbox.
+- [ ] Keep runtime package layering intact: Agent-to-sandbox package imports at
+  the runtime boundary remain type-only, and provider selection stays in
+  trusted host composition.
+- [ ] Integrate accepted-effect admission/receipts before create/release effects;
+  immutable `outcome-unknown` requests are never replayed by the model/tool
+  path.
+- [ ] Give the trusted lease service—not the model—a publication/discard seam.
+  Track the admitted baseline and durable publication state, surface changed
+  unpublished lease bytes in status/release, and refuse deletion until a
+  request-bound publication settles or separately authorized explicit discard
+  is recorded.
+
+### Acceptance
+
+- [ ] One Agent session owns at least two concurrent leases, explicitly targets
+  canonical operations to each, and proves independent mutable bytes, process
+  state, status, and cleanup.
+- [ ] A lost acquisition response reuses the persisted
+  `(workspaceId, clientLeaseId, requestDigest)` rather than minting another key;
+  a changed digest conflicts.
+- [ ] Omitted targeting passes the existing primary-Workspace conformance suite
+  unchanged, and unknown/cross-session/released handles fail before effects.
+- [ ] Host-policy tests prove the model cannot select provider/profile inputs,
+  self-grant the lease/tool capability, or mint discard authority.
+- [ ] Release of a changed lease reports unpublished state and performs no
+  deletion until publication or explicit host-authorized discard settles.
 
 ## Gate 0 — feasibility and evidence
 
@@ -291,19 +339,25 @@ not an equivalent cohort.
 - [ ] Deploy pinned SeaweedFS master, volume, filer, and S3 gateway components
   in the EU perimeter with separate data/config paths, health checks, audit
   logs, and non-public administration endpoints.
-- [ ] Define one tenant bucket and a non-guessable workspace prefix beneath it.
-  The management plane, not the sandbox node, owns bucket creation, policy, and
-  credential issuance.
+- [ ] Define one tenant bucket, a non-guessable primary Workspace prefix, and an
+  independent non-guessable prefix per sandbox lease beneath the same
+  workspace authority. No two active leases share mutable backing. The
+  management plane, not the sandbox node, owns prefix creation, policy, copy,
+  publication, and credential issuance.
 - [ ] Issue renewable short-lived S3/Filer credentials bound to tenant,
-  workspace prefix, required actions, sandbox lease, and the admitted endpoint.
+  workspace, exact sandbox prefix, required actions, sandbox lease, and the
+  admitted endpoint.
   Deny bucket/IAM/versioning/retention mutation, historical-version deletion,
   listing outside the prefix, and all cross-tenant access.
 - [ ] Enable and verify object/access events, backup, restore, and
   take-your-data-out for tenant buckets. (S3 versioning and retention are
   deferred features, gated on a compliance/undo requirement — not v1.)
-- [ ] Mount the tenant's SeaweedFS namespace inside the guest at `/workspace`
-  through the admitted FUSE path. Any guest `/dev/fuse` access remains inside
-  the micro-VM boundary; no host workspace directory is bind-mounted.
+- [ ] Mount only the lease's sandbox-scoped SeaweedFS prefix inside its guest at
+  `/workspace` through the admitted FUSE path. The primary Workspace prefix is
+  never mounted writable in the lease. Seed selected inputs by bounded copy or
+  admitted immutable snapshot, and publish admitted outputs explicitly. Any
+  guest `/dev/fuse` access remains inside the micro-VM boundary; no host
+  workspace directory is bind-mounted.
 - [ ] Define and test the supported cross-interface semantics for create,
   read/write, stat, recursive mkdir, rename, unlink, and concurrent-writer
   conflict. Unsupported POSIX behavior must return a stable error rather than
@@ -318,7 +372,18 @@ not an equivalent cohort.
   absolute paths, `..`, duplicate/conflicting names, device files, and symlink/
   hardlink escapes; extract without a host bind mount.
 - [ ] Implement explicit artifact publication from admitted `/scratch` output
-  paths into `/workspace`. Never blanket-sync `/scratch`.
+  paths into the lease's `/workspace`. Never blanket-sync `/scratch`.
+- [ ] Implement trusted lease-prefix -> primary-Workspace publication. Bind a
+  durable `publicationId` to workspace, sandbox, bounded source/destination
+  paths, source manifest digest, and expected primary revision; reject conflicts
+  before overwrite; stage and verify bytes before atomically advancing the
+  primary revision; emit ordinary primary-Workspace events after settlement.
+  Persist `pending`, `published`, `conflicted`, and `outcome-unknown`; reconcile
+  ambiguous responses by key without automatic replay.
+- [ ] Track the lease prefix against its admitted baseline. Release must surface
+  any unpublished change and block deletion until publication settles or a
+  separately request-bound host-authorized discard is recorded. The model and
+  sandbox guest cannot mint discard authority.
 - [ ] Make publication safety a v1 control-plane/guest-daemon invariant. Normal
   teardown must not silently destroy `/scratch` while unpublished files exist
   under admitted output paths: it must either preserve them pending publication
@@ -333,8 +398,18 @@ not an equivalent cohort.
 
 - [ ] POSIX write -> S3 read and S3 write -> POSIX read return identical bytes;
   rename/stat/mkdir/delete behavior matches the documented supported set.
-- [ ] Write -> destroy -> recreate -> read preserves `/workspace` and tenant
-  ownership; `/scratch` and copied transient inputs do not survive.
+- [ ] Two leases under one workspace mount distinct mutable prefixes: writes,
+  deletes, locks, and event cursors do not cross. Request-bound idempotent
+  publication alone changes the primary Workspace and emits its ordinary
+  events; stale expected revisions conflict without partial visibility.
+- [ ] Lost publication responses reconcile by publication key and manifest;
+  retries do not duplicate or partially apply bytes. Release of changed
+  unpublished lease files blocks without deletion, while separately authorized
+  explicit discard is durable and auditable.
+- [ ] Write -> suspend/destroy compute -> recreate within the same active lease
+  preserves that lease's `/workspace` and tenant ownership; release deletes the
+  lease prefix only after publication/pin/drain gates settle; `/scratch` and
+  copied transient inputs do not survive.
 - [ ] Credential expiry and every cross-bucket/prefix/action negative are
   denied and audited. A tenant cannot list, read, overwrite, infer, or delete a
   sibling's keys.
@@ -402,10 +477,35 @@ not an equivalent cohort.
   events so the existing workspace file tree stays live. Multiple subscribers
   share one underlying guest stream.
 - [ ] Implement durable handle semantics in the trusted management-plane store:
-  atomically bind tenant/workspace/session to sandbox id, cohort digest, lease
-  epoch, state, and credential expiry; keep logical creation time stable;
-  serialize concurrent creates; and return the same live binding after a
-  dropped-response retry or process restart.
+  atomically bind tenant/workspace/session plus `clientLeaseId` to sandbox id,
+  cohort digest, lease epoch, state, and credential expiry; keep logical
+  creation time stable; serialize creates only for the same
+  `(workspaceId, clientLeaseId)` while allowing bounded concurrent leases in
+  one authorized Agent session; reject a changed request digest; and return the
+  same live binding after a dropped-response retry or process restart.
+- [ ] Require a short-lived replay-protected capability on health, create,
+  files, events, exec, renew, and delete. Bind it to provider/node audience,
+  workspace, sandbox where applicable, operation, canonical request digest,
+  and expiry; treat response/provider identity as observation only. Consume a
+  nonce once for effectful non-stream requests and bound stream authority by
+  capability and lease expiry.
+- [ ] Admit quota before acquisition. Count owned leases, pending create
+  reservations, and unresolved cleanup debt against tenant and host ceilings;
+  make startup/orphan recovery single-flight and unable to race an owned lease
+  or reservation.
+- [ ] Treat create and destroy as accepted external effects. Persist immutable
+  `outcome-unknown` receipts after ambiguous transport/daemon loss and never
+  reinvoke them through the model/tool path. Reconciliation first observes by
+  durable effect/create key; if cleanup remains necessary, issue a separately
+  keyed idempotent maintenance operation without rewriting the original
+  receipt. Authenticate returned bindings against the original request before
+  publishing a lease or authorizing cleanup.
+- [ ] Pin the exact `(workspaceId, sandboxId)` lease around every active
+  operation. Retirement blocks new pins, drains or aborts bounded work,
+  protects unpublished outputs, and only then destroys compute and releases
+  credentials/storage attachment. Keep one cleanup owner; retain ambiguous
+  cleanup as listable, retryable, quota-counted maintenance debt without
+  rewriting the original receipt.
 - [ ] Treat process-local client objects as a cache only. On cache miss, resolve
   the durable handle, check cohort/lease/tenant health, then resume, recreate,
   fence, or return a stable unavailable result. Never reuse across an
@@ -434,8 +534,18 @@ not an equivalent cohort.
   tree without polling. Duplicates do not duplicate state, and an induced gap
   forces reconciliation before incremental delivery resumes.
 - [ ] A process restart reconnects to the same authorized durable handle; a
-  retry cannot create a second VM; stale/cohort-mismatched handles fail closed;
-  no handle crosses tenant/workspace/session identity.
+  retry of the same `(workspaceId, clientLeaseId, requestDigest)` cannot create
+  a second VM; a changed digest conflicts; several explicit leases in one Agent
+  session remain isolated; stale/cohort-mismatched handles fail closed; no
+  handle crosses tenant/workspace/session identity.
+- [ ] Cross-product authorization tests swap workspace, sandbox, operation,
+  audience, digest, nonce, and expiry claims across every endpoint and prove
+  rejection before guest, storage, lifecycle, or cleanup effects.
+- [ ] Ambiguous create/destroy tests preserve immutable `outcome-unknown`
+  receipts without model/tool replay; reconciliation observes by durable key
+  before a separately keyed idempotent maintenance cleanup retries; pin/drain
+  tests prevent teardown beneath active work; cleanup debt remains visible,
+  retryable, and quota-counted across process restart.
 - [ ] Provider conformance proves that normal teardown cannot silently discard
   unpublished admitted outputs and surfaces the contract's publication state
   without relying on agent compliance.
@@ -474,7 +584,9 @@ not an equivalent cohort.
   nor sibling object identity.
 - [ ] Inject failures at create, mount, credential issue/renew, exec, event
   stream, durable write, suspend, resume, destroy, and host reboot; prove
-  idempotency, fencing, orphan cleanup, durable recovery, and honest errors.
+  idempotency, immutable outcome-unknown handling without automatic replay,
+  per-lease pin/drain fencing, persistent quota-counted cleanup debt, orphan
+  cleanup, durable recovery, and honest errors.
 - [ ] Exercise rollback: stop new owned admission, drain or hard-expire existing
   owned sessions, route new sessions to the last qualified Blaxel cohort, and
   verify the same SeaweedFS `/workspace` contents. Never move a live sandbox or
@@ -611,9 +723,12 @@ cohort:
 - [ ] Two concurrent tenant identities receive distinct micro-VMs, guest
   kernels, networking, devices, credentials, handles, `/workspace` namespaces,
   and ephemeral `/scratch`.
-- [ ] `SandboxProviderV1` passes create, bounded/cancelled exec, fs operations,
-  zip copy-in, live inotify/S3 file events with gap recovery, idle
-  suspend/resume, durable-handle restart/retry, idempotent destroy, and durable
+- [ ] `SandboxProviderV1` passes bounded concurrent explicit leases in one
+  authorized Agent session; request-bound authorization; idempotent keyed
+  create; bounded/cancelled exec; fs operations; zip copy-in; live inotify/S3
+  file events with gap recovery; idle suspend/resume; durable-handle
+  restart/retry; accepted-effect outcome-unknown handling; pin/drain;
+  idempotent destroy; visible retryable cleanup debt; and durable
   write/destroy/recreate/read, including control-plane-enforced protection
   against silent unpublished-output loss.
 - [ ] All 11 hostile probes, egress allowlist negatives, fail-closed startup,

@@ -110,7 +110,11 @@ export function AppSessionActionsMenu({
         {onToggleArchived ? (
           <DropdownMenuItem onSelect={() => void onToggleArchived(sessionId, !archived)} className="gap-2 text-[13px]">
             {archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
-            {archived ? "Unarchive session" : "Archive session"}
+            {/* The way back is named for what it does to the chat, not for the
+                state it undoes: "Restore" reads as a return to the list, where
+                "Unarchive" only reads as the inverse of a verb the user has to
+                remember using (#1453). */}
+            {archived ? "Restore session" : "Archive session"}
           </DropdownMenuItem>
         ) : null}
         {canDelete ? <DropdownMenuSeparator /> : null}

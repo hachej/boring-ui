@@ -1411,6 +1411,61 @@ describe('PiChatPanel sandbox shell', () => {
     })))
   })
 
+  test('unlocks the composer and submits with the server default model for a pre-seeded session with no stored model (#1469)', async () => {
+    // A session created outside the primary new-chat flow (pre-seeded scripted
+    // session, or one created via a direct POST .../sessions call) hydrates
+    // with no currentModel and is not "new" (remoteState()'s default already
+    // carries a committed message). Live server-side model discovery (not the
+    // availableModels/serverResourcesEnabled=false shortcut most tests use)
+    // must still resolve a model so the composer isn't disabled forever, and
+    // the resolved model must be the server's own default — never a leftover
+    // browser-storage choice.
+    const staleBrowserModel = { provider: 'anthropic', id: 'claude-haiku' } as const
+    const serverDefault = { provider: 'anthropic', id: 'claude-opus' } as const
+    const persisted = storage({
+      [scopedComposerStorageKey('workspace-a', 'model')]: JSON.stringify(staleBrowserModel),
+      [scopedComposerStorageKey('workspace-a', 'model:user-selected')]: '1',
+    })
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : (input as Request).url
+      if (url.includes('/models')) {
+        return new Response(JSON.stringify({
+          models: [
+            { ...staleBrowserModel, label: 'Haiku', available: true },
+            { ...serverDefault, label: 'Opus', available: true },
+          ],
+          defaultModel: serverDefault,
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return jsonResponse([session('pi-1')])
+    })
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        storage={persisted}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    await waitFor(() => expect((textarea as HTMLTextAreaElement).disabled).toBe(false))
+    expect((screen.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.change(textarea, { target: { value: 'pre-seeded prompt' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'pre-seeded prompt',
+      model: serverDefault,
+    })))
+  })
+
   test('opens model and thinking pickers from slash commands', async () => {
     const remote = new FakeRemotePiSession(remoteState({ committedMessages: [], history: { mode: 'full', messageCount: 0 } }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))

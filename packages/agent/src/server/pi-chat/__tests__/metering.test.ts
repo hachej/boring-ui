@@ -126,6 +126,7 @@ function createService(adapter: FakeAdapter, sink: AgentMeteringSink) {
     getPiSessionAdapter: vi.fn(async () => adapter),
   }
   const service = new HarnessPiChatService({
+    agentTypeId: 'test',
     harness,
     sessionStore,
     workdir: '/workspace',
@@ -1148,6 +1149,7 @@ describe('pi chat metering', () => {
       getPiSessionAdapter: vi.fn(async () => adapter),
     }
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: '/workspace',

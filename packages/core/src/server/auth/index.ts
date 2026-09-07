@@ -6,7 +6,6 @@ export type {
 } from './createAuth.js'
 export { createPostSignupHook } from './postSignupHook.js'
 export type {
-  InitialAgentSeatResolution,
   PostSignupHookDeps,
   ResolveInitialAgentSeat,
   ResolveInitialAgentSeatInput,

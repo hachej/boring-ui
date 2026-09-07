@@ -23,6 +23,8 @@ describe("bootstrapServer", () => {
       piPackages: [],
       extensionPaths: [],
       agentTools: [],
+      agentToolFactories: [],
+      agentSessionDeleteContributions: [],
       runtimePlugins: [],
       provisioningContributions: [],
       packageResources: [],
@@ -31,6 +33,18 @@ describe("bootstrapServer", () => {
       workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
     })
+  })
+
+  it("collects selected-Agent factories and delete hooks without invoking them globally", async () => {
+    const agentToolFactory = vi.fn(() => [makeAgentTool("selected")])
+    const onAgentSessionDelete = vi.fn(async () => {})
+    const result = bootstrapServer({
+      plugins: [{ id: "trusted", agentToolFactory, onAgentSessionDelete }],
+    })
+
+    expect(agentToolFactory).not.toHaveBeenCalled()
+    expect(result.agentToolFactories).toEqual([{ id: "trusted", createTools: agentToolFactory }])
+    expect(result.agentSessionDeleteContributions).toEqual([{ id: "trusted", onDelete: onAgentSessionDelete }])
   })
 
   it("collects agentTools from plugins", () => {

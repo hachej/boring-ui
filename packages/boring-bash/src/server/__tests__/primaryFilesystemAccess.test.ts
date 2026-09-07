@@ -205,6 +205,43 @@ describe('primary filesystem access projection', () => {
     expect(filesystemSchema.enum).toEqual(['user'])
   })
 
+  test('host grep searches the storage root when the runtime root differs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-grep-root-'))
+    await mkdir(join(root, 'knowledge'), { recursive: true })
+    await writeFile(join(root, 'knowledge/notes.md'), 'first line\nneedle here\n')
+    // Sandboxed bash sees the workspace at /workspace; the host process does not.
+    const bundle = {
+      storageRoot: root,
+      workspace: workspace('/workspace'),
+      sandbox: { placement: 'local' },
+      fileSearch: {},
+      filesystemBindings: [binding()],
+    } as unknown as RuntimeBundle
+    const grep = buildFilesystemAgentTools(bundle).find((tool) => tool.name === 'grep')!
+    const ctx = { abortSignal: new AbortController().signal, toolCallId: 'grep-root' }
+    const result = await grep.execute({ path: 'knowledge', pattern: 'needle' }, ctx)
+    const text = result.content.map((part) => ('text' in part ? part.text : '')).join('\n')
+    expect(text).toContain('notes.md:2: needle here')
+    expect(text).not.toContain('/workspace')
+  })
+
+  test('anchors host grep at the storage root when runtime and storage roots differ', async () => {
+    const user = binding()
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-grep-'))
+    await writeFile(join(root, 'needle.txt'), 'needle')
+    const bundle = {
+      storageRoot: root,
+      workspace: workspace('/workspace'),
+      sandbox: { placement: 'local' },
+      fileSearch: {},
+      filesystemBindings: [user],
+    } as unknown as RuntimeBundle
+    const grep = buildFilesystemAgentTools(bundle).find((tool) => tool.name === 'grep')!
+    const result = await grep.execute({ path: '.', pattern: 'needle' }, { abortSignal: new AbortController().signal, toolCallId: 'grep-test' })
+    expect(result).toMatchObject({ isError: false })
+    expect(String(result.content?.[0]?.text ?? '')).toContain('needle.txt')
+  })
+
   test('routes upload_file through primary binding policy', async () => {
     const user = binding()
     const root = await mkdtemp(join(tmpdir(), 'boring-upload-access-'))

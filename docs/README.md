@@ -8,7 +8,11 @@ only into the package you're working on.
 
 Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
 `CLAUDE.md`). Agent workflow, coding process, review history, and proof
-procedures live in [`procedures/`](procedures/README.md).
+procedures live in [`procedures/`](procedures/README.md). Start with
+[risk-based delivery](procedures/boring-loop.md) for the owner-review boundaries
+(>500 changed package production lines), the mandatory cross-package abstraction
+gate, and automatic-eligible plugin UI with Playwright before/after evidence.
+The procedure distinguishes adopted policy from automation not yet enabled.
 
 ## Cold-start reading order (5 files)
 
@@ -78,6 +82,7 @@ standalone (`createAgentApp`) with zero core dependency.
 | `agent-playground` | Minimal chat-only playground for the agent package: in-process Fastify agent (`createAgentApp`, mode `direct`) behind Vite with agent-front source HMR. | [README](../apps/agent-playground/README.md) |
 | `workspace-playground` | Full IDE workbench playground for plugin development: Vite front proxying to an in-process `createWorkspaceAgentServer`, fixture-seeded workspace, demo plugins, Playwright e2e + agent evals. | [README](../apps/workspace-playground/README.md) |
 | `full-app` | Production-shaped local reference composing core + agent + workspace: better-auth and Postgres workspaces with roles/invites. | [README](../apps/full-app/README.md) |
+| `factory-playground` | Native local Factory dogfood app: Orchestrator-only `/loop`, Worker-only disposable sandboxes, Tasks/Inbox/Automations watch plane, and deterministic two-Worker feature simulation. | [README](../apps/factory-playground/README.md) |
 
 ## Repository tools
 

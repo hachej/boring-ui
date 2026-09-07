@@ -21,9 +21,10 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
     const blockerIds: string[] = []
     for (const hint of runtime.getPendingHints()) {
       if (hint.status && hint.status !== "ready") continue
+      if (hint.blocking === false) continue
       const blockerId = `${ASK_USER_PLUGIN_ID}:${hint.sessionId}:${hint.questionId}`
       blockerIds.push(blockerId)
-      const hydrated = runtime.getPending(hint.sessionId)
+      const hydrated = runtime.getPendingByQuestionId(hint.questionId)
       const isActiveHint = runtime.activeSessionId === hint.sessionId && isSessionOpen(runtime, hint.sessionId)
       const actions = hydrated
         ? [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }]
@@ -41,7 +42,11 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
         focus: { closeWorkbenchLeftPane: true },
-        composer: { visible: false },
+        // The inline chat card (rendered from the ask_user tool part) already
+        // carries Open/Cancel, so the composer bar would duplicate it. A
+        // requestless question has no tool call to render inline, so the
+        // composer bar is then the only in-chat affordance — keep it.
+        composer: { visible: !hydrated?.toolCallId },
         inbox: {
           kind: "question",
           sourceLabel: "question",
@@ -65,9 +70,9 @@ export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
       const sessionId = detail.blocker.sessionId ?? detail.sessionId
       if (!sessionId) return
       const pending = runtime.getPending(sessionId)
-      if (!pending || (detail.blocker.target && pending.questionId !== detail.blocker.target)) return
+      if (!pending || pending.blocking === false || (detail.blocker.target && pending.questionId !== detail.blocker.target)) return
       if (!runtime.beginQuestionAction(pending)) return
-      runtime.setPending(null, pending.sessionId)
+      runtime.removePending(pending.questionId)
       void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
         .catch(() => undefined)
         .finally(() => runtime.finishQuestionAction(pending))
@@ -83,11 +88,11 @@ export function useAskUserComposerStopCancel(runtime: QuestionsRuntime): void {
       const detail = (event as CustomEvent<unknown>).detail
       const sessionId = workspaceComposerStopTargetSessionId(detail, runtime.activeSessionId)
       const pending = runtime.getPending(sessionId)
-      if (!pending || !workspaceComposerStopAppliesToSession(detail, pending.sessionId, {
+      if (!pending || pending.blocking === false || !workspaceComposerStopAppliesToSession(detail, pending.sessionId, {
         fallbackSessionId: runtime.activeSessionId,
       })) return
       if (!runtime.beginQuestionAction(pending)) return
-      runtime.setPending(null, pending.sessionId)
+      runtime.removePending(pending.questionId)
       void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
         .catch(() => undefined)
         .finally(() => runtime.finishQuestionAction(pending))

@@ -94,6 +94,18 @@ export type WorkspaceSandboxPairV1 = Readonly<{
   dispose(): Promise<void>;
 }>;
 
+export interface SandboxProviderCreateCleanupDebtV1 {
+  readonly sandboxProviderCleanupDebt: Readonly<{ retry(): Promise<void> }>;
+}
+
+export function attachSandboxProviderCleanupDebt<T extends Error>(error: T, retry: () => Promise<void>): T {
+  Object.defineProperty(error, "sandboxProviderCleanupDebt", { value: Object.freeze({ retry }) });
+  return error;
+}
+
+export const DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 =
+  'boring-sandbox.disposable-provider.v1' as const;
+
 export interface SandboxProviderV1 {
   readonly contractVersion: typeof PROVIDER_CONTRACT_VERSION;
   readonly providerId: ExtractedSandboxProviderIdV1;
@@ -106,6 +118,33 @@ export interface SandboxProviderV1 {
     context: SandboxProviderInvalidateContextV1,
   ): Promise<void> | void;
   close?(): Promise<void>;
+}
+
+/** Host-only refinement required by mutable lease composition. */
+export interface DisposableSandboxProviderProfileV1 {
+  readonly contractVersion: typeof DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1;
+  readonly resume: false;
+  readonly publishedCleanupOwner: 'returned-pair';
+  readonly ambiguousCreate: 'correlated-reconciliation';
+  readonly providerConfigDigest: `sha256:${string}`;
+}
+
+export interface DisposableSandboxProviderV1 extends SandboxProviderV1 {
+  readonly disposableProfile: DisposableSandboxProviderProfileV1;
+}
+
+export function isDisposableSandboxProviderV1(
+  provider: SandboxProviderV1,
+): provider is DisposableSandboxProviderV1 {
+  const profile = (provider as Partial<DisposableSandboxProviderV1>).disposableProfile;
+  if (
+    profile?.contractVersion !== DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 ||
+    profile.resume !== false ||
+    profile.publishedCleanupOwner !== 'returned-pair' ||
+    profile.ambiguousCreate !== 'correlated-reconciliation' ||
+    !/^sha256:[a-f0-9]{64}$/.test(profile.providerConfigDigest)
+  ) return false;
+  return true;
 }
 
 export class SandboxProviderError extends Error {

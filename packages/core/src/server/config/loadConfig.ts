@@ -317,6 +317,11 @@ export async function loadConfig(
     auth: {
       secret: authSecret,
       url: securityConfig.betterAuthUrl,
+      // Public origin of the SPA front-end. In dev, the front and API run on
+      // separate ports (Vite proxies API calls); FRONTEND_URL points email
+      // links at the front so they land on SPA routes, not raw API JSON.
+      // Unset in production, where the front is served from the API origin.
+      frontUrl: env.FRONTEND_URL,
       github,
       google,
       mail,
