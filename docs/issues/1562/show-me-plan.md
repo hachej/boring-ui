@@ -1,6 +1,6 @@
 # Show me — gh-1562 native creation, first journey
 
-Three layers, ruled 2026-09-07:
+Three layers, ruled 2026-09-07 — and the three blocks pulled forward the same evening: Thread identity (job root; no session keys anywhere), the first View slice (product canvas = semantic Views), Library placement (product lives in Library, opens as a Thread in Work).
 
 ```text
 Host (control plane + broker)
@@ -34,35 +34,48 @@ sequenceDiagram
     Note over H,P: retry with same requestKey returns the same receipt
 ```
 
-Bead graph:
+Bead graph (spine first):
 
 ```mermaid
 graph LR
-  nc0[nc-0 embedded gate] --> nc3[nc-3 bridge ops]
-  nc1[nc-1 release manifest] --> nc2[nc-2 installation + activation]
+  nc1[1 release manifest] --> nc2[3 installation + activation]
+  nct[2 Thread identity] --> nc2
+  nc1 --> nc6[4 builder seat]
+  nc2 --> nc6
+  nct --> nc3[5 bridge ops]
   nc2 --> nc3
-  nc0 --> nc4a[nc-4a runtime seam]
+  nc3 --> ncv[6 first View slice]
+  nct --> ncl[7 Library + Thread canvas]
+  nc3 --> ncl
+  ncv --> ncl
+  nc0[∥ embedded gate] --> nc4a[8 runtime seam]
   nc3 --> nc4a
-  nc4a --> nc4b[nc-4b local adapter]
-  nc3 --> nc5[nc-5 isolated front]
-  nc4a --> nc6[nc-6 builder seat]
-  nc4b --> nc7[nc-7 first journey]
-  nc5 --> nc7
+  nc4a --> nc4b[9 local adapter]
+  nc3 --> nc5[10 isolated View renderer]
+  ncv --> nc5
+  ncl --> nc7[11 first journey]
   nc6 --> nc7
+  nc4b --> nc7
+  nc5 --> nc7
 ```
 
 File layout added by the epic:
 
 ```diff
  packages/workspace/src/server/
++├── threads/            # Thread identity + session bindings (nc-t)
++├── views/              # ViewResolver + ViewStore (nc-v)
 +├── productLifecycle/   # releases, installations, activation, bridge (nc-1..3)
 +├── productRuntime/     # types, embedded, local, brokeredOps (nc-4a/4b)
  └── runtimeBackend/     # becomes the embedded adapter's engine (nc-0)
  packages/workspace/src/front/
-+└── productRuntime/     # IsolatedProductPanel + postMessage broker (nc-5)
++├── views/              # ViewHost + built-in record/dashboard renderers (nc-v)
++├── shell/library, shell/work  # installed products → Thread canvas (nc-l)
++└── productRuntime/     # isolated iframe renderer + postMessage broker (nc-5)
  packages/core/drizzle/
 +├── 0028_product_releases.sql
-+└── 0029_product_installations.sql
++├── 0029_product_installations.sql
++└── 0030_threads.sql
 +plugins/product-builder/  # builder agent type + tools (nc-6)
  apps/workspace-playground/
 +└── fixtures/products/math-tutor/ + scripts/first-journey-acceptance.mjs (nc-7)

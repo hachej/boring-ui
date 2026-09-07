@@ -68,16 +68,18 @@ this journey's "job continuity" stage consumes. Epic
 [#1562](https://github.com/hachej/boring-ui/issues/1562); pack
 [`native-creation/`](../plans/native-creation/README.md).
 
-| Slice | Delivers | Gate |
-|---|---|---|
-| Ground truth: embedded runtime gate (`nc-0`) | In-process hot-loaded server plugins become the default-off `embedded` mode | none — dispatchable now |
-| Release manifest (`nc-1`) | Immutable content-addressed release record, DB-free store + core Postgres store | none — dispatchable now |
-| Installation + activation (`nc-2`) | Installation record; compare-and-set, request-keyed activation receipts; undo as activation | after `nc-1` |
-| Bridge operations (`nc-3`) | `product.v1.*` trusted WorkspaceBridge handlers | after `nc-0`, `nc-2` |
-| Product runtime seam (`nc-4a`, `nc-4b`) | `ProductRuntimeHost` + conformance suite; embedded adapter; `local` bwrap/runsc adapter | after `nc-0`, `nc-3` |
-| Isolated front component (`nc-5`) | Generated UI in a sandboxed iframe with a brokered bridge | after `nc-3` (UI-surface, one at a time) |
-| Builder agent seat (`nc-6`) | `product-builder` agent type: candidate create/verify/propose, never activate | after `nc-4a` |
-| First journey acceptance (`nc-7`) | Math-tutor fixture product installed for a second user in `local` mode; survives builder-sandbox destruction and one upstream update | after `nc-4b`, `nc-5`, `nc-6` |
+| Order | Slice | Delivers | Gate |
+|---|---|---|---|
+| 1 | Release manifest (`nc-1`) | Immutable content-addressed release record | now |
+| 2 | Thread identity (`nc-t`) | Job root with session bindings; no product key may use a session id; timeline shape stays spiked | now |
+| 3 | Installation + activation (`nc-2`) | Installation record; CAS, request-keyed activation receipts; undo as activation | after 1, 2 |
+| 4 | Builder seat (`nc-6`) | `product-builder` agent: candidates into the release store, never activates | after 1, 3 |
+| 5 | Bridge operations (`nc-3`) | `product.v1.*` trusted handlers | after 2, 3 |
+| 6 | First View slice (`nc-v`) | ViewDescriptor/Resolver/Host/Context/Ref for record + dashboard; P4's first consumer | after 5 |
+| 7 | Library + Thread canvas (`nc-l`) | Installed product in Library; opens as a Thread in Work | after 2, 5, 6, [shell-layout] |
+| ∥ | Embedded runtime gate (`nc-0`) | In-process hot-loaded server plugins become the default-off `embedded` mode | now |
+| 8–10 | Runtime seam, `local` adapter, isolated View renderer (`nc-4a`, `nc-4b`, `nc-5`) | Isolation for a second consumer on a shared host | after ∥, 5, 6 |
+| 11 | First journey acceptance (`nc-7`) | Math-tutor fixture installed for a second user in `local` mode; survives builder-sandbox destruction and one upstream update | after 7, 4, 9, 10 |
 
 The lifecycle ladder E0–E6 below (folded from the former Workspace Evolution
 pack) remains the acceptance vocabulary for later classes; E1 is what `nc-7`

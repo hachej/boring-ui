@@ -2,7 +2,7 @@
 <style>body{font:15px/1.5 system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#1a1a1a}.strip{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;border-bottom:1px solid #ddd;padding-bottom:.75rem}.pill{background:#1f6f43;color:#fff;border-radius:999px;padding:.1rem .6rem;font-size:.85rem}table{border-collapse:collapse;width:100%;margin:1rem 0}td,th{border:1px solid #ddd;padding:.4rem .6rem;vertical-align:top;text-align:left}.hi{background:#fde2e2}.md{background:#fff3cd}.lo{background:#e2f0d9}code{font-size:.9em}</style>
 <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true});</script></head><body>
 <div class="strip"><strong>gh-1562 Native creation: first Seneca product journey</strong><span class="pill">gate 1 — plan approval</span><span>Steward: Claude (session 2026-09-07)</span><span>Epic label <code>epic:native-creation</code></span></div>
-<p><strong>TL;DR:</strong> build the ruled release → installation → activation path and a per-product runtime on the existing packages, then prove the first journey on a math-tutor fixture installed for a second user in <code>local</code> mode. First code change gates today's in-process plugin backend default-off.</p>
+<p><strong>TL;DR:</strong> spine first — release identity, Thread identity (no session keys), installation/activation, builder, bridge — then the first View slice and the product's place in Library as a Thread in Work; isolation (runtime seam, local sandbox, iframe renderer) gates a second consumer on a shared host. First journey proven on a math-tutor fixture.</p>
 <h2>Architecture</h2>
 <pre class="mermaid">flowchart TB
   subgraph Host["Host — control plane + broker"]
@@ -24,19 +24,27 @@
 </pre>
 <h2>Goals / Non-goals</h2>
 <table><tr><th>Goals</th><th>Non-goals</th></tr><tr><td>Immutable release identity · CAS activation · brokered ops · isolated runtime and UI · builder seat · first-journey proof</td><td>Remote microVM adapter · full E5 reconciliation · public packaging/marketplace · thread storage shape · any Wave A reordering</td></tr></table>
-<h2>Bead graph</h2>
+<h2>Bead graph (spine first)</h2>
 <pre class="mermaid">graph LR
-  nc0[nc-0 P0 embedded gate] --> nc3[nc-3 bridge ops]
-  nc1[nc-1 P0 release manifest] --> nc2[nc-2 P0 installation+activation]
+  nc1[1 release manifest] --> nc2[3 installation + activation]
+  nct[2 Thread identity] --> nc2
+  nc1 --> nc6[4 builder seat]
+  nc2 --> nc6
+  nct --> nc3[5 bridge ops]
   nc2 --> nc3
-  nc0 --> nc4a[nc-4a runtime seam]
+  nc3 --> ncv[6 first View slice]
+  nct --> ncl[7 Library + Thread canvas]
+  nc3 --> ncl
+  ncv --> ncl
+  nc0[∥ embedded gate] --> nc4a[8 runtime seam]
   nc3 --> nc4a
-  nc4a --> nc4b[nc-4b local adapter]
-  nc3 --> nc5[nc-5 isolated front]
-  nc4a --> nc6[nc-6 builder seat]
-  nc4b --> nc7[nc-7 first journey]
-  nc5 --> nc7
+  nc4a --> nc4b[9 local adapter]
+  nc3 --> nc5[10 isolated View renderer]
+  ncv --> nc5
+  ncl --> nc7[11 first journey]
   nc6 --> nc7
+  nc4b --> nc7
+  nc5 --> nc7
 </pre>
 <h2>Key flow</h2>
 <pre class="mermaid">sequenceDiagram
@@ -51,6 +59,9 @@
 </pre>
 <h2>Decisions</h2>
 <table><tr><th>Decision</th><th>Options</th><th>Chosen</th><th>Why</th></tr>
+<tr><td>Job root</td><td>session · Thread identity now · wait for shape spike</td><td>Thread identity record now; timeline shape stays spiked</td><td>§9a identity half is ruled; products must not key on sessions</td></tr>
+<tr><td>Product UI</td><td>free React panes · View contract set</td><td>first View slice (record, dashboard)</td><td>invariant 4; P4 pressure-test (4)</td></tr>
+<tr><td>Placement</td><td>workspace per product · Library + Thread in Work</td><td>Library + Thread in Work</td><td>ratified shell; no global chat column</td></tr>
 <tr><td>Where generated server code runs</td><td>in-process · brokered+sandboxed · trusted release only</td><td>per-product runtime, modes by policy; in-process = gated embedded</td><td>P0.6/D-b; multi-tenant safety; founder out of the loop (§13c)</td></tr>
 <tr><td>Runtime unit</td><td>per agent · per installed product</td><td>per installed product</td><td>shared ops/data without hops; single-agent = D-e unchanged</td></tr>
 <tr><td>Store placement</td><td>core only · workspace DB-free + core pg</td><td>workspace DB-free interfaces, core injects</td><td>coding invariant</td></tr>

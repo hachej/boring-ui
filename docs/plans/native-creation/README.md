@@ -101,6 +101,7 @@ inherited by a fork that changes it without an applicability check.
 | Private activation | Preview/Keep by default; standing authorization opt-in per installation within a declared change class and budget; the founder is not the default approver. (§13d) |
 | Upstream adoption | Compatible maintenance under the installation's policy; conflicts surfaced precisely; admitted work stays attributable to its release. (§11d, §13a) |
 | Platform/tenant | Release, installation, activation, runtime modes = platform substrate; offers/pricing tenant-side. (§13h) |
+| Building blocks pulled forward (evening) | Thread **identity** record now (timeline shape stays spiked; no product key may use a session id); the **first View slice** as the product canvas; the product lives in **Library and opens as a Thread in Work**. DIRECTION amendment, "Premises pulled forward". |
 
 ## Scope of PR #1561
 

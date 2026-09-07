@@ -51,6 +51,9 @@ first-journey acceptance script over a math-tutor fixture product.
 ## Acceptance
 
 - Default boot never imports a runtime plugin's server module (nc-0).
+- A Thread with zero sessions exists; a session binds to at most one Thread; no product row or bridge input carries a session id (nc-t, nc-1..3).
+- A record View and a dashboard View render from validated descriptors in two mounts; agents never see renderer ids (nc-v).
+- The installed product appears in Library for the second user and opens/resumes one Thread in Work (nc-l).
 - Release digest deterministic and immutable; stale-generation activation rejected; request-key replay idempotent (nc-1, nc-2).
 - Bridge denies unauthorized and cross-workspace callers; embedded refused when gated (nc-3).
 - Conformance suite green for embedded and local; runtime process cannot read host env (nc-4a, nc-4b).
@@ -65,26 +68,34 @@ first-journey acceptance script over a math-tutor fixture product.
 
 ## Slices
 
-| Slice | Bead | Blocked by | File scope (summary) |
-|---|---|---|---|
-| nc-0 embedded runtime gate | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | — | workspace server composition, runtimeBackend/, PLUGIN_SYSTEM.md |
-| nc-1 release manifest | `wt-391-forward-nc-1-release-manifest-6xyh` | — | productLifecycle/releases*, core migration 0028 + store |
-| nc-2 installation + activation | `wt-391-forward-nc-2-installation-activation-z4pa` | nc-1 | productLifecycle/installations*, activation*, core migration 0029 |
-| nc-3 bridge ops | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | nc-0, nc-2 | productLifecycle/bridge.ts, server option wiring, WORKSPACE_BRIDGE_V1.md |
-| nc-4a runtime seam + embedded | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | nc-0, nc-3 | productRuntime/{types,embedded,brokeredOps}, conformance suite |
-| nc-4b local adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | nc-4a | productRuntime/{local,runtimeEntry,protocol} |
-| nc-5 isolated front | `wt-391-forward-nc-5-isolated-front-component-qm7x` | nc-3 | front/productRuntime/**, frontAssets route, playground fixture + e2e |
-| nc-6 builder seat | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | nc-4a | plugins/product-builder/**, playground fleet |
-| nc-7 first journey | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | nc-4b, nc-5, nc-6 | playground fixture product + acceptance script + receipt |
+Order = spine first (owner, 2026-09-07 evening): identity records → creation → placement; isolation gates a shared-host second consumer.
 
-Review budget: each bead stays inside the 1500-line PR budget; nc-4b and nc-5 are the largest and may split.
+| # | Slice | Bead | Blocked by | File scope (summary) |
+|---|---|---|---|---|
+| 1 | release manifest | `wt-391-forward-nc-1-release-manifest-6xyh` | — | productLifecycle/releases*, core migration 0028 + store |
+| 2 | Thread identity + session bindings | `wt-391-forward-nc-t-thread-identity-iohz` | — | server/threads/**, core migration 0030, thread.v1 bridge reads |
+| 3 | installation + activation (binds thread, never session) | `wt-391-forward-nc-2-installation-activation-z4pa` | 1, 2 | productLifecycle/installations*, activation*, core migration 0029 |
+| 4 | builder seat → candidates in the release store | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | 1, 3 | plugins/product-builder/**, playground fleet |
+| 5 | product.v1 bridge ops | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | 2, 3 | productLifecycle/bridge.ts, server option wiring, WORKSPACE_BRIDGE_V1.md |
+| 6 | first View slice (record, dashboard) | `wt-391-forward-nc-v-first-view-slice-oaal` | 5 | shared/views, server/views, front/views/ViewHost |
+| 7 | Library entry + Thread canvas | `wt-391-forward-nc-l-library-entry-job-canvas-uw98` | 2, 5, 6, [shell-layout] | front/shell/library, front/shell/work, playground e2e |
+| ∥ | embedded runtime gate | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | — | workspace server composition, runtimeBackend/, PLUGIN_SYSTEM.md |
+| 8 | runtime seam + embedded adapter | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | ∥, 5 | productRuntime/{types,embedded,brokeredOps}, conformance suite |
+| 9 | local adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | 8 | productRuntime/{local,runtimeEntry,protocol} |
+| 10 | isolated View renderer (iframe) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | 5, 6 | front/productRuntime/**, frontAssets route, fixture + e2e |
+| 11 | first journey | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | 7, 4, 9, 10 | playground fixture product + acceptance script + receipt |
+
+Binding rule on 1, 3, 5: no persisted row or bridge input carries a session id; a test asserts it.
+
+Review budget: each bead stays inside the 1500-line PR budget; 6, 9 and 10 are the largest and may split.
 
 ## Out of Scope
 
 - Remote (microVM) product runtime adapter — after nc-4b proves the seam.
 - Upstream reconciliation beyond the single fixture update in nc-7 (E5 full proof).
 - Public packaging, marketplace, pricing, creator agreements (tenant-side).
-- Thread storage shape; durable-streams Level D (Wave A, unchanged).
+- Thread **timeline storage shape** (`.13.2`) and durable-streams Level D (Wave A, unchanged). Thread *identity* is in scope (slice 2).
+- Saved Views in Library beyond the product's own descriptors (rest of P4).
 
 ## Open Questions
 
@@ -93,7 +104,7 @@ None blocking dispatch of nc-0/nc-1. Deferred to nc-4b: exact dispatch protocol 
 ## Graph Validation
 
 - `br dep cycles --blocking-only`: 0 cycles (2026-09-07).
-- `br ready`: nc-0 and nc-1 appear, status open, unassigned, P0.
+- `br ready`: nc-1, nc-t (P0) and nc-0 (P1) appear, status open, unassigned.
 
 ## Gate 1
 

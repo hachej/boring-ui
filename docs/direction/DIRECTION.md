@@ -673,28 +673,48 @@ reopens the shell/engine freeze. The merge-queue preflight standing obligation
 applies before any premise bead as before; native-creation beads are not
 premise beads and dispatch on their own gates below.
 
+### Premises pulled forward as this journey's consumers (owner, 2026-09-07 evening)
+
+Stepping back from the first bead cut, the owner named three building blocks
+the spine had left to Wave A and ruled them **dispatchable now as consumers
+of this journey**, without reordering Wave A:
+
+| Building block | Ruling |
+|---|---|
+| **Thread identity** | The identity half of §9a — a Thread record with session bindings — is dispatchable now (`nc-t`). The **timeline storage shape** (`.13.2`, stream vs projection) stays spiked after P1-A; `nc-t` decides nothing about it. **Binding rule:** no product record, key or operation may reference a session id; bind to workspace, installation and thread only. |
+| **Views** | The first ratified View slice (P4 [saved-views-kernel], "unsized") gets its planning pass *and* first consumer here (`nc-v`): the contract as a set, resolving the two kinds the first product needs. Agents see descriptors and refs, never renderers. It is premises.md's pressure-test (4). |
+| **Library, not standalone workspaces** | An installed product lives in Library and opens as a Thread in Work with the product's canvas (`nc-l`), consuming the substrate-free [shell-layout] chrome slice. No workspace per product; no global chat column. |
+
 ### Bead map — epic #1562, label `epic:native-creation`
 
-| Slice | Bead | Priority | Dispatch gate |
-|---|---|---|---|
-| nc-0 Ground truth: gate the embedded runtime default-off | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | P0 | **now** |
-| nc-1 Release manifest record + stores | `wt-391-forward-nc-1-release-manifest-6xyh` | P0 | **now** |
-| nc-2 Installation record + CAS activation receipts | `wt-391-forward-nc-2-installation-activation-z4pa` | P0 | after nc-1 |
-| nc-3 `product.v1.*` bridge operations | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | P1 | after nc-0, nc-2 |
-| nc-4a `ProductRuntimeHost` seam + embedded adapter + conformance | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | P1 | after nc-0, nc-3 |
-| nc-4b `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | P1 | after nc-4a |
-| nc-5 Isolated generated front component (UI surface) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | P1 | after nc-3; one UI-surface worker at a time |
-| nc-6 `product-builder` agent seat | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | P1 | after nc-4a |
-| nc-7 First journey acceptance (math-tutor fixture, second user, `local` mode) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | P1 | after nc-4b, nc-5, nc-6 — **the only bead that can close the epic** |
+Priority order is the **spine first**: identity records, then creation, then
+placement, with isolation gating a second consumer on a shared host.
+
+| Order | Slice | Bead | Priority | Dispatch gate |
+|---|---|---|---|---|
+| 1 | Release manifest record + stores | `wt-391-forward-nc-1-release-manifest-6xyh` | P0 | **now** |
+| 2 | Thread identity record + session bindings | `wt-391-forward-nc-t-thread-identity-iohz` | P0 | **now** |
+| 3 | Installation record + CAS activation receipts (binds thread, never session) | `wt-391-forward-nc-2-installation-activation-z4pa` | P0 | after 1, 2 |
+| 4 | `product-builder` agent seat: candidates into the release store | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | P1 | after 1, 3 |
+| 5 | `product.v1.*` bridge operations | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | P1 | after 2, 3 |
+| 6 | First ratified View slice (record, dashboard) | `wt-391-forward-nc-v-first-view-slice-oaal` | P1 | after 5; UI surface |
+| 7 | Library entry + Thread canvas in Work | `wt-391-forward-nc-l-library-entry-job-canvas-uw98` | P1 | after 2, 5, 6 and [shell-layout]; UI surface |
+| ∥ | Ground truth: gate the embedded runtime default-off | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | P1 | **now**, parallel, disjoint scope |
+| 8 | `ProductRuntimeHost` seam + embedded adapter + conformance | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | P2 | after ∥, 5 |
+| 9 | `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | P2 | after 8 |
+| 10 | Isolated generated View renderer (iframe) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | P2 | after 5, 6; UI surface |
+| 11 | First journey acceptance (math-tutor fixture, second user, `local` mode) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | P1 | after 7, 4, 9, 10 — **the only bead that can close the epic** |
 
 Every bead carries WHAT, WHY, file scope, proof path, acceptance and a
 fits-one-session judgment (bead-ready.md). Plan and show-me artifacts:
 [`docs/issues/1562/`](../issues/1562/plan.md).
 
-**Dispatch consequence:** nc-0 and nc-1 are dispatchable tonight in parallel
-(disjoint file scope); nc-2 follows nc-1; nc-3 and nc-4a follow. The
-worker cap of three and the single UI-surface worker rule apply. Zero
-autonomous merges holds: gate 2 remains an owner decision on the epic PR.
+**Dispatch consequence:** three beads are dispatchable tonight in parallel with
+disjoint file scope — release manifest, Thread identity, embedded gate. The
+installation record follows the first two; the builder and the bridge follow
+it. The worker cap of three and the single UI-surface worker rule apply
+(`nc-v`, `nc-l`, `nc-5` never run together). Zero autonomous merges holds:
+gate 2 remains an owner decision on the epic PR.
 
 **Done-bar:** nc-7 passes with zero founder source edits after the fixture
 request, the installed product survives destruction of the builder sandbox
