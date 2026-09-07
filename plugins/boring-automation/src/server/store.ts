@@ -19,6 +19,8 @@ export interface AutomationSeed {
   agentTypeId: string
   runDurationCapMs?: number | null
   promptRef: string
+  /** Trusted host-provided prompt body used when the workspace does not carry the source asset. */
+  promptBody?: string
 }
 
 export type {
@@ -39,8 +41,10 @@ export interface AutomationStore {
   readSeedManifest(): Promise<string | null>
   /** Idempotently provisions metadata for a checked-in prompt; returns null when the prompt is absent. */
   ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null>
-  /** Resolves immutable seed keys that currently exist without relying on mutable automation metadata. */
-  findExistingSeedKeys(keys: readonly string[]): Promise<readonly string[]>
+  /** Lists immutable seed keys under one host-owned prefix without candidate fan-out. */
+  listExistingSeedKeys?(prefix: string): Promise<readonly string[]>
+  /** @deprecated Compatibility for injected test/legacy stores; providers use prefix listing. */
+  findExistingSeedKeys?(keys: readonly string[]): Promise<readonly string[]>
   /** Atomically removes metadata for an immutable seed key only when no run occupies it. */
   removeSeededAutomationIfIdle(key: string): Promise<boolean>
   updateAutomation(id: string, patch: AutomationPatch): Promise<Automation>

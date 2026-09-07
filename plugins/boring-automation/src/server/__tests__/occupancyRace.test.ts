@@ -6,7 +6,6 @@ import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/serv
 import type { AutomationRunLifecyclePatch } from "../../shared/types"
 import { DispatchRunExecutor } from "../dispatchRunExecutor"
 import { FileAutomationStore } from "../fileStore"
-import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import { runLeaseLost } from "../store"
 
 const roots: string[] = []
@@ -14,7 +13,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true })))
 })
 
-it("keeps the slot occupied when accepted dispatch identity persistence loses the race", async () => {
+it("does not resurrect a settled run when accepted dispatch identity persistence loses the race", async () => {
   const root = await mkdtemp(join(tmpdir(), "boring-automation-occupancy-race-"))
   roots.push(root)
   const store = new FileAutomationStore(root)
@@ -86,26 +85,22 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
   })
   expect(acceptedWorkerStillRunning).toBe(true)
   expect(ambiguous).toMatchObject({
-    status: "outcome-unknown",
-    sessionId: "accepted-worker",
-    dispatchReceipt: expect.objectContaining({ accepted: true, ref: { agentTypeId: "boring-worker", sessionId: "accepted-worker" } }),
-    error: "Automation dispatch was accepted before its worker lease was lost; the outcome remains unknown",
+    status: "failed",
+    sessionId: null,
+    dispatchReceipt: null,
+    error: "Automation worker lease expired before fallback finalization",
   })
 
   const replacements = await Promise.allSettled([
     store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-1", modelSnapshot: automation.model }),
     store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-2", modelSnapshot: automation.model }),
   ])
-  expect(replacements).toHaveLength(2)
-  for (const replacement of replacements) {
-    expect(replacement.status).toBe("rejected")
-    if (replacement.status === "rejected") {
-      expect(replacement.reason).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
-    }
-  }
-  await expect(store.listRuns(automation.id)).resolves.toEqual([
-    expect.objectContaining({ id: ambiguous.id, status: "outcome-unknown", sessionId: "accepted-worker", dispatchReceipt: expect.objectContaining({ accepted: true }) }),
-  ])
+  expect(replacements.filter(({ status }) => status === "fulfilled")).toHaveLength(1)
+  expect(replacements.filter(({ status }) => status === "rejected")).toHaveLength(1)
+  await expect(store.listRuns(automation.id)).resolves.toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: ambiguous.id, status: "failed", sessionId: null, dispatchReceipt: null }),
+    expect.objectContaining({ status: "queued" }),
+  ]))
 
   const restarted = new FileAutomationStore(root)
   await restarted.reconcileOrphanedRuns(automation.id)
@@ -114,5 +109,5 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
     trigger: "manual",
     promptSnapshot: "replacement-after-restart",
     modelSnapshot: automation.model,
-  })).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
+  })).resolves.toMatchObject({ status: "queued" })
 })

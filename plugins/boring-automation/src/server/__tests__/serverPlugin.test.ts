@@ -211,7 +211,7 @@ describe("boring automation server plugin", () => {
     expect(sendIfIdle).toHaveBeenCalledWith("session-1", "Continue", "request-1")
   })
 
-  it("paginates the complete Agent session inventory", async () => {
+  it("bounds Agent session inventory to one newest page", async () => {
     const listSessions = vi.fn(async (_limit: number, cursor?: string) => cursor
       ? { sessions: [{ ref: { agentTypeId: "boring-worker", sessionId: "session-2" } }], nextCursor: undefined }
       : { sessions: [{ ref: { agentTypeId: "boring-worker", sessionId: "session-1" } }], nextCursor: "next" })
@@ -221,10 +221,8 @@ describe("boring automation server plugin", () => {
 
     await expect(controller.list("boring-worker")).resolves.toEqual([
       expect.objectContaining({ ref: { agentTypeId: "boring-worker", sessionId: "session-1" } }),
-      expect.objectContaining({ ref: { agentTypeId: "boring-worker", sessionId: "session-2" } }),
     ])
-    expect(listSessions).toHaveBeenNthCalledWith(1, 100, undefined)
-    expect(listSessions).toHaveBeenNthCalledWith(2, 100, "next")
+    expect(listSessions).toHaveBeenCalledExactlyOnceWith(100)
   })
 
   it("starts hosted due evaluation internally when Fastify becomes ready", async () => {

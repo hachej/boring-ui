@@ -133,7 +133,12 @@ COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
 COPY --from=build /app/apps/full-app/boring.app.toml apps/full-app/boring.app.toml
 COPY --from=build /app/apps/full-app/package.json apps/full-app/package.json
 COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
-COPY .agents/factory/policy.yaml /app/.agents/factory/policy.yaml
+# Factory composition is host-owned and self-contained in the production image.
+# Seed prompts are projected into tenant workspaces by the trusted seed provider.
+COPY .agents/factory/policy.yaml .agents/factory/fleet.yaml /app/.agents/factory/
+COPY .agents/automation/ /app/.agents/automation/
+COPY .agents/personas/ /app/.agents/personas/
+COPY .agents/skills/ /app/.agents/skills/
 COPY apps/full-app/docker/web-entrypoint.sh /usr/local/bin/web-entrypoint
 RUN chmod 0755 /usr/local/bin/web-entrypoint
 

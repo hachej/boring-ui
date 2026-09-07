@@ -11,7 +11,7 @@ import type {
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
 import { clampAutomationPersistedDurationMs, MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
-import { isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
+import { AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS, isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
 import type { AutomationSeed, AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
@@ -107,19 +107,23 @@ export class FileAutomationStore implements AutomationStore {
   }
 
   async ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null> {
-    try {
-      await readFile(this.workspacePath(input.promptRef), "utf8")
-    } catch (error) {
-      if ((error as { code?: string }).code === "ENOENT") return null
-      throw error
-    }
-
+    const promptPath = this.workspacePath(input.promptRef)
     let seeded: Automation | undefined
-    await this.mutate((state) => {
+    await this.mutate(async (state) => {
       const existing = state.automations[input.key]
       if (existing) {
         seeded = existing
         return
+      }
+      if (input.promptBody !== undefined) {
+        await this.writer(promptPath, input.promptBody)
+      } else {
+        try {
+          await readFile(promptPath, "utf8")
+        } catch (error) {
+          if ((error as { code?: string }).code === "ENOENT") return
+          throw error
+        }
       }
       const now = this.nowIso()
       seeded = {
@@ -138,6 +142,11 @@ export class FileAutomationStore implements AutomationStore {
       state.automations[input.key] = clone(seeded)
     })
     return clone(requireValue(seeded))
+  }
+
+  async listExistingSeedKeys(prefix: string): Promise<readonly string[]> {
+    const state = await this.load()
+    return Object.keys(state.automations).filter((key) => key.startsWith(prefix) && state.automations[key]?.id === key)
   }
 
   async findExistingSeedKeys(keys: readonly string[]): Promise<readonly string[]> {
@@ -313,6 +322,7 @@ export class FileAutomationStore implements AutomationStore {
         preserved = run
         return
       }
+      if (run.status !== "queued" && run.status !== "dispatching" && run.status !== "running") return
       preserved = applyRunPatch(run, {
         status: "outcome-unknown",
         sessionId: receipt.ref.sessionId,
@@ -322,7 +332,7 @@ export class FileAutomationStore implements AutomationStore {
       }, this.nowIso())
       state.runs[runId] = preserved
     })
-    if (preserved) this.activeRunIds.add(runId)
+    if (preserved && isAutomationRunOccupying(preserved.status)) this.activeRunIds.add(runId)
     return preserved ? clone(preserved) : null
   }
 
@@ -454,18 +464,22 @@ export class FileAutomationStore implements AutomationStore {
 function reconcileOrphanedRuns(
   state: StoredAutomationState,
   automationId: string,
-  activeRunIds: ReadonlySet<string>,
+  activeRunIds: Set<string>,
   completedAt: string,
 ): void {
   for (const run of Object.values(state.runs)) {
-    if (run.automationId !== automationId || !isAutomationRunOccupying(run.status) || activeRunIds.has(run.id)) continue
-    if (run.status === "outcome-unknown" && run.dispatchReceipt) continue
+    if (run.automationId !== automationId || !isAutomationRunOccupying(run.status)) continue
+    const ambiguousExpired = run.status === "outcome-unknown"
+      && new Date(completedAt).getTime() - new Date(run.updatedAt).getTime() >= AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS
+    if (run.status === "outcome-unknown" && !ambiguousExpired) continue
+    if (activeRunIds.has(run.id) && !ambiguousExpired) continue
     const reconciled = reconcileAbandonedRun(run.status, "host-restart")
     run.status = reconciled.status
     run.completedAt = completedAt
     run.durationMs = clampAutomationPersistedDurationMs(new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
     run.error = reconciled.error
     run.updatedAt = completedAt
+    activeRunIds.delete(run.id)
   }
 }
 

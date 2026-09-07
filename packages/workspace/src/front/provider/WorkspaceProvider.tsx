@@ -300,7 +300,6 @@ function WorkspacePluginProviders({
   authScopeKey,
   onAuthError,
   apiTimeout,
-  workspaceTimezone,
   activeSessionId,
   activeSessionAgentTypeId,
   openSessionIds,
@@ -314,7 +313,6 @@ function WorkspacePluginProviders({
   authScopeKey?: string
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
-  workspaceTimezone: string
   activeSessionId?: string | null
   /** Addressed owner for active-session work; defaults to the future-session Agent. */
   activeSessionAgentTypeId?: string | null
@@ -338,7 +336,6 @@ function WorkspacePluginProviders({
         authScopeKey={authScopeKey}
         onAuthError={onAuthError}
         apiTimeout={apiTimeout}
-        workspaceTimezone={workspaceTimezone}
         activeSessionId={activeSessionId}
         openSessionIds={openSessionIds}
         sessionRefs={sessionRefs}
@@ -399,8 +396,6 @@ export interface WorkspaceProviderProps {
   authScopeKey?: string
   /** Per-request timeout for the data layer's FetchClient, in ms. */
   apiTimeout?: number
-  /** IANA timezone used by workspace-local scheduling defaults. */
-  workspaceTimezone?: string
   /** Active chat/session scope shared with plugin providers that need session-scoped data. */
   activeSessionId?: string | null
   /** Addressed owner for active-session plugin work. */
@@ -458,14 +453,6 @@ function scopedAuthHeaders(
   return { "x-boring-workspace-id": workspaceId, ...authHeaders }
 }
 
-function resolvedBrowserTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
-  } catch {
-    return "UTC"
-  }
-}
-
 export function WorkspaceProvider({
   agentTypeId,
   children,
@@ -481,7 +468,6 @@ export function WorkspaceProvider({
   authHeaders,
   authScopeKey,
   apiTimeout,
-  workspaceTimezone = resolvedBrowserTimezone(),
   activeSessionId,
   activeSessionAgentTypeId,
   openSessionIds,
@@ -720,7 +706,6 @@ export function WorkspaceProvider({
                     authScopeKey={authScopeKey}
                     onAuthError={onAuthError}
                     apiTimeout={apiTimeout}
-                    workspaceTimezone={workspaceTimezone}
                     activeSessionId={activeSessionId}
                     activeSessionAgentTypeId={activeSessionAgentTypeId}
                     openSessionIds={openSessionIds}

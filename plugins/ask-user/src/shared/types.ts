@@ -96,8 +96,6 @@ export type AskUserRequest = {
   schema?: AskUserFormSchema
   artifacts?: HumanArtifact[]
   timeoutMs?: number
-  /** False files the durable intention and returns immediately. Default true. */
-  wait?: boolean
   /** Pi tool-call correlation for the inline transcript renderer. */
   toolCallId?: string
   /** Trusted server/runtime attribution. Not accepted from browser bridge inputs. */
@@ -115,8 +113,6 @@ export type AskUserToolInput = {
   schema: AskUserFormSchema
   artifacts?: HumanArtifact[]
   timeoutMs?: number
-  /** False files the durable intention and returns immediately. Default true. */
-  wait?: boolean
 }
 
 export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned"
@@ -138,8 +134,6 @@ export type AskUserQuestion = {
     updatedAt: string
   }
   status: AskUserQuestionStatus
-  /** False means this durable question intentionally has no in-process waiter. */
-  wait?: boolean
   title?: string
   context?: string
   schema?: AskUserFormSchema
@@ -168,7 +162,6 @@ export type AskUserCancelReason =
   | "runtime_unavailable"
 
 export type AskUserToolResult =
-  | { status: "filed"; questionId: string; sessionId: string }
   | { status: "answered"; answer: AskUserAnswer }
   | { questionId: string; status: "pending"; blocking: false }
   | {

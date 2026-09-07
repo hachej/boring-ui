@@ -204,23 +204,25 @@ describe("HostedDueRunService", () => {
 
     const actor = { workspaceId: "workspace-a", userId: "user-a" }
     expect(verifyActor).toHaveBeenCalledWith(actor)
-    expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
-      agentTypeId: "researcher",
-      context: actor,
-    }), expect.any(Function))
-    expect(dispatch).toHaveBeenCalledOnce()
-    expect(workspace.readFile).toHaveBeenCalledOnce()
-    expect(resolver.authorizeSession).toHaveBeenCalledWith(
-      actor,
-      { agentTypeId: "researcher", sessionId: "session-1" },
-      undefined,
-    )
     expect(result.outcomes).toEqual([expect.objectContaining({
       kind: "started",
       automationId: "automation-a",
       scheduledFor: "2026-07-23T09:00:00.000Z",
-      run: expect.objectContaining({ status: "succeeded", sessionId: "session-1" }),
+      run: expect.objectContaining({ status: "running", sessionId: null }),
     })])
+    await vi.waitFor(() => {
+      expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+        agentTypeId: "researcher",
+        context: actor,
+      }), expect.any(Function))
+      expect(dispatch).toHaveBeenCalledOnce()
+      expect(workspace.readFile).toHaveBeenCalledOnce()
+      expect(resolver.authorizeSession).toHaveBeenCalledWith(
+        actor,
+        { agentTypeId: "researcher", sessionId: "session-1" },
+        undefined,
+      )
+    })
   })
 
   it("reconciles stale hosted runs before evaluating new schedule work", async () => {

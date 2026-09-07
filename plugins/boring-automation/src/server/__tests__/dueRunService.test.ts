@@ -70,7 +70,7 @@ describe("DueRunService", () => {
       automationId: input.automationId,
       scheduledFor: input.scheduledFor ?? null,
     }))
-    const service = new DueRunService({ store: storeFor([first, second]), executor: { run: execute } as never, clock: () => NOW })
+    const service = new DueRunService({ store: storeFor([first, second]), executor: { start: execute } as never, clock: () => NOW })
 
     const result = await service.runDue(request())
 
@@ -93,7 +93,7 @@ describe("DueRunService", () => {
         automation({ id: "auto-1" }),
         automation({ id: "active" }),
       ], [duplicate, active]),
-      executor: { run: execute } as never,
+      executor: { start: execute } as never,
       clock: () => NOW,
     })
 
@@ -124,13 +124,13 @@ describe("DueRunService", () => {
 
       const restartedStore = new FileAutomationStore(dir, { clock: () => NOW })
       const execute = vi.fn(async () => ({ ...completedRun(), automationId: saved.id }))
-      const service = new DueRunService({ store: restartedStore, executor: { run: execute } as never, clock: () => NOW })
+      const service = new DueRunService({ store: restartedStore, executor: { start: execute } as never, clock: () => NOW })
       const result = await service.runDue(request())
 
-      expect(execute).not.toHaveBeenCalled()
-      expect(result.outcomes).toEqual([expect.objectContaining({ kind: "skipped", automationId: saved.id, reason: "active-run" })])
+      expect(execute).toHaveBeenCalledOnce()
+      expect(result.outcomes).toEqual([expect.objectContaining({ kind: "started", automationId: saved.id })])
       await expect(restartedStore.listRuns(saved.id)).resolves.toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: orphan.id, status: "outcome-unknown", error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied" }),
+        expect.objectContaining({ id: orphan.id, status: "failed", error: "Automation host restarted while the run was active" }),
       ]))
     } finally {
       await rm(dir, { recursive: true, force: true })
@@ -144,7 +144,7 @@ describe("DueRunService", () => {
     })
     const service = new DueRunService({
       store: storeFor([automation({ id: "a" }), automation({ id: "b" })]),
-      executor: { run: execute } as never,
+      executor: { start: execute } as never,
       clock: () => NOW,
     })
 
@@ -162,7 +162,7 @@ describe("DueRunService", () => {
     const execute = vi.fn(async () => {
       throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND, "automation agent retired is not available")
     })
-    const service = new DueRunService({ store: storeFor([automation()]), executor: { run: execute } as never, clock: () => NOW })
+    const service = new DueRunService({ store: storeFor([automation()]), executor: { start: execute } as never, clock: () => NOW })
 
     await expect(service.runDue(request())).resolves.toMatchObject({
       outcomes: [expect.objectContaining({ kind: "failed", code: BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND })],
@@ -174,7 +174,7 @@ describe("DueRunService", () => {
     [BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED, "duplicate-scheduled-run"],
   ] as const)("turns atomic %s races into deterministic skips", async (code, reason) => {
     const execute = vi.fn(async () => { throw new AutomationStoreError(code, "race") })
-    const service = new DueRunService({ store: storeFor([automation()]), executor: { run: execute } as never, clock: () => NOW })
+    const service = new DueRunService({ store: storeFor([automation()]), executor: { start: execute } as never, clock: () => NOW })
 
     const result = await service.runDue(request())
 

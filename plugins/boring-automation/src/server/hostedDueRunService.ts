@@ -104,7 +104,7 @@ export class HostedDueRunService {
           actorResolver: () => candidate.actor,
           eventPublisher: this.options.eventPublisher,
         })
-        const run = await executor.run({
+        const run = await executor.start({
           automationId: candidate.automation.id,
           ...(request ? { request } : {}),
           trigger: "scheduled",

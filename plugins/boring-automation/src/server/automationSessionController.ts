@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
-import type { AgentSessionSummary } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import type { AutomationSessionController } from "./operations"
 import { AutomationStoreError } from "./store"
@@ -33,14 +32,11 @@ export function createAutomationSessionController(
   return {
     async list(agentTypeId) {
       return await withBinding(agentTypeId, `list:${randomUUID()}`, async (binding) => {
-        const sessions: AgentSessionSummary[] = []
-        let cursor: string | undefined
-        do {
-          const page = await binding.listSessions(100, cursor)
-          sessions.push(...page.sessions)
-          cursor = page.nextCursor
-        } while (cursor)
-        return sessions
+        // Fleet inspection is intentionally bounded. The newest page contains
+        // the active/recent sessions relevant to the bounded run projection;
+        // never walk an untrusted cursor chain inside one tool call.
+        const page = await binding.listSessions(100)
+        return page.sessions
       })
     },
     async nudge(agentTypeId, sessionId, message, requestId) {

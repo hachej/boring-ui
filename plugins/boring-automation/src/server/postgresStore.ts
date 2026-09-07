@@ -3,7 +3,7 @@ import type postgres from "postgres"
 import type { Workspace } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { AUTOMATION_PROMPT_DIRECTORY, automationPromptPath } from "../shared/prompt"
-import { AUTOMATION_RUN_OCCUPYING_STATUSES, reconcileAbandonedRun } from "../shared/runStatus"
+import { AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS, AUTOMATION_RUN_OCCUPYING_STATUSES, reconcileAbandonedRun } from "../shared/runStatus"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../shared/types"
 import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound, type AutomationSeed, type AutomationStore } from "./store"
 
@@ -88,13 +88,19 @@ export class PostgresAutomationStore implements AutomationStore {
 
   async ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null> {
     const workspace = this.requireWorkspace()
-    try {
-      await workspace.readFile(input.promptRef)
-    } catch (error) {
-      if ((error as { code?: string }).code === "ENOENT") return null
-      throw error
-    }
     const id = deterministicSeedId(this.actor, input.key)
+    const existing = await this.getAutomation(id)
+    if (existing) return existing
+    if (input.promptBody !== undefined) {
+      await workspace.writeFile(input.promptRef, input.promptBody)
+    } else {
+      try {
+        await workspace.readFile(input.promptRef)
+      } catch (error) {
+        if ((error as { code?: string }).code === "ENOENT") return null
+        throw error
+      }
+    }
     const now = this.clock().toISOString()
     const rows = await this.sql<AutomationRow[]>`
       WITH upserted AS (
@@ -131,16 +137,25 @@ export class PostgresAutomationStore implements AutomationStore {
     if (keys.length === 0) return []
     const byId = new Map(keys.map((key) => [deterministicSeedId(this.actor, key), key]))
     const rows = await this.sql<{ id: string }[]>`
-      SELECT id
+      SELECT id FROM boring_automation_automations
+      WHERE workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND deleted_at IS NULL AND id = ANY(${this.sql.array([...byId.keys()])})
+    `
+    return rows.flatMap(({ id }) => byId.get(id) ? [byId.get(id)!] : [])
+  }
+
+  async listExistingSeedKeys(prefix: string): Promise<readonly string[]> {
+    const rows = await this.sql<{ prompt_ref: string }[]>`
+      SELECT prompt_ref
       FROM boring_automation_automations
       WHERE workspace_id = ${this.actor.workspaceId}
         AND owner_user_id = ${this.actor.userId}
         AND deleted_at IS NULL
-        AND id = ANY(${this.sql.array([...byId.keys()])})
+        AND prompt_ref LIKE ${`.agents/automation/${prefix}%`}
     `
-    return rows.flatMap(({ id }) => {
-      const key = byId.get(id)
-      return key ? [key] : []
+    return rows.flatMap(({ prompt_ref }) => {
+      const match = /^\.agents\/automation\/([a-zA-Z0-9_-]+)\.md$/.exec(prompt_ref)
+      return match?.[1]?.startsWith(prefix) ? [match[1]] : []
     })
   }
 
@@ -234,7 +249,7 @@ export class PostgresAutomationStore implements AutomationStore {
           updated_at = ${this.clock().toISOString()}
       WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
         AND status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
-        AND NOT (status = 'outcome-unknown' AND dispatch_receipt IS NOT NULL)
+        AND (status <> 'outcome-unknown' OR updated_at < NOW() - (${AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS} * INTERVAL '1 millisecond'))
     `
   }
 
@@ -322,16 +337,21 @@ export class PostgresAutomationStore implements AutomationStore {
     error: string,
   ): Promise<AutomationRun | null> {
     const serialized = JSON.stringify(receipt)
-    const rows = await this.sql<RunRow[]>`
-      UPDATE boring_automation_runs
-      SET session_id = ${receipt.ref.sessionId}, dispatch_receipt = ${serialized}::text::jsonb,
-        status = 'outcome-unknown', completed_at = ${completedAt}, error = ${error}, updated_at = NOW()
-      WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
-        AND dispatch_receipt IS NULL
-      RETURNING *
-    `
-    if (rows[0]) return toRun(rows[0])
-    return await this.findRun(runId)
+    try {
+      const rows = await this.sql<RunRow[]>`
+        UPDATE boring_automation_runs
+        SET session_id = ${receipt.ref.sessionId}, dispatch_receipt = ${serialized}::text::jsonb,
+          status = 'outcome-unknown', completed_at = ${completedAt}, error = ${error}, updated_at = NOW()
+        WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+          AND dispatch_receipt IS NULL AND status IN ('queued', 'dispatching', 'running')
+        RETURNING *
+      `
+      if (rows[0]) return toRun(rows[0])
+      return null
+    } catch (error) {
+      if (isUniqueViolation(error) && constraintName(error) === "boring_automation_runs_active_once_idx") return null
+      throw error
+    }
   }
 
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
@@ -444,7 +464,6 @@ export async function reconcileStaleHostedAutomationRuns(
           ELSE ${inFlight.error} END,
         updated_at = NOW()
     WHERE status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
-      AND NOT (status = 'outcome-unknown' AND dispatch_receipt IS NOT NULL)
       AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
     RETURNING *
   `

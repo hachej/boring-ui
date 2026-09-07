@@ -48,7 +48,7 @@ export { ModelSelect, ModelPickerMenu, ModelSelectTrigger, ThinkingSelect } from
 export type { AvailableModel, ModelSelection, ThinkingLevel } from './chatPanelSettings'
 export { getAgentCommands } from './commands'
 export type { AgentCommandContribution, AgentCommandOptions } from './commands'
-export { ComposerContributionProvider, useComposerContributions } from './chat/composerContributions'
+export { ComposerContributionProvider } from './chat/composerContributions'
 export type {
   ComposerActionContributionProps,
   ComposerContribution,

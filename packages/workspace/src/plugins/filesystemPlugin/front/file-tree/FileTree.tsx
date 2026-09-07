@@ -65,8 +65,6 @@ export interface FileTreeProps {
   onSelect?: (path: string) => void
   /** Called whenever the typed tree selection changes. */
   onSelectionChange?: (node: FileTreeNode | null) => void
-  /** Backward-compatible activation callback retained across rolling host upgrades. */
-  onActivateFile?: (path: string) => void
   onExpand?: (path: string) => void
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
@@ -357,7 +355,6 @@ export function FileTree({
   pendingPaths,
   onSelect,
   onSelectionChange,
-  onActivateFile,
   onExpand,
   onCollapse,
   onContextMenu,
@@ -423,9 +420,9 @@ export function FileTree({
 
   const handleActivate = useCallback(
     (node: { data: FileTreeNode }) => {
-      if (node.data.kind === "file") (onSelect ?? onActivateFile)?.(node.data.path)
+      if (node.data.kind === "file") onSelect?.(node.data.path)
     },
-    [onActivateFile, onSelect],
+    [onSelect],
   )
 
   const handleSelect = useCallback((nodes: Array<{ data: FileTreeNode }>) => {

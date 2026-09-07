@@ -32,7 +32,7 @@ export interface DueRunResult {
 
 export interface DueRunServiceOptions {
   store: AutomationStore
-  executor: Pick<DispatchRunExecutor, "run">
+  executor: Pick<DispatchRunExecutor, "start">
   clock?: () => Date
 }
 
@@ -64,7 +64,7 @@ export class DueRunService {
 
     for (const decision of evaluated.due) {
       try {
-        const run = await this.options.executor.run({
+        const run = await this.options.executor.start({
           automationId: decision.automationId,
           request,
           trigger: "scheduled",

@@ -171,7 +171,7 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(queries[1]!.values).not.toContain("workspace-only prompt")
   })
 
-  it("reactivates a seeded row without overwriting operator-edited metadata", async () => {
+  it("leaves an active seeded row and its operator-edited metadata untouched", async () => {
     const existing = {
       id: "seed-id", title: "operator title", enabled: false, cron: null, timezone: "Europe/Zurich",
       model: "operator:model", agent_type_id: "operator-agent", run_duration_cap_ms: null,
@@ -187,10 +187,9 @@ describe("PostgresAutomationStore actor isolation", () => {
       model: "manifest:model", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md",
     })).resolves.toMatchObject({ title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model" })
 
-    expect(recorded.queries[0]!.text).toContain("AND boring_automation_automations.deleted_at IS NOT NULL")
-    expect(recorded.queries[0]!.text).toContain("title = EXCLUDED.title")
-    expect(recorded.queries[0]!.text).toContain("updated_at = EXCLUDED.updated_at")
-    expect(recorded.queries[0]!.text).toContain("AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM upserted)")
+    expect(recorded.queries).toHaveLength(1)
+    expect(recorded.queries[0]!.text).toContain("AND deleted_at IS NULL")
+    expect(recorded.queries[0]!.text).not.toContain("INSERT INTO")
   })
 
   it("locks the seeded automation row before checking for occupying runs", async () => {

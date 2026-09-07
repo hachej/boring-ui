@@ -143,19 +143,6 @@ describe("FileAutomationStore persistence", () => {
     await expect(restartedStore.beginRun({
       automationId: automation.id,
       trigger: "manual",
-      promptSnapshot: "prompt",
-      modelSnapshot: "test:gpt-5.5",
-    })).rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
-    const runs = await restartedStore.listRuns(automation.id)
-
-    expect(runs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: orphan.id, status: "outcome-unknown", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied" }),
-    ]))
-
-    await restartedStore.reconcileOrphanedRuns(automation.id)
-    await expect(restartedStore.beginRun({
-      automationId: automation.id,
-      trigger: "manual",
       promptSnapshot: "replacement",
       modelSnapshot: "test:gpt-5.5",
     })).resolves.toMatchObject({ status: "queued" })
@@ -163,13 +150,13 @@ describe("FileAutomationStore persistence", () => {
       expect.objectContaining({
         id: orphan.id,
         status: "failed",
-        error: "Automation outcome remained unknown after host restart; releasing the occupied slot",
+        error: "Automation host restarted while the run was active",
       }),
     ]))
   })
 
-  it("never auto-releases accepted outcome ambiguity after restart", async () => {
-    const first = createStore()
+  it("releases accepted outcome ambiguity only after the bounded settlement window", async () => {
+    const first = createStore({ clock: () => new Date("2026-07-10T00:00:00.000Z") })
     const automation = await first.createAutomation({ title: "Accepted", cron: "0 9 * * *", timezone: "UTC", model: "test:model" })
     const run = await first.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
     await first.claimRunForDispatch(run.id)
@@ -179,13 +166,37 @@ describe("FileAutomationStore persistence", () => {
       dispatchReceipt: { ref: { agentTypeId: "default", sessionId: "session-1" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: run.id },
     })
 
-    const restarted = createStore()
-    await restarted.reconcileOrphanedRuns(automation.id)
-    await expect(restarted.listRuns(automation.id)).resolves.toEqual([
-      expect.objectContaining({ id: run.id, status: "outcome-unknown", dispatchReceipt: expect.objectContaining({ accepted: true }) }),
-    ])
-    await expect(restarted.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "again", modelSnapshot: "test:model" }))
+    const earlyRestart = createStore({ clock: () => new Date("2026-07-10T00:04:59.000Z") })
+    await earlyRestart.reconcileOrphanedRuns(automation.id)
+    await expect(earlyRestart.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "too-soon", modelSnapshot: "test:model" }))
       .rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
+
+    const boundedRestart = createStore({ clock: () => new Date("2026-07-10T00:05:00.000Z") })
+    await boundedRestart.reconcileOrphanedRuns(automation.id)
+    await expect(boundedRestart.listRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({ id: run.id, status: "failed", dispatchReceipt: expect.objectContaining({ accepted: true }) }),
+    ])
+    await expect(boundedRestart.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "again", modelSnapshot: "test:model" }))
+      .resolves.toMatchObject({ status: "queued" })
+  })
+
+  it("does not resurrect a settled run when late acceptance races a replacement", async () => {
+    const store = createStore()
+    const automation = await store.createAutomation({ title: "Race", cron: null, timezone: "UTC", model: "test:model" })
+    const settled = await store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
+    await store.updateRunLifecycle(settled.id, { status: "failed", completedAt: "2026-07-10T00:00:00.000Z" })
+    const replacement = await store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "next", modelSnapshot: "test:model" })
+
+    await expect(store.preserveAcceptedDispatch(
+      settled.id,
+      { ref: { agentTypeId: "default", sessionId: "late" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: settled.id },
+      "2026-07-10T00:01:00.000Z",
+      "late acceptance",
+    )).resolves.toBeNull()
+    await expect(store.listRuns(automation.id)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: settled.id, status: "failed", dispatchReceipt: null }),
+      expect.objectContaining({ id: replacement.id, status: "queued" }),
+    ]))
   })
 
   it("allows only one dispatcher to claim a queued run", async () => {

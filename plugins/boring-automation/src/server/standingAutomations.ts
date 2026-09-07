@@ -43,7 +43,9 @@ export async function seedStandingAutomations(
   const manifestSeeds = await readManifestSeeds(store)
   const provided = options.seedProvider
     ? await options.seedProvider({
-        findExistingSeedKeys: (keys) => store.findExistingSeedKeys(keys),
+        listExistingSeedKeys: async (prefix) => store.listExistingSeedKeys
+          ? await store.listExistingSeedKeys(prefix)
+          : (await store.listAutomations()).map(({ id }) => id).filter((id) => id.startsWith(prefix)),
         removeSeededAutomationIfIdle: (key) => store.removeSeededAutomationIfIdle(key),
         warn,
       })
@@ -52,7 +54,11 @@ export async function seedStandingAutomations(
   if (new Set(seeds.map(({ key }) => key)).size !== seeds.length) {
     throw new Error("automation seeds contain duplicate keys")
   }
-  const seeded = await Promise.all(seeds.map(async (input) => await store.ensureSeededAutomation(input)))
+  const seeded = await Promise.all(seeds.map(async (input) => {
+    const automation = await store.ensureSeededAutomation(input)
+    if (!automation) warn(`[boring-automation] skipped seed ${input.key}: prompt ${input.promptRef} was not found`)
+    return automation
+  }))
   return seeded.filter((automation): automation is Automation => automation !== null)
 }
 

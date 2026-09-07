@@ -6,10 +6,12 @@ import { createFactoryAutomationSeedProvider, createFactoryAutomationSeeds } fro
 
 async function workspace(policy?: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'factory-automation-seeds-'))
-  if (policy !== undefined) {
-    await mkdir(join(root, '.agents', 'factory'), { recursive: true })
-    await writeFile(join(root, '.agents', 'factory', 'policy.yaml'), policy)
-  }
+  await mkdir(join(root, '.agents', 'factory'), { recursive: true })
+  await mkdir(join(root, '.agents', 'automation'), { recursive: true })
+  if (policy !== undefined) await writeFile(join(root, '.agents', 'factory', 'policy.yaml'), policy)
+  await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet\n        envVar: ANTHROPIC_API_KEY\n')
+  await writeFile(join(root, '.agents', 'automation', 'worker-slot.md'), 'worker prompt')
+  await writeFile(join(root, '.agents', 'automation', 'triage-slot.md'), 'triage prompt')
   return root
 }
 
@@ -18,58 +20,53 @@ function context(
   remove: (key: string) => Promise<boolean> = async () => true,
 ) {
   return {
-    findExistingSeedKeys: vi.fn(async (keys: readonly string[]) => keys.filter((key) => existingSeedKeys.includes(key))),
+    listExistingSeedKeys: vi.fn(async (prefix: string) => existingSeedKeys.filter((key) => key.startsWith(prefix))),
     removeSeededAutomationIfIdle: remove,
     warn: vi.fn(),
   }
 }
 
 describe('factory automation seed host composition', () => {
-  it('derives worker slots from worker_cap 3 and 5 plus triage', async () => {
+  it('derives worker slots with isolated prompt refs plus triage', async () => {
     expect(createFactoryAutomationSeeds(3).map(({ key }) => key)).toEqual([
       'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'triage',
     ])
-    expect(createFactoryAutomationSeeds(5).map(({ key }) => key)).toEqual([
-      'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'worker-slot-4', 'worker-slot-5', 'triage',
-    ])
-    const provider = createFactoryAutomationSeedProvider({ policyRoot: await workspace('beadle:\n  worker_cap: 5\n') })
-    expect((await provider(context())).map(({ key }) => key)).toHaveLength(6)
+    expect(new Set(createFactoryAutomationSeeds(3).map(({ promptRef }) => promptRef)).size).toBe(4)
+    const provider = createFactoryAutomationSeedProvider({
+      policyRoot: await workspace('beadle:\n  worker_cap: 5\nmodels:\n  seats:\n    worker: T3\n'),
+      env: { ANTHROPIC_API_KEY: 'test' },
+    })
+    const seeds = await provider(context())
+    expect(seeds).toHaveLength(6)
+    expect(seeds[0]).toMatchObject({ model: 'anthropic:claude-sonnet', promptBody: 'worker prompt' })
   })
 
   it.each([
     ['missing', undefined],
-    ['invalid', 'beadle:\n  worker_cap: nope\n'],
+    ['invalid', 'beadle:\n  worker_cap: nope\nmodels:\n  seats:\n    worker: T3\n'],
   ])('falls back to 3 with a warning for %s policy', async (_label, policy) => {
     const warn = vi.fn()
     const provider = createFactoryAutomationSeedProvider({ policyRoot: await workspace(policy), warn })
     expect((await provider(context())).map(({ key }) => key)).toEqual([
       'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'triage',
     ])
-    expect(warn).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalled()
   })
 
-  it('retains and warns for an active surplus slot when worker_cap decreases', async () => {
+  it('prunes only the existing surplus prefix rows and retains active slots', async () => {
     const warn = vi.fn()
-    const remove = vi.fn(async () => false)
+    const remove = vi.fn(async (key: string) => key !== 'worker-slot-4')
     const provider = createFactoryAutomationSeedProvider({
-      policyRoot: await workspace('beadle:\n  worker_cap: 3\n'),
+      policyRoot: await workspace('beadle:\n  worker_cap: 3\nmodels:\n  seats:\n    worker: T3\n'),
       warn,
     })
-    await provider(context(['worker-slot-1', 'worker-slot-4'], remove))
-    expect(remove).toHaveBeenCalledWith('worker-slot-4')
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('active run'))
-  })
-
-  it('prunes by immutable seed key rather than mutable title or automation id', async () => {
-    const remove = vi.fn(async () => true)
-    const provider = createFactoryAutomationSeedProvider({
-      policyRoot: await workspace('beadle:\n  worker_cap: 3\n'),
-    })
-    const seedContext = context(['worker-slot-4'], remove)
+    const seedContext = context(['worker-slot-1', 'worker-slot-4', 'worker-slot-999'], remove)
 
     await provider(seedContext)
 
-    expect(seedContext.findExistingSeedKeys).toHaveBeenCalledWith(expect.arrayContaining(['worker-slot-4']))
-    expect(remove).toHaveBeenCalledExactlyOnceWith('worker-slot-4')
+    expect(seedContext.listExistingSeedKeys).toHaveBeenCalledExactlyOnceWith('worker-slot-')
+    expect(remove).toHaveBeenCalledTimes(2)
+    expect(remove).toHaveBeenCalledWith('worker-slot-4')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('active run'))
   })
 })
