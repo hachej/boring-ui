@@ -252,6 +252,7 @@ describe("Bombadil exploration staging", () => {
       mode: "Commands",
       query: "",
       workspaceReady: false,
+      rootLayoutAligned: true,
       lastActionWasPaletteOpen: true,
       lastActionWasNavigationOpen: false,
       lastActionWasInitial: false,
@@ -294,6 +295,16 @@ describe("Bombadil exploration staging", () => {
       manifest,
       workspaceCommandPaletteSpec,
     )).resolves.toBeUndefined()
+
+    const staleLayoutRoot = await fixture([entry(1, {
+      screenshot: "stable",
+      palette: { ...transient, rootLayoutAligned: false },
+    })])
+    await expect(verifyReproducedFinalState(
+      staleLayoutRoot,
+      manifest,
+      workspaceCommandPaletteSpec,
+    )).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
 
     const durableMismatchRoot = await fixture([entry(1, {
       screenshot: "stable",

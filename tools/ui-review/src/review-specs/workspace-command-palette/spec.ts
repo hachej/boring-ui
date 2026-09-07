@@ -16,7 +16,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v6",
+  specRevision: "workspace-command-palette-v7",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -104,7 +104,6 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       if (!palette || typeof palette !== "object" || Array.isArray(palette)) return state
       const durablePalette = { ...palette } as Record<string, unknown>
       delete durablePalette.workspaceReady
-      delete durablePalette.rootLayoutAligned
       delete durablePalette.lastActionWasPaletteOpen
       delete durablePalette.lastActionWasNavigationOpen
       delete durablePalette.lastActionWasInitial
@@ -134,7 +133,9 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
           && !Array.isArray(state.normalizedState.palette)
           ? state.normalizedState.palette as Record<string, unknown>
           : null
-        return state.ordinal > 2 && palette?.dialogVisible === true
+        return state.ordinal > 2
+          && palette?.dialogVisible === true
+          && palette.rootLayoutAligned === true
       })
       const ordered = [...states].sort((left, right) => left.ordinal - right.ordinal)
       const waits = dialogStates
