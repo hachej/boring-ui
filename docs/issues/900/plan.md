@@ -724,8 +724,8 @@ Discovery-only 900.1 requires no account credential migration. Existing stored
 Notion/Airtable rows remain readable and keep curated product semantics while
 the shared Composio transport is security-hardened. Catalog identity is
 host-derived and never stored as privileged provenance. 900.2 **does** require
-the versioned legacy-subject inventory/quarantine/relink or owner-approved
-migration described above. Do not auto-promote personal authority. Any later shared-credential migration inventories/quarantines
+the versioned legacy-subject inventory/quarantine and owner-approved explicit
+relink described above. Do not auto-promote personal authority. Any later shared-credential migration inventories/quarantines
 personal sources and requires explicit owner policy.
 
 PR #1309 is evidence/quarry, not a merge candidate. Reuse tests and verified
@@ -742,8 +742,8 @@ cleanup map, synthetic probe, and implicit optional construction.
    keep execution blocked.
 3. Qualify package tarballs in Seneca; enable discovery for a synthetic user and
    disposable provider project only.
-4. Complete C2's full canonical predecessor closure and conformance, then plan
-   the subject migration and implement 900.2.
+4. Complete C2's full canonical predecessor closure and conformance, then apply
+   the approved explicit-relink transition and implement 900.2.
 5. Implement one-Composio UI and connections after stable backend contracts.
 6. Release/pin exact package versions in Seneca; enable flags in order:
    outer MCP -> catalog -> approval execution.
@@ -819,7 +819,7 @@ user data, retry effects, or promote personal credentials.
 - execution flag off blocks new admission but reconciliation continues;
 - JCS cross-process vectors, Unicode/bidi/control display, plan/argument digest
   equality, and replay;
-- legacy/new subject inventory, quarantine, migration/relink and rollback;
+- legacy/new subject inventory, quarantine, explicit relink and rollback;
 - exact account pin/revalidation and zero/one/multiple account behavior; and
 - child slug/parent/Run/plan identity through call/result/record/renderer/
   metering/audit using C2's canonical interface.
@@ -899,7 +899,7 @@ slice does not make 900.1 `ready-for-agent`; dispatch still requires:
    child attribution.
 4. RFC 8785 JCS bytes are identical across display, digests, handoff, admission,
    and provider input; malformed Unicode/non-JSON values fail closed.
-5. Versioned subject migration inventories legacy/new accounts and quarantines
+5. The versioned subject transition inventories legacy/new accounts and quarantines
    conflicts before exact one-account authority can execute.
 6. Every launch call has exact durable approval and post-approval authority,
    source, account, schema, policy, project, credential and subject revision
@@ -988,6 +988,22 @@ direction = Path("docs/direction/DIRECTION.md").read_text()
 html = Path("docs/issues/900/plan-review.html").read_text()
 for token in ["BLOCKER", "C3", "C1", "C2", "durable cleanup", "exact-origin", "RFC 8785", *ids]:
     assert token in md and token in html, token
+decision_tokens = [
+    "host control-plane",
+    "shared transport hardening",
+    "architecture steward owns",
+    "explicit account relink",
+]
+for token in decision_tokens:
+    assert all(token in blob.lower() for blob in [md, html, bead_text]), token
+assert "**APPROVED**" in md
+assert "GATE 1 APPROVED · IMPLEMENTATION DEFERRED" in html
+for forbidden in [
+    "relinks" + " or migrates",
+    "relink" + "/migrate",
+    "owner-approved" + " migration",
+]:
+    assert forbidden not in md and forbidden not in html and forbidden not in bead_text, forbidden
 for token in ["inbound MCP Access", "outbound MCP Connectors", "first-class child"]:
     assert token in inbound and token in direction, token
 for token in [

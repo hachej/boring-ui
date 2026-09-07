@@ -182,7 +182,7 @@ real duplication is two replay sources. Rewrite the bead before working it.
 | Folder | Status |
 |---|---|
 | AgentGateway planning area | Historical; `packages/agent/docs/AGENT_GATEWAY_V0.md` binds the Gateway contract |
-| Fleet/environment planning area | Decision-28 detail for Waves 2+; follow #1409's canonical moved path if that PR lands |
+| Fleet/environment planning area | Decision-28 detail for Waves 2+; follow #1409's merged canonical moved path |
 | A1 planning area | A1 shipped; remainder absorbed into Decision 28's F-graph. Reference only |
 | `docs/issues/808/`, `820/`, `806/`, `900/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
 
