@@ -2,9 +2,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
-import { sandboxSourceAlias } from './vite-sandbox-alias.ts'
+import { sandboxSourceAlias } from '../../../../scripts/vite-sandbox-alias.ts'
 
-const repositoryRoot = resolve(import.meta.dirname, '..')
+const repositoryRoot = resolve(import.meta.dirname, '../../../..')
 const sandboxPackage = JSON.parse(
   readFileSync(resolve(repositoryRoot, 'packages/boring-sandbox/package.json'), 'utf8'),
 ) as {
