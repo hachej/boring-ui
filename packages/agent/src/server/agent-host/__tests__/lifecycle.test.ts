@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { AgentCoreHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
@@ -321,7 +321,11 @@ describe('Agent Host lifecycle', () => {
       ],
       harnessFactory: async (input) => {
         if (input.systemPromptAppend === 'alpha' && alphaLoads++ === 0) {
-          throw new Error('transient Agent application load failure')
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'transient Agent application load failure',
+            { retryable: true },
+          )
         }
         return await createScriptedPiHarness(input)
       },

@@ -68,6 +68,14 @@ function gatewayError(dto: AgentGatewayErrorDTO): AgentGatewayError {
   return new AgentGatewayError(dto.code, dto.message, dto.details)
 }
 
+function isRetryableGatewayError(error: AgentGatewayError): boolean {
+  const details = error.details
+  return typeof details === 'object'
+    && details !== null
+    && !Array.isArray(details)
+    && (details as Readonly<Record<string, JsonValue>>).retryable === true
+}
+
 function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
   return { kind: 'session', ref }
 }
@@ -924,7 +932,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
               this.runtime.assertOpen()
             } catch (error) {
               if (error instanceof AgentGatewayError) {
-                await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+                if (isRetryableGatewayError(error)) {
+                  await this.runtime.ledger.retry(key, error.toJSON())
+                } else {
+                  await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+                }
                 throw error
               }
               await rejectRetryablePreflightFailure(this.runtime.ledger, key)
