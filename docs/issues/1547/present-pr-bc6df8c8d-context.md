@@ -16,7 +16,7 @@ sequenceDiagram
     participant Claim as Idempotency store
     participant Effect as Invite + mail
     Caller->>Route: POST invite + key
-    Route->>Route: authorize owner; validate body
+    Route->>Route: authorize owner and validate body
     Route->>Claim: atomic claim scoped to actor/workspace/payload
     alt claimed
       Claim-->>Route: claimed
