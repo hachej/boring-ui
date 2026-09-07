@@ -61,6 +61,18 @@ export type {
 export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./types/surface"
 export { definePanel } from "./types/panel"
 export type { UrlPanePolicy, UrlPanePaneParams, UrlPaneResolution, UrlPaneRejectionReason } from "./urlPane"
+export type {
+  RuntimeWebViewProjectionRejectionReason,
+  RuntimeWebViewProjectionResolution,
+  RuntimeWebViewTarget,
+} from "./runtimeWebView"
+export {
+  LEGACY_URL_PANE_RUNTIME_PREVIEW_PATH,
+  RUNTIME_WEB_VIEW_PREVIEW_PATH,
+  resolveRuntimeWebViewProjection,
+  runtimeWebViewRefreshDelay,
+  runtimeWebViewTargetSchema,
+} from "./runtimeWebView"
 export {
   DEFAULT_URL_PANE_ORIGINS,
   URL_PANE_PANEL_ID,
