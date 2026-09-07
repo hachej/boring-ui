@@ -25,7 +25,7 @@ sequenceDiagram
     else matching completed
       Claim-->>Route: replay
     else pending or mismatch
-      Claim-->>Route: 409; no effect
+      Claim-->>Route: 409 and no effect
     end
 ```
 
