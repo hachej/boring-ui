@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>gh-1562 plan review</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#1a1a1a}.strip{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;border-bottom:1px solid #ddd;padding-bottom:.75rem}.pill{background:#1f6f43;color:#fff;border-radius:999px;padding:.1rem .6rem;font-size:.85rem}table{border-collapse:collapse;width:100%;margin:1rem 0}td,th{border:1px solid #ddd;padding:.4rem .6rem;vertical-align:top;text-align:left}.hi{background:#fde2e2}.md{background:#fff3cd}.lo{background:#e2f0d9}code{font-size:.9em}</style>
+<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true});</script></head><body>
+<div class="strip"><strong>gh-1562 Native creation: first Seneca product journey</strong><span class="pill">gate 1 — plan approval</span><span>Steward: Claude (session 2026-09-07)</span><span>Epic label <code>epic:native-creation</code></span></div>
+<p><strong>TL;DR:</strong> build the ruled release → installation → activation path and a per-product runtime on the existing packages, then prove the first journey on a math-tutor fixture installed for a second user in <code>local</code> mode. First code change gates today's in-process plugin backend default-off.</p>
+<h2>Architecture</h2>
+<pre class="mermaid">flowchart TB
+  subgraph Host["Host — control plane + broker"]
+    ID[identity · membership]
+    BR["WorkspaceBridge product.v1.* (nc-3)"]
+    RS["Release store (nc-1)"]
+    IS["Installation + activation store (nc-2)"]
+  end
+  subgraph PR["Product runtime — one per installed product (nc-4a/4b)"]
+    OPS[declared operations]
+    UI["generated front bundle → sandboxed iframe (nc-5)"]
+  end
+  SB["Sandbox lease — builder works here (nc-6)"]
+  BR --> RS
+  BR --> IS
+  BR -- brokered calls --> OPS
+  UI -- postMessage broker --> BR
+  SB -- candidate release --> RS
+</pre>
+<h2>Goals / Non-goals</h2>
+<table><tr><th>Goals</th><th>Non-goals</th></tr><tr><td>Immutable release identity · CAS activation · brokered ops · isolated runtime and UI · builder seat · first-journey proof</td><td>Remote microVM adapter · full E5 reconciliation · public packaging/marketplace · thread storage shape · any Wave A reordering</td></tr></table>
+<h2>Bead graph</h2>
+<pre class="mermaid">graph LR
+  nc0[nc-0 P0 embedded gate] --> nc3[nc-3 bridge ops]
+  nc1[nc-1 P0 release manifest] --> nc2[nc-2 P0 installation+activation]
+  nc2 --> nc3
+  nc0 --> nc4a[nc-4a runtime seam]
+  nc3 --> nc4a
+  nc4a --> nc4b[nc-4b local adapter]
+  nc3 --> nc5[nc-5 isolated front]
+  nc4a --> nc6[nc-6 builder seat]
+  nc4b --> nc7[nc-7 first journey]
+  nc5 --> nc7
+  nc6 --> nc7
+</pre>
+<h2>Key flow</h2>
+<pre class="mermaid">sequenceDiagram
+  participant B as builder
+  participant H as host bridge
+  participant I as installation store
+  participant P as product runtime
+  B->>H: propose(releaseDigest)
+  H->>I: activate(expectedGeneration, requestKey)
+  I-->>H: committed | aborted(stale)
+  H->>P: start(release) + register ops
+</pre>
+<h2>Decisions</h2>
+<table><tr><th>Decision</th><th>Options</th><th>Chosen</th><th>Why</th></tr>
+<tr><td>Where generated server code runs</td><td>in-process · brokered+sandboxed · trusted release only</td><td>per-product runtime, modes by policy; in-process = gated embedded</td><td>P0.6/D-b; multi-tenant safety; founder out of the loop (§13c)</td></tr>
+<tr><td>Runtime unit</td><td>per agent · per installed product</td><td>per installed product</td><td>shared ops/data without hops; single-agent = D-e unchanged</td></tr>
+<tr><td>Store placement</td><td>core only · workspace DB-free + core pg</td><td>workspace DB-free interfaces, core injects</td><td>coding invariant</td></tr>
+<tr><td>Activation shape</td><td>pointer flip · two-phase receipt</td><td>two-phase CAS receipt, request-keyed</td><td>mirrors existing publication ledger</td></tr></table>
+<h2>Risks</h2>
+<table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+<tr><td>nc-4b dispatch protocol churn</td><td class="md">medium</td><td class="md">medium</td><td>conformance suite is the contract; protocol internal to the adapter</td></tr>
+<tr><td>bwrap unavailable on a worker</td><td class="md">medium</td><td class="lo">low</td><td>suite asserts it ran on CI; local skip is explicit</td></tr>
+<tr><td>nc-0 breaks a live single-tenant deployment relying on hot server plugins</td><td class="lo">low</td><td class="hi">high</td><td>opt-in flag documented; Seneca sets it if needed</td></tr>
+<tr><td>Migration numbering collides with a parallel PR</td><td class="md">medium</td><td class="lo">low</td><td>renumber at rebase; tables additive</td></tr></table>
+<p>Proof commands live on each bead (<code>br show &lt;id&gt;</code>). Rollback: revert the bead commit; tables are additive.</p>
+</body></html>

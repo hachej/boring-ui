@@ -201,6 +201,15 @@ iframe UI, sandbox-proxy tools, server disabled, prompted grants, explicit
 promotion — ratified). There is no third "plugin-host service" to invent.
 (Discharges pass-1 #6.)
 
+> **2026-09-07 (RECONCILIATION §13c, D33):** "server disabled" is superseded
+> for installed products. Generated server code runs inside a **product
+> runtime** in `local`/`remote` mode (the existing sandbox/runtime tier — still
+> no third service), whose declared operations the host registers under the
+> installation's grants. `embedded` (in-process) mode is the default-off
+> exception for single-tenant curator deployments; P0.6's refusal of
+> `boring.server` from agent-writable roots in the host process stands
+> outside it.
+
 **D-c C6 commit protocol (cross-host exactly-once terminal recording).**
 - **Admission:** host appends `admitted(requestKey)` to the envelope *before*
   dispatch (requestKey = the five-part ledger key). Duplicate requestId with a

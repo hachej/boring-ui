@@ -44,6 +44,17 @@ architecture.
 > one document unit in both document-first and chat-first compositions.
 > Binding scope and amendments: [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 
+> **Amendment — 2026-09-07 (owner ruling, ratified via #1561; RECONCILIATION §13):**
+> native creation of expert software is the **first complete product
+> journey**: create → immutable release → install for a separate consumer →
+> adapt → maintain, without founder source edits. Three layers are ruled
+> (host = broker · product runtime = one per installed product, modes
+> `embedded`/`local`/`remote` · sandbox = disposable lease). Product's
+> private release/installation half leaves the deferred list; K9's "only
+> then" timing is superseded; builder agents are a distinct class; the
+> execution home is this repository. Every banner below dated 2026-09-07
+> points here.
+
 ## 1. The decisive discovery: the three documents describe ONE system
 
 The V2 kernel's 12 nouns map almost entirely onto machinery that is built,
@@ -101,6 +112,8 @@ strangler, not a fork: the old repo is a quarry and a running business, not a
 parallel architecture. Rationale accepted: this monorepo is a high-traffic
 factory; a kernel package here must win a CI fight on every merge, while a
 kernel repo makes the discipline structural.
+
+> **2026-09-07 (§13f):** R-a stands as doctrine but is demoted from "the next major build" to an evidence-triggered later port. `hachej/boring-v2` does not exist and nothing has been ported; the native-creation journey executes in `hachej/boring-ui`.
 
 **Port protocol (keeps the strangler honest):**
 1. **Interfaces before mechanisms, always.** Nothing lands in v2 without a
@@ -162,7 +175,10 @@ with the product noun. Do at A1 (types extraction) where the rename is free.
 Process, Schema, Module-runtime, DataSource, MountSlot, marketplace, A2A-remote.
 Each has a named promotion trigger (Rule of Three / second runtime mode / two
 real verticals). AgentState and Product were already reserved; the V2 doc
-agrees.
+agrees. *(2026-09-07, §13a: Product's private release/installation half is
+promoted for the native-creation journey; its public-packaging half stays
+deferred. Release and Installation are product-module records, not kernel
+nouns.)*
 
 ## 4. Invariants (normative; merges V2 §31, product doc §31, plan rules)
 
@@ -171,7 +187,7 @@ The five backbone invariants (ratified) come first; the rest derive:
 1. **Agents exist independently of workspaces; workspaces bind them through Seats.**
 2. **The Agent owns its session record; the Host owns accepted-work authority/envelope.** RunId := RequestKey, minted by the admitting authority before execution, stable across metering, artifacts, evaluations, outcomes.
 3. **Effective capability = Agent-declared ∩ Workspace-granted** (∩ thread/run restriction; authority only narrows).
-4. **Agents reason over semantic resources, views, artifacts — never renderer concepts.**
+4. **Agents reason over semantic resources, views, artifacts — never renderer concepts.** *(2026-09-07, §13e: narrowed for the distinct software-builder agent class only, which edits renderer/operation code inside candidates; domain agents unchanged.)*
 5. **A Seat grants participation, not identity** — a workspace constrains an agent but never mutates what agent it is.
 
 Derived (kernel additions): 6. Capabilities are defined once and projected to
@@ -215,7 +231,7 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 - **K6** First recursive challenger loop (instructions/tool-selection/model-routing only; sandbox → benchmark → promote-if-independently-better)
 - **K7** First paid vertical (creator growth — shortest feedback loop), as an experiment composition, concierge OK
 - **K8** Second structurally different vertical (macro / formulation / SME GTM)
-- **K9** Only then: extract Product packaging
+- **K9** Only then: extract Product packaging *(superseded 2026-09-07, §13a: private release and installation are the first complete journey; only public packaging waits.)*
 
 > **Amendment — 2026-08-26 (owner ruling, tracked in #1399; full text in
 > RECONCILIATION.md §8):** the product surface these verticals are delivered
@@ -240,7 +256,7 @@ P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
 
 **Workspace Evolution milestone extension — 2026-09-05.** Add the E0–E6
-product milestones in the [execution plan](../../workspace-evolution/README.md#milestones):
+product milestones in the [execution plan](../../native-creation/LIFECYCLE.md#milestones):
 request/preview preparation, durable workspace activation, personal scope,
 behavior revision, isolated generated modules, upgrade reconciliation, and
 approved reuse. Clinic's document dashboard and a second supported document
@@ -281,6 +297,11 @@ BSL rewrite, universal Mount, cross-tenant recursive learning, big package
 reorg **in the old repo** (dissolved into the port — see R-a), arbitrary
 untrusted hosted plugin execution (P0.6).
 
+**Scope amendment — 2026-09-07 (§13c).** Generated *server* code is admitted
+inside a product runtime in `local`/`remote` mode, brokered by the host. "Arbitrary
+untrusted hosted plugin execution (P0.6)" still excludes loading it into the
+host process outside the default-off `embedded` mode.
+
 **Scope amendment — 2026-09-05.** The general-purpose "universal app
 generator" exclusion above does not exclude the bounded personal evolution
 program in §11. Existing-component configuration is the first lane; new
@@ -320,7 +341,7 @@ excluded. Arbitrary code cannot promise conflict-free automatic upgrades.
 
 1. ~~R-a~~ RULED: new repo, interface-first, port mechanisms (protocol above).
 2. Track K sequencing after P0 as in §5 — confirm.
-3. Creator growth as first vertical (K7) — confirm or substitute.
+3. Creator growth as first vertical (K7) — confirm or substitute. *(2026-09-07: the first native-creation proof consumer is the Seneca mathematics tutor product, §13g; K7 as the first commercial vertical is a tenant-side decision and is not re-ruled here.)*
 
 ## 11. Owner-requested clarification — 2026-09-06 (software model)
 

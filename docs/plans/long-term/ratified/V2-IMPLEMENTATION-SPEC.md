@@ -183,7 +183,7 @@ status/decisions outlive a browser. Session-keyed consumers need a trusted
 adapter/migration before that live proof. The SessionRecord/Thread annotations
 above explicitly correct the stale one-object terminology under the already
 ratified §9a; they do not decide the outstanding Thread timeline storage shape.
-Contracts and stress cases: [execution plan](../../workspace-evolution/README.md#composable-experiences-and-ambient-work).
+Contracts and stress cases: [execution plan](../../native-creation/LIFECYCLE.md#composable-experiences-and-ambient-work).
 
 ## L5 — Optimization
 
@@ -221,6 +221,9 @@ Publishing       // creator flow: build agent → publish → hosted URL → use
 ```
 Ladder (ratified): Bare Agent → +Workspace → Agent App → +Seats → Team →
 Product. Upgrades additive, never migratory.
+*(2026-09-07, RECONCILIATION §13a: the private release/installation half of
+this layer is the first complete journey and executes now in `hachej/boring-ui`
+— see the native-creation extension below; only public packaging keeps M8.)*
 **Milestones:** M5 (one hosted Agent App URL, manual/concierge) · M8 (Product
 extraction — ONLY after two real verticals).
 
@@ -268,6 +271,16 @@ milestone; the kill criteria (handbook Part VII) can stop the line at M2 or M6.
 Old repo in parallel, unchanged: P0.6 · A7 (ports into M1's L0) · P0.2 ·
 AR1-003/004 (ports into M2's L2) · result→runId · keep selling.
 
+## Native creation re-timing — 2026-09-07
+
+**Ratified via #1561 (RECONCILIATION §13).** The first complete journey
+(private product → immutable release → install for a separate consumer →
+retained change → reconciliation) is built now, in this repository, on the
+existing packages; it does not wait for M3 (npx) or M8 (Product extraction).
+Three layers (host / product runtime / sandbox) and the installation/activation
+path are the contracts; E0–E6 below remain the lifecycle acceptance ladder.
+Bead map and gates: DIRECTION amendment 2026-09-07.
+
 ## Workspace Evolution milestone extension — 2026-09-05
 
 > Consumer scope updated 2026-09-06 under RECONCILIATION §12. The rows below
@@ -276,7 +289,7 @@ AR1-003/004 (ports into M2's L2) · result→runId · keep selling.
 **Specified, unbuilt by this PR; effective on owner merge.** This adds a
 named product proof to the capabilities above without renumbering M0–M8,
 opening the new-repo implementation freeze, or requiring M8 Product extraction
-for a private change. The [execution plan](../../workspace-evolution/README.md#milestones)
+for a private change. The [execution plan](../../native-creation/LIFECYCLE.md#milestones)
 owns E0–E6 acceptance; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
 owns dispatch. M-labels below map capability dependencies, not a second queue.
 

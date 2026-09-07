@@ -1,10 +1,14 @@
-# Proposed document amendments and implementation handoff
+# Amendment record and implementation handoff
 
-> **PROPOSED — NON-DISPATCHABLE.** September 7, 2026. This is suggested ruling
-> text and an edit plan, not an applied amendment to Decisions 28/29/32, the
-> ratified vision, Factory policy, or DIRECTION. Recording this pack does not
-> ratify its suggestions. Read [status and open decisions](README.md),
-> [the reassessment](REASSESSMENT.md), and [sources](COVERAGE_AND_SOURCES.md).
+> **APPLIED — 2026-09-07.** The rulings were recorded as RECONCILIATION §13 and
+> DECISIONS D33 (with dated addenda on D25/D28/D29/D30 and banners at every
+> superseded site in VISION, ARCHITECTURE-PLAN, V2-IMPLEMENTATION-SPEC and
+> V2-PORT-HANDBOOK), and sequenced by the DIRECTION amendment of 2026-09-07.
+> §1 below is the suggested text as it stood before ruling; where it differs
+> from §13 (notably: three layers and runtime modes instead of "one trusted
+> path resolving contributions dynamically"; execution home = this repo;
+> first consumer = Seneca math tutor), §13 wins. §2 is now a record of where
+> each edit landed.
 
 ## 1. Suggested ruling text
 
@@ -95,12 +99,11 @@ coupling prevents it. Repository choice is an engineering decision, not a
 product objective. Preserve valid customer data, authority, and histories
 through supported cutover.
 
-## 2. Exact edit map for adoption
+## 2. Edit map — where each ruling landed
 
-These are future edits requiring the selected rulings, not changes already
-made by this PR. Preserve historical evidence and code-cited anchors. Choose
-RECONCILIATION section numbering only after reconciling #1548's proposed
-sections; do not append a competing ratification history.
+Applied by PR #1561 (rows below describe the target; the dated banner or
+section at each site is the authority). PR #1548's §11/§12 were merged first;
+§13 follows them.
 
 | Target | Proposed amendment |
 | --- | --- |
@@ -113,7 +116,7 @@ sections; do not append a competing ratification history.
 | `docs/plans/long-term/ratified/V2-PORT-HANDBOOK.md` | Distinguish domain semantic interfaces from builder implementation access. Amend the deferred-noun list (Product, Customization) and the "future customization: declarative over agent-rewritten React" deferral to admit the first product's release/customization contracts; do not require all future nouns before a useful product. The per-session Thread shorthand is corrected by this PR. |
 | `docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md` | Preserve dated authority/recovery/migration evidence. Amend D-b ("untrusted tier: server disabled") and P0.6 to admit brokered, installation-scoped generated operations, or state that the first journey's backend half runs elsewhere; this is the hardest conflict in the pack. Make older sequencing clearly subordinate to the adopted DIRECTION amendment. Revalidate old source findings before treating them as current defects. |
 | `docs/direction/DIRECTION.md`, `docs/roadmap/README.md` | Publish the one creation-first executable sequence, precise prerequisite evidence, execution home, and bounded incumbent maintenance lane after adoption. Re-rule the 2026-08-27 Horizon split, which placed "packages/distribution" tenant-side: private release/installation identity is platform substrate; offers and pricing stay tenant-side. Do not dispatch from this proposal. |
-| #1548 `docs/plans/workspace-evolution/README.md`, `docs/vision/software-model.md` | Retain lifecycle/state/scope/upgrade work. Connect E0–E6 to initial creation and separate-consumer installation. E1a configuration proof is not full creation; new-code and maintenance retain their distinct acceptance bars. |
+| #1548 `docs/plans/native-creation/LIFECYCLE.md`, `docs/vision/software-model.md` | Retain lifecycle/state/scope/upgrade work. Connect E0–E6 to initial creation and separate-consumer installation. E1a configuration proof is not full creation; new-code and maintenance retain their distinct acceptance bars. |
 | `docs/plans/multiagent-shell/`, `docs/plans/workspace-agent-seats.md` | Keep Meridian as a consumer recipe and preserve durability/attribution requirements. Distinguish enrollment, job participation, installation, and release binding rather than rebuilding Seats. |
 | Package plugin/bridge contracts | First, repair the existing drift: `PLUGIN_SYSTEM.md` §7 lists hot server routes as a non-goal while `runtimeBackend/` serves them unflagged. After implementation, document contribution identity, installation scope, dependencies, generated-operation isolation, activation, teardown, and serving. Do not describe proposed hosted capabilities as shipped. |
 | `docs/PROJECT_ENVIRONMENT_MODEL.md` | Reconcile proposed vocabulary with selected Job/Installation semantics and retain stable execution/lease separation; avoid unnecessary new global entities. |

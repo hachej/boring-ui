@@ -59,10 +59,34 @@ completion, so it indirectly gates every Thread-view slice that consumes P1.
 | Remote/third-party hosts, marketplace | their own frozen gates | DIRECTION Wave 4 |
 | Commercial sequencing | nothing platform-side — it lives in Seneca | tenant repo roadmap |
 
-## Workspace Evolution extension — specified, not shipped
+## Native creation — the first complete product journey (ratified 2026-09-07)
+
+RECONCILIATION §13 makes create → release → install for a separate consumer →
+adapt → maintain the first complete journey, executed in this repository on
+the existing packages. The premises program above is unchanged and is what
+this journey's "job continuity" stage consumes. Epic
+[#1562](https://github.com/hachej/boring-ui/issues/1562); pack
+[`native-creation/`](../plans/native-creation/README.md).
+
+| Slice | Delivers | Gate |
+|---|---|---|
+| Ground truth: embedded runtime gate (`nc-0`) | In-process hot-loaded server plugins become the default-off `embedded` mode | none — dispatchable now |
+| Release manifest (`nc-1`) | Immutable content-addressed release record, DB-free store + core Postgres store | none — dispatchable now |
+| Installation + activation (`nc-2`) | Installation record; compare-and-set, request-keyed activation receipts; undo as activation | after `nc-1` |
+| Bridge operations (`nc-3`) | `product.v1.*` trusted WorkspaceBridge handlers | after `nc-0`, `nc-2` |
+| Product runtime seam (`nc-4a`, `nc-4b`) | `ProductRuntimeHost` + conformance suite; embedded adapter; `local` bwrap/runsc adapter | after `nc-0`, `nc-3` |
+| Isolated front component (`nc-5`) | Generated UI in a sandboxed iframe with a brokered bridge | after `nc-3` (UI-surface, one at a time) |
+| Builder agent seat (`nc-6`) | `product-builder` agent type: candidate create/verify/propose, never activate | after `nc-4a` |
+| First journey acceptance (`nc-7`) | Math-tutor fixture product installed for a second user in `local` mode; survives builder-sandbox destruction and one upstream update | after `nc-4b`, `nc-5`, `nc-6` |
+
+The lifecycle ladder E0–E6 below (folded from the former Workspace Evolution
+pack) remains the acceptance vocabulary for later classes; E1 is what `nc-7`
+proves for the first consumer.
+
+## Workspace Evolution extension — specified, folded into native creation
 
 The owner-requested 2026-09-05 amendment, generalized 2026-09-06, adds a consumer program on
-owner merge. Its [E0–E6 milestones](../plans/workspace-evolution/README.md#milestones)
+owner merge. Its [E0–E6 milestones](../plans/native-creation/LIFECYCLE.md#milestones)
 prove private adaptation, downstream maintenance, and approved reuse:
 
 | Milestone | Observable result | Key gate |

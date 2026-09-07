@@ -1,11 +1,14 @@
 # Native creation and maintained expert software
 
-> **PROPOSED — NON-DISPATCHABLE.** September 7, 2026. This pack translates the
-> owner's Seneca vision and the documentation reassessment into a reviewable
-> product obligation, amendment proposal, and acceptance plan. It is not an
-> owner ratification, implementation claim, new roadmap authority, or permission
-> to change runtime policy. `docs/direction/DIRECTION.md` remains the only
-> executable ordering. Recording this proposal does not activate it.
+> **RATIFIED — 2026-09-07 (owner ruling via PR #1561).** This pack carries
+> the owner's Seneca vision from reassessment to ruling: the product
+> obligation, the [RECONCILIATION §13](../long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey)
+> and [DECISIONS D33](../../DECISIONS.md#33-installed-products-run-in-their-own-runtime-one-trusted-installationactivation-path)
+> rulings, the lifecycle "how" folded from PR #1548, and the dispatchable bead
+> map in the [DIRECTION amendment of 2026-09-07](../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).
+> `DIRECTION.md` remains the only executable ordering; nothing here is
+> implemented by the documentation itself. Epic
+> [#1562](https://github.com/hachej/boring-ui/issues/1562).
 
 ## The product obligation
 
@@ -27,9 +30,12 @@ and owned compute do not have to precede it.
 
 | Document | Owns |
 | --- | --- |
-| [Reassessment](REASSESSMENT.md) | Findings, lifecycle responsibilities, replacement hypothesis, and what existing work already supplies. |
-| [Proposed amendments](DOCUMENT_AMENDMENTS.md) | Suggested ruling text, exact documentation targets, migration obligations, and crosswalk to existing M/E work. Nothing in its edit map is silently applied. |
-| [Coverage and sources](COVERAGE_AND_SOURCES.md) | Pinned evidence, inspection limits, and the reconciliation from the assessment baseline to this PR's base. |
+| [Rulings](../long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey) (§13) and [D33](../../DECISIONS.md#33-installed-products-run-in-their-own-runtime-one-trusted-installationactivation-path) | The obligation, three layers, runtime modes, installation path, builder class, execution home, first consumer, platform/tenant line. |
+| [Lifecycle](LIFECYCLE.md) | Release contract, composition layers, mutation lanes, E0–E6 acceptance ladder, failure injection (folded from PR #1548; §11/§12). |
+| [Reassessment](REASSESSMENT.md) | Findings that led to the rulings: what existed, what conflicted, the code/doc drift. Context, not authority. |
+| [Amendment record](DOCUMENT_AMENDMENTS.md) | Where each ruling landed in the canonical docs, and the crosswalk to M/E work. |
+| [Coverage and sources](COVERAGE_AND_SOURCES.md) | Pinned evidence and inspection limits of the reassessment. |
+| [Plan and show-me](../../issues/1562/plan.md) | Epic plan, bead graph, proof commands, gate-1 artifact. |
 
 This is a repository-ready synthesis of the September 7 reassessment, not a
 verbatim archive of its exported reports. Its source register preserves the
@@ -65,8 +71,9 @@ until their exact amendments are approved through the existing process.
 
 ## Proposed end-to-end proof
 
-These are acceptance stages to map into existing work after ratification, not
-new dispatch codes or permission to bypass dependencies.
+These are the acceptance stages; the bead map in the DIRECTION amendment
+implements them for the first consumer, and nc-7 is the only bead that can
+close the epic.
 
 | Stage | Observable acceptance |
 | --- | --- |
@@ -82,26 +89,26 @@ result, acceptance, cost, and any founder intervention. Missing proof is not a
 pass. Evaluation evidence must identify the tested behavior and cannot be
 inherited by a fork that changes it without an applicability check.
 
-## Decisions still open
+## Decisions ruled 2026-09-07
 
-| Decision | Recommendation, not an owner answer |
+| Decision | Ruling (RECONCILIATION §13) |
 | --- | --- |
-| First proof consumer | A bounded mathematics product as the technical tracer, followed by a nontechnical expert's real workflow. Founder use alone is not usability proof. |
-| Private activation | Permit explicit standing authorization within a declared scope and budget; offer preview/Keep. Routine private changes should not require founder approval. Existing authority is unchanged until the corresponding policy is approved and enforced. |
-| Upstream adoption | Compatible maintenance under the installation's declared policy; meaningful method changes and conflicts surfaced; admitted work remains attributable to its effective release, subject to current revocation. |
-| Execution home | Identify any existing `boring-v2` work, select one implementation home, and record incumbent maintenance/cutover ownership before starting a successor. Repository lookup failure does not prove absence. |
+| Execution home | **This repository.** `boring-v2` does not exist; nothing was ported. R-a stays doctrine for a later, evidence-triggered port. (§13f) |
+| Where generated code runs | **Host / product runtime / sandbox.** One runtime per installed product; modes `embedded` (single-tenant curator only, default off) · `local` · `remote` are host policy. Today's in-process hot loading is `embedded` and is gated first. (§13b, c) |
+| Runtime unit | **Per installed product**, not per agent; single-agent products match D-e unchanged. (§13b) |
+| PR #1548 | **Folded** into this pack as [LIFECYCLE.md](LIFECYCLE.md); closes superseded on merge. (§13i) |
+| First proof consumer | **Seneca mathematics tutor product** for a second learner, then a nontechnical curator. (§13g) |
+| Private activation | Preview/Keep by default; standing authorization opt-in per installation within a declared change class and budget; the founder is not the default approver. (§13d) |
+| Upstream adoption | Compatible maintenance under the installation's policy; conflicts surfaced precisely; admitted work stays attributable to its release. (§11d, §13a) |
+| Platform/tenant | Release, installation, activation, runtime modes = platform substrate; offers/pricing tenant-side. (§13h) |
 
-## Scope of the documentation PR
+## Scope of PR #1561
 
-The pack records proposals and makes them discoverable from the documentation
-index. Its separate correction to `V2-IMPLEMENTATION-SPEC.md` only propagates
-the already-ratified RECONCILIATION §9a Thread/Session split into a stale
-example and associated port wording. It does not choose the Thread storage
-shape, alter milestones, or ratify the new creation program.
-
-No code, dependency, schema, Factory policy, merge authority, infrastructure,
-customer data, or production service is changed. Existing pending decisions
-and the separate #1548 branch remain untouched. To adopt the new direction,
-record the selected rulings and explicit supersessions in the existing
-ratified documents, reconcile #1548, and amend DIRECTION once. Do not dispatch
-from this pack merely because its documentation PR exists or is merged.
+Documentation and beads only. It records the rulings in the ratified pack
+(§13, D33, dated banners at every superseded site), amends DIRECTION once,
+folds PR #1548, propagates the ratified §9a Thread/Session split into the two
+stale spec/handbook examples, and creates epic #1562 with nine beads meeting
+the Definition of Ready. No code, dependency, schema, Factory policy, merge
+authority, infrastructure, customer data or production service changes here;
+the first code change is bead `nc-0`, which gates the existing in-process
+runtime default-off.

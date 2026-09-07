@@ -1,7 +1,17 @@
-# [Workspace Evolution] Personal software, maintained through change
+# [Native Creation] Lifecycle: personal software, maintained through change
 
-2026-09-05; generalized across domains 2026-09-06. Owner-requested plan; effective on owner
-merge. **Specified, not implemented by this PR.**
+2026-09-05; generalized across domains 2026-09-06; folded into the native-creation
+pack and ratified 2026-09-07 (PR #1561, formerly PR #1548). **Specified, not
+implemented by this PR.** This is the lifecycle "how" of the program; the
+obligation, the host / product-runtime / sandbox ruling, timing, execution home
+and first consumer live in [RECONCILIATION §13](../long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey)
+and the [pack index](README.md). Where this document says generated code is
+served "only through the isolated tier" and "never registers its server
+routes", read §13(c): served inside a product runtime in `local`/`remote`
+mode, whose declared operations the host registers under the installation's
+grants. The Clinic / Charlotte / ESG consumers below remain E0 preparation
+fixtures and later structurally different consumers; the first live proof
+consumer is the Seneca mathematics tutor product (§13(g)).
 
 [DIRECTION](../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution)
 alone owns dispatch. [RECONCILIATION §11](../long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution)

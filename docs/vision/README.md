@@ -28,6 +28,23 @@ one surface owns the substrate. Every visible product is an *Experience over
 the governed work substrate*; the explicit optimization loop attaches where
 a real objective and outcome signal exist.
 
+## Native creation — the first complete product journey (ratified 2026-09-07)
+
+An expert creates useful software **inside Seneca**, uses it to complete a
+job, changes its method and interface, installs it for a separate consumer,
+and maintains it through an upstream update, **without founder source edits**.
+Creation is itself a job: the expert supplies intent, knowledge, examples,
+judgment and authorization; the platform performs the engineering. This is
+now the first complete journey, ahead of public packaging, marketplaces or
+owned compute. Three layers make it safe: the **host** brokers identity, data
+and activation; each installed product runs in its own **product runtime**
+(in-process only for a single-tenant curator, otherwise a local or remote
+sandboxed runtime); builders work in disposable **sandboxes** that are never
+the product host. Rulings: [RECONCILIATION §13](../plans/long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey);
+pack: [`native-creation/`](../plans/native-creation/README.md). The two
+sections below are its lifecycle "how", folded from the former Workspace
+Evolution pack.
+
 ## The software behind every Experience (owner-requested clarification, 2026-09-06)
 
 **Boring lets people compose and maintain software around their work.**
@@ -82,12 +99,12 @@ context are independent composition choices. A French **Documents médicaux**
 dashboard, a source-grounded expert conversation, and an analytical workbench
 can compose supported units without forking operation meaning. Records,
 knowledge and admitted server work outlive browser views; status and decisions
-stay reachable outside chat. [Composition contracts and stress cases](../plans/workspace-evolution/README.md#composable-experiences-and-ambient-work)
+stay reachable outside chat. [Composition contracts and stress cases](../plans/native-creation/LIFECYCLE.md#composable-experiences-and-ambient-work)
 make this checkable across domain fixtures before generalized platform claims.
 
 This is **specified future work, effective on owner merge**, grounded in
 [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
-[Workspace Evolution](../plans/workspace-evolution/README.md) defines the
+[Workspace Evolution](../plans/native-creation/LIFECYCLE.md) defines the
 E0–E6 proofs; [DIRECTION](../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
 controls when each may run. The 2026-09-06 amendment broadens preparation
 across Clinic and Charlotte/Seneca, then earns the live loop in one selected

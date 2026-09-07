@@ -565,7 +565,7 @@ they must separate proposed behavior, dependencies, and required evidence from
 shipped guarantees. This replaces the literal blanket reading of "docs never
 precede implementation" while preserving the G16 evidence requirement.
 
-Plan and milestone acceptance: [Workspace Evolution](../../workspace-evolution/README.md).
+Plan and milestone acceptance: [Workspace Evolution](../../native-creation/LIFECYCLE.md).
 
 ## 12. OWNER-REQUESTED AMENDMENT — 2026-09-06 (software model and cross-domain proof)
 
@@ -657,3 +657,117 @@ execution identity or authority model, frozen-port reopening, or bypass of
 confinement/accepted-work/attribution/View gates. The single-agent and ordinary
 operate paths remain first-class. Known old scope is amended by this section;
 the remaining implementation decisions are exposed in the consumer slices.
+
+## 13. OWNER RULING — 2026-09-07 (native creation: the first complete product journey)
+
+Ruled by the owner on 2026-09-07 after the native-creation reassessment and
+grill recorded in [`docs/plans/native-creation/`](../../native-creation/README.md).
+Additive to §6–§12; each clause names what it supersedes. **Merging #1561
+ratifies this section** (the same instrument pattern as #1409 for §8). Sequencing
+lives only in the DIRECTION amendment of the same date; this section decides
+meaning and authority.
+
+**(a) Product obligation and re-timing.** A tenant such as Seneca creates,
+uses, changes, installs and maintains expert software from inside the product,
+without founder source edits. Creation is itself a job. The first complete
+journey is: one private product → immutable release → installation for a
+separate consumer → retained method/UI change → supported upstream/private
+reconciliation. This **supersedes the timing** that placed Product extraction
+and creator publishing after two real verticals (VISION §5 K9; V2-IMPLEMENTATION-SPEC
+L7 and Part C M8; V2-PORT-HANDBOOK V2-13). Public marketplace, discovery,
+revenue share and cross-tenant learning remain deferred; private release and
+installation do not wait for them. The **Product** noun leaves R-e's deferred
+list for its private release/installation half only; its public-packaging
+half stays deferred. Release and Installation are product-module records
+(§11c), not kernel nouns; Rule of Three still gates kernel promotion.
+
+**(b) Three layers: host, product runtime, sandbox.**
+
+> **Host** = control plane and broker only: identity, membership, installation
+> records, activation, data/attention brokering, revocation. It never imports
+> product code except in `embedded` mode (c).
+> **Product runtime** = durable, **one per installed product**: runs the
+> product's agent loop(s), its generated domain operations, and serves its
+> generated UI. It survives any sandbox and is isolated by mode. The runtime
+> unit is the installation, not the agent; a single-agent product coincides
+> with today's per-agent-type rule (ARCHITECTURE-PLAN D-e), so nothing landed
+> changes.
+> **Sandbox** = disposable environment lease (DECISIONS D31) used by builders
+> and agents for tool calls, builds and checks. Never the product host.
+> Destroying it must leave the installed product and its data intact.
+
+**(c) Runtime modes are policy, not code.** `embedded` (in the host process;
+permitted only on single-tenant deployments where the curator is the operator;
+**default off**; today's `runtimeBackend/` hot-loading *is* this mode and is
+gated as such) · `local` (bwrap/runsc lease on the same host) · `remote`
+(hardware microVM: Vercel interim, sovereign Firecracker fleet per D31). One
+contract in every mode; the host selects the mode per installation, never the
+product or the builder. A product installed for a separate consumer on a
+shared host requires `local` or `remote`. This **supersedes** ARCHITECTURE-PLAN
+D-b's "server disabled" for the untrusted tier and **narrows** P0.6: generated
+server code is admitted *inside a product runtime* in `local`/`remote` mode,
+brokered by the host; it is never imported into the host process outside
+`embedded` mode. D-b's "no third plugin-host service" stands: the product
+runtime is the existing sandbox/runtime tier, not a new service class.
+
+**(d) One trusted installation/activation path.** A host-owned path resolves
+immutable released contributions per installation: a release declares
+requirements; an installation binds resources, grants and a runtime mode;
+activation is compare-and-set against the installation's generation and
+settles once (prepared → committed | aborted) under a request key; undo is a
+new activation of a prior release. Execution is authorized under
+actor ∩ installation ∩ job ∩ current policy. Publication, installation,
+activation and commercial launch are separate acts with separate receipts.
+This narrows DECISIONS D25/D28/D29/D30 exactly as recorded in **D33**: still
+one authorization/construction funnel, no agent-minted scope, no mutable
+registry of executable code in the trusted tier, no second composer. A curator
+or organization may set a **standing authorization** for private changes
+within a declared change class and budget; the founder is not the default
+approver. Default = preview/Keep, with standing authorization opt-in per
+installation.
+
+**(e) Builder agents are a distinct class.** Domain agents keep invariant 4
+(semantic resources, views, artifacts; never renderer concepts). An authorized
+**software builder**, seated as its own agent type with its own tool catalog,
+may inspect and change renderer code, CSS, domain operations and tests for the
+requested change — inside a candidate, never the active release, never
+protected checks or authority controls. This narrows VISION invariant 4 and the
+Port Handbook's renderer prohibition for that class only. Invariant 10 ("never
+live self-rewriting") is unchanged: builders produce candidates; the host
+activates.
+
+**(f) Execution home.** This repository (`hachej/boring-ui`) is the execution
+home for the journey. R-a (new repo, interface-first port) stands as doctrine
+but is **demoted** from "the next major build" to an evidence-triggered later
+port: `hachej/boring-v2` does not exist and nothing has been ported. DIRECTION
+records the consequence.
+
+**(g) First proof consumer.** A bounded **mathematics tutor product created by
+the Seneca curator** and installed for a second authorized learner; then a
+nontechnical curator's real workflow. Founder use alone is not usability proof.
+§12's Clinic / Charlotte / ESG consumers remain E0 preparation fixtures and
+later structurally different consumers; §12's second-consumer bar for any
+cross-domain claim stands.
+
+**(h) Platform/tenant boundary.** Re-rules the 2026-08-27 (night) Horizon
+split for Horizon 3: release identity, installation, activation, product-runtime
+modes and upgrade reconciliation are **platform substrate**. Offers, pricing,
+packaging of the offer and creator agreements stay tenant-side. "Packages and
+distribution" as a commercial motion remains tenant-side; its substrate is
+platform.
+
+**(i) Disposition of PR #1548 (Workspace Evolution).** Folded, not duplicated:
+§11 and §12 stand as the lifecycle "how" (release contract, layers, mutation
+lanes, E0–E6, cross-domain bar); this section supplies the obligation, the
+layers/modes ruling, the timing, the execution home and the first consumer.
+Its plan now lives at [`native-creation/LIFECYCLE.md`](../../native-creation/LIFECYCLE.md).
+Read §11(e)'s "served only through the isolated tier … never register its
+server routes" and E4's "C4 admitted isolation for build and serving" as:
+build in a sandbox lease, serve inside a product runtime in `local`/`remote`
+mode (c). #1548 closes as superseded when #1561 merges.
+
+**Explicit non-change.** Thread = durable job root, 0..n Sessions (§9a); no
+A2A loopback or shared-runtime room (§7, §9); one gateway session contract
+(D29); Seats grant participation, not identity; the durable-streams premise
+order; Rule of Three for kernel nouns; the premises-never-pricing split; the
+isolation floor of D31.

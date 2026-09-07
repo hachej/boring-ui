@@ -13,6 +13,7 @@ Keep out of scope:
 - Release rollback history and GC
 - Changing Charlotte’s immutable publication/activation model
 A Seat references stable `agentTypeId`, never a release digest. Seneca’s explicit deployed-product manifest supplies the deployment set now; a future lifecycle resolver can replace that source without changing Seats.
+*(2026-09-07: that resolver is the installation/activation path of RECONCILIATION §13(d) / D33. Enrollment (Seat), job participation (Thread), installation and effective release stay four distinct questions; Seats are unchanged.)*
 ---
 ## 2. Blocking review findings and dispositions
 | Finding | Severity | Evidence | Disposition |

@@ -102,7 +102,7 @@ not override later explicit supersession or turn plans into implementation.
 | S14 | [Factory policy](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/.agents/factory/policy.yaml) | Full config; old allowlist/300-line predicate. Live enforcement not tested. |
 | S15 | [Factory vision](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/docs/factory/VISION.md) | Full file; internal engineering conventions and amended human boundaries. |
 | S16 | [Self-improvement synthesis](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/docs/research/recursive-self-improvement/README.md) and [delta](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/docs/research/recursive-self-improvement/05-delta.md) | Both read; evaluation/measurement agenda and explicit source caveats. External numerical/novelty claims are not reasserted here. |
-| S17 | [Workspace Evolution PR #1548](https://github.com/hachej/boring-ui/pull/1548) and [pinned plan](https://github.com/hachej/boring-ui/blob/cb6b476aefb8d8fb3b1395a72a006264f5326d8d/docs/plans/workspace-evolution/README.md) | Separate draft branch; lifecycle design context, scope, proof levels and explicitly unbuilt runtime milestones. Current metadata rechecked for this PR. |
+| S17 | [Workspace Evolution PR #1548](https://github.com/hachej/boring-ui/pull/1548) and [pinned plan](https://github.com/hachej/boring-ui/blob/cb6b476aefb8d8fb3b1395a72a006264f5326d8d/docs/plans/native-creation/LIFECYCLE.md) | Separate draft branch; lifecycle design context, scope, proof levels and explicitly unbuilt runtime milestones. Current metadata rechecked for this PR. |
 | S18 | [Credits launch plan](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/docs/credits-launch-plan.md) | Launch choices and early limitations; payment correctness is not generalized pricing strategy. |
 | S19 | [Interview intake](https://github.com/hachej/boring-ui/blob/aaa713a19cd4a4236a27f96b5c3eb77261a15ebb/docs/plans/agent-interview-intake-plan.md) | Full PR-base read; typed briefs/confirmation/frozen provenance and explicit exclusions; production/provider claims not independently tested. |
 
@@ -126,3 +126,11 @@ Before dispatch, use a complete checkout to reconcile current types and plans,
 repeat relevant link/strategy checks, choose the actual implementation home,
 and obtain the required reviews. Revalidate any load-bearing upstream-runtime,
 scientific, economic, security, or deployment claim against primary evidence.
+
+## Ruling record
+
+2026-09-07: the owner grilled the reassessment in session (execution home,
+backend-operation tradeoff, runtime unit, host/runtime/sandbox split, #1548
+disposition, ratification instrument) and ruled; RECONCILIATION §13 and
+DECISIONS D33 record the outcome. The bead graph (epic #1562) was created from
+`docs/issues/1562/plan.md`. No runtime conformance was exercised by this PR.

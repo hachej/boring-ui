@@ -148,7 +148,9 @@ about Dockview groups, component names, tab ids, CSS, grid widths, modals.
 
 ### Supporting kernel types (from the agent-native harvest — adopt directly)
 
-```ts
+```
+
+*(2026-09-07, RECONCILIATION §13e: this prohibition binds domain agents. A seated software-builder agent may read and change renderer code, CSS, operations and tests inside a candidate release.)*ts
 interface ExecutionContext {
   runId: string; threadId?: string
   principal: PrincipalRef; authority: Authority
@@ -192,6 +194,7 @@ Deep links from agent results back into the human app: "Created candidate
 portfolio. [Open candidate comparison]".
 
 ### Deferred nouns — single list with promotion triggers
+*(2026-09-07, §13a: Product's private release/installation half is promoted; Customization's first slice — retained method/UI change through a product runtime — is the native-creation journey. Both public packaging and general declarative customization remain deferred.)*
 Product (after two real verticals) · Seat-as-full-subsystem (seatId itself IS
 P0 per ratification — the subsystem waits) · Process · Schema · Module ·
 Navigation · Customization · DataSource · **Experiment** (promote when three
@@ -475,6 +478,8 @@ autonomous infra — benchmark incumbent vs challenger, promote only if
 independently better; V2-11 first vertical (creator growth — shortest
 feedback); V2-12 second structurally different vertical (macro / industrial
 formulation / portfolio / SME GTM); V2-13 only then extract Product.
+*(2026-09-07, §13a: private release/installation no longer waits for V2-11/12;
+only public Product packaging does.)*
 
 **Research program:** H1 agents generate useful candidates · H2 explicit
 objectives/evaluators discriminate · H3 human+world feedback improves later
@@ -527,6 +532,9 @@ customer data never lives inside one agent runtime.
 
 **Future customization** (deferred): semantic/declarative over agent-rewritten
 React; inheritance Platform → Vertical → Product → Workspace → User.
+*(2026-09-07, §13: the first customization slice is builder-generated React and
+operations served in an isolated product runtime, retained through activation
+receipts; the declarative layer is still the target once Rule of Three applies.)*
 
 **Non-goals now** (full list): marketplace · creator revenue sharing · custom
 domains · universal app generator · generalized A2A network · full cloud

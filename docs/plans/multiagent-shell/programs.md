@@ -5,6 +5,20 @@ are closed. This page is their canonical home; work items exist only as
 concrete PRs/issues. Do not reopen umbrella issues for these programs — amend
 this page instead.
 
+## Native creation — the first complete product journey
+
+- Status: **ACTIVE** (ratified 2026-09-07 via #1561; RECONCILIATION §13,
+  DECISIONS D33). Epic [#1562](https://github.com/hachej/boring-ui/issues/1562);
+  beads labelled `epic:native-creation` (`nc-0` … `nc-7`); dispatch order in
+  the DIRECTION amendment of 2026-09-07.
+- Pack: [`../native-creation/README.md`](../native-creation/README.md)
+  (obligation, rulings, acceptance) and
+  [`../native-creation/LIFECYCLE.md`](../native-creation/LIFECYCLE.md)
+  (release contract, layers, E0–E6 — folded from PR #1548).
+- Relationship to this program: the premises are unchanged and are what the
+  journey's "job continuity" stage consumes; native creation is the named
+  consumer the Wave 3 rule asked for.
+
 ## Durable streams — restart-safe agent interactions
 
 - Status: **ACTIVE** — P1-A is approved and dispatchable as five beads

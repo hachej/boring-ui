@@ -125,7 +125,7 @@ and runtime implementation.
 
 Normative amendment: [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 Readable vision: [vision overview](../vision/README.md#personal-software-evolution-owner-requested-extension-2026-09-05).
-Milestones/proof: [Workspace Evolution](../plans/workspace-evolution/README.md).
+Milestones/proof: [Workspace Evolution](../plans/native-creation/LIFECYCLE.md).
 Dispatch: [DIRECTION amendment](DIRECTION.md#amendment-2026-09-05--workspace-evolution).
 
 ### 2026-09-06 — One software model, many Experiences

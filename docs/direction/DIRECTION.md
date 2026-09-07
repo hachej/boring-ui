@@ -558,7 +558,7 @@ ambient work and optional chat. Seneca is the authenticated host for the
 personal-scope proof. Pricing, offer design, and vertical GTM remain tenant-side.
 
 The binding scope is [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
-The [execution plan](../plans/workspace-evolution/README.md) owns milestone
+The [execution plan](../plans/native-creation/LIFECYCLE.md) owns milestone
 acceptance, seam ownership, rollout, and proof. This amendment alone owns
 dispatch; the M0–M8 capability crosswalk is not another queue.
 
@@ -640,3 +640,65 @@ new-repo freeze and tenant-owned commercial ordering are unchanged. Reuse
 Seneca's existing exact-package publication/activation seams where applicable;
 they do not substitute for scoped Experience activation, personal overlays,
 or general upgrade reconciliation.
+
+## Amendment 2026-09-07 — native creation is the first complete product journey
+
+**Owner ruling, ratified via #1561** (ontology/authority halves in
+`RECONCILIATION.md` §13 and `DECISIONS.md` D33; this section is the sequencing
+record). The owner's Seneca vision — an expert creates, installs for a separate
+consumer, adapts and maintains software inside the product without founder
+source edits — was reassessed against the ratified plan
+([`plans/native-creation/`](../plans/native-creation/README.md)) and grilled
+the same day. Rulings:
+
+| Decision | Ruling |
+|---|---|
+| Product journey | **First complete journey** = private product → immutable release → install for a separate consumer → retained change → reconciliation. Supersedes K9 / M8 "only after two verticals" timing. Public marketplace stays deferred. |
+| Layers | **Host / product runtime / sandbox** (§13b). One runtime per installed product; sandbox is a disposable lease, never the product host. |
+| Runtime modes | **Policy, not code** (§13c): `embedded` (single-tenant curator only, **default off**) · `local` (bwrap/runsc) · `remote` (microVM). Separate-consumer installs on a shared host need `local`/`remote`. Today's in-process `runtimeBackend/` hot-loading is `embedded` and is gated first. |
+| Installation path | One trusted host-owned path: release manifest → installation → CAS activation receipt → undo as activation (§13d, D33 narrows D25/D28/D29/D30 and ARCH-PLAN D-b/P0.6). |
+| Builder agents | Distinct agent class with its own tool catalog; may edit renderer/operation code inside candidates; never activates (§13e). |
+| Execution home | **This repository.** R-a demoted to an evidence-triggered later port; `boring-v2` does not exist (§13f). |
+| First consumer | **Seneca mathematics tutor product**, installed for a second learner; then a nontechnical curator (§13g). |
+| Platform/tenant | Release/installation/activation/runtime modes = platform substrate; offers and pricing stay tenant-side. Re-rules the 2026-08-27 (night) Horizon 3 line (§13h). |
+| PR #1548 | **Folded** into `plans/native-creation/LIFECYCLE.md`; §11/§12 stand as the lifecycle "how"; closes superseded on merge (§13i). |
+
+### The program beside Wave A, not instead of it
+
+Wave A (premises) is unchanged and keeps its priority. Native creation is the
+**named consumer** those premises were waiting for: its "job continuity"
+acceptance stage *is* [durable-streams] Level D, its job root is the ratified
+Thread, and its builder attribution is [seat-audit-attribution]. Nothing here
+reopens the shell/engine freeze. The merge-queue preflight standing obligation
+applies before any premise bead as before; native-creation beads are not
+premise beads and dispatch on their own gates below.
+
+### Bead map — epic #1562, label `epic:native-creation`
+
+| Slice | Bead | Priority | Dispatch gate |
+|---|---|---|---|
+| nc-0 Ground truth: gate the embedded runtime default-off | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | P0 | **now** |
+| nc-1 Release manifest record + stores | `wt-391-forward-nc-1-release-manifest-6xyh` | P0 | **now** |
+| nc-2 Installation record + CAS activation receipts | `wt-391-forward-nc-2-installation-activation-z4pa` | P0 | after nc-1 |
+| nc-3 `product.v1.*` bridge operations | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | P1 | after nc-0, nc-2 |
+| nc-4a `ProductRuntimeHost` seam + embedded adapter + conformance | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | P1 | after nc-0, nc-3 |
+| nc-4b `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | P1 | after nc-4a |
+| nc-5 Isolated generated front component (UI surface) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | P1 | after nc-3; one UI-surface worker at a time |
+| nc-6 `product-builder` agent seat | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | P1 | after nc-4a |
+| nc-7 First journey acceptance (math-tutor fixture, second user, `local` mode) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | P1 | after nc-4b, nc-5, nc-6 — **the only bead that can close the epic** |
+
+Every bead carries WHAT, WHY, file scope, proof path, acceptance and a
+fits-one-session judgment (bead-ready.md). Plan and show-me artifacts:
+[`docs/issues/1562/`](../issues/1562/plan.md).
+
+**Dispatch consequence:** nc-0 and nc-1 are dispatchable tonight in parallel
+(disjoint file scope); nc-2 follows nc-1; nc-3 and nc-4a follow. The
+worker cap of three and the single UI-surface worker rule apply. Zero
+autonomous merges holds: gate 2 remains an owner decision on the epic PR.
+
+**Done-bar:** nc-7 passes with zero founder source edits after the fixture
+request, the installed product survives destruction of the builder sandbox
+and one upstream fixture update, and the receipt is committed under
+`docs/issues/1562/`. A configuration-only success earns its own credit and
+does not close the epic. Founder interventions per accepted retained
+adaptation is the standing metric.

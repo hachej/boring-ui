@@ -1,9 +1,9 @@
 # Reassessment: from agent runtime to expert-created software
 
-> **PROPOSED — NON-DISPATCHABLE.** September 7, 2026. Product/architecture
-> assessment, not a shipped-capability claim or an amendment to locked rules.
-> Read [the pack status and open choices](README.md) first. Source labels refer
-> to [the coverage register](COVERAGE_AND_SOURCES.md).
+> **CONTEXT — ruled 2026-09-07.** The findings below led to RECONCILIATION §13
+> and DECISIONS D33; they are kept as the record of *why*, not as authority.
+> Where a "proposed correction" here differs from §13, §13 wins. Source labels
+> refer to [the coverage register](COVERAGE_AND_SOURCES.md).
 
 Assessment baseline: `4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6`.
 PR base reconciliation: `aaa713a19cd4a4236a27f96b5c3eb77261a15ebb`.
