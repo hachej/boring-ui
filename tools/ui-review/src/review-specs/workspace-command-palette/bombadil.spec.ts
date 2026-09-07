@@ -77,13 +77,16 @@ const palette = extract((state): SafePaletteState => {
     && completedResources.some((url) => url.includes("/api/v1/ui/state"))
   const shell = state.document.querySelector(COMMAND_PALETTE_SHELL_SELECTOR)
   const viewportIsCompact = state.window.innerWidth <= COMMAND_PALETTE_COMPACT_MAX_WIDTH
-  const rootLayoutAligned = shell !== null
+  const shellMatchesViewport = (): boolean => shell !== null
     && (shell.getAttribute("data-mobile-shell") === "true") === viewportIsCompact
+  let rootLayoutAligned = shellMatchesViewport()
   if (!rootLayoutAligned && shell !== null) {
-    // The shell already reconciles responsive state from resize. Dispatching
-    // one idempotent signal per mismatched observation prevents Bombadil from
-    // enumerating controls from a stale layout while preserving fail-closed waits.
+    // The shell already reconciles responsive state from resize. Dispatch one
+    // idempotent signal per mismatched observation, then re-read the marker:
+    // React can flush the existing resize update synchronously during dispatch.
+    // Keep waiting only when the rendered shell still has not caught up.
     state.window.dispatchEvent(new Event("resize"))
+    rootLayoutAligned = shellMatchesViewport()
   }
   const dialogs = visibleElements('[role="dialog"], [aria-modal="true"]')
     .filter((element, index, all) => all.indexOf(element) === index)
