@@ -10,6 +10,7 @@ export type UrlPanePaneProps = PaneProps<UrlPanePaneParams>
 export function UrlPanePane({ params, className }: UrlPanePaneProps) {
   return createElement(UrlPane, {
     url: params?.url,
+    runtimePreview: params?.runtimePreview,
     title: params?.title,
     className,
   })
