@@ -44,6 +44,8 @@ export interface WorkspaceInboxItem {
   decision?: string
   /** Every field the owner filled in, so the row can show their notes. */
   answerValues?: Record<string, AskUserAnswerValue>
+  nonBlocking?: boolean
+  deliveryStatus?: "undelivered" | "delivered"
 }
 
 export type WorkspaceInboxItemViewModel = WorkspaceInboxItem & {
@@ -138,8 +140,8 @@ export function pendingSummaryToInboxItem(
     description: summary.context ?? "ask-user.question",
     source: { type: "ask-user", label: "question" },
     sessionId: summary.sessionId,
-    agentTypeId: options.fallbackAgentTypeId ?? null,
-    chatAvailable: !!options.fallbackAgentTypeId,
+    agentTypeId: summary.agentTypeId ?? options.fallbackAgentTypeId ?? null,
+    chatAvailable: !!(summary.agentTypeId ?? options.fallbackAgentTypeId),
     targetLabel: summary.questionId,
     artifacts: [
       surfaceArtifact,
@@ -149,6 +151,7 @@ export function pendingSummaryToInboxItem(
     updatedAt: summary.updatedAt || summary.createdAt,
     priority: 10,
     actions: [],
+    nonBlocking: summary.blocking === false,
   }
 }
 
@@ -230,5 +233,7 @@ export function answeredSummaryToInboxItem(
     actions: [],
     ...(summary.decision ? { decision: summary.decision } : {}),
     answerValues: summary.values,
+    nonBlocking: summary.blocking === false,
+    ...(summary.deliveryStatus ? { deliveryStatus: summary.deliveryStatus } : {}),
   }
 }

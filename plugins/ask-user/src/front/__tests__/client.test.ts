@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createQuestionsClient, deriveIdempotencyKey, normalizeQuestion, readPendingQuestionHintFromState, readPendingQuestionHintsFromState } from "../client"
+import { createQuestionsClient, deriveIdempotencyKey, normalizeQuestion, readPendingQuestionHintFromState, readPendingQuestionHintsFromState, readPendingQuestionReceipt } from "../client"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 
@@ -51,6 +51,32 @@ describe("ask-user front client", () => {
     expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "legacy", sessionId: "s-legacy", status: "ready" })
   })
 
+  it("reads every question-indexed hint when one session has several questions", () => {
+    const state = {
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        hint: null,
+        hintsBySession: { s1: { questionId: "q2", sessionId: "s1", status: "ready", blocking: false } },
+        hintsByQuestion: {
+          q1: { questionId: "q1", sessionId: "s1", status: "ready", blocking: false },
+          q2: { questionId: "q2", sessionId: "s1", status: "ready", blocking: false },
+        },
+      },
+    }
+
+    expect(readPendingQuestionHintsFromState(state)).toEqual([
+      { questionId: "q2", sessionId: "s1", status: "ready", blocking: false },
+      { questionId: "q1", sessionId: "s1", status: "ready", blocking: false },
+    ])
+  })
+
+  it("recognizes only a complete non-blocking pending tool receipt", () => {
+    expect(readPendingQuestionReceipt({ details: { questionId: "q1", status: "pending", blocking: false } }))
+      .toEqual({ questionId: "q1", status: "pending", blocking: false })
+    expect(readPendingQuestionReceipt({ details: { questionId: "q1", status: "answered", blocking: false } })).toBeNull()
+    expect(readPendingQuestionReceipt({ details: { questionId: "q1", status: "pending", blocking: true } })).toBeNull()
+    expect(readPendingQuestionReceipt({ questionId: "q1", status: "pending", blocking: false })).toBeNull()
+  })
+
   it("hydrates plural associated artifacts atomically without accepting malformed values", () => {
     const artifact = { id: "plan", surfaceKind: "file", target: "docs/plan.md", title: "Plan" }
     const base = { ...question, artifacts: [artifact] }
@@ -79,6 +105,18 @@ describe("ask-user front client", () => {
     await createQuestionsClient().pending("default", controller.signal)
 
     expect(fetchMock.mock.calls[0]![1]!.signal).toBe(controller.signal)
+  })
+
+  it("requests an exact pending question when a session has several", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { pending: null } }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await createQuestionsClient().pending("default", undefined, "q-specific")
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toMatchObject({
+      op: "ask-user.v1.pending",
+      input: { sessionId: "default", questionId: "q-specific" },
+    })
   })
 
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {

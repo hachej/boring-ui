@@ -731,7 +731,7 @@ export async function createWorkspacesModeApp(opts: {
   type WorkspaceBridgeCore = {
     registry: ReturnType<typeof workspaceServer.createWorkspaceBridgeRuntimeCore>["registry"]
     idempotencyStore: InstanceType<typeof workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore>
-    extraTools: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["agentOptions"]["extraTools"]>
+    projectAgentTools: ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["projectAgentTools"]
     preservedUiStateKeys: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["preservedUiStateKeys"]>
     packageResources: ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["packageResources"]
   }
@@ -783,10 +783,18 @@ export async function createWorkspacesModeApp(opts: {
         ownerWorkspaceId: workspace.id,
         handlers: pluginCollection.workspaceBridgeHandlers ?? [],
       })
+      const agentToolsByAgentTypeId = new Map<string, ReturnType<typeof pluginCollection.projectAgentTools>>()
       return {
         registry: bridgeCore.registry,
         idempotencyStore: new workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore(),
-        extraTools: pluginCollection.agentOptions.extraTools ?? [],
+        projectAgentTools(agentTypeId) {
+          let tools = agentToolsByAgentTypeId.get(agentTypeId)
+          if (!tools) {
+            tools = pluginCollection.projectAgentTools(agentTypeId)
+            agentToolsByAgentTypeId.set(agentTypeId, tools)
+          }
+          return tools
+        },
         preservedUiStateKeys: pluginCollection.preservedUiStateKeys ?? [],
         packageResources: pluginCollection.packageResources,
       }
@@ -1096,7 +1104,7 @@ export async function createWorkspacesModeApp(opts: {
         },
       }
     },
-    async resolveAuthorizedAgentRuntimeScope({ authorizedScope, intent }) {
+    async resolveAuthorizedAgentRuntimeScope({ authorizedScope, agentTypeId, intent }) {
       const workspace = trustedLocalScope.workspace(authorizedScope)
       if (intent.operation === "reload") {
         const buildResourceDigestInput = () => {
@@ -1157,7 +1165,7 @@ export async function createWorkspacesModeApp(opts: {
         ...workspaceServer.createWorkspaceUiTools(getBridge(workspace.id), {
           workspaceRoot: sandboxRuntimeAdapter.workspaceFsCapability === "strong" ? workspace.path : undefined,
         }),
-        ...(await getWorkspaceBridgeCore(workspace)).extraTools,
+        ...(await getWorkspaceBridgeCore(workspace)).projectAgentTools(agentTypeId),
         automationTool(),
         agentServer.createPluginDiagnosticsTool({
           getLastReloadDiagnostics: () => lastReloadDiagnostics.get(pluginRuntimeKey(workspace)) ?? [],

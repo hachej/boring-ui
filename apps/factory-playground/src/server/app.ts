@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { resolveFactoryEpicKey, createFactoryHostedApp } from '@hachej/boring-factory/server'
+import { createFactoryHostedApp } from '@hachej/boring-factory/server'
 
 export interface CreateFactoryPlaygroundOptions {
   readonly appRoot: string
@@ -15,14 +15,14 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
   const workspaceRoot = resolve(options.workspaceRoot ?? env.BORING_FACTORY_WORKSPACE_ROOT ?? options.repositoryRoot)
   const stateRoot = resolve(env.BORING_FACTORY_STATE_ROOT ?? resolve(options.appRoot, '.factory-state'))
   await mkdir(stateRoot, { recursive: true })
-  const epicKey = await resolveFactoryEpicKey(workspaceRoot, env)
   return await createFactoryHostedApp({
     appRoot: options.appRoot,
     repositoryRoot: options.repositoryRoot,
     workspaceRoot,
-    epicKey,
     stateRoot,
     env,
+    ...(env.BORING_FACTORY_EPIC_KEY?.trim() ? { epicKey: env.BORING_FACTORY_EPIC_KEY.trim() } : {}),
+    ...(env.BORING_FACTORY_FEATURE_NAME?.trim() ? { featureName: env.BORING_FACTORY_FEATURE_NAME.trim() } : {}),
     models: {
       orchestrator: env.BORING_FACTORY_ORCHESTRATOR_MODEL,
       worker: env.BORING_FACTORY_WORKER_MODEL,
