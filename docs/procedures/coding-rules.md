@@ -10,7 +10,9 @@
 - Never push directly to remote `main`. Use a short-lived branch/worktree unless
   the owner or Kanzen trunk procedure explicitly authorizes local-main work;
   keep local `main` green.
-- Run relevant lint/typecheck/tests before considering work done.
+- Run relevant lint/typecheck/tests before considering work done. Every code PR
+  also needs the independent [cross-package abstraction gate](coding-invariants.md#cross-package-abstraction-review-hard-gate);
+  green checks alone do not prove package boundaries are intact.
 - Never stash, revert, or overwrite another agent's uncommitted work.
   Investigate unexpected changes first.
 
@@ -39,10 +41,12 @@
 - Do not refactor adjacent code unless the task needs it.
 - Remove imports/variables/functions made unused by your changes.
 - Mention unrelated dead code; do not delete it unless asked.
-- Keep review slices small: plans and PRs should target about 1,500 added
-  production-code lines max, excluding tests, docs, generated output, and
-  snapshots. If the work is larger, decompose it into slices or stacked PRs
-  before coding, or record an explicit owner-approved exception.
+- Keep slices small and independently reversible. Owner review routing follows
+  [boring-loop](boring-loop.md#where-the-owner-reviews): more than 500 added +
+  deleted production-code lines under `packages/` triggers owner review, as do
+  protected boundaries at any size. This replaces the old 1,500-added-line
+  review budget. Split for independent value, never to evade a protected gate;
+  plugin location and small diffs do not excuse abstraction leaks.
 
 ## Verifiable Goals
 

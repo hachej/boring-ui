@@ -35,7 +35,21 @@ function requestedSession(init?: RequestInit): string | undefined {
   return (JSON.parse(init.body) as { input?: { sessionId?: string } }).input?.sessionId
 }
 
+function requestedQuestion(init?: RequestInit): string | undefined {
+  if (typeof init?.body !== "string") return undefined
+  return (JSON.parse(init.body) as { input?: { questionId?: string } }).input?.questionId
+}
+
 describe("createPendingRefreshCoordinator", () => {
+  it("preserves a non-blocking hint after hydrating the full question", () => {
+    const store = createQuestionsStore()
+    store.setPending({ ...baseQuestion, blocking: false })
+
+    expect(store.getPendingHints()).toEqual([
+      expect.objectContaining({ questionId: "q-active", blocking: false }),
+    ])
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -87,6 +101,42 @@ describe("createPendingRefreshCoordinator", () => {
     deactivate()
   })
 
+  it("hydrates and caches multiple pending questions in one session by question id", async () => {
+    const store = createQuestionsStore()
+    const first = { ...baseQuestion, questionId: "q-first", title: "First", blocking: false as const }
+    const second = { ...baseQuestion, questionId: "q-second", title: "Second", blocking: false as const }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/api/v1/ui/state")) {
+        return Response.json({
+          "questions.pending": {
+            hint: null,
+            hintsBySession: { active: { questionId: second.questionId, sessionId: "active", status: "ready", blocking: false } },
+            hintsByQuestion: {
+              [first.questionId]: { questionId: first.questionId, sessionId: "active", status: "ready", blocking: false },
+              [second.questionId]: { questionId: second.questionId, sessionId: "active", status: "ready", blocking: false },
+            },
+          },
+        })
+      }
+      const questionId = requestedQuestion(init)
+      return Response.json({ ok: true, output: { pending: questionId === first.questionId ? first : questionId === second.questionId ? second : null } })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const coordinator = createPendingRefreshCoordinator({ apiBaseUrl: "", store })
+    const deactivate = coordinator.activate("active")
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getPendingByQuestionId(first.questionId)).toMatchObject({ title: "First" })
+    expect(store.getPendingByQuestionId(second.questionId)).toMatchObject({ title: "Second" })
+    expect(fetchMock.mock.calls.filter(([, init]) => requestedQuestion(init) === first.questionId)).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([, init]) => requestedQuestion(init) === second.questionId)).toHaveLength(1)
+    store.removePending(first.questionId)
+    expect(store.getPendingByQuestionId(first.questionId)).toBeNull()
+    expect(store.getPendingByQuestionId(second.questionId)).toMatchObject({ title: "Second" })
+    deactivate()
+  })
+
   it("does not restore a background question removed by newer authoritative state", async () => {
     const store = createQuestionsStore()
     const background = { ...baseQuestion, questionId: "q-background", sessionId: "background" }
@@ -116,6 +166,46 @@ describe("createPendingRefreshCoordinator", () => {
     resolveBackground?.(Response.json({ ok: true, output: { pending: background } }))
     await vi.advanceTimersByTimeAsync(0)
     expect(store.getPending("background")).toBeNull()
+    deactivate()
+  })
+
+  it("does not restore an obsolete question from a same-session batch after a late hydration", async () => {
+    const store = createQuestionsStore()
+    const first = { ...baseQuestion, questionId: "q-first", title: "First", blocking: false as const }
+    const second = { ...baseQuestion, questionId: "q-second", title: "Second", blocking: false as const }
+    let includeFirst = true
+    let resolveFirst: ((response: Response) => void) | undefined
+    const delayedFirst = new Promise<Response>((resolve) => { resolveFirst = resolve })
+    const state = () => ({
+      "questions.pending": {
+        hint: null,
+        hintsBySession: { active: { questionId: second.questionId, sessionId: "active", status: "ready", blocking: false } },
+        hintsByQuestion: Object.fromEntries((includeFirst ? [first, second] : [second]).map((candidate) => [
+          candidate.questionId,
+          { questionId: candidate.questionId, sessionId: "active", status: "ready", blocking: false },
+        ])),
+      },
+    })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/api/v1/ui/state")) return Response.json(state())
+      if (requestedQuestion(init) === first.questionId) return await delayedFirst
+      if (requestedQuestion(init) === second.questionId) return Response.json({ ok: true, output: { pending: second } })
+      return Response.json({ ok: true, output: { pending: null } })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const coordinator = createPendingRefreshCoordinator({ apiBaseUrl: "", store })
+    const deactivate = coordinator.activate("active")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getPendingByQuestionId(second.questionId)).toMatchObject({ title: "Second" })
+
+    includeFirst = false
+    coordinator.request()
+    await vi.advanceTimersByTimeAsync(0)
+    resolveFirst?.(Response.json({ ok: true, output: { pending: first } }))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getPendingByQuestionId(first.questionId)).toBeNull()
+    expect(store.getPendingByQuestionId(second.questionId)).toMatchObject({ title: "Second" })
     deactivate()
   })
 

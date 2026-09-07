@@ -76,9 +76,9 @@ seats:
       - name: triage
         digest: sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766
       - name: owner-gate
-        digest: sha256:7c09cb681037c763a27575eb558b0468a609530ac461ac52d2b201d2cdfb30d7
+        digest: sha256:15b78aa8e6a776b534179eb7d719d03d335d31d6ec12fc9b47dae5b0e8eab46c
       - name: handoff
-        digest: sha256:884918c3e5dabd33302f82b494ccaa3e1228c4733e7e90f2649c2e8d2808d762
+        digest: sha256:2dd01ee97452f5f36827fb4be6e1307eb05daba1ede64f4e148e2285df9097a9
 
   # The owner's standing counterpart: pinned, conversational, full authority.
   # Dispatches work and reads bead END-STATES only.
@@ -86,13 +86,13 @@ seats:
     agentTypeId: boring-orchestrator
     skills:
       - name: plan
-        digest: sha256:6c28c19da113cafc0af58883fc352b21896ed784b911b0593f0ed6254801d709
+        digest: sha256:686301214eb21f4163da19eb199a7dcd8c3647241bd6066913ff19f9306047d2
       - name: feedback
         digest: sha256:707ae8fd12ace225be7d6de8c345c7d73cf9aa07763f138419f6d6b26b92a9af
       - name: owner-gate
-        digest: sha256:7c09cb681037c763a27575eb558b0468a609530ac461ac52d2b201d2cdfb30d7
+        digest: sha256:15b78aa8e6a776b534179eb7d719d03d335d31d6ec12fc9b47dae5b0e8eab46c
       - name: handoff
-        digest: sha256:884918c3e5dabd33302f82b494ccaa3e1228c4733e7e90f2649c2e8d2808d762
+        digest: sha256:2dd01ee97452f5f36827fb4be6e1307eb05daba1ede64f4e148e2285df9097a9
       - name: show-me
         digest: sha256:4ad15fdf99fa06a953ce4b8d2457c7afbce5bca2f1759daf5594b4cfc13d6c96
 
@@ -103,10 +103,10 @@ seats:
     agentTypeId: boring-worker
     skills:
       - name: exec
-        digest: sha256:248eae90f7c6f1260e7654772ba5c3a0339834c7bd649ec456a61af933e04ba9
+        digest: sha256:2565b415d4790855d277c96909f4847686445af7707b6de68a04e4ba2d8c79eb
       - name: fresh-eyes
         digest: sha256:58f6cfb66cc2a31238e5c033f42b69b7fbd6089d06c9f6d5108caa7035e5f565
       - name: owner-gate
-        digest: sha256:7c09cb681037c763a27575eb558b0468a609530ac461ac52d2b201d2cdfb30d7
+        digest: sha256:15b78aa8e6a776b534179eb7d719d03d335d31d6ec12fc9b47dae5b0e8eab46c
       - name: handoff
-        digest: sha256:884918c3e5dabd33302f82b494ccaa3e1228c4733e7e90f2649c2e8d2808d762
+        digest: sha256:2dd01ee97452f5f36827fb4be6e1307eb05daba1ede64f4e148e2285df9097a9

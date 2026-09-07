@@ -173,6 +173,7 @@ async function dispatchGatewayInput(
           requestId,
           clientNonce,
           content,
+          ...(input.requireIdle ? { requireIdle: true as const } : {}),
           ...(input.displayMessage ? { displayContent: input.displayMessage } : {}),
           ...(input.model ? { model: input.model } : {}),
           ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),

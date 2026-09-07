@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
