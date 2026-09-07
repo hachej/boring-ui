@@ -10,22 +10,26 @@ export type AskUserPendingHint = {
   sessionId: string
   toolCallId?: string
   status: AskUserQuestion["status"]
+  blocking?: false
 }
 
 export type AskUserPendingState = {
   /**
    * Compatibility/current hint for older frontends.
-   * Non-authoritative in multi-session state; new readers must use hintsBySession.
+   * Non-authoritative in multi-question state; readers use hintsByQuestion when present.
    */
   hint: AskUserPendingHint | null
   /** Session-indexed hints so background sessions can show a badge without exposing answer tokens. */
   hintsBySession: Record<string, AskUserPendingHint>
+  /** Present when one session has multiple pending questions. */
+  hintsByQuestion?: Record<string, AskUserPendingHint>
 }
 
 export class AskUserStatePublisher {
   private unsubscribe?: () => void
   private publishChain = Promise.resolve()
   private readonly hintsBySession = new Map<string, AskUserPendingHint>()
+  private readonly hintsByQuestion = new Map<string, AskUserPendingHint>()
   private generation = 0
   private cancelRetry?: () => void
   /** Snapshot of the last pending state whose invalidation the bridge accepted.
@@ -45,8 +49,9 @@ export class AskUserStatePublisher {
     }
     const activeGeneration = ++this.generation
     this.unsubscribe = this.store.subscribe((change) => {
+      if (change.reason === "transcript") return
       void this.enqueuePublish(
-        (generation) => this.publishSessionNow(change.sessionId, generation),
+        (generation) => this.publishSessionNow(change.sessionId, generation, true),
         activeGeneration,
       )
     })
@@ -65,6 +70,7 @@ export class AskUserStatePublisher {
     this.cancelRetry?.()
     this.cancelRetry = undefined
     this.hintsBySession.clear()
+    this.hintsByQuestion.clear()
     this.lastAcceptedInvalidationSnapshot = undefined
     await this.publishChain
   }
@@ -80,20 +86,22 @@ export class AskUserStatePublisher {
     await this.publishSessionNow(sessionId)
   }
 
-  private async publishSessionNow(sessionId: string, generation?: number): Promise<void> {
-    const hint = toPendingHint(await this.store.getPending(sessionId))
+  private async publishSessionNow(sessionId: string, generation?: number, forceNotify = false): Promise<void> {
+    const pending = await this.store.listPending()
     if (!this.isCurrent(generation)) return
-    if (hint) this.hintsBySession.set(sessionId, hint)
-    else this.hintsBySession.delete(sessionId)
+    this.rebuildHints(pending)
+    const hint = this.hintsBySession.get(sessionId) ?? null
     const nextPending = this.currentPendingState(hint)
-    await this.publishPendingState(nextPending, generation)
+    await this.publishPendingState(nextPending, generation, forceNotify)
   }
 
   private currentPendingState(preferredHint?: AskUserPendingHint | null): AskUserPendingState {
     const hintsBySession = Object.fromEntries(this.hintsBySession.entries())
+    const hasSameSessionBatch = this.hintsByQuestion.size > this.hintsBySession.size
     return {
       hint: preferredHint ?? Object.values(hintsBySession)[0] ?? null,
       hintsBySession,
+      ...(hasSameSessionBatch ? { hintsByQuestion: Object.fromEntries(this.hintsByQuestion.entries()) } : {}),
     }
   }
 
@@ -147,18 +155,27 @@ export class AskUserStatePublisher {
   private async initializeFromStore(generation?: number): Promise<void> {
     const pending = await this.store.listPending()
     if (!this.isCurrent(generation)) return
-    this.hintsBySession.clear()
-    for (const question of pending) {
-      const hint = toPendingHint(question)
-      if (hint) this.hintsBySession.set(hint.sessionId, hint)
-    }
+    this.rebuildHints(pending)
     const nextPending = this.currentPendingState()
     await this.publishPendingState(nextPending, generation)
+  }
+
+  private rebuildHints(pending: AskUserQuestion[]): void {
+    this.hintsBySession.clear()
+    this.hintsByQuestion.clear()
+    for (const question of pending) {
+      const hint = toPendingHint(question)
+      if (!hint) continue
+      this.hintsByQuestion.set(hint.questionId, hint)
+      const current = this.hintsBySession.get(hint.sessionId)
+      if (!current || current.blocking === false || question.blocking !== false) this.hintsBySession.set(hint.sessionId, hint)
+    }
   }
 
   private async publishPendingState(
     nextPending: AskUserPendingState,
     generation?: number,
+    forceNotify = false,
   ): Promise<void> {
     const nextSnapshot = JSON.stringify(nextPending)
     let stateChanged = false
@@ -170,7 +187,7 @@ export class AskUserStatePublisher {
         : undefined
     })
     if (!this.isCurrent(generation)) return
-    if (!stateChanged && this.lastAcceptedInvalidationSnapshot === nextSnapshot) return
+    if (!forceNotify && !stateChanged && this.lastAcceptedInvalidationSnapshot === nextSnapshot) return
     await this.notifyPendingChanged(generation)
     if (!this.isCurrent(generation)) return
     this.lastAcceptedInvalidationSnapshot = nextSnapshot
@@ -194,6 +211,7 @@ function toPendingHint(question: AskUserQuestion | null): AskUserPendingHint | n
     sessionId: question.sessionId,
     ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
     status: question.status,
+    ...(question.blocking === false ? { blocking: false as const } : {}),
   }
 }
 

@@ -9,6 +9,11 @@ disable-model-invocation: true
 Drive one executable TODO, plan, Beads epic, or validated UI packet to
 `ready-for-human`; never merge.
 
+Every rule here is a default except proof and honesty. The host and the owner decide. A host notice, a host tool result, or an owner instruction relayed in a prompt overrides any default in this skill; comply in the same turn and record the override in the gate card or handoff (AGENTS.md hard rule 1).
+The host's `factory_status` classification of claims is the truth; the
+Orchestrator recovers stale claims with `recover_stale_claims`, and a Worker
+whose turn is about to end without finishing writes the handoff comment first.
+
 Read the artifact, `docs/procedures/boring-loop.md`, and
 `docs/procedures/MODEL-CARD.md`. Load only the needed procedure:
 

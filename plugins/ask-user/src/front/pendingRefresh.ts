@@ -14,6 +14,7 @@ type RefreshRun = {
   generation: number
   activeSessionId: string | null
   requestedSessions: Set<string>
+  requestedQuestions: Map<string, string>
 }
 
 type HydrationRun = {
@@ -31,7 +32,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
 export type PendingRefreshCoordinator = {
   activate(activeSessionId?: string | null): () => void
-  request(sessionId?: string): void
+  request(sessionId?: string, questionId?: string): void
 }
 
 export function createPendingRefreshCoordinator({
@@ -42,6 +43,7 @@ export function createPendingRefreshCoordinator({
 }: PendingRefreshOptions): PendingRefreshCoordinator {
   const client = createQuestionsClient({ apiBaseUrl, headers: authHeaders })
   const requestedSessions = new Set<string>()
+  const requestedQuestions = new Map<string, string>()
   const hydrationRuns = new Map<string, HydrationRun>()
   let generation = 0
   let activeGeneration: number | null = null
@@ -82,11 +84,11 @@ export function createPendingRefreshCoordinator({
     }
   }
 
-  async function fetchPending(sessionId: string): Promise<PendingResult> {
+  async function fetchPending(sessionId: string, questionId?: string): Promise<PendingResult> {
     try {
       return {
         sessionId,
-        pending: await runBounded((signal) => client.pending(sessionId, signal)),
+        pending: await runBounded((signal) => client.pending(sessionId, signal, questionId)),
         succeeded: true,
       }
     } catch {
@@ -94,21 +96,24 @@ export function createPendingRefreshCoordinator({
     }
   }
 
-  function hydrateSession(sessionId: string, key: string, runGeneration: number, force: boolean): void {
-    const current = hydrationRuns.get(sessionId)
+  function hydrateQuestion(sessionId: string, questionId: string | undefined, key: string, runGeneration: number, force: boolean): void {
+    const targetKey = questionId ?? `session:${sessionId}`
+    const current = hydrationRuns.get(targetKey)
     if (!force && current?.generation === runGeneration && current.key === key) return
 
     const hydration: HydrationRun = { generation: runGeneration, key }
-    hydrationRuns.set(sessionId, hydration)
-    void fetchPending(sessionId)
+    hydrationRuns.set(targetKey, hydration)
+    void fetchPending(sessionId, questionId)
       .then((result) => {
-        if (isActive(runGeneration) && hydrationRuns.get(sessionId) === hydration && result.succeeded) {
-          store.setPending(result.pending, result.sessionId)
+        if (isActive(runGeneration) && hydrationRuns.get(targetKey) === hydration && result.succeeded) {
+          if (result.pending) store.setPending(result.pending)
+          else if (questionId) store.removePending(questionId)
+          else store.setPending(null, result.sessionId)
         }
       })
       .catch(() => undefined)
       .finally(() => {
-        if (hydrationRuns.get(sessionId) === hydration) hydrationRuns.delete(sessionId)
+        if (hydrationRuns.get(targetKey) === hydration) hydrationRuns.delete(targetKey)
       })
   }
 
@@ -132,19 +137,37 @@ export function createPendingRefreshCoordinator({
     if (!isLatestRefresh(run)) return
     if (hasAuthoritativeHints) store.setPendingHints(hints)
 
-    const hintsBySession = new Map(hints.map((hint) => [hint.sessionId, hint]))
-    const sessionsToHydrate = new Set(run.requestedSessions)
-    if (run.activeSessionId) sessionsToHydrate.add(run.activeSessionId)
-    for (const hint of hints) sessionsToHydrate.add(hint.sessionId)
-    if (hasAuthoritativeHints) {
-      for (const sessionId of hydrationRuns.keys()) {
-        if (!sessionsToHydrate.has(sessionId)) hydrationRuns.delete(sessionId)
+    const hintedSessions = new Set(hints.map((hint) => hint.sessionId))
+    const activeHydrationTargets = new Set<string>()
+    for (const hint of hints) {
+      activeHydrationTargets.add(hint.questionId)
+      hydrateQuestion(
+        hint.sessionId,
+        hint.questionId,
+        `${hint.questionId}:${hint.status ?? ""}`,
+        run.generation,
+        run.requestedQuestions.has(hint.questionId) || run.requestedSessions.has(hint.sessionId),
+      )
+    }
+    for (const [questionId, sessionId] of run.requestedQuestions) {
+      activeHydrationTargets.add(questionId)
+      if (!hints.some((hint) => hint.questionId === questionId)) {
+        hydrateQuestion(sessionId, questionId, `${questionId}:requested`, run.generation, true)
       }
     }
-    for (const sessionId of sessionsToHydrate) {
-      const hint = hintsBySession.get(sessionId)
-      const key = hint ? `${hint.questionId}:${hint.status ?? ""}` : "no-hint"
-      hydrateSession(sessionId, key, run.generation, run.requestedSessions.has(sessionId))
+    const fallbackSessions = new Set(run.requestedSessions)
+    if (run.activeSessionId) fallbackSessions.add(run.activeSessionId)
+    const exactRequestedSessions = new Set(run.requestedQuestions.values())
+    for (const sessionId of fallbackSessions) {
+      if (!hintedSessions.has(sessionId) && !exactRequestedSessions.has(sessionId)) {
+        activeHydrationTargets.add(`session:${sessionId}`)
+        hydrateQuestion(sessionId, undefined, "no-hint", run.generation, run.requestedSessions.has(sessionId))
+      }
+    }
+    if (hasAuthoritativeHints) {
+      for (const targetKey of hydrationRuns.keys()) {
+        if (!activeHydrationTargets.has(targetKey)) hydrationRuns.delete(targetKey)
+      }
     }
   }
 
@@ -158,15 +181,18 @@ export function createPendingRefreshCoordinator({
         generation: activeGeneration,
         activeSessionId,
         requestedSessions: new Set(requestedSessions),
+        requestedQuestions: new Map(requestedQuestions),
       }
       requestedSessions.clear()
+      requestedQuestions.clear()
       latestRefresh = run
       void runRefresh(run).catch(() => undefined)
     }, 0)
   }
 
-  function request(sessionId?: string): void {
-    if (sessionId) requestedSessions.add(sessionId)
+  function request(sessionId?: string, questionId?: string): void {
+    if (sessionId && questionId) requestedQuestions.set(questionId, sessionId)
+    else if (sessionId) requestedSessions.add(sessionId)
     schedule()
   }
 
@@ -177,6 +203,8 @@ export function createPendingRefreshCoordinator({
     for (const controller of requestControllers) controller.abort()
     requestControllers.clear()
     hydrationRuns.clear()
+    requestedSessions.clear()
+    requestedQuestions.clear()
     latestRefresh = null
     activeGeneration = null
     activeSessionId = null

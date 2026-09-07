@@ -1,578 +1,252 @@
 #!/usr/bin/env node
-// factory-epic.mjs — launch one Factory instance per work thread (PR / branch of this
-// repo, or an epic in another repository), each with its own Inbox/Agents UI.
-//
-// Usage:
-//   node scripts/factory-epic.mjs up --feature "<Feature Name>" (--pr <n> | --branch <name> | --repo <url-or-path> [--base <ref>]) [--provider vercel|local-simulation] [--models orch=...,worker=...,reviewer=...]
-//   node scripts/factory-epic.mjs list
-//   node scripts/factory-epic.mjs down <epic-key> [--keep-worktree]
-//   node scripts/factory-epic.mjs intake
-//
-// Run from apps/factory-playground/ (or from anywhere via `pnpm --filter factory-playground epic ...`).
-import { execFile, execFileSync, spawn } from 'node:child_process'
-import { once } from 'node:events'
-import { createServer } from 'node:net'
+// Factory Hub launcher: provision epic worktrees, then register them in one host.
+import { execFile, spawn } from 'node:child_process'
 import { openSync } from 'node:fs'
-import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
-import { dirname, resolve } from 'node:path'
+import { mkdir, stat } from 'node:fs/promises'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const exec = promisify(execFile)
-
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const APP_ROOT = resolve(SCRIPT_DIR, '..')
-const STATE_ROOT = resolve(APP_ROOT, '.factory-state')
-const REGISTRY_PATH = resolve(STATE_ROOT, 'epics.json')
-
-// This repo's own toplevel (the checkout apps/factory-playground lives in). New
-// worktrees for this repo's own branches/PRs, and clones of other repos, both
-// live under `<REPO_ROOT>/.worktrees/` per AGENTS.md's worktree rule.
-const REPO_ROOT = (await exec('git', ['-C', SCRIPT_DIR, 'rev-parse', '--show-toplevel'])).stdout.trim()
-
-const RESERVED_API_PORTS = new Set([5230])
-const RESERVED_UI_PORTS = new Set([5220])
-
-// ---------------------------------------------------------------------------
-// small utilities
-// ---------------------------------------------------------------------------
+export const REPOSITORY_ROOT = process.env.BORING_FACTORY_WORKSPACE_ROOT
+  ? resolve(process.env.BORING_FACTORY_WORKSPACE_ROOT)
+  : (await exec('git', ['-C', SCRIPT_DIR, 'rev-parse', '--show-toplevel'])).stdout.trim()
+const STATE_ROOT = resolve(process.env.BORING_FACTORY_STATE_ROOT || resolve(APP_ROOT, '.factory-state'))
+const API_PORT = process.env.AGENT_API_PORT || '5230'
+const UI_PORT = process.env.PORT || '5220'
+const API_ROOT = process.env.BORING_FACTORY_API_ROOT || `http://127.0.0.1:${API_PORT}`
 
 function slugify(input) {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-') || 'epic'
-}
-
-function titleCaseWords(words) {
-  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-}
-
-/** Best-effort 2-4 word Title Case feature name derived from a PR/branch title, stripping a leading [bracket]/prefix. */
-function deriveFeatureNameFromTitle(rawTitle) {
-  let stripped = rawTitle.trim()
-  // Repeatedly strip leading [bracket] groups, bare #issue refs, and a
-  // conventional-commit prefix (feat:, fix(scope):, ...).
-  for (let i = 0; i < 6; i++) {
-    const before = stripped
-    stripped = stripped
-      .replace(/^\[[^\]]*\]\s*/, '')
-      .replace(/^#\d+\s*/, '')
-      .replace(/^(feat|fix|chore|docs|refactor|test|perf)(\([^)]*\))?:\s*/i, '')
-      .trim()
-    if (stripped === before) break
-  }
-  const words = stripped.split(/\s+/).filter(Boolean).slice(0, 4)
-  const minWords = words.length >= 2 ? words : stripped.split(/\s+/).filter(Boolean).slice(0, 2)
-  return titleCaseWords(minWords.length > 0 ? minWords : ['Untitled', 'Work'])
-}
-
-async function readJsonFile(path, fallback) {
-  try {
-    return JSON.parse(await readFile(path, 'utf8'))
-  } catch (error) {
-    if (error.code === 'ENOENT') return fallback
-    throw error
-  }
-}
-
-async function writeJsonFileAtomic(path, value) {
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.${randomUUID()}.tmp`
-  await writeFile(tmp, JSON.stringify(value, null, 2))
-  await rename(tmp, path)
-}
-
-async function readRegistry() {
-  return readJsonFile(REGISTRY_PATH, { epics: {} })
-}
-
-async function writeRegistry(registry) {
-  await writeJsonFileAtomic(REGISTRY_PATH, registry)
-}
-
-/** True if a TCP listener could bind 127.0.0.1:port right now (i.e. the port is free). */
-function isPortFree(port) {
-  return new Promise((resolvePromise) => {
-    const server = createServer()
-    server.once('error', () => resolvePromise(false))
-    server.once('listening', () => server.close(() => resolvePromise(true)))
-    server.listen(port, '127.0.0.1')
-  })
-}
-
-/** True if something is actively listening on 127.0.0.1:port. */
-async function isPortLive(port) {
-  return !(await isPortFree(port))
-}
-
-async function pickFreePorts(registry) {
-  const usedApi = new Set([...RESERVED_API_PORTS, ...Object.values(registry.epics).map((e) => e.apiPort)])
-  const usedUi = new Set([...RESERVED_UI_PORTS, ...Object.values(registry.epics).map((e) => e.uiPort)])
-  for (let k = 1; k < 500; k++) {
-    const apiPort = 5230 + 2 * k
-    const uiPort = 5220 + 2 * k
-    if (usedApi.has(apiPort) || usedUi.has(uiPort)) continue
-    // eslint-disable-next-line no-await-in-loop
-    if (!(await isPortFree(apiPort)) || !(await isPortFree(uiPort))) continue
-    return { apiPort, uiPort }
-  }
-  throw new Error('could not find a free API/UI port pair after 500 attempts')
-}
-
-/** `${VAR:-$(vault kv get -field=<field> <path>)}` in JS: env wins; vault is a best-effort, non-fatal fallback. */
-function resolveSecret(envValue, vaultPath, vaultField) {
-  const fromEnv = envValue?.trim()
-  if (fromEnv) return fromEnv
-  try {
-    return execFileSync('vault', ['kv', 'get', '-field', vaultField, vaultPath], { encoding: 'utf8' }).trim() || undefined
-  } catch {
-    return undefined
-  }
-}
-
-function resolveGhAuthToken() {
-  try {
-    return execFileSync('gh', ['auth', 'token'], { encoding: 'utf8' }).trim() || undefined
-  } catch {
-    return undefined
-  }
-}
-
-async function tailscaleIpv4() {
-  try {
-    const { stdout } = await exec('tailscale', ['ip', '-4'])
-    return stdout.trim().split('\n')[0] || undefined
-  } catch {
-    return undefined
-  }
+  return input.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-') || 'epic'
 }
 
 function parseArgs(argv) {
   const positional = []
   const flags = {}
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
-    if (arg.startsWith('--')) {
-      const key = arg.slice(2)
-      const next = argv[i + 1]
-      if (next !== undefined && !next.startsWith('--')) {
-        flags[key] = next
-        i++
-      } else {
-        flags[key] = true
-      }
-    } else {
-      positional.push(arg)
-    }
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]
+    if (!arg.startsWith('--')) { positional.push(arg); continue }
+    const key = arg.slice(2)
+    const next = argv[index + 1]
+    if (next !== undefined && !next.startsWith('--')) { flags[key] = next; index += 1 } else flags[key] = true
   }
   return { positional, flags }
 }
 
-function parseModels(modelsFlag) {
-  const result = {}
-  if (!modelsFlag || modelsFlag === true) return result
-  for (const pair of modelsFlag.split(',')) {
-    const [key, ...rest] = pair.split('=')
-    const value = rest.join('=').trim()
-    if (!key || !value) continue
-    if (key.trim() === 'orch') result.orchestrator = value
-    else if (key.trim() === 'worker') result.worker = value
-    else if (key.trim() === 'reviewer') result.reviewer = value
+function parseModels(value) {
+  if (!value || value === true) return undefined
+  const models = {}
+  for (const pair of value.split(',')) {
+    const [rawSeat, ...rest] = pair.split('=')
+    const model = rest.join('=').trim()
+    const seat = rawSeat.trim() === 'orch' ? 'orchestrator' : rawSeat.trim()
+    if (['orchestrator', 'worker', 'reviewer'].includes(seat) && model) models[seat] = model
   }
-  return result
+  return Object.keys(models).length > 0 ? models : undefined
 }
 
-async function ensureGitIdentity(cwd) {
-  const hasIdentity = async (key) => {
-    try {
-      const { stdout } = await exec('git', ['config', key], { cwd })
-      return stdout.trim().length > 0
-    } catch {
-      return false
-    }
-  }
-  if (await hasIdentity('user.email') && await hasIdentity('user.name')) return
-  const name = resolveSecret(undefined, 'secret/agent/boringdata-agent', 'username')
-  const email = resolveSecret(undefined, 'secret/agent/boringdata-agent', 'email')
-  if (name) await exec('git', ['config', 'user.name', name], { cwd })
-  if (email) await exec('git', ['config', 'user.email', email], { cwd })
+async function directoryExists(path) {
+  try { return (await stat(path)).isDirectory() } catch { return false }
 }
 
-async function ensureBeadsInit(cwd) {
-  const beadsDir = resolve(cwd, '.beads')
-  const exists = await readJsonFile(resolve(beadsDir, 'config.yaml'), null).then(() => true).catch(() => false)
-  if (exists) return
+async function request(path, options = {}) {
+  let response
   try {
-    await exec('br', ['init', '--no-auto-flush'], { cwd })
-  } catch (error) {
-    console.warn(`[factory-epic] warning: 'br init --no-auto-flush' failed in ${cwd}: ${error.message}`)
-  }
-}
-
-async function dirExists(path) {
-  try {
-    const info = await stat(path)
-    return info.isDirectory()
-  } catch {
-    return false
-  }
-}
-
-// ---------------------------------------------------------------------------
-// up
-// ---------------------------------------------------------------------------
-
-async function resolveWorktreeForThisRepo({ pr, branch, slug }) {
-  await exec('git', ['-C', REPO_ROOT, 'fetch', 'origin'])
-  let branchName = branch
-  if (pr) {
-    const { stdout } = await exec('gh', ['pr', 'view', String(pr), '--json', 'headRefName,headRepository'], { cwd: REPO_ROOT })
-    const info = JSON.parse(stdout)
-    branchName = info.headRefName
-    console.log(`[factory-epic] PR #${pr} head branch: ${branchName} (repo: ${info.headRepository?.name ?? 'origin'})`)
-  }
-  const worktreePath = resolve(REPO_ROOT, '.worktrees', `epic-${slug}`)
-  if (await dirExists(worktreePath)) {
-    console.log(`[factory-epic] reusing existing worktree ${worktreePath}`)
-    return { workspaceRoot: worktreePath, branch: branchName, worktreeGitRoot: REPO_ROOT, repoUrl: undefined }
-  }
-  try {
-    await exec('git', ['-C', REPO_ROOT, 'worktree', 'add', worktreePath, branchName])
-  } catch (error) {
-    const message = String(error.stderr || error.message || '')
-    if (message.includes('already checked out') || message.includes('already used by worktree')) {
-      console.warn(`[factory-epic] branch '${branchName}' is already checked out elsewhere (e.g. this is your current worktree's own branch); creating a detached worktree at its HEAD instead. Commits made in the new worktree will need an explicit push to move '${branchName}'.`)
-      await exec('git', ['-C', REPO_ROOT, 'worktree', 'add', '--detach', worktreePath, branchName])
-    } else {
-      throw error
-    }
-  }
-  return { workspaceRoot: worktreePath, branch: branchName, worktreeGitRoot: REPO_ROOT, repoUrl: undefined }
-}
-
-function repoSlugFromUrl(repo) {
-  const base = repo.replace(/\.git$/, '').replace(/\/$/, '')
-  const last = base.split(/[/:]/).pop()
-  return slugify(last || 'repo')
-}
-
-async function resolveWorktreeForExternalRepo({ repo, base, slug }) {
-  const repoSlug = repoSlugFromUrl(repo)
-  const mirrorPath = resolve(REPO_ROOT, '.worktrees', 'repos', repoSlug)
-  const epicPath = resolve(REPO_ROOT, '.worktrees', 'repos', `${repoSlug}-${slug}`)
-
-  if (!(await dirExists(mirrorPath))) {
-    console.log(`[factory-epic] cloning ${repo} into ${mirrorPath}`)
-    await mkdir(dirname(mirrorPath), { recursive: true })
-    await exec('git', ['clone', repo, mirrorPath])
-  } else {
-    console.log(`[factory-epic] reusing existing clone ${mirrorPath} (fetching)`)
-    await exec('git', ['-C', mirrorPath, 'fetch', 'origin']).catch((error) => {
-      console.warn(`[factory-epic] warning: fetch in ${mirrorPath} failed: ${error.message}`)
+    response = await fetch(`${API_ROOT}${path}`, {
+      ...options,
+      headers: { 'content-type': 'application/json', ...(options.headers || {}) },
     })
-  }
-
-  const baseRef = base || await (async () => {
-    try {
-      const { stdout } = await exec('git', ['-C', mirrorPath, 'symbolic-ref', 'refs/remotes/origin/HEAD'])
-      return stdout.trim().replace('refs/remotes/origin/', '')
-    } catch {
-      return 'main'
-    }
-  })()
-
-  const branchName = `epic/${slug}`
-  if (await dirExists(epicPath)) {
-    console.log(`[factory-epic] reusing existing epic worktree ${epicPath}`)
-    return { workspaceRoot: epicPath, branch: branchName, worktreeGitRoot: mirrorPath, repoUrl: repo }
-  }
-
-  try {
-    await exec('git', ['-C', mirrorPath, 'worktree', 'add', '-B', branchName, epicPath, `origin/${baseRef}`])
   } catch (error) {
-    // Branch may already exist locally in the mirror from a prior partial run.
-    await exec('git', ['-C', mirrorPath, 'worktree', 'add', epicPath, branchName])
+    throw new Error(`Factory Hub is not reachable at ${API_ROOT}. Start it with \`pnpm --filter factory-playground epic hub up\` or \`pnpm --filter factory-playground dev\`. (${error.message})`)
   }
-  try {
-    await exec('git', ['-C', epicPath, 'push', '-u', 'origin', branchName])
-  } catch (error) {
-    console.warn(`[factory-epic] warning: could not push ${branchName} to origin yet (${error.message}). Push it manually before using the vercel provider.`)
-  }
-  return { workspaceRoot: epicPath, branch: branchName, worktreeGitRoot: mirrorPath, repoUrl: repo }
+  const text = await response.text()
+  let body
+  try { body = text ? JSON.parse(text) : undefined } catch { body = text }
+  if (!response.ok) throw new Error(`${options.method || 'GET'} ${path} failed (${response.status}): ${typeof body === 'string' ? body : JSON.stringify(body)}`)
+  return body
 }
 
-async function waitForMeta(apiPort, timeoutMs = 180_000) {
+async function waitForHub(timeoutMs = 180_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${apiPort}/api/v1/workspace/meta`)
-      if (response.ok) return await response.json()
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 1500))
+    try { return await request('/api/v1/workspace/meta') } catch {}
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_500))
   }
-  throw new Error(`timed out waiting for http://127.0.0.1:${apiPort}/api/v1/workspace/meta`)
+  throw new Error(`timed out waiting for Factory Hub at ${API_ROOT}`)
+}
+
+function assertExpectedHub(meta) {
+  if (meta?.workspaceId !== 'factory-hub') throw new Error(`${API_ROOT} is not a Factory Hub (workspaceId=${meta?.workspaceId ?? 'missing'})`)
+  if (typeof meta.workspaceRoot !== 'string') throw new Error(`Factory Hub at ${API_ROOT} did not report a workspaceRoot`)
+  if (resolve(meta.workspaceRoot) !== REPOSITORY_ROOT) {
+    throw new Error(`Factory Hub at ${API_ROOT} serves ${meta.workspaceRoot}, not ${REPOSITORY_ROOT}`)
+  }
+  return meta
+}
+
+async function cmdHubUp() {
+  let existing
+  try {
+    existing = await request('/api/v1/workspace/meta')
+  } catch (error) {
+    if (!String(error.message).startsWith('Factory Hub is not reachable')) throw error
+  }
+  if (existing) {
+    const meta = assertExpectedHub(existing)
+    console.log(`[factory-hub] already running at ${API_ROOT} (${meta.workspaceId})`)
+    return
+  }
+  const logsRoot = resolve(STATE_ROOT, 'logs')
+  await mkdir(logsRoot, { recursive: true })
+  const logPath = resolve(logsRoot, 'hub.log')
+  const log = openSync(logPath, 'a')
+  const child = spawn('pnpm', ['--filter', 'factory-playground', 'dev'], {
+    cwd: REPOSITORY_ROOT,
+    detached: true,
+    stdio: ['ignore', log, log],
+    env: {
+      ...process.env,
+      BORING_FACTORY_WORKSPACE_ROOT: REPOSITORY_ROOT,
+      BORING_FACTORY_STATE_ROOT: STATE_ROOT,
+      BORING_AGENT_SESSION_ROOT: process.env.BORING_AGENT_SESSION_ROOT || resolve(STATE_ROOT, 'sessions'),
+      AGENT_API_PORT: API_PORT,
+      PORT: UI_PORT,
+    },
+  })
+  child.unref()
+  const meta = assertExpectedHub(await waitForHub())
+  console.log(`[factory-hub] running ${meta.projectName} at http://127.0.0.1:${UI_PORT}/ (API ${API_ROOT}, pid ${child.pid}, log ${logPath})`)
+}
+
+async function resolveBaseRef(flags) {
+  if (flags.pr !== undefined) {
+    const number = String(flags.pr)
+    if (!/^\d+$/.test(number)) throw new Error('--pr must be a pull request number')
+    const ref = `refs/remotes/origin/factory-pr-${number}`
+    await exec('git', ['fetch', 'origin', `pull/${number}/head:${ref}`], { cwd: REPOSITORY_ROOT })
+    return ref
+  }
+  if (typeof flags.branch === 'string') {
+    try {
+      await exec('git', ['rev-parse', '--verify', flags.branch], { cwd: REPOSITORY_ROOT })
+      return flags.branch
+    } catch {
+      await exec('git', ['rev-parse', '--verify', `origin/${flags.branch}`], { cwd: REPOSITORY_ROOT })
+      return `origin/${flags.branch}`
+    }
+  }
+  return 'origin/main'
+}
+
+async function provisionWorktree(epicKey, baseRef) {
+  const branch = `epic/${epicKey}`
+  const worktree = resolve(REPOSITORY_ROOT, '.worktrees', `epic-${epicKey}`)
+  if (!(await directoryExists(worktree))) {
+    await mkdir(resolve(worktree, '..'), { recursive: true })
+    const branchExists = await exec('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: REPOSITORY_ROOT })
+      .then(() => true, () => false)
+    if (branchExists) await exec('git', ['worktree', 'add', worktree, branch], { cwd: REPOSITORY_ROOT })
+    else await exec('git', ['worktree', 'add', '-b', branch, worktree, baseRef], { cwd: REPOSITORY_ROOT })
+  }
+  const actualBranch = (await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktree })).stdout.trim()
+  if (actualBranch !== branch) throw new Error(`${worktree} is on ${actualBranch}, expected ${branch}`)
+
+  console.log(`[factory-epic] provisioning dependencies in ${worktree}`)
+  await exec('pnpm', ['install', '--offline', '--frozen-lockfile'], { cwd: worktree, maxBuffer: 16 * 1024 * 1024 })
+  await exec('pnpm', ['build'], { cwd: worktree, maxBuffer: 16 * 1024 * 1024 })
+  return worktree
 }
 
 async function cmdUp(flags) {
-  const feature = flags.feature
-  if (!feature || feature === true) throw new Error('--feature "<Feature Name>" is required')
-  const slug = slugify(feature)
-
-  const modeCount = ['pr', 'branch', 'repo'].filter((k) => flags[k] !== undefined).length
-  if (modeCount !== 1) throw new Error('exactly one of --pr, --branch, or --repo is required')
-
-  let worktree
-  if (flags.pr !== undefined) {
-    worktree = await resolveWorktreeForThisRepo({ pr: flags.pr, slug })
-  } else if (flags.branch !== undefined) {
-    worktree = await resolveWorktreeForThisRepo({ branch: flags.branch, slug })
-  } else {
-    worktree = await resolveWorktreeForExternalRepo({ repo: flags.repo, base: typeof flags.base === 'string' ? flags.base : undefined, slug })
-  }
-
-  await ensureGitIdentity(worktree.workspaceRoot)
-  await ensureBeadsInit(worktree.workspaceRoot)
-
-  const registry = await readRegistry()
-  if (registry.epics[slug]) {
-    throw new Error(`epic '${slug}' is already registered (workspaceRoot: ${registry.epics[slug].workspaceRoot}). Run 'down ${slug}' first, or pick a different --feature.`)
-  }
-  const { apiPort, uiPort } = await pickFreePorts(registry)
-
-  const provider = flags.provider === 'vercel' ? 'vercel' : 'local-simulation'
-  const models = parseModels(flags.models)
-
-  const epicStateRoot = resolve(STATE_ROOT, 'epics', slug)
-  const logsDir = resolve(epicStateRoot, 'logs')
-  await mkdir(logsDir, { recursive: true })
-
-  const openaiKey = resolveSecret(process.env.OPENAI_API_KEY, 'secret/openai', 'api_key')
-  const anthropicKey = resolveSecret(process.env.ANTHROPIC_API_KEY, 'secret/agent/anthropic', 'api_key')
-
-  const env = {
-    ...process.env,
-    ...(openaiKey ? { OPENAI_API_KEY: openaiKey } : {}),
-    ...(anthropicKey ? { ANTHROPIC_API_KEY: anthropicKey } : {}),
-    BORING_FACTORY_WORKSPACE_ROOT: worktree.workspaceRoot,
-    BORING_FACTORY_EPIC_KEY: slug,
-    BORING_FACTORY_FEATURE_NAME: feature,
-    BORING_FACTORY_STATE_ROOT: epicStateRoot,
-    BORING_AGENT_SESSION_ROOT: resolve(epicStateRoot, 'sessions'),
-    BORING_FACTORY_SANDBOX_PROVIDER: provider,
-    BORING_SANDBOX_TELEMETRY_SALT: randomUUID(),
-    AGENT_API_PORT: String(apiPort),
-    PORT: String(uiPort),
-    ...(models.orchestrator ? { BORING_FACTORY_ORCHESTRATOR_MODEL: models.orchestrator } : {}),
-    ...(models.worker ? { BORING_FACTORY_WORKER_MODEL: models.worker } : {}),
-    ...(models.reviewer ? { BORING_FACTORY_REVIEWER_MODEL: models.reviewer } : {}),
-  }
-  if (provider === 'vercel' && !env.BORING_FACTORY_GIT_TOKEN) {
-    const ghToken = resolveGhAuthToken()
-    if (ghToken) env.BORING_FACTORY_GIT_TOKEN = ghToken
-  }
-
-  const hostLog = resolve(logsDir, 'host.log')
-  const hostFd = openSync(hostLog, 'a')
-  const host = spawn('pnpm', ['exec', 'tsx', 'scripts/factory-host.mts'], {
-    cwd: APP_ROOT,
-    env,
-    detached: true,
-    stdio: ['ignore', hostFd, hostFd],
+  if (flags.repo !== undefined) throw new Error('--repo is reserved for the future multi-repository registry; this hub currently accepts its canonical repository only')
+  if (flags.provider !== undefined) throw new Error('--provider is a Factory Hub setting; set BORING_FACTORY_SANDBOX_PROVIDER before `hub up`')
+  const featureName = typeof flags.feature === 'string' ? flags.feature.trim() : ''
+  if (!featureName) throw new Error('--feature "<Feature Name>" is required')
+  const epicKey = typeof flags.key === 'string' ? flags.key.trim() : slugify(featureName)
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(epicKey)) throw new Error('--key must be a lowercase slug (letters, numbers, and single hyphens)')
+  assertExpectedHub(await request('/api/v1/workspace/meta'))
+  await exec('git', ['fetch', 'origin'], { cwd: REPOSITORY_ROOT })
+  const baseRef = await resolveBaseRef(flags)
+  const branch = `epic/${epicKey}`
+  const worktree = await provisionWorktree(epicKey, baseRef)
+  const entry = await request('/api/v1/factory/epics', {
+    method: 'POST',
+    body: JSON.stringify({
+      epicKey,
+      featureName,
+      worktree,
+      branch,
+      ...(typeof flags.request === 'string' ? { requestFile: flags.request } : {}),
+      ...(parseModels(flags.models) ? { models: parseModels(flags.models) } : {}),
+      start: flags.start !== 'false',
+    }),
   })
-  host.unref()
-
-  const viteLog = resolve(logsDir, 'vite.log')
-  const viteFd = openSync(viteLog, 'a')
-  console.log(`[factory-epic] launching epic '${slug}' (feature: ${feature}) — API ${apiPort}, UI ${uiPort}`)
-  console.log(`[factory-epic]   workspaceRoot: ${worktree.workspaceRoot}`)
-  console.log(`[factory-epic]   host log: ${hostLog}`)
-  console.log(`[factory-epic]   vite log: ${viteLog}`)
-  const vite = spawn('pnpm', ['exec', 'vite', '--port', String(uiPort), '--host', '127.0.0.1'], {
-    cwd: APP_ROOT,
-    env: { ...env, BORING_FACTORY_VITE_FRONTEND_ONLY: '1' },
-    detached: true,
-    stdio: ['ignore', viteFd, viteFd],
-  })
-  vite.unref()
-
-  let meta
-  try {
-    meta = await waitForMeta(apiPort)
-  } catch (error) {
-    console.error(`[factory-epic] ${error.message}`)
-    for (const logPath of [hostLog, viteLog]) {
-      console.error(`[factory-epic] tail of ${logPath}:`)
-      try {
-        const { stdout } = await exec('tail', ['-n', '60', logPath])
-        console.error(stdout)
-      } catch {
-        // ignore
-      }
-    }
-    throw error
-  }
-
-  registry.epics[slug] = {
-    epicKey: slug,
-    featureName: feature,
-    workspaceRoot: worktree.workspaceRoot,
-    branch: worktree.branch,
-    repoUrl: worktree.repoUrl,
-    worktreeGitRoot: worktree.worktreeGitRoot,
-    apiPort,
-    uiPort,
-    provider,
-    pids: [host.pid, vite.pid],
-    startedAt: new Date().toISOString(),
-    stateRoot: epicStateRoot,
-  }
-  await writeRegistry(registry)
-
-  const tsIp = await tailscaleIpv4()
-  console.log('')
-  console.log(`[factory-epic] up: epic '${slug}' — ${meta.projectName ?? 'Boring Factory'} (${meta.defaultAgentTypeId})`)
-  console.log(`[factory-epic]   UI:  http://127.0.0.1:${uiPort}/`)
-  if (tsIp) console.log(`[factory-epic]   UI (tailscale): http://${tsIp}:${uiPort}/`)
-  console.log(`[factory-epic]   API: http://127.0.0.1:${apiPort}/api/v1/workspace/meta`)
-  console.log('[factory-epic] Next: open the UI, start on Boring Orchestrator, and paste your request.')
-  console.log(`[factory-epic] Or drive it headlessly: EPIC_WT=${worktree.workspaceRoot} EPIC_KEY=${slug} API_PORT=${apiPort} node scripts/live-epic-acceptance.mjs`)
-}
-
-// ---------------------------------------------------------------------------
-// list
-// ---------------------------------------------------------------------------
-
-async function beadCounts(workspaceRoot, epicKey) {
-  try {
-    const { stdout } = await exec('br', ['list', '--label', `epic:${epicKey}`, '--json', '--no-auto-flush'], { cwd: workspaceRoot })
-    const parsed = JSON.parse(stdout)
-    const issues = Array.isArray(parsed) ? parsed : parsed.issues ?? []
-    const counts = { open: 0, in_progress: 0, closed: 0, other: 0 }
-    for (const issue of issues) {
-      const status = issue.status ?? 'other'
-      if (status in counts) counts[status]++
-      else counts.other++
-    }
-    return counts
-  } catch {
-    return undefined
+  console.log(`[factory-epic] registered ${entry.epicKey} (${entry.branch}) in Factory Hub`)
+  console.log(`[factory-epic] Orchestrator: ${entry.orchestratorSessionId}; UI: http://127.0.0.1:${UI_PORT}/`)
+  if (entry.kickoff?.status === 'failed') {
+    console.warn(`[factory-epic] kickoff was not accepted (${entry.kickoff.message}); the registered Orchestrator session is ready to retry`)
   }
 }
 
 async function cmdList() {
-  const registry = await readRegistry()
-  const entries = Object.values(registry.epics)
-  if (entries.length === 0) {
-    console.log('No registered epics. Run `node scripts/factory-epic.mjs up ...` or `intake` for candidates.')
-    return
-  }
+  assertExpectedHub(await request('/api/v1/workspace/meta'))
+  const entries = await request('/api/v1/factory/epics')
+  if (entries.length === 0) { console.log('No registered epics.'); return }
   for (const entry of entries) {
-    const live = await isPortLive(entry.apiPort)
-    const counts = await beadCounts(entry.workspaceRoot, entry.epicKey)
-    const countsStr = counts ? `open=${counts.open} in_progress=${counts.in_progress} closed=${counts.closed}` : 'beads: n/a'
-    console.log(`${entry.epicKey}\t${live ? 'live' : 'down'}\tapi=${entry.apiPort} ui=${entry.uiPort}\t${countsStr}`)
-    console.log(`  feature: ${entry.featureName}`)
-    console.log(`  branch:  ${entry.branch}${entry.repoUrl ? ` (${entry.repoUrl})` : ''}`)
-    console.log(`  root:    ${entry.workspaceRoot}`)
+    const gate = entry.pendingQuestion ? ' gate=pending' : ''
+    console.log(`${entry.epicKey}\t${entry.status}\t${entry.headSha?.slice(0, 8) || 'no-head'}\torch=${entry.orchestratorStatus || 'none'}${gate}\tbeads=${entry.beads.open}/${entry.beads.closed} open/closed`)
+    console.log(`  ${entry.featureName} · ${entry.branch} · ${entry.worktree}`)
   }
 }
 
-// ---------------------------------------------------------------------------
-// down
-// ---------------------------------------------------------------------------
-
-async function cmdDown(epicKey, flags) {
-  if (!epicKey) throw new Error('usage: down <epic-key> [--keep-worktree]')
-  const registry = await readRegistry()
-  const entry = registry.epics[epicKey]
-  if (!entry) throw new Error(`no registered epic '${epicKey}'`)
-
-  for (const pid of entry.pids ?? []) {
-    try {
-      process.kill(-pid, 'SIGTERM')
-    } catch {
-      try {
-        process.kill(pid, 'SIGTERM')
-      } catch {
-        // already dead
-      }
-    }
-  }
-
-  delete registry.epics[epicKey]
-  await writeRegistry(registry)
-  console.log(`[factory-epic] stopped epic '${epicKey}' and removed its registry entry.`)
-
-  if (flags['keep-worktree']) {
-    console.log(`[factory-epic] keeping worktree at ${entry.workspaceRoot} (--keep-worktree)`)
-    return
-  }
-  try {
-    await exec('git', ['-C', entry.worktreeGitRoot, 'worktree', 'remove', entry.workspaceRoot])
-    console.log(`[factory-epic] removed worktree ${entry.workspaceRoot}`)
-  } catch (error) {
-    console.warn(`[factory-epic] could not remove worktree ${entry.workspaceRoot} automatically (${error.message}). Clean it up manually, or re-run with --keep-worktree next time.`)
-  }
+async function cmdDown(epicKey) {
+  if (!epicKey) throw new Error('usage: down <epic-key>')
+  assertExpectedHub(await request('/api/v1/workspace/meta'))
+  const entry = await request(`/api/v1/factory/epics/${encodeURIComponent(epicKey)}/close`, { method: 'POST', body: '{}' })
+  console.log(`[factory-epic] marked '${entry.epicKey}' closed; worktree kept at ${entry.worktree}`)
 }
 
-// ---------------------------------------------------------------------------
-// intake
-// ---------------------------------------------------------------------------
+export async function cmdAdopt(epicKey, flags) {
+  if (!epicKey) throw new Error('usage: adopt <epic-key> --session <id> --transcript <absolute-path>')
+  if (typeof flags.session !== 'string' || !flags.session.trim()) throw new Error('--session <id> is required')
+  if (typeof flags.transcript !== 'string' || !flags.transcript.trim()) throw new Error('--transcript <absolute-path> is required')
+  if (!isAbsolute(flags.transcript)) throw new Error('--transcript must be an absolute path')
+  assertExpectedHub(await request('/api/v1/workspace/meta'))
+  const entry = await request(`/api/v1/factory/epics/${encodeURIComponent(epicKey)}/adopt`, {
+    method: 'POST',
+    body: JSON.stringify({ orchestratorSessionId: flags.session.trim(), transcriptPath: flags.transcript }),
+  })
+  console.log(`[factory-epic] adopted Orchestrator ${entry.orchestratorSessionId} for '${entry.epicKey}'`)
+}
 
 async function cmdIntake() {
-  let prs
-  try {
-    const { stdout } = await exec('gh', ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,headRefName,updatedAt,isDraft'], { cwd: REPO_ROOT })
-    prs = JSON.parse(stdout)
-  } catch (error) {
-    console.error(`[factory-epic] 'gh pr list' failed: ${error.message}`)
-    return
-  }
-  if (prs.length === 0) {
-    console.log('No open PRs found.')
-    return
-  }
-  console.log(`Found ${prs.length} open PR(s). Candidate 'up' commands (never run automatically):\n`)
-  for (const pr of prs) {
-    const feature = deriveFeatureNameFromTitle(pr.title)
-    const draftTag = pr.isDraft ? ' [draft]' : ''
-    console.log(`# #${pr.number}${draftTag} ${pr.title} (${pr.headRefName}, updated ${pr.updatedAt})`)
-    console.log(`node scripts/factory-epic.mjs up --feature "${feature}" --pr ${pr.number} --provider local-simulation\n`)
+  const { stdout } = await exec('gh', ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,headRefName,isDraft'], { cwd: REPOSITORY_ROOT })
+  const pulls = JSON.parse(stdout)
+  if (pulls.length === 0) { console.log('No open PRs found.'); return }
+  for (const pull of pulls) {
+    console.log(`# #${pull.number}${pull.isDraft ? ' [draft]' : ''} ${pull.title} (${pull.headRefName})`)
+    console.log(`pnpm --filter factory-playground epic up --feature ${JSON.stringify(pull.title)} --pr ${pull.number}\n`)
   }
 }
-
-// ---------------------------------------------------------------------------
-// entrypoint
-// ---------------------------------------------------------------------------
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2)
   const { positional, flags } = parseArgs(rest)
-  switch (command) {
-    case 'up':
-      await cmdUp(flags)
-      break
-    case 'list':
-      await cmdList()
-      break
-    case 'down':
-      await cmdDown(positional[0], flags)
-      break
-    case 'intake':
-      await cmdIntake()
-      break
-    default:
-      console.log('Usage: node scripts/factory-epic.mjs <up|list|down|intake> [...args]')
-      if (command) process.exitCode = 1
-  }
+  if (command === 'hub' && positional[0] === 'up') return await cmdHubUp()
+  if (command === 'up') return await cmdUp(flags)
+  if (command === 'list') return await cmdList()
+  if (command === 'adopt') return await cmdAdopt(positional[0], flags)
+  if (command === 'down') return await cmdDown(positional[0])
+  if (command === 'intake') return await cmdIntake()
+  console.log('Usage: factory-epic.mjs hub up | up --feature <name> [--key <slug>] [--pr <n>|--branch <name>] [--request <path>] [--models orch=...,worker=...,reviewer=...] [--start false] | list | adopt <key> --session <id> --transcript <absolute-path> | down <key> | intake')
+  if (command) process.exitCode = 1
 }
 
-main().catch((error) => {
-  console.error(`[factory-epic] ${error.stack || error.message}`)
-  process.exitCode = 1
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error(`[factory-epic] ${error.stack || error.message}`)
+    process.exitCode = 1
+  })
+}

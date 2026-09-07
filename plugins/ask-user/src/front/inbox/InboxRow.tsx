@@ -56,6 +56,9 @@ export function InboxRow({
           <span className="truncate text-muted-foreground">{subtitle || item.description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
+          {item.nonBlocking ? (
+            <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[10px] font-medium text-muted-foreground">non-blocking</span>
+          ) : null}
           {item.decision ? (
             <span className="rounded-full px-2 py-0.5 text-[10px] font-medium" style={inboxDecisionBadgeStyle(item.decision)}>{item.decision}</span>
           ) : null}
