@@ -587,9 +587,15 @@ ledger target is `agentTypeId` for create and the full Agent/session ref for
 session effects. It persists `pending-admission` plus the canonical digest,
 calls an admission adapter that is itself idempotent on the full ledger key,
 and durably records either its acceptance receipt or stable typed rejection
-before any mutation. A retryable admission failure leaves the record pending;
-it is not retained as a denial. Only after an accepted receipt is durable does
-the Host advance to `in-flight`, then store the completed typed receipt before
+before any mutation. An explicit retryable admission result or retryable prompt
+state guard marks the pending record `retryable: true`; it is not retained as a
+denial. A same-key/same-digest `prepare` must atomically consume that marker and
+return `ownership: 'reclaimed'` to exactly one caller. Concurrent losers return
+`ownership: 'existing'` and remain in progress, while a different digest
+conflicts. `acceptAdmission` is forbidden while the marker remains set, so only
+the reclaimed owner can advance. Unmarked pending records are never implicitly
+released after reopen. Only after an accepted receipt is durable does the Host
+advance to `in-flight`, then store the completed typed receipt before
 acknowledgement. A crash after external admission succeeds but before local
 receipt persistence is reconciled by the adapter with the same key—never by a
 second non-idempotent admission call. Restart of an unresolved in-flight record
@@ -602,8 +608,8 @@ admission/effect/receipt boundaries. Level D stream cases remain skipped for the
 streaming lane.
 
 `AgentRequestLedger` has durable `prepare(key,digest)`,
-`acceptAdmission(key,admissionReceipt)`, `beginEffect(key)`,
-`reject(key,stableError)`, `complete(key,receipt)`,
+`markAdmissionRetryable(key)`, `acceptAdmission(key,admissionReceipt)`,
+`beginEffect(key)`, `reject(key,stableError)`, `complete(key,receipt)`,
 `markOutcomeUnknown(key,error)`, and `read(key)` operations
 over `pending-admission | admission-accepted | in-flight | rejected | completed
 | outcome-unknown` records. Same-digest retries return the same terminal
@@ -690,7 +696,11 @@ interface AgentRequestLedgerRecordBase {
   readonly updatedAt: number
 }
 type AgentRequestLedgerRecord =
-  | (AgentRequestLedgerRecordBase & { readonly state: 'pending-admission' })
+  | (AgentRequestLedgerRecordBase & {
+      readonly state: 'pending-admission'
+      /** Explicit safe release before admission acceptance or effect dispatch. */
+      readonly retryable?: true
+    })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'admission-accepted'
       readonly admissionReceipt: string
@@ -709,8 +719,15 @@ type AgentRequestLedgerRecord =
       readonly error: AgentGatewayErrorDTO
     })
 
+interface AgentRequestLedgerPrepareResult {
+  readonly ownership: 'created' | 'reclaimed' | 'existing'
+  readonly record: AgentRequestLedgerRecord
+}
+
 interface AgentRequestLedger {
-  prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerRecord>
+  readonly durability: 'durable-transactional' | 'in-memory'
+  prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult>
+  markAdmissionRetryable(key: AgentRequestKey): Promise<void>
   acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
   beginEffect(key: AgentRequestKey): Promise<void>
   reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void>
@@ -727,8 +744,9 @@ session target. The canonical digest covers the complete effect payload but not
 
 | Operation | Valid predecessor → result |
 | --- | --- |
-| `prepare` | missing → `pending-admission`; same key/digest → current record; different digest → conflict |
-| `acceptAdmission` | `pending-admission` → `admission-accepted` |
+| `prepare` | missing → `pending-admission` + `created`; retryable same key/digest → atomically clear marker + `reclaimed` for one caller; every other same key/digest → current record + `existing`; different digest → conflict |
+| `markAdmissionRetryable` | unmarked `pending-admission` → `pending-admission, retryable: true`; every other predecessor → conflict |
+| `acceptAdmission` | claimed/unmarked `pending-admission` → `admission-accepted`; retryable pending → conflict |
 | strong `reject` | `pending-admission` → `rejected(kind=gateway)` |
 | `beginEffect` | `admission-accepted` → `in-flight` |
 | legacy observed reject | `in-flight` → `rejected(kind=legacy-admission)` |
@@ -736,8 +754,10 @@ session target. The canonical digest covers the complete effect payload but not
 | `markOutcomeUnknown` | `in-flight` → `outcome-unknown` |
 
 Terminal states return their recorded result on a same-digest retry; every
-other predecessor is rejected. Retryable strong admission leaves
-`pending-admission` unchanged.
+other predecessor is rejected. A retryable strong admission or prompt guard
+marks `pending-admission` explicitly retryable before returning its error. That
+marker is the only authority for a later atomic reclaim; it preserves the key
+and digest, grants exactly one new owner, and is cleared by the reclaim.
 
 ### 6.9 `AgentHostAgentSpec` (agent vs host split)
 

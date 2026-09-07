@@ -1,11 +1,19 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { Worker } from 'node:worker_threads'
 import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type { AgentRequestKey, AgentRequestLedger } from '../types'
+
+const claimWorkerPath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  'fixtures',
+  'requestLedgerClaimWorker.ts',
+)
 
 const key: AgentRequestKey = {
   workspaceScopeId: 'workspace-a',
@@ -13,6 +21,49 @@ const key: AgentRequestKey = {
   operation: 'session.create',
   target: { kind: 'agent', agentTypeId: 'alpha' },
   requestId: 'request-a',
+}
+
+interface ParallelClaimResult {
+  claim: Awaited<ReturnType<AgentRequestLedger['prepare']>>
+  effectStarted: boolean
+}
+
+function runClaimWorker(
+  dbPath: string,
+  barrier: SharedArrayBuffer,
+): Promise<ParallelClaimResult> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(claimWorkerPath, {
+      workerData: { dbPath, key, digest: 'digest-a', barrier },
+      execArgv: ['--import', 'tsx'],
+    })
+    worker.once('message', (message: ParallelClaimResult & { error?: { message: string; stack?: string } }) => {
+      void worker.terminate()
+      if (message.error) {
+        const error = new Error(message.error.message)
+        error.stack = message.error.stack
+        reject(error)
+        return
+      }
+      resolve(message)
+    })
+    worker.once('error', reject)
+  })
+}
+
+async function runParallelClaims(dbPath: string): Promise<[ParallelClaimResult, ParallelClaimResult]> {
+  // Slot 0 counts ready workers; slot 1 releases both from a deterministic barrier.
+  const barrier = new SharedArrayBuffer(8)
+  const sync = new Int32Array(barrier)
+  const claims = [runClaimWorker(dbPath, barrier), runClaimWorker(dbPath, barrier)] as const
+  const deadline = Date.now() + 10_000
+  while (Atomics.load(sync, 0) < 2) {
+    if (Date.now() >= deadline) throw new Error(`only ${Atomics.load(sync, 0)}/2 claim workers reached the start barrier`)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  Atomics.store(sync, 1, 1)
+  Atomics.notify(sync, 1, 2)
+  return Promise.all(claims)
 }
 
 describe('InMemoryAgentRequestLedger', () => {
@@ -107,28 +158,27 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
 })
 
 describe('SqliteAgentRequestLedger', () => {
-  it('atomically elects one owner across instances and durably replays the terminal record', async () => {
+  it('atomically elects one retry owner across concurrent connections and starts only its effect', async () => {
     const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
-    const first = new SqliteAgentRequestLedger(path)
-    const second = new SqliteAgentRequestLedger(path)
-    const prepared = await Promise.all([
-      first.prepare(key, 'digest-a'),
-      second.prepare(key, 'digest-a'),
-    ])
+    const setup = new SqliteAgentRequestLedger(path)
+    await setup.prepare(key, 'digest-a')
+    await setup.markAdmissionRetryable(key)
+    setup.close()
 
-    expect(prepared.filter(({ ownership }) => ownership === 'created')).toHaveLength(1)
-    expect(prepared.filter(({ ownership }) => ownership === 'existing')).toHaveLength(1)
-    const initialOwner = prepared[0]?.ownership === 'created' ? first : second
-    await initialOwner.markAdmissionRetryable(key)
-    const retried = await Promise.all([first.prepare(key, 'digest-a'), second.prepare(key, 'digest-a')])
-    expect(retried.filter(({ ownership }) => ownership === 'reclaimed')).toHaveLength(1)
-    expect(retried.filter(({ ownership }) => ownership === 'existing')).toHaveLength(1)
-    const owner = retried[0]?.ownership === 'reclaimed' ? first : second
-    await owner.acceptAdmission(key, 'admission-a')
-    await owner.beginEffect(key)
+    // Each worker owns a separate real node:sqlite connection to this WAL file.
+    // Both workers block after opening until the coordinator releases one shared
+    // barrier, so their synchronous prepare calls execute on different OS threads.
+    const retried = await runParallelClaims(path)
+    expect(retried.filter(({ claim }) => claim.ownership === 'reclaimed')).toHaveLength(1)
+    const losers = retried.filter(({ claim }) => claim.ownership === 'existing')
+    expect(losers).toHaveLength(1)
+    expect(losers[0]?.claim.record.state).toMatch(/^(pending-admission|admission-accepted|in-flight)$/)
+    expect(retried.filter(({ effectStarted }) => effectStarted)).toHaveLength(1)
+
+    const owner = new SqliteAgentRequestLedger(path)
+    await expect(owner.read(key)).resolves.toMatchObject({ state: 'in-flight' })
     await owner.complete(key, { accepted: true })
-    first.close()
-    second.close()
+    owner.close()
 
     const reopened = new SqliteAgentRequestLedger(path)
     await expect(reopened.prepare(key, 'digest-a')).resolves.toMatchObject({
