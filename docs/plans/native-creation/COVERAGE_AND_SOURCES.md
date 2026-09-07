@@ -106,6 +106,9 @@ not override later explicit supersession or turn plans into implementation.
 | S18 | [Credits launch plan](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/docs/credits-launch-plan.md) | Launch choices and early limitations; payment correctness is not generalized pricing strategy. |
 | S19 | [Interview intake](https://github.com/hachej/boring-ui/blob/aaa713a19cd4a4236a27f96b5c3eb77261a15ebb/docs/plans/agent-interview-intake-plan.md) | Full PR-base read; typed briefs/confirmation/frozen provenance and explicit exclusions; production/provider claims not independently tested. |
 
+| S20 | `packages/workspace/src/server/runtimeBackend/` and `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` (local checkout, main `fe09b1489`) | Hot-loaded external `boring.server` modules dispatched in-process without a flag; contradicts `PLUGIN_SYSTEM.md` §7 and ARCHITECTURE-PLAN D-b/P0.6. |
+| S21 | `gh repo view hachej/boring-v2` (2026-09-07) and local `~/projects` | Repository does not resolve for the owner token; no v2 worktree or port exists. |
+
 Sequencing context also comes from the original reading of
 [DIRECTION](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/docs/direction/DIRECTION.md)
 and the [roadmap index](https://github.com/hachej/boring-ui/blob/4a08466fd2ccd53ed720e217d1c91d5bf67cb8e6/docs/roadmap/README.md).

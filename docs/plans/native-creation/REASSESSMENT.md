@@ -47,6 +47,26 @@ separates that local tier from unimplemented hosted external-code support.
 The WorkspaceBridge likewise requires trusted registration of host operations.
 [S06, S08, S09]
 
+The prohibition is older and wider than Decisions 28/29. Decision 25 rejects
+the AgentHost/controller/publication/content-addressed-store path and states
+that immutable identity does not imply a publication store; Decision 30 says
+journaled multi-host publication needs a new decision amending 25/28. The
+architecture plan's D-b ruling makes the untrusted tier (C4) the only ratified
+home for authored code, with **server disabled**, and P0.6 refuses
+`boring.server` modules from agent-writable roots. Any amendment must name
+D25, D28, D29, D30, D-b, and P0.6 together, not D28/D29 alone. [S04, S06]
+
+Code and documents disagree here, and the disagreement is load-bearing.
+`packages/workspace/src/server/runtimeBackend/` dynamically imports external
+plugins' `boring.server` modules into the host Node process and dispatches
+them through `/api/v1/plugins/:pluginId/*`, wired without a flag in
+`createWorkspaceAgentServer.ts`. The plugin contract's non-goals still list
+"hot-registering Fastify routes from generated plugins" as excluded. The
+generated backend path therefore exists today in the least acceptable form:
+in-process, under host authority, with a workspace-id header check as its only
+scope. Declaring the lifecycle without ruling on this path would leave the
+security ground truth unchanged. [S08, S20]
+
 These mechanisms provide useful composition boundaries. They do not by
 themselves establish immutable effective software releases, scoped customer
 installations, durable activation, or private/upstream reconciliation.
@@ -80,7 +100,8 @@ zero or more Sessions; a Session is one runtime conversation. The baseline v2
 specification still has a `// = session` example. Its newer ruling wins, but
 the example is a real implementation hazard. [S03, S05]
 
-This PR corrects that example and its immediate port wording. It does not
+This PR corrects that example, its immediate port wording, and the matching
+per-session shorthand in the Port Handbook's Thread entry. It does not
 choose first-class Thread stream versus projection storage, implement the
 binding, or add a competing Job store. Customer language can say Job while the
 existing Thread identity remains authoritative.
@@ -180,11 +201,15 @@ platform powers and other tenants outside the builder's reach.
 ## 7. Replace the failing boundary before choosing a total rewrite
 
 The older vision already permits a new repository, selective ports, and
-product-by-product cutover. Incumbent maintenance is compatible with that
-strategy, but multiple documents appear to direct the next major build. One
-implementation home and one executable sequence must be identified. The failed
-connected lookup for `boring-v2` is not proof that no successor work exists.
-[S01–S04]
+product-by-product cutover (ruling R-a, 2026-08-16). Incumbent maintenance is
+compatible with that strategy. DIRECTION is the single declared sequencing
+authority and it has never scheduled the v2 port: the K-track, M0–M8, and
+V2-00..13 orders are ratified dependency rationale, not dispatched work, and
+DIRECTION's only v2 line says Wave 4 stays frozen. The gap is not competing
+authorities; it is that no execution home for the new journey is named
+anywhere DIRECTION can dispatch from. `hachej/boring-v2` does not resolve for
+the repository owner's token and no local worktree or port exists; nothing has
+been ported. [S01–S04, S21]
 
 Compare three options against the same end-to-end journey: extend current
 composition; replace lifecycle/composition and UX while retaining suitable

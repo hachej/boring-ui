@@ -39,7 +39,13 @@ limits of that review; it does not claim an exhaustive recursive `docs/` audit.
 
 Draft [PR #1548](https://github.com/hachej/boring-ui/pull/1548), reviewed separately
 at `cb6b476aefb8d8fb3b1395a72a006264f5326d8d`, is the main existing lifecycle
-design input. Its E0–E6 runtime milestones remain unbuilt in that PR. Preserve
+design input. Its release contract (capture intent → immutable candidate
+manifest → verify and preview → activate against an expected generation vector
+→ observe and recover) is the same Change loop this pack describes, and its
+E4 milestone already names generating a component absent from the catalog.
+This pack does not re-specify that contract; it adds the product obligation,
+the re-timing, and the Installation and Release identities the contract
+assumes but does not name. Its E0–E6 runtime milestones remain unbuilt in that PR. Preserve
 its separation of domain state, changes, scopes, upgrades, and proof levels;
 add creation and installation for a separate consumer as the overarching
 acceptance journey. Do not treat an E1a configuration preview as the complete
