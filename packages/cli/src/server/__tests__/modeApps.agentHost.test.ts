@@ -512,18 +512,20 @@ describe.sequential("CLI Agent Host composition", () => {
         "  - seat: repository-worker",
         "    agentTypeId: fixture-cli-repository-worker",
         "    skills: []",
-        // fixture-cli-local-worker is deliberately NOT seated here. The global
-        // roster only names globally discoverable packages; seating a
-        // workspace-local one is an invalid configured seat and now aborts host
-        // boot by contract. What this test proves is that the workspace-local
-        // package does not leak into the global fleet through discovery.
+        "  - seat: workspace-local-worker",
+        "    agentTypeId: fixture-cli-local-worker",
+        "    skills: []",
+        // The global roster deliberately names a workspace-local definition.
+        // It must be excluded while the valid repository sibling still boots;
+        // if workspace discovery leaks into the global scan, this assertion
+        // exposes the package (and its duplicate definition conflict).
         "",
       ].join("\n"),
       "utf8",
     )
     await writeFile(
       join(fleetRoot, ".agents", "factory", "policy.yaml"),
-      "models:\n  seats:\n    repository-worker: T3\n",
+      "models:\n  seats:\n    repository-worker: T3\n    workspace-local-worker: T3\n",
       "utf8",
     )
 
@@ -746,7 +748,7 @@ describe.sequential("CLI Agent Host composition", () => {
         expect(addressed.json()).toEqual([{
           agentTypeId: "default",
           label: "Agent",
-          definition: { version: "1", digest: expect.any(String) },
+          definition: { version: "1" },
         }])
         expect((await fixture.app.inject({
           method: "GET",

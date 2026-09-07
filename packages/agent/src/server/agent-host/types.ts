@@ -93,6 +93,10 @@ export type AgentRequestLedgerRecord =
       readonly receipt: JsonValue
     })
   | (AgentRequestLedgerRecordBase & {
+      readonly state: 'retryable'
+      readonly error: AgentGatewayErrorDTO
+    })
+  | (AgentRequestLedgerRecordBase & {
       readonly state: 'outcome-unknown'
       readonly error: AgentGatewayErrorDTO
     })
@@ -105,6 +109,8 @@ export interface AgentRequestLedger {
   /** All transitions are compare-and-swap against the exact allowed prior state. */
   acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
   beginEffect(key: AgentRequestKey): Promise<void>
+  /** Return a pre-effect admission to a retryable terminal state. */
+  retry(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void>
   reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void>
   complete(key: AgentRequestKey, receipt: JsonValue): Promise<void>
   markOutcomeUnknown(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void>

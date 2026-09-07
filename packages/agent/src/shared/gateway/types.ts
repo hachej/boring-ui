@@ -101,7 +101,7 @@ export interface AgentSummary {
   readonly pluginIds?: readonly string[]
   readonly definition?: {
     readonly version: string
-    readonly digest: string
+    readonly digest?: string
   }
 }
 

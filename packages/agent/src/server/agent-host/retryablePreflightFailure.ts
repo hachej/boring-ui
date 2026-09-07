@@ -3,8 +3,8 @@ import type { AgentRequestKey, AgentRequestLedger } from './types'
 
 /**
  * Classifies a runtime/application load failure before an Agent effect begins.
- * No requested mutation can have occurred, so a fresh request id may retry
- * after the dependency recovers instead of receiving outcome-unknown.
+ * No requested mutation can have occurred, so the same idempotency key may
+ * retry after the dependency recovers instead of receiving outcome-unknown.
  */
 export async function rejectRetryablePreflightFailure(
   ledger: AgentRequestLedger,
@@ -15,6 +15,6 @@ export async function rejectRetryablePreflightFailure(
     'Agent runtime failed to load',
     { retryable: true },
   )
-  await ledger.reject(key, { kind: 'gateway', error: retryable.toJSON() }).catch(() => {})
+  await ledger.retry(key, retryable.toJSON())
   throw retryable
 }

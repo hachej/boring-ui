@@ -52,6 +52,16 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     const existing = this.records.get(id)
     if (existing) {
       if (existing.digest !== digest) conflict()
+      if (existing.state === 'retryable') {
+        const record: AgentRequestLedgerRecord = {
+          key,
+          digest,
+          state: 'pending-admission',
+          updatedAt: Date.now(),
+        }
+        this.records.set(id, record)
+        return { ownership: 'created', record }
+      }
       return { ownership: 'existing', record: existing }
     }
     const record: AgentRequestLedgerRecord = {
@@ -75,6 +85,16 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     this.transition(key, 'begin effect', (record) => {
       if (record.state !== 'admission-accepted') invalidTransition(record, 'begin effect')
       return { key: record.key, digest: record.digest, state: 'in-flight', updatedAt: Date.now() }
+    })
+  }
+
+  async retry(
+    key: AgentRequestKey,
+    error: import('../../shared/index').AgentGatewayErrorDTO,
+  ): Promise<void> {
+    this.transition(key, 'mark retryable', (record) => {
+      if (record.state !== 'admission-accepted') invalidTransition(record, 'mark retryable')
+      return { key: record.key, digest: record.digest, state: 'retryable', error, updatedAt: Date.now() }
     })
   }
 

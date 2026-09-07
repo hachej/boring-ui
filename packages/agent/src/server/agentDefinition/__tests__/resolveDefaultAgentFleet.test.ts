@@ -120,24 +120,24 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     )
   })
 
-  describe('flag=1 fail-closes missing or malformed configured fleet state', () => {
+  describe('flag=1 handles absent versus malformed configured fleet state', () => {
     let root: string
 
     afterEach(async () => {
       if (root) await rm(root, { recursive: true, force: true })
     })
 
-    test('rejects a missing configured fleet file', async () => {
-      root = await mkdtemp(join(tmpdir(), 'fleet-boot-reject-'))
+    test('boots the default Agent when the fleet file is absent', async () => {
+      root = await mkdtemp(join(tmpdir(), 'fleet-boot-default-'))
       await expect(resolveDefaultAgentFleet({
         repositoryRoot: root,
         discoveredPackages: [],
         env: { BORING_AGENT_FLEET: '1' },
-      })).rejects.toMatchObject({
-        name: 'FleetConfigError',
-        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
-      })
-      expect(loggerMocks.error).not.toHaveBeenCalled()
+      })).resolves.toBe(DEFAULT_AGENT_FLEET)
+      expect(loggerMocks.warn).toHaveBeenCalledWith(
+        'fleet config is absent; authored Agent packages remain inert',
+        { code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID },
+      )
     })
 
     test('rejects malformed configured fleet YAML', async () => {

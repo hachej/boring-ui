@@ -181,7 +181,10 @@ operations.
 
 The Gateway request ledger is the only idempotency authority. A backend method
 may be invoked again after a crash only through a ledger-admitted request; the
-backend itself promises no deduplication. P1-B substitutes the adapter-private
+backend itself promises no deduplication. A runtime load failure before the
+effect begins records a retryable state, so the same request key and payload can
+atomically reclaim admission after recovery; completed, rejected, in-flight, and
+outcome-unknown records retain their normal replay behavior. P1-B substitutes the adapter-private
 replay source below `HarnessPiChatService`, not this interface. Later operations
 may extend the interface only in their named slices (`resumePausedToolCall` in
 A3b and `markTurnInterrupted` in A4); neither is part of the current seam.

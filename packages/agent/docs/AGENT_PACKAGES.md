@@ -55,11 +55,13 @@ contribution, even when the global roster names its definition id.
 Digest refresh is intentionally repository-local in v1. The script reads only
 `.agents/personas/`; it does not rewrite pins for agent packages installed from
 another local directory. Such packages must already have matching
-seat-authoritative skill pins. Once a roster seat names the package, a
-schema, preflight, conflict, materialization, or digest mismatch is invalid
-host configuration and aborts startup with its stable diagnostic (for example
-`AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH`). Invalid unseated discovery may still
-be excluded because it has no activation authority.
+seat-authoritative skill pins. A package with a schema, preflight, conflict,
+materialization, or digest mismatch is excluded with its stable diagnostic (for
+example `AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH`) while valid sibling seats
+continue to boot. Invalid unseated discovery is likewise excluded because it
+has no activation authority. A missing fleet file means no authored roster and
+boots only the regular default Agent; a present but malformed fleet or policy
+file remains a whole-fleet configuration error.
 
 ## Unseat or remove
 

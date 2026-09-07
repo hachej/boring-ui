@@ -69,10 +69,21 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         (request_key, digest, state, record_json, updated_at)
       VALUES (?, ?, ?, ?, ?)
     `).run(id, digest, record.state, JSON.stringify(record), record.updatedAt)
-    const current = this.readSync(key)
+    let current = this.readSync(key)
     if (!current) conflict('request ledger ownership claim was not persisted')
     if (current.digest !== digest) {
       conflict('requestId was already used with a different payload')
+    }
+    if (inserted.changes !== 1 && current.state === 'retryable') {
+      const reset: AgentRequestLedgerRecord = { key, digest, state: 'pending-admission', updatedAt: Date.now() }
+      const claimed = this.database.prepare(`
+        UPDATE agent_request_ledger
+        SET state = ?, record_json = ?, updated_at = ?
+        WHERE request_key = ? AND digest = ? AND state = 'retryable'
+      `).run(reset.state, JSON.stringify(reset), reset.updatedAt, id, digest)
+      if (claimed.changes === 1) return { ownership: 'created', record: reset }
+      current = this.readSync(key)
+      if (!current) conflict('request ledger retry claim was not persisted')
     }
     return { ownership: inserted.changes === 1 ? 'created' : 'existing', record: current }
   }
@@ -91,6 +102,19 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       key: record.key,
       digest: record.digest,
       state: 'in-flight',
+      updatedAt: Date.now(),
+    }))
+  }
+
+  async retry(
+    key: AgentRequestKey,
+    error: import('../../shared/index').AgentGatewayErrorDTO,
+  ): Promise<void> {
+    this.transition(key, ['admission-accepted'], (record) => ({
+      key: record.key,
+      digest: record.digest,
+      state: 'retryable',
+      error,
       updatedAt: Date.now(),
     }))
   }

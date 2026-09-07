@@ -36,7 +36,7 @@ describe('InMemoryAgentRequestLedger', () => {
     })
   })
 
-  it('retains stable strong rejection while retryable admission leaves pending', async () => {
+  it('retains a strong rejection and reclaims a retryable pre-effect admission', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     await ledger.prepare(key, 'digest-a')
     expect((await ledger.read(key))?.state).toBe('pending-admission')
@@ -45,6 +45,19 @@ describe('InMemoryAgentRequestLedger', () => {
       error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED, message: 'denied' },
     })
     expect(await ledger.read(key)).toMatchObject({ state: 'rejected' })
+
+    const retryKey = { ...key, requestId: 'retryable-request' }
+    await ledger.prepare(retryKey, 'digest-a')
+    await ledger.acceptAdmission(retryKey, 'admission-a')
+    await ledger.retry(retryKey, {
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      message: 'runtime unavailable',
+      details: { retryable: true },
+    })
+    await expect(ledger.prepare(retryKey, 'digest-a')).resolves.toMatchObject({
+      ownership: 'created',
+      record: { state: 'pending-admission' },
+    })
   })
 
   it('permits outcome-unknown only from in-flight', async () => {
@@ -92,6 +105,29 @@ describe('SqliteAgentRequestLedger', () => {
       code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
     })
     reopened.close()
+  })
+
+  it('atomically reclaims a durable retryable pre-effect admission', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const first = new SqliteAgentRequestLedger(path)
+    const second = new SqliteAgentRequestLedger(path)
+    await first.prepare(key, 'digest-a')
+    await first.acceptAdmission(key, 'admission-a')
+    await first.retry(key, {
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      message: 'runtime unavailable',
+      details: { retryable: true },
+    })
+
+    const claimed = await Promise.all([
+      first.prepare(key, 'digest-a'),
+      second.prepare(key, 'digest-a'),
+    ])
+    expect(claimed.filter(({ ownership }) => ownership === 'created')).toHaveLength(1)
+    expect(claimed.filter(({ ownership }) => ownership === 'existing')).toHaveLength(1)
+    expect(claimed.every(({ record }) => record.state === 'pending-admission')).toBe(true)
+    first.close()
+    second.close()
   })
 
   it('validates the effect target before claiming durable ownership', async () => {

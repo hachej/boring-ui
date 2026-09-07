@@ -35,6 +35,8 @@ function descriptor(
 
 const DISCOVERED_PACKAGES = [
   descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-alpha', ['greet', 'skills/local']),
+  descriptor(resolve(PERSONAS_DIR, 'broken'), 'fixture-broken', ['greet']),
+  descriptor(resolve(PERSONAS_DIR, 'mismatched'), 'fixture-mismatched-actual', []),
 ]
 
 function options(discoveredPackages = DISCOVERED_PACKAGES) {
@@ -97,16 +99,18 @@ async function validAlphaOptions() {
 }
 
 describe('loadConfiguredAgentFleet', () => {
-  test('fails the whole configured fleet when any seated Agent is invalid', async () => {
-    await expect(loadConfiguredAgentFleet({
+  test('excludes invalid seated packages while valid siblings still boot', async () => {
+    const result = await loadConfiguredAgentFleet({
       ...options(),
       fleetConfigPath: resolve(FIXTURE_ROOT, 'factory', 'fleet.yaml'),
       env: { ANTHROPIC_API_KEY: 'test-key' },
-    })).rejects.toMatchObject({
-      name: 'FleetConfigError',
-      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
-      field: 'seats',
     })
+
+    expect(result.agents.map((agent) => agent.agentTypeId)).toEqual(['fixture-alpha'])
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ seat: 'broken', agentTypeId: 'fixture-broken' }),
+      expect.objectContaining({ seat: 'mismatched', agentTypeId: 'fixture-mismatched-expected' }),
+    ]))
   })
 
   test('composes a fully valid configured seat', async () => {
@@ -316,8 +320,12 @@ describe('loadConfiguredAgentFleet', () => {
       '',
     ].join('\n'))
 
-    await expect(loadConfiguredAgentFleet({ ...options(), fleetConfigPath, env: {} }))
-      .rejects.toMatchObject({ name: 'FleetConfigError', field: 'seats' })
+    const result = await loadConfiguredAgentFleet({ ...options(), fleetConfigPath, env: {} })
+    expect(result.agents).toEqual([])
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'alpha',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
+    }))
   })
 
   test('rejects invalid preflight for a configured seat but permits invalid unseated discovery exclusion', async () => {
@@ -325,11 +333,16 @@ describe('loadConfiguredAgentFleet', () => {
       ...descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-alpha', ['greet', 'skills/local']),
       preflight: { ok: false, errors: [{ code: PREFLIGHT_INVALID_PLUGIN_METADATA, message: 'invalid schema' }] },
     }
-    await expect(loadConfiguredAgentFleet({
+    const invalidConfigured = await loadConfiguredAgentFleet({
       ...await validAlphaOptions(),
       discoveredPackages: [invalidAlpha],
       env: {},
-    })).rejects.toMatchObject({ name: 'FleetConfigError', field: 'seats' })
+    })
+    expect(invalidConfigured.agents).toEqual([])
+    expect(invalidConfigured.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'alpha',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+    }))
 
     const invalidUnseated = {
       ...descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-unseated-invalid', []),
@@ -347,9 +360,9 @@ describe('loadConfiguredAgentFleet', () => {
     }))
   })
 
-  test('fails startup when packages conflict for a seated definitionId', async () => {
+  test('excludes both conflicting packages without taking down the fleet', async () => {
     const alpha = descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-alpha', ['greet', 'skills/local'])
-    await expect(loadConfiguredAgentFleet({
+    const result = await loadConfiguredAgentFleet({
       ...await validAlphaOptions(),
       discoveredPackages: [alpha, {
         ...alpha,
@@ -357,6 +370,9 @@ describe('loadConfiguredAgentFleet', () => {
         preflight: { ok: false, errors: [{ code: PREFLIGHT_INVALID_PLUGIN_METADATA, message: 'fixture preflight failure' }] },
       }],
       env: {},
-    })).rejects.toMatchObject({ name: 'FleetConfigError', field: 'seats' })
+    })
+    expect(result.agents).toEqual([])
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.code === ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT))
+      .toHaveLength(2)
   })
 })

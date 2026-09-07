@@ -60,7 +60,7 @@ async function loadFleet() {
 }
 
 describe("agent package discovery → fleet loader conflict detection", () => {
-  test("a malformed duplicate claimant fails configured fleet startup", async () => {
+  test("a malformed duplicate claimant excludes both packages", async () => {
     root = await mkdtemp(join(tmpdir(), "agent-pkg-conflict-"))
     await writePersona("valid", {
       definitionId: "boring-dup",
@@ -82,10 +82,16 @@ describe("agent package discovery → fleet loader conflict detection", () => {
       "boring-dup",
     ])
     expect(discoveredPackages.some((pkg) => !pkg.preflight.ok)).toBe(true)
-    await expect(result).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+    await expect(result).resolves.toMatchObject({
+      agents: [],
+      diagnostics: [
+        expect.objectContaining({ agentTypeId: "boring-dup", code: "AGENT_DEFINITION_ID_CONFLICT" }),
+        expect.objectContaining({ agentTypeId: "boring-dup", code: "AGENT_DEFINITION_ID_CONFLICT" }),
+      ],
+    })
   })
 
-  test("a malformed pi.skills duplicate claimant also fails configured fleet startup", async () => {
+  test("a malformed pi.skills duplicate claimant also excludes both packages", async () => {
     root = await mkdtemp(join(tmpdir(), "agent-pkg-conflict-"))
     await writePersona("valid", {
       definitionId: "boring-dup",
@@ -100,7 +106,13 @@ describe("agent package discovery → fleet loader conflict detection", () => {
     await writeFactory([{ seat: "dup-seat", agentTypeId: "boring-dup" }])
 
     const { result } = await loadFleet()
-    await expect(result).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+    await expect(result).resolves.toMatchObject({
+      agents: [],
+      diagnostics: [
+        expect.objectContaining({ agentTypeId: "boring-dup", code: "AGENT_DEFINITION_ID_CONFLICT" }),
+        expect.objectContaining({ agentTypeId: "boring-dup", code: "AGENT_DEFINITION_ID_CONFLICT" }),
+      ],
+    })
   })
 
   test("a single valid claimant still seats normally", async () => {

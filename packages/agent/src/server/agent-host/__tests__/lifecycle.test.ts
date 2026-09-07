@@ -77,6 +77,23 @@ async function expectBounded(operation: () => Promise<void>): Promise<void> {
 }
 
 describe('Agent Host lifecycle', () => {
+  it('preserves a catalog definition version when no digest is supplied', async () => {
+    const fixture = await options({
+      agents: [{
+        agentTypeId: 'alpha',
+        definition: { instructions: 'alpha', label: 'Alpha', version: '1.2.3' },
+      }],
+    })
+    const created = await createAgentHost(fixture.value)
+
+    await expect(created.gateway.listAgents({ scope })).resolves.toEqual([{
+      agentTypeId: 'alpha',
+      label: 'Alpha',
+      definition: { version: '1.2.3' },
+    }])
+    await created.host.close()
+  })
+
   it('closes active unbounded subscriptions and disposes bindings, Environment, and adapter once', async () => {
     const fixture = await options()
     const created = await createAgentHost(fixture.value)
@@ -127,6 +144,7 @@ describe('Agent Host lifecycle', () => {
       },
       acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
       beginEffect: (key) => base.beginEffect(key),
+      retry: (key, error) => base.retry(key, error),
       reject: (key, failure) => base.reject(key, failure),
       complete: (key, receipt) => base.complete(key, receipt),
       markOutcomeUnknown: (key, error) => base.markOutcomeUnknown(key, error),
@@ -333,7 +351,7 @@ describe('Agent Host lifecycle', () => {
     await expect(created.gateway.createSession({
       scope,
       agentTypeId: 'alpha',
-      requestId: 'alpha-retry',
+      requestId: 'alpha-load-fails',
     })).resolves.toMatchObject({ agentTypeId: 'alpha' })
 
     await created.host.close()

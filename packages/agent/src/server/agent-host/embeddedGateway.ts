@@ -330,8 +330,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           : {
               definition: {
                 version: agent.definition.version,
-                digest: agent.definition.digest
-                  ?? canonicalDigest(agent.definition as unknown as JsonValue),
+                ...(agent.definition.digest === undefined ? {} : { digest: agent.definition.digest }),
               },
             }),
       }))

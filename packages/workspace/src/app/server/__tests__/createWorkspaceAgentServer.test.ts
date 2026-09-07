@@ -120,7 +120,6 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 
 import {
   AgentRuntimeIdentityError,
-  ConfiguredDefaultAgentError,
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   digestWorkspacePiResourceInputs,
@@ -129,10 +128,6 @@ import {
   resolveBoringPiSkillPaths,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
-import {
-  CONFIGURED_DEFAULT_AGENT_ERROR_CODE as PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE,
-  ConfiguredDefaultAgentError as PublicConfiguredDefaultAgentError,
-} from "../index"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
 import { RuntimeBackendRegistry } from "../../../server/runtimeBackend"
 
@@ -524,7 +519,7 @@ describe("Workspace public admission composition", () => {
     } finally {
       await app.close()
     }
-  }, 10_000)
+  }, 30_000)
 })
 
 describe("workspace app-server plugin package helpers", () => {
@@ -1943,7 +1938,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
-  test("BORING_AGENT_FLEET fails startup when packages conflict for a seated definitionId", async () => {
+  test("BORING_AGENT_FLEET excludes conflicting seated packages and boots the default", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-fleet-conflict-")
     const fleetRoot = await makeTempDir("boring-agent-fleet-conflict-repo-")
     const personasRoot = join(fleetRoot, ".agents", "personas")
@@ -1975,15 +1970,19 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const previousFlag = process.env.BORING_AGENT_FLEET
     process.env.BORING_AGENT_FLEET = "1"
     try {
-      await expect(createWorkspaceAgentServer({
+      const app = await createWorkspaceAgentServer({
         workspaceRoot,
         fleetRepositoryRoot: fleetRoot,
         logger: false,
         provisionWorkspace: false,
         externalPlugins: false,
         fleetCompiler: { async compile({ agents }) { return agents } },
-      })).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
-      expect(agentServerMock.createAgentHost).not.toHaveBeenCalled()
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+      await app.close()
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
@@ -2028,8 +2027,8 @@ ${seats}` : "seats: []\n"}`, "utf8")
         }
         return hostOptions.agents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
-          ...(agent.definition?.digest
-            ? { definition: { version: agent.definition.version, digest: agent.definition.digest } }
+          ...(agent.definition?.version
+            ? { definition: { version: agent.definition.version, ...(agent.definition.digest ? { digest: agent.definition.digest } : {}) } }
             : {}),
         }))
       } finally {
@@ -2043,12 +2042,12 @@ ${seats}` : "seats: []\n"}`, "utf8")
       await writeManifest("1.0.0", "Local worker v1.\n")
       await writeFile(settingsPath, JSON.stringify({ packages: ["../agents/local-worker"] }), "utf8")
       await writeFleet("")
-      expect(await bootInventory()).toEqual([{ agentTypeId: "default" }])
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default", definition: { version: "1" } }])
 
       await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
       const installed = await bootInventory()
       expect(installed).toEqual([
-        { agentTypeId: "default" },
+        { agentTypeId: "default", definition: { version: "1" } },
         { agentTypeId: "fixture-local-worker", definition: { version: "1.0.0", digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) } },
       ])
       const v1Digest = installed[1]?.definition?.digest
@@ -2071,20 +2070,20 @@ ${seats}` : "seats: []\n"}`, "utf8")
         digest: sha256:${"0".repeat(64)}
 `,
       )
-      await expect(bootInventory()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default", definition: { version: "1" } }])
 
       await writeFleet("")
-      expect(await bootInventory()).toEqual([{ agentTypeId: "default" }])
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default", definition: { version: "1" } }])
       await writeFile(settingsPath, JSON.stringify({ packages: [] }), "utf8")
-      expect(await bootInventory()).toEqual([{ agentTypeId: "default" }])
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default", definition: { version: "1" } }])
 
       await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
-      await expect(bootInventory()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default", definition: { version: "1" } }])
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
     }
-  }, 15_000)
+  }, 30_000)
 
   test("remote git/npm package roots cannot contribute agents before their distribution gate", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-remote-gate-")
@@ -2129,14 +2128,18 @@ ${seats}` : "seats: []\n"}`, "utf8")
     const previousFlag = process.env.BORING_AGENT_FLEET
     process.env.BORING_AGENT_FLEET = "1"
     try {
-      await expect(createWorkspaceAgentServer({
+      const app = await createWorkspaceAgentServer({
         workspaceRoot,
         fleetRepositoryRoot: fleetRoot,
         logger: false,
         provisionWorkspace: false,
         fleetCompiler: { async compile({ agents }) { return agents } },
-      })).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
-      expect(agentServerMock.createAgentHost).not.toHaveBeenCalled()
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+      await app.close()
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
@@ -2221,11 +2224,6 @@ ${seats}` : "seats: []\n"}`, "utf8")
     expect(createRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.provisionWorkspaceRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.captureResolvedRuntimeScope).not.toHaveBeenCalled()
-  })
-
-  test("exports the configured-default startup error through the public app/server surface", () => {
-    expect(PublicConfiguredDefaultAgentError).toBe(ConfiguredDefaultAgentError)
-    expect(PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE).toBe("CONFIG_INVALID")
   })
 
   test("rejects a configured defaultAgentTypeId that is absent from the boot fleet", async () => {

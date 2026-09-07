@@ -49,6 +49,11 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
       if (current.digest !== digest) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with a different payload')
       }
+      if (current.state === 'retryable') {
+        const record: AgentRequestLedgerRecord = { state: 'pending-admission', key, digest, updatedAt: this.tick() }
+        this.records.set(identity, record)
+        return { ownership: 'created', record }
+      }
       return { ownership: 'existing', record: current }
     }
     const record: AgentRequestLedgerRecord = {
@@ -69,6 +74,11 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
   async beginEffect(key: AgentRequestKey): Promise<void> {
     const current = this.requireState(key, 'admission-accepted')
     this.write(key, { ...current, state: 'in-flight', updatedAt: this.tick() })
+  }
+
+  async retry(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void> {
+    const current = this.requireState(key, 'admission-accepted')
+    this.write(key, { ...current, state: 'retryable', error, updatedAt: this.tick() })
   }
 
   async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
