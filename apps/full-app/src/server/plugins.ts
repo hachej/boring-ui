@@ -26,10 +26,10 @@ class FullAppPluginCompositionError extends Error {
 
 // Automation is composed explicitly below because its host-owned seed provider
 // cannot be represented by a package-name default without double registration.
-const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([] satisfies ReadonlyArray<{
+const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION: readonly {
   packageName: string
   descriptor: StableContributionDescriptor
-}>)
+}[] = Object.freeze([])
 
 const FULL_APP_DEFAULT_PLUGIN_PACKAGES = Object.freeze(FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION.map((entry) => entry.packageName))
 const require = createRequire(import.meta.url)
