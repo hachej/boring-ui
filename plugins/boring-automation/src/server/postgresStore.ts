@@ -3,7 +3,7 @@ import type postgres from "postgres"
 import type { Workspace } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { AUTOMATION_PROMPT_DIRECTORY, automationPromptPath } from "../shared/prompt"
-import { AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS, AUTOMATION_RUN_OCCUPYING_STATUSES, reconcileAbandonedRun } from "../shared/runStatus"
+import { AUTOMATION_RUN_OCCUPYING_STATUSES, reconcileAbandonedRun } from "../shared/runStatus"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../shared/types"
 import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound, type AutomationSeed, type AutomationStore } from "./store"
 
@@ -249,7 +249,7 @@ export class PostgresAutomationStore implements AutomationStore {
           updated_at = ${this.clock().toISOString()}
       WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
         AND status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
-        AND (status <> 'outcome-unknown' OR updated_at < NOW() - (${AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS} * INTERVAL '1 millisecond'))
+        AND NOT (status = 'outcome-unknown' AND dispatch_receipt IS NOT NULL)
     `
   }
 
@@ -409,6 +409,19 @@ export class PostgresAutomationStore implements AutomationStore {
     return rows.map(toRun)
   }
 
+  async settleCancelledSession(ref: { agentTypeId: string; sessionId: string }, completedAt: string): Promise<AutomationRun | null> {
+    const rows = await this.sql<RunRow[]>`
+      UPDATE boring_automation_runs AS run
+      SET status = 'cancelled', completed_at = ${completedAt},
+        error = 'Automation session was explicitly cancelled', updated_at = NOW()
+      WHERE run.workspace_id = ${this.actor.workspaceId} AND run.owner_user_id = ${this.actor.userId}
+        AND run.dispatch_receipt->'ref'->>'agentTypeId' = ${ref.agentTypeId} AND run.session_id = ${ref.sessionId}
+        AND run.status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
+      RETURNING run.*
+    `
+    return rows[0] ? toRun(rows[0]) : null
+  }
+
   async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }): Promise<AutomationRun | null> {
     const rows = await this.sql<RunRow[]>`
       SELECT runs.* FROM boring_automation_runs AS runs
@@ -464,6 +477,7 @@ export async function reconcileStaleHostedAutomationRuns(
           ELSE ${inFlight.error} END,
         updated_at = NOW()
     WHERE status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
+      AND NOT (status = 'outcome-unknown' AND dispatch_receipt IS NOT NULL)
       AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
     RETURNING *
   `

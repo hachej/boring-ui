@@ -73,6 +73,8 @@ export interface AutomationStore {
   listRecentRuns(limit: number): Promise<AutomationRun[]>
   /** Exact durable Agent-address lookup for session controls. */
   findRunBySessionRef(ref: AgentSessionRef): Promise<AutomationRun | null>
+  /** Atomically settles the matching occupying run after an explicit confirmed session stop. */
+  settleCancelledSession?(ref: AgentSessionRef, completedAt: string): Promise<AutomationRun | null>
 }
 
 export class AutomationStoreError extends Error {

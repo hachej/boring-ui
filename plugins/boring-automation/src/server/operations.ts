@@ -211,7 +211,8 @@ export function createAutomationOperations({
       if (!sessionController) throw contextUnavailable()
       await requireSessionTarget(store, ref)
       const receipt = await sessionController.cancel(ref.agentTypeId, ref.sessionId, `cancel:${randomUUID()}`)
-      return receipt.stopped
+      const settled = await store.settleCancelledSession?.(ref, new Date().toISOString())
+      return receipt.stopped || settled
         ? { ...ref, cancelled: true }
         : { ...ref, skipped: "session-not-running" }
     },

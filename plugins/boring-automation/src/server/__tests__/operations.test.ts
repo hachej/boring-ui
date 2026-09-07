@@ -208,6 +208,24 @@ describe("AutomationOperations", () => {
     expect(sessionController.nudge).toHaveBeenCalledWith("worker", "session-1", "Continue", expect.stringMatching(/^nudge:/))
   })
 
+  it("settles the matching durable run after confirmed session cancellation", async () => {
+    const settleCancelledSession = vi.fn(async () => run({ status: "cancelled" }))
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
+    }
+    const operations = createAutomationOperations({
+      store: storeMock({ settleCancelledSession }), actor: { workspaceId: "w", userId: "u" }, sessionController,
+    })
+
+    await expect(operations.cancel!({ agentTypeId: "worker", sessionId: "session-1" }))
+      .resolves.toMatchObject({ cancelled: true })
+    expect(settleCancelledSession).toHaveBeenCalledWith(
+      { agentTypeId: "worker", sessionId: "session-1" }, expect.any(String),
+    )
+  })
+
   it("reports cancel as skipped when the Agent confirms no session was stopped", async () => {
     const sessionController = {
       list: vi.fn(async () => []),

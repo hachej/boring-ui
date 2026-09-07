@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
-import { createFactoryAutomationSeedProvider } from '@hachej/boring-agent/server'
+import { createFactoryAutomationSeedProvider } from './factoryAutomationSeeds.js'
 import type { CoreWorkspaceAgentServerPlugin, CoreWorkspacePluginEntry } from '@hachej/boring-core/app/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import { ErrorCode, type Sha256Digest } from '@hachej/boring-agent/shared'
@@ -24,14 +24,12 @@ class FullAppPluginCompositionError extends Error {
   }
 }
 
-const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
-  packageName: '@hachej/boring-automation',
-  descriptor: Object.freeze({
-    id: 'boring-automation',
-    version: '0.1.87',
-    contentDigest: 'sha256:5fcd1c7d39c96709d8bff594b8b05a8f57560a820104d5d79242545f31ca23d2',
-  } satisfies StableContributionDescriptor),
-}])
+// Automation is composed explicitly below because its host-owned seed provider
+// cannot be represented by a package-name default without double registration.
+const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([] satisfies ReadonlyArray<{
+  packageName: string
+  descriptor: StableContributionDescriptor
+}>)
 
 const FULL_APP_DEFAULT_PLUGIN_PACKAGES = Object.freeze(FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION.map((entry) => entry.packageName))
 const require = createRequire(import.meta.url)

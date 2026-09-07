@@ -9,9 +9,9 @@ Run one bounded factory tick, report, and exit. Durable state lives in beads, ru
    - Still `idle` after a recorded `nudge-delivered` marker and cooldown: record `idle-after-nudge <ts> attempt=N` and raise one non-blocking owner intention. Do not call `cancel`, break the lease, or claim that the occupying run was resolved; an idle Agent reports `stopped: false`.
    - Stale lease plus `error` or `gone` session: record the exact state and raise one non-blocking owner intention; do not call `nudge`/`cancel`, break the lease, or pretend the occupying run was resolved.
    - Stale lease plus `null` session state: the run has no address yet; leave it to durable run reconciliation and do not improvise a session control.
-   - When the configured attempt limit is exhausted, route to Steward as a spec defect and file one owner intention with `ask_user wait:false`; record `intention-raised <condition> <id> <ts>` on the bead.
+   - When the configured attempt limit is exhausted, route to Steward as a spec defect and file one owner intention with `ask_user blocking:false`; record `intention-raised <condition> <id> <ts>` on the bead.
    - Never cancel a `running` or `aborting` session. Never repeat an action whose structured bead comment already records it.
-   - Poll previously recorded intention ids with `read_intention` and act only on explicit answered values.
+   - Non-blocking answers are delivered by the host as follow-ups. Act only on explicit delivered values; an unanswered intention is never consent.
 2. **Janitor.** Reconcile stale leases, proof hygiene, and epic-branch drift from durable evidence only. Mechanical blockers may be unblocked; judgment calls become one non-blocking owner intention.
 3. **Triage slot.** If untriaged GitHub issues exist and the triage automation has no active dispatch run, trigger it with `boring_automation run`.
 4. **Worker slots.** Read `beadle.worker_cap`. While ready work exceeds active workers, trigger unoccupied worker-slot automations. Start slots, never beads; each worker claims atomically for itself. A `RUN_ALREADY_ACTIVE` result means occupied and must remain rejected.

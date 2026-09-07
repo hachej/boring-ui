@@ -30,9 +30,6 @@ export const AUTOMATION_RUN_OCCUPYING_STATUSES = [
   "outcome-unknown",
 ] as const satisfies readonly AutomationRunStatus[]
 
-/** Ambiguous receipts block new dispatches long enough for late terminal writes, then release without retrying the same occurrence. */
-export const AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS = 5 * 60_000
-
 const AUTOMATION_RUN_OCCUPYING_STATUS_SET = new Set<AutomationRunStatus>(AUTOMATION_RUN_OCCUPYING_STATUSES)
 const AUTOMATION_RUN_SETTLED_STATUS_SET = new Set<AutomationRunStatus>(AUTOMATION_RUN_SETTLED_STATUSES)
 

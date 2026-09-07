@@ -1,4 +1,3 @@
-import type { FactoryAutomationSeedContext } from "@hachej/boring-agent/server"
 import { z } from "zod"
 import { isValidFiveFieldCron, isValidIanaTimeZone, MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
 import type { Automation, AutomationSeed, AutomationStore } from "./store"
@@ -24,12 +23,17 @@ export const AutomationSeedSchema = z.object({
 
 const ManifestSchema = z.object({ automations: z.array(AutomationSeedSchema) }).strict()
 
+export interface AutomationSeedProviderContext {
+  readonly listExistingSeedKeys: (prefix: string) => Promise<readonly string[]>
+  readonly removeSeededAutomationIfIdle: (key: string) => Promise<boolean>
+  readonly warn: (message: string) => void
+}
+
 export type AutomationSeedProvider = (
-  context: FactoryAutomationSeedContext,
+  context: AutomationSeedProviderContext,
 ) => Promise<readonly AutomationSeed[]>
 
 export interface SeedStandingAutomationsOptions {
-  readonly additionalSeeds?: readonly AutomationSeed[]
   readonly seedProvider?: AutomationSeedProvider
   readonly warn?: (message: string) => void
 }
@@ -49,7 +53,7 @@ export async function seedStandingAutomations(
         removeSeededAutomationIfIdle: (key) => store.removeSeededAutomationIfIdle(key),
         warn,
       })
-    : options.additionalSeeds ?? []
+    : []
   const seeds = [...manifestSeeds, ...provided]
   if (new Set(seeds.map(({ key }) => key)).size !== seeds.length) {
     throw new Error("automation seeds contain duplicate keys")

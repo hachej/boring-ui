@@ -2,16 +2,17 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { createFactoryAutomationSeedProvider, createFactoryAutomationSeeds } from '../factoryAutomationSeeds'
+import { createFactoryAutomationSeedProvider, createFactoryAutomationSeeds } from '../factoryAutomationSeeds.js'
 
 async function workspace(policy?: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'factory-automation-seeds-'))
   await mkdir(join(root, '.agents', 'factory'), { recursive: true })
   await mkdir(join(root, '.agents', 'automation'), { recursive: true })
   if (policy !== undefined) await writeFile(join(root, '.agents', 'factory', 'policy.yaml'), policy)
-  await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet\n        envVar: ANTHROPIC_API_KEY\n')
+  await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'models:\n  tiers:\n    T1:\n      - provider: google\n        id: gemini-pro\n        envVar: GEMINI_API_KEY\n    T3:\n      - provider: anthropic\n        id: claude-sonnet\n        envVar: ANTHROPIC_API_KEY\n')
   await writeFile(join(root, '.agents', 'automation', 'worker-slot.md'), 'worker prompt')
   await writeFile(join(root, '.agents', 'automation', 'triage-slot.md'), 'triage prompt')
+  await writeFile(join(root, '.agents', 'automation', 'orchestrator-tick.md'), 'orchestrator prompt')
   return root
 }
 
@@ -29,26 +30,27 @@ function context(
 describe('factory automation seed host composition', () => {
   it('derives worker slots with isolated prompt refs plus triage', async () => {
     expect(createFactoryAutomationSeeds(3).map(({ key }) => key)).toEqual([
-      'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'triage',
+      'orchestrator-tick', 'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'triage',
     ])
-    expect(new Set(createFactoryAutomationSeeds(3).map(({ promptRef }) => promptRef)).size).toBe(4)
+    expect(new Set(createFactoryAutomationSeeds(3).map(({ promptRef }) => promptRef)).size).toBe(5)
     const provider = createFactoryAutomationSeedProvider({
-      policyRoot: await workspace('beadle:\n  worker_cap: 5\nmodels:\n  seats:\n    worker: T3\n'),
+      policyRoot: await workspace('beadle:\n  worker_cap: 5\nmodels:\n  seats:\n    worker: T3\n    orchestrator: T1\n'),
       env: { ANTHROPIC_API_KEY: 'test' },
     })
     const seeds = await provider(context())
-    expect(seeds).toHaveLength(6)
-    expect(seeds[0]).toMatchObject({ model: 'anthropic:claude-sonnet', promptBody: 'worker prompt' })
+    expect(seeds).toHaveLength(7)
+    expect(seeds[0]).toMatchObject({ key: 'orchestrator-tick', promptBody: 'orchestrator prompt' })
+    expect(seeds[1]).toMatchObject({ model: 'anthropic:claude-sonnet', promptBody: 'worker prompt' })
   })
 
   it.each([
     ['missing', undefined],
-    ['invalid', 'beadle:\n  worker_cap: nope\nmodels:\n  seats:\n    worker: T3\n'],
+    ['invalid', 'beadle:\n  worker_cap: nope\nmodels:\n  seats:\n    worker: T3\n    orchestrator: T1\n'],
   ])('falls back to 3 with a warning for %s policy', async (_label, policy) => {
     const warn = vi.fn()
     const provider = createFactoryAutomationSeedProvider({ policyRoot: await workspace(policy), warn })
     expect((await provider(context())).map(({ key }) => key)).toEqual([
-      'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'triage',
+      'orchestrator-tick', 'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'triage',
     ])
     expect(warn).toHaveBeenCalled()
   })
@@ -57,7 +59,7 @@ describe('factory automation seed host composition', () => {
     const warn = vi.fn()
     const remove = vi.fn(async (key: string) => key !== 'worker-slot-4')
     const provider = createFactoryAutomationSeedProvider({
-      policyRoot: await workspace('beadle:\n  worker_cap: 3\nmodels:\n  seats:\n    worker: T3\n'),
+      policyRoot: await workspace('beadle:\n  worker_cap: 3\nmodels:\n  seats:\n    worker: T3\n    orchestrator: T1\n'),
       warn,
     })
     const seedContext = context(['worker-slot-1', 'worker-slot-4', 'worker-slot-999'], remove)

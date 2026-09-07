@@ -128,16 +128,6 @@ export type {
   ResolveDefaultAgentFleetOptions,
 } from './agentDefinition/resolveDefaultAgentFleet'
 export {
-  createFactoryAutomationSeedProvider,
-  createFactoryAutomationSeeds,
-} from './automation/factoryAutomationSeeds'
-export type {
-  CreateFactoryAutomationSeedProviderOptions,
-  FactoryAutomationSeed,
-  FactoryAutomationSeedContext,
-  FactoryAutomationSeedProvider,
-} from './automation/factoryAutomationSeeds'
-export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
   type ResolvedAgentDigestInput,

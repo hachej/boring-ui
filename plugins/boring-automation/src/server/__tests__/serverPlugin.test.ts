@@ -76,7 +76,7 @@ describe("boring automation server plugin", () => {
     await app.register(createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
       workspaceRoot,
-      additionalSeeds: [{
+      seedProvider: async () => [{
         key: "triage",
         title: "triage",
         enabled: true,

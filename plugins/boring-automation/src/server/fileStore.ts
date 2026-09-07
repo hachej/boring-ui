@@ -11,7 +11,7 @@ import type {
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
 import { clampAutomationPersistedDurationMs, MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
-import { AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS, isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
+import { isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
 import type { AutomationSeed, AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
@@ -109,6 +109,7 @@ export class FileAutomationStore implements AutomationStore {
   async ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null> {
     const promptPath = this.workspacePath(input.promptRef)
     let seeded: Automation | undefined
+    let missingPrompt = false
     await this.mutate(async (state) => {
       const existing = state.automations[input.key]
       if (existing) {
@@ -121,7 +122,10 @@ export class FileAutomationStore implements AutomationStore {
         try {
           await readFile(promptPath, "utf8")
         } catch (error) {
-          if ((error as { code?: string }).code === "ENOENT") return
+          if ((error as { code?: string }).code === "ENOENT") {
+            missingPrompt = true
+            return
+          }
           throw error
         }
       }
@@ -141,6 +145,7 @@ export class FileAutomationStore implements AutomationStore {
       }
       state.automations[input.key] = clone(seeded)
     })
+    if (missingPrompt) return null
     return clone(requireValue(seeded))
   }
 
@@ -375,6 +380,26 @@ export class FileAutomationStore implements AutomationStore {
       .map(clone)
   }
 
+  async settleCancelledSession(ref: { agentTypeId: string; sessionId: string }, completedAt: string): Promise<AutomationRun | null> {
+    let settled: AutomationRun | undefined
+    await this.mutate((state) => {
+      const run = Object.values(state.runs)
+        .filter((candidate) => candidate.dispatchReceipt?.ref.agentTypeId === ref.agentTypeId
+          && candidate.dispatchReceipt.ref.sessionId === ref.sessionId
+          && isAutomationRunOccupying(candidate.status))
+        .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))[0]
+      if (!run) return
+      settled = applyRunPatch(run, {
+        status: "cancelled",
+        completedAt,
+        error: "Automation session was explicitly cancelled",
+      }, this.nowIso())
+      state.runs[run.id] = settled
+      this.activeRunIds.delete(run.id)
+    })
+    return settled ? clone(settled) : null
+  }
+
   async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }): Promise<AutomationRun | null> {
     const state = await this.load()
     const run = Object.values(state.runs)
@@ -469,10 +494,8 @@ function reconcileOrphanedRuns(
 ): void {
   for (const run of Object.values(state.runs)) {
     if (run.automationId !== automationId || !isAutomationRunOccupying(run.status)) continue
-    const ambiguousExpired = run.status === "outcome-unknown"
-      && new Date(completedAt).getTime() - new Date(run.updatedAt).getTime() >= AUTOMATION_OUTCOME_UNKNOWN_RELEASE_AFTER_MS
-    if (run.status === "outcome-unknown" && !ambiguousExpired) continue
-    if (activeRunIds.has(run.id) && !ambiguousExpired) continue
+    if (run.status === "outcome-unknown" && run.dispatchReceipt) continue
+    if (activeRunIds.has(run.id)) continue
     const reconciled = reconcileAbandonedRun(run.status, "host-restart")
     run.status = reconciled.status
     run.completedAt = completedAt

@@ -20,7 +20,7 @@ import { resolveAutomationOperationsForActor, type AutomationStoreMode } from ".
 import { createAutomationSessionController } from "./automationSessionController"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
-import type { AutomationSeed, AutomationStore } from "./store"
+import type { AutomationStore } from "./store"
 import { seedStandingAutomations, type AutomationSeedProvider } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
@@ -44,8 +44,6 @@ export interface BoringAutomationServerPluginOptions {
   eventBusOwner?: "plugin" | "caller"
   /** Defaults to true when hosted due execution is composed. Disable when an external scheduler owns wake-ups. */
   hostedSchedulerEnabled?: boolean
-  /** Optional trusted host-owned seeds. Workspace manifests remain schema-validated at the file boundary. */
-  additionalSeeds?: readonly AutomationSeed[]
   /** Optional dynamic host seed source; the generic plugin does not interpret host policy. */
   seedProvider?: AutomationSeedProvider
   seedWarning?: (message: string) => void
@@ -140,11 +138,10 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
 
 
 function seedOptions(
-  options: Pick<BoringAutomationServerPluginOptions, "additionalSeeds" | "seedProvider" | "seedWarning">,
+  options: Pick<BoringAutomationServerPluginOptions, "seedProvider" | "seedWarning">,
   fallbackWarning: (message: string) => void = () => undefined,
 ) {
   return {
-    ...(options.additionalSeeds ? { additionalSeeds: options.additionalSeeds } : {}),
     ...(options.seedProvider ? { seedProvider: options.seedProvider } : {}),
     warn: options.seedWarning ?? fallbackWarning,
   }
