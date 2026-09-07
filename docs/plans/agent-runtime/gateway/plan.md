@@ -621,25 +621,19 @@ streaming lane.
 over `pending-admission | admission-accepted | in-flight | rejected | completed
 | outcome-unknown` records. Same-digest retries return the same terminal
 rejection. Pending admission is safe to reconcile/retry after restart; only
-unresolved in-flight work becomes outcome-unknown. **v0 owner descope
-(2026-07-23):** the Level-B floor is a process-lifetime in-memory default
-ledger implementing this exact state machine and API — strictly stronger than
-today's wire, which has no command idempotency at all. HTTP callers survive a
-Host restart; for them, retry protection spans the process lifetime and a
-retry crossing a restart degrades to today's wire semantics (documented at
-each affected promise: create retention, stable-service-error replay, drain
-outcome-unknown). In-process embedded callers die with the process and
-recover via the documented snapshot loop. The durable file/SQLite ledger beside `sessionRoot` — with
-≥24-hour completed-record/create-tombstone retention (config may increase,
-never decrease), restart receipt replay, and active
-`AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation — becomes the mandatory
-default at Level D and lands with the streaming lane's SQLite activation; a
-lane needing crash-safe admission earlier (for example a MIG-CORE billing
-policy) may adopt the durable adapter ahead of Level D. Conformance at Level
-B covers admission rejection before mutation, concurrent retry, retryable
-adapter failure, and conflict; the crash/restart matrix (crash after external
-acceptance but before local receipt persistence; restart separately from true
-unknown effect outcome) runs at Level D.
+unresolved in-flight work becomes outcome-unknown. Production Host composition
+requires a transactional durable ledger: omission of `requestLedger` constructs
+the built-in SQLite ledger at `requestLedgerPath`, or at a Host-owned path
+derived from `sessionRoot`. An injected ledger must also report
+`durable-transactional`. The in-memory implementation remains available only
+through an explicit `inMemoryRequestLedgerMode: 'test' | 'development'` opt-in;
+it is never an implicit production fallback. The durable ledger provides
+restart receipt/service-error replay, completed-record/create-tombstone
+retention, and active `AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation. Level-B
+conformance covers admission rejection before mutation, concurrent retry,
+retryable adapter failure, conflict, and durable restart behavior. Level D adds
+durable stream offsets and retention semantics; it does not defer request-ledger
+durability.
 
 The server-only ledger/admission contract is exact (none of these records is a
 transport DTO):
@@ -817,8 +811,9 @@ legacy output unchanged. All non-legacy specs require `definition`.
 
 Host options (mechanism + custody — never in the spec): plugin **loading**
 (dirs/managers), model **credentials/providers**, `sessionRoot` (host
-namespaces per `agentTypeId` internally), `runtimeModeAdapter`/`runtimeHost`,
-`auth`.
+namespaces per `agentTypeId` internally), `requestLedgerPath` or an injected
+transactional ledger, explicit test/development-only in-memory ledger mode,
+`runtimeModeAdapter`/`runtimeHost`, `auth`.
 
 ### 6.10 `createAgentHost()`
 
@@ -840,10 +835,14 @@ interface CreateAgentHostOptions {
   }) => Promise<ResolvedAgentRuntimeScope>
   readonly telemetry?: TelemetrySink
   readonly metering?: AgentMeteringSink
-  /** Optional adapter override; omission constructs the Level-B in-memory
-      default (the durable default becomes mandatory at Level D per §6.8). */
+  /** Optional adapter override; production overrides must be transactional. */
   readonly requestLedger?: AgentRequestLedger
-  readonly requestRetentionMs?: number // durable ledger only; minimum enforced: 24h
+  /** Durable effect-ledger path, independent of transcript/session storage.
+      When omitted, production derives a Host-owned path from sessionRoot. */
+  readonly requestLedgerPath?: string
+  /** Explicit opt-in for tests/development; never a production fallback. */
+  readonly inMemoryRequestLedgerMode?: 'test' | 'development'
+  readonly requestRetentionMs?: number // durable ledger retention
   /** Omission selects the built-in idempotent accept-all adapter for
       trusted-local composition; it never skips ledger admission. */
   readonly effectAdmission?: AgentEffectAdmission
