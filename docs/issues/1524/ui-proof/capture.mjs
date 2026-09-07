@@ -23,14 +23,15 @@ for (const target of [{ label: "before", sha: base }, { label: "after", sha: hea
 const report = {
   schemaVersion: 1,
   scenario: "active live transcript → keyboard-focus Open transcript → Nudge → Stop/finalize",
-  fixture: "deterministic active session live-1, transcript live-transcripts/consultation.md, 180s review interval",
+  fixture: "isolated production-plugin component harness with deterministic active session live-1, mocked host/HTTP/WebSocket/media boundaries, transcript live-transcripts/consultation.md, 180s review interval",
   viewport,
   base,
   head,
   results,
 }
 await writeFile(join(out, "report.json"), `${JSON.stringify(report, null, 2)}\n`)
-await writeFile(join(out, "README.md"), `# PR #1524 live-transcription UI proof\n\n- Base: \`${base}\`\n- Candidate: \`${head}\`\n- Viewport: ${viewport.width}×${viewport.height}\n- Scenario: ${report.scenario}\n- Fixture: ${report.fixture}\n- Assertions (both revisions): the real browser controller completes compute preparation, microphone attach, WebSocket nonce ACK, and one correctly sized audio frame; the actual live-transcription Markdown panel is read-only while active, shows deterministic streamed Speaker 1/Speaker 2 fixture lines, then shows refined metadata and unlocks after completion; labeled active state is visible; controls have unique accessible names; keyboard focus reaches Open transcript; Open emits the exact workspace surface command; Nudge exposes a polite status; Stop becomes disabled/finalizing then completes; dock and controls remain inside the viewport without horizontal overflow.\n- Videos: [before.webm](./before.webm), [after.webm](./after.webm)\n- Machine report: [report.json](./report.json)\n`)
+await writeFile(join(out, "README.md"), `# PR #1524 live-transcription UI proof\n\n- Base: \`${base}\`\n- Candidate: \`${head}\`\n- Viewport: ${viewport.width}×${viewport.height}\n- Scenario: ${report.scenario}\n- Fixture: ${report.fixture}\n- Scope: isolated production-plugin component harness; Agent/Workspace host components plus HTTP/WebSocket/media boundaries are deterministic mocks. This does not claim a full production-shell E2E.
+- Assertions (both revisions): the production browser controller completes compute preparation, microphone attach, WebSocket nonce ACK, and one correctly sized audio frame; the production live-transcription plugin pane is read-only while active, shows deterministic streamed Speaker 1/Speaker 2 fixture lines through the mocked Workspace renderer, then shows refined metadata and unlocks after completion; labeled active state is visible; controls have unique accessible names; keyboard focus reaches Open transcript; Open emits the exact workspace surface command; Nudge exposes a polite status; Stop becomes disabled/finalizing then completes; dock and controls remain inside the harness viewport without horizontal overflow.\n- Videos: [before.webm](./before.webm), [after.webm](./after.webm)\n- Machine report: [report.json](./report.json)\n`)
 console.log(JSON.stringify(report, null, 2))
 
 function required(name) {
