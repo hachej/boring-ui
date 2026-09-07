@@ -202,9 +202,15 @@ def parse_multipart_body(body: bytes, boundary: bytes) -> dict[str, tuple[dict[s
     parts = body.split(delimiter)
     fields: dict[str, tuple[dict[str, str], bytes]] = {}
     for part in parts:
-        part = part.strip(b"\r\n")
-        if not part or part == b"--":
+        if not part or part in (b"--", b"--\r\n"):
             continue
+        # Boundary framing contributes exactly one leading and trailing CRLF.
+        # Remove those bytes, never content bytes: binary recordings may validly
+        # end in any number of CR/LF octets.
+        if part.startswith(b"\r\n"):
+            part = part[2:]
+        if part.endswith(b"\r\n"):
+            part = part[:-2]
         header_blob, _, value = part.partition(b"\r\n\r\n")
         if not _:
             continue
@@ -221,7 +227,7 @@ def parse_multipart_body(body: bytes, boundary: bytes) -> dict[str, tuple[dict[s
             if piece.startswith("name="):
                 field_name = piece[len("name="):].strip('"')
         if field_name:
-            fields[field_name] = (headers, value.rstrip(b"\r\n"))
+            fields[field_name] = (headers, value)
     return fields
 
 

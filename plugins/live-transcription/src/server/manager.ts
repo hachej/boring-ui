@@ -23,8 +23,6 @@ import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisper
 import { LiveReviewBroker } from "./reviewBroker"
 import { LocalAudioRecorder } from "./audioRecorder"
 import type { TranscriptRefiner } from "./refine"
-import { join as joinPath } from "node:path"
-import { realpath, stat as fsStat } from "node:fs/promises"
 
 interface UpstreamConnection {
   connect(): Promise<void>
@@ -521,14 +519,16 @@ export class LiveTranscriptManager {
     refiner: TranscriptRefiner,
     input: { path: string; title?: string; overwrite?: boolean },
   ): Promise<{ transcriptPath: string; words: number; speakers: number; durationSeconds: number }> {
-    if (!workspace.writeFileWithStat) {
-      throw new LiveTranscriptError("live_transcript_disabled", "Workspace guarded file operations are unavailable.", 503)
+    if (!workspace.readBinaryFile || !workspace.writeFileWithStat) {
+      throw new LiveTranscriptError("live_transcript_disabled", "Workspace binary read and guarded write operations are unavailable.", 503)
     }
     const relPath = validateWorkspaceAudioPath(input.path)
-    if (!this.options.audioRecordingDirectory) {
-      throw new LiveTranscriptError("live_transcript_disabled", "No local audio recording directory is configured for file transcription.", 503)
+    let audioBytes: Uint8Array
+    try {
+      audioBytes = await workspace.readBinaryFile(relPath)
+    } catch {
+      throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file was not found or is inaccessible.", 400)
     }
-    const absolutePath = await resolveRecordingAbsolutePath(this.options.audioRecordingDirectory, relPath)
     const transcriptRelPath = `${relPath.replace(/\.[^./\\]+$/, "")}.transcript.md`
     if (!input.overwrite) {
       const exists = await workspace.stat(transcriptRelPath).then(() => true, () => false)
@@ -538,7 +538,12 @@ export class LiveTranscriptManager {
     }
     const title = cleanTitle(input.title)
     const startedAt = new Date(this.now()).toISOString()
-    const result = await refiner.refine({ audioAbsolutePath: absolutePath, title, startedAt })
+    const result = await refiner.refine({
+      audioBytes,
+      audioFilename: relPath.slice(`${RECORDING_FOLDER}/`.length),
+      title,
+      startedAt,
+    })
     await workspace.writeFileWithStat(transcriptRelPath, result.markdown)
     return {
       transcriptPath: transcriptRelPath,
@@ -795,31 +800,6 @@ function validateWorkspaceAudioPath(raw: unknown): string {
     throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file extension is unsupported.", 400)
   }
   return `${RECORDING_FOLDER}/${name}`
-}
-
-/**
- * Resolves a validated `live-transcripts/<name>` path to its real host path inside the plugin's
- * own `audioRecordingDirectory` (an absolute host directory — never the sandbox-canonical
- * `workspace.root`, which does not exist in the host Node process running this plugin).
- */
-async function resolveRecordingAbsolutePath(audioRecordingDirectory: string, relPath: string): Promise<string> {
-  const name = relPath.slice(`${RECORDING_FOLDER}/`.length)
-  const candidate = joinPath(audioRecordingDirectory, name)
-  let real: string
-  let realDirectory: string
-  try {
-    ;[real, realDirectory] = await Promise.all([realpath(candidate), realpath(audioRecordingDirectory)])
-  } catch {
-    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file was not found or is inaccessible.", 400)
-  }
-  if (real !== realDirectory && !real.startsWith(`${realDirectory}/`)) {
-    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording path escaped the recordings directory.", 400)
-  }
-  const stats = await fsStat(real).catch(() => undefined)
-  if (!stats || !stats.isFile()) {
-    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording path is not a regular file.", 400)
-  }
-  return real
 }
 
 function cleanTitle(value: string | undefined): string {

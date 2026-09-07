@@ -437,6 +437,10 @@ export async function createFolderModeApp(opts: {
     diarizerBearerToken?: string
     lifecycleUrl?: string
     lifecycleBearerToken?: string
+    refineUrl?: string
+    refineBearerToken?: string
+    audioRecordingDirectory?: string
+    audioRecordingFfmpegPath?: string
     reviewIntervalMs?: number
   }
 }): Promise<FastifyInstance> {
@@ -521,6 +525,10 @@ export async function createFolderModeApp(opts: {
         diarizerBearerToken: opts.liveTranscripts.diarizerBearerToken,
         lifecycleUrl: opts.liveTranscripts.lifecycleUrl,
         lifecycleBearerToken: opts.liveTranscripts.lifecycleBearerToken,
+        refineUrl: opts.liveTranscripts.refineUrl,
+        refineBearerToken: opts.liveTranscripts.refineBearerToken,
+        audioRecordingDirectory: opts.liveTranscripts.audioRecordingDirectory,
+        audioRecordingFfmpegPath: opts.liveTranscripts.audioRecordingFfmpegPath,
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined

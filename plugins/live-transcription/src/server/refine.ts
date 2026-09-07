@@ -22,12 +22,16 @@ export interface TranscriptRefinerOptions {
   sleep?: (ms: number) => Promise<void>
 }
 
-export interface RefineInput {
-  audioAbsolutePath: string
+interface RefineMetadata {
   title: string
   startedAt: string
   language?: string
 }
+
+export type RefineInput = RefineMetadata & (
+  | { audioAbsolutePath: string; audioBytes?: never; audioFilename?: never }
+  | { audioAbsolutePath?: never; audioBytes: Uint8Array; audioFilename: string }
+)
 
 export interface RefineResult {
   markdown: string
@@ -65,10 +69,14 @@ export class TranscriptRefiner {
 
   async refine(input: RefineInput): Promise<RefineResult> {
     let size: number
-    try {
-      size = (await stat(input.audioAbsolutePath)).size
-    } catch {
-      throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file was not found.", 400)
+    if (input.audioBytes) {
+      size = input.audioBytes.byteLength
+    } else {
+      try {
+        size = (await stat(input.audioAbsolutePath)).size
+      } catch {
+        throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file was not found.", 400)
+      }
     }
     if (size > MAX_AUDIO_BYTES) {
       throw new LiveTranscriptError("live_transcript_limit_exceeded", "Recording exceeded the offline refine size limit.", 413)
@@ -92,14 +100,21 @@ export class TranscriptRefiner {
   }
 
   private async refineWithLease(input: RefineInput): Promise<RefineResult> {
-    let buffer: Buffer
-    try {
-      buffer = await readFile(input.audioAbsolutePath)
-    } catch {
-      throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file could not be read.", 400)
+    let bytes: Uint8Array
+    let filename: string
+    if (input.audioBytes) {
+      bytes = input.audioBytes
+      filename = input.audioFilename
+    } else {
+      try {
+        bytes = new Uint8Array(await readFile(input.audioAbsolutePath))
+      } catch {
+        throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file could not be read.", 400)
+      }
+      filename = basename(input.audioAbsolutePath)
     }
     const form = new FormData()
-    form.set("file", new Blob([new Uint8Array(buffer)]), basename(input.audioAbsolutePath))
+    form.set("file", new Blob([new Uint8Array(bytes)]), filename)
     form.set("language", input.language?.trim() || "fr")
 
     const response = await this.postRefineWithRetry(form)

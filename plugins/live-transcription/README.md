@@ -91,6 +91,13 @@ refineBearerToken: "<refine service token>",  // required, at least 32 character
 refineFetch: undefined,                       // test hook only
 ```
 
+The stock folder-mode CLI forwards
+`BORING_LIVE_TRANSCRIPTS_REFINE_URL`,
+`BORING_LIVE_TRANSCRIPTS_REFINE_BEARER_TOKEN`,
+`BORING_LIVE_TRANSCRIPTS_RECORDING_DIRECTORY`, and
+`BORING_LIVE_TRANSCRIPTS_FFMPEG_PATH` to those plugin options. The recording
+and refine settings remain opt-in.
+
 When `refineUrl` is set, `createLiveTranscriptServerPlugin` builds a
 `TranscriptRefiner` (`src/server/refine.ts`) that streams a recording to
 `POST {refineUrl}/refine` (multipart `file`, optional `language`, bearer
@@ -119,13 +126,9 @@ Two ways to trigger it:
   segment after the folder, extension one of `m4a`, `mp3`, `wav`, `webm`,
   `ogg`, `mp4`, `aac`, `flac`. Any other path (outside `live-transcripts/`,
   containing extra segments or `..`, absolute) is rejected with 400. The
-  audio is read from the plugin's own `audioRecordingDirectory` (the real
-  host directory backing the workspace's `live-transcripts/` folder) rather
-  than through the sandbox-facing `workspace.root`, since the latter is a
-  sandbox-canonical label that doesn't resolve to a real path in the host
-  Node process; symlink escapes out of that directory are rejected, and the
-  request answers `503 live_transcript_disabled` if no
-  `audioRecordingDirectory` is configured. It writes the refined transcript
+  audio is read exclusively through the resolved Workspace's public
+  `readBinaryFile` seam; this route never maps a workspace-relative path onto
+  ambient host storage. It writes the refined transcript
   to `<path without extension>.transcript.md` in the workspace (refusing to
   overwrite an existing file unless `overwrite: true`, which returns
   `live_transcript_revision_conflict`/409) and responds `{ transcriptPath,

@@ -30,7 +30,7 @@ const report = {
   results,
 }
 await writeFile(join(out, "report.json"), `${JSON.stringify(report, null, 2)}\n`)
-await writeFile(join(out, "README.md"), `# PR #1524 live-transcription UI proof\n\n- Base: \`${base}\`\n- Candidate: \`${head}\`\n- Viewport: ${viewport.width}×${viewport.height}\n- Scenario: ${report.scenario}\n- Fixture: ${report.fixture}\n- Assertions (both revisions): the real browser controller completes compute preparation, microphone attach, WebSocket nonce ACK, and one correctly sized audio frame; labeled active state is visible; controls have unique accessible names; keyboard focus reaches Open transcript; Open emits the exact workspace surface command; Nudge exposes a polite status; Stop becomes disabled/finalizing then completes; dock and controls remain inside the viewport without horizontal overflow.\n- Videos: [before.webm](./before.webm), [after.webm](./after.webm)\n- Machine report: [report.json](./report.json)\n`)
+await writeFile(join(out, "README.md"), `# PR #1524 live-transcription UI proof\n\n- Base: \`${base}\`\n- Candidate: \`${head}\`\n- Viewport: ${viewport.width}×${viewport.height}\n- Scenario: ${report.scenario}\n- Fixture: ${report.fixture}\n- Assertions (both revisions): the real browser controller completes compute preparation, microphone attach, WebSocket nonce ACK, and one correctly sized audio frame; the actual live-transcription Markdown panel is read-only while active, shows deterministic streamed Speaker 1/Speaker 2 fixture lines, then shows refined metadata and unlocks after completion; labeled active state is visible; controls have unique accessible names; keyboard focus reaches Open transcript; Open emits the exact workspace surface command; Nudge exposes a polite status; Stop becomes disabled/finalizing then completes; dock and controls remain inside the viewport without horizontal overflow.\n- Videos: [before.webm](./before.webm), [after.webm](./after.webm)\n- Machine report: [report.json](./report.json)\n`)
 console.log(JSON.stringify(report, null, 2))
 
 function required(name) {
@@ -76,6 +76,9 @@ async function capture({ label, sha }) {
     await dock.waitFor()
     await page.getByLabel("Live transcription", { exact: true }).waitFor()
     await page.evaluate(() => window.__emitAudioFrame())
+    await page.getByText("Speaker 1: Bonjour").waitFor()
+    await page.getByText("Speaker 2: Bonjour docteur").waitFor()
+    if (await page.getByTestId("markdown-editor").getAttribute("data-mode") !== "view") throw new Error(`${label}: active transcript was not read-only`)
     const startupTrace = await page.evaluate(() => window.__networkTrace)
     for (const expected of ["POST /api/v1/live-transcripts/compute/prepare", "POST /api/v1/live-transcripts", "WS nonce", "WS audio-frame"]) {
       if (!startupTrace.includes(expected)) throw new Error(`${label}: missing live-start trace ${expected}`)
@@ -111,6 +114,8 @@ async function capture({ label, sha }) {
     await finalizing.waitFor()
     if (!(await finalizing.isDisabled())) throw new Error(`${label}: finalizing control was not disabled`)
     await page.getByTestId("completed").waitFor()
+    await page.getByText("Refined: large-v3-turbo, 8 words, 2 speakers").waitFor()
+    if (await page.getByTestId("markdown-editor").getAttribute("data-mode") !== "edit") throw new Error(`${label}: completed transcript did not unlock`)
 
     await page.screenshot({ path: join(out, `${label}.png`), fullPage: true })
     await page.waitForTimeout(500)
@@ -126,6 +131,7 @@ async function capture({ label, sha }) {
       screenshot: `${label}.png`,
       assertions: {
         liveStartMicrophoneSocketAndAudioFrame: "PASS",
+        streamedSpeakerLabelsAndRefinedTranscriptPanel: "PASS",
         interaction: "PASS",
         accessibleNamesAndStatus: "PASS",
         keyboardFocus: "PASS",
@@ -143,16 +149,18 @@ async function capture({ label, sha }) {
 async function writeFixture(root, label, sha) {
   await writeFile(join(root, "index.html"), '<div id="root"></div><script type="module" src="/entry.tsx"></script>')
   await writeFile(join(root, "mock-agent.tsx"), `import React from "react"\nexport const ChatMessageContributionProvider=({children})=>children\nexport const ComposerContributionProvider=({children})=>children\nexport const Message=({children})=><div>{children}</div>\nexport const MessageContent=({children})=><div>{children}</div>\nexport const Tool=({children})=><div>{children}</div>\nexport const ToolContent=({children})=><div>{children}</div>\nexport const ToolHeader=({children})=><div>{children}</div>\nexport const useOpenArtifact=()=>()=>{}\n`)
-  await writeFile(join(root, "mock-workspace.tsx"), `import React from "react"\nexport const MarkdownEditorPane=()=> <div>Transcript</div>\n`)
+  await writeFile(join(root, "mock-workspace.tsx"), `import React,{useEffect,useState} from "react"\nexport const MarkdownEditorPane=({params})=>{const[,render]=useState(0);useEffect(()=>{const listener=()=>render(v=>v+1);addEventListener("proof-transcript",listener);return()=>removeEventListener("proof-transcript",listener)},[]);return <article data-testid="markdown-editor" data-mode={params?.mode}><h2>Consultation transcript</h2>{(window.__transcript??[]).map((line,index)=><p key={index}>{line}</p>)}</article>}\n`)
   await writeFile(join(root, "mock-workspace-plugin.ts"), `export const definePlugin=(value)=>value\nexport const postUiCommand=(command)=>{ window.__uiCommands.push(command) }\n`)
   await writeFile(join(root, "entry.tsx"), `
 import React, { useEffect, useSyncExternalStore } from "react"
 import { createRoot } from "react-dom/client"
-import { LiveTranscriptComposerTop, liveTranscriptBrowserState, liveTranscriptController } from "/plugins/live-transcription/src/front/index.tsx"
+import { LiveTranscriptComposerTop, LiveTranscriptMarkdownPane, liveTranscriptBrowserState, liveTranscriptController } from "/plugins/live-transcription/src/front/index.tsx"
 import { LIVE_PCM_FRAME_BYTES } from "/plugins/live-transcription/src/shared/index.ts"
 window.__uiCommands=[]
 window.__networkTrace=[]
 window.__terminal=false
+window.__transcript=[]
+window.__setTranscript=(lines)=>{window.__transcript=lines;dispatchEvent(new Event("proof-transcript"))}
 const ok=(value)=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{"content-type":"application/json"}}))
 window.fetch=async(input,init={})=>{
  const path=typeof input==="string"?input:new URL(input.url).pathname
@@ -160,7 +168,7 @@ window.fetch=async(input,init={})=>{
  if(path.endsWith("/compute/prepare")) return ok({preparationId:"prepare-1",state:"ready"})
  if(path==="/api/v1/live-transcripts") return ok({liveSessionId:"live-1",transcriptPath:"live-transcripts/consultation.md",socketNonce:"nonce-1",reviewIntervalMs:180000})
  if(path.endsWith("/review")) return ok({status:"dispatched"})
- if(path.endsWith("/stop")){ window.__terminal=true; await new Promise(r=>setTimeout(r,350)); return ok({transcriptPath:"live-transcripts/consultation.md"}) }
+ if(path.endsWith("/stop")){ window.__terminal=true; await new Promise(r=>setTimeout(r,350)); window.__setTranscript(["Refined: large-v3-turbo, 8 words, 2 speakers","Speaker 1: Bonjour, comment allez-vous ?","Speaker 2: Très bien, merci docteur."]); return ok({transcriptPath:"live-transcripts/consultation.md"}) }
  return ok({})
 }
 class FakeSocket extends EventTarget{
@@ -174,11 +182,11 @@ class FakeAudioContext{constructor(){} audioWorklet={addModule:async()=>{}};dest
 class FakeWorklet{constructor(){window.__worklet=this;this.port={onmessage:null,postMessage(){}}}connect(){}disconnect(){}}
 window.AudioContext=FakeAudioContext
 window.AudioWorkletNode=FakeWorklet
-window.__emitAudioFrame=()=>window.__worklet.port.onmessage({data:{type:"frame",data:new ArrayBuffer(LIVE_PCM_FRAME_BYTES)}})
+window.__emitAudioFrame=()=>{window.__worklet.port.onmessage({data:{type:"frame",data:new ArrayBuffer(LIVE_PCM_FRAME_BYTES)}});window.__setTranscript(["Speaker 1: Bonjour","Speaker 2: Bonjour docteur"])}
 function App(){
  const recording=useSyncExternalStore(liveTranscriptBrowserState.subscribe,liveTranscriptBrowserState.getSnapshot,liveTranscriptBrowserState.getSnapshot)
  useEffect(()=>{void liveTranscriptController.start("chat-1","Consultation")},[])
- return <main><header><strong>${label.toUpperCase()}</strong><code>${sha}</code></header><section aria-label="Live transcription proof fixture"><LiveTranscriptComposerTop/></section>{window.__terminal&&!recording.phase?<p data-testid="completed">Transcript finalized</p>:null}</main>
+ return <main><header><strong>${label.toUpperCase()}</strong><code>${sha}</code></header><section aria-label="Live transcription proof fixture"><LiveTranscriptComposerTop/></section><section className="transcript"><LiveTranscriptMarkdownPane params={{path:"live-transcripts/consultation.md"}} api={{}}/></section>{window.__terminal&&!recording.phase?<p data-testid="completed">Transcript finalized</p>:null}</main>
 }
 createRoot(document.getElementById("root")).render(<App/>)
 `)
@@ -186,6 +194,6 @@ createRoot(document.getElementById("root")).render(<App/>)
   const entry = await readFile(join(root, "entry.tsx"), "utf8")
   await writeFile(join(root, "entry.tsx"), `import \"/fixture.css\"\n${entry}`)
   await writeFile(join(root, "fixture.css"), `
-:root{font-family:Inter,ui-sans-serif,system-ui;color:#172033;background:#f5f7fb}*{box-sizing:border-box}body{margin:0}main{width:720px;margin:72px auto;padding:28px;background:#fff;border:1px solid #d9deea;border-radius:24px;box-shadow:0 18px 50px #24304b22}header{display:flex;gap:14px;align-items:center;margin-bottom:28px}header strong{font-size:13px;letter-spacing:.12em;color:#b42318}header code{font-size:11px;color:#667085}.w-full{width:100%}.overflow-hidden{overflow:hidden}.rounded-\\[18px\\]{border-radius:18px}.border{border:1px solid #d0d5dd}.bg-card\\/95{background:#fff}.flex{display:flex}.flex-nowrap{flex-wrap:nowrap}.items-center{align-items:center}.gap-2{gap:.5rem}.gap-1\\.5{gap:.375rem}.gap-2\\.5{gap:.625rem}.gap-1{gap:.25rem}.px-3{padding-left:.75rem;padding-right:.75rem}.py-2\\.5{padding-top:.625rem;padding-bottom:.625rem}.shrink-0{flex-shrink:0}.size-2\\.5{width:.625rem;height:.625rem}.size-1\\.5{width:.375rem;height:.375rem}.size-2{width:.5rem;height:.5rem}.size-4{width:1rem;height:1rem}.size-8{width:2rem;height:2rem}.rounded-full{border-radius:9999px}.bg-red-500\\/18,.bg-red-500\\/12{background:#fee4e2}.bg-red-500{background:#f04438}.text-red-600{color:#d92d20}.min-w-0{min-width:0}.min-w-20{min-width:5rem}.flex-1{flex:1}.flex-col{flex-direction:column}.font-semibold,.font-medium{font-weight:600}.text-\\[12px\\]{font-size:12px}.text-\\[11px\\]{font-size:11px}.text-muted-foreground{color:#667085}.ml-auto{margin-left:auto}.justify-end{justify-content:flex-end}.h-8{height:2rem}.h-1{height:.25rem}.bg-muted{background:#eaecf0}.bg-background{background:#fff}.px-3{padding-left:.75rem;padding-right:.75rem}button{font:inherit;border:0;cursor:pointer}button:focus{outline:3px solid #84adff;outline-offset:2px}button:disabled{cursor:wait;opacity:.6}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}[role=status]{margin-top:8px;padding:8px 12px;border-top:1px solid #eaecf0;color:#475467}[data-testid=completed]{color:#067647;font-weight:600}
+:root{font-family:Inter,ui-sans-serif,system-ui;color:#172033;background:#f5f7fb}*{box-sizing:border-box}body{margin:0}main{width:720px;margin:72px auto;padding:28px;background:#fff;border:1px solid #d9deea;border-radius:24px;box-shadow:0 18px 50px #24304b22}header{display:flex;gap:14px;align-items:center;margin-bottom:28px}header strong{font-size:13px;letter-spacing:.12em;color:#b42318}header code{font-size:11px;color:#667085}.w-full{width:100%}.overflow-hidden{overflow:hidden}.rounded-\\[18px\\]{border-radius:18px}.border{border:1px solid #d0d5dd}.bg-card\\/95{background:#fff}.flex{display:flex}.flex-nowrap{flex-wrap:nowrap}.items-center{align-items:center}.gap-2{gap:.5rem}.gap-1\\.5{gap:.375rem}.gap-2\\.5{gap:.625rem}.gap-1{gap:.25rem}.px-3{padding-left:.75rem;padding-right:.75rem}.py-2\\.5{padding-top:.625rem;padding-bottom:.625rem}.shrink-0{flex-shrink:0}.size-2\\.5{width:.625rem;height:.625rem}.size-1\\.5{width:.375rem;height:.375rem}.size-2{width:.5rem;height:.5rem}.size-4{width:1rem;height:1rem}.size-8{width:2rem;height:2rem}.rounded-full{border-radius:9999px}.bg-red-500\\/18,.bg-red-500\\/12{background:#fee4e2}.bg-red-500{background:#f04438}.text-red-600{color:#d92d20}.min-w-0{min-width:0}.min-w-20{min-width:5rem}.flex-1{flex:1}.flex-col{flex-direction:column}.font-semibold,.font-medium{font-weight:600}.text-\\[12px\\]{font-size:12px}.text-\\[11px\\]{font-size:11px}.text-muted-foreground{color:#667085}.ml-auto{margin-left:auto}.justify-end{justify-content:flex-end}.h-8{height:2rem}.h-1{height:.25rem}.bg-muted{background:#eaecf0}.bg-background{background:#fff}.px-3{padding-left:.75rem;padding-right:.75rem}button{font:inherit;border:0;cursor:pointer}button:focus{outline:3px solid #84adff;outline-offset:2px}button:disabled{cursor:wait;opacity:.6}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}[role=status]{margin-top:8px;padding:8px 12px;border-top:1px solid #eaecf0;color:#475467}[data-testid=completed]{color:#067647;font-weight:600}.transcript{margin-top:24px;padding:18px;border:1px solid #d0d5dd;border-radius:12px;background:#f9fafb}.transcript h2{font-size:14px;margin:0 0 12px}.transcript p{font-size:12px;margin:6px 0}
 `)
 }

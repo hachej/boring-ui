@@ -91,7 +91,6 @@ describe("TranscriptRefiner", () => {
         res.end(JSON.stringify(SUCCESS_PAYLOAD))
       })
     })
-    const audioPath = await makeAudioFile()
     const refiner = new TranscriptRefiner({
       refineUrl: baseUrl,
       bearerToken: "s".repeat(40),
@@ -99,7 +98,8 @@ describe("TranscriptRefiner", () => {
     })
 
     const result = await refiner.refine({
-      audioAbsolutePath: audioPath,
+      audioBytes: new Uint8Array(16).fill(1),
+      audioFilename: "session.m4a",
       title: "Consult",
       startedAt: "2026-09-05T09:30:00.000Z",
     })

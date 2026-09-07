@@ -95,6 +95,18 @@ class MultipartTest(unittest.TestCase):
         self.assertEqual(form["language"][1], b"fr")
         self.assertEqual(form["maxSpeakers"][1], b"2")
 
+    def test_preserves_binary_trailing_crlf_bytes(self):
+        boundary = b"binary-boundary"
+        payload = b"AUDIO\r\n\n\r"
+        body = (
+            b"--" + boundary + b"\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="a.wav"\r\n'
+            b"Content-Type: audio/wav\r\n\r\n" + payload + b"\r\n"
+            b"--" + boundary + b"--\r\n"
+        )
+        form = rs.parse_multipart_body(body, boundary)
+        self.assertEqual(form["file"][1], payload)
+
     def test_missing_file_field(self):
         boundary = b"B"
         body = (

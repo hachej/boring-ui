@@ -1,11 +1,7 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import type { Entry, Stat, Workspace } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import fastify, { type FastifyInstance } from "fastify"
-import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, it } from "vitest"
 import { LIVE_TRANSCRIPT_BASE_PATH } from "../../shared"
 import { createLiveTranscriptServerPlugin } from "../index"
@@ -14,16 +10,11 @@ const canonicalHost = "localhost:43124"
 const canonicalOrigin = `http://${canonicalHost}`
 const actor = { workspaceId: "default", userId: "local" }
 
-/**
- * Minimal Workspace whose files live under a sandbox-style root that does not exist on the
- * host filesystem (mirrors the clinic deployment, where `workspace.root` is the sandbox-canonical
- * `/workspace` label). Only the transcript-write side of transcribe-file goes through this;
- * the audio recording itself is read from a separate, real host directory
- * (`audioRecordingDirectory`), exactly as in production.
- */
+/** Minimal sandbox-style Workspace proving media reads stay on the public Workspace seam. */
 class FakeSandboxWorkspace implements Workspace {
   readonly runtimeContext: { runtimeCwd: string; mode: "direct" }
   private readonly files = new Map<string, string>()
+  private readonly binaryFiles = new Map<string, Uint8Array>()
   constructor(readonly root: string) {
     this.runtimeContext = { runtimeCwd: root, mode: "direct" }
   }
@@ -34,7 +25,9 @@ class FakeSandboxWorkspace implements Workspace {
     return value
   }
   async readBinaryFile(relPath: string): Promise<Uint8Array> {
-    return new TextEncoder().encode(await this.readFile(relPath))
+    const value = this.binaryFiles.get(relPath)
+    if (!value) throw new Error(`not found: ${relPath}`)
+    return value
   }
   async writeFile(relPath: string, data: string): Promise<void> {
     this.files.set(relPath, data)
@@ -44,14 +37,14 @@ class FakeSandboxWorkspace implements Workspace {
     return await this.stat(relPath)
   }
   async writeBinaryFile(relPath: string, data: Uint8Array): Promise<void> {
-    this.files.set(relPath, new TextDecoder().decode(data))
+    this.binaryFiles.set(relPath, data)
   }
   async unlink(relPath: string): Promise<void> { this.files.delete(relPath) }
   async readdir(): Promise<Entry[]> { return [] }
   async stat(relPath: string): Promise<Stat> {
-    const value = this.files.get(relPath)
+    const value = this.files.get(relPath) ?? this.binaryFiles.get(relPath)
     if (value === undefined) throw new Error(`not found: ${relPath}`)
-    return { size: value.length, mtimeMs: 0, kind: "file" }
+    return { size: typeof value === "string" ? value.length : value.byteLength, mtimeMs: 0, kind: "file" }
   }
   async mkdir(): Promise<void> {}
   async rename(): Promise<void> {}
@@ -117,25 +110,16 @@ async function transcribeFile(app: FastifyInstance, payload: Record<string, unkn
   })
 }
 
-const dirs: string[] = []
 const apps: FastifyInstance[] = []
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()))
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-async function makeDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "boring-transcribe-file-"))
-  dirs.push(dir)
-  return dir
-}
-
 describe("POST /live-transcripts/transcribe-file", () => {
-  it("refines a recording from the audio recording directory and writes a sibling transcript into the workspace", async () => {
-    const audioRecordingDirectory = await makeDir()
-    await writeFile(join(audioRecordingDirectory, "recording.m4a"), Buffer.alloc(16))
-    const { app, workspace } = await createApp({ workspaceRoot: "/workspace", audioRecordingDirectory })
+  it("refines a recording through Workspace.readBinaryFile and writes a sibling transcript", async () => {
+    const { app, workspace } = await createApp({ workspaceRoot: "/workspace" })
     apps.push(app)
+    await workspace.writeBinaryFile("live-transcripts/recording.m4a", new Uint8Array(16))
 
     const response = await transcribeFile(app, { path: "live-transcripts/recording.m4a", title: "Consult" })
     expect(response.statusCode).toBe(200)
@@ -151,10 +135,9 @@ describe("POST /live-transcripts/transcribe-file", () => {
   })
 
   it("refuses to overwrite an existing transcript unless overwrite is set", async () => {
-    const audioRecordingDirectory = await makeDir()
-    await writeFile(join(audioRecordingDirectory, "recording.m4a"), Buffer.alloc(16))
-    const { app, workspace } = await createApp({ workspaceRoot: "/workspace", audioRecordingDirectory })
+    const { app, workspace } = await createApp({ workspaceRoot: "/workspace" })
     apps.push(app)
+    await workspace.writeBinaryFile("live-transcripts/recording.m4a", new Uint8Array(16))
     await workspace.writeFile("live-transcripts/recording.transcript.md", "# Existing\n")
 
     const blocked = await transcribeFile(app, { path: "live-transcripts/recording.m4a" })
@@ -166,8 +149,7 @@ describe("POST /live-transcripts/transcribe-file", () => {
   })
 
   it("rejects paths outside live-transcripts/, traversal, absolute paths, and unsupported extensions", async () => {
-    const audioRecordingDirectory = await makeDir()
-    const { app } = await createApp({ workspaceRoot: "/workspace", audioRecordingDirectory })
+    const { app } = await createApp({ workspaceRoot: "/workspace" })
     apps.push(app)
 
     for (const path of [
@@ -187,36 +169,31 @@ describe("POST /live-transcripts/transcribe-file", () => {
     }
   })
 
-  it("rejects a symlink that escapes the audio recording directory", async () => {
-    const audioRecordingDirectory = await makeDir()
-    const outside = await makeDir()
-    await writeFile(join(outside, "secret.m4a"), Buffer.alloc(16))
-    await symlink(join(outside, "secret.m4a"), join(audioRecordingDirectory, "escape.m4a"))
-    const { app } = await createApp({ workspaceRoot: "/workspace", audioRecordingDirectory })
+  it("rejects a recording the Workspace adapter cannot read", async () => {
+    const { app } = await createApp({ workspaceRoot: "/workspace" })
     apps.push(app)
 
-    const response = await transcribeFile(app, { path: "live-transcripts/escape.m4a" })
+    const response = await transcribeFile(app, { path: "live-transcripts/missing.m4a" })
     expect(response.statusCode).toBe(400)
     expect(response.json()).toMatchObject({ error: { code: "live_transcript_attachment_invalid" } })
   })
 
   it("returns 503 when the offline refiner is not configured", async () => {
-    const audioRecordingDirectory = await makeDir()
-    await writeFile(join(audioRecordingDirectory, "recording.m4a"), Buffer.alloc(16))
-    const { app } = await createApp({ workspaceRoot: "/workspace", audioRecordingDirectory, withRefiner: false })
+    const { app, workspace } = await createApp({ workspaceRoot: "/workspace", withRefiner: false })
     apps.push(app)
+    await workspace.writeBinaryFile("live-transcripts/recording.m4a", new Uint8Array(16))
 
     const response = await transcribeFile(app, { path: "live-transcripts/recording.m4a" })
     expect(response.statusCode).toBe(503)
     expect(response.json()).toMatchObject({ error: { code: "live_transcript_disabled" } })
   })
 
-  it("returns 503 when no audio recording directory is configured", async () => {
-    const { app } = await createApp({ workspaceRoot: "/workspace" })
+  it("does not require ambient host recording-directory configuration", async () => {
+    const { app, workspace } = await createApp({ workspaceRoot: "/workspace" })
     apps.push(app)
+    await workspace.writeBinaryFile("live-transcripts/recording.m4a", new Uint8Array(16))
 
     const response = await transcribeFile(app, { path: "live-transcripts/recording.m4a" })
-    expect(response.statusCode).toBe(503)
-    expect(response.json()).toMatchObject({ error: { code: "live_transcript_disabled" } })
+    expect(response.statusCode).toBe(200)
   })
 })

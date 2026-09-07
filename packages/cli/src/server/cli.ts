@@ -460,6 +460,10 @@ async function startFolderMode(opts: {
         : undefined,
       lifecycleUrl: process.env.BORING_LIVE_TRANSCRIPTS_LIFECYCLE_URL,
       lifecycleBearerToken: process.env.BORING_LIVE_TRANSCRIPTS_LIFECYCLE_BEARER_TOKEN,
+      refineUrl: process.env.BORING_LIVE_TRANSCRIPTS_REFINE_URL,
+      refineBearerToken: process.env.BORING_LIVE_TRANSCRIPTS_REFINE_BEARER_TOKEN,
+      audioRecordingDirectory: process.env.BORING_LIVE_TRANSCRIPTS_RECORDING_DIRECTORY,
+      audioRecordingFfmpegPath: process.env.BORING_LIVE_TRANSCRIPTS_FFMPEG_PATH,
     },
   })
 
