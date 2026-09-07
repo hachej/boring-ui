@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import type { AgentRequestLedger } from '../types'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
@@ -89,7 +90,21 @@ describe('createAgentHost', () => {
     await inMemory.host.close()
 
     const customRoot = await root()
-    const customLedger = new SqliteAgentRequestLedger(join(customRoot, 'custom.sqlite'))
+    const backingLedger = new SqliteAgentRequestLedger(join(customRoot, 'custom.sqlite'))
+    // A current custom implementation needs no retention hook: the Host option
+    // configures only a ledger the Host constructs itself.
+    const customLedger: AgentRequestLedger = {
+      durability: 'durable-transactional',
+      prepare: (...args) => backingLedger.prepare(...args),
+      markAdmissionRetryable: (...args) => backingLedger.markAdmissionRetryable(...args),
+      acceptAdmission: (...args) => backingLedger.acceptAdmission(...args),
+      beginEffect: (...args) => backingLedger.beginEffect(...args),
+      reject: (...args) => backingLedger.reject(...args),
+      complete: (...args) => backingLedger.complete(...args),
+      markOutcomeUnknown: (...args) => backingLedger.markOutcomeUnknown(...args),
+      read: (...args) => backingLedger.read(...args),
+      close: () => backingLedger.close(),
+    }
     const custom = await createAgentHost({
       ...options(customRoot),
       requestLedger: customLedger,

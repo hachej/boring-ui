@@ -651,8 +651,11 @@ rows are never eligible regardless of age. A retained tombstone keeps the full
 request key and digest: the same digest returns stable
 `AGENT_REQUEST_OUTCOME_UNKNOWN`, while a changed digest remains
 `AGENT_REQUEST_CONFLICT`; it can never become `created` or `reclaimed`.
-Injected custom ledgers remain source-compatible and own their storage policy;
-`requestRetentionMs` configures only the Agent-owned built-in SQLite ledger.
+Retention adds no operation to the current `AgentRequestLedger` interface.
+Injected implementations of that current interface keep owning their storage
+policy; `requestRetentionMs` configures only the Agent-owned built-in SQLite
+ledger. (The separately approved retry-reclaim contract already requires
+`markAdmissionRetryable`; retention does not change that requirement.)
 The SQLite implementation does not perform startup state reconciliation.
 Level-B conformance covers admission rejection before mutation, concurrent
 retry, retryable adapter failure, conflict, retention boundaries/tombstones,
