@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads'
-import { SqliteAgentRequestLedger } from '../../sqliteRequestLedger'
-import type { AgentRequestKey } from '../../types'
+import { SqliteAgentRequestLedger } from '../../sqliteRequestLedger.ts'
+import type { AgentRequestKey } from '../../types.ts'
 
 interface ClaimWorkerInput {
   dbPath: string

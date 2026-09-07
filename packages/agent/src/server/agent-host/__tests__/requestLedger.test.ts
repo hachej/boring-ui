@@ -47,7 +47,12 @@ function runClaimWorker(
       }
       resolve(message)
     })
-    worker.once('error', reject)
+    worker.once('error', (error) => {
+      // Unblock the coordinator if module startup fails before this worker can
+      // announce readiness; Promise.all then reports the original worker error.
+      Atomics.add(new Int32Array(barrier), 0, 1)
+      reject(error)
+    })
   })
 }
 
@@ -189,7 +194,7 @@ describe('SqliteAgentRequestLedger', () => {
       code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
     })
     reopened.close()
-  })
+  }, 20_000)
 
   it.each(['pending-admission', 'admission-accepted', 'in-flight', 'outcome-unknown'] as const)(
     'does not reclaim %s after reopen without a proven safe release',
