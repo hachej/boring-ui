@@ -1,6 +1,11 @@
 # Factory reliability model
 
-Status: implemented in the native Factory playground (`apps/factory-playground`), proven by live runs recorded under `docs/issues/1508/`. Applies to the ratified Factory contract in `.agents/factory/README.md`; conflicts are listed at the end.
+Scope: current native Factory playground mechanisms (`apps/factory-playground`),
+with live-run evidence under `docs/issues/1508/` and limitations below. Normative
+review/merge policy is now [risk-based delivery](../procedures/boring-loop.md)
+(owner amendment 2026-09-07). Broader plugin auto-merge, revision-bound video
+admission and the complete abstraction gate are **not implemented by that docs
+amendment**; preserve current gates until the host/CI rollout is proven.
 
 ## Durable truth
 
@@ -89,11 +94,20 @@ The canonical `exec` and `owner-gate` blocks assume per-Bead PRs, push-after-com
 - Concurrency: two Workers on one epic share the worktree without file reservations by owner ruling; collisions are resolved in place. Add reservations only if runs show collisions.
 - Provider quotas: model credit exhaustion still surfaces as failed turns. Host dispatch and review caps bound retries, but do not predict or replenish provider credit.
 
-## Owner handoff: two Inbox gates
+## Owner handoff: current two-gate flow
+
+The following describes the existing flow, not the target risk classifier.
+[The owner amendment](../procedures/boring-loop.md#when-to-ask-and-when-not-to)
+reserves new owner decisions for protected boundaries, but does not cancel
+pending questions or permit agents to skip existing gates. The 2026-09-07 pilot
+found Gate 1 compliance was supervised, not mechanically enforced by
+`dispatch_worker`; durable questions alone do not prove dispatch authorization.
+The new abstraction PASS and UI-video gates likewise need explicit host/CI
+admission before automatic delivery can claim enforcement.
 
 Every seat's real tool catalog includes the workspace-scoped `ask_user` capability. Factory policy reserves owner contact and both gates for the Orchestrator; its call lands in the Workspace Inbox and blocks the seat until the owner decides.
 
-- **Gate 1, plan approval.** After the Bead graph exists: title `[br-<bead>] Plan approval: <title>`, context = goal, Bead list in dependency order, proof commands, risk and rollback, what approve triggers. Plan ceremony is scaled to the epic (one plan note, at most one adversarial review, no HTML review page unless UI changes). Nothing is dispatched before approve.
+- **Gate 1, plan approval.** After the Bead graph exists: title `[br-<bead>] Plan approval: <title>`, context = goal, Bead list in dependency order, proof commands, risk and rollback, what approve triggers. Plan ceremony is scaled to the epic (one plan note, at most one adversarial review, no HTML review page unless UI changes). Policy requires approval before dispatch; the current dispatch tool does not mechanically enforce this condition.
 - **Gate 2, merge approval.** When `factory_status` shows every epic Bead handed off with SHA, sandbox proof and `fresh_review` approve: the Orchestrator opens or updates the epic PR with the Owner Review card (`docs/procedures/owner-review-card.md`) plus a `## Handover` section, starts an exact-SHA `demo_sandbox` with TTL capped by `BORING_FACTORY_DEMO_MAX_MINUTES`, then raises `ask_user` with PR URL, head SHA, demo URL and lifetime, please-test steps and handover lines. Vercel lease-creation failures fall back visibly to the local provider. Gate 2 requires a URL when the tool can provide one; after both attempts fail, the Orchestrator still raises the gate and records the exact error under `Demo:`. An owner or host waiver relayed in the prompt is authoritative. On approve it comments on the PR and never merges; on changes it opens follow-up Beads.
 
 Both gates survive restarts: pending questions are persisted by the ask-user store and are not swept on boot.
