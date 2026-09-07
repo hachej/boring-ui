@@ -25,7 +25,16 @@ The app is deliberately no-auth and local. It is an integration playground, not 
 pnpm --filter factory-playground dev
 ```
 
-Open <http://localhost:5220>. Start on **Boring Orchestrator**, ask it to arm supervision (it calls the host `supervise` tool) or use the seeded feature suggestion. Watch addressed Worker sessions in Agents, claims in Tasks, owner gates in Inbox, and dispatch runs in Automations.
+Open <http://localhost:5220> for single-tab local development. For remote or
+multi-tab use, serve the browser-facing origin over **HTTPS with HTTP/2**;
+see [the streaming proxy setup](ops/README.md). The raw HTTP port is not a
+reliable multi-tab entry point: each tab holds filesystem, UI-command,
+activity, and session streams, exhausting the browser's shared six-connection
+HTTP/1.1 pool. A second tab can stall at “Preparing workspace…” even when
+individual API probes are fast. Reloading or reprioritizing the host does
+not resolve that transport limit.
+
+Start on **Boring Orchestrator**, ask it to arm supervision (it calls the host `supervise` tool) or use the seeded feature suggestion. Watch addressed Worker sessions in Agents, claims in Tasks, owner gates in Inbox, and dispatch runs in Automations.
 
 A deterministic tracer-bullet simulation is available without model or cloud credentials. It requires the real `br` CLI on `PATH`; the simulation test skips rather than substituting a fake graph when `br` is unavailable:
 
@@ -93,7 +102,8 @@ node scripts/factory-epic.mjs up --feature "CDC Backfill" --repo https://github.
    `configureServer` hook) — a separate headless `dev.ts` process is not
    also started, since it would try to bind the same API port a second time.
 5. Waits for `/api/v1/workspace/meta`, then prints the UI URL (and a
-   Tailscale IP variant when `tailscale ip -4` is available), plus the exact
+   Tailscale IP variant when `tailscale ip -4` is available — this raw HTTP
+   URL is single-tab only; configure the HTTP/2 proxy for remote multi-tab use), plus the exact
    `live-epic-acceptance.mjs` invocation to drive it headlessly instead.
 6. Records the instance in `.factory-state/epics.json`.
 
