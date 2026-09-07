@@ -39,6 +39,18 @@ Public discovery, marketplaces, revenue share, specialist models and owned
 compute do not precede this journey. Private release and installation do
 not wait for them.
 
+## The journey as a matrix
+
+| Stage | Capability it needs | Proof | Blocks today |
+|---|---|---|---|
+| Create | builder seat, typed intake preferred, sandbox lease, candidate manifest, evidence record | candidate exists with provenance; builder cannot activate | none of it built |
+| Release | artifact publication, digest verification, dependency admission, host-only release op | bytes survive builder destruction; tampered byte fails | no release/artifact store |
+| Install | installation record, requirements resolution + consent, personal-scope isolation | member B installs; member A cannot reach B's runtime/data | no installation record; membership is per workspace |
+| Run | Thread identity, product runtime in `local`/`remote`, brokered operations, learner data store, Level D durability | job survives browser loss; results outside chat | Thread record, runtime seam, data store absent; Level D flag-off |
+| Adapt | change intent record, activation with generation vector, preview isolation | retained change survives; preview cannot mutate real records | none |
+| Maintain | compatibility check, three-way conflict, quarantine, undo, drain of pinned Runs | compatible update keeps intent; incompatible base yields one precise conflict | none |
+| Live on Seneca | release delivery to the tenant, provisioning, hardware isolation for shared tenants | out of the first epic; named open obligations | open |
+
 ## Who is in the journey
 
 - **Curator** — the expert; owns the product's method and its consumers.

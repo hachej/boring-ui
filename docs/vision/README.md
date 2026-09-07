@@ -14,9 +14,10 @@ is [`explorations.md`](explorations.md).
 
 ## The one paragraph
 
-An expert creates useful software inside Seneca, uses it to do a job, changes
-its method and interface, installs it for someone else, and keeps it working
-through upstream updates — without a founder editing source. Boring is the
+An expert creates useful software inside Seneca, releases it, installs it for
+someone else, who uses it to do a real job; the expert changes its method and
+interface and keeps it working through upstream updates — without a founder
+editing source. Boring is the
 substrate that makes that dependable: a governed job root (Thread), semantic
 Views over domain records, agents that act inside a durable job under one
 authority funnel, immutable releases installed per consumer and run in their
@@ -38,10 +39,25 @@ neutral substrate.
 | 8 | [Platform, tenants and delivery](08-platform-tenants-delivery.md) | Platform/tenant split, execution home, the factory |
 | — | [Crosswalk](CROSSWALK.md) | Chapter section → ruling |
 
+## The identities, once
+
+```text
+Product ──1..n── Release (immutable, content digest)
+                    │
+                    └── Installation (scope · bindings · grants · mode · generation)
+                            │  activation receipts (CAS, request-keyed)
+                            └── Thread (one job; 0..n Sessions; Runs pinned to a release)
+Domain records (learner data) ── own lifecycle; bound to installation, job when produced in one, release
+Agent (definition digest) ── pinned by a Release; seated in a Workspace by a Seat
+```
+
+The ratified product ladder still applies: bare agent → agent plus workspace →
+agent app → seats/team → product; upgrades are additive, never migratory.
+
 ## Vocabulary (one line each)
 
 - **Thread** — one durable job; binds zero or more **Sessions** (runtime conversations).
-- **Run** — one admitted agent execution inside a Thread; identified by its request key.
+- **Run** — one admitted agent execution, identified by its request key; inside a Thread when part of a durable job, otherwise standalone.
 - **View** — a semantic descriptor (collection, record, document, dashboard…) resolved by the host; agents never see renderers.
 - **Experience** — a composed product surface over the substrate; Meridian is the flagship, not the only one.
 - **Agent** — a packaged persona with skills, knowledge and tools, identified by a content digest.

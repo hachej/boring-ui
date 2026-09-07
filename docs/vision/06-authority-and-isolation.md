@@ -23,8 +23,9 @@ the installation binds and what the Thread restricts; it never widens.
 
 Effect, data and readiness endpoints use short-lived authority bound to
 audience, workspace, sandbox or installation, operation, digest and expiry.
-Bridge tokens are workspace-scoped, short-lived, refreshable, revocable per
-token, and never logged. Revocation denies further reads, activation and
+Bridge tokens today are workspace-scoped, short-lived and refreshable, with
+revocation on refresh tokens only; binding them to installation, job,
+operation and digest, and revoking live calls by epoch, are open obligations. Revocation denies further reads, activation and
 delivery; it cannot undo what was already disclosed. Model credentials are
 issued per invocation as a capability, never as a raw key crossing a runtime
 boundary, so a product's consumer never shares the curator's key and the
@@ -43,12 +44,14 @@ processes receive an allowlisted environment, never the host's.
 
 Authored code is admitted only through isolation plus explicit promotion.
 Generated front code renders in an isolated frame with brokered
-capabilities. Generated server code runs inside the product runtime in
-`local` or `remote` mode, brokered by the host, and is never imported into
-the host process outside the explicit, default-off `embedded` mode. The
-host refuses server modules from agent-writable roots by default. For the
-first proof, the bwrap/runsc floor is accepted for `local`; a hardware
-microVM is required before any shared-tenant deployment.
+capabilities; generated server code runs inside the product runtime under
+the modes defined in chapter 4 and is never imported into the host process
+outside the default-off `embedded` mode. The host refuses server modules from
+agent-writable roots by default. A `local` runtime binds the sandbox's
+hardened profile — no egress by default, CPU, memory, process and disk
+limits — not only an environment allowlist. For the first proof the
+bwrap/runsc floor is accepted for `local`; a hardware microVM is required
+before any shared-tenant deployment.
 
 ## Data sovereignty and history
 
@@ -61,13 +64,15 @@ for any new activation receipt.
 
 ## Crosswalk
 
-| Section | Ruling | Built? |
-|---|---|---|
-| One gateway/funnel; host-minted scope | DECISIONS D29, D33; RECONCILIATION §13(d) | gateway built; product path: `nc-3` |
-| Execution context; capability effect classes; intersection | V2-PORT-HANDBOOK Supporting types, Capability; V2 spec L3 | bead `nc-x` |
-| Request-bound authority; bridge tokens; revocation | ARCHITECTURE-PLAN §6, Track A (A8); WORKSPACE_BRIDGE_V1; §11(c) | bridge tokens built; epochs open |
-| Model credentials per invocation | ARCHITECTURE-PLAN A7; DECISIONS D27 | bead `nc-c`; BYOK persistence #1145 open |
-| Sandbox leases; Firecracker floor; env allowlist | DECISIONS D31 + addenda; ARCHITECTURE-PLAN A4 | providers built; A4 open |
-| Untrusted tier; runtime modes; P0.6 | ARCHITECTURE-PLAN D-b as superseded by §13(c); P0.6; D33 | beads `nc-0`, `nc-4b`, `nc-5` |
-| `local` floor default for the first proof | DIRECTION 2026-09-07 owner defaults | — |
-| Sovereignty; session history | D31; AGENTS.md rule 9 | — |
+Implementation status lives only in [`CROSSWALK.md`](CROSSWALK.md).
+
+| Section | Ruling |
+|---|---|
+| One gateway/funnel; host-minted scope | DECISIONS D29, D33; RECONCILIATION §13(d) |
+| Execution context; capability effect classes; intersection | V2-PORT-HANDBOOK Supporting types, Capability; V2 spec L3 |
+| Request-bound authority; bridge tokens; revocation | ARCHITECTURE-PLAN §6, Track A (A8); WORKSPACE_BRIDGE_V1; §11(c) |
+| Model credentials per invocation | ARCHITECTURE-PLAN A7; DECISIONS D27 |
+| Sandbox leases; Firecracker floor; env allowlist | DECISIONS D31 + addenda; ARCHITECTURE-PLAN A4 |
+| Untrusted tier; runtime modes; P0.6 | ARCHITECTURE-PLAN D-b as superseded by §13(c); P0.6; D33 |
+| `local` floor default for the first proof | DIRECTION 2026-09-07 owner defaults |
+| Sovereignty; session history | D31; AGENTS.md rule 9 |

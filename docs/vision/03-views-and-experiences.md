@@ -38,15 +38,16 @@ expert product opens as a job in Work with its own canvas; a learner never
 navigates an operator roster to resume a lesson.
 
 There is no global chat column. Conversation is contextual: beside a View or
-inside a Thread. Transcripts are multi-author — one composer, several named
-agents visibly authoring, with join, handoff and leave markers.
+inside a Thread (transcript authorship: chapter 5).
 
 ## Where a product lives
 
 An installed product appears in the **Library** beside files and built-in
 views, scoped to the members who hold the installation. Selecting it opens
-Work with a Thread bound to the installation and the product's primary View;
-reopening resumes the same Thread. No standalone workspace per product.
+Work on a Thread bound to the installation with the product's primary View:
+one job is one Thread, a product may have many jobs, and reopening offers the
+open jobs rather than silently starting another. No standalone workspace per
+product.
 
 ## Generated UI
 
@@ -59,11 +60,13 @@ when a descriptor suffices.
 
 ## Crosswalk
 
-| Section | Ruling | Built? |
-|---|---|---|
-| View contract as a set; agents never see renderers | RECONCILIATION §8(c)(3); VISION invariant 4; V2 spec L4 | bead `nc-v` (first slice) |
-| Composable Experiences; recipes not modes | RECONCILIATION §11(f), §12(a) | — |
-| Meridian flagship, other Experiences valid | RECONCILIATION §8(a) scope clause | shell chrome slices dispatchable; layout not built |
-| No global chat column; multi-author transcript | §8(a); §9b | fixture only |
-| Library entry, Thread in Work | DIRECTION 2026-09-07 "Library, not standalone workspaces" | bead `nc-l` |
-| Generated UI isolation | §11(e), §13(c) | bead `nc-5`; prior PR #1499 |
+Implementation status lives only in [`CROSSWALK.md`](CROSSWALK.md).
+
+| Section | Ruling |
+|---|---|
+| View contract as a set; agents never see renderers | RECONCILIATION §8(c)(3); VISION invariant 4; V2 spec L4 |
+| Composable Experiences; recipes not modes | RECONCILIATION §11(f), §12(a) |
+| Meridian flagship, other Experiences valid | RECONCILIATION §8(a) scope clause |
+| No global chat column; multi-author transcript | §8(a); §9b |
+| Library entry, Thread in Work | DIRECTION 2026-09-07 "Library, not standalone workspaces" |
+| Generated UI isolation | §11(e), §13(c) |

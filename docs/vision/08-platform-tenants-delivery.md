@@ -9,10 +9,11 @@ packaging of the offer, creator agreements, hostnames as presentation and
 go-to-market sequencing. A commercial decision never reorders the kernel;
 kernel sequencing is never justified by an unnamed offer.
 
-Seneca is the first consumer and the first proof host. It pulls a release by
-digest from the platform's stores; deploying it is the tenant's job with the
-tenant's provisioning, secrets, migrations and backups. That path is outside
-the first epic and named as an open obligation.
+Seneca is the first consumer and the first proof host. The recorded default
+is that it pulls a release by digest from the platform's stores; who owns
+provisioning, secrets, migrations and backups for an installed product is not
+yet ruled. That delivery path is outside the first epic and named as an open
+obligation.
 
 ## Execution home
 
@@ -27,8 +28,9 @@ dependency rationale, not a schedule.
 Work is planned as beads meeting a definition of ready (what, proof path,
 file scope, fits one session), dispatched from DIRECTION alone, built in
 isolated worktrees, reviewed fresh at an exact commit, and merged by an owner
-decision at a demonstrated URL. Two human gates: plan approval and merge
-approval, both as Inbox items. The curator never operates beads, worktrees
+decision at a demonstrated URL. Human gates sit at protected boundaries —
+today, plan approval and merge approval as Inbox items; enforced automatic
+admission of ordinary work is the intended rollout and is not yet enabled. The curator never operates beads, worktrees
 or pull requests; those are internal mechanisms behind an authoring job.
 A gate that needs the founder to approve every private adaptation has moved
 the bottleneck, not removed it.

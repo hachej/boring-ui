@@ -36,9 +36,9 @@ definition, or turn a draft into an accepted record.
 Inside a candidate they may read and change renderer code, CSS, domain
 operations and tests. They never touch the active release, protected checks
 or authority controls, and they never activate. The restriction is an
-authority boundary enforced by the host, not the absence of a tool. Their
-request arrives as a typed brief with provenance and confirmation, not an
-untyped string.
+authority boundary enforced by the host, not the absence of a tool. A typed
+brief with provenance and confirmation is the preferred request shape; it is
+not a ruled requirement.
 
 ## Teams
 
@@ -61,12 +61,14 @@ evidence.
 
 ## Crosswalk
 
-| Section | Ruling | Built? |
-|---|---|---|
-| Agent package, digest, knowledge | #1107 / #1202 lane; V2-PORT-HANDBOOK Agent | built (boot-time install); bead `nc-a` for the tutor |
-| Seats grant participation; additive specialist Seat | VISION invariant 5; DECISIONS D32; seats plan | built (`workspace_agent_seats`) |
-| Deployment-static fleet; products as separate tier | DECISIONS D28; D33 addendum | fleet built; product tier: beads `nc-1/2` |
-| Domain vs builder class | RECONCILIATION §13(e); VISION invariant 4 narrowing | bead `nc-6`; boundary via `nc-x` |
-| Multi-author transcript; orchestrator Seat; seat attribution | §9b; §8(c)(2); [seat-audit-attribution] | fixture only; beads `.14.1/.14.2` |
-| Delegation; no loopback | V2 spec L3; §7, §9 | MCP delegate exists; kernel noun absent |
-| Promotion on evidence; no live self-rewriting | VISION invariants 10, 11; 2026-08-27 amendment | — |
+Implementation status lives only in [`CROSSWALK.md`](CROSSWALK.md).
+
+| Section | Ruling |
+|---|---|
+| Agent package, digest, knowledge | #1107 / #1202 lane; V2-PORT-HANDBOOK Agent |
+| Seats grant participation; additive specialist Seat | VISION invariant 5; DECISIONS D32; seats plan |
+| Deployment-static fleet; products as separate tier | DECISIONS D28; D33 addendum |
+| Domain vs builder class | RECONCILIATION §13(e); VISION invariant 4 narrowing |
+| Multi-author transcript; orchestrator Seat; seat attribution | §9b; §8(c)(2); [seat-audit-attribution] |
+| Delegation; no loopback | V2 spec L3; §7, §9 |
+| Promotion on evidence; no live self-rewriting | VISION invariants 10, 11; 2026-08-27 amendment |

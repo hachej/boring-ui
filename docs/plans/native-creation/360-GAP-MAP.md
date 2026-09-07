@@ -73,3 +73,24 @@ historical rows.
 4. Who owns the identity id space: nc-t or durable-streams A1?
 5. Cross-repo release path to Seneca: tenant pulls a release by digest from this repo's registry, or Seneca vendors the product?
 6. Lane 2 K-beads dormant; lane 3 P0 rulings answered or deferred.
+
+## F. Cross-model review additions (Astra and Sol, 2026-09-07 night)
+
+Two independent reviews of the consolidated edition confirmed the map above
+and added: durable artifact publication and materialization (bytes must
+outlive the builder sandbox) → bead `nc-p`; a host-only candidate→release
+issuance op → `nc-p`; preview effect isolation → `nc-6`; version-pinned
+execution and drain during activation → `nc-4a`, `nc-r`; installation
+retirement → `nc-2`, `nc-3`; requirements resolution and consent → `nc-2`;
+same-workspace personal isolation tests → `nc-2`, `nc-3`, `nc-7`; a durable
+local-intent record for three-way reconciliation → bead `nc-o`; runtime
+supervision (restart, orphan, drain) → `nc-4a`; hardened egress/resource
+profile for `local` → `nc-4b`; dependency admission at release → `nc-1`;
+schema migration execution → named open. Thirteen ruling-neutrality drifts in
+the edition were corrected (Thread not mandatory for domain records; Run
+optional outside a job; generation vector across all scopes; "not the default
+approver"; evaluation fields conditional; addressed posts are a proposal;
+typed brief preferred not required; knowledge shape; tenant deployment
+ownership unruled; gates at protected boundaries; journey order; product→Thread
+cardinality). Full reports in the session scratchpad; CROSSWALK statuses made
+atomic with an open-obligations table.
