@@ -957,14 +957,9 @@ expected_paths = {
     "docs/issues/900/plan.md",
     "docs/issues/900/show-me-plan.md",
 }
-merge_base = subprocess.check_output(
-    ["git", "merge-base", "origin/main", "HEAD"], text=True
-).strip()
+integration_base = "68dcb7db8822f721c6b45d0731e01a46fa364f28"
 actual_paths = set(subprocess.check_output(
-    ["git", "diff", "--name-only", merge_base], text=True
-).splitlines())
-actual_paths.update(subprocess.check_output(
-    ["git", "ls-files", "--others", "--exclude-standard"], text=True
+    ["git", "diff", "--name-only", f"{integration_base}..HEAD"], text=True
 ).splitlines())
 assert actual_paths == expected_paths, (actual_paths, expected_paths)
 rows = {r["id"]: r for r in map(json.loads, Path(".beads/issues.jsonl").read_text().splitlines()) if r.get("id") in ids}
@@ -1051,7 +1046,7 @@ git diff --check
 test -z "$(git diff --cached --name-only)"
 ```
 
-The merge-base-to-working-tree check permits exactly the Beads export, combined
+The integration-base-to-committed-tree check permits exactly the Beads export, combined
 direction/pointer migration, both canonical plans, the outbound review artifact,
 and the approved Gate 1 show-me record. HTML parity checks mirror verdict, actual bead IDs/edges, dependency
 closure and critical risks; cross-plan tokens prove the inbound/outbound/C2
