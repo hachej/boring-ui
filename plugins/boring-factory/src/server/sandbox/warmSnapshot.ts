@@ -59,6 +59,10 @@ interface StepResult {
   durationMs: number
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
 function sha256Prefixed(hexDigest: string): `sha256:${string}` {
   return (hexDigest.startsWith('sha256:') ? hexDigest : `sha256:${hexDigest}`) as `sha256:${string}`
 }
@@ -101,6 +105,7 @@ export async function createWarmSnapshot(options: CreateWarmSnapshotOptions): Pr
   const overallStart = Date.now()
   const ref = options.ref
   const remoteUrl = options.remoteUrl ?? DEFAULT_REPO_URL
+  const quotedRemoteUrl = shellQuote(remoteUrl)
   const vcpus = options.vcpus ?? DEFAULT_VCPUS
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const snapshotExpirationMs = options.snapshotExpirationMs ?? DEFAULT_SNAPSHOT_EXPIRATION_MS
@@ -144,8 +149,8 @@ export async function createWarmSnapshot(options: CreateWarmSnapshotOptions): Pr
     // otherwise expose via `ps` inside the sandbox, and never logged (`log`
     // only sees this fixed label plus the command's stdout/stderr).
     const cloneCommand = options.gitToken
-      ? `factory_auth_header="AUTHORIZATION: basic $(printf '%s' \"x-access-token:$${FACTORY_GIT_TOKEN_ENV_VAR}\" | base64 | tr -d '\\n')" && git -c http.extraheader="$factory_auth_header" clone --filter=blob:none ${remoteUrl} ${FACTORY_WARM_REPO_ROOT}`
-      : `git clone --filter=blob:none ${remoteUrl} ${FACTORY_WARM_REPO_ROOT}`
+      ? `factory_auth_header="AUTHORIZATION: basic $(printf '%s' \"x-access-token:$${FACTORY_GIT_TOKEN_ENV_VAR}\" | base64 | tr -d '\\n')" && git -c http.extraheader="$factory_auth_header" clone --filter=blob:none ${quotedRemoteUrl} ${FACTORY_WARM_REPO_ROOT}`
+      : `git clone --filter=blob:none ${quotedRemoteUrl} ${FACTORY_WARM_REPO_ROOT}`
     const clone = await runStep(
       seed,
       `clone ${remoteUrl} into ${FACTORY_WARM_REPO_ROOT}`,

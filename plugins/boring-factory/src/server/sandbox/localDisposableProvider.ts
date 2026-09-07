@@ -43,8 +43,8 @@ export async function ignoredBuildDirectories(sourceRoot: string): Promise<strin
     .filter((line) => /^(packages|plugins|apps)\/[^/]+\/(dist|public)$/.test(line))
 }
 
-export async function snapshotCommittedHead(sourceRoot: string, targetRoot: string): Promise<string> {
-  const sha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot })).stdout.trim()
+export async function snapshotCommittedHead(sourceRoot: string, targetRoot: string, revision = 'HEAD'): Promise<string> {
+  const sha = (await execFileAsync('git', ['rev-parse', '--verify', `${revision}^{commit}`], { cwd: sourceRoot })).stdout.trim()
   await execFileAsync('git', ['clone', '--quiet', '--shared', '--no-checkout', sourceRoot, targetRoot])
   await execFileAsync('git', ['checkout', '--quiet', '--detach', sha], { cwd: targetRoot })
   for (const name of LINKED_DEPENDENCY_ROOTS) {
@@ -71,12 +71,12 @@ export async function snapshotCommittedHead(sourceRoot: string, targetRoot: stri
  * sandbox filesystem never flows back. It proves lease routing and exact-SHA
  * isolation, not security confinement.
  */
-export function createLocalDisposableProvider(seedRoot: string): DisposableSandboxProviderV1 {
+export function createLocalDisposableProvider(seedRoot: string, revision = 'HEAD'): DisposableSandboxProviderV1 {
   const direct = createDirectSandboxProvider()
   return {
     ...direct,
     async create(context) {
-      await snapshotCommittedHead(seedRoot, context.workspaceRoot)
+      await snapshotCommittedHead(seedRoot, context.workspaceRoot, revision)
       const pair = await direct.create(context)
       let disposed = false
       return {
@@ -97,7 +97,7 @@ export function createLocalDisposableProvider(seedRoot: string): DisposableSandb
       resume: false,
       publishedCleanupOwner: 'returned-pair',
       ambiguousCreate: 'correlated-reconciliation',
-      providerConfigDigest: digest(`factory-playground-local-exact-sha:${seedRoot}`),
+      providerConfigDigest: digest(`factory-playground-local-exact-sha:${seedRoot}:${revision}`),
     },
   }
 }

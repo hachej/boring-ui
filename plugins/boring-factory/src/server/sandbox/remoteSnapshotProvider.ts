@@ -291,7 +291,7 @@ async function resolveBranchBestEffort(sourceRoot: string): Promise<string | und
 }
 
 /** Strip embedded credentials and normalize SSH remotes to plain https. */
-function normalizeRemoteUrl(rawUrl: string): string {
+export function normalizeRemoteUrl(rawUrl: string): string {
   const url = rawUrl.trim()
   const scpLike = /^(?:[\w.-]+@)?([\w.-]+):(.+)$/.exec(url)
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && scpLike) {

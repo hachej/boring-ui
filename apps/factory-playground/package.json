@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-sandbox-plugin build",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-sandbox-plugin build && pnpm --filter @hachej/boring-factory build",
     "dev": "pnpm run build:deps && pnpm run dev:app",
     "dev:app": "vite",
     "build": "pnpm run build:deps && vite build",
