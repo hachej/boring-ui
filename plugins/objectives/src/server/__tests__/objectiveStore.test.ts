@@ -481,6 +481,62 @@ describe("FileObjectiveStore", () => {
       await expect(readFile(`${lockPath}.reclaim`, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
     })
 
+    it("does not let a stale-lock reclaimer overtake a live holder paused at commit", async () => {
+      const path = join(dir, "objectives.json")
+      const storeA = new FileObjectiveStore(path)
+      const storeB = new FileObjectiveStore(path)
+      const seeded = await storeA.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+
+      type PrivateLockOps = {
+        reclaimIfStale(lockPath: string, token: string): Promise<boolean>
+      }
+      const opsB = storeB as unknown as PrivateLockOps
+      const originalB = opsB.reclaimIfStale.bind(opsB)
+      const outcomesB: boolean[] = []
+      opsB.reclaimIfStale = async (...args) => {
+        const result = await originalB(...args)
+        outcomesB.push(result)
+        return result
+      }
+
+      const realRename = vi.mocked(rename).getMockImplementation()!
+      let signalCommitRename!: () => void
+      const commitRenameReached = new Promise<void>((resolve) => { signalCommitRename = resolve })
+      let allowCommitRename!: () => void
+      const commitRenameAllowed = new Promise<void>((resolve) => { allowCommitRename = resolve })
+      let held = false
+      vi.mocked(rename).mockImplementation(async (from, to) => {
+        if (!held && to === path) {
+          held = true
+          signalCommitRename()
+          await commitRenameAllowed
+        }
+        return realRename(from, to)
+      })
+
+      const writerA = storeA.update({ id: seeded.id, current: 200 })
+      await commitRenameReached
+
+      // Age A's still-live lock without waiting 30 seconds. A already holds
+      // the reclaim/commit guard, so B must lose reclamation and wait rather
+      // than replacing A's token and entering with the same base revision.
+      const liveMeta = JSON.parse(await readFile(lockPath, "utf8"))
+      await writeFile(lockPath, JSON.stringify({ ...liveMeta, timestamp: Date.now() - 60_000 }), "utf8")
+      const writerB = storeB.create(input({ title: "Writer B" }))
+      while (!outcomesB.includes(false)) await new Promise((resolve) => setTimeout(resolve, 5))
+      allowCommitRename()
+
+      await expect(Promise.all([writerA, writerB])).resolves.toHaveLength(2)
+      expect(outcomesB).toContain(false)
+      const finalState = JSON.parse(await readFile(path, "utf8"))
+      expect(finalState.revision).toBe(3)
+      expect(finalState.objectives).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: seeded.id, current: 200 }),
+        expect.objectContaining({ title: "Writer B" }),
+      ]))
+    })
+
     it("rejects a symlinked lock path instead of following it (finding: lock path never symlink-checked)", async () => {
       const path = join(dir, "objectives.json")
       const s = new FileObjectiveStore(path)

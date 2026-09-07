@@ -259,22 +259,54 @@ export class FileObjectiveStore implements ObjectiveStore {
         const shouldWrite = fn(draft) !== false
         if (!shouldWrite) return
 
-        // Recheck happens inside the lock: no other writer can advance the
-        // revision between this read and the commit below.
-        const recheck = await this.readOnDiskAt(filePath)
-        if (recheck.revision !== before.revision) {
+        // Reclamation and the final ownership-check/commit share the same
+        // exclusive guard. If this holder was paused long enough to look
+        // stale, a reclaimer either waits until this commit finishes or wins
+        // first; in the latter case our token check fails and this stale draft
+        // is never written over the reclaimer's commit.
+        const reclaimGuardPath = `${lockPath}.reclaim`
+        const ownsCommitGuard = await this.acquireReclaimGuard(reclaimGuardPath, token, true)
+        if (!ownsCommitGuard) {
           throw new ObjectiveStoreError(
-            OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
-            `objective store was modified concurrently (expected revision ${before.revision}, found ${recheck.revision}); retry`,
+            OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
+            "timed out waiting to verify objective store write-lock ownership",
+            { cause: new Error(`Objective store reclaim guard acquisition timed out at ${reclaimGuardPath}`) },
           )
         }
+        try {
+          const lockMeta = await this.readLockMeta(lockPath)
+          let lockToken: string | undefined
+          try {
+            lockToken = lockMeta
+              ? (JSON.parse(lockMeta.raw) as Partial<{ token: string }>).token
+              : undefined
+          } catch {
+            lockToken = undefined
+          }
+          if (lockToken !== token) {
+            throw new ObjectiveStoreError(
+              OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
+              "objective store write-lock ownership changed before commit; retry",
+            )
+          }
 
-        const nextState: OnDiskState = {
-          version: 1,
-          revision: before.revision + 1,
-          objectives: [...draft.values()],
+          const recheck = await this.readOnDiskAt(filePath)
+          if (recheck.revision !== before.revision) {
+            throw new ObjectiveStoreError(
+              OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
+              `objective store was modified concurrently (expected revision ${before.revision}, found ${recheck.revision}); retry`,
+            )
+          }
+
+          const nextState: OnDiskState = {
+            version: 1,
+            revision: before.revision + 1,
+            objectives: [...draft.values()],
+          }
+          await this.commit(filePath, nextState)
+        } finally {
+          await this.releaseLock(reclaimGuardPath, token)
         }
-        await this.commit(filePath, nextState)
       } finally {
         await this.releaseLock(lockPath, token)
       }
@@ -377,22 +409,7 @@ export class FileObjectiveStore implements ObjectiveStore {
    */
   private async reclaimIfStale(lockPath: string, token: string): Promise<boolean> {
     const claimPath = `${lockPath}.reclaim`
-    let claimHandle
-    try {
-      claimHandle = await open(claimPath, "wx")
-      try {
-        await claimHandle.writeFile(JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
-      } finally {
-        await claimHandle.close()
-      }
-    } catch (error) {
-      if ((error as { code?: string }).code === "EEXIST") return false
-      // Once the exclusive create succeeds nobody else can own or replace
-      // this non-reclaimable sidecar, so a failed metadata write may safely
-      // remove it rather than wedging all later stale-lock recovery.
-      if (claimHandle) await rm(claimPath, { force: true }).catch(() => undefined)
-      throw normalizeStoreIoError("failed to claim objective store lock reclamation", error)
-    }
+    if (!(await this.acquireReclaimGuard(claimPath, token, false))) return false
 
     try {
       // The pre-claim observation is only a hint. Re-read under the exclusive
@@ -422,6 +439,34 @@ export class FileObjectiveStore implements ObjectiveStore {
       }
     } finally {
       await this.releaseLock(claimPath, token)
+    }
+  }
+
+  private async acquireReclaimGuard(claimPath: string, token: string, wait: boolean): Promise<boolean> {
+    const deadline = Date.now() + LOCK_ACQUIRE_TIMEOUT_MS
+    for (;;) {
+      let claimHandle
+      try {
+        claimHandle = await open(claimPath, "wx")
+        try {
+          await claimHandle.writeFile(JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
+        } finally {
+          await claimHandle.close()
+        }
+        return true
+      } catch (error) {
+        if ((error as { code?: string }).code === "EEXIST") {
+          if (!wait) return false
+          if (Date.now() >= deadline) return false
+          await delay(LOCK_POLL_INTERVAL_MS)
+          continue
+        }
+        // Once the exclusive create succeeds nobody else can own or replace
+        // this non-reclaimable sidecar, so a failed metadata write may safely
+        // remove it rather than wedging all later stale-lock recovery.
+        if (claimHandle) await rm(claimPath, { force: true }).catch(() => undefined)
+        throw normalizeStoreIoError("failed to claim objective store lock reclamation", error)
+      }
     }
   }
 
