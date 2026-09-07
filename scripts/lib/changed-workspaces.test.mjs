@@ -51,6 +51,11 @@ if (args.includes('list')) {
 `)
   chmodSync(join(root, '.fixture/pnpm'), 0o755)
   write('.fixture/calls.jsonl', '')
+  function removeWorkspace(path) {
+    rmSync(join(root, path), { recursive: true, force: true })
+    const listed = JSON.parse(readFileSync(join(root, '.fixture/workspaces.json'), 'utf8'))
+    write('.fixture/workspaces.json', JSON.stringify(listed.filter((workspace) => workspace.path !== join(root, path))))
+  }
   function run(script, env = {}) {
     const result = spawnSync(process.execPath, [join(scripts, `${script}-changed-workspaces.mjs`)], {
       cwd: root,
@@ -60,7 +65,7 @@ if (args.includes('list')) {
     const calls = readFileSync(join(root, '.fixture/calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
     return { ...result, calls }
   }
-  return { root, git, write, run }
+  return { root, git, write, removeWorkspace, run }
 }
 
 for (const script of ['test', 'typecheck']) {
@@ -100,6 +105,16 @@ for (const script of ['test', 'typecheck']) {
     assert.equal(result.status, 0, result.stderr)
     assert.ok(result.calls.at(-1).includes('@test/core'))
     assert.ok(result.calls.at(-1).includes('@test/unrelated'))
+  })
+
+  test(`${script}: removed workspace runs the full check instead of skipping`, (t) => {
+    const f = fixture(t)
+    f.removeWorkspace('packages/store')
+    const result = f.run(script)
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(result.calls, [['run', script]])
+    assert.match(result.stdout, /has no current owner/)
+    assert.doesNotMatch(result.stdout, /skipping/)
   })
 
   test(`${script}: global change runs the full check exactly once`, (t) => {

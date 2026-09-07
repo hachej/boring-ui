@@ -10,6 +10,7 @@ const globalFiles = new Set([
 const globalPrefixes = [
   '.github/workflows/', 'scripts/', '.agents/skills/', '.agents/factory/', '.agents/personas/',
 ]
+const workspaceRootPrefixes = ['packages/', 'plugins/', 'apps/', 'tools/']
 
 function run(cmd, args) {
   const result = spawnSync(cmd, args, { stdio: 'inherit' })
@@ -78,9 +79,19 @@ export function runChangedWorkspaces(script) {
   const workspaceByName = new Map(workspaces.map((workspace) => [workspace.name, workspace]))
   const packageByRel = [...workspaces].sort((a, b) => b.rel.length - a.rel.length)
   const changedNames = new Set()
+  const ownerlessWorkspaceFiles = []
   for (const file of changedFiles) {
     const owner = packageByRel.find((workspace) => file === workspace.rel || file.startsWith(`${workspace.rel}/`))
     if (owner) changedNames.add(owner.name)
+    else if (workspaceRootPrefixes.some((prefix) => file.startsWith(prefix))) ownerlessWorkspaceFiles.push(file)
+  }
+  // A removed workspace is absent from the current pnpm listing, so its old
+  // path cannot be mapped to an owner or its dependents. Conservatively run
+  // the full command rather than reporting a successful skip.
+  if (ownerlessWorkspaceFiles.length > 0) {
+    console.log(`${label}: changed workspace path has no current owner (${ownerlessWorkspaceFiles.sort().join(', ')}); running full ${script}`)
+    run('pnpm', ['run', script])
+    return
   }
   if (changedNames.size === 0) {
     console.log(`${label}: no workspace package changes since ${base} (including local edits); skipping`)
