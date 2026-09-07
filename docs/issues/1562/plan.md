@@ -25,7 +25,7 @@ installation record with compare-and-set activation receipts, trusted
 `product.v1.*` bridge operations, a `ProductRuntimeHost` seam with `embedded`
 (gated, default off) and `local` (bwrap/runsc) adapters, an isolated iframe
 front for generated components, a `product-builder` agent seat, and a
-first-journey acceptance script over a math-tutor fixture product.
+first-journey acceptance path that uses a math-tutor playground fixture for deterministic supporting proof and requires the live Seneca mathematics tutor before epic closure.
 
 ## Decisions
 
@@ -34,7 +34,7 @@ first-journey acceptance script over a math-tutor fixture product.
 - Release and Installation are product-module records under `packages/workspace/src/server/productLifecycle/`, DB-free; core injects Postgres stores (coding invariant: workspace stays DB-free).
 - Activation receipts mirror the two-phase `agent_host_destructive_publication_events` shape.
 - Builder tools never call activate; the host activates through the bridge.
-- First consumer proof runs on a playground fixture; the live Seneca tutor product is tenant-side acceptance after nc-7.
+- The playground math-tutor fixture supplies deterministic supporting proof only. nc-7 cannot close the epic until the live Seneca mathematics tutor, created by the Seneca curator and installed for a second authorized learner, passes tenant-side acceptance.
 
 ## Flag / Abstraction
 
@@ -59,12 +59,13 @@ first-journey acceptance script over a math-tutor fixture product.
 - Conformance suite green for embedded and local; runtime process cannot read host env (nc-4a, nc-4b).
 - Generated component renders in a sandboxed iframe and reaches only brokered ops (nc-5).
 - Builder produces a candidate manifest and cannot activate (nc-6).
-- nc-7 script passes end to end with zero founder edits; receipt committed.
+- nc-7 fixture script passes end to end with zero founder edits and supplies deterministic supporting evidence; its receipt is committed.
+- Before nc-7 closes the epic, the live Seneca mathematics tutor created by the Seneca curator is installed for a second authorized learner and proves live domain identity/operations plus a bounded Job Thread with a result/decision after chat/browser closure. Fixture-only evidence cannot satisfy this bar.
 
 ## Proof
 
-- Exact commands: see each bead's "Proof path" (`br show <id>`); epic-level `pnpm --filter workspace-playground first-journey` after nc-7.
-- Screenshot/demo: nc-5 UI Review gate; nc-7 receipt under `docs/issues/1562/`.
+- Exact commands: see each bead's "Proof path" (`br show <id>`); epic-level `pnpm --filter workspace-playground first-journey` provides deterministic support during nc-7 but is not sufficient to close the epic.
+- Screenshot/demo: nc-5 UI Review gate; nc-7 fixture and live Seneca acceptance receipts under `docs/issues/1562/`.
 
 ## Slices
 
@@ -89,7 +90,7 @@ Second re-cut (360 sweep, 2026-09-07 night). Order = spine first.
 | 14 | Reconciliation: compatibility, precise conflict, quarantine, undo | `wt-391-forward-nc-r-reconciliation-he4u` | after 4, 9, 12 |
 | 15 | `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | after 12 |
 | 16 | Isolated generated View renderer (iframe; resurrects #1499) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | after 9, 10; UI surface |
-| 17 | First journey acceptance (receipt generated from evidence + usage records) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — **the only bead that can close the epic** |
+| 17 | First journey acceptance (deterministic fixture support + mandatory live Seneca tutor receipt generated from evidence and usage records) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — **the only bead that can close the epic, and only after live Seneca acceptance** |
 
 Binding rule on 1, 4, 5, 9: no persisted row or bridge input carries a session id; a test asserts it. Each bead's PRIOR WORK note names the design or PR to reuse (see `../../plans/native-creation/360-GAP-MAP.md`).
 
