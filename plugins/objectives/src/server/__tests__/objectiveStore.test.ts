@@ -4,11 +4,20 @@ import { lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, symlink, u
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { ToolExecContext } from "@hachej/boring-workspace"
+import {
+  createWorkspaceBridgeRegistry,
+  WorkspaceBridgeErrorCode,
+  type WorkspaceBridgeCallContext,
+} from "@hachej/boring-workspace/server"
+import { OBJECTIVE_BRIDGE_CAPABILITIES, OBJECTIVE_BRIDGE_OPS } from "../../shared/bridge"
 import { OBJECTIVE_MAX_AGGREGATE_BYTES } from "../../shared/constants"
 import { OBJECTIVE_ERROR_CODES } from "../../shared/error-codes"
 import { validateCreateObjectiveInput } from "../../shared/schema"
 import type { CreateObjectiveInput } from "../../shared/types"
+import { createObjectiveBridgeHandlers } from "../objectiveBridgeHandlers"
 import { FileObjectiveStore } from "../objectiveStore"
+import { createObjectiveTools } from "../objectiveTools"
 import { WorkspacePathEscapeError } from "../pathSafety"
 
 // Node's ESM module namespace is non-configurable, so `vi.spyOn` on the raw
@@ -128,16 +137,64 @@ describe("FileObjectiveStore", () => {
       })
     }
 
-    it("wraps a read failure with the plugin-owned store code and original cause", async () => {
-      const cause = nodeFailure("read medium failed")
+    it("wraps a read failure with a stable public message, plugin-owned code, and original cause", async () => {
+      const cause = nodeFailure("EIO: /host/private/objectives.json")
       vi.mocked(readFile).mockRejectedValueOnce(cause)
-      await expectStoreIo(store.list(), cause)
+      const failure = store.list().catch((error: unknown) => error)
+      await expect(failure).resolves.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.STORE_IO,
+        message: "failed to read objective store",
+        cause,
+      })
+      await expect(failure).resolves.not.toMatchObject({ message: expect.stringContaining("/host/private") })
     })
 
-    it("wraps path inspection failures rather than leaking raw Node errors", async () => {
-      const cause = nodeFailure("lstat denied", "EACCES")
-      vi.mocked(lstat).mockRejectedValueOnce(cause)
-      await expectStoreIo(store.list(), cause)
+    it("carries a real injected read failure through the tool seam without leaking Node diagnostics", async () => {
+      const cause = nodeFailure("EACCES: /host/private/objectives.json", "EACCES")
+      vi.mocked(readFile).mockRejectedValueOnce(cause)
+      const tools = createObjectiveTools({ store })
+      const listTool = tools.find((candidate) => candidate.name === "list_objectives")!
+      const ctx: ToolExecContext = { abortSignal: new AbortController().signal, toolCallId: "call-fs" }
+
+      const result = await listTool.execute({}, ctx)
+      expect(result).toMatchObject({ isError: true, details: { code: OBJECTIVE_ERROR_CODES.STORE_IO } })
+      expect(result.content[0]?.text).toBe("list_objectives failed: failed to read objective store")
+      expect(JSON.stringify(result)).not.toContain("/host/private")
+      expect(result.details).not.toHaveProperty("cause")
+    })
+
+    it("carries a real injected read failure through WorkspaceBridge's generic canonical mapping", async () => {
+      const cause = nodeFailure("EIO: /host/private/objectives.json")
+      vi.mocked(readFile).mockRejectedValueOnce(cause)
+      const registry = createWorkspaceBridgeRegistry()
+      for (const entry of createObjectiveBridgeHandlers({ store })) {
+        registry.registerHandler(entry.definition, entry.handler)
+      }
+      const context: WorkspaceBridgeCallContext = {
+        callerClass: "browser",
+        workspaceId: "workspace-1",
+        sessionId: "s1",
+        capabilities: [OBJECTIVE_BRIDGE_CAPABILITIES.list],
+        actor: { actorKind: "human", performedBy: { id: "user-1", label: "user:user-1" } },
+      }
+
+      const result = await registry.call({ op: OBJECTIVE_BRIDGE_OPS.list, input: {} }, context)
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: WorkspaceBridgeErrorCode.HandlerFailed, message: "failed to read objective store" },
+      })
+      expect(JSON.stringify(result)).not.toContain("/host/private")
+      expect(JSON.stringify(result)).not.toContain(OBJECTIVE_ERROR_CODES.STORE_IO)
+    })
+
+    it("wraps directory creation and path inspection failures rather than leaking raw Node errors", async () => {
+      const mkdirCause = nodeFailure("mkdir denied", "EACCES")
+      vi.mocked(mkdir).mockRejectedValueOnce(mkdirCause)
+      await expectStoreIo(store.list(), mkdirCause)
+
+      const lstatCause = nodeFailure("lstat denied", "EACCES")
+      vi.mocked(lstat).mockRejectedValueOnce(lstatCause)
+      await expectStoreIo(store.list(), lstatCause)
     })
 
     it("wraps contained-path resolution failures rather than leaking raw Node errors", async () => {
@@ -150,10 +207,33 @@ describe("FileObjectiveStore", () => {
       await rm(workspaceRoot, { recursive: true, force: true })
     })
 
-    it("wraps lock open failures rather than leaking raw Node errors", async () => {
-      const cause = nodeFailure("lock open denied", "EACCES")
-      vi.mocked(open).mockRejectedValueOnce(cause)
-      await expectStoreIo(store.create(input()), cause)
+    it("wraps lock open and metadata read failures rather than leaking raw Node errors", async () => {
+      const openCause = nodeFailure("lock open denied", "EACCES")
+      vi.mocked(open).mockRejectedValueOnce(openCause)
+      await expectStoreIo(store.create(input()), openCause)
+
+      const lockPath = `${join(dir, "objectives.json")}.lock`
+      await writeFile(lockPath, JSON.stringify({ token: "held", timestamp: Date.now() }), "utf8")
+      const readCause = nodeFailure("lock read failed")
+      vi.mocked(readFile).mockRejectedValueOnce(readCause)
+      await expectStoreIo(store.create(input()), readCause)
+      await rm(lockPath, { force: true })
+    })
+
+    it("wraps stale-lock reclaim write and rename failures", async () => {
+      const lockPath = `${join(dir, "objectives.json")}.lock`
+      const stale = JSON.stringify({ token: "stale", timestamp: Date.now() - 60_000 })
+
+      await writeFile(lockPath, stale, "utf8")
+      const writeCause = nodeFailure("reclaim write failed")
+      vi.mocked(writeFile).mockRejectedValueOnce(writeCause)
+      await expectStoreIo(store.create(input()), writeCause)
+
+      await writeFile(lockPath, stale, "utf8")
+      const renameCause = nodeFailure("reclaim rename failed")
+      vi.mocked(rename).mockRejectedValueOnce(renameCause)
+      await expectStoreIo(store.create(input()), renameCause)
+      await rm(lockPath, { force: true })
     })
 
     it("wraps commit write failures, preserves their cause, and leaves observable state unchanged", async () => {
