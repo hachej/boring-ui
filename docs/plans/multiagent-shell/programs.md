@@ -9,8 +9,9 @@ this page instead.
 
 - Status: **ACTIVE** (ratified 2026-09-07 via #1561; RECONCILIATION §13,
   DECISIONS D33). Epic [#1562](https://github.com/hachej/boring-ui/issues/1562);
-  beads labelled `epic:native-creation` (`nc-1`, `nc-t`, `nc-2`, `nc-6`, `nc-3`,
-  `nc-v`, `nc-l`, `nc-0`, `nc-4a`, `nc-4b`, `nc-5`, `nc-7`); dispatch order in
+  beads labelled `epic:native-creation` (18: `nc-1`, `nc-t`, `nc-x`, `nc-0`, `nc-2`,
+  `nc-d`, `nc-a`, `nc-e`, `nc-6`, `nc-3`, `nc-v`, `nc-l`, `nc-4a`, `nc-c`, `nc-r`,
+  `nc-4b`, `nc-5`, `nc-7`); dispatch order in
   the DIRECTION amendment of 2026-09-07. It pulls forward Thread *identity*
   (not the timeline shape) and the first View slice as its consumers.
 - Pack: [`../native-creation/README.md`](../native-creation/README.md)

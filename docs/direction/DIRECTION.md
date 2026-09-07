@@ -685,36 +685,62 @@ of this journey**, without reordering Wave A:
 | **Views** | The first ratified View slice (P4 [saved-views-kernel], "unsized") gets its planning pass *and* first consumer here (`nc-v`): the contract as a set, resolving the two kinds the first product needs. Agents see descriptors and refs, never renderers. It is premises.md's pressure-test (4). |
 | **Library, not standalone workspaces** | An installed product lives in Library and opens as a Thread in Work with the product's canvas (`nc-l`), consuming the substrate-free [shell-layout] chrome slice. No workspace per product; no global chat column. |
 
+### Second re-cut — 360 sweep (owner, 2026-09-07 night)
+
+Six parallel sweeps of the whole spec against the first cut
+([`360-GAP-MAP.md`](../plans/native-creation/360-GAP-MAP.md)) found the graph
+was a kernel-only slice. Six beads were added (data, tutor agent package,
+evidence, authority substrate, reconciliation, model credentials), premise
+edges were made machine-checkable, prior designs are cited in each bead, and
+the lane 2 kernel-port beads (`rc-lane2-kernel-port-l55c.*`) are **deferred**
+per §13f. Owner defaults recorded (each reversible by a later ruling):
+
+| Question | Default |
+|---|---|
+| What is "a separate consumer"? | A workspace member holding a **personal-scope installation**. No second workspace, no new grant type. |
+| Tutor persona path for the first proof | May ride the restart-based agent-package install; the release pins its definition digest; hot activation through the product path is the follow-up (#1107 slice 3). |
+| `local` mode isolation floor | bwrap/runsc accepted for the first proof; hardware microVM (`remote`) before any shared-tenant Seneca deployment. |
+| Identity id space | durable-streams A1 owns session ids; `nc-t` owns thread ids; the binding table is the only place both appear. |
+| Release path to Seneca | Seneca pulls a release by digest from this repo's stores; not in the epic's scope. |
+| Lane 2 / lane 3 | Lane 2 K-beads deferred. Lane 3 P0 owner beads (`rc-lane3-steering-0j8o.1/.2`) stay open; they do not gate this epic. |
+
 ### Bead map — epic #1562, label `epic:native-creation`
 
-Priority order is the **spine first**: identity records, then creation, then
-placement, with isolation gating a second consumer on a shared host.
+Spine first: identity records and the authority substrate, then data and the
+agent, then creation, then placement; isolation gates a second consumer on a
+shared host; reconciliation and credentials gate the acceptance.
 
 | Order | Slice | Bead | Priority | Dispatch gate |
 |---|---|---|---|---|
-| 1 | Release manifest record + stores | `wt-391-forward-nc-1-release-manifest-6xyh` | P0 | **now** |
+| 1 | Release manifest record + stores (pins agent definition digests, stateCompat) | `wt-391-forward-nc-1-release-manifest-6xyh` | P0 | **now** |
 | 2 | Thread identity record + session bindings | `wt-391-forward-nc-t-thread-identity-iohz` | P0 | **now** |
-| 3 | Installation record + CAS activation receipts (binds thread, never session) | `wt-391-forward-nc-2-installation-activation-z4pa` | P0 | after 1, 2 |
-| 4 | `product-builder` agent seat: candidates into the release store | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | P1 | after 1, 3 |
-| 5 | `product.v1.*` bridge operations | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | P1 | after 2, 3 |
-| 6 | First ratified View slice (record, dashboard) | `wt-391-forward-nc-v-first-view-slice-oaal` | P1 | after 5; UI surface |
-| 7 | Library entry + Thread canvas in Work | `wt-391-forward-nc-l-library-entry-job-canvas-uw98` | P1 | after 2, 5, 6 and [shell-layout]; UI surface |
-| ∥ | Ground truth: gate the embedded runtime default-off | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | P1 | **now**, parallel, disjoint scope |
-| 8 | `ProductRuntimeHost` seam + embedded adapter + conformance | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | P2 | after ∥, 5 |
-| 9 | `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | P2 | after 8 |
-| 10 | Isolated generated View renderer (iframe) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | P2 | after 5, 6; UI surface |
-| 11 | First journey acceptance (math-tutor fixture, second user, `local` mode) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | P1 | after 7, 4, 9, 10 — **the only bead that can close the epic** |
+| 3 | Shared ExecutionContext / Authority + effect-classed Capability | `wt-391-forward-nc-x-execution-context-capability-tsqh` | P1 | **now** |
+| ∥ | Ground truth: gate the embedded runtime default-off | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | P1 | **now**, parallel |
+| 4 | Installation record + CAS activation receipts (personal-scope install = the separate consumer) | `wt-391-forward-nc-2-installation-activation-z4pa` | P0 | after 1, 2 |
+| 5 | Learner data store + schema versioning + catalog adapter | `wt-391-forward-nc-d-learner-data-store-axqb` | P0 | after 1, 2 |
+| 6 | Tutor agent package (persona, skills, knowledge) pinned by digest | `wt-391-forward-nc-a-tutor-agent-package-767r` | P1 | after 1 |
+| 7 | Evaluation/Outcome record bound to releaseDigest | `wt-391-forward-nc-e-evaluation-record-akcu` | P1 | after 1 |
+| 8 | `product-builder` seat: typed brief → candidate + evidence, never activates | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | P1 | after 1, 4, 6, 7 |
+| 9 | `product.v1.*` bridge operations through defineCapability | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | P1 | after 2, 3, 4 |
+| 10 | First ratified View slice (record, dashboard) | `wt-391-forward-nc-v-first-view-slice-oaal` | P1 | after 9; UI surface |
+| 11 | Library entry + Thread canvas in Work (consumes shell L3b) | `wt-391-forward-nc-l-library-entry-job-canvas-uw98` | P1 | after 2, 9, 10, `shell-ngfs.6`; UI surface |
+| 12 | `ProductRuntimeHost` seam + embedded adapter + conformance | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | P2 | after ∥, 3, 9 |
+| 13 | Model credentials: scoped, request-bound issuance; usage per installation | `wt-391-forward-nc-c-model-credentials-rzh1` | P1 | after 3 |
+| 14 | Reconciliation: compatibility, precise conflict, quarantine, undo | `wt-391-forward-nc-r-reconciliation-he4u` | P1 | after 4, 9, 12 |
+| 15 | `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | P2 | after 12 |
+| 16 | Isolated generated View renderer (iframe; resurrects #1499) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | P2 | after 9, 10; UI surface |
+| 17 | First journey acceptance (receipt generated from evidence + usage records) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | P1 | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — **the only bead that can close the epic** |
 
-Every bead carries WHAT, WHY, file scope, proof path, acceptance and a
-fits-one-session judgment (bead-ready.md). Plan and show-me artifacts:
-[`docs/issues/1562/`](../issues/1562/plan.md).
+Every bead carries WHAT, WHY, file scope, proof path, acceptance, a
+fits-one-session judgment (bead-ready.md) and, where the 360 sweep found one,
+a PRIOR WORK note naming the design or PR to reuse. Plan and show-me
+artifacts: [`docs/issues/1562/`](../issues/1562/plan.md).
 
-**Dispatch consequence:** three beads are dispatchable tonight in parallel with
-disjoint file scope — release manifest, Thread identity, embedded gate. The
-installation record follows the first two; the builder and the bridge follow
-it. The worker cap of three and the single UI-surface worker rule apply
-(`nc-v`, `nc-l`, `nc-5` never run together). Zero autonomous merges holds:
-gate 2 remains an owner decision on the epic PR.
+**Dispatch consequence:** four beads are dispatchable tonight in parallel with
+disjoint file scope — release manifest, Thread identity, authority substrate,
+embedded gate. Installation and learner data follow the first two. The worker
+cap of three and the single UI-surface worker rule apply (`nc-v`, `nc-l`,
+`nc-5` never run together). Zero autonomous merges holds.
 
 **Done-bar:** nc-7 passes with zero founder source edits after the fixture
 request, the installed product survives destruction of the builder sandbox

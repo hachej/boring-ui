@@ -70,16 +70,24 @@ this journey's "job continuity" stage consumes. Epic
 
 | Order | Slice | Delivers | Gate |
 |---|---|---|---|
-| 1 | Release manifest (`nc-1`) | Immutable content-addressed release record | now |
-| 2 | Thread identity (`nc-t`) | Job root with session bindings; no product key may use a session id; timeline shape stays spiked | now |
-| 3 | Installation + activation (`nc-2`) | Installation record; CAS, request-keyed activation receipts; undo as activation | after 1, 2 |
-| 4 | Builder seat (`nc-6`) | `product-builder` agent: candidates into the release store, never activates | after 1, 3 |
-| 5 | Bridge operations (`nc-3`) | `product.v1.*` trusted handlers | after 2, 3 |
-| 6 | First View slice (`nc-v`) | ViewDescriptor/Resolver/Host/Context/Ref for record + dashboard; P4's first consumer | after 5 |
-| 7 | Library + Thread canvas (`nc-l`) | Installed product in Library; opens as a Thread in Work | after 2, 5, 6, [shell-layout] |
-| ∥ | Embedded runtime gate (`nc-0`) | In-process hot-loaded server plugins become the default-off `embedded` mode | now |
-| 8–10 | Runtime seam, `local` adapter, isolated View renderer (`nc-4a`, `nc-4b`, `nc-5`) | Isolation for a second consumer on a shared host | after ∥, 5, 6 |
-| 11 | First journey acceptance (`nc-7`) | Math-tutor fixture installed for a second user in `local` mode; survives builder-sandbox destruction and one upstream update | after 7, 4, 9, 10 |
+| 1 | Release manifest record + stores (`nc-1`) | Immutable content-addressed release record; pins agent definition digests | now |
+| 2 | Thread identity record + session bindings (`nc-t`) | Job root with session bindings; no product key may use a session id | now |
+| 3 | Shared ExecutionContext / Authority + effect-classed Capability (`nc-x`) | One authorization funnel for product operations | now |
+| ∥ | Ground truth: gate the embedded runtime default-off (`nc-0`) | In-process hot-loaded server plugins become the default-off embedded mode | now, parallel |
+| 4 | Installation record + CAS activation receipts (`nc-2`) | Installation record; CAS activation receipts; personal-scope install = separate consumer | after 1, 2 |
+| 5 | Learner data store + schema versioning + catalog adapter (`nc-d`) | Learner records bound to installation + thread + release | after 1, 2 |
+| 6 | Tutor agent package (`nc-a`) | The tutor as an agent package, digest-pinned | after 1 |
+| 7 | Evaluation/Outcome record bound to releaseDigest (`nc-e`) | Evidence bound to the exact release; forks do not inherit | after 1 |
+| 8 | `product-builder` seat: typed brief → candidate + evidence, never activates (`nc-6`) | product-builder: typed brief → candidate + evidence; never activates | after 1, 4, 6, 7 |
+| 9 | `product.v1.*` bridge operations through defineCapability (`nc-3`) | product.v1.* trusted handlers | after 2, 3, 4 |
+| 10 | First ratified View slice (`nc-v`) | ViewDescriptor set for record + dashboard; P4's first consumer | after 9; UI surface |
+| 11 | Library entry + Thread canvas in Work (`nc-l`) | Installed product in Library; opens as a Thread in Work | after 2, 9, 10, `shell-ngfs.6`; UI surface |
+| 12 | `ProductRuntimeHost` seam + embedded adapter + conformance (`nc-4a`) | ProductRuntimeHost seam + conformance | after ∥, 3, 9 |
+| 13 | Model credentials: scoped, request-bound issuance; usage per installation (`nc-c`) | Scoped model credentials; usage per installation | after 3 |
+| 14 | Reconciliation: compatibility, precise conflict, quarantine, undo (`nc-r`) | Compatible upgrade keeps the retained change; incompatible base → precise conflict; quarantine; undo | after 4, 9, 12 |
+| 15 | `local` sandbox runtime adapter (`nc-4b`) | local bwrap/runsc runtime | after 12 |
+| 16 | Isolated generated View renderer (`nc-5`) | Generated UI in a sandboxed iframe | after 9, 10; UI surface |
+| 17 | First journey acceptance (`nc-7`) | Math-tutor fixture for a second learner in local mode; receipt from evidence records | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — the only bead that can close the epic |
 
 The lifecycle ladder E0–E6 below (folded from the former Workspace Evolution
 pack) remains the acceptance vocabulary for later classes; E1 is what `nc-7`

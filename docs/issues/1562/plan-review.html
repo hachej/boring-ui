@@ -24,25 +24,35 @@
 </pre>
 <h2>Goals / Non-goals</h2>
 <table><tr><th>Goals</th><th>Non-goals</th></tr><tr><td>Immutable release identity · CAS activation · brokered ops · isolated runtime and UI · builder seat · first-journey proof</td><td>Remote microVM adapter · full E5 reconciliation · public packaging/marketplace · thread storage shape · any Wave A reordering</td></tr></table>
-<h2>Bead graph (spine first)</h2>
+<h2>Bead graph (second re-cut)</h2>
 <pre class="mermaid">graph LR
-  nc1[1 release manifest] --> nc2[3 installation + activation]
+  nc1[1 release manifest] --> nc2[4 installation + activation]
   nct[2 Thread identity] --> nc2
-  nc1 --> nc6[4 builder seat]
-  nc2 --> nc6
-  nct --> nc3[5 bridge ops]
+  ncx[3 ExecutionContext + Capability] --> nc3[9 bridge ops]
+  nc1 --> ncd[5 learner data]
+  nct --> ncd
+  nc1 --> nca[6 tutor agent package]
+  nc1 --> nce[7 evaluation record]
+  nc2 --> nc6[8 builder seat]
+  nca --> nc6
+  nce --> nc6
   nc2 --> nc3
-  nc3 --> ncv[6 first View slice]
-  nct --> ncl[7 Library + Thread canvas]
-  nc3 --> ncl
+  nc3 --> ncv[10 first View slice]
+  nc3 --> ncl[11 Library + Thread canvas]
   ncv --> ncl
-  nc0[∥ embedded gate] --> nc4a[8 runtime seam]
+  nc0[∥ embedded gate] --> nc4a[12 runtime seam]
+  ncx --> nc4a
   nc3 --> nc4a
-  nc4a --> nc4b[9 local adapter]
-  nc3 --> nc5[10 isolated View renderer]
-  ncv --> nc5
-  ncl --> nc7[11 first journey]
+  ncx --> ncc[13 model credentials]
+  nc2 --> ncr[14 reconciliation]
+  nc4a --> ncr
+  nc4a --> nc4b[15 local adapter]
+  ncv --> nc5[16 isolated View renderer]
+  ncd --> nc7[17 first journey]
   nc6 --> nc7
+  ncl --> nc7
+  ncc --> nc7
+  ncr --> nc7
   nc4b --> nc7
   nc5 --> nc7
 </pre>
@@ -57,6 +67,8 @@
   I-->>H: committed | aborted(stale)
   H->>P: start(release) + register ops
 </pre>
+<h2>Owner defaults (360 re-cut)</h2>
+<table><tr><th>Question</th><th>Default</th></tr><tr><td>Separate consumer</td><td>workspace member with a personal-scope installation</td></tr><tr><td>Tutor persona path</td><td>agent-package install for the first proof; digest pinned in the release</td></tr><tr><td>local mode floor</td><td>bwrap/runsc for the first proof; microVM before shared-tenant Seneca</td></tr><tr><td>Id space</td><td>A1 owns session ids, nc-t owns thread ids</td></tr><tr><td>Release path to Seneca</td><td>pull by digest; out of epic scope</td></tr></table>
 <h2>Decisions</h2>
 <table><tr><th>Decision</th><th>Options</th><th>Chosen</th><th>Why</th></tr>
 <tr><td>Job root</td><td>session · Thread identity now · wait for shape spike</td><td>Thread identity record now; timeline shape stays spiked</td><td>§9a identity half is ruled; products must not key on sessions</td></tr>

@@ -34,27 +34,37 @@ sequenceDiagram
     Note over H,P: retry with same requestKey returns the same receipt
 ```
 
-Bead graph (spine first):
+Bead graph (second re-cut, spine first):
 
 ```mermaid
 graph LR
-  nc1[1 release manifest] --> nc2[3 installation + activation]
+  nc1[1 release manifest] --> nc2[4 installation + activation]
   nct[2 Thread identity] --> nc2
-  nc1 --> nc6[4 builder seat]
-  nc2 --> nc6
-  nct --> nc3[5 bridge ops]
+  ncx[3 ExecutionContext + Capability] --> nc3[9 bridge ops]
+  nc1 --> ncd[5 learner data]
+  nct --> ncd
+  nc1 --> nca[6 tutor agent package]
+  nc1 --> nce[7 evaluation record]
+  nc2 --> nc6[8 builder seat]
+  nca --> nc6
+  nce --> nc6
   nc2 --> nc3
-  nc3 --> ncv[6 first View slice]
-  nct --> ncl[7 Library + Thread canvas]
-  nc3 --> ncl
+  nc3 --> ncv[10 first View slice]
+  nc3 --> ncl[11 Library + Thread canvas]
   ncv --> ncl
-  nc0[∥ embedded gate] --> nc4a[8 runtime seam]
+  nc0[∥ embedded gate] --> nc4a[12 runtime seam]
+  ncx --> nc4a
   nc3 --> nc4a
-  nc4a --> nc4b[9 local adapter]
-  nc3 --> nc5[10 isolated View renderer]
-  ncv --> nc5
-  ncl --> nc7[11 first journey]
+  ncx --> ncc[13 model credentials]
+  nc2 --> ncr[14 reconciliation]
+  nc4a --> ncr
+  nc4a --> nc4b[15 local adapter]
+  ncv --> nc5[16 isolated View renderer]
+  ncd --> nc7[17 first journey]
   nc6 --> nc7
+  ncl --> nc7
+  ncc --> nc7
+  ncr --> nc7
   nc4b --> nc7
   nc5 --> nc7
 ```
@@ -65,7 +75,11 @@ File layout added by the epic:
  packages/workspace/src/server/
 +├── threads/            # Thread identity + session bindings (nc-t)
 +├── views/              # ViewResolver + ViewStore (nc-v)
-+├── productLifecycle/   # releases, installations, activation, bridge (nc-1..3)
++├── productLifecycle/   # releases, installations, activation, bridge, reconcile (nc-1..3, nc-r)
++├── productData/        # learner record store + schema (nc-d)
++├── productEvidence/    # evaluation/outcome records (nc-e)
++├── authority/          # ExecutionContext, Capability, effective grants (nc-x)
++├── modelCredentials/   # scoped model capability issuance (nc-c)
 +├── productRuntime/     # types, embedded, local, brokeredOps (nc-4a/4b)
  └── runtimeBackend/     # becomes the embedded adapter's engine (nc-0)
  packages/workspace/src/front/
@@ -75,7 +89,9 @@ File layout added by the epic:
  packages/core/drizzle/
 +├── 0028_product_releases.sql
 +├── 0029_product_installations.sql
-+└── 0030_threads.sql
++├── 0030_threads.sql
++├── 0031_product_records.sql
++└── 0032_product_evidence.sql
 +plugins/product-builder/  # builder agent type + tools (nc-6)
  apps/workspace-playground/
 +└── fixtures/products/math-tutor/ + scripts/first-journey-acceptance.mjs (nc-7)

@@ -68,26 +68,32 @@ first-journey acceptance script over a math-tutor fixture product.
 
 ## Slices
 
-Order = spine first (owner, 2026-09-07 evening): identity records → creation → placement; isolation gates a shared-host second consumer.
+Second re-cut (360 sweep, 2026-09-07 night). Order = spine first.
 
-| # | Slice | Bead | Blocked by | File scope (summary) |
-|---|---|---|---|---|
-| 1 | release manifest | `wt-391-forward-nc-1-release-manifest-6xyh` | — | productLifecycle/releases*, core migration 0028 + store |
-| 2 | Thread identity + session bindings | `wt-391-forward-nc-t-thread-identity-iohz` | — | server/threads/**, core migration 0030, thread.v1 bridge reads |
-| 3 | installation + activation (binds thread, never session) | `wt-391-forward-nc-2-installation-activation-z4pa` | 1, 2 | productLifecycle/installations*, activation*, core migration 0029 |
-| 4 | builder seat → candidates in the release store | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | 1, 3 | plugins/product-builder/**, playground fleet |
-| 5 | product.v1 bridge ops | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | 2, 3 | productLifecycle/bridge.ts, server option wiring, WORKSPACE_BRIDGE_V1.md |
-| 6 | first View slice (record, dashboard) | `wt-391-forward-nc-v-first-view-slice-oaal` | 5 | shared/views, server/views, front/views/ViewHost |
-| 7 | Library entry + Thread canvas | `wt-391-forward-nc-l-library-entry-job-canvas-uw98` | 2, 5, 6, [shell-layout] | front/shell/library, front/shell/work, playground e2e |
-| ∥ | embedded runtime gate | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | — | workspace server composition, runtimeBackend/, PLUGIN_SYSTEM.md |
-| 8 | runtime seam + embedded adapter | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | ∥, 5 | productRuntime/{types,embedded,brokeredOps}, conformance suite |
-| 9 | local adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | 8 | productRuntime/{local,runtimeEntry,protocol} |
-| 10 | isolated View renderer (iframe) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | 5, 6 | front/productRuntime/**, frontAssets route, fixture + e2e |
-| 11 | first journey | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | 7, 4, 9, 10 | playground fixture product + acceptance script + receipt |
+| Order | Slice | Bead | Gate |
+|---|---|---|---|
+| 1 | Release manifest record + stores (pins agent definition digests, stateCompat) | `wt-391-forward-nc-1-release-manifest-6xyh` | **now** |
+| 2 | Thread identity record + session bindings | `wt-391-forward-nc-t-thread-identity-iohz` | **now** |
+| 3 | Shared ExecutionContext / Authority + effect-classed Capability | `wt-391-forward-nc-x-execution-context-capability-tsqh` | **now** |
+| ∥ | Ground truth: gate the embedded runtime default-off | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | **now**, parallel |
+| 4 | Installation record + CAS activation receipts (personal-scope install = the separate consumer) | `wt-391-forward-nc-2-installation-activation-z4pa` | after 1, 2 |
+| 5 | Learner data store + schema versioning + catalog adapter | `wt-391-forward-nc-d-learner-data-store-axqb` | after 1, 2 |
+| 6 | Tutor agent package (persona, skills, knowledge) pinned by digest | `wt-391-forward-nc-a-tutor-agent-package-767r` | after 1 |
+| 7 | Evaluation/Outcome record bound to releaseDigest | `wt-391-forward-nc-e-evaluation-record-akcu` | after 1 |
+| 8 | `product-builder` seat: typed brief → candidate + evidence, never activates | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | after 1, 4, 6, 7 |
+| 9 | `product.v1.*` bridge operations through defineCapability | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | after 2, 3, 4 |
+| 10 | First ratified View slice (record, dashboard) | `wt-391-forward-nc-v-first-view-slice-oaal` | after 9; UI surface |
+| 11 | Library entry + Thread canvas in Work (consumes shell L3b) | `wt-391-forward-nc-l-library-entry-job-canvas-uw98` | after 2, 9, 10, `shell-ngfs.6`; UI surface |
+| 12 | `ProductRuntimeHost` seam + embedded adapter + conformance | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | after ∥, 3, 9 |
+| 13 | Model credentials: scoped, request-bound issuance; usage per installation | `wt-391-forward-nc-c-model-credentials-rzh1` | after 3 |
+| 14 | Reconciliation: compatibility, precise conflict, quarantine, undo | `wt-391-forward-nc-r-reconciliation-he4u` | after 4, 9, 12 |
+| 15 | `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | after 12 |
+| 16 | Isolated generated View renderer (iframe; resurrects #1499) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | after 9, 10; UI surface |
+| 17 | First journey acceptance (receipt generated from evidence + usage records) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — **the only bead that can close the epic** |
 
-Binding rule on 1, 3, 5: no persisted row or bridge input carries a session id; a test asserts it.
+Binding rule on 1, 4, 5, 9: no persisted row or bridge input carries a session id; a test asserts it. Each bead's PRIOR WORK note names the design or PR to reuse (see `../../plans/native-creation/360-GAP-MAP.md`).
 
-Review budget: each bead stays inside the 1500-line PR budget; 6, 9 and 10 are the largest and may split.
+Review budget: each bead stays inside the 1500-line PR budget; 10, 15 and 16 are the largest and may split.
 
 ## Out of Scope
 
@@ -99,12 +105,12 @@ Review budget: each bead stays inside the 1500-line PR budget; 6, 9 and 10 are t
 
 ## Open Questions
 
-None blocking dispatch of nc-0/nc-1. Deferred to nc-4b: exact dispatch protocol (stdio JSON lines vs local HTTP) — the bead may choose, the conformance suite is the contract.
+Owner defaults recorded in the DIRECTION amendment (separate consumer = personal-scope install; tutor persona on the agent-package path for the first proof; bwrap/runsc floor for `local`; A1 owns session ids; Seneca pulls by digest). None blocks dispatch of the four ready beads. Deferred to nc-4b: exact dispatch protocol (stdio JSON lines vs local HTTP) — the bead may choose, the conformance suite is the contract.
 
 ## Graph Validation
 
 - `br dep cycles --blocking-only`: 0 cycles (2026-09-07).
-- `br ready`: nc-1, nc-t (P0) and nc-0 (P1) appear, status open, unassigned.
+- `br ready`: nc-1, nc-t (P0), nc-x and nc-0 (P1) appear, status open, unassigned; 18 beads, 0 cycles.
 
 ## Gate 1
 

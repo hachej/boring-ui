@@ -35,6 +35,7 @@ and owned compute do not have to precede it.
 | [Reassessment](REASSESSMENT.md) | Findings that led to the rulings: what existed, what conflicted, the code/doc drift. Context, not authority. |
 | [Amendment record](DOCUMENT_AMENDMENTS.md) | Where each ruling landed in the canonical docs, and the crosswalk to M/E work. |
 | [Coverage and sources](COVERAGE_AND_SOURCES.md) | Pinned evidence and inspection limits of the reassessment. |
+| [360 gap map](360-GAP-MAP.md) | What the whole spec requires that the first bead cut missed; prior designs to reuse; owner decisions and defaults. |
 | [Plan and show-me](../../issues/1562/plan.md) | Epic plan, bead graph, proof commands, gate-1 artifact. |
 
 This is a repository-ready synthesis of the September 7 reassessment, not a
@@ -101,6 +102,7 @@ inherited by a fork that changes it without an applicability check.
 | Private activation | Preview/Keep by default; standing authorization opt-in per installation within a declared change class and budget; the founder is not the default approver. (§13d) |
 | Upstream adoption | Compatible maintenance under the installation's policy; conflicts surfaced precisely; admitted work stays attributable to its release. (§11d, §13a) |
 | Platform/tenant | Release, installation, activation, runtime modes = platform substrate; offers/pricing tenant-side. (§13h) |
+| 360 re-cut (night) | Six sweeps of the whole spec ([360-GAP-MAP.md](360-GAP-MAP.md)) added data, tutor-agent package, evidence, authority substrate, reconciliation and model-credential beads; premise edges are machine-checkable; lane 2 kernel-port beads deferred; owner defaults recorded in DIRECTION. |
 | Building blocks pulled forward (evening) | Thread **identity** record now (timeline shape stays spiked; no product key may use a session id); the **first View slice** as the product canvas; the product lives in **Library and opens as a Thread in Work**. DIRECTION amendment, "Premises pulled forward". |
 
 ## Scope of PR #1561
