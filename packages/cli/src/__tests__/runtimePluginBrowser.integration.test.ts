@@ -111,6 +111,10 @@ async function withBrowser(run: (page: import("@playwright/test").Page, trace: s
   const page = await browser.newPage()
   const trace: string[] = []
   page.on("console", (message) => trace.push(`[browser:${message.type()}] ${message.text()}`))
+  page.on("pageerror", (error) => trace.push(`[browser:pageerror] ${error.message}`))
+  page.on("response", (response) => {
+    if (response.status() >= 400) trace.push(`[http:${response.status()}] ${response.request().method()} ${response.url()}`)
+  })
   try {
     await run(page, trace)
   } catch (error) {
