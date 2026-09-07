@@ -110,7 +110,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     key: AgentRequestKey,
     error: import('../../shared/index').AgentGatewayErrorDTO,
   ): Promise<void> {
-    this.transition(key, ['admission-accepted'], (record) => ({
+    this.transition(key, ['pending-admission', 'admission-accepted'], (record) => ({
       key: record.key,
       digest: record.digest,
       state: 'retryable',

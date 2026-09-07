@@ -93,7 +93,9 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     error: import('../../shared/index').AgentGatewayErrorDTO,
   ): Promise<void> {
     this.transition(key, 'mark retryable', (record) => {
-      if (record.state !== 'admission-accepted') invalidTransition(record, 'mark retryable')
+      if (record.state !== 'pending-admission' && record.state !== 'admission-accepted') {
+        invalidTransition(record, 'mark retryable')
+      }
       return { key: record.key, digest: record.digest, state: 'retryable', error, updatedAt: Date.now() }
     })
   }

@@ -77,8 +77,11 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
   }
 
   async retry(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void> {
-    const current = this.requireState(key, 'admission-accepted')
-    this.write(key, { ...current, state: 'retryable', error, updatedAt: this.tick() })
+    const current = this.records.get(keyIdentity(key))
+    if (current?.state !== 'pending-admission' && current?.state !== 'admission-accepted') {
+      throw new Error(`invalid ledger transition: ${current?.state ?? 'missing'} -> retryable`)
+    }
+    this.write(key, { key: current.key, digest: current.digest, state: 'retryable', error, updatedAt: this.tick() })
   }
 
   async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
@@ -322,12 +325,20 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     }
   })
 
-  it('leaves retryable strong admission pending and process lifetime does not imply durability', async () => {
+  it('atomically reclaims retryable strong admission and process lifetime does not imply durability', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     const key = requestKey()
     await ledger.prepare(key, 'digest-a')
-    // A retryable admission result performs no ledger transition.
-    expect(await ledger.read(key)).toMatchObject({ state: 'pending-admission' })
+    await ledger.retry(key, {
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      message: 'admission unavailable',
+      details: { retryable: true },
+    })
+    expect(await ledger.read(key)).toMatchObject({ state: 'retryable' })
+    expect(await ledger.prepare(key, 'digest-a')).toMatchObject({
+      ownership: 'created',
+      record: { state: 'pending-admission' },
+    })
     expect(await new InMemoryAgentRequestLedger().read(key)).toBeUndefined()
   })
 })

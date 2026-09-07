@@ -29,7 +29,7 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toEqual({ sessions: [] })
   })
 
-  it('leaves retryable admission pending so the same request can be safely admitted later', async () => {
+  it('reclaims retryable admission so the same request can be safely admitted later', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const scope = fixture.issueScope()
     fixture.queueAdmission('session.create', 'retryable')
@@ -38,10 +38,10 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.createSession(input)).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
     })
-    await expect(fixture.gateway.createSession(input)).rejects.toMatchObject({
-      code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+    await expect(fixture.gateway.createSession(input)).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ ref: expect.objectContaining({ agentTypeId: 'alpha' }) })],
     })
-    await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toMatchObject({ sessions: [] })
   })
 
   it('admits rename, archive, and delete before any session mutation', async () => {
