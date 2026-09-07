@@ -146,11 +146,11 @@ Kinds: collection, record, document, kanban, timeline, dashboard, inbox,
 chart, table, map, artifact. The Agent reasons about these; it NEVER reasons
 about Dockview groups, component names, tab ids, CSS, grid widths, modals.
 
+*(2026-09-07, RECONCILIATION §13e: this prohibition binds domain agents. A seated software-builder agent may read and change renderer code, CSS, operations and tests inside a candidate release.)*
+
 ### Supporting kernel types (from the agent-native harvest — adopt directly)
 
-```
-
-*(2026-09-07, RECONCILIATION §13e: this prohibition binds domain agents. A seated software-builder agent may read and change renderer code, CSS, operations and tests inside a candidate release.)*ts
+```ts
 interface ExecutionContext {
   runId: string; threadId?: string
   principal: PrincipalRef; authority: Authority
