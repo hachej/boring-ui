@@ -29,7 +29,7 @@ const objectivesPlugin: BoringFrontFactoryWithId = definePlugin({
       id: `${OBJECTIVES_PLUGIN_ID}.surface`,
       kind: OBJECTIVE_SURFACE_KIND,
       title: OBJECTIVE_PANEL_TITLE,
-      description: "Opens a single Objective (the thin Goal primitive) by id.",
+      description: "Opens a single Objective by id.",
       targetHint: "The Objective id returned by create_objective/list_objectives.",
       examples: [{ target: "obj_123", label: "Open an objective by id" }],
       resolve: (request) => {

@@ -91,7 +91,13 @@ export const UpdateObjectiveInputSchema = withAggregateSizeLimit(
 )
 
 export const GetObjectiveInputSchema = z.object({ id: z.string().min(1) }).strict()
-export const ListObjectivesInputSchema = z.object({ status: ObjectiveStatusSchema.optional() }).strict()
+export const ListObjectivesInputSchema = z
+  .object({
+    status: ObjectiveStatusSchema.optional(),
+    limit: z.number().int().min(1).max(20).optional(),
+    cursor: z.string().regex(/^\d+$/).optional(),
+  })
+  .strict()
 
 /**
  * Versioned on-disk shape. `revision` is a monotonic counter used for

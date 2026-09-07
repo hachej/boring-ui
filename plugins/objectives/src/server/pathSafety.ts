@@ -1,9 +1,10 @@
 import { lstat, mkdir, realpath } from "node:fs/promises"
 import { isAbsolute, relative, resolve } from "node:path"
+import { ObjectiveError, OBJECTIVE_ERROR_CODES } from "../shared/error-codes"
 
-export class WorkspacePathEscapeError extends Error {
-  constructor(message: string) {
-    super(message)
+export class WorkspacePathEscapeError extends ObjectiveError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(OBJECTIVE_ERROR_CODES.PATH_ESCAPE, message, options)
   }
 }
 

@@ -4,7 +4,7 @@
   "type": "module",
   "private": false,
   "license": "MIT",
-  "description": "Objectives workspace plugin — a thin Goal primitive (Objective: statement, metric, baseline/target/current, status, constraints, evidence).",
+  "description": "Objectives workspace plugin — a durable thin planning primitive (Objective: statement, metric, baseline/target/current, status, constraints, evidence).",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -17,7 +17,7 @@
     "server": "dist/server/index.js"
   },
   "pi": {
-    "systemPrompt": "Objectives plugin: use list_objectives/get_objective/create_objective/update_objective to manage Objectives (the thin Goal primitive). Open one for the user with exec_ui openSurface using kind 'objective' and target = objective id."
+    "systemPrompt": "Objectives plugin: use list_objectives/get_objective/create_objective/update_objective to manage Objectives (the durable thin planning primitive). Open one for the user with exec_ui openSurface using kind 'objective' and target = objective id."
   },
   "files": [
     "dist",

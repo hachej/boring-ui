@@ -361,6 +361,24 @@ describe("FileObjectiveStore", () => {
   describe("load validation and migration", () => {
     const canonicalId = "obj-11111111-1111-4111-8111-111111111111"
 
+    it("fails closed on malformed JSON and preserves the file on mutation", async () => {
+      await mkdir(dir, { recursive: true })
+      const filePath = join(dir, "objectives.json")
+      await writeFile(filePath, '{"version":1,"objectives":[', "utf8")
+      await expect(store.list()).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.STORE_CORRUPT })
+      await expect(store.create(input())).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.STORE_CORRUPT })
+      await expect(readFile(filePath, "utf8")).resolves.toBe('{"version":1,"objectives":[')
+    })
+
+    it("fails closed on an unrecognized store shape", async () => {
+      await mkdir(dir, { recursive: true })
+      const filePath = join(dir, "objectives.json")
+      await writeFile(filePath, JSON.stringify({ unexpected: true }), "utf8")
+      await expect(store.list()).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.STORE_CORRUPT })
+      await expect(store.create(input())).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.STORE_CORRUPT })
+      await expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ unexpected: true })
+    })
+
     it("skips a corrupt record and reports it via diagnostics instead of crashing", async () => {
       await mkdir(dir, { recursive: true })
       await writeFile(
@@ -425,12 +443,13 @@ describe("FileObjectiveStore", () => {
         ]),
       )
 
-      // The next write upgrades the on-disk file to the versioned shape,
-      // even though the legacy record itself was dropped.
-      await store.create(input({ title: "Fresh" }))
+      // A write must not silently destroy the rejected durable record.
+      await expect(store.create(input({ title: "Fresh" }))).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.STORE_CORRUPT,
+      })
       const raw = JSON.parse(await readFile(join(dir, "objectives.json"), "utf8"))
-      expect(raw).toMatchObject({ version: 1, revision: 1 })
-      expect(raw.objectives).toHaveLength(1)
+      expect(raw).not.toHaveProperty("version")
+      expect(raw.objectives).toHaveProperty("obj-legacy")
     })
   })
 
@@ -440,6 +459,14 @@ describe("FileObjectiveStore", () => {
       const second = await store.create(input({ clientRequestId: "retry-1" }))
       expect(second.id).toBe(first.id)
       await expect(store.list()).resolves.toHaveLength(1)
+    })
+
+    it("rejects reuse of a clientRequestId with different input", async () => {
+      await store.create(input({ clientRequestId: "retry-conflict", title: "Original" }))
+      await expect(
+        store.create(input({ clientRequestId: "retry-conflict", title: "Different" })),
+      ).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.IDEMPOTENCY_CONFLICT })
+      await expect(store.list()).resolves.toMatchObject([{ title: "Original" }])
     })
 
     it("creates distinct objectives for distinct clientRequestIds", async () => {

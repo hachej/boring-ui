@@ -1,12 +1,13 @@
 import type { AgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace"
 import { OBJECTIVE_STATUSES } from "../shared/constants"
+import { ObjectiveError } from "../shared/error-codes"
 import {
   validateCreateObjectiveInput,
   validateGetObjectiveInput,
   validateListObjectivesInput,
   validateUpdateObjectiveInput,
 } from "../shared/schema"
-import { ObjectiveStoreError, type ObjectiveStore } from "./objectiveStore"
+import type { ObjectiveStore } from "./objectiveStore"
 
 export interface CreateObjectiveToolsOptions {
   store: ObjectiveStore
@@ -22,7 +23,7 @@ function failure(prefix: string, error: unknown): ToolResult {
   const message = error instanceof Error ? error.message : String(error)
   return textResult(
     `${prefix}: ${message}`,
-    error instanceof ObjectiveStoreError ? { code: error.code } : undefined,
+    error instanceof ObjectiveError ? { code: error.code } : undefined,
     true,
   )
 }
@@ -32,18 +33,33 @@ export function createObjectiveTools(options: CreateObjectiveToolsOptions): Agen
   return [
     {
       name: "list_objectives",
-      description: "List Objectives (the thin Goal primitive), optionally filtered by status.",
+      description: "List one page of Objectives, optionally filtered by status. Pass nextCursor as cursor to continue.",
       parameters: {
         type: "object",
-        properties: { status: statusEnum },
+        properties: {
+          status: statusEnum,
+          limit: { type: "number", minimum: 1, maximum: 20 },
+          cursor: { type: "string", pattern: "^[0-9]+$" },
+        },
         additionalProperties: false,
       },
       async execute(params: Record<string, unknown>, _ctx: ToolExecContext) {
         const parsed = validateListObjectivesInput(params)
         if (!parsed.success) return textResult(`Invalid list_objectives input: ${parsed.error.issues[0]?.message ?? parsed.error.message}`, undefined, true)
         try {
-          const objectives = await store.list(parsed.data.status)
-          return textResult(`Found ${objectives.length} objective(s).`, { objectives })
+          const all = await store.list(parsed.data.status)
+          const offset = parsed.data.cursor ? Number(parsed.data.cursor) : 0
+          if (!Number.isSafeInteger(offset) || offset > all.length) {
+            return textResult("Invalid list_objectives input: cursor is out of range", undefined, true)
+          }
+          const limit = parsed.data.limit ?? 20
+          const objectives = all.slice(offset, offset + limit)
+          const nextOffset = offset + objectives.length
+          const nextCursor = nextOffset < all.length ? String(nextOffset) : undefined
+          return textResult(
+            `Found ${objectives.length} objective(s) in this page${nextCursor ? "; more are available" : ""}.`,
+            { objectives, ...(nextCursor ? { nextCursor } : {}) },
+          )
         } catch (error) {
           return failure("list_objectives failed", error)
         }
@@ -72,7 +88,7 @@ export function createObjectiveTools(options: CreateObjectiveToolsOptions): Agen
     },
     {
       name: "create_objective",
-      description: "Create an Objective — the thin Goal primitive: a statement, a metric, a baseline/target/current, constraints, and evidence references. Never call this 'goal', 'investigation', or 'action' when talking to the user; the kernel noun is Objective.",
+      description: "Create an Objective: a statement, a metric, a baseline/target/current, constraints, and evidence references. Never call this 'goal', 'investigation', or 'action' when talking to the user; the kernel noun is Objective.",
       parameters: {
         type: "object",
         properties: {

@@ -106,6 +106,16 @@ All API failures must use the response envelope:
 | `STREAM_BUFFER_EVICTED` | Resume cursor evicted from in-memory stream buffer | 410 | retry | warn | stable (public API) |
 | `CURSOR_OUT_OF_RANGE` | Resume cursor invalid/out of range | 416 | user-fix | warn | stable (public API) |
 | `BRIDGE_COMMAND_INVALID` | UI bridge command kind/params invalid | 400 | user-fix | warn | stable (public API) |
+| `OBJECTIVE_NOT_FOUND` | Requested Objective does not exist | 404 | user-fix | warn | stable (plugin API) |
+| `OBJECTIVE_VALIDATION_INVALID` | Objective input or stored record is invalid | 400 | user-fix | warn | stable (plugin API) |
+| `OBJECTIVE_REVISION_CONFLICT` | Objective store revision changed during mutation | 409 | retry | warn | stable (plugin API) |
+| `OBJECTIVE_IDEMPOTENCY_CONFLICT` | Objective create idempotency key was reused with different input | 409 | user-fix | warn | stable (plugin API) |
+| `OBJECTIVE_PATH_ESCAPE` | Objective store path escapes its workspace boundary | 403 | report-bug | error | stable (plugin API) |
+| `OBJECTIVE_TOO_LARGE` | Objective exceeds its durable or transport-safe size limit | 413 | user-fix | warn | stable (plugin API) |
+| `OBJECTIVE_LOCK_TIMEOUT` | Objective store writer lock could not be acquired in time | 409 | retry | warn | stable (plugin API) |
+| `OBJECTIVE_STORE_CORRUPT` | Objective durable state is malformed and writes are refused | 500 | recover | error | stable (plugin API) |
+| `OBJECTIVE_STORE_IO` | Objective durable state could not be read or committed | 500 | retry | error | stable (plugin API) |
+| `OBJECTIVE_CONFIG_INVALID` | Objective plugin composition is missing required configuration | 500 | user-fix | error | stable (plugin API) |
 | `TOOL_NOT_FOUND` | Requested tool name not present in catalog | 404 | user-fix | warn | stable (public API) |
 | `TOOL_INVALID_INPUT` | Tool input fails schema validation | 400 | user-fix | warn | stable (public API) |
 | `TOOL_EXECUTION_ERROR` | Tool threw or returned execution failure | 500 | report-bug | error | stable (public API) |

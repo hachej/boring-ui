@@ -4,7 +4,7 @@ import type { OBJECTIVE_STATUSES } from "./constants"
 export type ObjectiveStatus = (typeof OBJECTIVE_STATUSES)[number]
 
 /**
- * Thin Goal primitive. Vocabulary is owner-ratified: "objective", never
+ * Thin planning primitive. Vocabulary is owner-ratified: "objective", never
  * "goal"/"investigation"/"action".
  */
 export interface Objective {

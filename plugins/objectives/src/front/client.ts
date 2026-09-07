@@ -45,8 +45,17 @@ export function createObjectivesClient(options: ObjectivesClientOptions = {}) {
 
   return {
     async list(status?: ObjectiveStatus): Promise<Objective[]> {
-      const output = await callBridge<{ objectives: Objective[] }>(OBJECTIVE_BRIDGE_OPS.list, status ? { status } : {})
-      return output.objectives
+      const objectives: Objective[] = []
+      let cursor: string | undefined
+      do {
+        const output = await callBridge<{ objectives: Objective[]; nextCursor?: string }>(
+          OBJECTIVE_BRIDGE_OPS.list,
+          { ...(status ? { status } : {}), limit: 20, ...(cursor ? { cursor } : {}) },
+        )
+        objectives.push(...output.objectives)
+        cursor = output.nextCursor
+      } while (cursor)
+      return objectives
     },
     async get(id: string): Promise<Objective | null> {
       const output = await callBridge<{ objective: Objective | null }>(OBJECTIVE_BRIDGE_OPS.get, { id })

@@ -2,17 +2,14 @@ import { lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/pro
 import { basename, dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { OBJECTIVE_MAX_AGGREGATE_BYTES } from "../shared/constants"
-import { OBJECTIVE_ERROR_CODES } from "../shared/error-codes"
+import { ObjectiveError, OBJECTIVE_ERROR_CODES, type ObjectiveErrorCode } from "../shared/error-codes"
 import { ObjectiveSchema, StoredObjectiveStateSchema } from "../shared/schema"
 import type { CreateObjectiveInput, Objective, ObjectiveStatus, UpdateObjectiveInput } from "../shared/types"
 import { assertFileNotSymlink, ensureContainedDir, WorkspacePathEscapeError } from "./pathSafety"
 
-export class ObjectiveStoreError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-  ) {
-    super(message)
+export class ObjectiveStoreError extends ObjectiveError {
+  constructor(code: ObjectiveErrorCode, message: string, options?: ErrorOptions) {
+    super(code, message, options)
   }
 }
 
@@ -90,6 +87,12 @@ export class FileObjectiveStore implements ObjectiveStore {
       if (input.clientRequestId) {
         const existing = [...objectives.values()].find((o) => o.clientRequestId === input.clientRequestId)
         if (existing) {
+          if (!matchesCreateInput(existing, input)) {
+            throw new ObjectiveStoreError(
+              OBJECTIVE_ERROR_CODES.IDEMPOTENCY_CONFLICT,
+              `clientRequestId ${input.clientRequestId} was already used with different objective input`,
+            )
+          }
           created = clone(existing)
           return false
         }
@@ -222,6 +225,12 @@ export class FileObjectiveStore implements ObjectiveStore {
         // and "path actually read/written" to the inside of the lock.
         const filePath = await this.resolveFilePath()
         const before = await this.readOnDiskAt(filePath)
+        if (this.diagnostics.some((diagnostic) => diagnostic.index >= 0)) {
+          throw new ObjectiveStoreError(
+            OBJECTIVE_ERROR_CODES.STORE_CORRUPT,
+            "objective store contains invalid records; refusing to overwrite durable evidence",
+          )
+        }
         const draft = new Map(before.objectives)
         const shouldWrite = fn(draft) !== false
         if (!shouldWrite) return
@@ -408,7 +417,13 @@ export class FileObjectiveStore implements ObjectiveStore {
     try {
       raw = await readFile(filePath, "utf8")
     } catch (error) {
-      if ((error as { code?: string }).code !== "ENOENT") throw error
+      if ((error as { code?: string }).code !== "ENOENT") {
+        throw new ObjectiveStoreError(
+          OBJECTIVE_ERROR_CODES.STORE_IO,
+          `failed to read objective store at ${filePath}: ${errorMessage(error)}`,
+          { cause: error },
+        )
+      }
       this.diagnostics = []
       return { revision: 0, objectives: new Map() }
     }
@@ -416,9 +431,13 @@ export class FileObjectiveStore implements ObjectiveStore {
     let parsed: unknown
     try {
       parsed = JSON.parse(raw)
-    } catch {
-      this.diagnostics = [{ index: -1, reason: "objective store file is not valid JSON; starting from an empty store" }]
-      return { revision: 0, objectives: new Map() }
+    } catch (error) {
+      this.diagnostics = [{ index: -1, reason: "objective store file is not valid JSON" }]
+      throw new ObjectiveStoreError(
+        OBJECTIVE_ERROR_CODES.STORE_CORRUPT,
+        "objective store file is not valid JSON; refusing to treat durable data as empty",
+        { cause: error },
+      )
     }
 
     return this.parseOnDisk(parsed)
@@ -445,8 +464,16 @@ export class FileObjectiveStore implements ObjectiveStore {
   private async commit(filePath: string, state: OnDiskState): Promise<void> {
     const dir = dirname(filePath)
     const tmp = join(dir, `.${randomUUID()}.tmp`)
-    await writeFile(tmp, JSON.stringify(state, null, 2), "utf8")
-    await rename(tmp, filePath)
+    try {
+      await writeFile(tmp, JSON.stringify(state, null, 2), "utf8")
+      await rename(tmp, filePath)
+    } catch (error) {
+      throw new ObjectiveStoreError(
+        OBJECTIVE_ERROR_CODES.STORE_IO,
+        `failed to commit objective store at ${filePath}: ${errorMessage(error)}`,
+        { cause: error },
+      )
+    }
   }
 }
 
@@ -469,16 +496,36 @@ function normalizeOnDiskShape(
     return { revision: 0, rawObjectives }
   }
 
-  diagnostics.push({ index: -1, reason: "unrecognized objective store file shape; starting from an empty store" })
-  return { revision: 0, rawObjectives: [] }
+  diagnostics.push({ index: -1, reason: "unrecognized objective store file shape" })
+  throw new ObjectiveStoreError(
+    OBJECTIVE_ERROR_CODES.STORE_CORRUPT,
+    "unrecognized objective store file shape; refusing to treat durable data as empty",
+  )
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+function matchesCreateInput(existing: Objective, input: CreateObjectiveInput): boolean {
+  return existing.title === input.title
+    && existing.objective === input.objective
+    && existing.metric === input.metric
+    && Object.is(existing.baseline, input.baseline)
+    && Object.is(existing.target, input.target)
+    && Object.is(existing.current, input.current ?? input.baseline)
+    && existing.status === (input.status ?? "active")
+    && JSON.stringify(existing.constraints) === JSON.stringify(input.constraints ?? [])
+    && JSON.stringify(existing.evidenceRefs) === JSON.stringify(input.evidenceRefs ?? [])
+    && existing.outcome === input.outcome
+}
+
 function generateObjectiveId(): string {
   return `obj-${randomUUID()}`
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function nowIso(): string {

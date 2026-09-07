@@ -23,6 +23,22 @@ describe("createObjectivesClient", () => {
     await expect(client.list()).resolves.toEqual([{ id: "obj_1", title: "Ship v2" }])
   })
 
+  it("follows objective.v1.list cursors until all pages are loaded", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      if (!body.input.cursor) {
+        return jsonResponse({ ok: true, output: { objectives: [{ id: "obj_1" }], nextCursor: "1" } })
+      }
+      expect(body.input).toMatchObject({ cursor: "1", limit: 20 })
+      return jsonResponse({ ok: true, output: { objectives: [{ id: "obj_2" }] } })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const client = createObjectivesClient()
+    await expect(client.list()).resolves.toEqual([{ id: "obj_1" }, { id: "obj_2" }])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it("passes a status filter to objective.v1.list", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body))

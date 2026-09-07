@@ -14,8 +14,8 @@ export const OBJECTIVE_BRIDGE_CAPABILITIES = {
   update: "objectives:update",
 } as const
 
-export type ObjectiveBridgeListInput = { status?: ObjectiveStatus }
-export type ObjectiveBridgeListOutput = { objectives: Objective[] }
+export type ObjectiveBridgeListInput = { status?: ObjectiveStatus; limit?: number; cursor?: string }
+export type ObjectiveBridgeListOutput = { objectives: Objective[]; nextCursor?: string }
 
 export type ObjectiveBridgeGetInput = { id: string }
 export type ObjectiveBridgeGetOutput = { objective: Objective | null }

@@ -23,7 +23,8 @@ import {
   type ObjectiveBridgeUpdateInput,
   type ObjectiveBridgeUpdateOutput,
 } from "../shared"
-import { ObjectiveStoreError, type ObjectiveStore } from "./objectiveStore"
+import { ObjectiveError } from "../shared/error-codes"
+import type { ObjectiveStore } from "./objectiveStore"
 
 export interface ObjectiveBridgeHandlersOptions {
   store: ObjectiveStore
@@ -117,7 +118,16 @@ function listHandler({ store }: ObjectiveBridgeHandlersOptions) {
     const parsed = validateListObjectivesInput(input ?? {})
     if (!parsed.success) throw invalid(firstIssue(parsed.error))
     try {
-      return { objectives: await store.list(parsed.data.status) }
+      const all = await store.list(parsed.data.status)
+      const offset = parsed.data.cursor ? Number(parsed.data.cursor) : 0
+      if (!Number.isSafeInteger(offset) || offset > all.length) throw invalid("list cursor is out of range")
+      const limit = parsed.data.limit ?? 20
+      const objectives = all.slice(offset, offset + limit)
+      const nextOffset = offset + objectives.length
+      return {
+        objectives,
+        ...(nextOffset < all.length ? { nextCursor: String(nextOffset) } : {}),
+      }
     } catch (error) {
       throw mapObjectiveError(error)
     }
@@ -165,7 +175,7 @@ function firstIssue(error: { issues: Array<{ message: string }> }): string {
 }
 
 function mapObjectiveError(error: unknown): never {
-  if (error instanceof ObjectiveStoreError) {
+  if (error instanceof ObjectiveError) {
     throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidRequest, error.message, { objectiveCode: error.code })
   }
   throw error

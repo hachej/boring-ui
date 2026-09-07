@@ -177,6 +177,27 @@ describe("objectives WorkspaceBridge handlers", () => {
     expect(listed).toMatchObject({ ok: true, output: { objectives: [{ title: "Paused one" }] } })
   })
 
+  it("paginates list output below the bridge envelope", async () => {
+    const registry = registryFixture()
+    for (let index = 0; index < 21; index += 1) {
+      await store.create({ ...createInput, title: `Objective ${index}` })
+    }
+
+    const first = await registry.call(
+      { op: OBJECTIVE_BRIDGE_OPS.list, input: { limit: 20 } },
+      browserContext([OBJECTIVE_BRIDGE_CAPABILITIES.list]),
+    )
+    expect(first).toMatchObject({ ok: true, output: { objectives: expect.any(Array), nextCursor: "20" } })
+    expect((first as { ok: true; output: { objectives: unknown[] } }).output.objectives).toHaveLength(20)
+
+    const second = await registry.call(
+      { op: OBJECTIVE_BRIDGE_OPS.list, input: { limit: 20, cursor: "20" } },
+      browserContext([OBJECTIVE_BRIDGE_CAPABILITIES.list]),
+    )
+    expect(second).toMatchObject({ ok: true, output: { objectives: [expect.any(Object)] } })
+    expect((second as { ok: true; output: { nextCursor?: string } }).output.nextCursor).toBeUndefined()
+  })
+
   it("dedupes a retried create by clientRequestId", async () => {
     const registry = registryFixture()
     const first = await registry.call(

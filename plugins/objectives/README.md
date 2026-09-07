@@ -1,6 +1,6 @@
 # Objectives plugin
 
-A thin Goal primitive for Boring workspace: **Objective**.
+A durable thin planning primitive for Boring workspace: **Objective**.
 
 ## Architecture note
 
