@@ -16,6 +16,14 @@ export { createInMemoryBridge } from "./bridge/createInMemoryBridge"
 export { updateUiState } from "./bridge/updateUiState"
 export { uiRoutes } from "./ui-control/http/uiRoutes"
 export type { UiRoutesOptions } from "./ui-control/http/uiRoutes"
+export { RuntimeProjectionBroker } from "./runtimeProjection/runtimeProjectionBroker"
+export type {
+  RuntimeProjectionGrant,
+  RuntimeProjectionIdentity,
+  RuntimeProjectionUpstreamLease,
+} from "./runtimeProjection/runtimeProjectionBroker"
+export { runtimeProjectionRoutes } from "./runtimeProjection/runtimeProjectionRoutes"
+export type { RuntimeProjectionRoutesOptions } from "./runtimeProjection/runtimeProjectionRoutes"
 export {
   createGetUiStateTool,
   createExecUiTool,
