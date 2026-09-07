@@ -1,8 +1,8 @@
 # Plugin Exports — final package proof
 
-Implementation revision audited: `725d7568acdaa9f355bbabf956fdc467a5cf72fc`  
-Base/current main: `68dcb7db8822f721c6b45d0731e01a46fa364f28`  
-PR: https://github.com/hachej/boring-ui/pull/1543  
+Implementation revision audited: `725d7568acdaa9f355bbabf956fdc467a5cf72fc`
+Base/current main: `68dcb7db8822f721c6b45d0731e01a46fa364f28`
+PR: https://github.com/hachej/boring-ui/pull/1543
 Bead: `wt-391-forward-civu.2` (lineage: `wt-391-forward-clu5.2`)
 
 This durable receipt records the exact-revision verification completed before this

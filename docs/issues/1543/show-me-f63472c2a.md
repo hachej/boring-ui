@@ -2,15 +2,15 @@
 
 ## Owner Review
 
-Bead / PR / issue: `wt-391-forward-civu.3` / [PR #1543](https://github.com/hachej/boring-ui/pull/1543) / issue #1543  
-Lineage: `wt-391-forward-clu5.2`  
-What changed / why: Runtime-loaded plugins now receive every public named export from the workspace root, plugin, and events entrypoints while continuing to share the host's singleton values. Browser-path repairs also preserve hot reload, expose actionable request failures, and prevent a failed module evaluation from being executed a second time.  
-Why you are needed: The complete diff changes the CLI↔workspace package-boundary mechanism and therefore matches the protected **Shared core/contracts** boundary. It does not qualify for the automatic route even though package production churn is below the numerical threshold. The rollout also retains the existing owner gate.  
-Recommendation / alternatives: Approve the exact reviewed implementation. The alternative is to keep the manual export list, which can silently fall behind public workspace exports and break plugin ESM linking.  
-Scope / base / implementation head SHA: `68dcb7db8822f721c6b45d0731e01a46fa364f28` / `f63472c2a2dc5bb96b95299955923b16fb329114`  
-What approval authorizes: Merge of the reviewed PR revision through the protected route after current-main integration validation; it does not authorize publish/deploy or bypass branch protection.  
-Risk / rollback: The main residual is that the focused real-Chromium runtime test is not in ordinary CI; it passed 2/2 in the exact-SHA sandbox. Roll back by reverting the PR's feature commits (or the eventual merge commit) and rebuilding the CLI; no migration or stored-data rollback is required.  
-Proof / independent review / abstraction verdict links: [`final-package-proof.md`](./final-package-proof.md); final GitHub checks on PR #1543; reviews `f8e16b02-c9d4-4067-a956-f222e68c39de` and `34f78583-c595-465b-8a0a-5e5d910626f7`, both APPROVE with thermo PASS and explicit abstraction PASS.  
+Bead / PR / issue: `wt-391-forward-civu.3` / [PR #1543](https://github.com/hachej/boring-ui/pull/1543) / issue #1543
+Lineage: `wt-391-forward-clu5.2`
+What changed / why: Runtime-loaded plugins now receive every public named export from the workspace root, plugin, and events entrypoints while continuing to share the host's singleton values. Browser-path repairs also preserve hot reload, expose actionable request failures, and prevent a failed module evaluation from being executed a second time.
+Why you are needed: The complete diff changes the CLI↔workspace package-boundary mechanism and therefore matches the protected **Shared core/contracts** boundary. It does not qualify for the automatic route even though package production churn is below the numerical threshold. The rollout also retains the existing owner gate.
+Recommendation / alternatives: Approve the exact reviewed implementation. The alternative is to keep the manual export list, which can silently fall behind public workspace exports and break plugin ESM linking.
+Scope / base / implementation head SHA: `68dcb7db8822f721c6b45d0731e01a46fa364f28` / `f63472c2a2dc5bb96b95299955923b16fb329114`
+What approval authorizes: Merge of the reviewed PR revision through the protected route after current-main integration validation; it does not authorize publish/deploy or bypass branch protection.
+Risk / rollback: The main residual is that the focused real-Chromium runtime test is not in ordinary CI; it passed 2/2 in the exact-SHA sandbox. Roll back by reverting the PR's feature commits (or the eventual merge commit) and rebuilding the CLI; no migration or stored-data rollback is required.
+Proof / independent review / abstraction verdict links: [`final-package-proof.md`](./final-package-proof.md); final GitHub checks on PR #1543; reviews `f8e16b02-c9d4-4067-a956-f222e68c39de` and `34f78583-c595-465b-8a0a-5e5d910626f7`, both APPROVE with thermo PASS and explicit abstraction PASS.
 Artifact: `.handoff/pr-1543-presentation.html`
 
 Please test:
