@@ -25,11 +25,12 @@ const evidenceRefsSchema = z
 export const ObjectiveIdSchema = z.string().regex(OBJECTIVE_ID_PATTERN)
 
 const clientRequestIdSchema = z.string().min(1).max(OBJECTIVE_MAX_CLIENT_REQUEST_ID_LENGTH)
+const utf8Encoder = new TextEncoder()
 
 /** Aggregate-size guard: the serialized object must stay under the bridge-safe cap. */
 function withAggregateSizeLimit<T extends z.ZodTypeAny>(schema: T) {
   return schema.refine(
-    (value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= OBJECTIVE_MAX_AGGREGATE_BYTES,
+    (value) => utf8Encoder.encode(JSON.stringify(value)).byteLength <= OBJECTIVE_MAX_AGGREGATE_BYTES,
     { message: `Objective exceeds the ${OBJECTIVE_MAX_AGGREGATE_BYTES}-byte aggregate size limit` },
   )
 }

@@ -39,6 +39,7 @@ const LOCK_ACQUIRE_TIMEOUT_MS = 5_000
 const LOCK_POLL_INTERVAL_MS = 25
 /** How old an unreleased lock must be before it's treated as crash-abandoned. */
 const LOCK_STALE_MS = 30_000
+const utf8Encoder = new TextEncoder()
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -146,7 +147,7 @@ export class FileObjectiveStore implements ObjectiveStore {
       // field at a time. Validated here, against the merged result, so a
       // committed record can never end up larger than what the bridge/pane
       // can read back.
-      const mergedBytes = Buffer.byteLength(JSON.stringify(next), "utf8")
+      const mergedBytes = utf8Encoder.encode(JSON.stringify(next)).byteLength
       if (mergedBytes > OBJECTIVE_MAX_AGGREGATE_BYTES) {
         throw new ObjectiveStoreError(
           OBJECTIVE_ERROR_CODES.TOO_LARGE,

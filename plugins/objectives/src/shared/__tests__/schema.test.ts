@@ -61,6 +61,20 @@ describe("objectives schema", () => {
     expect(result.success).toBe(false)
   })
 
+  it("counts UTF-8 bytes rather than JavaScript code units for the aggregate cap", () => {
+    const result = validateCreateObjectiveInput({
+      title: "Ship v2",
+      objective: "Ship the v2 rewrite to production",
+      metric: "weekly active users",
+      baseline: 100,
+      target: 500,
+      // 17,000 UTF-16 code units but 34,000 UTF-8 bytes across the
+      // constraints. A string-length check would incorrectly admit this.
+      constraints: Array.from({ length: 50 }, () => "é".repeat(340)),
+    })
+    expect(result.success).toBe(false)
+  })
+
   it("accepts a create input at the field limits when it stays under the aggregate cap", () => {
     const result = validateCreateObjectiveInput({
       title: "Ship v2",
