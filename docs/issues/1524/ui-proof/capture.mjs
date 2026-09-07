@@ -30,7 +30,7 @@ const report = {
   results,
 }
 await writeFile(join(out, "report.json"), `${JSON.stringify(report, null, 2)}\n`)
-await writeFile(join(out, "README.md"), `# PR #1524 live-transcription UI proof\n\n- Base: \`${base}\`\n- Candidate: \`${head}\`\n- Viewport: ${viewport.width}×${viewport.height}\n- Scenario: ${report.scenario}\n- Fixture: ${report.fixture}\n- Assertions (both revisions): labeled active state is visible; controls have unique accessible names; keyboard focus reaches Open transcript; Open emits the exact workspace surface command; Nudge exposes a polite status; Stop becomes disabled/finalizing then completes; dock and controls remain inside the viewport without horizontal overflow.\n- Videos: [before.webm](./before.webm), [after.webm](./after.webm)\n- Machine report: [report.json](./report.json)\n`)
+await writeFile(join(out, "README.md"), `# PR #1524 live-transcription UI proof\n\n- Base: \`${base}\`\n- Candidate: \`${head}\`\n- Viewport: ${viewport.width}×${viewport.height}\n- Scenario: ${report.scenario}\n- Fixture: ${report.fixture}\n- Assertions (both revisions): the real browser controller completes compute preparation, microphone attach, WebSocket nonce ACK, and one correctly sized audio frame; labeled active state is visible; controls have unique accessible names; keyboard focus reaches Open transcript; Open emits the exact workspace surface command; Nudge exposes a polite status; Stop becomes disabled/finalizing then completes; dock and controls remain inside the viewport without horizontal overflow.\n- Videos: [before.webm](./before.webm), [after.webm](./after.webm)\n- Machine report: [report.json](./report.json)\n`)
 console.log(JSON.stringify(report, null, 2))
 
 function required(name) {
@@ -44,7 +44,6 @@ async function capture({ label, sha }) {
   let server
   let browser
   try {
-    execFileSync("git", ["archive", sha, "plugins/live-transcription/src"], { stdio: ["ignore", "pipe", "inherit"] })
     const archive = execFileSync("git", ["archive", sha, "plugins/live-transcription/src"])
     execFileSync("tar", ["-x", "-C", root], { input: archive })
     await writeFixture(root, label, sha)
@@ -76,9 +75,25 @@ async function capture({ label, sha }) {
     const dock = page.locator('[data-boring-agent-part="live-transcript-dock"]')
     await dock.waitFor()
     await page.getByLabel("Live transcription", { exact: true }).waitFor()
+    await page.evaluate(() => window.__emitAudioFrame())
+    const startupTrace = await page.evaluate(() => window.__networkTrace)
+    for (const expected of ["POST /api/v1/live-transcripts/compute/prepare", "POST /api/v1/live-transcripts", "WS nonce", "WS audio-frame"]) {
+      if (!startupTrace.includes(expected)) throw new Error(`${label}: missing live-start trace ${expected}`)
+    }
     const controls = ["Open transcript in new pane", "Nudge", "Stop transcription"]
     for (const name of controls) {
       if (await page.getByRole("button", { name, exact: true }).count() !== 1) throw new Error(`${label}: expected one ${name} button`)
+    }
+    const layout = await dock.evaluate((node) => {
+      const rect = node.getBoundingClientRect()
+      return {
+        left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+        viewportWidth: innerWidth, viewportHeight: innerHeight,
+        documentScrollWidth: document.documentElement.scrollWidth,
+      }
+    })
+    if (layout.left < 0 || layout.top < 0 || layout.right > viewport.width || layout.bottom > viewport.height || layout.documentScrollWidth > viewport.width) {
+      throw new Error(`${label}: dock overflowed viewport: ${JSON.stringify(layout)}`)
     }
 
     await page.keyboard.press("Tab")
@@ -97,18 +112,6 @@ async function capture({ label, sha }) {
     if (!(await finalizing.isDisabled())) throw new Error(`${label}: finalizing control was not disabled`)
     await page.getByTestId("completed").waitFor()
 
-    const layout = await dock.evaluate((node) => {
-      const rect = node.getBoundingClientRect()
-      return {
-        left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
-        viewportWidth: innerWidth, viewportHeight: innerHeight,
-        documentScrollWidth: document.documentElement.scrollWidth,
-      }
-    })
-    if (layout.left < 0 || layout.top < 0 || layout.right > viewport.width || layout.bottom > viewport.height || layout.documentScrollWidth > viewport.width) {
-      throw new Error(`${label}: dock overflowed viewport: ${JSON.stringify(layout)}`)
-    }
-
     await page.screenshot({ path: join(out, `${label}.png`), fullPage: true })
     await page.waitForTimeout(500)
     const video = page.video()
@@ -122,6 +125,7 @@ async function capture({ label, sha }) {
       video: `${label}.webm`,
       screenshot: `${label}.png`,
       assertions: {
+        liveStartMicrophoneSocketAndAudioFrame: "PASS",
         interaction: "PASS",
         accessibleNamesAndStatus: "PASS",
         keyboardFocus: "PASS",
@@ -142,16 +146,39 @@ async function writeFixture(root, label, sha) {
   await writeFile(join(root, "mock-workspace.tsx"), `import React from "react"\nexport const MarkdownEditorPane=()=> <div>Transcript</div>\n`)
   await writeFile(join(root, "mock-workspace-plugin.ts"), `export const definePlugin=(value)=>value\nexport const postUiCommand=(command)=>{ window.__uiCommands.push(command) }\n`)
   await writeFile(join(root, "entry.tsx"), `
-import React, { useState } from "react"
+import React, { useEffect, useSyncExternalStore } from "react"
 import { createRoot } from "react-dom/client"
-import { LiveTranscriptComposerDock, liveTranscriptBrowserState, liveTranscriptController } from "/plugins/live-transcription/src/front/index.tsx"
+import { LiveTranscriptComposerTop, liveTranscriptBrowserState, liveTranscriptController } from "/plugins/live-transcription/src/front/index.tsx"
+import { LIVE_PCM_FRAME_BYTES } from "/plugins/live-transcription/src/shared/index.ts"
 window.__uiCommands=[]
-liveTranscriptBrowserState.set({ liveSessionId:"live-1", transcriptPath:"live-transcripts/consultation.md", state:"active", recordingKind:"live", phase:"recording", startedAt:Date.now()-15000, reviewIntervalMs:180000 })
-liveTranscriptController.review=async()=>"Transcript review dispatched in the originating chat."
+window.__networkTrace=[]
+window.__terminal=false
+const ok=(value)=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{"content-type":"application/json"}}))
+window.fetch=async(input,init={})=>{
+ const path=typeof input==="string"?input:new URL(input.url).pathname
+ window.__networkTrace.push((init.method??"GET")+" "+path)
+ if(path.endsWith("/compute/prepare")) return ok({preparationId:"prepare-1",state:"ready"})
+ if(path==="/api/v1/live-transcripts") return ok({liveSessionId:"live-1",transcriptPath:"live-transcripts/consultation.md",socketNonce:"nonce-1",reviewIntervalMs:180000})
+ if(path.endsWith("/review")) return ok({status:"dispatched"})
+ if(path.endsWith("/stop")){ window.__terminal=true; await new Promise(r=>setTimeout(r,350)); return ok({transcriptPath:"live-transcripts/consultation.md"}) }
+ return ok({})
+}
+class FakeSocket extends EventTarget{
+ static OPEN=1; readyState=0; bufferedAmount=0; binaryType="arraybuffer"; onmessage; onerror; onclose; sent=0
+ constructor(){ super(); setTimeout(()=>{this.readyState=1;this.dispatchEvent(new Event("open"))},10) }
+ send(value){ this.sent++; if(this.sent===1){window.__networkTrace.push("WS nonce")}else{window.__networkTrace.push("WS audio-frame")} setTimeout(()=>this.onmessage?.({data:new Uint8Array([1]).buffer}),0) }
+ close(){this.readyState=3} }
+window.WebSocket=FakeSocket
+Object.defineProperty(navigator,"mediaDevices",{value:{getUserMedia:async()=>({getTracks:()=>[{stop(){}}]})},configurable:true})
+class FakeAudioContext{constructor(){} audioWorklet={addModule:async()=>{}};destination={};createMediaStreamSource(){return{connect(){},disconnect(){}}}async resume(){}async close(){}}
+class FakeWorklet{constructor(){window.__worklet=this;this.port={onmessage:null,postMessage(){}}}connect(){}disconnect(){}}
+window.AudioContext=FakeAudioContext
+window.AudioWorkletNode=FakeWorklet
+window.__emitAudioFrame=()=>window.__worklet.port.onmessage({data:{type:"frame",data:new ArrayBuffer(LIVE_PCM_FRAME_BYTES)}})
 function App(){
- const [complete,setComplete]=useState(false)
- liveTranscriptController.stopLiveRecording=async()=>{ await new Promise(r=>setTimeout(r,350)); liveTranscriptBrowserState.set({ state:"complete", phase:"idle" }); setComplete(true) }
- return <main><header><strong>${label.toUpperCase()}</strong><code>${sha}</code></header><section aria-label="Live transcription proof fixture"><LiveTranscriptComposerDock/></section>{complete?<p data-testid="completed">Transcript finalized</p>:null}</main>
+ const recording=useSyncExternalStore(liveTranscriptBrowserState.subscribe,liveTranscriptBrowserState.getSnapshot,liveTranscriptBrowserState.getSnapshot)
+ useEffect(()=>{void liveTranscriptController.start("chat-1","Consultation")},[])
+ return <main><header><strong>${label.toUpperCase()}</strong><code>${sha}</code></header><section aria-label="Live transcription proof fixture"><LiveTranscriptComposerTop/></section>{window.__terminal&&!recording.phase?<p data-testid="completed">Transcript finalized</p>:null}</main>
 }
 createRoot(document.getElementById("root")).render(<App/>)
 `)
