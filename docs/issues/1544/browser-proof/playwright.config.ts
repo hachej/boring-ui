@@ -6,7 +6,9 @@ const outputDir = process.env.PROOF_OUTPUT_DIR ?? 'docs/issues/1544/browser-proo
 export default defineConfig({
   testDir: '.',
   testMatch: 'chat-event-ownership.spec.ts',
-  timeout: 30_000,
+  // Cold source transforms in the isolated exact-SHA sandbox can exceed 30s;
+  // the stream journey itself remains bounded to six deterministic seconds.
+  timeout: 90_000,
   workers: 1,
   retries: 0,
   reporter: [['list'], ['json', { outputFile: `${outputDir}/results.json` }]],
