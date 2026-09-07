@@ -557,7 +557,7 @@ stable code:
 | `AGENT_SESSION_CURSOR_INVALID` | malformed/tampered list cursor or scope/filter binding mismatch — structural invalidity only; a valid server-issued keyset cursor remains valid under mutation and may yield an empty page; indistinguishable by design |
 | `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest, or an invalid ledger transition was attempted |
 | `AGENT_REQUEST_IN_PROGRESS` | same-key/same-digest request already has another active owner; retry after that request reaches a replayable terminal state |
-| `AGENT_REQUEST_OUTCOME_UNKNOWN` | effect was durably admitted but Host died before a safe completed receipt; never replay silently |
+| `AGENT_REQUEST_OUTCOME_UNKNOWN` | the live Host durably recorded an ambiguous post-effect result (including graceful-drain timeout); never replay silently |
 | `AGENT_RUNTIME_RESTART_REQUIRED` | the pinned Agent runtime changed incompatibly and requires a process/session restart before reuse |
 | `AGENT_COMMAND_INVALID_STATE` | command/payload is not valid for the authoritative Pi chat status |
 | `AGENT_SHARED_ENVIRONMENT_UNAVAILABLE` | Agents requiring one canonical Workspace environment resolve incompatible placement identities/providers |
@@ -1025,8 +1025,9 @@ Existing `registerAgentRoutes` callers retain their current optional
 (`packages/agent/src/core/piChatSessionService.ts:73-75`): the compat wrapper
 records a built-in `legacy-at-most-once` acceptance, places that legacy callback
 *after* ledger `beginEffect` and immediately before the mutation, invokes it at
-most once, and maps any crash/ambiguous completion to
-`AGENT_REQUEST_OUTCOME_UNKNOWN` rather than retrying. An observed action failure
+most once, and maps an ambiguity observed by the live Host to
+`AGENT_REQUEST_OUTCOME_UNKNOWN` rather than retrying. Abrupt process death leaves
+`in-flight` preserved/in-progress until Level-D reconciliation exists. An observed action failure
 is replayable only when `stableServiceActionFailure` can project it to the
 server-only `{ kind: 'service', error: AgentStableServiceErrorDTO }` record:
 the error must have a canonical shared `ErrorCode`, an integer 4xx/5xx status

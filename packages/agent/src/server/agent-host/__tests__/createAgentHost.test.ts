@@ -13,6 +13,7 @@ import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
@@ -89,6 +90,68 @@ describe('createAgentHost', () => {
     const second = await createAgentHost(options(sessionRoot))
     expect(second.host.hostId).toBe(first.host.hostId)
     await second.host.close()
+  })
+
+  it('replays a completed create receipt across Host restart without a second transcript', async () => {
+    const sessionRoot = await root()
+    const input = { scope, agentTypeId: 'alpha', requestId: 'restart-create' }
+
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      harnessFactory: createScriptedPiHarness,
+    })
+    const ref = await first.gateway.createSession(input)
+    await first.host.close()
+
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      harnessFactory: createScriptedPiHarness,
+    })
+    await expect(restarted.gateway.createSession(input)).resolves.toEqual(ref)
+    await expect(restarted.gateway.listSessions({ scope })).resolves.toMatchObject({
+      sessions: [{ ref }],
+    })
+    await restarted.host.close()
+  })
+
+  it('keeps abrupt-restart in-flight work in progress without implicit outcome reconciliation', async () => {
+    const sessionRoot = await root()
+    const ledgerPath = join(sessionRoot, 'abrupt-request-ledger.sqlite')
+    const firstLedger = new SqliteAgentRequestLedger(ledgerPath)
+    let signalHarnessStarted!: () => void
+    const harnessStarted = new Promise<void>((resolve) => { signalHarnessStarted = resolve })
+    let releaseHarness!: () => void
+    const harnessGate = new Promise<void>((resolve) => { releaseHarness = resolve })
+    const input = { scope, agentTypeId: 'alpha', requestId: 'abrupt-create' }
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      requestLedger: firstLedger,
+      harnessFactory: async (harnessInput) => {
+        signalHarnessStarted()
+        await harnessGate
+        return createScriptedPiHarness(harnessInput)
+      },
+    })
+    const pending = first.gateway.createSession(input)
+    pending.catch(() => {})
+    await harnessStarted
+
+    // Model abrupt process loss: the durable connection disappears without
+    // host.drain(), so no live owner can prove a terminal outcome.
+    firstLedger.close()
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      requestLedger: new SqliteAgentRequestLedger(ledgerPath),
+      harnessFactory: createScriptedPiHarness,
+    })
+    await expect(restarted.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+    })
+    await restarted.host.close()
+
+    releaseHarness()
+    await pending.catch(() => {})
+    await first.host.close().catch(() => {})
   })
 
   it('filters the catalog and rejects an unseated Agent before runtime resolution', async () => {
@@ -1319,7 +1382,7 @@ describe('createAgentHost', () => {
     await app.close()
   })
 
-  it('durably replays insufficient-credit rejection instead of reporting an unknown outcome', async () => {
+  it('durably replays insufficient-credit rejection across Host restart instead of reporting an unknown outcome', async () => {
     const workspaceRoot = await root()
     const reserveRun = vi.fn(async () => {
       throw Object.assign(new Error('insufficient credits'), {
@@ -1327,21 +1390,26 @@ describe('createAgentHost', () => {
         statusCode: 402,
       })
     })
-    const created = await createAgentHost({
-      ...options(workspaceRoot),
-      // Metering rejects this request before harness execution. Keep the test on
-      // that causal seam instead of paying unrelated real-provider discovery.
-      harnessFactory: createScriptedPiHarness,
-      metering: {
-        isEnabled: () => true,
-        reserveRun,
-        recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
-        settleRun: vi.fn(async () => {}),
-        releaseRun: vi.fn(async () => {}),
-      },
-    })
-    const app = Fastify({ logger: false })
-    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    const startHost = async () => {
+      const created = await createAgentHost({
+        ...options(workspaceRoot),
+        // Metering rejects this request before harness execution. Keep the test
+        // on that causal seam instead of paying real-provider discovery.
+        harnessFactory: createScriptedPiHarness,
+        metering: {
+          isEnabled: () => true,
+          reserveRun,
+          recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
+          settleRun: vi.fn(async () => {}),
+          releaseRun: vi.fn(async () => {}),
+        },
+      })
+      const app = Fastify({ logger: false })
+      await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+      return app
+    }
+
+    let app = await startHost()
     const createdSession = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions',
@@ -1357,14 +1425,18 @@ describe('createAgentHost', () => {
         content: 'hello',
       },
     }
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const expectInsufficientCredit = async () => {
       const response = await app.inject(prompt)
       expect(response.statusCode).toBe(402)
       expect(response.json()).toEqual({
         error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'insufficient credits' },
       })
     }
+
+    await expectInsufficientCredit()
+    await app.close()
+    app = await startHost()
+    await expectInsufficientCredit()
     expect(reserveRun).toHaveBeenCalledOnce()
     await app.close()
   })

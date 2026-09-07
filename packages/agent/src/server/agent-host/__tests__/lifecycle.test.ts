@@ -8,6 +8,7 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type {
   AgentRequestKey,
   AgentRequestLedger,
@@ -284,6 +285,13 @@ describe('Agent Host lifecycle', () => {
     await expectBounded(() => created.host.close())
     expect(disposeRuntime).toHaveBeenCalledOnce()
     expect(disposeAdapter).toHaveBeenCalledOnce()
+
+    const reopened = new SqliteAgentRequestLedger(join(fixture.value.sessionRoot!, '.agent-request-ledger.sqlite'))
+    await expect(reopened.read(createRequestKey('harness-stuck'))).resolves.toMatchObject({
+      state: 'outcome-unknown',
+      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
+    })
+    reopened.close()
 
     releaseHarness.resolve()
     await new Promise((resolve) => setTimeout(resolve, 20))
