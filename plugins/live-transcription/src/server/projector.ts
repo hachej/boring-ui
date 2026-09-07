@@ -155,6 +155,15 @@ export class LiveTranscriptProjector {
     await this.queue
   }
 
+  /** Replaces the terminal projection only if no external edit changed it. */
+  async replaceAfterFinalize(markdown: string): Promise<void> {
+    await this.queue
+    if (!this.terminal) {
+      throw new LiveTranscriptError("live_transcript_revision_conflict", "Transcript refinement started before capture finalized.", 409)
+    }
+    await this.writeGuarded(markdown)
+  }
+
   private flushScheduled(): void {
     const document = this.pendingDocument
     this.pendingDocument = undefined
@@ -184,6 +193,10 @@ export class LiveTranscriptProjector {
   }
 
   private async project(document: TranscriptDocument): Promise<void> {
+    await this.writeGuarded(renderTranscriptMarkdown(document))
+  }
+
+  private async writeGuarded(markdown: string): Promise<void> {
     if (!this.workspace.readBinaryFile || !this.workspace.writeFileWithStat) {
       throw new LiveTranscriptError("live_transcript_disabled", "Workspace does not support guarded transcript projection.", 503)
     }
@@ -209,7 +222,6 @@ export class LiveTranscriptProjector {
       )
     }
 
-    const markdown = renderTranscriptMarkdown(document)
     const nextBytes = encoder.encode(markdown)
     this.lastWriteAt = this.now()
     if (bytesEqual(nextBytes, this.expectedBytes)) return

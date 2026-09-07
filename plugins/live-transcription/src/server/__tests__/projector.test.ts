@@ -103,6 +103,21 @@ describe("LiveTranscriptProjector", () => {
     expect(await workspace.readFile("live-transcripts/a.md")).toContain("[00:00:03] **Speaker 1:** Bonjour")
   })
 
+  it("refuses to overwrite a user edit that lands before background refinement", async () => {
+    const workspace = new MemoryWorkspace()
+    const path = "live-transcripts/refine-conflict.md"
+    const markdown = renderTranscriptMarkdown(initial)
+    const stat = await workspace.writeFileWithStat(path, markdown)
+    const projector = new LiveTranscriptProjector(workspace, path, { markdown, mtimeMs: stat.mtimeMs })
+    await projector.finalize({ ...initial, state: "complete" })
+
+    workspace.mutateExternally(path, "# Doctor notes\n")
+    await expect(projector.replaceAfterFinalize("# Refined\n")).rejects.toMatchObject({
+      code: "live_transcript_revision_conflict",
+    })
+    expect(await workspace.readFile(path)).toBe("# Doctor notes\n")
+  })
+
   it("keeps rapid snapshots at least one second apart", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)

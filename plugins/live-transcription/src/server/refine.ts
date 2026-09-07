@@ -11,6 +11,7 @@ import type { WhisperLiveKitLine } from "./whisperLiveKit"
 export const MAX_REFINE_AUDIO_BYTES = 200 * 1024 * 1024
 const HEARTBEAT_INTERVAL_MS = 30_000
 const RETRY_DELAY_MS = 5_000
+const DEFAULT_REQUEST_TIMEOUT_MS = 10 * 60_000
 
 export interface TranscriptRefinerOptions {
   refineUrl: string
@@ -20,6 +21,8 @@ export interface TranscriptRefinerOptions {
   now?: () => number
   /** Overridable for tests; defaults to a real `setTimeout`-based delay. */
   sleep?: (ms: number) => Promise<void>
+  /** Per-attempt HTTP deadline; defaults to ten minutes. */
+  requestTimeoutMs?: number
 }
 
 interface RefineMetadata {
@@ -169,18 +172,29 @@ export class TranscriptRefiner {
   private async postRefineWithRetry(form: FormData): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       let response: Response
+      const controller = new AbortController()
+      const timeout = setTimeout(
+        () => controller.abort(),
+        this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      )
       try {
         response = await (this.options.fetch ?? fetch)(`${this.options.refineUrl}/refine`, {
           method: "POST",
           headers: { Authorization: `Bearer ${this.options.bearerToken}` },
           body: form,
+          signal: controller.signal,
         })
       } catch {
+        if (controller.signal.aborted) {
+          throw new LiveTranscriptError("live_transcript_upstream_failed", "Transcript refine service timed out.", 504)
+        }
         if (attempt === 0) {
           await this.delay(RETRY_DELAY_MS)
           continue
         }
         throw new LiveTranscriptError("live_transcript_upstream_failed", "Transcript refine service was unavailable.", 502)
+      } finally {
+        clearTimeout(timeout)
       }
       if (response.ok) return response
       const { text, payload } = await readErrorBody(response)

@@ -314,6 +314,26 @@ describe("TranscriptRefiner", () => {
     }
   })
 
+  it("aborts a stalled refine request at the configured deadline", async () => {
+    const fetchMock: typeof fetch = vi.fn(async (_url, init) => await new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
+    }))
+    const refiner = new TranscriptRefiner({
+      refineUrl: "http://127.0.0.1:18884/v1",
+      bearerToken: "s".repeat(40),
+      fetch: fetchMock,
+      requestTimeoutMs: 10,
+    })
+
+    await expect(refiner.refine({
+      audioBytes: new Uint8Array(16),
+      audioFilename: "session.m4a",
+      title: "Consult",
+      startedAt: "2026-09-05T09:30:00.000Z",
+    })).rejects.toMatchObject({ code: "live_transcript_upstream_failed", statusCode: 504 })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it("rejects a missing audio file without contacting the service", async () => {
     const refiner = new TranscriptRefiner({ refineUrl: "http://127.0.0.1:1/v1", bearerToken: "s".repeat(40) })
     await expect(refiner.refine({ audioAbsolutePath: "/no/such/file.m4a", title: "Consult", startedAt: "2026-09-05T09:30:00.000Z" }))

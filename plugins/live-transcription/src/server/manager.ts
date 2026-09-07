@@ -571,7 +571,7 @@ export class LiveTranscriptManager {
           title: session.title,
           startedAt: session.startedAt,
         })
-        await workspace.writeFileWithStat!(session.transcriptPath, result.markdown)
+        await session.projector.replaceAfterFinalize(result.markdown)
         if (session.reviewTarget) {
           try {
             await session.reviewTarget.sendIfIdle({
