@@ -20,7 +20,7 @@ import { resolveAutomationOperationsForActor, type AutomationStoreMode } from ".
 import { createAutomationSessionController } from "./automationSessionController"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
-import type { AutomationStore } from "./store"
+import type { Automation, AutomationStore } from "./store"
 import { seedStandingAutomations, type AutomationSeedProvider } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
@@ -47,6 +47,8 @@ export interface BoringAutomationServerPluginOptions {
   /** Optional dynamic host seed source; the generic plugin does not interpret host policy. */
   seedProvider?: AutomationSeedProvider
   seedWarning?: (message: string) => void
+  /** Host-owned authority gate for agent-requested model/provider changes. */
+  canUpdateAutomationModel?: (automation: Automation) => boolean
 }
 
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions): WorkspaceServerPlugin {
@@ -77,6 +79,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       mode: options.storeMode ?? "local",
       resolveStore: async (actor) => options.storeForActor ? options.storeForActor(actor) : store,
       defaultAgentTypeId: options.agentTypeId,
+      canUpdateAutomationModel: options.canUpdateAutomationModel,
       sessionController: options.dispatcherResolver
         ? createAutomationSessionController(options.dispatcherResolver, actorContext)
         : undefined,

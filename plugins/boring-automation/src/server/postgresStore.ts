@@ -343,7 +343,7 @@ export class PostgresAutomationStore implements AutomationStore {
         SET session_id = ${receipt.ref.sessionId}, dispatch_receipt = ${serialized}::text::jsonb,
           status = 'outcome-unknown', completed_at = ${completedAt}, error = ${error}, updated_at = NOW()
         WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
-          AND dispatch_receipt IS NULL AND status IN ('queued', 'dispatching', 'running')
+          AND dispatch_receipt IS NULL
         RETURNING *
       `
       if (rows[0]) return toRun(rows[0])

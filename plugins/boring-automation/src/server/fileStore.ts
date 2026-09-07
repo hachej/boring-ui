@@ -327,7 +327,12 @@ export class FileAutomationStore implements AutomationStore {
         preserved = run
         return
       }
-      if (run.status !== "queued" && run.status !== "dispatching" && run.status !== "running") return
+      const competingRun = Object.values(state.runs).some((candidate) => (
+        candidate.id !== runId
+        && candidate.automationId === run.automationId
+        && isAutomationRunOccupying(candidate.status)
+      ))
+      if (competingRun) return
       preserved = applyRunPatch(run, {
         status: "outcome-unknown",
         sessionId: receipt.ref.sessionId,

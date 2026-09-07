@@ -279,6 +279,23 @@ describe("AutomationOperations", () => {
     await expect(operations.update("automation-1", {})).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
   })
 
+  it("rejects host-protected model changes before mutating metadata or prompt", async () => {
+    const store = storeMock()
+    const canUpdateAutomationModel = vi.fn(() => false)
+    const operations = createAutomationOperations({
+      store,
+      actor: { workspaceId: "w", userId: "u" },
+      canUpdateAutomationModel,
+    })
+
+    await expect(operations.update("automation-1", { model: "other:model", prompt: "must not write" }))
+      .rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL })
+
+    expect(canUpdateAutomationModel).toHaveBeenCalledWith(expect.objectContaining({ id: "automation-1" }))
+    expect(store.updatePrompt).not.toHaveBeenCalled()
+    expect(store.updateAutomation).not.toHaveBeenCalled()
+  })
+
   it("pauses and resumes using enabled-only metadata patches", async () => {
     const store = storeMock()
     const operations = createAutomationOperations({ store, actor: { workspaceId: "w", userId: "u" } })

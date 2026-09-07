@@ -13,7 +13,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true })))
 })
 
-it("does not resurrect a settled run when accepted dispatch identity persistence loses the race", async () => {
+it("preserves accepted dispatch occupancy when fallback finalization loses the lease", async () => {
   const root = await mkdtemp(join(tmpdir(), "boring-automation-occupancy-race-"))
   roots.push(root)
   const store = new FileAutomationStore(root)
@@ -85,21 +85,22 @@ it("does not resurrect a settled run when accepted dispatch identity persistence
   })
   expect(acceptedWorkerStillRunning).toBe(true)
   expect(ambiguous).toMatchObject({
-    status: "failed",
-    sessionId: null,
-    dispatchReceipt: null,
-    error: "Automation worker lease expired before fallback finalization",
+    status: "outcome-unknown",
+    sessionId: "accepted-worker",
+    dispatchReceipt: expect.objectContaining({
+      ref: { agentTypeId: "boring-worker", sessionId: "accepted-worker" },
+    }),
+    error: expect.stringContaining("outcome remains unknown"),
   })
 
   const replacements = await Promise.allSettled([
     store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-1", modelSnapshot: automation.model }),
     store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-2", modelSnapshot: automation.model }),
   ])
-  expect(replacements.filter(({ status }) => status === "fulfilled")).toHaveLength(1)
-  expect(replacements.filter(({ status }) => status === "rejected")).toHaveLength(1)
+  expect(replacements.filter(({ status }) => status === "fulfilled")).toHaveLength(0)
+  expect(replacements.filter(({ status }) => status === "rejected")).toHaveLength(2)
   await expect(store.listRuns(automation.id)).resolves.toEqual(expect.arrayContaining([
-    expect.objectContaining({ id: ambiguous.id, status: "failed", sessionId: null, dispatchReceipt: null }),
-    expect.objectContaining({ status: "queued" }),
+    expect.objectContaining({ id: ambiguous.id, status: "outcome-unknown", sessionId: "accepted-worker" }),
   ]))
 
   const restarted = new FileAutomationStore(root)
@@ -109,5 +110,5 @@ it("does not resurrect a settled run when accepted dispatch identity persistence
     trigger: "manual",
     promptSnapshot: "replacement-after-restart",
     modelSnapshot: automation.model,
-  })).resolves.toMatchObject({ status: "queued" })
+  })).rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
 })

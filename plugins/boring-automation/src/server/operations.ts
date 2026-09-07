@@ -119,6 +119,7 @@ export interface AutomationOperationsResolverOptions {
   localUserId?: string
   defaultAgentTypeId?: string
   sessionController?: AutomationSessionController
+  canUpdateAutomationModel?: (automation: Automation) => boolean
 }
 
 /**
@@ -145,6 +146,7 @@ export async function resolveAutomationOperationsForActor(
     store, actor, executor,
     defaultAgentTypeId: options.defaultAgentTypeId,
     sessionController: options.sessionController,
+    canUpdateAutomationModel: options.canUpdateAutomationModel,
   }) }
 }
 
@@ -154,12 +156,15 @@ export function createAutomationOperations({
   executor,
   defaultAgentTypeId = "default",
   sessionController,
+  canUpdateAutomationModel = () => true,
 }: {
   store: AutomationStore
   actor: VerifiedAutomationActor
   defaultAgentTypeId?: string
   sessionController?: AutomationSessionController
   executor?: DispatchRunStarter
+  /** Host authority gate for model/provider changes on protected automations. */
+  canUpdateAutomationModel?: (automation: Automation) => boolean
 }): AutomationOperations {
   return {
     async list(limit) {
@@ -231,10 +236,13 @@ export function createAutomationOperations({
       return automationSummary(await store.createAutomation(input))
     },
     async update(automationId, input) {
-      await requireAutomation(store, automationId)
+      const current = await requireAutomation(store, automationId)
       const { prompt, ...metadata } = input
       if (prompt === undefined && Object.keys(metadata).length === 0) {
         throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.INVALID_BODY, "automation update requires at least one field")
+      }
+      if (metadata.model !== undefined && !canUpdateAutomationModel(current)) {
+        throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL, "automation model is controlled by host policy")
       }
       if (prompt !== undefined) await store.updatePrompt(automationId, prompt)
       const automation = Object.keys(metadata).length > 0

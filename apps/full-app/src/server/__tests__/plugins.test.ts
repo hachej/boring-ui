@@ -25,13 +25,15 @@ describe('full-app factory automation composition', () => {
 
     const entry = createFullAppAutomationPluginEntry(policyRoot)
     if (!('options' in entry)) throw new TypeError('expected package plugin entry')
-    const provider = (entry.options as {
+    const automationOptions = entry.options as {
       seedProvider: (context: {
         listExistingSeedKeys: (prefix: string) => Promise<readonly string[]>
         removeSeededAutomationIfIdle: (key: string) => Promise<boolean>
         warn: (message: string) => void
       }) => Promise<readonly { key: string; promptRef: string; promptBody: string }[]>
-    }).seedProvider
+      canUpdateAutomationModel: (automation: { promptRef: string }) => boolean
+    }
+    const provider = automationOptions.seedProvider
     const seeds = await provider({
       listExistingSeedKeys: async () => [],
       removeSeededAutomationIfIdle: async () => true,
@@ -50,6 +52,9 @@ describe('full-app factory automation composition', () => {
     expect(new Set(seeds.map(({ promptRef }) => promptRef)).size).toBe(seeds.length)
     expect(seeds[0]).toMatchObject({ promptBody: 'orchestrator prompt' })
     expect(seeds[1]).toMatchObject({ promptBody: 'worker prompt' })
+    expect(automationOptions.canUpdateAutomationModel({ promptRef: '.agents/automation/orchestrator-tick.md' })).toBe(false)
+    expect(automationOptions.canUpdateAutomationModel({ promptRef: '.agents/automation/worker-slot-5.md' })).toBe(false)
+    expect(automationOptions.canUpdateAutomationModel({ promptRef: '.agents/automation/user-created.md' })).toBe(true)
     expect(resolveFullAppFactoryPolicyRoot({ BORING_FACTORY_POLICY_ROOT: policyRoot }, '/wrong')).toBe(policyRoot)
   })
 })

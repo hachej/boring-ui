@@ -179,6 +179,42 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
     ])
   })
 
+  it("restores accepted occupancy after a concurrent terminal transition loses the lease", async () => {
+    const store = createStore()
+    const automation = await store.createAutomation({ title: "Worker slot", timezone: "UTC", model: "model-a", prompt: "prompt" })
+    const accepted = await store.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "prompt",
+      modelSnapshot: "model-a",
+    })
+    await store.claimRunForDispatch(accepted.id)
+    await store.updateRunLifecycle(accepted.id, { status: "failed", completedAt: "2026-07-10T09:01:00.000Z" })
+
+    await expect(store.preserveAcceptedDispatch(
+      accepted.id,
+      {
+        ref: { agentTypeId: "boring-worker", sessionId: "accepted-worker-session" },
+        accepted: true,
+        cursor: 1,
+        disposition: "prompt",
+        clientNonce: accepted.id,
+      },
+      "2026-07-10T09:02:00.000Z",
+      "accepted dispatch outcome is unknown",
+    )).resolves.toMatchObject({
+      status: "outcome-unknown",
+      sessionId: "accepted-worker-session",
+      dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "boring-worker", sessionId: "accepted-worker-session" } }),
+    })
+    await expect(store.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "replacement",
+      modelSnapshot: "model-a",
+    })).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
+  })
+
   it("atomically records each scheduled occurrence at most once", async () => {
     const store = createStore()
     const automation = await store.createAutomation({ title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model" })

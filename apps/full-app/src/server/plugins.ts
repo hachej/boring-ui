@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { createFactoryAutomationSeedProvider } from './factoryAutomationSeeds.js'
+import type { Automation } from '@hachej/boring-automation/server'
 import type { CoreWorkspaceAgentServerPlugin, CoreWorkspacePluginEntry } from '@hachej/boring-core/app/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import { ErrorCode, type Sha256Digest } from '@hachej/boring-agent/shared'
@@ -95,6 +96,12 @@ export function resolveFullAppFactoryPolicyRoot(
   return env.BORING_FACTORY_POLICY_ROOT?.trim() || cwd
 }
 
+export function isFullAppFactoryAutomation(automation: Automation): boolean {
+  return automation.promptRef === '.agents/automation/orchestrator-tick.md'
+    || automation.promptRef === '.agents/automation/triage.md'
+    || /^\.agents\/automation\/worker-slot-[1-9][0-9]*\.md$/.test(automation.promptRef)
+}
+
 export function createFullAppAutomationPluginEntry(
   policyRoot: string = resolveFullAppFactoryPolicyRoot(),
 ): CoreWorkspacePluginEntry {
@@ -107,6 +114,7 @@ export function createFullAppAutomationPluginEntry(
         policyRoot,
         warn: (message) => console.warn(message),
       }),
+      canUpdateAutomationModel: (automation: Automation) => !isFullAppFactoryAutomation(automation),
     },
   }
 }
