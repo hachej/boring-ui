@@ -416,6 +416,9 @@ export function PiChatPanel<
   const [resumeQueuedPendingSessionIds, setResumeQueuedPendingSessionIds] = useState<Set<string>>(() => new Set())
   const [resumeQueuedErrorsBySessionId, setResumeQueuedErrorsBySessionId] = useState<Map<string, PanelNotice>>(() => new Map())
   const resumeQueuedInFlightRef = useRef(new Map<string, Promise<unknown>>())
+  const resumeQueuedOwnerTokenBySessionIdRef = useRef(new Map<string, number>())
+  const resumeQueuedSessionTokensRef = useRef(new WeakMap<RemotePiSession, number>())
+  const resumeQueuedSessionTokenSeqRef = useRef(0)
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -504,16 +507,33 @@ export function PiChatPanel<
   ), [activeChatIdentity, selectedPiSession])
   const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
   const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
-  // Resume-queued pending/error/in-flight state is keyed by bare session id.
-  // Reset it when the owning agent/storage scope changes so state cannot leak
-  // into a different session that reuses the same id.
-  const chatScopeKey = `${externalSessionId ? 'external' : 'managed'}\u0000${agentTypeId}\u0000${storageScope ?? ''}`
+  // Resume state is displayed by session id, but ownership belongs to the
+  // selected session object. Preserve state when navigating back to the same
+  // transport; clear only when that id is rebound to a replacement transport.
   useEffect(() => {
+    if (!activeChatSessionId || !selectedPiSession) return
+    let ownerToken = resumeQueuedSessionTokensRef.current.get(selectedPiSession)
+    if (ownerToken === undefined) {
+      ownerToken = ++resumeQueuedSessionTokenSeqRef.current
+      resumeQueuedSessionTokensRef.current.set(selectedPiSession, ownerToken)
+    }
+    if (resumeQueuedOwnerTokenBySessionIdRef.current.get(activeChatSessionId) === ownerToken) return
+    resumeQueuedOwnerTokenBySessionIdRef.current.set(activeChatSessionId, ownerToken)
     setQueueMutationPending(false)
-    setResumeQueuedPendingSessionIds(new Set())
-    setResumeQueuedErrorsBySessionId(new Map())
-    resumeQueuedInFlightRef.current.clear()
-  }, [chatScopeKey])
+    setResumeQueuedPendingSessionIds((previous) => {
+      if (!previous.has(activeChatSessionId)) return previous
+      const next = new Set(previous)
+      next.delete(activeChatSessionId)
+      return next
+    })
+    setResumeQueuedErrorsBySessionId((previous) => {
+      if (!previous.has(activeChatSessionId)) return previous
+      const next = new Map(previous)
+      next.delete(activeChatSessionId)
+      return next
+    })
+    resumeQueuedInFlightRef.current.delete(activeChatSessionId)
+  }, [activeChatSessionId, selectedPiSession])
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
@@ -1073,6 +1093,7 @@ export function PiChatPanel<
     const run = policy.resumeQueued()
     resumeQueuedInFlightRef.current.set(sessionId, run)
     void run.catch((error) => {
+      if (resumeQueuedInFlightRef.current.get(sessionId) !== run) return
       setResumeQueuedErrorsBySessionId((previous) => new Map(previous).set(sessionId, {
         id: errorNoticeId,
         level: 'error',
