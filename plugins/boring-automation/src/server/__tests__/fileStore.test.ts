@@ -182,7 +182,7 @@ describe("FileAutomationStore persistence", () => {
 
   it("does not resurrect a settled run when late acceptance races a replacement", async () => {
     const store = createStore()
-    const automation = await store.createAutomation({ title: "Race", cron: null, timezone: "UTC", model: "test:model" })
+    const automation = await store.createAutomation({ title: "Race", timezone: "UTC", model: "test:model" })
     const settled = await store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
     await store.updateRunLifecycle(settled.id, { status: "failed", completedAt: "2026-07-10T00:00:00.000Z" })
     const replacement = await store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "next", modelSnapshot: "test:model" })
