@@ -1,8 +1,9 @@
 # [Agent Package Lifecycle] What changed, visually
 
 **PR:** [#1310](https://github.com/hachej/boring-ui/pull/1310)
-**Reviewed code:** `fbe8873fbf8e93f9e00c9f6d24a59c0fc2525816`
-**Base/current main:** `d19b04d357ea7d2caae20a44a657edb3ee4c582e`
+**Reviewed product code:** `fbe8873fbf8e93f9e00c9f6d24a59c0fc2525816`
+**Current integration candidate:** `351ec6276a7464ce21c5b42cb52dffaade7aa469`
+**Base/current main:** `68dcb7db8822f721c6b45d0731e01a46fa364f28`
 **Route:** **PROTECTED** — public Agent API and package-boundary contracts changed; owner Gate 2 is required.
 
 ## Structure — the boundary that changed
@@ -22,7 +23,7 @@
 -        retryable preflight can permanently occupy/reject a request key
 +        retryable pre-effect state can be atomically reclaimed
        AgentRequestLedger (public contract)
-+        retryable state + reclaim(key, payloadDigest)
++        retryable state + prepare(key, payloadDigest) atomic reclaim
          ├── in-memory implementation
          └── SQLite state-qualified CAS implementation
 ```
@@ -31,13 +32,13 @@
 
 ```diff
  createSession(requestId, payload)
-   ledger.admit(requestId, payloadDigest)
+   ledger.prepare(requestId, payloadDigest)
    preflight
 -    failure -> pending/rejected record; retry replays failure/in-progress
-+    retryable failure -> ledger marks retryable; no effect begins
++    retryable failure -> ledger.retry(requestId, error); no effect begins
 +  retry with same requestId + same payloadDigest
-+    ledger.reclaimRetryable(requestId, payloadDigest)
-+      compare state and digest atomically
++    ledger.prepare(requestId, payloadDigest)
++      atomically reclaims only matching retryable state + digest
 +    preflight succeeds
    ledger.beginEffect(requestId)
    create session
@@ -88,12 +89,12 @@ sequenceDiagram
     F-->>C: default + valid Agents; diagnostics for invalid sibling
     C->>H: createAgentHost(resolved fleet)
     C->>H: createSession(requestId, payload)
-    H->>L: admit(requestId, digest)
+    H->>L: prepare(requestId, digest)
     H->>R: preflight
     R-->>H: retryable failure
-    H->>L: mark retryable (pre-effect)
+    H->>L: retry(requestId, error) (pre-effect)
     C->>H: retry same requestId + payload
-    H->>L: reclaim retryable by state + digest
+    H->>L: prepare atomically reclaims by state + digest
     L-->>H: admitted
     H->>R: preflight, then begin effect
     H-->>C: session created
@@ -104,4 +105,4 @@ sequenceDiagram
 1. **Public seam:** `AgentRequestLedger` and `AgentSummary.definition` semantics intentionally changed, so automatic admission is disallowed even though package production churn is only `144 + 41 = 185` lines.
 2. **Ownership:** Workspace discovers/composes; Agent owns fleet validation, identity projection, preflight classification, and ledger transitions.
 3. **Safety:** retry reclaim is limited to same key + same payload while still pre-effect; terminal outcomes and conflicts remain stable.
-4. **Evidence:** exact-head CI is green, exact-SHA sandbox tests pass, standards/spec and thermo are CLEAN, and independent abstraction review is PASS.
+4. **Evidence:** product SHA `fbe8873f` has green CI and clean review; integration candidate `351ec6276` has exact-SHA sandbox proof and receives its own current-head CI/review before Gate 2.
