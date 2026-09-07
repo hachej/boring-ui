@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
+import { ErrorCode } from '../../../shared/error-codes'
 import { AgentGatewayErrorCode } from '../../../shared/gateway/errors'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import { RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
@@ -1895,13 +1896,23 @@ describe('PiChatPanel sandbox shell', () => {
       const encoder = new TextEncoder()
       await act(async () => {
         for (const event of [
-          { type: 'agent-start', seq: 1, turnId: 'turn-1' },
-          { type: 'agent-end', seq: 1, turnId: 'turn-1', status: 'ok' },
-          { type: 'agent-end', seq: 2, turnId: 'turn-1', status: 'ok' },
-          { type: 'agent-end', seq: 2, turnId: 'turn-1', status: 'ok' },
+          { type: 'agent-start', seq: 1, turnId: 'turn-current' },
+          // Both rejected terminals consume sequence numbers but must not reach
+          // PiChatPanel's onTurnComplete callback seam.
+          { type: 'agent-end', seq: 2, turnId: 'turn-stale', status: 'ok' },
+          {
+            type: 'error',
+            seq: 3,
+            turnId: 'turn-current',
+            retryable: false,
+            error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'failed', retryable: false },
+          },
+          { type: 'agent-end', seq: 4, turnId: 'turn-current', status: 'ok' },
+          { type: 'agent-start', seq: 5, turnId: 'turn-next' },
+          { type: 'agent-end', seq: 6, turnId: 'turn-next', status: 'ok' },
         ]) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`))
       })
-      await waitFor(() => expect(remote.getState().lastSeq).toBe(2))
+      await waitFor(() => expect(remote.getState().lastSeq).toBe(6))
       expect(remote.getState().status).toBe('idle')
       expect(onTurnComplete).toHaveBeenCalledTimes(1)
     } finally {

@@ -212,6 +212,36 @@ describe('RemotePiSession', () => {
     }
   })
 
+  it('does not notify callbacks for consumed stale-turn or contradictory terminal events', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot())
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const onEvent = vi.fn()
+    const session = createSession(fetchMock, { onEvent })
+    try {
+      await waitUntil(() => session.getState().connection.state === 'connected')
+      events.write({ type: 'agent-end', seq: 6, turnId: 'turn-stale', status: 'ok' })
+      events.write({
+        type: 'error',
+        seq: 7,
+        turnId: 'turn-1',
+        retryable: false,
+        error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'failed', retryable: false },
+      })
+      events.write({ type: 'agent-end', seq: 8, turnId: 'turn-1', status: 'ok' })
+      events.write({ type: 'heartbeat', now: '2026-06-03T00:02:00.000Z' })
+      await waitUntil(() => session.getState().connection.lastHeartbeatAt !== undefined)
+
+      expect(session.getState()).toMatchObject({ lastSeq: 8, status: 'error', error: { message: 'failed' } })
+      expect(onEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'error', seq: 7 }))
+    } finally {
+      session.dispose()
+    }
+  })
+
   it('withholds gap events from callbacks until recovery accepts them', async () => {
     const streams = [openNdjsonStream(), openNdjsonStream()]
     const recovery = deferred<Response>()

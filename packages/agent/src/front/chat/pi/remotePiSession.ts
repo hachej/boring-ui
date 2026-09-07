@@ -480,11 +480,8 @@ export class RemotePiSession {
           }
 
           this.recordEventType(frame.type)
-          const previousSeq = this.store.getState().lastSeq
-          this.store.dispatch({ type: 'event', event: frame })
-          if (this.store.getState().lastSeq > previousSeq && this.isStreamActive(generation, runId)) {
-            this.options.onEvent?.(frame)
-          }
+          const accepted = this.store.dispatchEvent(frame)
+          if (accepted && this.isStreamActive(generation, runId)) this.options.onEvent?.(frame)
           if (this.store.getState().needsResync && this.isStreamActive(generation, runId)) {
             this.gapCount += 1
             this.rehydrateAfterStreamReset(generation)

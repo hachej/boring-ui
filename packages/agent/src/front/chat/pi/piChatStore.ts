@@ -1,4 +1,5 @@
-import { piChatReducer, type PiChatReducerAction, type PiChatState } from './piChatReducer'
+import type { PiChatEvent } from '../../../shared/chat'
+import { piChatReducer, reducePiChatEvent, type PiChatReducerAction, type PiChatState } from './piChatReducer'
 
 export type PiChatStoreListener = () => void
 
@@ -10,6 +11,8 @@ export interface PiChatStoreOptions {
 export interface PiChatStore {
   getState(): PiChatState
   dispatch(action: PiChatReducerAction, options?: { flush?: boolean }): void
+  /** Applies one stream event and reports the reducer's semantic acceptance. */
+  dispatchEvent(event: PiChatEvent, options?: { flush?: boolean }): boolean
   subscribe(listener: PiChatStoreListener): () => void
   dispose(): void
 }
@@ -44,6 +47,18 @@ export function createPiChatStore(initialState: PiChatState, options: PiChatStor
     scheduled = scheduleNotify(notifyNow)
   }
 
+  const publish = (dispatchOptions?: { flush?: boolean }) => {
+    if (dispatchOptions?.flush) {
+      if (scheduled !== undefined) {
+        cancelNotify(scheduled)
+        scheduled = undefined
+      }
+      notifyNow()
+      return
+    }
+    schedule()
+  }
+
   return {
     getState() {
       return state
@@ -51,15 +66,14 @@ export function createPiChatStore(initialState: PiChatState, options: PiChatStor
     dispatch(action, dispatchOptions) {
       if (disposed) return
       state = piChatReducer(state, action)
-      if (dispatchOptions?.flush) {
-        if (scheduled !== undefined) {
-          cancelNotify(scheduled)
-          scheduled = undefined
-        }
-        notifyNow()
-        return
-      }
-      schedule()
+      publish(dispatchOptions)
+    },
+    dispatchEvent(event, dispatchOptions) {
+      if (disposed) return false
+      const reduction = reducePiChatEvent(state, event)
+      state = reduction.state
+      publish(dispatchOptions)
+      return reduction.accepted
     },
     subscribe(listener) {
       if (disposed) return () => {}
