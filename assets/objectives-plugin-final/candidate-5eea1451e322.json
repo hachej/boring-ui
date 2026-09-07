@@ -1,0 +1,16 @@
+{
+  "revision": "5eea1451e322f4940478f28367c1cc6624951f30",
+  "label": "candidate",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "hasObjectiveSurface": true,
+  "assertions": [
+    "initial progress 2 / 10",
+    "server update interaction",
+    "refreshed progress 7 / 10",
+    "constraint visible"
+  ],
+  "video": "assets/objectives-plugin-final/candidate-5eea1451e322.webm"
+}
