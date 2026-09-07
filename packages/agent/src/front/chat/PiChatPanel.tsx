@@ -416,6 +416,7 @@ export function PiChatPanel<
   const [resumeQueuedPendingSessionIds, setResumeQueuedPendingSessionIds] = useState<Set<string>>(() => new Set())
   const [resumeQueuedErrorsBySessionId, setResumeQueuedErrorsBySessionId] = useState<Map<string, PanelNotice>>(() => new Map())
   const resumeQueuedInFlightRef = useRef(new Map<string, Promise<unknown>>())
+  const resumeQueuedOwnerBySessionIdRef = useRef(new Map<string, RemotePiSession>())
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -504,15 +505,28 @@ export function PiChatPanel<
   ), [activeChatIdentity, selectedPiSession])
   const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
   const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
-  // Resume-queued pending/error/in-flight state is keyed by bare session id.
-  // Fence it by the selected session object so every transport replacement,
-  // including dependency-driven external recreation, gets fresh ownership.
+  // Resume state is displayed by session id, but ownership belongs to the
+  // selected session object. Preserve state when navigating back to the same
+  // transport; clear only when that id is rebound to a replacement transport.
   useEffect(() => {
+    if (!activeChatSessionId || !selectedPiSession) return
+    if (resumeQueuedOwnerBySessionIdRef.current.get(activeChatSessionId) === selectedPiSession) return
+    resumeQueuedOwnerBySessionIdRef.current.set(activeChatSessionId, selectedPiSession)
     setQueueMutationPending(false)
-    setResumeQueuedPendingSessionIds(new Set())
-    setResumeQueuedErrorsBySessionId(new Map())
-    resumeQueuedInFlightRef.current.clear()
-  }, [selectedPiSession])
+    setResumeQueuedPendingSessionIds((previous) => {
+      if (!previous.has(activeChatSessionId)) return previous
+      const next = new Set(previous)
+      next.delete(activeChatSessionId)
+      return next
+    })
+    setResumeQueuedErrorsBySessionId((previous) => {
+      if (!previous.has(activeChatSessionId)) return previous
+      const next = new Map(previous)
+      next.delete(activeChatSessionId)
+      return next
+    })
+    resumeQueuedInFlightRef.current.delete(activeChatSessionId)
+  }, [activeChatSessionId, selectedPiSession])
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
