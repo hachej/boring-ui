@@ -172,8 +172,16 @@ export class FileObjectiveStore implements ObjectiveStore {
           `updating objective ${next.id} would produce a record of ${mergedBytes} bytes, exceeding the ${OBJECTIVE_MAX_AGGREGATE_BYTES}-byte aggregate size limit`,
         )
       }
-      objectives.set(next.id, next)
-      updated = clone(next)
+      const validated = ObjectiveSchema.safeParse(next)
+      if (!validated.success) {
+        throw new ObjectiveStoreError(
+          OBJECTIVE_ERROR_CODES.VALIDATION_INVALID,
+          `updated objective failed validation: ${validated.error.issues[0]?.message ?? "invalid objective record"}`,
+        )
+      }
+      const persisted = validated.data as Objective
+      objectives.set(persisted.id, persisted)
+      updated = clone(persisted)
       return true
     })
     return updated!

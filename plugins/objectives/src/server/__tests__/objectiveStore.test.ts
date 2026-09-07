@@ -114,6 +114,17 @@ describe("FileObjectiveStore", () => {
     await expect(reloaded.get(created.id)).resolves.toMatchObject({ current: 250, status: "achieved" })
   })
 
+  it("rejects a direct update that would persist an invalid objective and leaves the record readable", async () => {
+    const created = await store.create(input())
+
+    await expect(
+      store.update({ id: created.id, status: "bogus" } as unknown as Parameters<FileObjectiveStore["update"]>[0]),
+    ).rejects.toMatchObject({ code: OBJECTIVE_ERROR_CODES.VALIDATION_INVALID })
+
+    await expect(store.get(created.id)).resolves.toEqual(created)
+    await expect(store.list()).resolves.toEqual([created])
+  })
+
   it("rejects updates for an unknown objective", async () => {
     await expect(store.update({ id: "missing", current: 1 })).rejects.toMatchObject({
       code: OBJECTIVE_ERROR_CODES.NOT_FOUND,
