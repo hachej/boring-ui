@@ -22,9 +22,11 @@ const actor = { workspaceId: "default", userId: "local" }
  * (`audioRecordingDirectory`), exactly as in production.
  */
 class FakeSandboxWorkspace implements Workspace {
-  readonly runtimeContext = { runtimeCwd: this.root, mode: "direct" as const }
+  readonly runtimeContext: { runtimeCwd: string; mode: "direct" }
   private readonly files = new Map<string, string>()
-  constructor(readonly root: string) {}
+  constructor(readonly root: string) {
+    this.runtimeContext = { runtimeCwd: root, mode: "direct" }
+  }
 
   async readFile(relPath: string): Promise<string> {
     const value = this.files.get(relPath)

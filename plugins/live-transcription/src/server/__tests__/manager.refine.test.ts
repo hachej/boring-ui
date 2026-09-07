@@ -29,9 +29,13 @@ class FakeSocket extends EventEmitter {
   }
 }
 
+type VisibleUserMessageTarget = NonNullable<
+  Awaited<ReturnType<NonNullable<WorkspaceAgentDispatcherBinding["bindPiSession"]>>>["visibleUserMessageTarget"]
+>
+
 function resolver(
   workspace: MemoryWorkspace,
-  target: { isIdle: () => Promise<boolean>; sendIfIdle: (input: unknown) => Promise<unknown> },
+  target: VisibleUserMessageTarget,
 ): WorkspaceAgentDispatcherResolver {
   const ensure: NonNullable<WorkspaceAgentDispatcherBinding["bindPiSession"]> = vi.fn(async () => ({
     visibleUserMessageTarget: target,
