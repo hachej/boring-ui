@@ -237,10 +237,11 @@ export function FleetNewChatAction({
   )
 }
 
-/** Small keyboard-shortcut hint badge (e.g. ⌘K), Linear/Stripe-style. */
+/** Small keyboard-shortcut hint badge (e.g. ⌘K), Linear/Stripe-style. Hidden
+ * on coarse pointers — a keyboard chord is meaningless on a phone. */
 export function KbdHint({ keys }: { keys: string }) {
   return (
-    <kbd aria-hidden="true" className="rounded border border-border/60 bg-foreground/[0.08] px-1.5 py-px text-[10px] font-medium leading-[1.4] tracking-wide text-muted-foreground">
+    <kbd aria-hidden="true" className="pointer-coarse:hidden rounded border border-border/60 bg-foreground/[0.08] px-1.5 py-px text-[10px] font-medium leading-[1.4] tracking-wide text-muted-foreground">
       {keys}
     </kbd>
   )

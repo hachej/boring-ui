@@ -82,6 +82,10 @@ export interface PiChatComposerSurfaceProps<
   onComposerBlockerAction?: (blocker: TComposerBlocker, action: string) => void
   queuePreview: QueuedUserMessage[]
   onEditQueued: () => void
+  onResumeQueued: () => void
+  resumeQueuedPending: boolean
+  onRemoveQueued?: () => void
+  queueMutationPending: boolean
   hotReloadEnabled: boolean
   pluginUpdateState: PluginUpdateState | null
   onDismissPluginUpdate: () => void
@@ -147,6 +151,10 @@ export function PiChatComposerSurface<
   onComposerBlockerAction,
   queuePreview,
   onEditQueued,
+  onResumeQueued,
+  resumeQueuedPending,
+  onRemoveQueued,
+  queueMutationPending,
   hotReloadEnabled,
   pluginUpdateState,
   onDismissPluginUpdate,
@@ -198,9 +206,10 @@ export function PiChatComposerSurface<
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,
     workspaceRequestId,
+    requestHeaders,
     responseUrl: 'raw',
     fetch,
-  }), [apiBaseUrl, fetch, workspaceRequestId])
+  }), [apiBaseUrl, fetch, requestHeaders, workspaceRequestId])
 
   const resizeTextarea = useCallback((node: HTMLTextAreaElement | null) => {
     if (!node) return
@@ -270,7 +279,14 @@ export function PiChatComposerSurface<
         />
       ) : null}
       {queuePreview.length > 0 ? (
-        <QueuedComposerNotice followUps={queuePreview} onEdit={onEditQueued} />
+        <QueuedComposerNotice
+          followUps={queuePreview}
+          onEdit={onEditQueued}
+          onResume={onResumeQueued}
+          resumePending={resumeQueuedPending}
+          onRemove={onRemoveQueued}
+          actionPending={queueMutationPending}
+        />
       ) : null}
       {hotReloadEnabled ? (
         <PluginUpdateStatus

@@ -9,7 +9,7 @@ import {
 import { useRef, useState, useEffect } from "react"
 import { useDataClient, useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { FetchError } from "./fetchClient"
-import { getPreloadedTreeEntries } from "./treePreloadCache"
+import { getPreloadedTreeEntries, getPreloadedTreeUpdatedAt } from "./treePreloadCache"
 import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
@@ -68,6 +68,11 @@ export function useFileList(dir: string | null, filesystem?: FilesystemId): UseQ
     enabled: dir != null,
     staleTime: 3_000,
     initialData: () => fs === "user" ? getPreloadedTreeEntries(base, workspaceId, dir) : undefined,
+    // Date the seeded snapshot from when it was actually captured. Otherwise
+    // React Query stamps it "just fetched" on every mount, so a pane that
+    // remounts after a workspace round-trip keeps serving the boot-time tree
+    // and never refetches.
+    initialDataUpdatedAt: () => fs === "user" ? getPreloadedTreeUpdatedAt(base, workspaceId, dir) : undefined,
     // File-event SSE invalidates this query when files change. Polling every
     // 3s made slow/dev backends self-abort before the first tree response,
     // leaving the workbench tree stuck on its skeleton.

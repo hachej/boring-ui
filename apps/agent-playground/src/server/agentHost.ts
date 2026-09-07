@@ -82,7 +82,14 @@ export async function createAgentPlaygroundRuntime(
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   const startedAt = Date.now()
   const created = await createAgentHost({
-    agents: [{ agentTypeId: PLAYGROUND_AGENT_TYPE_ID, legacyDefault: true }],
+    agents: [{
+      agentTypeId: PLAYGROUND_AGENT_TYPE_ID,
+      definition: {
+        instructions: 'You are the Agent Playground assistant.',
+        label: 'Playground Agent',
+        version: '1',
+      },
+    }],
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: 'agent-playground',
     scopeVerifier: verifier,

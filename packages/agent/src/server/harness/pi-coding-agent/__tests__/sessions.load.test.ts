@@ -337,7 +337,7 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(textOf(history[0])).toBe("fresh prompt");
   });
 
-  it("compacts legacy ui_snapshot bloat out of the file on first load (repair-on-read)", async () => {
+  it("ignores legacy ui_snapshot bloat without mutating the transcript on read", async () => {
     const sessionId = "sess-legacy-bloat";
     const filepath = join(tmpDir, `${sessionId}.jsonl`);
 
@@ -365,26 +365,20 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     const sizeBefore = (await stat(filepath)).size;
     const store = new PiSessionStore("/workspace", tmpDir);
 
-    // loadEntries triggers resolveSessionTranscript which should compact the file
+    // Read paths ignore obsolete snapshots without rewriting a live transcript.
     const { messages } = await store.loadEntries(ctx, sessionId);
     const history = buildPiChatHistory(messages, { sessionId });
 
-    // Messages are intact after compaction
+    // Canonical messages remain intact while snapshots stay excluded.
     expect(history).toHaveLength(2);
     expect(history[0].role).toBe("user");
     expect(textOf(history[0])).toBe("real question");
 
-    // The file was compacted — ui_snapshot records stripped
-    const compactedContent = await readFile(filepath, "utf-8");
-    const snapshotCount = compactedContent
-      .split("\n")
-      .filter((l) => l.trim())
-      .filter((l) => { try { return (JSON.parse(l) as { type?: string }).type === "ui_snapshot" } catch { return false } })
-      .length;
-    expect(snapshotCount).toBe(0);
-    expect((await stat(filepath)).size).toBeLessThan(sizeBefore / 2);
+    // Loading is read-only: explicit offline maintenance owns any compaction.
+    expect(await readFile(filepath, "utf-8")).toBe(originalContent);
+    expect((await stat(filepath)).size).toBe(sizeBefore);
 
-    // Non-snapshot records (session_info) survive
+    // Non-snapshot metadata remains readable.
     const detail = await store.load(ctx, sessionId);
     expect(detail.title).toBe("Legacy session");
   });

@@ -36,6 +36,18 @@ export default defineConfig([
     outDir: 'dist',
     target: 'es2022',
     external: EXTERNALS,
+    // esbuild otherwise falls back to the CLASSIC jsx transform (which
+    // requires `React` in scope) unless it can auto-detect "jsx": "react-jsx"
+    // from tsconfig.json. That auto-detection is implicit and cwd/tooling
+    // dependent (it silently breaks if tsconfig.json isn't resolvable from
+    // wherever esbuild is invoked, e.g. a Docker build context) — mail
+    // templates like VerifyEmail.tsx/Welcome.tsx are authored for the
+    // automatic runtime and import no React, so a classic-transform build
+    // crashes at SSR with "React is not defined" (#1438). Set it explicitly
+    // so the build doesn't depend on tsconfig resolution succeeding.
+    esbuildOptions(options) {
+      options.jsx = 'automatic'
+    },
     async onSuccess() {
       for (const rel of CSS_ASSETS) {
         const dest = `dist/${rel}`

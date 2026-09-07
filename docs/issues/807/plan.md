@@ -18,13 +18,13 @@ authority.
 Current authority, in order:
 
 1. [`../../DECISIONS.md`](../../DECISIONS.md), Decision 26.
-2. [`../391/plan.md`](../391/plan.md), especially Step 1A session compatibility
+2. [`../../plans/agent-runtime/fleet-and-environments/plan.md`](../../plans/agent-runtime/fleet-and-environments/plan.md), especially Step 1A session compatibility
    and the consumer-backed Step 3 trigger.
-3. [`../391/AGENT-CONSUMPTION-MODES.md`](../391/AGENT-CONSUMPTION-MODES.md),
+3. [`../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md`](../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md),
    especially trusted workspace/agent binding before session-only addressing.
-4. [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md), which retains
+4. [`../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md`](../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md), which retains
    T1 durable events and makes T2/channels thin, triggered follow-ons.
-5. [`../391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md), the
+5. [`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md), the
    non-binding north-star for the control-plane/data-plane split.
 
 The documents under [`runtime-refactor/work/`](runtime-refactor/work/) are

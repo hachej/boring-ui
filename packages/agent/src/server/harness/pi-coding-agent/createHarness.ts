@@ -7,8 +7,7 @@ import {
   type AgentSession,
   type PromptOptions,
   SessionManager,
-  AuthStorage,
-  ModelRegistry,
+  ModelRuntime,
   DefaultResourceLoader,
   getAgentDir,
   loadSkills,
@@ -25,10 +24,8 @@ import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
-import {
-  readConfiguredDefaultModel,
-  registerConfiguredModelProviders,
-} from "../../models/modelConfig.js";
+import { readConfiguredDefaultModel } from "../../models/modelConfig.js";
+import { createConfiguredModelRuntime } from "../../models/modelRuntime.js";
 import {
   mergePiPackageSources,
   type PiPackageSource,
@@ -41,7 +38,7 @@ interface PiRunContextState {
 
 interface PiSessionHandle {
   piSession: AgentSession;
-  modelRegistry: ModelRegistry;
+  modelRuntime: ModelRuntime;
   sessionManager: SessionManager;
   resourceLoader: DefaultResourceLoader;
   sessionId: string;
@@ -102,6 +99,8 @@ export interface PiHarnessOptions {
   noSkills?: boolean;
   /** Disable ambient Pi extensions (required when tools execute in a remote runtime). */
   noExtensions?: boolean;
+  /** Ignore packages from user/project Pi settings while preserving explicit host package grants. */
+  noAmbientPackages?: boolean;
   additionalSkillPaths?: string[];
   defaultModel?: { provider: string; id: string };
   /**
@@ -259,14 +258,14 @@ function meteredExtensionCommandContext(ctx: ExtensionCommandContext, command: s
 }
 
 function resolveRequestedModel(
-  modelRegistry: ModelRegistry,
+  modelRuntime: ModelRuntime,
   input: AgentSendInput,
   options: { strict?: boolean } = {},
 ) {
   const requestedId = input.model?.id;
   if (!input.model || !requestedId) return undefined;
-  const model = modelRegistry.find(input.model.provider, requestedId);
-  const available = modelRegistry.getAvailable();
+  const model = modelRuntime.getModel(input.model.provider, requestedId);
+  const available = modelRuntime.getAvailableSnapshot();
   const hasAuth = Boolean(model) && available.some(
     (m) => m.provider === model!.provider && m.id === model!.id,
   );
@@ -278,16 +277,16 @@ function resolveRequestedModel(
 }
 
 function resolveDefaultModel(
-  modelRegistry: ModelRegistry,
+  modelRuntime: ModelRuntime,
   override?: { provider: string; id: string },
   strict?: boolean,
 ) {
   if (override) {
-    return resolveRequestedModel(modelRegistry, { model: override }, { strict });
+    return resolveRequestedModel(modelRuntime, { model: override }, { strict });
   }
   const configured = readConfiguredDefaultModel();
   if (configured) {
-    const model = modelRegistry.find(configured.provider, configured.id);
+    const model = modelRuntime.getModel(configured.provider, configured.id);
     if (model) return model;
   }
   return undefined;
@@ -319,7 +318,7 @@ async function applyRequestedSessionOptions(
   input: AgentSendInput,
   options: { strictModelResolution?: boolean } = {},
 ): Promise<void> {
-  const requestedModel = resolveRequestedModel(handle.modelRegistry, input, { strict: options.strictModelResolution });
+  const requestedModel = resolveRequestedModel(handle.modelRuntime, input, { strict: options.strictModelResolution });
   if (requestedModel) {
     const current = handle.piSession.model;
     if (
@@ -565,12 +564,10 @@ export function createPiCodingAgentHarness(opts: {
   }
 
   function createRunBoundAdapter(handle: PiSessionHandle, sessionId: string, ctx: RunContext): PiAgentSessionAdapter {
-    const adapter = createPiAgentSessionAdapter(handle.piSession, {
-      sessionId,
-      ...(handle.piSession.agent && typeof handle.piSession.agent.continue === "function"
-        ? { continueQueuedFollowUp: () => handle.piSession.agent!.continue() }
-        : {}),
-    });
+    // Pi 0.84 drains its native follow-up queue after an interrupted turn.
+    // Supplying the older explicit agent.continue() compatibility hook would
+    // submit the same queued follow-up a second time.
+    const adapter = createPiAgentSessionAdapter(handle.piSession, { sessionId });
     return {
       ...adapter,
       prompt: (promptInput) => bindRunContext(ctx, () => adapter.prompt(promptInput)),
@@ -588,18 +585,16 @@ export function createPiCodingAgentHarness(opts: {
     input: AgentSendInput,
     ctx: RunContext,
   ): Promise<PiSessionHandle> {
-    // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
-    // its normal environment/settings/auth sources; Boring does not pick a
+    // Auth/model credentials remain Pi-owned. The default runtime reads Pi's
+    // normal environment/settings/auth sources; Boring does not pick a
     // provider credential itself.
-    const authStorage = AuthStorage.create();
-    const modelRegistry = ModelRegistry.create(authStorage);
-    registerConfiguredModelProviders(modelRegistry);
+    const { modelRuntime } = await createConfiguredModelRuntime();
     // Strict model validation must fail before native transcript creation.
-    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
+    const resolvedModel = resolveRequestedModel(modelRuntime, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured
     // Boring/Pi default if present. Undefined is intentional: Pi/session owns
     // the final fallback model selection.
-    const model = resolvedModel ?? resolveDefaultModel(modelRegistry, pi.defaultModel, pi.strictModelResolution);
+    const model = resolvedModel ?? resolveDefaultModel(modelRuntime, pi.defaultModel, pi.strictModelResolution);
 
     // Restore Boring-owned sessions as before: every session id is minted (and
     // its transcript written) server-side at create, so there is no id-less
@@ -659,6 +654,7 @@ export function createPiCodingAgentHarness(opts: {
       opts.cwd,
       agentDir,
       effectivePackages,
+      { includeConfiguredPackages: pi.noAmbientPackages !== true },
     )
     const resourceLoader = new DefaultResourceLoader({
       cwd: opts.cwd,
@@ -704,8 +700,8 @@ export function createPiCodingAgentHarness(opts: {
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
-      authStorage,
-      modelRegistry,
+      modelRuntime,
+      settingsManager,
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
@@ -717,7 +713,7 @@ export function createPiCodingAgentHarness(opts: {
     };
     const handle: PiSessionHandle = {
       piSession,
-      modelRegistry,
+      modelRuntime,
       sessionManager,
       resourceLoader,
       sessionId: sessionId,
@@ -800,7 +796,10 @@ export function createPiCodingAgentHarness(opts: {
      * the expected pre-first-turn state, not an error.
      */
     getSystemPrompt(sessionId: string): string | undefined {
-      return piSessionHandlesFor(sessionId)[0]?.piSession.systemPrompt;
+      const prompt = piSessionHandlesFor(sessionId)[0]?.piSession.systemPrompt;
+      return prompt && pi.locateSkillResource
+        ? projectSkillResourceLocations(prompt, pi.locateSkillResource)
+        : prompt;
     },
 
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean {

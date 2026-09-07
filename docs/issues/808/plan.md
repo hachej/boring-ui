@@ -31,7 +31,7 @@ extraction plan per Decision 26 + agent-cloud vision**. It is plan-only and is
 complete when this reviewed plan merges. The execution chain proposed below is
 not created by this PR.
 
-[`../391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md) is a current
+[`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md) is a current
 north-star note, explicitly non-binding on Beads. This plan follows its
 control-plane/data-plane split and the rule that executable tenant work runs
 only in the sandbox. Its long-term product ideas create no dependency and do
@@ -39,11 +39,11 @@ not override Decision 26 sequencing or the canonical #391 plan.
 
 Shared sequencing remains controlled by:
 
-- [`../391/plan.md`](../391/plan.md): provider extraction is Step 3 after the
+- [`../../plans/agent-runtime/fleet-and-environments/plan.md`](../../plans/agent-runtime/fleet-and-environments/plan.md): provider extraction is Step 3 after the
   Step 2 trigger.
-- [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md): P2 needs a
+- [`../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md`](../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md): P2 needs a
   demonstrated consumer and X1 remains later.
-- [`../391/AGENT-CONSUMPTION-MODES.md`](../391/AGENT-CONSUMPTION-MODES.md):
+- [`../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md`](../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md):
   every execution stays workspace-backed and Workspace + Sandbox swap together.
 - [`../805/runtime-refactor/work/A1-agent-authoring/PLAN.md`](../805/runtime-refactor/work/A1-agent-authoring/PLAN.md):
   authored definitions are data-only and do not carry runtime handles or

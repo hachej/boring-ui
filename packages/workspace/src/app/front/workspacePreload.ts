@@ -17,7 +17,12 @@ export type WorkspaceRuntimeDependenciesWarmupStatus = {
 export type WorkspaceWarmupStatus =
   | { status: "preparing"; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge"; message?: string; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
   | { status: "ready"; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
-  | { status: "failed"; message: string; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge"; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
+  /**
+   * `code` carries the server's stable error code for a terminal boot failure
+   * (gh-1402): hosts discriminate on it — e.g. a workspace refused because its
+   * default Agent is gone needs a recovery surface, a generic 500 does not.
+   */
+  | { status: "failed"; message: string; code?: string; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge"; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
 
 /**
  * Convert an absolute filesystem path into a workspace-relative one when it
@@ -132,6 +137,23 @@ export function errorMessageFromPayload(payload: unknown): string | null {
   if (typeof root.message === "string" && root.message) return root.message
   const error = root.error as { message?: unknown } | undefined
   return typeof error?.message === "string" && error.message ? error.message : null
+}
+
+/** Stable server error code for a failed warmup response, when it carries one. */
+export function errorCodeFromPayload(payload: unknown): string | null {
+  const code = parseWorkspaceReadyError(payload)?.code
+  return typeof code === "string" && code ? code : null
+}
+
+/** Terminal boot failure that preserves the server's error code. */
+export class WorkspaceBootError extends Error {
+  readonly code?: string
+
+  constructor(message: string, code?: string) {
+    super(message)
+    this.name = "WorkspaceBootError"
+    if (code) this.code = code
+  }
 }
 
 export interface ReadyStatusWarmupSnapshot {

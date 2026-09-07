@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.103",
+  "version": "0.1.109",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
@@ -75,6 +75,7 @@
     "@vercel/blob": "^2.8.0",
     "@vercel/sandbox": "3.0.0",
     "chokidar": "^5.0.0",
+    "proper-lockfile": "^4.1.2",
     "zod": "^3.25.76"
   },
   "peerDependencies": {
@@ -82,8 +83,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
+    "@types/proper-lockfile": "^4.1.4",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

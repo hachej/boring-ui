@@ -30,7 +30,15 @@ Both are built in `src/server/modeApps.ts`.
 
 - **Folder mode** — `createFolderModeApp({ workspaceRoot, mode })`. One folder
   = one workspace (`workspaceId: "default"`). Wraps
-  `@hachej/boring-workspace/app/server`'s `createWorkspaceAgentServer`.
+  `@hachej/boring-workspace/app/server`'s `createWorkspaceAgentServer`. When
+  the launched root is a valid trusted `boring.agent` package, folder mode
+  activates that Agent instead of the anonymous default, including only its
+  package-local Pi resources and readonly `agent_knowledge` internal binding.
+  The human-facing shared catalog shows writable **Workspace** plus every
+  user-visible authored knowledge root; Agent composition filters those human
+  aliases and mounts only the addressed Agent's canonical knowledge binding.
+  Package-resource skill mounts use internal `agent_resources` and remain
+  hidden from file pickers.
 - **Workspaces mode** — `createWorkspacesModeApp({ mode })`. A multi-workspace
   hub. Builds a bare Fastify app and registers the workspace runtime backend
   gateway, agent routes, and UI routes. Each workspace is resolved per-request

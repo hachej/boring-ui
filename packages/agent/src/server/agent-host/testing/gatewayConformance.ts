@@ -3,6 +3,7 @@ import {
   AGENT_GATEWAY_ERROR_CODES,
   AgentGatewayError,
   AgentGatewayErrorCode,
+  compareSessionOrder,
   type AgentGateway,
   type AgentSessionActivity,
   type AgentSessionRef,
@@ -86,6 +87,7 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         await expectCode(fixture.gateway.connectSession({ scope: denied, ref }), 'AGENT_SCOPE_DENIED')
         await expectCode(fixture.gateway.readSessionState({ scope: denied, ref }), 'AGENT_SCOPE_DENIED')
         await expectCode(fixture.gateway.renameSession({ scope: denied, ref, requestId: `denied-rename-${index}`, title: 'x' }), 'AGENT_SCOPE_DENIED')
+        await expectCode(fixture.gateway.setSessionArchived({ scope: denied, ref, requestId: `denied-archive-${index}`, archived: true }), 'AGENT_SCOPE_DENIED')
         await expectCode(fixture.gateway.deleteSession({ scope: denied, ref, requestId: `denied-delete-${index}` }), 'AGENT_SCOPE_DENIED')
       }
     })
@@ -109,6 +111,9 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         'AGENT_TYPE_UNKNOWN',
         'AGENT_SESSION_NOT_FOUND',
         'AGENT_SCOPE_DENIED',
+        'AGENT_ENTITLEMENT_REQUIRED',
+        'AGENT_ACCESS_FORBIDDEN',
+        'AGENT_ACCESS_POLICY_UNAVAILABLE',
         'AGENT_SESSION_REPLAY_GAP',
         'AGENT_SESSION_CURSOR_AHEAD',
         'AGENT_SESSION_CURSOR_EXPIRED',
@@ -145,6 +150,14 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
             const ref = await createSession(fixture, scope, `${requestId}-session`)
             await expectCode(fixture.gateway.renameSession({ scope, ref, requestId, title: 'mutated' }), 'AGENT_SCOPE_DENIED')
             expect((await fixture.gateway.readSessionState({ scope, ref })).summary.title).toBe(`${requestId}-session`)
+          },
+        },
+        {
+          effect: 'session.archive',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            await expectCode(fixture.gateway.setSessionArchived({ scope, ref, requestId, archived: true }), 'AGENT_SCOPE_DENIED')
+            expect((await fixture.gateway.listSessions({ scope, archived: 'active' })).sessions).toContainEqual(expect.objectContaining({ ref }))
           },
         },
         {
@@ -313,8 +326,45 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       )
       await expect(fixture.gateway.renameSession({ scope: scopeA, ref: second, requestId: 'shared-target-id', title: 'two' })).resolves.toMatchObject({ title: 'two' })
 
+      const archived = await fixture.gateway.setSessionArchived({
+        scope: scopeA,
+        ref: first,
+        requestId: 'archive-id',
+        archived: true,
+      })
+      expect(archived.archived).toBe(true)
+      await expect(fixture.gateway.setSessionArchived({
+        scope: scopeA,
+        ref: first,
+        requestId: 'archive-id',
+        archived: true,
+      })).resolves.toEqual(archived)
+      await expectCode(fixture.gateway.setSessionArchived({
+        scope: scopeA,
+        ref: first,
+        requestId: 'archive-id',
+        archived: false,
+      }), 'AGENT_REQUEST_CONFLICT')
+
       await fixture.gateway.deleteSession({ scope: scopeA, ref: second, requestId: 'delete-id' })
       await expect(fixture.gateway.deleteSession({ scope: scopeA, ref: second, requestId: 'delete-id' })).resolves.toBeUndefined()
+    })
+
+    it('replays a completed archive receipt after the session is deleted', async () => {
+      const fixture = await options.createFixture()
+      const scope = fixture.issueScope()
+      const ref = await createSession(fixture, scope, 'archive-then-delete')
+      const archiveRequest = {
+        scope,
+        ref,
+        requestId: 'archive-before-delete',
+        archived: true,
+      } as const
+      const archived = await fixture.gateway.setSessionArchived(archiveRequest)
+
+      await fixture.gateway.deleteSession({ scope, ref, requestId: 'delete-after-archive' })
+
+      await expect(fixture.gateway.setSessionArchived(archiveRequest)).resolves.toEqual(archived)
     })
 
     it('enforces command states, queue controls, typed receipts, and command idempotency', async () => {
@@ -575,13 +625,13 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       await expectCode(fixture.gateway.listSessions({ scope: scopeB, cursor, limit: 1 }), 'AGENT_SESSION_CURSOR_INVALID')
       await expectCode(fixture.gateway.listSessions({ scope: scopeA, cursor, limit: 2 }), 'AGENT_SESSION_CURSOR_INVALID')
       await expectCode(fixture.gateway.listSessions({ scope: scopeA, cursor, agentTypeId: 'alpha', limit: 1 }), 'AGENT_SESSION_CURSOR_INVALID')
+      await expectCode(fixture.gateway.listSessions({ scope: scopeA, cursor, archived: 'active', limit: 1 }), 'AGENT_SESSION_CURSOR_INVALID')
 
       const all = await fixture.gateway.listSessions({ scope: scopeA, limit: 20 })
-      expect(all.sessions).toEqual([...all.sessions].sort((left, right) =>
-        right.updatedAt - left.updatedAt
-        || left.ref.agentTypeId.localeCompare(right.ref.agentTypeId)
-        || left.ref.sessionId.localeCompare(right.ref.sessionId),
-      ))
+      expect(all.sessions).toEqual([...all.sessions].sort((left, right) => compareSessionOrder(
+        [left.updatedAt, left.ref.agentTypeId, left.ref.sessionId],
+        [right.updatedAt, right.ref.agentTypeId, right.ref.sessionId],
+      )))
       expect(all.sessions.map((session) => session.ref)).toEqual([alphaA, alphaC, beta])
     })
 

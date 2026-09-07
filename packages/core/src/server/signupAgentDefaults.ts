@@ -2,10 +2,10 @@ import { AGENT_TYPE_ID_PATTERN } from './defaultAgentType.js'
 import { ERROR_CODES } from '../shared/errors.js'
 
 /**
- * Decision 28 hook: an exact trusted signup-domain mapping may initialize
- * `defaultAgentTypeId` for a newly created default Workspace. The domain has
- * no continuing routing, membership, selection, or authorization effect and
- * never rewrites an existing Workspace.
+ * An exact trusted signup-domain mapping may add one specialist Agent Seat to
+ * a newly created default Workspace. The application Default Agent remains
+ * primary. The domain has no continuing routing, membership, selection, or
+ * authorization effect and never rewrites an existing Workspace.
  *
  * The mapping is trusted host configuration (env/server option) compiled and
  * validated at boot. It is never sourced from a request body, query string, or
@@ -144,9 +144,9 @@ export function compileSignupAgentDefaults(
 
 /**
  * Exact-hostname lookup consumed ONLY at new-default-workspace initialization.
- * No suffix/wildcard matching, no email-domain input, no fallback rewriting:
- * an unmapped or malformed hostname yields `undefined` and the ordinary boot
- * default applies.
+ * The historical function name is retained for API compatibility; the result
+ * is now an additional specialist Seat, never a replacement Workspace default.
+ * No suffix/wildcard matching or email-domain input is accepted.
  */
 export function resolveSignupDefaultAgentTypeId(
   signupAgentDefaults: SignupAgentDefaults | undefined,

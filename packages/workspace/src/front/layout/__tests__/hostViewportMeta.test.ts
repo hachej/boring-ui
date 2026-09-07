@@ -8,6 +8,10 @@ import { describe, expect, it } from "vitest"
  * `viewport-fit=cover`, so a host that ships the default viewport meta silently
  * disables every inset in the shell. This guards the hosts against that
  * regression, which is otherwise invisible on desktop and in jsdom.
+ *
+ * The same hosts must also opt into `interactive-widget=resizes-content`:
+ * Android Chrome >= 108 otherwise keeps the layout viewport at full height
+ * when the software keyboard opens, putting the composer underneath it.
  */
 function repoRoot(): string {
   let dir = dirname(new URL(import.meta.url).pathname)
@@ -34,5 +38,13 @@ describe("host viewport meta", () => {
 
     expect(meta, `${host} declares no viewport meta`).not.toBeNull()
     expect(meta?.[0]).toContain("viewport-fit=cover")
+  })
+
+  it.each(HOSTS)("%s opts into interactive-widget=resizes-content so the keyboard shrinks the layout viewport", (host) => {
+    const html = readFileSync(join(root, host), "utf8")
+    const meta = html.match(/<meta\s+name="viewport"[^>]*>/)
+
+    expect(meta, `${host} declares no viewport meta`).not.toBeNull()
+    expect(meta?.[0]).toContain("interactive-widget=resizes-content")
   })
 })

@@ -124,7 +124,7 @@ function renderFixture(name: string): ReactNode {
     case "dock-group":
       return (
         <MockWorkspaceApiProvider>
-          <WorkspaceProvider agentTypeId="default" panels={panels} persistenceEnabled={false}>
+          <WorkspaceProvider agentTypeId="default" panels={panels} persistenceEnabled={false} frontPluginHotReload={false}>
             <div className="h-[640px] w-full overflow-hidden rounded border border-border">
               <DockviewShell
                 layout={{

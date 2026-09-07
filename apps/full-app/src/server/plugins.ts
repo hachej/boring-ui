@@ -87,6 +87,15 @@ export const serverPlugins: CoreWorkspaceAgentServerPlugin[] = [
 Object.freeze(serverPlugins)
 
 export async function createFullAppHostPluginComposition(config: CoreConfig) {
+  // Blaxel/current hosted modes have no qualified dedicated-identity private
+  // channel. App-level enablement therefore fails at boot rather than composing
+  // a shared-namespace browser or silently downgrading isolation.
+  if (process.env.BORING_BROWSER_ENABLED === '1') {
+    throw new FullAppPluginCompositionError({
+      field: 'browser.trusted-service-v1',
+      reason: 'hosted-provider-unqualified',
+    })
+  }
   const governance = await createGovernance(config)
   const composition = composeServerPlugins([
     ...createBoringMcpContributions(),

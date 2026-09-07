@@ -21,12 +21,14 @@ export function DetachedPanelPopover({
   return (
     <div
       data-boring-workspace-part="detached-panel-popover"
-      className="absolute z-[120] flex max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl"
+      className="absolute z-[120] flex max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl"
       style={{
         left: position.left,
         top: position.top,
         width: `min(${resolvedSize.width}px, calc(100vw - 2rem))`,
-        height: `min(${resolvedSize.height}px, calc(100vh - 2rem))`,
+        // dvh: `100vh` is the large viewport on mobile, so a popover clamped to
+        // it still runs ~60px past the visible area while the URL bar shows.
+        height: `min(${resolvedSize.height}px, calc(100dvh - 2rem))`,
       }}
       role="dialog"
       aria-label={ariaLabel}

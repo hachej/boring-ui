@@ -74,7 +74,6 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     };
   }),
   SessionManager: { inMemory: () => ({}), create: mockSessionManagerCreate, open: mockSessionManagerOpen },
-  AuthStorage: { inMemory: () => ({}), create: () => ({}) },
   // createHarness always builds a DefaultResourceLoader now so it can inject
   // the workspace-paths system-prompt guideline. Stub the lookups it needs.
   getAgentDir: () => "/tmp/test-agent-dir",
@@ -95,16 +94,12 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
       loadAllSettings: vi.fn(),
     }),
   },
-  ModelRegistry: {
-    inMemory: () => ({
-      find: mockFindModel,
-      // Return every model find() has been called with — keeps the mock
-      // consistent: anything the registry "knows about" is also available.
-      getAvailable: () => mockFindModel.mock.calls.map(([provider, id]: [string, string]) => ({ provider, id })),
-    }),
-    create: () => ({
-      find: mockFindModel,
-      getAvailable: () => mockFindModel.mock.calls.map(([provider, id]: [string, string]) => ({ provider, id })),
+  ModelRuntime: {
+    create: async () => ({
+      getModel: mockFindModel,
+      getAvailableSnapshot: () => mockFindModel.mock.calls.map(([provider, id]: [string, string]) => ({ provider, id })),
+      registerProvider: vi.fn(),
+      refresh: vi.fn(async () => ({})),
     }),
   },
 }));

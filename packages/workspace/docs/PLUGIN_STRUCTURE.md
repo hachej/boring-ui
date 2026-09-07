@@ -43,6 +43,8 @@ plugins/<name>/
   vitest.config.ts
 ```
 
+For a server-only trusted package using selected-Agent tool factories and joined session cleanup, see [`plugins/sandbox`](../../../plugins/sandbox/README.md). It intentionally has no front entrypoint.
+
 App/internal plugins may expose boot-time server contributions such as routes,
 agent tools, system prompts, provisioning, and Pi resources. Server changes
 require restarting the workspace process.

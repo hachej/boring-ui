@@ -45,6 +45,40 @@ describe('useAddressedAgentSelection', () => {
     expect(result.current.selectedAgentTypeId).toBe('review/agent')
   })
 
+  test('selects the configured regular default without changing fleet order', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse([
+      { agentTypeId: 'alpha', label: 'Alpha' },
+      { agentTypeId: 'general', label: 'General' },
+    ]))
+
+    const { result } = renderHook(() => useAddressedAgentSelection({
+      preferredAgentTypeId: 'general',
+      fetch: fetchMock as unknown as typeof fetch,
+      enabled: true,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.agents.map((agent) => agent.agentTypeId)).toEqual(['alpha', 'general'])
+    expect(result.current.selectedAgentTypeId).toBe('general')
+  })
+
+  test('keeps an unavailable persisted default selected so execution fails closed', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse([
+      { agentTypeId: 'alpha', label: 'Alpha' },
+      { agentTypeId: 'reviewer', label: 'Reviewer' },
+    ]))
+
+    const { result } = renderHook(() => useAddressedAgentSelection({
+      preferredAgentTypeId: 'retired-agent',
+      fetch: fetchMock as unknown as typeof fetch,
+      enabled: true,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.agents.map((agent) => agent.agentTypeId)).toEqual(['alpha', 'reviewer'])
+    expect(result.current.selectedAgentTypeId).toBe('retired-agent')
+  })
+
   test('does not discover agents without the explicit opt-in', async () => {
     const fetchMock = vi.fn()
     const { result } = renderHook(() => useAddressedAgentSelection({

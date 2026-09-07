@@ -5,6 +5,7 @@ import type {
   QueuedUserMessage,
   ThinkingLevel,
 } from '../chat'
+import type { SessionArchiveFilter } from '../session'
 import type { AgentSessionEvent } from './events'
 
 export type WorkspaceScopeId = string
@@ -51,6 +52,42 @@ export interface AgentScopeVerifier {
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
 }
 
+/**
+ * Product-owned access decision for one deployed Agent in one verified scope.
+ * The Host consumes this decision before session lookup, runtime binding, or
+ * effects. A host without a resolver preserves the legacy all-deployed policy.
+ */
+export type AgentAccessDecision =
+  | { readonly state: 'allowed'; readonly seatId?: string }
+  | { readonly state: 'not-available'; readonly reason: 'not-deployed' | 'not-seated' }
+  | {
+      readonly state: 'entitlement-denied'
+      readonly seatId: string
+      readonly denial: 'subscription-required' | 'forbidden'
+    }
+  | { readonly state: 'policy-unavailable'; readonly retryAfterSeconds?: number }
+
+export type AgentAccessOperation =
+  | 'catalog'
+  | 'session.list'
+  | 'session.read'
+  | 'session.create'
+  | 'session.mutate'
+  | 'runtime.bind'
+  | 'runtime.effect'
+  | 'stream.event'
+
+export interface ResolveAgentAccessInput {
+  readonly authorizedScope: AuthorizedAgentScope
+  readonly verifiedClaim: VerifiedAgentScopeClaim
+  readonly agentTypeId: string
+  readonly operation: AgentAccessOperation
+}
+
+export type ResolveAgentAccess = (
+  input: ResolveAgentAccessInput,
+) => Promise<AgentAccessDecision>
+
 export interface AgentSessionRef {
   readonly agentTypeId: string
   readonly sessionId: string
@@ -77,6 +114,8 @@ export interface AuthorizedAgentSessionQuery {
   readonly agentTypeId?: string
   readonly cursor?: string
   readonly limit?: number
+  /** Defaults to `all`; archiving is a visibility flag, not a listing default. */
+  readonly archived?: SessionArchiveFilter
 }
 
 export type AgentSessionActivity = 'idle' | 'running' | 'aborting' | 'error'
@@ -92,6 +131,8 @@ export interface AgentSessionSummary {
   readonly nativeSessionId?: string
   /** Native transcript metadata used to gate rename until a reply exists. */
   readonly hasAssistantReply?: boolean
+  /** Visibility only: present (true) exactly while the session is archived. */
+  readonly archived?: boolean
 }
 
 export interface AgentSessionPage {
@@ -126,6 +167,18 @@ export interface RenameAgentSessionInput {
   readonly title: string
 }
 
+/**
+ * Archive is NOT delete: it hides the session from a default listing and
+ * nothing else. The transcript stays exactly where it was, and `archived:
+ * false` puts the row back.
+ */
+export interface SetAgentSessionArchivedInput {
+  readonly scope: AuthorizedAgentScope
+  readonly ref: AgentSessionRef
+  readonly requestId: string
+  readonly archived: boolean
+}
+
 export interface DeleteAgentSessionInput {
   readonly scope: AuthorizedAgentScope
   readonly ref: AgentSessionRef
@@ -158,6 +211,11 @@ export type IdempotentAgentSend = AgentPromptCommand | AgentFollowUpCommand
 
 export interface IdempotentAgentControl {
   readonly requestId: string
+}
+
+export interface IdempotentInterruptControl extends IdempotentAgentControl {
+  /** Abort-and-queue policy specific to interrupt commands. */
+  readonly queueAction?: 'hold' | 'resume'
 }
 
 export interface IdempotentQueueClear extends IdempotentAgentControl {
@@ -197,19 +255,25 @@ export interface AgentSessionConnection {
   readonly ref: AgentSessionRef
   readonly events: AsyncIterable<AgentSessionEvent>
   send(input: IdempotentAgentSend): Promise<AgentSendReceipt>
-  interrupt(input: IdempotentAgentControl): Promise<CommandReceipt>
+  interrupt(input: IdempotentInterruptControl): Promise<CommandReceipt>
   stop(input: IdempotentAgentControl): Promise<StopReceipt>
   clearQueue(input: IdempotentQueueClear): Promise<QueueClearReceipt>
   close(): Promise<void>
 }
 
 export interface AgentGateway {
+  authorizeAgentAccess?(input: {
+    readonly scope: AuthorizedAgentScope
+    readonly agentTypeId: string
+    readonly operation: AgentAccessOperation
+  }): Promise<void>
   listAgents(input: ListAgentsInput): Promise<readonly AgentSummary[]>
   listSessions(input: AuthorizedAgentSessionQuery): Promise<AgentSessionPage>
   createSession(input: CreateAgentSessionInput): Promise<AgentSessionRef>
   connectSession(input: ConnectAgentSessionInput): Promise<AgentSessionConnection>
   readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
   renameSession(input: RenameAgentSessionInput): Promise<AgentSessionSummary>
+  setSessionArchived(input: SetAgentSessionArchivedInput): Promise<AgentSessionSummary>
   deleteSession(input: DeleteAgentSessionInput): Promise<void>
   close(): Promise<void>
 }

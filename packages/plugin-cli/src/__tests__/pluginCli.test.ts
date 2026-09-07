@@ -359,3 +359,43 @@ test("scaffold produces package.json with correct pi.slashCommands shape", async
   expect(cmd.title).toBeUndefined()
   expect(cmd.action).toBeUndefined()
 })
+
+// Golden: the panel id the scaffolded front registers MUST be the panel id the
+// scaffolded agent command opens. These live in two separate canonical templates
+// (templates/front-canonical.tsx and templates/agent-canonical.ts), so it is easy
+// to edit one and silently break every freshly scaffolded plugin: the slash
+// command would open a component id that was never registered. This test scaffolds
+// a real plugin into a temp dir and compares the two ends string-for-string, so
+// drift in EITHER template fails here.
+test("scaffolded agent template opens the panel id the front template registers", async () => {
+  const root = await tempDir("boring-plugin-panel-id-")
+  const workspaceRoot = join(root, "workspace")
+  await mkdir(workspaceRoot, { recursive: true })
+
+  const name = "panel-id-probe"
+  await runPluginCli(["scaffold", name, workspaceRoot], { cwd: workspaceRoot })
+
+  const pluginDir = join(workspaceRoot, ".pi", "extensions", name)
+  const front = await readFile(join(pluginDir, "front", "index.tsx"), "utf8")
+  const agent = await readFile(join(pluginDir, "agent", "index.ts"), "utf8")
+
+  // --- front: the id actually handed to definePlugin({ panels: [...] }) ---
+  const frontConst = /const\s+MAIN_PANEL_ID\s*=\s*"([^"]+)"/.exec(front)
+  expect(frontConst, "front/index.tsx must declare `const MAIN_PANEL_ID = \"…\"`").not.toBeNull()
+  const registeredPanelId = frontConst![1]!
+  // ...and it must really be the registered panel, not just a stray constant.
+  expect(front).toMatch(/panels:\s*\[[\s\S]*\bid:\s*MAIN_PANEL_ID\b/)
+
+  // --- agent: the component id passed to openPanel() ---
+  const agentConst = /const\s+PANEL_ID\s*=\s*"([^"]+)"/.exec(agent)
+  expect(agentConst, "agent/index.ts must declare `const PANEL_ID = \"…\"`").not.toBeNull()
+  const openedPanelId = agentConst![1]!
+  expect(agent).toMatch(/openPanel\(\{[\s\S]*component:\s*PANEL_ID\b/)
+
+  // --- the defect this guards: the two must be identical ---
+  expect(openedPanelId).toBe(registeredPanelId)
+
+  // Canonical convention, matching first-party plugins (e.g. bi-dashboard.panel,
+  // ccusage-dashboard.panel) and templates/front-file-visualizer.tsx.
+  expect(registeredPanelId).toBe(`${name}.panel`)
+})

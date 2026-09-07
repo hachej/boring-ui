@@ -145,7 +145,8 @@ describe("stable session id — one session, one transcript", () => {
       const harness = makeHarness(cwd);
       const store = harness.sessions as PiSessionStore;
       const { id } = await store.create(WORKSPACE_CTX);
-      appendTurn(await firstPromptManager(harness, cwd, id), "hello", "hi");
+      const manager = await firstPromptManager(harness, cwd, id);
+      appendTurn(manager, "hello", "hi");
 
       // The service gates rename on both of these; the wrapper supplied neither.
       const detail = await store.load(WORKSPACE_CTX, id);
@@ -153,8 +154,16 @@ describe("stable session id — one session, one transcript", () => {
 
       await expect(store.rename!(WORKSPACE_CTX, id, "Renamed by the user"))
         .resolves.toMatchObject({ title: "Renamed by the user" });
-      await expect(coldStore(harness, cwd).load(WORKSPACE_CTX, id))
-        .resolves.toMatchObject({ title: "Renamed by the user" });
+
+      // Native Pi can still append a later auto-derived title on another branch.
+      // The persisted user-authority marker, not append order, decides every projection.
+      SessionManager.open(manager.getSessionFile()!, store.getSessionDir(), cwd)
+        .appendSessionInfo("Auto title after next turn");
+      const restarted = coldStore(harness, cwd);
+      await expect(restarted.load(WORKSPACE_CTX, id))
+        .resolves.toMatchObject({ title: "Renamed by the user", nativeSessionId: id });
+      await expect(restarted.list(WORKSPACE_CTX))
+        .resolves.toEqual([expect.objectContaining({ id, title: "Renamed by the user", nativeSessionId: id })]);
     });
   }, 20_000);
 

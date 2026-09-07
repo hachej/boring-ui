@@ -3,7 +3,7 @@
 Status: active package implementation authority under Decision 28.
 
 Product ordering and final acceptance remain in
-[`../../../../391/plan.md`](../../../../391/plan.md). This file owns the
+[`../../../../../plans/agent-runtime/fleet-and-environments/plan.md`](../../../../../plans/agent-runtime/fleet-and-environments/plan.md). This file owns the
 reusable Agent, Workspace, `boring-bash`, `boring-sandbox`, and CLI package
 contracts. The former [`PLAN.md`](PLAN.md), [`HANDOFF.md`](HANDOFF.md), and
 [`TODO.md`](TODO.md) are Decision 26 planning snapshots and non-dispatchable

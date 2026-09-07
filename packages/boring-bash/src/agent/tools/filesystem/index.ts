@@ -242,7 +242,8 @@ function withBoundFilesystemPromptGuidance(promptSnippet: string | undefined, fi
   if (filesystemIds.length === 0 && !dynamicBindings) return promptSnippet
   const target = filesystemIds.length > 0 ? ` (${filesystemIds.join(', ')})` : ''
   const guidance = [
-    'Named filesystem bindings: file tools default to the user workspace when filesystem is omitted.',
+    'Named filesystem bindings are logical filesystems exposed through first-class file tools; they are not shell paths.',
+    'File tools default to the user workspace when filesystem is omitted.',
     `Use the filesystem parameter explicitly for named context${target}, and start browsing at / unless told otherwise.`,
     'A binding may be readonly or readwrite; do not use path prefixes like filesystem:/x to switch filesystem.',
   ].join('\n')
@@ -356,7 +357,11 @@ function buildHostFilesystemTools(
     adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),
     adaptPiTool(createEditToolDefinition(cwd, { operations: ops.edit })),
     adaptPiTool(createFindToolDefinition(cwd, { operations: ops.find })),
-    adaptPiTool(createGrepToolDefinition(cwd, { operations: ops.grep })),
+    // Pi's grep tool only routes isDirectory/readFile through `operations`;
+    // the ripgrep child process itself runs on the host. Anchor it at the
+    // storage root, otherwise every search targets the runtime path
+    // (e.g. /workspace/...) which does not exist outside the sandbox.
+    adaptPiTool(createGrepToolDefinition(storageRoot, { operations: ops.grep })),
     adaptPiTool(createLsToolDefinition(cwd, { operations: ops.ls })),
   ]
 }

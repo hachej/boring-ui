@@ -17,6 +17,7 @@ export {
 } from './piSessionSearch'
 export {
   InitialDraftAutoSubmitGuard,
+  PiComposerSubmissionCoordinator,
   createPiComposerPolicyController,
   readPiComposerSettings,
   scopedComposerStorageKey,
@@ -24,8 +25,11 @@ export {
   modelOptionsForSelection,
   writePiComposerShowThoughts,
   writePiComposerThinking,
+  type PiComposerBeforeSubmitResult,
   type PiComposerBlockedReason,
+  type PiComposerHandledSubmit,
   type PiComposerPolicyOptions,
+  type PiComposerReplacementSubmit,
   type PiComposerSettings,
   type PiComposerSettingsStorageOptions,
   type PiComposerSubmitInput,

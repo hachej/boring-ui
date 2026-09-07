@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
@@ -8,6 +8,8 @@ import {
   createDirectProvisioningAdapter,
   createLocalProvisioningAdapter,
 } from '../provisioningAdapter'
+
+const ENOENT_CODE = 'ENOENT'
 
 async function tempRoot(prefix: string): Promise<string> {
   return await mkdtemp(join(tmpdir(), prefix))
@@ -101,6 +103,20 @@ test('direct adapter resolveInstallSource returns runtime-visible local paths an
     fingerprint: 'sha256:abc',
   })).resolves.toBe(`${sourceRoot}/`)
   expect(adapter.getRuntimeCacheRoot()).toBe(paths.cache)
+})
+
+test('local adapter rejects escaping write ancestors before outside mutation', async () => {
+  const workspaceRoot = await tempRoot('boring-local-write-workspace-')
+  const outsideRoot = await tempRoot('boring-local-write-outside-')
+  await writeFile(join(outsideRoot, 'sentinel.txt'), 'untouched\n')
+  await symlink(outsideRoot, join(workspaceRoot, '.agents'))
+  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
+
+  await expect(adapter.workspaceFs.mkdir('.agents/skills/nested')).rejects.toMatchObject({ reason: 'path-escape' })
+  await expect(adapter.workspaceFs.writeText('.agents/other/nested/file.txt', 'escaped\n')).rejects.toMatchObject({ reason: 'path-escape' })
+  expect(await readdir(outsideRoot)).toEqual(['sentinel.txt'])
+  await expect(stat(join(outsideRoot, 'skills'))).rejects.toMatchObject({ code: ENOENT_CODE })
+  await expect(stat(join(outsideRoot, 'other'))).rejects.toMatchObject({ code: ENOENT_CODE })
 })
 
 test('local adapter exists() treats an out-of-workspace bin symlink as present (no realpath-escape throw)', async () => {

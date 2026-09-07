@@ -1,7 +1,12 @@
 import { randomUUID, createHash } from 'node:crypto'
-import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
+import type {
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import type {
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceMember,
   WorkspaceInvite,
   WorkspaceRuntime,
@@ -17,7 +22,7 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
-import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
+import { parseRequiredDefaultAgentTypeId } from '../../defaultAgentType.js'
 import type { LocalUserStore } from './LocalUserStore.js'
 
 function toWorkspace(workspace: Workspace): Workspace {
@@ -26,6 +31,7 @@ function toWorkspace(workspace: Workspace): Workspace {
 
 export class LocalWorkspaceStore implements WorkspaceStore {
   private workspaces = new Map<string, Workspace>()
+  private agentSeats = new Map<string, WorkspaceAgentSeat>() // key: `${workspaceId}:${agentTypeId}`
   private members = new Map<string, WorkspaceMember>() // key: `${workspaceId}:${userId}`
   private invites = new Map<string, WorkspaceInvite>()
   private runtimes = new Map<string, WorkspaceRuntime>()
@@ -35,14 +41,32 @@ export class LocalWorkspaceStore implements WorkspaceStore {
 
   constructor(private userStore: LocalUserStore) {}
 
-  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
-    const id = opts?.id ?? randomUUID()
-    const existing = opts?.id ? this.workspaces.get(id) : undefined
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const additionalAgentSeat = opts.additionalAgentSeat
+      ? {
+          agentTypeId: parseRequiredDefaultAgentTypeId(opts.additionalAgentSeat.agentTypeId),
+          source: opts.additionalAgentSeat.source,
+        }
+      : undefined
+    const id = opts.id ?? randomUUID()
+    const existing = opts.id ? this.workspaces.get(id) : undefined
     if (existing) {
       assertWorkspaceTypeIdMatches(existing.workspaceTypeId, workspaceTypeId)
       return toWorkspace(existing)
+    }
+
+    // Mirror idx_workspaces_default_per_user_app (#1463): at most one active
+    // default per (createdBy, appId). Lets Local/e2e-backed tests catch the
+    // same duplicate-default collisions Postgres's partial unique index does,
+    // instead of silently allowing what production would reject.
+    if (opts?.isDefault) {
+      const collision = [...this.workspaces.values()].some((w) =>
+        !w.deletedAt && w.createdBy === userId && w.appId === appId && w.isDefault)
+      if (collision) {
+        throw new Error('duplicate key value violates unique constraint "idx_workspaces_default_per_user_app"')
+      }
     }
 
     const now = new Date().toISOString()
@@ -66,6 +90,24 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       role: 'owner',
       createdAt: now,
     })
+    this.agentSeats.set(`${ws.id}:${defaultAgentTypeId}`, {
+      seatId: randomUUID(),
+      workspaceId: ws.id,
+      agentTypeId: defaultAgentTypeId,
+      source: opts.initialAgentSeatSource ?? 'generic-default',
+      enrolledByUserId: opts.enrolledByUserId ?? userId,
+      createdAt: now,
+    })
+    if (additionalAgentSeat && additionalAgentSeat.agentTypeId !== defaultAgentTypeId) {
+      this.agentSeats.set(`${ws.id}:${additionalAgentSeat.agentTypeId}`, {
+        seatId: randomUUID(),
+        workspaceId: ws.id,
+        agentTypeId: additionalAgentSeat.agentTypeId,
+        source: additionalAgentSeat.source,
+        enrolledByUserId: opts.enrolledByUserId ?? userId,
+        createdAt: now,
+      })
+    }
     this.runtimes.set(ws.id, {
       workspaceId: ws.id,
       spriteUrl: null,
@@ -104,6 +146,83 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return result
   }
 
+  async listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]> {
+    return [...this.agentSeats.values()]
+      .filter((seat) => seat.workspaceId === workspaceId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt)
+        || left.agentTypeId.localeCompare(right.agentTypeId))
+      .map((seat) => ({ ...seat }))
+  }
+
+  async hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    return this.agentSeats.has(`${workspaceId}:${parsedAgentTypeId}`)
+  }
+
+  async addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat> {
+    if (!this.workspaces.has(workspaceId)) throw new Error(`Workspace ${workspaceId} was not found`)
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const key = `${workspaceId}:${parsedAgentTypeId}`
+    const existing = this.agentSeats.get(key)
+    if (existing) return { ...existing }
+    const seat: WorkspaceAgentSeat = {
+      seatId: randomUUID(),
+      workspaceId,
+      agentTypeId: parsedAgentTypeId,
+      source,
+      enrolledByUserId: enrolledByUserId ?? null,
+      createdAt: new Date().toISOString(),
+    }
+    this.agentSeats.set(key, seat)
+    return { ...seat }
+  }
+
+  async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
+    let count = 0
+    for (const workspace of this.workspaces.values()) {
+      if (workspace.appId === appId && workspace.defaultAgentTypeId == null) count += 1
+    }
+    return count
+  }
+
+  async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    let updated = 0
+    for (const [id, workspace] of this.workspaces) {
+      if (workspace.appId !== appId || workspace.defaultAgentTypeId != null) continue
+      this.workspaces.set(id, { ...workspace, defaultAgentTypeId })
+      const seatKey = `${id}:${defaultAgentTypeId}`
+      if (!this.agentSeats.has(seatKey)) {
+        this.agentSeats.set(seatKey, {
+          seatId: randomUUID(),
+          workspaceId: id,
+          agentTypeId: defaultAgentTypeId,
+          source: 'migration-default',
+          enrolledByUserId: workspace.createdBy,
+          createdAt: new Date().toISOString(),
+        })
+      }
+      updated += 1
+    }
+    return updated
+  }
+
+  async setDefaultAgentTypeId(id: string, expected: string, value: string): Promise<Workspace | null> {
+    const expectedDefaultAgentTypeId = parseRequiredDefaultAgentTypeId(expected)
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    const workspace = this.workspaces.get(id)
+    if (!workspace || workspace.deletedAt) return null
+    if (workspace.defaultAgentTypeId !== expectedDefaultAgentTypeId) return null
+    const next = { ...workspace, defaultAgentTypeId }
+    this.workspaces.set(id, next)
+    return toWorkspace(next)
+  }
+
   async get(id: string): Promise<Workspace | null> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return null
@@ -132,12 +251,64 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return toWorkspace(updated)
   }
 
+  // Plain, unconditional soft-delete primitive — see the matching comment on
+  // PostgresWorkspaceStore.delete(). Callers that need the #1463 guarantee
+  // use deleteAndRecreateDefaultIfEmpty() below.
   async delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }
     ws.deletedAt = new Date().toISOString()
     this.workspaces.set(id, ws)
     return { removed: true }
+  }
+
+  // #1463: single-process mirror of PostgresWorkspaceStore's transactional
+  // version — see the interface doc on WorkspaceStore.deleteAndRecreateDefaultIfEmpty.
+  // LocalWorkspaceStore has no real concurrency, but it still honors the
+  // all-or-nothing contract: if the replacement create() throws (for example
+  // the idx_workspaces_default_per_user_app mirror above rejecting a
+  // duplicate live default), the soft-delete is rolled back in-memory rather
+  // than left committed with no replacement.
+  async deleteAndRecreateDefaultIfEmpty(
+    id: string,
+    actingUserId: string,
+    recreate: {
+      name: string
+      defaultAgentTypeId: string
+      initialAgentSeatSource?: WorkspaceAgentSeatSource
+      enrolledByUserId?: string
+    },
+  ): Promise<{
+    removed: boolean
+    code?: typeof ERROR_CODES.NOT_FOUND
+    recreated: Workspace | null
+  }> {
+    const ws = this.workspaces.get(id)
+    if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null }
+
+    ws.deletedAt = new Date().toISOString()
+    this.workspaces.set(id, ws)
+
+    const remaining = [...this.workspaces.values()].filter((w) =>
+      !w.deletedAt && w.appId === ws.appId && this.members.has(`${w.id}:${actingUserId}`))
+
+    if (remaining.length > 0) return { removed: true, recreated: null }
+
+    try {
+      const recreated = await this.create(actingUserId, recreate.name, ws.appId, {
+        isDefault: true,
+        defaultAgentTypeId: recreate.defaultAgentTypeId,
+        initialAgentSeatSource: recreate.initialAgentSeatSource,
+        enrolledByUserId: recreate.enrolledByUserId,
+      })
+      return { removed: true, recreated }
+    } catch (err) {
+      // Roll back the soft-delete: never leave a committed delete with no
+      // replacement when the replacement insert itself failed.
+      ws.deletedAt = null
+      this.workspaces.set(id, ws)
+      throw err
+    }
   }
 
   async getWorkspacesWhereSoleOwner(userId: string): Promise<Workspace[]> {

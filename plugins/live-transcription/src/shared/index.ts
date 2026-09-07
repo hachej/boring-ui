@@ -39,6 +39,7 @@ export type LiveTranscriptState = "setup" | "active" | "stopping" | "complete" |
 export interface LiveTranscriptStartResponse {
   liveSessionId: string
   transcriptPath: string
+  audioPath?: string
   socketNonce: string
   reviewIntervalMs: number
   state: "setup"
@@ -48,6 +49,7 @@ export interface LiveTranscriptStatusResponse {
   active: boolean
   liveSessionId?: string
   transcriptPath?: string
+  audioPath?: string
   originatingSessionId?: string
   state?: LiveTranscriptState
   outcome?: LiveTranscriptErrorCode
@@ -57,6 +59,7 @@ export interface LiveTranscriptStatusResponse {
 export interface LiveTranscriptTerminalResponse {
   liveSessionId: string
   transcriptPath: string
+  audioPath?: string
   state: "complete" | "interrupted"
   outcome?: LiveTranscriptErrorCode
   projectionRevision: number

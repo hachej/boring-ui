@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  AuthStorage,
   createAgentSession,
   createExtensionRuntime,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { PiChatEvent } from '../../../shared/chat'
 import type { SessionStore } from '../../../shared/session'
@@ -15,7 +15,7 @@ import { createPiAgentSessionAdapter } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
 
-type ProviderConfig = Parameters<ModelRegistry['registerProvider']>[1]
+type ProviderConfig = Parameters<ModelRuntime['registerProvider']>[1]
 type ProviderStream = ReturnType<NonNullable<ProviderConfig['streamSimple']>>
 type ProviderStreamEvent = {
   type: string
@@ -105,7 +105,9 @@ function createEmptyResourceLoader() {
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),
     getSystemPrompt: () => undefined,
+    getSystemPromptSource: () => undefined,
     getAppendSystemPrompt: () => [],
+    getAppendSystemPromptSources: () => [],
     extendResources: () => {},
     reload: async () => {},
   }
@@ -124,10 +126,13 @@ async function createRealPiAdapter(options: RealPiAdapterOptions = {}) {
   const providerCalls: unknown[] = []
   const toolCalls: Array<{ toolCallId: string; params: Record<string, unknown> }> = []
   const toolCallWaiters: Array<() => void> = []
-  const authStorage = AuthStorage.inMemory()
-  const modelRegistry = ModelRegistry.inMemory(authStorage)
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  })
 
-  modelRegistry.registerProvider('boring-test', {
+  modelRuntime.registerProvider('boring-test', {
     name: 'Boring Test Provider',
     api: 'boring-test',
     baseUrl: 'https://example.invalid',
@@ -181,7 +186,8 @@ async function createRealPiAdapter(options: RealPiAdapterOptions = {}) {
     },
   })
 
-  const model = modelRegistry.find('boring-test', 'loop-model')
+  await modelRuntime.refresh({ allowNetwork: false })
+  const model = modelRuntime.getModel('boring-test', 'loop-model')
   expect(model).toBeDefined()
 
   const probeTool: ToolDefinition = {
@@ -221,8 +227,7 @@ async function createRealPiAdapter(options: RealPiAdapterOptions = {}) {
 
   const { session } = await createAgentSession({
     cwd: process.cwd(),
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     model,
     noTools: 'builtin',
     customTools: [probeTool],
@@ -296,6 +301,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     const { adapter, providerCalls, toolCalls } = await createRealPiAdapter()
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -352,6 +358,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -411,6 +418,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -470,6 +478,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -491,7 +500,8 @@ describe('HarnessPiChatService real Pi loop', () => {
       event.status === 'aborted'
     ))
 
-    expect(providerCalls).toHaveLength(2)
+    // Pi 0.84 stops before a second provider request once tool execution is aborted.
+    expect(providerCalls).toHaveLength(1)
     expect(toolCalls).toEqual([{ toolCallId: 'tool-abort', params: { query: 'wait-abort' } }])
     const toolResults = events.filter((event) => event.type === 'tool-result')
     expect(toolResults).toHaveLength(1)
@@ -507,6 +517,7 @@ describe('HarnessPiChatService real Pi loop', () => {
       event.messageId === 'assistant-after-abort' &&
       event.kind === 'text'
     )).toBe(false)
+    expect(events.some((event) => event.type === 'error')).toBe(false)
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'tool-call', messageId: 'assistant-abort-tool', toolCallId: 'tool-abort', toolName: 'probe_tool' }),
       expect.objectContaining({ type: 'agent-end', status: 'aborted' }),
@@ -525,6 +536,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -633,6 +645,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -678,8 +691,10 @@ describe('HarnessPiChatService real Pi loop', () => {
       event.status === 'aborted'
     ))
 
-    expect(providerCalls).toHaveLength(2)
+    // Pi 0.84 stops before a second provider request once tool execution is aborted.
+    expect(providerCalls).toHaveLength(1)
     expect(toolCalls).toEqual([{ toolCallId: 'tool-stop', params: { query: 'wait-abort' } }])
+    expect(events.some((event) => event.type === 'error')).toBe(false)
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'queue-updated',
@@ -752,6 +767,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -771,6 +787,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     // This simulates browser/service reload over the same live Pi session. It
     // does not prove JSONL cold-restart persistence.
     const reloadedService = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),

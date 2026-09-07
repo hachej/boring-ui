@@ -9,7 +9,7 @@ import {
   WORKSPACE_COMMAND_NOTIFY_EVENT,
   type CommandNotifyPayload,
 } from '../../shared/agentPluginEvents'
-import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
+import type { PiChatEvent, PiChatStatus, QueuedUserMessage } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
@@ -37,6 +37,7 @@ import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } fr
 import type { PiChatRuntimeNotice } from './pi/piChatReducer'
 import {
   InitialDraftAutoSubmitGuard,
+  PiComposerSubmissionCoordinator,
   createPiComposerPolicyController,
   modelOptionsForSelection,
   readPiComposerSettings,
@@ -44,6 +45,7 @@ import {
   writePiComposerShowThoughts,
   writePiComposerThinking,
   type ActiveSessionStorageLike,
+  type PiComposerBeforeSubmitResult,
 } from './session'
 import { SessionList, usePiSessions, type UsePiSessionsOptions } from './session'
 import {
@@ -60,6 +62,7 @@ import type {
 } from './components/MessageMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
+import { LargePromptSpillCache, spillLargePrompt } from './largePromptSpill'
 import {
   errorMessage,
   headersContentKey,
@@ -84,6 +87,12 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+const RESUME_QUEUED_ERROR_PREFIX = 'resume-queued-error:'
+
+function requestHeaderValue(headers: Record<string, string | undefined> | undefined, name: string): string | undefined {
+  const target = name.toLowerCase()
+  return Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === target)?.[1]
+}
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -96,6 +105,8 @@ export interface ChatSubmitContext {
   sessionId: string
   source: ChatSubmitSource
 }
+
+export type ChatBeforeSubmitResult = PiComposerBeforeSubmitResult
 
 interface ComposerSendPayload {
   text: string
@@ -176,7 +187,11 @@ export interface PiChatPanelProps<
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
-  onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
+  /** Persist oversized text prompts through the workspace upload route and send a compact path reference. Enabled by default. */
+  spillLargePrompts?: boolean
+  /** Character threshold for generic prompt spilling. Defaults to 12,000. */
+  largePromptThresholdChars?: number
+  onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => ChatBeforeSubmitResult | Promise<ChatBeforeSubmitResult>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
   onComposerWarning?: (message: string) => void
@@ -242,6 +257,8 @@ export function PiChatPanel<
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
   onSessionReset,
+  spillLargePrompts = true,
+  largePromptThresholdChars,
   onBeforeSubmit,
   onReloadAgentPlugins,
   onCommandResult,
@@ -395,6 +412,10 @@ export function PiChatPanel<
   const [draft, setDraft] = useState(() => initialDraft ?? '')
   const draftRef = useRef(draft)
   draftRef.current = draft
+  const [queueMutationPending, setQueueMutationPending] = useState(false)
+  const [resumeQueuedPendingSessionIds, setResumeQueuedPendingSessionIds] = useState<Set<string>>(() => new Set())
+  const [resumeQueuedErrorsBySessionId, setResumeQueuedErrorsBySessionId] = useState<Map<string, PanelNotice>>(() => new Map())
+  const resumeQueuedInFlightRef = useRef(new Map<string, Promise<unknown>>())
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -470,6 +491,29 @@ export function PiChatPanel<
   )
 
   const activeChatSessionId = selectedChatState?.sessionId
+  const activeChatIdentity = `${agentTypeId}\u0000${workspaceId ?? ''}\u0000${storageScope ?? ''}\u0000${activeChatSessionId ?? ''}`
+  const selectedPiSessionRef = useRef(selectedPiSession)
+  const activeChatIdentityRef = useRef(activeChatIdentity)
+  const largePromptSpillCacheRef = useRef(new LargePromptSpillCache())
+  const submissionCoordinatorRef = useRef(new PiComposerSubmissionCoordinator())
+  selectedPiSessionRef.current = selectedPiSession
+  activeChatIdentityRef.current = activeChatIdentity
+  const isPolicySessionActive = useCallback(() => (
+    selectedPiSessionRef.current === selectedPiSession &&
+    activeChatIdentityRef.current === activeChatIdentity
+  ), [activeChatIdentity, selectedPiSession])
+  const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
+  const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
+  // Resume-queued pending/error/in-flight state is keyed by bare session id.
+  // Reset it when the owning agent/storage scope changes so state cannot leak
+  // into a different session that reuses the same id.
+  const chatScopeKey = `${externalSessionId ? 'external' : 'managed'}\u0000${agentTypeId}\u0000${storageScope ?? ''}`
+  useEffect(() => {
+    setQueueMutationPending(false)
+    setResumeQueuedPendingSessionIds(new Set())
+    setResumeQueuedErrorsBySessionId(new Map())
+    resumeQueuedInFlightRef.current.clear()
+  }, [chatScopeKey])
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
@@ -516,7 +560,7 @@ export function PiChatPanel<
           dismissible: true,
         }]
       : []
-    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
+    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...(resumeQueuedError ? [resumeQueuedError] : []), ...localNotices]
       .filter((notice) => !dismissedNoticeIds.has(notice.id))
     // A terminal chat error (history failed to load, no messages present)
     // already explains why the agent looks unreachable. Showing
@@ -525,7 +569,7 @@ export function PiChatPanel<
     // but only when there's genuinely no history, matching the gate in
     // RuntimeNotices/PiConversationSurface (see terminalChatErrors.ts).
     return filterCompetingNoiseNotices(combined, messages.length === 0)
-  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, selectedChatState, sessionsError])
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, resumeQueuedError, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {
@@ -537,6 +581,15 @@ export function PiChatPanel<
   const clearLocalNotice = useCallback((id: string) => {
     setDismissedNoticeIds((previous) => new Set(previous).add(id))
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
+    if (id.startsWith(RESUME_QUEUED_ERROR_PREFIX)) {
+      const sessionId = id.slice(RESUME_QUEUED_ERROR_PREFIX.length)
+      setResumeQueuedErrorsBySessionId((previous) => {
+        if (!previous.has(sessionId)) return previous
+        const next = new Map(previous)
+        next.delete(sessionId)
+        return next
+      })
+    }
   }, [])
 
   // Remove a notice so it can be shown again later (unlike clearLocalNotice, which
@@ -803,15 +856,31 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
+      isActiveSession: isPolicySessionActive,
+      submissionCoordinator: submissionCoordinatorRef.current,
+      submissionIdentity: activeChatIdentity,
+      onQueueMutationPending: setQueueMutationPending,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
       },
       onBeforeSubmit: onBeforeSubmit
-        ? async (draft, context) => {
-            const result = await onBeforeSubmit(draft, { ...context, sessionId: activeChatSessionId, source: context.source ?? 'composer' })
-            return result !== false
-          }
+        ? async (draft, context) => await onBeforeSubmit(draft, {
+            ...context,
+            sessionId: activeChatSessionId,
+            source: context.source ?? 'composer',
+          })
         : undefined,
+      onTransformPrompt: async (text) => await spillLargePrompt(text, {
+        sessionId: activeChatSessionId,
+        destinationIdentity: `${apiBaseUrl ?? ''}\u0000${workspaceId ?? ''}\u0000${headersContentKey(requestHeaders)}`,
+        cache: largePromptSpillCacheRef.current,
+        enabled: spillLargePrompts,
+        thresholdChars: largePromptThresholdChars,
+        apiBaseUrl,
+        workspaceRequestId: requestHeaderValue(requestHeaders, 'x-boring-workspace-id'),
+        requestHeaders,
+        fetch,
+      }),
       onCommandResult: (message) => {
         onCommandResult?.(message)
         addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
@@ -826,11 +895,21 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, apiBaseUrl, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, fetch, isPolicySessionActive, largePromptThresholdChars, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, requestHeaders, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, spillLargePrompts, submitThinkingControl, suppressPreSubmitCancelledWarning, workspaceId])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
   // action for a specific code.
+  const surfaceHandledSubmit = useCallback((message?: string) => {
+    if (!message) return
+    addLocalNotice({
+      id: `handled-submit:${Date.now()}`,
+      level: 'info',
+      text: message,
+      dismissible: true,
+    })
+  }, [addLocalNotice])
+
   const surfaceRunRejected = useCallback((error: unknown) => {
     const errorCode = piChatErrorCode(error)
     // Un-dismiss first: if the user dismissed a prior rejection, the id sits in
@@ -872,6 +951,7 @@ export function PiChatPanel<
       if (result.type === 'prompt' || result.type === 'followup') {
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
+      if (result.type === 'handled') surfaceHandledSubmit(result.message)
       if (result.type === 'prompt' && activeChatSessionId) {
         onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
@@ -879,6 +959,7 @@ export function PiChatPanel<
       }
       return undefined
     } catch (error) {
+      if (!isPolicySessionActive()) return undefined
       clearLocalSubmitted(activeChatSessionId)
       restoreSubmittedDraft()
       // Single normalization point for rejected sends: surface as one stable
@@ -888,7 +969,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, isPolicySessionActive, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceHandledSubmit, surfaceRunRejected])
 
   const availableAssistantSlashCommands = useMemo(
     () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
@@ -953,10 +1034,20 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, policy])
 
+  const removeQueued = useCallback(() => {
+    if (!policy) return
+    void policy.removeAllQueued().then((result) => {
+      if (!result.ok) {
+        addLocalNotice({ id: 'remove-queued', level: 'warning', text: result.message, dismissible: true })
+      }
+    })
+  }, [addLocalNotice, policy])
+
   const stop = useCallback(() => {
     onComposerStop?.()
     clearLocalSubmitted(activeChatSessionId)
-    void policy?.stop().catch((error) => {
+    // Stop aborts the active turn while explicitly holding queued follow-ups.
+    void policy?.interrupt({ queueAction: 'hold' }).catch((error) => {
       addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })
   }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, onComposerStop, policy])
@@ -966,6 +1057,39 @@ export function PiChatPanel<
       addLocalNotice({ id: 'interrupt-error', level: 'error', text: errorMessage(error, 'Could not interrupt the chat session.'), dismissible: true })
     })
   }, [addLocalNotice, policy])
+
+  const resumeQueued = useCallback(() => {
+    const sessionId = activeChatSessionId
+    if (!policy || !sessionId || resumeQueuedInFlightRef.current.has(sessionId)) return
+    const errorNoticeId = `${RESUME_QUEUED_ERROR_PREFIX}${sessionId}`
+    dropLocalNotice(errorNoticeId)
+    setResumeQueuedErrorsBySessionId((previous) => {
+      if (!previous.has(sessionId)) return previous
+      const next = new Map(previous)
+      next.delete(sessionId)
+      return next
+    })
+    setResumeQueuedPendingSessionIds((previous) => new Set(previous).add(sessionId))
+    const run = policy.resumeQueued()
+    resumeQueuedInFlightRef.current.set(sessionId, run)
+    void run.catch((error) => {
+      setResumeQueuedErrorsBySessionId((previous) => new Map(previous).set(sessionId, {
+        id: errorNoticeId,
+        level: 'error',
+        text: errorMessage(error, 'Could not resume queued follow-ups.'),
+        dismissible: true,
+      }))
+    }).finally(() => {
+      if (resumeQueuedInFlightRef.current.get(sessionId) !== run) return
+      resumeQueuedInFlightRef.current.delete(sessionId)
+      setResumeQueuedPendingSessionIds((previous) => {
+        if (!previous.has(sessionId)) return previous
+        const next = new Set(previous)
+        next.delete(sessionId)
+        return next
+      })
+    })
+  }, [activeChatSessionId, dropLocalNotice, policy])
 
   useEffect(() => {
     setPluginUpdateState(null)
@@ -1025,11 +1149,16 @@ export function PiChatPanel<
         }
         return
       }
+      if (result.type === 'stale') {
+        settlePendingAutoSubmit(activeSessionId)
+        return
+      }
       // Supersede a prior run-rejected CTA only on an admitted run (same rule as the
       // composer path — a local command admits nothing).
       if (result.type === 'prompt' || result.type === 'followup') {
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
+      if (result.type === 'handled') surfaceHandledSubmit(result.message)
       if (result.type === 'prompt') {
         onPromptSubmitStarted?.({ sessionId: activeSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeSessionId)
@@ -1041,6 +1170,7 @@ export function PiChatPanel<
         settlePendingAutoSubmit(activeSessionId)
       }
     }).catch((error) => {
+      if (!isPolicySessionActive()) return
       clearLocalSubmitted(activeSessionId)
       restoreSubmittedDraft()
       settlePendingAutoSubmit(activeSessionId)
@@ -1049,7 +1179,7 @@ export function PiChatPanel<
       // of an inert generic error.
       surfaceRunRejected(error)
     })
-  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, isPolicySessionActive, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceHandledSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {
@@ -1156,6 +1286,10 @@ export function PiChatPanel<
               onComposerBlockerAction={onComposerBlockerAction}
               queuePreview={queuePreview}
               onEditQueued={editQueued}
+              onRemoveQueued={removeQueued}
+              queueMutationPending={queueMutationPending}
+              onResumeQueued={resumeQueued}
+              resumeQueuedPending={resumeQueuedPending}
               hotReloadEnabled={hotReloadEnabled}
               pluginUpdateState={pluginUpdateState}
               onDismissPluginUpdate={dismissPluginUpdate}

@@ -6,6 +6,7 @@ import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { createMailTransport } from '../mail/transport.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWorkspaceInvite } from '../mail/templates/index.js'
+import { buildInviteAcceptUrl } from '../mail/links.js'
 import { createInviteBody, acceptInviteQuery, tokenBody } from './__schemas__/invites.js'
 import type { Database } from '../db/connection.js'
 import { createIdempotencyMiddleware, createDrizzleIdempotencyStore } from '../middleware/idempotency.js'
@@ -80,7 +81,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
 
       if (transport) {
         const workspace = await store.get(id)
-        const acceptUrl = `${app.config.auth.url}/api/v1/workspaces/${id}/invites/${invite.id}/accept?invite_token=${rawToken}`
+        const acceptUrl = buildInviteAcceptUrl(app.config, rawToken)
         try {
           const email = await renderWorkspaceInvite({
             to: parsed.data.email,

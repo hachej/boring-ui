@@ -5,6 +5,10 @@ export {
   type CoreFrontendRootHandler,
   type CreateCoreWorkspaceAgentServerOptions,
 } from './createCoreWorkspaceAgentServer.js'
+export type {
+  AddressedAgentCapabilityContext,
+  AgentPiCapabilityOptions,
+} from './addressedAgentRuntimeScope.js'
 export type { CoreDynamicAuthBaseURL } from '../../server/auth/index.js'
 export type { CoreRequestScope, CoreRequestScopeResolver } from '../../server/app/index.js'
 export {

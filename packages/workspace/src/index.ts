@@ -93,6 +93,8 @@ export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
 // Utility
 export { cn } from "./front/lib/utils"
+export { RuntimeWebView, runtimeWebViewSandbox } from "./front/components/RuntimeWebView"
+export type { RuntimeWebViewProps, RuntimeWebViewSource } from "./front/components/RuntimeWebView"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"
@@ -364,6 +366,11 @@ export {
   WORKSPACE_ATTENTION_ACTION_EVENT,
   emitWorkspaceAttentionAction,
   useWorkspaceAttention,
+  // The provider is a VALUE, not just a type: a plugin that contributes an
+  // attention-driven surface (the Inbox badge) has to be able to mount one to
+  // test it. Only the props type was exported, so importing the component from
+  // the package root silently yielded `undefined` at runtime.
+  WorkspaceAttentionProvider,
   workspaceAttentionSessionBadgeForBlocker,
 } from "./front/provider"
 export type {

@@ -3,6 +3,7 @@ import type {
   AgentGateway,
   AgentGatewayErrorDTO,
   AgentScopeVerifier,
+  ResolveAgentAccess,
   AgentSessionRef,
   AgentTool,
   AuthorizedAgentScope,
@@ -16,6 +17,7 @@ import type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeModeAdapter,
+  RuntimeTrustedServiceLeaseV1,
 } from '../runtime/mode'
 import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
@@ -35,6 +37,7 @@ export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispat
 export type AgentGatewayEffect =
   | 'session.create'
   | 'session.rename'
+  | 'session.archive'
   | 'session.delete'
   | 'session.prompt'
   | 'session.followup'
@@ -155,7 +158,25 @@ export interface AgentInstructionFileRef {
   readonly role: 'persona'
 }
 
-export interface ConfiguredAgentHostAgentSpec {
+/**
+ * An authored instruction file as the fleet composer knows it: a canonical
+ * HOST absolute path, not yet addressed against any workspace.
+ *
+ * The two shapes are deliberately distinct. A multi-workspace host (the CLI
+ * hub, core) serves a DIFFERENT root per request, so composition cannot know
+ * which root a ref should be relative to; only the request can. The spec
+ * therefore carries sources, and `describe` publishes the subset that is
+ * reachable through the root actually being served (gh-1189).
+ */
+export interface AgentInstructionSource {
+  /** Canonical absolute path on the host filesystem. */
+  readonly absolutePath: string
+  readonly role: 'persona'
+}
+
+export const DEFAULT_AGENT_TYPE_ID = 'default'
+
+export interface AgentHostAgentSpec {
   readonly agentTypeId: string
   readonly definition: {
     readonly instructions: string
@@ -176,8 +197,12 @@ export interface ConfiguredAgentHostAgentSpec {
     /** Host path of the package's `knowledge/` folder. */
     readonly rootDir: string
   }
-  /** Authored instruction sources behind `definition.instructions`. */
-  readonly instructionFiles?: readonly AgentInstructionFileRef[]
+  /**
+   * Authored instruction sources behind `definition.instructions`, as host
+   * absolute paths. Addressed against a served workspace root per request by
+   * `describe`, never at composition time.
+   */
+  readonly instructionSources?: readonly AgentInstructionSource[]
   readonly plugins?: readonly {
     /** Canonical app-preflighted plugin ID. */
     readonly name: string
@@ -188,16 +213,13 @@ export interface ConfiguredAgentHostAgentSpec {
     /** RESERVED / NOT ENFORCED. Per-turn token-limit enforcement is future work. */
     readonly maxTokensPerTurn?: number
   }
+  /** Trusted host-owned provisioning grants; absent means no inherited resources. */
+  readonly provisioning?: {
+    readonly inheritSkillPaths?: boolean
+  }
 }
 
-export interface LegacyDefaultAgentHostSpec {
-  readonly agentTypeId: 'default'
-  readonly legacyDefault: true
-}
-
-export type AgentHostAgentSpec =
-  | ConfiguredAgentHostAgentSpec
-  | LegacyDefaultAgentHostSpec
+export type ConfiguredAgentHostAgentSpec = AgentHostAgentSpec
 
 /**
  * Server-only compiler output. App-specific validated handles may be attached,
@@ -246,6 +268,12 @@ export interface ResolvedAgentRuntimeScope {
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
+  /** Joined trusted-plugin cleanup invoked after backend session deletion succeeds. */
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
   readonly includeFilesystemTools?: boolean
   readonly includeUploadTools?: boolean
   readonly sessionDir?: string
@@ -300,6 +328,18 @@ export interface AgentHostEnvironmentScope extends ResolvedEnvironmentScope {
   }) => Promise<readonly RuntimeFilesystemBinding[] | undefined>
 }
 
+export interface AgentHostSessionEnvironmentLease {
+  readonly environmentGenerationId: string
+  readonly bindingGeneration: number
+  readonly signal: AbortSignal
+  acquireTrustedService(input: {
+    readonly leaseId: string
+    readonly idleTtlMs: number
+    readonly absoluteTtlMs: number
+  }): Promise<RuntimeTrustedServiceLeaseV1>
+  release(): void
+}
+
 export interface AgentHostEnvironmentLease {
   readonly workspace: Workspace
   readonly gitWorkspace: Workspace
@@ -347,6 +387,8 @@ export interface CreateAgentHostOptions {
   readonly fleetCompiler: AgentFleetCompiler
   readonly hostId?: string
   readonly scopeVerifier: AgentScopeVerifier
+  /** Optional product-owned Seat/entitlement policy; omission preserves legacy fleet-wide access. */
+  readonly resolveAgentAccess?: ResolveAgentAccess
   readonly runtimeModeAdapter: RuntimeModeAdapter
   readonly runtimeHost?: AgentRuntimeHostOperations
   readonly sessionRoot?: string
@@ -387,6 +429,12 @@ export interface CreatedAgentHost {
     readonly authorizedScope: AuthorizedAgentScope
     readonly intent: AuthorizedEnvironmentIntent
   }): Promise<AgentHostEnvironmentLease>
+  /** Trusted composition-only acquisition of the addressed session's exact Environment generation. */
+  acquireSessionEnvironment(input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease>
   runWithWorkspaceAgent(
     input: AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
