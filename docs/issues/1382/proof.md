@@ -6,7 +6,7 @@
 - Actual comparison base and current `origin/main`: `68dcb7db8822f721c6b45d0731e01a46fa364f28`.
 - Reviewed code head: `1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c` (includes final review-found merged-update validation; predecessor `5eea1451e322f4940478f28367c1cc6624951f30`).
 - Integration candidate: current main is the merge-base and an ancestor of the reviewed code head; merge commits `384a89eed01f4c3521fefe1d7ba015d17ff06eb0` and `3f37b1679e1df704edd6b15a2387fe39c2824b62` integrated main without rewriting history.
-- Artifact proof/media commit: `025125fae4b779e65edbd3f5be84297b4f1b1875`; owner presentation commit: `732de74e89db2553853cb5968bdd0d3651d881b5`. The final receipt commit that updates this literal lineage is recorded in the Bead handoff and PR proof comment; all commits after the reviewed code head are docs/media only and change no product code or contract.
+- Initial artifact proof/media commit: `025125fae4b779e65edbd3f5be84297b4f1b1875`; final-code evidence commit: `97ebd27b291e85a915f57e1dee03c10d79d79cdb`; regenerated owner presentation commit: `99ee127259496c45fa0e91af884dedc7d1e41910`. The final receipt commit that updates this literal lineage is recorded in the Bead handoff and PR proof comment; all commits after the reviewed code head are docs/media only and change no product code or contract.
 
 ## What changed
 
@@ -62,7 +62,7 @@ node docs/issues/1382/run-ui-proof.mjs <revision> <label> .handoff/objectives-ui
 
 ## Risk route, counts, triggers, and exclusions
 
-- Predecessor base-to-code diff: **5,465 additions + 19 deletions = 5,484 changed lines across 55 files** (`68dcb7db...5eea1451e`). Final reviewed-code counts are refreshed below after the evidence commit. Through owner-presentation commit `732de74e8`, the PR is **7,524 additions + 19 deletions = 7,543 changed lines across 61 files**; the increase is docs/media/artifact-only and does not alter production risk.
+- Base-to-final-code commit `1a6c4158d` (including preceding delivery artifacts): **7,543 additions + 19 deletions = 7,562 changed lines across 61 files**. Through regenerated owner-presentation commit `99ee12725`, the full PR is **7,698 additions + 19 deletions = 7,717 changed lines across 64 files**. The post-code increase is docs/media/artifact-only and does not alter production risk.
 - `packages/**` production additions + deletions: **0**; the base-to-head `packages` diff is empty.
 - Numerical exclusions from the package threshold: all plugin production code (outside `packages/**`), tests, evals, docs, `.beads/issues.jsonl`, manifests, lockfile, and generated/artifact media. Exclusion is numerical only; every area remains semantically reviewed.
 - Matched protected trigger: durable Objective primitive / architecture semantic decision. This controls the route regardless of package production count.
