@@ -361,6 +361,31 @@ describe('Agent Host lifecycle', () => {
     await created.host.close()
   })
 
+  it('reclaims the same request key after a plain Error runtime preflight failure', async () => {
+    let loads = 0
+    const fixture = await options({
+      harnessFactory: async (input) => {
+        if (loads++ === 0) throw new Error('transient plain runtime load failure')
+        return await createScriptedPiHarness(input)
+      },
+    })
+    const created = await createAgentHost(fixture.value)
+    const input = {
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'plain-error-same-key',
+    }
+
+    await expect(created.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      details: { retryable: true },
+    })
+    await expect(created.gateway.createSession(input)).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    expect(loads).toBe(2)
+
+    await created.host.close()
+  })
+
   it('keeps gateway.close facade-local and idempotent', async () => {
     const fixture = await options()
     const created = await createAgentHost(fixture.value)

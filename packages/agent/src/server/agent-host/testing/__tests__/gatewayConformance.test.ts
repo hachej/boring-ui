@@ -372,7 +372,6 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     readonly digest: string
     readonly error: AgentGatewayError
   }>()
-  private readonly pendingRequests = new Map<string, string>()
   private readonly admissionQueue = new Map<AgentRequestKey['operation'], Array<'strong-reject' | 'retryable'>>()
   private readonly connections = new Set<{
     closed: boolean
@@ -759,13 +758,6 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
   }
 
   private replayRequest<T>(key: string, digest: string): T | undefined {
-    const pendingDigest = this.pendingRequests.get(key)
-    if (pendingDigest !== undefined) {
-      if (pendingDigest !== digest) {
-        throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with different payload')
-      }
-      throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS, 'request is already in progress')
-    }
     const failure = this.requestFailures.get(key)
     if (failure !== undefined) {
       if (failure.digest !== digest) {
@@ -794,7 +786,6 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       throw error
     }
     if (disposition === 'retryable') {
-      this.pendingRequests.set(key, digest)
       throw this.error(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'admission temporarily unavailable')
     }
   }
