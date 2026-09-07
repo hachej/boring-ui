@@ -9,9 +9,9 @@ import {
   WorkspaceBridgeErrorCode,
   type WorkspaceBridgeCallContext,
 } from "@hachej/boring-workspace/server"
-import { OBJECTIVE_BRIDGE_CAPABILITIES, OBJECTIVE_BRIDGE_OPS } from "../../shared"
+import { OBJECTIVE_BRIDGE_CAPABILITIES, OBJECTIVE_BRIDGE_OPS, OBJECTIVE_ERROR_CODES } from "../../shared"
 import { createObjectiveBridgeHandlers } from "../objectiveBridgeHandlers"
-import { FileObjectiveStore } from "../objectiveStore"
+import { FileObjectiveStore, ObjectiveStoreError, type ObjectiveStore } from "../objectiveStore"
 
 let dir: string
 let store: FileObjectiveStore
@@ -45,9 +45,9 @@ function serverContext(capabilities: string[]): WorkspaceBridgeCallContext {
   }
 }
 
-function registryFixture() {
+function registryFixture(objectiveStore: ObjectiveStore = store) {
   const registry = createWorkspaceBridgeRegistry()
-  for (const entry of createObjectiveBridgeHandlers({ store })) {
+  for (const entry of createObjectiveBridgeHandlers({ store: objectiveStore })) {
     registry.registerHandler(entry.definition, entry.handler)
   }
   return registry
@@ -98,6 +98,27 @@ describe("objectives WorkspaceBridge handlers", () => {
       serverContext([OBJECTIVE_BRIDGE_CAPABILITIES.update]),
     )
     expect(denied).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
+  })
+
+  it("keeps Objective storage codes plugin-owned while mapping them to WorkspaceBridge's generic failure", async () => {
+    const failingStore = {
+      list: async () => {
+        throw new ObjectiveStoreError(OBJECTIVE_ERROR_CODES.STORE_IO, "objective storage unavailable", {
+          cause: Object.assign(new Error("EIO: raw host diagnostic"), { code: "EIO" }),
+        })
+      },
+    } as unknown as ObjectiveStore
+    const denied = await registryFixture(failingStore).call(
+      { op: OBJECTIVE_BRIDGE_OPS.list, input: {} },
+      browserContext([OBJECTIVE_BRIDGE_CAPABILITIES.list]),
+    )
+
+    expect(denied).toMatchObject({
+      ok: false,
+      error: { code: WorkspaceBridgeErrorCode.HandlerFailed, message: "objective storage unavailable" },
+    })
+    expect(JSON.stringify(denied)).not.toContain("raw host diagnostic")
+    expect(JSON.stringify(denied)).not.toContain(OBJECTIVE_ERROR_CODES.STORE_IO)
   })
 
   it("rejects an invalid create input", async () => {

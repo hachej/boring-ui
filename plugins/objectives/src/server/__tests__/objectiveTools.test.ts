@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace"
 import { OBJECTIVE_ERROR_CODES } from "../../shared"
 import { createObjectiveTools } from "../objectiveTools"
-import { FileObjectiveStore } from "../objectiveStore"
+import { FileObjectiveStore, ObjectiveStoreError } from "../objectiveStore"
 
 let dir: string
 let store: FileObjectiveStore
@@ -87,5 +87,24 @@ describe("objective agent tools", () => {
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toMatch(/update_objective failed/)
     expect(result.details).toEqual({ code: OBJECTIVE_ERROR_CODES.NOT_FOUND })
+  })
+
+  it("preserves the plugin-owned code at the tool seam without exposing the Node cause", async () => {
+    const cause = Object.assign(new Error("EACCES: host path denied"), { code: "EACCES" })
+    tools = createObjectiveTools({
+      store: {
+        list: async () => {
+          throw new ObjectiveStoreError(OBJECTIVE_ERROR_CODES.STORE_IO, "objective storage unavailable", { cause })
+        },
+      } as unknown as FileObjectiveStore,
+    })
+
+    const result = await tool("list_objectives").execute({}, ctx)
+    expect(result).toMatchObject({
+      isError: true,
+      details: { code: OBJECTIVE_ERROR_CODES.STORE_IO },
+    })
+    expect(result.content[0]?.text).toBe("list_objectives failed: objective storage unavailable")
+    expect(result.details).not.toHaveProperty("cause")
   })
 })

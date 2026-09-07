@@ -24,12 +24,16 @@ export class WorkspacePathEscapeError extends ObjectiveError {
  * symlink swapped in after the store was constructed is still caught.
  */
 export async function ensureContainedDir(workspaceRoot: string, dirPath: string): Promise<string> {
-  const resolvedRoot = resolve(workspaceRoot)
-  await mkdir(dirPath, { recursive: true, mode: 0o700 })
-  const realRoot = await realpath(resolvedRoot)
-  const realDir = await realpath(dirPath)
-  assertContained(realRoot, realDir, dirPath)
-  return realDir
+  try {
+    const resolvedRoot = resolve(workspaceRoot)
+    await mkdir(dirPath, { recursive: true, mode: 0o700 })
+    const realRoot = await realpath(resolvedRoot)
+    const realDir = await realpath(dirPath)
+    assertContained(realRoot, realDir, dirPath)
+    return realDir
+  } catch (error) {
+    throw normalizePathError(`failed to resolve objective store directory ${dirPath}`, error)
+  }
 }
 
 function assertContained(realRoot: string, realCandidate: string, requestedPath: string): void {
@@ -62,9 +66,15 @@ export async function assertFileNotSymlink(filePath: string): Promise<void> {
     stats = await lstat(filePath)
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return
-    throw error
+    throw normalizePathError(`failed to inspect objective store path ${filePath}`, error)
   }
   if (stats.isSymbolicLink()) {
     throw new WorkspacePathEscapeError(`Refusing to operate on a symlinked objective store file: ${filePath}`)
   }
+}
+
+function normalizePathError(message: string, error: unknown): ObjectiveError {
+  if (error instanceof ObjectiveError) return error
+  const diagnostic = error instanceof Error ? error.message : String(error)
+  return new ObjectiveError(OBJECTIVE_ERROR_CODES.STORE_IO, `${message}: ${diagnostic}`, { cause: error })
 }

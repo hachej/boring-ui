@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises"
+import { lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -13,16 +13,19 @@ import { WorkspacePathEscapeError } from "../pathSafety"
 
 // Node's ESM module namespace is non-configurable, so `vi.spyOn` on the raw
 // `node:fs/promises` exports fails ("Cannot redefine property"). Route the
-// module through `vi.mock` with `importOriginal` instead so `readFile` and
-// `writeFile` become real mockable functions while every other export
-// (mkdir, rename, symlink, ...) stays the genuine implementation. Every
-// import of `readFile`/`writeFile` in this file (direct or via the store)
-// resolves to the same mocked function.
+// module through `vi.mock` with `importOriginal` instead. The filesystem
+// operations used by the store/path boundary become injectable while every
+// unlisted export stays the genuine implementation.
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>()
   return {
     ...actual,
+    lstat: vi.fn(actual.lstat),
+    mkdir: vi.fn(actual.mkdir),
+    open: vi.fn(actual.open),
     readFile: vi.fn(actual.readFile),
+    realpath: vi.fn(actual.realpath),
+    rename: vi.fn(actual.rename),
     writeFile: vi.fn(actual.writeFile),
   }
 })
@@ -113,26 +116,64 @@ describe("FileObjectiveStore", () => {
     await expect(store.get("missing")).resolves.toBeNull()
   })
 
-  describe("commit-then-observe durability", () => {
-    it("leaves observable state unchanged when the write fails", async () => {
-      await store.create(input({ title: "Existing" }))
+  describe("filesystem error contract", () => {
+    function nodeFailure(message: string, code = "EIO"): Error & { code: string } {
+      return Object.assign(new Error(message), { code })
+    }
 
-      vi.mocked(writeFile).mockRejectedValueOnce(new Error("disk full"))
-      await expect(store.create(input({ title: "Should not persist" }))).rejects.toThrow("disk full")
+    function expectStoreIo(promise: Promise<unknown>, cause: Error) {
+      return expect(promise).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.STORE_IO,
+        cause,
+      })
+    }
 
-      const titles = (await store.list()).map((o) => o.title)
-      expect(titles).toEqual(["Existing"])
-
-      const raw = JSON.parse(await readFile(join(dir, "objectives.json"), "utf8"))
-      expect(raw.objectives).toHaveLength(1)
+    it("wraps a read failure with the plugin-owned store code and original cause", async () => {
+      const cause = nodeFailure("read medium failed")
+      vi.mocked(readFile).mockRejectedValueOnce(cause)
+      await expectStoreIo(store.list(), cause)
     })
 
-    it("leaves observable state unchanged when an update's write fails", async () => {
+    it("wraps path inspection failures rather than leaking raw Node errors", async () => {
+      const cause = nodeFailure("lstat denied", "EACCES")
+      vi.mocked(lstat).mockRejectedValueOnce(cause)
+      await expectStoreIo(store.list(), cause)
+    })
+
+    it("wraps contained-path resolution failures rather than leaking raw Node errors", async () => {
+      const workspaceRoot = await mkdtemp(join(tmpdir(), "objectives-workspace-"))
+      const contained = new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"), { workspaceRoot })
+      const cause = nodeFailure("realpath denied", "EACCES")
+      vi.mocked(realpath).mockRejectedValueOnce(cause)
+
+      await expectStoreIo(contained.list(), cause)
+      await rm(workspaceRoot, { recursive: true, force: true })
+    })
+
+    it("wraps lock open failures rather than leaking raw Node errors", async () => {
+      const cause = nodeFailure("lock open denied", "EACCES")
+      vi.mocked(open).mockRejectedValueOnce(cause)
+      await expectStoreIo(store.create(input()), cause)
+    })
+
+    it("wraps commit write failures, preserves their cause, and leaves observable state unchanged", async () => {
+      await store.create(input({ title: "Existing" }))
+      const cause = nodeFailure("disk full", "ENOSPC")
+      // Lock metadata uses FileHandle.writeFile; this module-level writeFile
+      // call is the commit temp file.
+      vi.mocked(writeFile).mockRejectedValueOnce(cause)
+
+      await expectStoreIo(store.create(input({ title: "Should not persist" })), cause)
+      expect((await store.list()).map((o) => o.title)).toEqual(["Existing"])
+      expect(JSON.parse(await readFile(join(dir, "objectives.json"), "utf8")).objectives).toHaveLength(1)
+    })
+
+    it("wraps commit rename failures and leaves an update unobserved", async () => {
       const created = await store.create(input())
+      const cause = nodeFailure("rename failed")
+      vi.mocked(rename).mockRejectedValueOnce(cause)
 
-      vi.mocked(writeFile).mockRejectedValueOnce(new Error("disk full"))
-      await expect(store.update({ id: created.id, current: 999 })).rejects.toThrow("disk full")
-
+      await expectStoreIo(store.update({ id: created.id, current: 999 }), cause)
       await expect(store.get(created.id)).resolves.toMatchObject({ current: 100 })
     })
   })

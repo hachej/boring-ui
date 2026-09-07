@@ -292,7 +292,9 @@ export class FileObjectiveStore implements ObjectiveStore {
         }
         return true
       } catch (error) {
-        if ((error as { code?: string }).code !== "EEXIST") throw error
+        if ((error as { code?: string }).code !== "EEXIST") {
+          throw normalizeStoreIoError(`failed to acquire objective store lock at ${lockPath}`, error)
+        }
         if (await this.reclaimIfStale(lockPath, token)) return true
         if (Date.now() >= deadline) return false
         await delay(LOCK_POLL_INTERVAL_MS)
@@ -317,7 +319,7 @@ export class FileObjectiveStore implements ObjectiveStore {
       stats = await lstat(lockPath)
     } catch (error) {
       if ((error as { code?: string }).code === "ENOENT") return null
-      throw error
+      throw normalizeStoreIoError(`failed to inspect objective store lock at ${lockPath}`, error)
     }
     if (stats.isSymbolicLink()) {
       throw new WorkspacePathEscapeError(`Refusing to operate on a symlinked objective store lock file: ${lockPath}`)
@@ -327,7 +329,7 @@ export class FileObjectiveStore implements ObjectiveStore {
       return { raw, mtimeMs: stats.mtimeMs }
     } catch (error) {
       if ((error as { code?: string }).code === "ENOENT") return null
-      throw error
+      throw normalizeStoreIoError(`failed to read objective store lock at ${lockPath}`, error)
     }
   }
 
@@ -370,9 +372,13 @@ export class FileObjectiveStore implements ObjectiveStore {
 
     const dir = dirname(lockPath)
     const tmp = join(dir, `.${randomUUID()}.lock.tmp`)
-    await writeFile(tmp, JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
-    await rename(tmp, lockPath)
-    return true
+    try {
+      await writeFile(tmp, JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
+      await rename(tmp, lockPath)
+      return true
+    } catch (error) {
+      throw normalizeStoreIoError(`failed to reclaim objective store lock at ${lockPath}`, error)
+    }
   }
 
   /**
@@ -423,8 +429,12 @@ export class FileObjectiveStore implements ObjectiveStore {
   }
 
   private async ensurePlainDir(): Promise<string> {
-    await mkdir(this.dir, { recursive: true, mode: 0o700 })
-    return this.dir
+    try {
+      await mkdir(this.dir, { recursive: true, mode: 0o700 })
+      return this.dir
+    } catch (error) {
+      throw normalizeStoreIoError(`failed to create objective store directory ${this.dir}`, error)
+    }
   }
 
   private async readOnDiskAt(filePath: string): Promise<LoadedState> {
@@ -495,11 +505,7 @@ export class FileObjectiveStore implements ObjectiveStore {
       await writeFile(tmp, JSON.stringify(state, null, 2), "utf8")
       await rename(tmp, filePath)
     } catch (error) {
-      throw new ObjectiveStoreError(
-        OBJECTIVE_ERROR_CODES.STORE_IO,
-        `failed to commit objective store at ${filePath}: ${errorMessage(error)}`,
-        { cause: error },
-      )
+      throw normalizeStoreIoError(`failed to commit objective store at ${filePath}`, error)
     }
   }
 }
@@ -549,6 +555,15 @@ function matchesCreateInput(existing: Objective, input: CreateObjectiveInput): b
 
 function generateObjectiveId(): string {
   return `obj-${randomUUID()}`
+}
+
+function normalizeStoreIoError(message: string, error: unknown): ObjectiveError {
+  if (error instanceof ObjectiveError) return error
+  return new ObjectiveStoreError(
+    OBJECTIVE_ERROR_CODES.STORE_IO,
+    `${message}: ${errorMessage(error)}`,
+    { cause: error },
+  )
 }
 
 function errorMessage(error: unknown): string {
