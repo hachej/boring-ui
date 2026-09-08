@@ -5,7 +5,7 @@ import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { AUTOMATION_PROMPT_DIRECTORY, automationPromptPath } from "../shared/prompt"
 import { AUTOMATION_RUN_OCCUPYING_STATUSES, reconcileAbandonedRun } from "../shared/runStatus"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../shared/types"
-import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound, type AutomationSeed, type AutomationStore } from "./store"
+import { AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS, AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound, type AutomationSeed, type AutomationStore } from "./store"
 
 export interface HostedAutomationActor {
   workspaceId: string
@@ -249,7 +249,8 @@ export class PostgresAutomationStore implements AutomationStore {
           updated_at = ${this.clock().toISOString()}
       WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
         AND status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
-        AND status <> 'outcome-unknown'
+        AND (status <> 'outcome-unknown'
+          OR updated_at < NOW() - (${AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS} * INTERVAL '1 millisecond'))
     `
   }
 
@@ -477,7 +478,6 @@ export async function reconcileStaleHostedAutomationRuns(
           ELSE ${inFlight.error} END,
         updated_at = NOW()
     WHERE status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
-      AND status <> 'outcome-unknown'
       AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
     RETURNING *
   `

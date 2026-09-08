@@ -154,7 +154,7 @@ describe("FileAutomationStore persistence", () => {
     ]))
   })
 
-  it("releases accepted outcome ambiguity only through explicit session cancellation", async () => {
+  it("keeps accepted ambiguity during the reclaim window, then releases the slot", async () => {
     const first = createStore({ clock: () => new Date("2026-07-10T00:00:00.000Z") })
     const automation = await first.createAutomation({ title: "Accepted", cron: "0 9 * * *", timezone: "UTC", model: "test:model" })
     const run = await first.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
@@ -165,17 +165,27 @@ describe("FileAutomationStore persistence", () => {
       dispatchReceipt: { ref: { agentTypeId: "default", sessionId: "session-1" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: run.id },
     })
 
-    const restarted = createStore({ clock: () => new Date("2026-07-10T01:00:00.000Z") })
+    let now = new Date("2026-07-10T00:04:59.999Z")
+    const restarted = createStore({ clock: () => now })
     await restarted.reconcileOrphanedRuns(automation.id)
     await expect(restarted.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "too-soon", modelSnapshot: "test:model" }))
       .rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
 
-    await expect(restarted.settleCancelledSession(
-      { agentTypeId: "default", sessionId: "session-1" },
-      "2026-07-10T01:00:00.000Z",
-    )).resolves.toMatchObject({ id: run.id, status: "cancelled" })
-    await expect(restarted.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "again", modelSnapshot: "test:model" }))
-      .resolves.toMatchObject({ status: "queued" })
+    now = new Date("2026-07-10T00:05:00.000Z")
+    const replacement = await restarted.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "after-timeout",
+      modelSnapshot: "test:model",
+    })
+    expect(replacement).toMatchObject({ status: "queued" })
+    await expect(restarted.listRuns(automation.id)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: run.id,
+        status: "failed",
+        error: "Automation outcome remained unknown after its worker lease expired; releasing the occupied slot",
+      }),
+    ]))
   })
 
   it("does not resurrect a settled run when late acceptance races a replacement", async () => {

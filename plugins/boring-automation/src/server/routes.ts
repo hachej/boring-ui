@@ -12,6 +12,7 @@ import type { HostedDueRunService } from "./hostedDueRunService"
 import type { DueRunService } from "./dueRunService"
 import { timingSafeEqual } from "node:crypto"
 import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRunExecutor"
+import type { AutomationOperations } from "./operations"
 import type { AutomationRunEventBus } from "./runEventBus"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
@@ -29,6 +30,8 @@ export interface AutomationRoutesOptions {
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
   hostedTriggerToken?: string
   actorResolver?: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
+  /** Host-composed operation service; PATCH uses the same authority path as the agent tool. */
+  operationsForRequest?: (request: FastifyRequest) => Promise<Pick<AutomationOperations, "update">> | Pick<AutomationOperations, "update">
   eventBus?: AutomationRunEventBus
 }
 
@@ -108,7 +111,11 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.patch(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      const automation = await (await resolveStore(opts, request)).updateAutomation(id, parseBody(AutomationPatchSchema, request.body))
+      const input = parseBody(AutomationPatchSchema, request.body)
+      const operations = await opts.operationsForRequest?.(request)
+      const automation = operations
+        ? await operations.update(id, input)
+        : await (await resolveStore(opts, request)).updateAutomation(id, input)
       return { ok: true, automation }
     } catch (cause) {
       return sendError(reply, cause)

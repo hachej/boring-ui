@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type postgres from "postgres"
 import type { Workspace } from "@hachej/boring-agent/shared"
-import { PostgresAutomationStore, listHostedAutomationCandidates } from "../postgresStore"
+import { PostgresAutomationStore, listHostedAutomationCandidates, reconcileStaleHostedAutomationRuns } from "../postgresStore"
 
 type RecordedQuery = { text: string; values: unknown[] }
 
@@ -256,6 +256,20 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(queries[0]!.text).not.toContain("boring_automation_runs")
     expect(queries[0]!.values).toEqual(expect.arrayContaining([
       "automation-a", "workspace-a", "user-a", "2026-07-19T08:00:00.000Z",
+    ]))
+  })
+
+  it("includes stale outcome-unknown runs in bounded hosted reconciliation", async () => {
+    const recorded = recordingSql([])
+
+    await expect(reconcileStaleHostedAutomationRuns(recorded.sql, 300_000)).resolves.toEqual([])
+
+    expect(recorded.queries).toHaveLength(1)
+    expect(recorded.queries[0]!.text).toContain("status = ANY(?)")
+    expect(recorded.queries[0]!.text).not.toContain("status <> 'outcome-unknown'")
+    expect(recorded.queries[0]!.values).toEqual(expect.arrayContaining([
+      ["queued", "dispatching", "running", "outcome-unknown"],
+      300_000,
     ]))
   })
 

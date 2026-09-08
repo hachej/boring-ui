@@ -9,6 +9,9 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 
+/** Maximum time an accepted dispatch may reserve a slot without a terminal outcome. */
+export const AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS = 5 * 60_000
+
 export interface AutomationSeed {
   key: string
   title: string

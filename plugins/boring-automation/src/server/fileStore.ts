@@ -13,7 +13,7 @@ import { automationPromptPath } from "../shared/prompt"
 import { clampAutomationPersistedDurationMs, MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
 import { isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
 import type { AutomationSeed, AutomationStore } from "./store"
-import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
+import { AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
 type StoredAutomationState = {
   automations: Record<string, Automation>
@@ -342,7 +342,9 @@ export class FileAutomationStore implements AutomationStore {
       }, this.nowIso())
       state.runs[runId] = preserved
     })
-    if (preserved && isAutomationRunOccupying(preserved.status)) this.activeRunIds.add(runId)
+    // Accepted ambiguity reserves the durable slot, but no executor heartbeat owns it.
+    // Bounded reconciliation below must therefore be able to reclaim it.
+    if (preserved?.status === "outcome-unknown") this.activeRunIds.delete(runId)
     return preserved ? clone(preserved) : null
   }
 
@@ -355,7 +357,9 @@ export class FileAutomationStore implements AutomationStore {
       updated = applyRunPatch(run, patch, this.nowIso())
       state.runs[runId] = updated
     })
-    if (updated && !isAutomationRunOccupying(updated.status)) this.activeRunIds.delete(runId)
+    if (updated && (!isAutomationRunOccupying(updated.status) || updated.status === "outcome-unknown")) {
+      this.activeRunIds.delete(runId)
+    }
     return clone(requireValue(updated))
   }
 
@@ -497,11 +501,16 @@ function reconcileOrphanedRuns(
   activeRunIds: Set<string>,
   completedAt: string,
 ): void {
+  const nowMs = new Date(completedAt).getTime()
   for (const run of Object.values(state.runs)) {
     if (run.automationId !== automationId || !isAutomationRunOccupying(run.status)) continue
-    if (run.status === "outcome-unknown") continue
     if (activeRunIds.has(run.id)) continue
-    const reconciled = reconcileAbandonedRun(run.status, "host-restart")
+    if (run.status === "outcome-unknown"
+      && nowMs - new Date(run.updatedAt).getTime() < AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS) continue
+    const reconciled = reconcileAbandonedRun(
+      run.status,
+      run.status === "outcome-unknown" ? "lease-expired" : "host-restart",
+    )
     run.status = reconciled.status
     run.completedAt = completedAt
     run.durationMs = clampAutomationPersistedDurationMs(new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())

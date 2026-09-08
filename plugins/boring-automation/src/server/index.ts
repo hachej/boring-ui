@@ -108,6 +108,21 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       hostedDueRunService: hostedDueCoordinator,
       hostedTriggerToken: options.hostedTriggerToken,
       actorResolver: options.actorResolver,
+      operationsForRequest: async (request) => {
+        const actor = options.actorResolver
+          ? await options.actorResolver(request)
+          : { workspaceId: "local", userId: "local" }
+        const resolved = await resolveAutomationOperationsForActor({
+          mode: options.storeMode ?? "local",
+          localUserId: actor.userId,
+          resolveStore: async () => options.storeForRequest
+            ? await options.storeForRequest(request, actor)
+            : store,
+          defaultAgentTypeId: options.agentTypeId,
+          canUpdateAutomationModel: options.canUpdateAutomationModel,
+        }, actor)
+        return resolved.operations
+      },
       eventBus,
     })
     app.addHook("preClose", async () => {

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 import { bootstrapServer } from "@hachej/boring-workspace/server"
 import { BORING_AUTOMATION_ERROR_CODES, BORING_AUTOMATION_PLUGIN_ID, BORING_AUTOMATION_ROUTE_PREFIX } from "../../shared"
 import { BORING_AUTOMATION_TOOL_NAME } from "../automationTool"
+import { FileAutomationStore } from "../fileStore"
 import defaultBoringAutomationServerPlugin, { createAutomationSessionController, createBoringAutomationServerPlugin } from "../index"
 
 function seedReadyStore() {
@@ -28,6 +29,55 @@ describe("boring automation server plugin", () => {
     const res = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, automations: [] })
+
+    await app.close()
+    await rm(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it("routes HTTP model patches through the host-owned operations authority", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-model-authority-"))
+    const store = new FileAutomationStore(workspaceRoot)
+    const protectedAutomation = await store.createAutomation({
+      title: "Protected worker slot", timezone: "UTC", model: "test:original", prompt: "run",
+    })
+    const editableAutomation = await store.createAutomation({
+      title: "User automation", timezone: "UTC", model: "test:original", prompt: "run",
+    })
+    const canUpdateAutomationModel = vi.fn((automation: { id: string }) => automation.id === editableAutomation.id)
+    const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
+      store,
+      canUpdateAutomationModel,
+    })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+
+    const rejected = await app.inject({
+      method: "PATCH",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${protectedAutomation.id}`,
+      payload: { title: "must-not-write", model: "test:forbidden" },
+    })
+    expect(rejected.statusCode).toBe(400)
+    expect(rejected.json()).toMatchObject({ ok: false, code: BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL })
+    await expect(store.getAutomation(protectedAutomation.id)).resolves.toMatchObject({
+      title: "Protected worker slot",
+      model: "test:original",
+    })
+
+    const metadataOnly = await app.inject({
+      method: "PATCH",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${protectedAutomation.id}`,
+      payload: { enabled: false },
+    })
+    expect(metadataOnly.statusCode).toBe(200)
+    const accepted = await app.inject({
+      method: "PATCH",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${editableAutomation.id}`,
+      payload: { model: "test:allowed" },
+    })
+    expect(accepted.statusCode).toBe(200)
+    expect(accepted.json().automation.model).toBe("test:allowed")
+    expect(canUpdateAutomationModel).toHaveBeenCalledTimes(2)
 
     await app.close()
     await rm(workspaceRoot, { recursive: true, force: true })
