@@ -13,7 +13,7 @@ import type { SessionStore } from '../../../shared/session'
 import type { PiAgentSessionAdapter } from '../PiAgentSessionAdapter'
 import { createPiAgentSessionAdapter } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
-import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
 
 type ProviderConfig = Parameters<ModelRuntime['registerProvider']>[1]
 type ProviderStream = ReturnType<NonNullable<ProviderConfig['streamSimple']>>
