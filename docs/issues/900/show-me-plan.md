@@ -4,7 +4,7 @@
 Source: draft PR #1415 at `08ecf78671fb58ae84a06d17e05b2984114f371b`
 Epic Bead: `wt-391-forward-fz5p`
 
-The program first lands the independently reviewed MCP plans, then gives their first safe implementation slices explicit roadmap authority, then makes exactly those slices ready. It does not implement MCP.
+The program first lands the independently reviewed MCP plans, then gives their first safe implementation slices explicit roadmap authority. The owner subsequently selected the roots-only correction: exactly #806 Slice 0 and 900.1a are ready; 900.1b/1c remain deferred and serial, and #806 Slice 1 remains absent/unplaced. It does not implement MCP.
 
 ## Structure — what this epic touches
 
@@ -12,7 +12,7 @@ The program first lands the independently reviewed MCP plans, then gives their f
 MCP Program
 ├── .beads/issues.jsonl
 │   ├── planning epic + 3 serial planning Beads
-│   └── later: exactly 900.1a/1b/1c + #806 Slice 1 become ready
+│   └── exactly two roots ready: 900.1a + #806 Slice 0
 ├── docs/direction/DIRECTION.md
 │   └── explicit wave placement for #806 Slice 0 + #900.1 discovery
 ├── docs/issues/806/
@@ -34,8 +34,9 @@ sequenceDiagram
     F->>P: land reviewed combined plan
     P->>D: place #806 Slice 0 + #900.1 discovery
     D->>B: record decisions in first Beads
-    B-->>O: exactly 900.1a/1b/1c + #806 Slice 1 are ready
-    Note over F,B: no MCP product implementation in this epic
+    O->>B: select roots-only correction
+    B-->>O: exactly 900.1a + #806 Slice 0 are ready
+    Note over F,B: 900.1b/1c deferred; #806 Slice 1 absent/unplaced; no implementation
 ```
 
 ## Diff-shaped outcome
@@ -49,7 +50,9 @@ sequenceDiagram
 +  reviewed combined plan is present on the epic branch
 +  DIRECTION.md names #806 Slice 0 and #900.1 discovery in a wave
 +  approved store, transport, tracker, and relink policies are recorded
-+  exactly 900.1a / 900.1b / 900.1c / #806 Slice 1 are ready
++  exactly 900.1a and #806 Slice 0 are ready and unclaimed
++  900.1b remains deferred behind 900.1a; 900.1c remains deferred behind 900.1b
++  #806 Slice 1 remains absent/unplaced
 
  Never changed by this epic
    product source code
@@ -73,5 +76,5 @@ sequenceDiagram
 - `br dep cycles` must remain cycle-free.
 - `bv --robot-insights` validates dependency shape before dispatch.
 - `pnpm lint:invariants` proves the roadmap amendment.
-- Final proof: `br ready --label epic:mcp-program` identifies exactly the four intended follow-on implementation Beads.
+- Final proof: `br ready --label epic:mcp-program` identifies exactly the two owner-selected roots: #806 Slice 0 and 900.1a.
 - Rollback: revert each planning commit in reverse order; no product code or user data changes.

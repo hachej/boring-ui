@@ -1,8 +1,9 @@
 # [MCP Program] What changed, visually
 
-**Gate 2 · planning-only delivery**
-Reviewed planning SHA: `6d07621fce20ee8e103b6a63abe952639519e5df`
-Target: `origin/main@3a594dceb`
+**Gate 2 · planning-only delivery, refreshed after main reconciliation**
+Planning/root-repair SHA: `6d07621fce20ee8e103b6a63abe952639519e5df`
+Reconciled candidate: `4354b00ef704468f1df7235c965c254f97c32a9f`
+Target: `origin/main@65c1059e7d5f0282dae4f988fbdff1bc29373b63`
 Demo: waived by the owner request because this epic changes planning documents and tracker metadata only.
 
 ## Changed shape
@@ -68,4 +69,5 @@ sequenceDiagram
 - `bv --robot-insights` reports `Cycles: null`.
 - `pnpm lint:invariants` and `scripts/check-strategy-docs.sh` passed at the roadmap SHA.
 - Root-only repair passed exact-SHA sandbox proof and independent adversarial review at `6d07621f`.
-- Git merge-tree against `origin/main@3a594dceb` is conflict-free.
+- Reconciliation candidate `4354b00ef` passed dedicated exact-SHA sandbox proof (sandbox `af39d929-7cd2-43b9-b785-ba02955304a7`): exact two-root readiness, no dependency cycles, valid `bv --robot-insights`, planning assertions, `pnpm lint:invariants`, strategy-doc checks, and `git diff --check`.
+- `origin/main@65c1059e7` is an ancestor of the reconciliation candidate, and PR #1568 reports that exact target/head pair `MERGEABLE`.
