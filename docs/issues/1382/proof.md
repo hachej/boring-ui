@@ -2,77 +2,83 @@
 
 ## Scope and exact revisions
 
-- Issue / epic / delivery Bead / PR: [#1382](https://github.com/hachej/boring-ui/issues/1382) / `pr-1382-objectives-plugin` / `wt-391-forward-5m2v.4` / [PR #1382](https://github.com/hachej/boring-ui/pull/1382).
-- Actual comparison base and current `origin/main`: `68dcb7db8822f721c6b45d0731e01a46fa364f28`.
-- Reviewed code head: `1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c` (includes final review-found merged-update validation; predecessor `5eea1451e322f4940478f28367c1cc6624951f30`).
-- Integration candidate: current main is the merge-base and an ancestor of the reviewed code head; merge commits `384a89eed01f4c3521fefe1d7ba015d17ff06eb0` and `3f37b1679e1df704edd6b15a2387fe39c2824b62` integrated main without rewriting history.
-- Initial artifact proof/media commit: `025125fae4b779e65edbd3f5be84297b4f1b1875`; final-code evidence commit: `97ebd27b291e85a915f57e1dee03c10d79d79cdb`; regenerated owner presentation commits: `99ee127259496c45fa0e91af884dedc7d1e41910`, then exact-review refresh `d6f04fdbfd663c5743cfa1d44e37d5fb200099ef`. The final receipt commit that updates this literal lineage is recorded in the Bead handoff and PR proof comment; all commits after the reviewed code head are docs/media only and change no product code or contract.
+- Issue / epic / terminal delivery Bead / PR: [#1382](https://github.com/hachej/boring-ui/issues/1382) / `pr-1382-objectives-plugin` / `wt-391-forward-5m2v.6` / [PR #1382](https://github.com/hachej/boring-ui/pull/1382).
+- Authoritative remote `main`, actual comparison base, and merge-base: `68dcb7db8822f721c6b45d0731e01a46fa364f28`. `git fetch origin main`, `git ls-remote origin refs/heads/main`, and `git rev-parse origin/main` all returned this SHA; it is an ancestor of the candidate, so no new merge was required.
+- Reviewed code SHA: `20c13de549a5871c09622bc93b66a77871510f20`.
+- Post-race WebM/JSON evidence SHA: `ddf4093e320fd3deb948147853a7f09f3e024c45`.
+- Final docs/presentation SHA is literal-named in the revision-bound PR proof comment, PR `## Handover`, and terminal Bead handoff after publication. A Git commit cannot truthfully embed its own not-yet-computed hash; this document binds its own content to the immutable reviewed-code and evidence SHAs above rather than fabricating one.
+- Historical proof/media remain intact. The new `before-postrace-*` and `final-postrace-*` files are distinct and do not overwrite prior captures.
 
 ## What changed
 
-The plugin supplies a thin Objective record, restart-durable file store, four agent tools, `objective.v1` bridge operations, and a workbench pane. Final hardening validates the fully materialized create record against the unchanged 24 KiB UTF-8 limit and maps direct filesystem/path/lock failures to path-free plugin-owned stable errors while retaining raw diagnostics only in trusted `Error.cause`.
+The owner-ratified thin plugin supplies a restart-durable Objective record, four agent tools, `objective.v1` bridge operations, and a rehydrating workbench pane. Hardening now validates complete persisted records, emits plugin-owned path-free failures, and serializes stale-lock reclaimer election plus the final token/revision/commit/release critical section. Two reclaimers cannot both enter, and a stale-yet-live holder cannot commit or release across a successful reclaimer.
 
-The plugin is not registered in app composition, publishes nothing, creates no migration, and adds no package production source. The durable Objective primitive remains an owner-protected architecture decision.
+The plugin remains unregistered in app composition. It publishes nothing, creates no migration, and changes no production source under `packages/**`.
 
 ## Exact-SHA automated verification
 
-Factory sandbox `e06f6f1f-3d71-4015-b429-29944a5f403e` verified both `git rev-parse HEAD` and `.factory-sha` as exact evidence SHA `40506e261eaec216c422f9ee5f2f6ebeea0dda3a` (containing final code `1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c`) and produced:
+Factory sandbox `9ff0b3a4-4ff5-4d1b-9d64-1bf79bcf4d9d` verified both `git rev-parse HEAD` and `.factory-sha` as exact reviewed code `20c13de549a5871c09622bc93b66a77871510f20` and produced:
 
 - `CI=true pnpm install --frozen-lockfile` — PASS; only existing missing-prebuilt-bin warnings.
 - `pnpm --filter @hachej/boring-objectives typecheck` — PASS.
-- `pnpm --filter @hachej/boring-objectives test` — PASS, **8 files / 93 tests**.
+- `pnpm --filter @hachej/boring-objectives test` — PASS, **8 files / 96 tests**.
 - `pnpm --filter @hachej/boring-objectives build` — PASS, ESM plus declarations.
 - `pnpm audit:imports` — PASS.
-- Runtime Refactor P8 exact commands `pnpm lint:invariants` and `pnpm check:golden-path` — PASS, including no uncovered shared `node:*`, `Buffer`, or raw-path signatures.
+- Runtime Refactor P8 exact commands `pnpm lint:invariants` and `pnpm check:golden-path` — PASS with no skips or weakened assertions.
+- `git cat-file -t 68dcb7db...`, `git merge-base HEAD 68dcb7db...`, and `git merge-base --is-ancestor 68dcb7db... HEAD` — PASS; authoritative current main exists, is the exact merge-base, and is an ancestor.
+- Affected race command `pnpm --filter @hachej/boring-objectives exec vitest run src/server/__tests__/objectiveStore.test.ts -t 'reclaim|stale|release'` — PASS, **10 passed / 34 skipped** in the focused file.
 
-No assertion was removed, skipped, or weakened. Boundary coverage includes complete-record byte limits; corrupt/duplicate durable state; idempotency conflicts; pagination; containment; lock/reclaim/commit failures; cause preservation; public diagnostic redaction; real tool and WorkspaceBridge seams; and failed-commit durability.
+The full suite's boundary coverage includes complete-record byte limits; corrupt/duplicate state; idempotency conflict; pagination; path containment; stable error/cause handling; real tool and WorkspaceBridge seams; atomic commit durability; two-reclaimer/two-writer election; stale live-holder commit exclusion; and guarded release.
 
 ## UI evidence
 
-Deterministic runner (same fixture, viewport, and interaction):
+Deterministic existing runner, same fixture/viewport/interaction for base and candidate:
 
 ```sh
-node docs/issues/1382/run-ui-proof.mjs <revision> <label> .handoff/objectives-ui-proof-final
+node docs/issues/1382/run-ui-proof.mjs <revision> <label> <output-dir>
 ```
 
 - Fixture: `obj-11111111-1111-4111-8111-111111111111`; viewport: 1280×720.
-- Base `68dcb7db8822f721c6b45d0731e01a46fa364f28`: Objective surface absent; click **Probe Objective surface**; status becomes `No Objective panel registered.` — PASS. [Video](../../../assets/objectives-plugin-final/before-68dcb7db8822.webm) · [JSON report](../../../assets/objectives-plugin-final/before-68dcb7db8822.json).
-- Candidate `1a6c4158dde1872e9b5bd989f27aa3d9f63d2b5c`: initial `2 / 10`; click **Apply server update**; ObjectivePane's actual visibility-refresh handler reaches `7 / 10`; constraint visible — PASS. [Video](../../../assets/objectives-plugin-final/candidate-1a6c4158dde1.webm) · [JSON report](../../../assets/objectives-plugin-final/candidate-1a6c4158dde1.json).
-- The same two runs passed in the exact-SHA Factory sandbox and were repeated locally to publish owner-accessible artifacts. Per the requested existing-runner scenario, this is a deterministic component harness using archived revision sources, a Workspace module shim, and fixture `fetch`; it proves ObjectivePane interaction/refresh rather than claiming an end-to-end durable-store browser path. Direct store/tool/real WorkspaceBridge registry coverage is supplied by the 93-test suite.
-- Mobile omitted: the plugin is unregistered and this proof targets a fixed workbench pane; responsive residual is limited to component coverage.
+- Base `68dcb7db8822f721c6b45d0731e01a46fa364f28`: Objective surface absent; click **Probe Objective surface**; `No Objective panel registered.` — PASS. [New video](../../../assets/objectives-plugin-final/before-postrace-68dcb7db8822.webm) · [new JSON](../../../assets/objectives-plugin-final/before-postrace-68dcb7db8822.json).
+- Final code `20c13de549a5871c09622bc93b66a77871510f20`: initial `2 / 10`; click **Apply server update**; actual ObjectivePane visibility refresh reaches `7 / 10`; constraint visible — PASS. [New video](../../../assets/objectives-plugin-final/final-postrace-20c13de549a5.webm) · [new JSON](../../../assets/objectives-plugin-final/final-postrace-20c13de549a5.json).
+- Both runs passed first in exact-SHA sandbox `9ff0b3a4-...`, then were repeated with the identical runner to publish durable assets. The JSON paths were normalized to repository-relative paths; scans contain no workspace absolute path.
+- Scope honesty: this is the required archived-revision component harness with Workspace shim and deterministic fixture fetch. It proves ObjectivePane interaction/refresh, not an end-to-end durable-store browser route. Store/tool/real WorkspaceBridge seams are covered by the 96-test package suite.
+- Mobile omitted: the plugin is unregistered and targets a fixed workbench pane; residual responsive coverage is component-level.
 
-## CI and integration audit
+## GitHub CI and integration
 
-- Final reviewed-code [Workflow Invariants run 34163847781](https://github.com/hachej/boring-ui/actions/runs/34163847781) — SUCCESS, including Runtime Refactor P8, Strategy Docs, and Action Pins.
-- Final reviewed-code [CI run 34163847711](https://github.com/hachej/boring-ui/actions/runs/34163847711) — all affected and broad jobs passed except an unrelated `workspace-command-palette` Bombadil replay divergence in UI Review; failed-job rerun requested. Final required-check disposition is recorded revision-bound in the Bead handoff/PR comment rather than represented as green before it is green.
-- Earlier [CI run 34157346152](https://github.com/hachej/boring-ui/actions/runs/34157346152) and [Workflow Invariants 34157346157](https://github.com/hachej/boring-ui/actions/runs/34157346157) were fully green before the two server-contract fixes.
-- Historical failures preserved: P8 shared `Buffer` findings in runs 32645716828/32961886253 and merged lockfile breakage in 34149136876/34149136997 were fixed by `45dd7a00e4ffa4c48b8de1791dc911c958de35dd`; later Bombadil replay divergence is outside Objectives paths and is not misreported as product proof.
-- PR conversations, GitHub reviews, and inline review comments were audited; each remains empty. Independent Factory reviews below are the durable review source.
+Exact reviewed-code SHA `20c13de549a5871c09622bc93b66a77871510f20` is green:
 
-## Independent review and explicit abstraction PASS
+- [CI run 34171982714](https://github.com/hachej/boring-ui/actions/runs/34171982714) — SUCCESS: Detect Changes, Lint, Typecheck, Invariants, bundle budgets, E2E, UI Review, Reference Images and Remote Worker Smoke; `Unit Tests Changed` reported `None` and the full matrix was workflow-skipped.
+- [Workflow Invariants run 34171982711](https://github.com/hachej/boring-ui/actions/runs/34171982711) — SUCCESS: Runtime Refactor P8, Strategy Docs, and Action Pins.
+- Exact final docs/artifact-head required-check URLs and conclusions are recorded after the immutable head exists in the PR proof comment and Bead handoff. Earlier failures/cancellations and their fix-forward dispositions remain preserved in prior handoffs and the presentation review history.
 
-**Abstraction review: PASS** for final merged-update code at exact evidence SHA `40506e261eaec216c422f9ee5f2f6ebeea0dda3a` (Boring Reviewer session `a46b9f7f-fa08-4eea-a488-48d71b81e2ef`, `openai-codex/gpt-5.6-sol`, digest `sha256:5a997c6d66cad3e36f832084e4e349e8cd0fa6dec736860607823b774109907b`). The reviewer confirmed the prior invalid-update finding fixed and the abstraction boundary PASS; its request-changes verdict was limited to pending CI and stale proof/presentation receipts, repaired in the subsequent artifact-only commits. Earlier clean code pass: session `109e9597-bf15-4529-82eb-343c3f005bbc` at `5eea1451e322f4940478f28367c1cc6624951f30`.
+## Independent review and explicit package-abstraction PASS
 
-- Governing contracts inspected: `docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md`, `docs/plans/long-term/ratified/RECONCILIATION.md`, and `docs/procedures/coding-invariants.md`.
-- Public seams inspected: objectives front/server/shared exports; `ObjectiveStore`, `FileObjectiveStore`, `ObjectiveError`, tools, objective.v1 handlers/client; WorkspaceBridge registry/trusted handler/HTTP composition; `createWorkspaceAgentServer`; plugin composition; and `ObjectivePane`.
-- Real callers inspected: `evals/factory/lib/harness.ts` and objective eval checks; Agent and Workspace production sources were searched for Objective special-cases.
-- Ownership/direction: Objective vocabulary, persistence, path policy, and the canonical plugin-local `ObjectiveErrorCode` enum remain plugin-owned. Agent's platform `ErrorCode` intentionally contains no `OBJECTIVE_*` special-case; adding one would invert this ownership. Workspace owns generic composition and canonical bridge errors. Agent core contains no Objective special-case. Consumers use supported exports; no private/deep import, dependency reversal, cycle, concrete-layout leak, permission widening, or substitution break exists.
-- Consumer proof: exact command set above plus real direct/tool/registry regressions. ENOENT, containment, mutual exclusion, timeout/reclamation, atomic replacement, and failed-commit durability remain intact.
-- Earlier request-changes rounds and fixes are preserved in parent/code-fix Bead handoffs. Final artifact-only SHA receives a separate fresh review for standards, evidence accessibility/correctness, thermo applicability, and reconfirmation that docs/media do not invalidate this package-abstraction PASS.
+Final code review at exact `20c13de549a5871c09622bc93b66a77871510f20`: Boring Reviewer session `c1d006fb-643c-4aa8-a783-9f75d2749ac6`, model `openai-codex/gpt-5.6-sol`, brief digest `sha256:fa690275b998394e313486cf6a47138587997b14671921d81ad4e10a7794011f`, verdict **APPROVE** with no material findings.
+
+- Standards/spec: **PASS**.
+- Thermo: **PASS**.
+- Package abstraction: **PASS**.
+- Supported exports and real callers inspected: objectives front/server/shared exports; `ObjectiveStore` / `FileObjectiveStore`; tools; `objective.v1` handlers/client; `ObjectivePane`; WorkspaceBridge registry/composition; factory harness/eval callers; app composition.
+- Ownership/direction: schema, persistence, locking, vocabulary, and stable errors remain plugin-owned. Workspace remains generic host/bridge composition. Agent/app gain no Objective special-case, deep import, private-store dependency, cycle, renderer leak, or authority widening.
+- Substitution/durability: injected `ObjectiveStore` remains substitutable; default factory retains workspace-root containment; browser mutation authority is unchanged; guarded election/commit/release satisfies the advertised single-live-writer/restart-overlap durability contract.
+- Earlier two review rounds found adjacent stale-holder commit and release schedules; both were fixed forward and re-proved. The final round is clean.
+- A terminal independent review additionally checks this exact final docs/artifact SHA for evidence correctness/accessibility, standards/spec, thermo applicability, and reconfirms the full package-abstraction PASS; provenance is recorded in the PR proof comment and Bead handoff.
 
 ## Risk route, counts, triggers, and exclusions
 
-- Base-to-final-code commit `1a6c4158d` (including preceding delivery artifacts): **7,543 additions + 19 deletions = 7,562 changed lines across 61 files**. Through final owner-presentation commit `d6f04fdbf`, the full PR is **7,710 additions + 19 deletions = 7,729 changed lines across 64 files**. The post-code increase is docs/media/artifact-only and does not alter production risk.
-- `packages/**` production additions + deletions: **0**; the base-to-head `packages` diff is empty.
-- Numerical exclusions from the package threshold: all plugin production code (outside `packages/**`), tests, evals, docs, `.beads/issues.jsonl`, manifests, lockfile, and generated/artifact media. Exclusion is numerical only; every area remains semantically reviewed.
-- Matched protected trigger: durable Objective primitive / architecture semantic decision. This controls the route regardless of package production count.
-- Absent triggers: no authentication, permissions, tenant isolation, secrets, billing/spend, destructive migration/deletion, release/publish, shared design-system/global navigation, or automation-authority change.
-- Route: **protected owner merge decision; never automatic**.
+- Base-to-reviewed-code `20c13de54`: **7,978 additions + 19 deletions = 7,997 changed lines across 64 files**.
+- `packages/**` production additions + deletions: **0**; the base-to-code `packages` diff is empty.
+- Final docs/artifact-only churn is reported from the exact published head in the PR proof comment and handoff; it does not alter production risk.
+- Numerical exclusions from the package threshold: plugin production (outside `packages/**`), tests, evals, docs, Bead ledger, manifests, lockfile, WebM/JSON, and self-contained presentation. Exclusions are numerical only; all remain in semantic review scope.
+- Matched protected trigger: durable Objective primitive / architecture semantic decision. This controls the route despite 0 package production lines.
+- Absent triggers: authentication, permissions, tenant isolation, secrets, billing/spend, destructive migration/deletion, release/publish, shared design-system/global navigation, and automation-authority change.
+- Route: **protected exact-SHA owner merge decision; never automatic**.
 
-## Gaps, risk triggers, rollback, and owner test
+## Residuals, rollback, and owner click-through
 
-- Waiver: none. Proof gap: none once the final rerun and required checks are green; a failed/missing check blocks handoff as ready.
-- Accepted residuals: narrow pre-lock lock-path symlink-swap window, release read-then-unlink window, and documented single-live-writer/restart-overlap contract rather than arbitrary N-writer serializability.
-- Risk triggers to revisit: registering the plugin, changing public Objective vocabulary/bridge codes, widening browser mutations, moving Objective ownership into a platform package, multi-writer support, migration, release, or any `packages/**` production change.
-- Rollback before merge: reject the candidate. After an authorized merge: revert PR #1382's merge commit. No migration, registration, release, or data rewrite needs reversal.
-- Owner test: open the [presentation](../../../assets/objectives-plugin-final/pr-1382-presentation.html), inspect the Show me flow, watch base then candidate video, confirm `2 / 10` becomes `7 / 10`, then inspect stable-error and complete-record-limit diffs. Merge only the exact approved PR head after required checks remain green.
+- Waiver: none. Open blocker/major review findings: none.
+- Accepted residuals: crash while owning the non-recursively-reclaimable sidecar may require operator removal; uncertainty fails closed and caller waits remain bounded; existing pre-lock path TOCTOU; no arbitrary N-writer guarantee beyond the documented single-live-writer/restart-overlap contract.
+- Rollback before merge: reject PR #1382. After authorized merge: revert the PR merge commit (or the Objective plugin commit range). No migration, registration, release, deletion, or persisted-data rewrite needs reversal.
+- Owner click-through: open the [self-contained presentation](../../../assets/objectives-plugin-final/pr-1382-presentation.html); inspect the guarded stale-lock flow; watch the new base video then new final video; verify absent → probe on base and `2 / 10` → click update → `7 / 10` plus visible constraint on final; inspect the complete-record/stable-error/stale-reclaimer diffs; approve only the exact final PR head named in `## Owner Review` while required checks remain green.
