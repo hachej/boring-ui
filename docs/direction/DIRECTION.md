@@ -543,3 +543,100 @@ The audit's decision filter (buyer / work-unit / feedback / reuse /
 irreversibility / complexity tests) is adopted as reviewer guidance for
 future capability proposals — a filter, not a gate. No premise, bead, or
 queue item changes; P1-A dispatch is unaffected.
+
+## Amendment 2026-09-05 — Workspace Evolution
+
+> The 2026-09-06 amendment below supersedes the consumer selection in this
+> section. Its premise gates and priority stand except where explicitly scoped.
+
+**Owner-requested; effective on owner merge. Specified, not implemented by
+this PR.** Add Workspace Evolution as a named platform-consumer program:
+direct user requests produce private software revisions that can be previewed,
+activated, reconciled with upstream improvements, and selectively reused.
+Clinic is the first workflow proof: a French Documents médicaux dashboard with
+ambient work and optional chat. Seneca is the authenticated host for the
+personal-scope proof. Pricing, offer design, and vertical GTM remain tenant-side.
+
+The binding scope is [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+The [execution plan](../plans/workspace-evolution/README.md) owns milestone
+acceptance, seam ownership, rollout, and proof. This amendment alone owns
+dispatch; the M0–M8 capability crosswalk is not another queue.
+
+| Slice | Dispatch and release dependency |
+|---|---|
+| E0 — request and preview preparation | May run after owner merge alongside premises: capture the dashboard request/catalog; reuse a registered rendering unit in two contract fixtures with normalized synthetic references and a fixture-only adapter/extraction if needed. Clinic's live consultation document path is currently session-keyed; this proves no live migration. No production activation, new Job Thread, or lookalike saved View contract. |
+| E1a — durable activation subproof | After E0 and [durable-streams] P1-C proves consumed accepted-work/recovery; paused-human proofs apply when a paused Run is resumed. Require host-owned durable activation/current authorization and any Job Thread premises consumed by this release workflow. Saved semantic compositions also wait for [saved-views-kernel]. May land before E1b; no live Clinic ambient claim. |
+| E1b — live Clinic subproof | After E1a, trusted Clinic domain identity/operation adapter and migration proof, [thread-storage-spike], and [seat-audit-attribution]. The bounded background Job Thread must deliver recoverable status/results/decisions outside chat. These Thread/attribution dependencies are mandatory. E1 is complete only when E1a and E1b pass. |
+| E2 — personal scope | After E1 and authenticated membership/scoped-store read, preview, write, and revocation evidence. Require [seat-audit-attribution] for Seat-authored provenance where consumed. Do not substitute a browser key or shared local actor for identity. |
+| E3 — behavior revision | After E1/E2, exact behavior/run attribution and relevant protected evaluation gates. A presentation preference does not authorize changing shared expert or domain policy. |
+| E4 — isolated private module | After E1/E2 and the C4 untrusted tier is admitted/proven for both build and serving; no hosted generated-code preview or install before that gate. |
+| E5 — upgrade and reconciliation | After E1/E2 for configuration. Extend after E3/E4 for their artifact classes. Prove an ordinary upstream upgrade and a real conflict before broadening that class's automatic updates. |
+| E6 — approved reuse and broader autonomy | Starts after E5; completion requires a useful approved contribution adopted by a second private workspace. Broader autonomy additionally needs retained-use and maintenance evidence for that change class. Publishing and customer adoption remain separate authorizations; a public marketplace is not a prerequisite. |
+
+**Priority and explicit supersession.** The merge-queue preflight and
+[durable-streams] keystone priority stand. E0 is an explicit addition to the
+earlier list of runnable preparation/chrome work; it does not relabel E1 as
+substrate-free. Later E-slices are conditional consumers of their named
+premises, not a blanket reopening of the non-chrome shell/engine freeze.
+Wave 4's new-repo implementation gate and the interface-first port doctrine
+remain unchanged. Use existing published package/app seams; the new-repo
+M-labels describe capability relationships only.
+
+Thread-storage shape and the relevant attribution joins apply when an E-slice
+consumes Job Threads, including headless work; E1b necessarily consumes them.
+They do not gate a standalone configuration preview that consumes none of
+them. Saved Views still wait for the complete ratified View
+contract. Early product-specific props may select existing components; they
+may not create a replacement ViewDescriptor under an overlay name.
+
+**Next work on adoption:** execute E0 against the Clinic document-dashboard
+request, including a second supported mount, no-chat navigation, and French
+review/status copy. Record missing domain operations and session-identity
+migration needs; prepare E1 against the then-current premise evidence. These
+fixture proofs do not wait for a full Meridian shell or multi-agent engine.
+No capability is closed by this plan PR, and no calendar estimate substitutes
+for a gate.
+
+The done-bar is a direct request kept through real use and a supported
+upgrade, followed by approved reuse in another private workspace. Track all
+attempts, including failed builds and repair work; generated-code volume is
+not progress by itself.
+
+## Amendment 2026-09-06 — Cross-domain Workspace Evolution
+
+**Owner-requested; effective on owner merge; no runtime capability is closed.**
+The owner requested a general software vision that covers Clinic,
+Charlotte Ledoux/Seneca and ESG portfolio-impact analysis. Binding semantics:
+[RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
+Readable model and evidence: [software model](../vision/software-model.md).
+
+**Explicit scope change:** the 2026-09-05 E0/E1 consumer selection is no longer
+Clinic-only, and Seneca is more than an identity proof host. Select one useful
+bounded live consumer for the first release loop; record its workflow, domain
+owner, source/operation contracts and missing prerequisites before E1
+implementation. This is implementation scoping, not permission to change
+tenant GTM or dispatch a second heavy platform build.
+
+| Slice | Current dispatch and done-bar |
+|---|---|
+| E0 — cross-domain preparation | After owner merge, alongside premises: map the owner-described Clinic request and a source-backed proposed Charlotte/Seneca fixture request. Record requester and provenance; confirm proposed requests with the intended requester before calling them actual customer requests. Reuse one registered resource/evidence unit across two supported mounts and both synthetic domain fixtures. Record ESG as an unverified analytical stress case. No live migration, production activation, new Job Thread or substitute saved-View schema. |
+| E1a — durable configuration | After E0 and P1-C accepted-work/recovery. One selected consumer earns request → candidate → private preview → durable keep/undo. Retain current authorization and every consumed Thread/View/pause premise from the September 5 row. |
+| E1b — selected live domain work | After E1a, the selected consumer's domain identity/operation and any required migration proof, plus mandatory [thread-storage-spike] and [seat-audit-attribution]. One bounded Job Thread exposes status/results/decisions outside chat. Clinic selection additionally requires its trusted Session-keyed record migration. E1 needs E1a and E1b. |
+| E2/E5 — ownership and maintenance | Existing gates stand. Earn personal/shared isolation and a real configuration upgrade/conflict. Before declaring a shared capability cross-domain, repeat it in a second structurally different live consumer with its own domain acceptance. Synthetic ESG fixtures do not count. |
+| E3/E4/E6 — broaden the earned class | Existing order stands: E3 for behavior promises; E4 for novel confined code; E5 configuration before E6, with E3/E4 extending upgrade evidence for their classes. Approved minimal export, maintainer review and independent adoption remain required. |
+
+**Next work on adoption:** Factory returns one request/contract map for Clinic
+and one source-backed proposed fixture request/contract map for Charlotte/Seneca,
+each with requester/provenance and confirmation status, one bounded
+two-domain/two-mount fixture demo,
+the ESG assumptions it could not verify, and the proposed first live workflow
+with its prerequisite issues. A supported private change does not wait for
+three client rollouts. A domain-specific success does not close a universal
+platform claim. Rule of Three and any kernel promotion still need their
+existing evidence, beyond this consumer-readiness bar.
+
+Premise priority, merge-queue preflight, interface-first port doctrine,
+new-repo freeze and tenant-owned commercial ordering are unchanged. Reuse
+Seneca's existing exact-package publication/activation seams where applicable;
+they do not substitute for scoped Experience activation, personal overlays,
+or general upgrade reconciliation.

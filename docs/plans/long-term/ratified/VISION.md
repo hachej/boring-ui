@@ -28,6 +28,22 @@ architecture.
 > for every product. The kernel remains the compounding layer; ordinary
 > operate-mode products are not forced into its ontology.
 
+> **Amendment — 2026-09-05 (owner-requested; effective on owner merge;
+> implementation pending):** personal software evolution is an explicit
+> product goal. A user can start with a minimal useful workspace, request
+> changes to its interface and permitted behavior, try an immutable candidate,
+> keep or undo it, and retain local intent through shared upgrades. Useful
+> changes can become optional reusable packages through an authorized export
+> and review. This extends controlled revision to the Experience itself;
+> it does not require an optimization Objective for every preference.
+> **Clinic clarification:** the starting Experience can be a French medical-
+> document dashboard with an ambient agent and optional chat. Workspace is the
+> governed world, not mandatory chrome. Domain resources, primary surfaces,
+> presence, triggers, and scoped context compose independently; records and
+> admitted work outlive any conversation or mounted UI. The first proof reuses
+> one document unit in both document-first and chat-first compositions.
+> Binding scope and amendments: [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+
 ## 1. The decisive discovery: the three documents describe ONE system
 
 The V2 kernel's 12 nouns map almost entirely onto machinery that is built,
@@ -174,7 +190,9 @@ stay outside the kernel; every platform investment is pulled by a real
 experiment or customer.
 13. Sovereignty: Boring owns memory, context, optimization history, policy,
 evaluation, recursive intelligence; model providers are replaceable compute.
-14. Docs never precede the implementations they describe.
+14. Documentation must not claim implementation guarantees before they are
+demonstrated. Explicitly unbuilt plans/specifications may precede implementation
+(2026-09-05 clarification, effective on owner merge; RECONCILIATION §11g).
 
 ## 5. Unified roadmap (V2's 14 steps collapsed into the frozen DAG + new work)
 
@@ -213,8 +231,26 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 > 2026-08-27 §9 update: transcript presentation is now multi-author, and the
 > storage value-root is ruled — only the shape remains spiked.)*
 
+> **Scope reconciliation — 2026-09-05:** the 2026-08-27 ruling in
+> RECONCILIATION §8(a) scoped the shell sentence above to the Meridian flagship.
+> It does not require that shell for verticals. §10 defaults vertical SaaS to
+> ambient presence; §11 makes Clinic's document-first proof explicit.
+
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
+
+**Workspace Evolution milestone extension — 2026-09-05.** Add the E0–E6
+product milestones in the [execution plan](../../workspace-evolution/README.md#milestones):
+request/preview preparation, durable workspace activation, personal scope,
+behavior revision, isolated generated modules, upgrade reconciliation, and
+approved reuse. Clinic's document dashboard and a second supported document
+mount are the first proofs; live acceptance requires domain identity and
+server work independent of chat. Seneca is the target
+authenticated host for the personal-scope proof. This does not replace the
+first-commercial-vertical decision or renumber K1–K9/M0–M8. The
+[implementation-spec crosswalk](V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
+maps capabilities; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
+alone schedules them and preserves the relevant premise gates.
 
 ## 6. Research program & kill criteria (adopted verbatim from V2)
 
@@ -244,6 +280,14 @@ autonomous trading/ad-budgets, self-modifying production repo, Product DSL,
 BSL rewrite, universal Mount, cross-tenant recursive learning, big package
 reorg **in the old repo** (dissolved into the port — see R-a), arbitrary
 untrusted hosted plugin execution (P0.6).
+
+**Scope amendment — 2026-09-05.** The general-purpose "universal app
+generator" exclusion above does not exclude the bounded personal evolution
+program in §11. Existing-component configuration is the first lane; new
+generated modules require the isolated C4 tier before hosted preview or use.
+Untrusted in-process execution, autonomous production-source rewriting,
+automatic private-data sharing, and a marketplace prerequisite remain
+excluded. Arbitrary code cannot promise conflict-free automatic upgrades.
 
 ## 9. One diagram
 
@@ -277,3 +321,38 @@ untrusted hosted plugin execution (P0.6).
 1. ~~R-a~~ RULED: new repo, interface-first, port mechanisms (protocol above).
 2. Track K sequencing after P0 as in §5 — confirm.
 3. Creator growth as first vertical (K7) — confirm or substitute.
+
+## 11. Owner-requested clarification — 2026-09-06 (software model)
+
+**Proposed; effective on owner merge; no implementation claim.** The current
+Experience-over-governed-work north star remains. The owner requested that it
+be made concrete across Clinic, the Charlotte Ledoux/Seneca knowledge product,
+and an ESG portfolio-impact use case, instead of being defined by Clinic.
+
+The product responsibilities are **state and knowledge, domain operations,
+Experiences, and durable work**, under **authority, evidence and lifecycle
+control**. They map to existing resource/artifact, Capability, View,
+Thread/Session/Run, and host contracts. They are not additional kernel nouns.
+Domain truth may remain in external systems or read-only corpora; no universal
+record schema or mandatory system-of-record migration follows. Deterministic
+calculations and manual operations are valid without model inference. The
+explicit optimization loop remains optional under the 2026-08-27 scope ruling.
+
+Domain packages own schemas, methods, validation and review meaning. Shared
+mechanisms own composition, authority, context, accepted work and compatible
+software revision. Software undo does not undo domain records or effects.
+Each vertical earns its own readiness; source-grounded knowledge adaptation
+does not prove medical correctness, and a synthetic portfolio fixture does
+not prove a live financial client.
+
+**Named scope amendment:** the September 5 E-program references to Clinic as
+the first universal proof and Seneca only as an authenticated host are
+superseded by cross-domain preparation and one selected live consumer, then
+second-consumer evidence for claimed shared capabilities. Clinic retains its
+mandatory migration when selected; E1b retains its Thread/attribution premises
+for every selected consumer. This changes neither K/M commercial ordering nor
+Rule of Three, the frozen noun set, the port doctrine or the security model.
+
+Normative detail: [RECONCILIATION §12](RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
+Readable model/evidence: [software model](../../../vision/software-model.md).
+Dispatch: [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-06--cross-domain-workspace-evolution).
