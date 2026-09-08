@@ -52,10 +52,11 @@ Resumable unit of work ("ACME proposal", "Why is EZ inflation sticky?",
 ```ts
 interface Thread { threadId: string; workspaceId: string; title?: string; participants?: ParticipantRef[]; workingSet?: ResourceRef[] }
 ```
-Implementation: recasts AgentGateway session machinery; owns one per-session
-record (A2a) and many Runs. *(Storage-shape note, 2026-08-26: the one-record
-backing shape is suspended pending the thread-storage spike — RECONCILIATION
-§8; the ontology stands.)*
+Implementation: one Thread binds zero or more runtime Sessions (RECONCILIATION
+§9a, 2026-08-27; headless Work has none) and many Runs; AgentGateway session
+machinery backs the Session bindings. *(Storage-shape note: whether the Thread
+timeline is a first-class stream or a projection over Sessions remains the
+open spike — RECONCILIATION §9a; the ontology stands.)*
 
 ### Mount
 Addressable governed namespace exposing data/resources/capabilities to a
@@ -145,6 +146,8 @@ Kinds: collection, record, document, kanban, timeline, dashboard, inbox,
 chart, table, map, artifact. The Agent reasons about these; it NEVER reasons
 about Dockview groups, component names, tab ids, CSS, grid widths, modals.
 
+*(2026-09-07, RECONCILIATION §13e: this prohibition binds domain agents. A seated software-builder agent may read and change renderer code, CSS, operations and tests inside a candidate release.)*
+
 ### Supporting kernel types (from the agent-native harvest — adopt directly)
 
 ```ts
@@ -191,6 +194,7 @@ Deep links from agent results back into the human app: "Created candidate
 portfolio. [Open candidate comparison]".
 
 ### Deferred nouns — single list with promotion triggers
+*(2026-09-07, §13a: Product's private release/installation half is promoted; Customization's first slice — retained method/UI change through a product runtime — is the native-creation journey. Both public packaging and general declarative customization remain deferred.)*
 Product (after two real verticals) · Seat-as-full-subsystem (seatId itself IS
 P0 per ratification — the subsystem waits) · Process · Schema · Module ·
 Navigation · Customization · DataSource · **Experiment** (promote when three
@@ -474,6 +478,8 @@ autonomous infra — benchmark incumbent vs challenger, promote only if
 independently better; V2-11 first vertical (creator growth — shortest
 feedback); V2-12 second structurally different vertical (macro / industrial
 formulation / portfolio / SME GTM); V2-13 only then extract Product.
+*(2026-09-07, §13a: private release/installation no longer waits for V2-11/12;
+only public Product packaging does.)*
 
 **Research program:** H1 agents generate useful candidates · H2 explicit
 objectives/evaluators discriminate · H3 human+world feedback improves later
@@ -526,6 +532,9 @@ customer data never lives inside one agent runtime.
 
 **Future customization** (deferred): semantic/declarative over agent-rewritten
 React; inheritance Platform → Vertical → Product → Workspace → User.
+*(2026-09-07, §13: the first customization slice is builder-generated React and
+operations served in an isolated product runtime, retained through activation
+receipts; the declarative layer is still the target once Rule of Three applies.)*
 
 **Non-goals now** (full list): marketplace · creator revenue sharing · custom
 domains · universal app generator · generalized A2A network · full cloud

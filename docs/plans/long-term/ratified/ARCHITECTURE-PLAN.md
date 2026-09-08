@@ -6,6 +6,14 @@
 > AgentRef opportunistic; Seat-grants-participation invariant). Where this file
 > and §6 differ, §6 wins. Next input: implementation, not abstraction.
 
+> **2026-09-05 owner-requested extension:**
+> [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution)
+> adds scoped workspace evolution on owner merge. It preserves R1, D-b, the
+> accepted-work contract, and the isolated untrusted tier. Its Clinic
+> clarification makes document-first, ambient composition concrete while
+> separating domain records and work from chat/UI lifetimes. Its proposed
+> milestones are not claims that the historical obligations below have shipped.
+
 2026-08-14/15. Produced by the W33 research cycle (5 framework scouts, 6 executable
 spikes, 4 code censuses, PR #1256 review) and hardened by two adversarial passes +
 one transcript-recall pass (Sol xhigh); dispositions in
@@ -193,6 +201,15 @@ iframe UI, sandbox-proxy tools, server disabled, prompted grants, explicit
 promotion — ratified). There is no third "plugin-host service" to invent.
 (Discharges pass-1 #6.)
 
+> **2026-09-07 (RECONCILIATION §13c, D33):** "server disabled" is superseded
+> for installed products. Generated server code runs inside a **product
+> runtime** in `local`/`remote` mode (the existing sandbox/runtime tier — still
+> no third service), whose declared operations the host registers under the
+> installation's grants. `embedded` (in-process) mode is the default-off
+> exception for single-tenant curator deployments; P0.6's refusal of
+> `boring.server` from agent-writable roots in the host process stands
+> outside it.
+
 **D-c C6 commit protocol (cross-host exactly-once terminal recording).**
 - **Admission:** host appends `admitted(requestKey)` to the envelope *before*
   dispatch (requestKey = the five-part ledger key). Duplicate requestId with a
@@ -324,8 +341,10 @@ drain/reseed) ride with A2a/A6.
 - No integrating Flue/celld (patterns yes, dependency no; celld: empty
   `process.env`, 435 ms cold start vs 4 ms advertised — executed; feasibility
   gates recorded for any future revisit).
-- Docs corrections never precede the implementations they describe (G16 lesson:
-  we documented guarantees that never ran — that is how this cycle started).
+- Documentation may not claim implementation guarantees before they are
+  demonstrated (G16 lesson: we documented guarantees that never ran).
+  Explicitly unbuilt plans/specifications may precede implementation — named
+  2026-09-05 clarification, effective on owner merge, RECONCILIATION §11(g).
 
 ## 7. Open items (owned, not dropped)
 

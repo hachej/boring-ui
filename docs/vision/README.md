@@ -28,6 +28,90 @@ one surface owns the substrate. Every visible product is an *Experience over
 the governed work substrate*; the explicit optimization loop attaches where
 a real objective and outcome signal exist.
 
+## Native creation — the first complete product journey (ratified 2026-09-07)
+
+An expert creates useful software **inside Seneca**, uses it to complete a
+job, changes its method and interface, installs it for a separate consumer,
+and maintains it through an upstream update, **without founder source edits**.
+Creation is itself a job: the expert supplies intent, knowledge, examples,
+judgment and authorization; the platform performs the engineering. This is
+now the first complete journey, ahead of public packaging, marketplaces or
+owned compute. Three layers make it safe: the **host** brokers identity, data
+and activation; each installed product runs in its own **product runtime**
+(in-process only for a single-tenant curator, otherwise a local or remote
+sandboxed runtime); builders work in disposable **sandboxes** that are never
+the product host. Rulings: [RECONCILIATION §13](../plans/long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey);
+pack: [`native-creation/`](../plans/native-creation/README.md). The two
+sections below are its lifecycle "how", folded from the former Workspace
+Evolution pack.
+
+## The software behind every Experience (owner-requested clarification, 2026-09-06)
+
+**Boring lets people compose and maintain software around their work.**
+“System of record + UI + agent workflows” is a useful starting point; the
+general model also needs domain operations, knowledge that may remain in
+external/read-only sources, and work that may be deterministic or human-led.
+
+| Responsibility | Product meaning |
+|---|---|
+| State and knowledge | What the product knows or owns: records, sources, files, drafts and artifacts, with identity, versions and provenance |
+| Domain operations | What can be done: queries, calculations, validation, transitions and effects, defined once for authorized callers |
+| Experiences | How people interact: chat, documents, tables/charts, forms, review queues, embedded or headless surfaces |
+| Durable work | What is underway: bounded jobs, status, decisions and results, with optional agent participation and conversation |
+
+**Authority, evidence and lifecycle control apply across all four.** These
+are responsibilities mapped to existing contracts, not new universal kernel
+nouns or four services. A UI must not own business rules; an agent must not
+own domain truth or grant itself authority. Ordinary browsing, manual work
+and deterministic calculation must remain useful without inference.
+
+The three adaptations expose different requirements: **Clinic** is
+document/record-led; **Charlotte Ledoux/Seneca** is a source-grounded knowledge
+product with read-only corpus and writable drafts; **ESG portfolio analysis**
+tests reproducible calculations, input freshness and scenario comparison.
+The ESG details remain a proposed stress case from the owner's description,
+not a verified implementation. None defines the universal application schema.
+
+The [software model](software-model.md) contains the ownership map, source
+scope, cross-domain proof and refutation tests. It is the §12 model retained by
+the 2026-09-07 native-creation ruling; §13 updates its first consumer and timing.
+No implementation is claimed by this documentation.
+
+## Personal software evolution (owner-requested extension, 2026-09-05)
+
+An Experience can become the user's own software: start with a minimal useful
+workspace, ask it to change its layout or permitted behavior, inspect a
+candidate, and keep or undo it. Intentional customizations survive shared
+upgrades; approved improvements can become optional reusable components or
+domain packages. A raw workspace should support useful work immediately and
+can adopt a domain starter without making the user design the application.
+
+The branch is normally a private versioned composition of shared packages,
+local settings, behavior assets, and isolated custom modules. The host keeps
+identity, authority, recovery, and activation; business records remain separate
+from software revisions. Full layout variation is a supported goal, while
+Meridian remains the flagship workspace Experience. Personalization does not
+mutate a shared expert for every subscriber or require a measurable A/B result
+for every preference.
+
+Domain resources/operations, primary surfaces, presence, triggers, and scoped
+context are independent composition choices. A French **Documents médicaux**
+dashboard, a source-grounded expert conversation, and an analytical workbench
+can compose supported units without forking operation meaning. Records,
+knowledge and admitted server work outlive browser views; status and decisions
+stay reachable outside chat. [Composition contracts and stress cases](../plans/native-creation/LIFECYCLE.md#composable-experiences-and-ambient-work)
+make this checkable across domain fixtures before generalized platform claims.
+
+This is specified future work, grounded in [RECONCILIATION
+§11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution)
+and retained by §13. [Workspace Evolution](../plans/native-creation/LIFECYCLE.md)
+defines the E0–E6 proofs; the [DIRECTION amendment of
+2026-09-07](../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+controls current dispatch. The 2026-09-06 cross-domain preparation remains
+context for later consumers; the first live proof is the Seneca mathematics
+tutor. Clinic retains its own migration and capture obligations; commercial
+sequencing remains tenant-owned.
+
 ## Layer 1 — the execution engine (built, hardening)
 
 Agents run behind **one gateway** — a single frozen session contract and a
@@ -59,17 +143,18 @@ working backend. Analysis + criteria:
 
 ## Layer 2 — the optimization kernel (the new work)
 
-Objective → Candidate → Evaluation → Outcome → Evidence: small durable
-records that sit on top of every run, so agents don't just act — they
-provably improve. Twelve nouns, frozen ontology, ported into a clean kernel
-interface-first. This is the part of the company that compounds.
+Objective → Candidate → Evaluation → Outcome → Evidence: explicit optimization
+records attach where a real objective and measurable outcome exist. They
+consume attributable work; ordinary operate-mode tasks need not become
+experiments. Improvement remains a hypothesis until independent evidence
+demonstrates it. The frozen ontology ports into a clean kernel interface-first.
 
 Detail: [`../plans/long-term/ratified/VISION.md`](../plans/long-term/ratified/VISION.md)
 (the merged ratified vision) and its implementation spec beside it.
 
-## Layer 3 — the product surface (specified, premise-gated)
+## Layer 3 — the product surfaces (specified, premise-gated)
 
-The **multi-agent workspace shell**: Search on top, then Inbox / Work /
+Meridian, the flagship **multi-agent workspace shell**: Search on top, then Inbox / Work /
 Agents / Library over one workspace. A **Thread is one job** — the durable
 job root, binding zero or more conversations (RECONCILIATION §9a). In
 Meridian it reads like a Slack thread: **one composer, explicit
@@ -93,8 +178,8 @@ absorbed north-star ruling ledger).
 ## Layer 4 — the commercial motion (lives in the tenant repos)
 
 The platform repo deliberately holds **no** pricing, campaigns, or GTM
-sequencing. Verticals are *recipes* — saved views + automations + an
-objectives shape + participants staffed from the application fleet — and the
+sequencing. Verticals are *recipes* — domain sources and operations, supported
+views, permitted work patterns, optional objectives and participants — and the
 tenant repositories (Seneca) own which recipe sells first, to whom, at what
 price. Today that motion is real: paying subscribers on the creator side, a
 deployed client tenant, and a commercial roadmap that references these
