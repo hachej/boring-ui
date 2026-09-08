@@ -409,6 +409,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       {
         agentTypeId: input.agentTypeId,
         title: input.title ?? null,
+        ...(input.originChannel === undefined ? {} : { originChannel: input.originChannel }),
         resumeSessionId: input.resumeSessionId ?? null,
       },
       async () => {
@@ -441,7 +442,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           const created = await preparedBinding.composition.backend.createSession(
             harnessScope(claim, input.agentTypeId),
             harnessContext(claim, input.requestId),
-            { title: input.title },
+            { title: input.title, originChannel: input.originChannel },
           )
           const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
           this.knownSessions.add(agentSessionKey(claim.workspaceScopeId, ref))
