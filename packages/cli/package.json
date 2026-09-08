@@ -12,7 +12,8 @@
     "public/"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "node scripts/generate-host-singleton-exports.mjs --check && tsup",
+    "generate:singleton-exports": "node scripts/generate-host-singleton-exports.mjs",
     "build:front": "vite build",
     "build:full": "node scripts/build-full.mjs",
     "typecheck": "tsc --noEmit",
