@@ -4,12 +4,10 @@ import { createFolderModeApp, createWorkspacesModeApp, type RuntimeMode } from "
 export async function createLocalFolderModeApp(opts: {
   workspaceRoot: string
   mode: RuntimeMode
-  projectName?: string
 }): Promise<FastifyInstance> {
   return await createFolderModeApp({
     workspaceRoot: opts.workspaceRoot,
     mode: opts.mode,
-    projectName: opts.projectName,
     provisionWorkspace: false,
     // Match runCli's loopback-only folder-mode configuration. Omitting this
     // leaves browser WorkspaceBridge calls unauthenticated and makes the built

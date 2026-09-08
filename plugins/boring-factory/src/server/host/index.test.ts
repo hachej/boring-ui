@@ -7,6 +7,8 @@ import { promisify } from 'node:util'
 import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFactoryHost } from './index'
+import { readOrchestratorStatuses } from './factoryHub'
+import type { FactoryEpicEntry } from './epicRegistry'
 import { FACTORY_REQUEST_FILE_MAX_BYTES } from './epicRegistry'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../../../..')
@@ -18,6 +20,40 @@ afterEach(async () => {
 })
 
 describe('factory host composition', () => {
+  it('chunks summary projection requests at the public 50-session limit and falls back only for omitted sessions', async () => {
+    const entries = Array.from({ length: 51 }, (_, index): FactoryEpicEntry => ({
+      epicKey: `epic-${index}`,
+      featureName: `Epic ${index}`,
+      worktree: '/unused',
+      branch: `epic/${index}`,
+      repositoryRoot: '/unused',
+      orchestratorSessionId: `orch-${index}`,
+      createdAt: '2026-09-07T00:00:00.000Z',
+      status: 'closed',
+    }))
+    const calls: Array<{ method: string; payload?: { sessionIds: string[] }; url: string }> = []
+    const app = {
+      async inject(request: { method: string; payload?: { sessionIds: string[] }; url: string }) {
+        calls.push(request)
+        if (request.method === 'POST') {
+          const sessionIds = request.payload?.sessionIds ?? []
+          const summaries = sessionIds.filter((id) => id !== 'orch-50').map((sessionId) => ({ ref: { sessionId }, status: 'idle' }))
+          return { statusCode: 200, json: <T>() => ({ summaries }) as T }
+        }
+        return { statusCode: 200, json: <T>() => ({ state: { status: 'running' } }) as T }
+      },
+    }
+
+    const statuses = await readOrchestratorStatuses(app as never, entries)
+
+    expect(calls.filter((call) => call.method === 'POST').map((call) => call.payload?.sessionIds.length).sort()).toEqual([1, 50])
+    expect(calls.filter((call) => call.method === 'GET').map((call) => call.url)).toEqual([
+      '/api/v1/agents/boring-orchestrator/sessions/orch-50/state',
+    ])
+    expect(statuses.size).toBe(51)
+    expect(statuses.get('orch-50')).toBe('running')
+  })
+
   it('keeps sandbox provider selection separate from seat model preferences', async () => {
     const stateRoot = await mkdtemp(resolve(tmpdir(), 'factory-host-models-'))
     temporaryRoots.push(stateRoot)

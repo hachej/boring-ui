@@ -14,7 +14,17 @@ export function useToast(): ToastApi {
   return {
     toast(input) {
       if (typeof window === 'undefined') return
-      window.dispatchEvent(new CustomEvent('boring-ui:toast', { detail: input }))
+      if (typeof input === 'string') {
+        toast(input)
+        return
+      }
+      const variant = input.variant === 'destructive'
+        ? 'error'
+        : input.variant === 'default' || input.variant === 'warning'
+          ? 'info'
+          : input.variant
+      toast({ ...input, variant })
     },
   }
 }
+import { toast } from './toast'

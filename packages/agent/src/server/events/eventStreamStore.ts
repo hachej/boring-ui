@@ -66,6 +66,15 @@ export interface EventStreamStore {
   subscribe(path: string, listener: () => void): () => void
 }
 
+/** Resolves a canonical session stream only when it exists in this store. */
+export async function findSessionEventStream(
+  store: EventStreamStore,
+  identity: SessionStreamIdentity,
+): Promise<string | undefined> {
+  const path = sessionStreamPath(identity)
+  return await store.getStreamMeta(path) ? path : undefined
+}
+
 export class EventStreamStoreError extends Error {
   readonly code = 'INTERNAL_ERROR'
 
