@@ -1,0 +1,16 @@
+{
+  "revision": "422b2b12ce266ee8c829264050ad718fb8a0a7d9",
+  "label": "final-wt7",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "hasObjectiveSurface": true,
+  "assertions": [
+    "initial progress 2 / 10",
+    "server update interaction",
+    "refreshed progress 7 / 10",
+    "constraint visible"
+  ],
+  "video": "assets/objectives-plugin-final/final-wt7-422b2b12ce26.webm"
+}
