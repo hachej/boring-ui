@@ -232,7 +232,9 @@ export class FileObjectiveStore implements ObjectiveStore {
       // attempt — documented here rather than silently assumed away.
       const preLockPath = await this.resolveFilePath()
       const lockPath = `${preLockPath}.lock`
+      const reclaimGuardPath = `${lockPath}.reclaim`
       const token = randomUUID()
+      let reclaimGuardHeld = false
 
       if (!(await this.acquireLock(lockPath, token))) {
         throw new ObjectiveStoreError(
@@ -264,51 +266,57 @@ export class FileObjectiveStore implements ObjectiveStore {
         // stale, a reclaimer either waits until this commit finishes or wins
         // first; in the latter case our token check fails and this stale draft
         // is never written over the reclaimer's commit.
-        const reclaimGuardPath = `${lockPath}.reclaim`
-        const ownsCommitGuard = await this.acquireReclaimGuard(reclaimGuardPath, token, true)
-        if (!ownsCommitGuard) {
+        reclaimGuardHeld = await this.acquireReclaimGuard(reclaimGuardPath, token, true)
+        if (!reclaimGuardHeld) {
           throw new ObjectiveStoreError(
             OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
             "timed out waiting to verify objective store write-lock ownership",
             { cause: new Error(`Objective store reclaim guard acquisition timed out at ${reclaimGuardPath}`) },
           )
         }
+        const lockMeta = await this.readLockMeta(lockPath)
+        let lockToken: string | undefined
         try {
-          const lockMeta = await this.readLockMeta(lockPath)
-          let lockToken: string | undefined
-          try {
-            lockToken = lockMeta
-              ? (JSON.parse(lockMeta.raw) as Partial<{ token: string }>).token
-              : undefined
-          } catch {
-            lockToken = undefined
-          }
-          if (lockToken !== token) {
-            throw new ObjectiveStoreError(
-              OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
-              "objective store write-lock ownership changed before commit; retry",
-            )
-          }
-
-          const recheck = await this.readOnDiskAt(filePath)
-          if (recheck.revision !== before.revision) {
-            throw new ObjectiveStoreError(
-              OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
-              `objective store was modified concurrently (expected revision ${before.revision}, found ${recheck.revision}); retry`,
-            )
-          }
-
-          const nextState: OnDiskState = {
-            version: 1,
-            revision: before.revision + 1,
-            objectives: [...draft.values()],
-          }
-          await this.commit(filePath, nextState)
-        } finally {
-          await this.releaseLock(reclaimGuardPath, token)
+          lockToken = lockMeta
+            ? (JSON.parse(lockMeta.raw) as Partial<{ token: string }>).token
+            : undefined
+        } catch {
+          lockToken = undefined
         }
+        if (lockToken !== token) {
+          throw new ObjectiveStoreError(
+            OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
+            "objective store write-lock ownership changed before commit; retry",
+          )
+        }
+
+        const recheck = await this.readOnDiskAt(filePath)
+        if (recheck.revision !== before.revision) {
+          throw new ObjectiveStoreError(
+            OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
+            `objective store was modified concurrently (expected revision ${before.revision}, found ${recheck.revision}); retry`,
+          )
+        }
+
+        const nextState: OnDiskState = {
+          version: 1,
+          revision: before.revision + 1,
+          objectives: [...draft.values()],
+        }
+        await this.commit(filePath, nextState)
       } finally {
-        await this.releaseLock(lockPath, token)
+        // Main-lock release must share the reclaim guard too. Otherwise a
+        // reclaimer could replace an already-stale holder's token after
+        // releaseLock reads it but before rm, and the old holder would delete
+        // the reclaimer's new lock. Keep the guard until the main path is gone.
+        if (!reclaimGuardHeld) {
+          reclaimGuardHeld = await this.acquireReclaimGuard(reclaimGuardPath, token, true)
+        }
+        try {
+          if (reclaimGuardHeld) await this.releaseLock(lockPath, token)
+        } finally {
+          if (reclaimGuardHeld) await this.releaseLock(reclaimGuardPath, token)
+        }
       }
     })
     this.writeChain = run.catch(() => undefined)

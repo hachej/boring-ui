@@ -34,6 +34,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     readFile: vi.fn(actual.readFile),
     realpath: vi.fn(actual.realpath),
     rename: vi.fn(actual.rename),
+    rm: vi.fn(actual.rm),
     writeFile: vi.fn(actual.writeFile),
   }
 })
@@ -534,6 +535,61 @@ describe("FileObjectiveStore", () => {
       expect(finalState.objectives).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: seeded.id, current: 200 }),
         expect.objectContaining({ title: "Writer B" }),
+      ]))
+    })
+
+    it("keeps the reclaim guard through stale main-lock release", async () => {
+      const path = join(dir, "objectives.json")
+      const storeA = new FileObjectiveStore(path)
+      const storeB = new FileObjectiveStore(path)
+      const seeded = await storeA.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+
+      type PrivateLockOps = {
+        reclaimIfStale(lockPath: string, token: string): Promise<boolean>
+      }
+      const opsB = storeB as unknown as PrivateLockOps
+      const originalB = opsB.reclaimIfStale.bind(opsB)
+      const outcomesB: boolean[] = []
+      opsB.reclaimIfStale = async (...args) => {
+        const result = await originalB(...args)
+        outcomesB.push(result)
+        return result
+      }
+
+      const realRm = vi.mocked(rm).getMockImplementation()!
+      let signalMainRelease!: () => void
+      const mainReleaseReached = new Promise<void>((resolve) => { signalMainRelease = resolve })
+      let allowMainRelease!: () => void
+      const mainReleaseAllowed = new Promise<void>((resolve) => { allowMainRelease = resolve })
+      let held = false
+      vi.mocked(rm).mockImplementation(async (target, options) => {
+        if (!held && target === lockPath) {
+          held = true
+          signalMainRelease()
+          await mainReleaseAllowed
+        }
+        return realRm(target, options)
+      })
+
+      const writerA = storeA.update({ id: seeded.id, current: 300 })
+      await mainReleaseReached
+      const liveMeta = JSON.parse(await readFile(lockPath, "utf8"))
+      await writeFile(lockPath, JSON.stringify({ ...liveMeta, timestamp: Date.now() - 60_000 }), "utf8")
+
+      // A has already verified its token and is paused immediately before rm.
+      // B sees a stale lock but cannot reclaim while A still holds the guard.
+      const writerB = storeB.create(input({ title: "Writer B after release" }))
+      while (!outcomesB.includes(false)) await new Promise((resolve) => setTimeout(resolve, 5))
+      allowMainRelease()
+
+      await expect(Promise.all([writerA, writerB])).resolves.toHaveLength(2)
+      expect(outcomesB).toContain(false)
+      const finalState = JSON.parse(await readFile(path, "utf8"))
+      expect(finalState.revision).toBe(3)
+      expect(finalState.objectives).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: seeded.id, current: 300 }),
+        expect.objectContaining({ title: "Writer B after release" }),
       ]))
     })
 
