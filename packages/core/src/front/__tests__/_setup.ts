@@ -12,7 +12,8 @@ let fetchStubbed = false
 let uiHelpersLoaded = false
 
 function isFrontTestFile(): boolean {
-  return (expect.getState().testPath ?? '').includes('/src/front/')
+  const testPath = expect.getState().testPath ?? ''
+  return testPath.includes('/src/front/') || testPath.includes('/src/app/front/')
 }
 
 async function ensureUiHelpersLoaded(): Promise<void> {

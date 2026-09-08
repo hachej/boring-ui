@@ -8,7 +8,6 @@ const TASK_ID = 'boring-ui-v2-r8u5'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(__dirname, '../../../../')
 const harnessPath = resolve(__dirname, 'fixtures/shutdownHarness.ts')
-const tsxBin = resolve(packageRoot, 'node_modules/.bin/tsx')
 const DEFAULT_BOOT_TIMEOUT_MS = 15_000
 const DEFAULT_EXIT_TIMEOUT_MS = 50_000
 const SHUTDOWN_GRACE_MS = 30_000
@@ -29,9 +28,11 @@ function spawnHarness(mode: 'clean' | 'slow'): {
   readOutput: () => string
 } {
   let output = ''
+  // Invoke Node directly so SIGTERM reaches the harness rather than a package
+  // manager shell/CLI shim that may translate it to exit code 143 under load.
   const child = spawn(
-    tsxBin,
-    [harnessPath, mode],
+    process.execPath,
+    ['--import', 'tsx', harnessPath, mode],
     {
       cwd: packageRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
