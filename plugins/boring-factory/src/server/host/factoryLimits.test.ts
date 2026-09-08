@@ -85,13 +85,13 @@ function fakeApp(
   childSessionIds: readonly string[] = ['child-1'],
   options: FakeAppOptions = {},
 ) {
-  const calls: Array<{ method: string; url: string; payload?: unknown }> = []
+  const calls: Array<{ method: string; url: string; payload?: unknown; headers?: Record<string, string> }> = []
   let created = 0
   let sessionListCalls = 0
   return {
     calls,
     app: {
-      async inject(request: { method: string; url: string; payload?: unknown }) {
+      async inject(request: { method: string; url: string; payload?: unknown; headers?: Record<string, string> }) {
         calls.push(request)
         if (request.method === 'GET' && request.url.includes('/boring-worker/sessions') && !request.url.endsWith('/state')) {
           const snapshot = options.workerSessionSnapshots?.[Math.min(sessionListCalls, options.workerSessionSnapshots.length - 1)] ?? workerSessions
@@ -210,7 +210,7 @@ describe('Factory host limits', () => {
       { id: 'br-under', status: 'in_progress', assignee: 'under' },
       { id: 'br-over', status: 'in_progress', assignee: 'over' },
     ])
-    const { app } = fakeApp([
+    const { app, calls: agentCalls } = fakeApp([
       { sessionId: 'busy', status: 'running', updatedAt: now - 20 * 60_000 },
       { sessionId: 'under', status: 'idle', updatedAt: now - 9 * 60_000 },
       { sessionId: 'over', status: 'idle', updatedAt: now - 11 * 60_000 },
@@ -228,6 +228,7 @@ describe('Factory host limits', () => {
       expect.objectContaining({ id: 'br-over', sessionLiveness: 'idle', idleForMs: 11 * 60_000, stale: true, recoveryCommand: 'recover_stale_claims' }),
     ]))
     expect(result.details).toMatchObject({ staleClaims: { count: 2, beadIds: ['br-missing', 'br-over'], recoveryCommand: 'recover_stale_claims' } })
+    expect(agentCalls.every((call) => call.headers?.['x-boring-invocation-mode'] === 'unattended')).toBe(true)
   })
 
   it('resolves an assignee session independently of a missing epic binding', async () => {
@@ -302,7 +303,7 @@ describe('Factory host limits', () => {
       { id: 'br-under', status: 'in_progress', assignee: 'under' },
       { id: 'br-over', status: 'in_progress', assignee: 'over' },
     ])
-    const { app } = fakeApp([
+    const { app, calls: agentCalls } = fakeApp([
       { sessionId: 'busy', status: 'running', updatedAt: now - 20 * 60_000 },
       { sessionId: 'under', status: 'idle', updatedAt: now - 9 * 60_000 },
       { sessionId: 'over', status: 'idle', updatedAt: now - 11 * 60_000 },
@@ -318,6 +319,7 @@ describe('Factory host limits', () => {
     const updates = calls.filter((args) => args[0] === 'update')
     expect(updates.map((args) => args[1])).toEqual(['br-missing', 'br-over'])
     expect(updates.every((args) => args.includes('--assignee') && args.includes('') && args.includes('open'))).toBe(true)
+    expect(agentCalls.every((call) => call.headers?.['x-boring-invocation-mode'] === 'unattended')).toBe(true)
   })
 
   it('revalidates a stale claim and skips it when its Worker becomes busy', async () => {

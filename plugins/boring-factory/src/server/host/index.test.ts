@@ -237,6 +237,9 @@ describe('factory host composition', () => {
       expect(legacyAdopt.statusCode).toBe(200)
       expect(legacyAdopt.json()).toMatchObject({ orchestratorSessionId: legacySessionId })
       await expect(host.sessionBindings.get(legacySessionId)).resolves.toBe('default-path')
+      const legacyStateRequests = agentRequests.filter((request) => request.url === `/api/v1/agents/boring-orchestrator/sessions/${legacySessionId}/state`)
+      expect(legacyStateRequests).toHaveLength(2)
+      expect(legacyStateRequests.every((request) => request.invocationMode === 'unattended')).toBe(true)
       const importedFile = (await readdir(hubNamespace)).find((file) => file.endsWith(`_${legacySessionId}.jsonl`))
       expect(importedFile).toBeDefined()
       const importedHeader = JSON.parse((await readFile(resolve(hubNamespace, importedFile!), 'utf8')).trim()) as { boringSessionCtx: unknown }
