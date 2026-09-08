@@ -2,21 +2,26 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import type { AgentRequestLedger } from '../types'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
+import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
+const require = createRequire(import.meta.url)
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
 
@@ -27,6 +32,16 @@ async function root() {
 }
 
 const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
+
+const persistedScriptedHarness: AgentHarnessFactory = async (input) => ({
+  ...createScriptedPiHarness(input),
+  sessions: new PiSessionStore(input.cwd, {
+    sessionDir: input.sessionDir,
+    sessionRoot: input.sessionRoot,
+    sessionNamespace: input.sessionNamespace,
+    storageCwd: input.cwd,
+  }),
+})
 
 function options(sessionRoot: string) {
   return {
@@ -73,6 +88,29 @@ describe('createAgentHost', () => {
       authorizeAgentRequest: async () => scope,
     })).not.toThrow()
     await inMemory.host.close()
+
+    const customRoot = await root()
+    const backingLedger = new SqliteAgentRequestLedger(join(customRoot, 'custom.sqlite'))
+    // A current custom implementation needs no retention hook: the Host option
+    // configures only a ledger the Host constructs itself.
+    const customLedger: AgentRequestLedger = {
+      durability: 'durable-transactional',
+      prepare: (...args) => backingLedger.prepare(...args),
+      markAdmissionRetryable: (...args) => backingLedger.markAdmissionRetryable(...args),
+      acceptAdmission: (...args) => backingLedger.acceptAdmission(...args),
+      beginEffect: (...args) => backingLedger.beginEffect(...args),
+      reject: (...args) => backingLedger.reject(...args),
+      complete: (...args) => backingLedger.complete(...args),
+      markOutcomeUnknown: (...args) => backingLedger.markOutcomeUnknown(...args),
+      read: (...args) => backingLedger.read(...args),
+      close: () => backingLedger.close(),
+    }
+    const custom = await createAgentHost({
+      ...options(customRoot),
+      requestLedger: customLedger,
+      requestRetentionMs: 0,
+    })
+    await custom.host.close()
   })
 
   it('awaits compilation, freezes the fleet, and publishes a stable durable identity', async () => {
@@ -89,6 +127,122 @@ describe('createAgentHost', () => {
     const second = await createAgentHost(options(sessionRoot))
     expect(second.host.hostId).toBe(first.host.hostId)
     await second.host.close()
+  })
+
+  it('replays a completed create receipt across Host restart without a second transcript', async () => {
+    const sessionRoot = await root()
+    const input = { scope, agentTypeId: 'alpha', requestId: 'restart-create' }
+    const harnessFactory = vi.fn(persistedScriptedHarness)
+
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      harnessFactory,
+    })
+    const ref = await first.gateway.createSession(input)
+    await first.host.close()
+
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      harnessFactory,
+    })
+    await expect(restarted.gateway.createSession(input)).resolves.toEqual(ref)
+    expect(harnessFactory).toHaveBeenCalledOnce()
+    await restarted.host.close()
+  })
+
+  it('keeps a create tombstone after its configured terminal receipt retention expires', async () => {
+    const sessionRoot = await root()
+    const ledgerPath = join(sessionRoot, '.agent-request-ledger.sqlite')
+    const input = { scope, agentTypeId: 'alpha', requestId: 'expired-create' }
+    const harnessFactory = vi.fn(persistedScriptedHarness)
+
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      requestRetentionMs: MIN_REQUEST_RETENTION_MS,
+      harnessFactory,
+    })
+    await first.gateway.createSession(input)
+    await first.host.close()
+
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const database = new DatabaseSync(ledgerPath)
+    database.prepare('UPDATE agent_request_ledger SET updated_at = 0 WHERE state = ?').run('completed')
+    database.close()
+
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      requestRetentionMs: MIN_REQUEST_RETENTION_MS,
+      harnessFactory,
+    })
+    await expect(restarted.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+    })
+    expect(harnessFactory).toHaveBeenCalledOnce()
+
+    const inspect = new DatabaseSync(ledgerPath)
+    expect(inspect.prepare('SELECT count(*) AS count FROM agent_request_ledger WHERE state = ?').get('completed'))
+      .toEqual({ count: 0 })
+    expect(inspect.prepare('SELECT count(*) AS count FROM agent_request_tombstones').get())
+      .toEqual({ count: 1 })
+    inspect.close()
+    await restarted.host.close()
+  })
+
+  it('keeps abrupt-restart in-flight work in progress without implicit outcome reconciliation', async () => {
+    const sessionRoot = await root()
+    const ledgerPath = join(sessionRoot, 'abrupt-request-ledger.sqlite')
+    const firstLedger = new SqliteAgentRequestLedger(ledgerPath)
+    let signalEffectStarted!: () => void
+    const effectStarted = new Promise<void>((resolve) => { signalEffectStarted = resolve })
+    let releaseEffect!: () => void
+    const effectGate = new Promise<void>((resolve) => { releaseEffect = resolve })
+    const input = { scope, agentTypeId: 'alpha', requestId: 'abrupt-create' }
+    const requestKey = {
+      workspaceScopeId: scope.workspaceScopeId,
+      authSubjectId: scope.authSubjectId,
+      operation: 'session.create' as const,
+      target: { kind: 'agent' as const, agentTypeId: 'alpha' },
+      requestId: input.requestId,
+    }
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      requestLedger: firstLedger,
+      harnessFactory: async (harnessInput) => {
+        const harness = createScriptedPiHarness(harnessInput)
+        return {
+          ...harness,
+          sessions: {
+            ...harness.sessions,
+            async create(...args: Parameters<typeof harness.sessions.create>) {
+              signalEffectStarted()
+              await effectGate
+              return await harness.sessions.create(...args)
+            },
+          },
+        }
+      },
+    })
+    const pending = first.gateway.createSession(input)
+    pending.catch(() => {})
+    await effectStarted
+    await expect(firstLedger.read(requestKey)).resolves.toMatchObject({ state: 'in-flight' })
+
+    // Model abrupt process loss: the durable connection disappears without
+    // host.drain(), so no live owner can prove a terminal outcome.
+    firstLedger.close()
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      requestLedger: new SqliteAgentRequestLedger(ledgerPath),
+      harnessFactory: createScriptedPiHarness,
+    })
+    await expect(restarted.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+    })
+    await restarted.host.close()
+
+    releaseEffect()
+    await pending.catch(() => {})
+    await first.host.close().catch(() => {})
   })
 
   it('filters the catalog and rejects an unseated Agent before runtime resolution', async () => {
@@ -1319,7 +1473,7 @@ describe('createAgentHost', () => {
     await app.close()
   })
 
-  it('durably replays insufficient-credit rejection instead of reporting an unknown outcome', async () => {
+  it('durably replays insufficient-credit rejection across Host restart instead of reporting an unknown outcome', async () => {
     const workspaceRoot = await root()
     const reserveRun = vi.fn(async () => {
       throw Object.assign(new Error('insufficient credits'), {
@@ -1327,21 +1481,26 @@ describe('createAgentHost', () => {
         statusCode: 402,
       })
     })
-    const created = await createAgentHost({
-      ...options(workspaceRoot),
-      // Metering rejects this request before harness execution. Keep the test on
-      // that causal seam instead of paying unrelated real-provider discovery.
-      harnessFactory: createScriptedPiHarness,
-      metering: {
-        isEnabled: () => true,
-        reserveRun,
-        recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
-        settleRun: vi.fn(async () => {}),
-        releaseRun: vi.fn(async () => {}),
-      },
-    })
-    const app = Fastify({ logger: false })
-    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    const startHost = async () => {
+      const created = await createAgentHost({
+        ...options(workspaceRoot),
+        // Metering rejects this request before harness execution. Keep the test
+        // on that causal seam instead of paying real-provider discovery.
+        harnessFactory: persistedScriptedHarness,
+        metering: {
+          isEnabled: () => true,
+          reserveRun,
+          recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
+          settleRun: vi.fn(async () => {}),
+          releaseRun: vi.fn(async () => {}),
+        },
+      })
+      const app = Fastify({ logger: false })
+      await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+      return app
+    }
+
+    let app = await startHost()
     const createdSession = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions',
@@ -1357,14 +1516,18 @@ describe('createAgentHost', () => {
         content: 'hello',
       },
     }
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const expectInsufficientCredit = async () => {
       const response = await app.inject(prompt)
       expect(response.statusCode).toBe(402)
       expect(response.json()).toEqual({
         error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'insufficient credits' },
       })
     }
+
+    await expectInsufficientCredit()
+    await app.close()
+    app = await startHost()
+    await expectInsufficientCredit()
     expect(reserveRun).toHaveBeenCalledOnce()
     await app.close()
   })
