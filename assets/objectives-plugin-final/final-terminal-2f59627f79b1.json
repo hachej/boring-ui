@@ -1,0 +1,16 @@
+{
+  "revision": "2f59627f79b1d5ecec81f0fc2df7b62fb8894474",
+  "label": "final-terminal",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "hasObjectiveSurface": true,
+  "assertions": [
+    "initial progress 2 / 10",
+    "server update interaction",
+    "refreshed progress 7 / 10",
+    "constraint visible"
+  ],
+  "video": "assets/objectives-plugin-final/final-terminal-2f59627f79b1.webm"
+}
