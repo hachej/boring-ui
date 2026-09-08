@@ -6,8 +6,10 @@ adds a dated snapshot under [`state/`](state/); this file holds only the
 current status, snapshots hold the analysis. Vision components are defined in
 [`VISION.md`](VISION.md); sequencing in [`DIRECTION.md`](DIRECTION.md).
 
-Status verified against `origin/main` at `98619e9b8`. Roadmap items use
-descriptive names; old letter-number codes appear once in parentheses.
+Status verified against `origin/main` at `98619e9b8`. **Focused update
+2026-09-04:** the owner restarted the Channels lane; only that row is newer than
+the 2026-08-26 snapshot. Roadmap items use descriptive names; old letter-number
+codes appear once in parentheses.
 
 ## Vision components — status
 
@@ -57,7 +59,7 @@ CLOSED and absorbed into #1409.
 | Sovereign sandbox (#1081) | **Architecture merged (#1220), zero implementation.** Wave 4 implementation gates unchanged |
 | Metering/billing (#819) | **Nothing merged**; ships only when a usage-priced offer pulls it (unchanged 08-08 ruling) |
 | Executable environments (#1123) | ACTIVE at LOW priority (unchanged); #1166 mount contract open |
-| Channels (#1127) | Deprioritized (unchanged) |
+| Channels (#1127) | **Active.** Owner restarted the lane 2026-09-04; r4.1 is landing on `epic/whatsapp-channel`, with the provisioned-binding pilot subset tracked by `epic:whatsapp-channel` Beads. |
 | UI polish loop | Standing low-effort background work (unchanged) |
 | Vertical agents (private → public) | Direction unchanged (ratified 2026-08-08). **Commercial sequencing now lives in the Seneca tenant repo**, not here |
 

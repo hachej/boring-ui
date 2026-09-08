@@ -1,102 +1,94 @@
 # AGENTS.md
 
-Read this first. Re-read after compaction.
+Read this first; re-read after compaction.
 
-This file is intentionally lean: it contains only hard rules and routing pointers.
-Detailed coding practices, workflow, architecture, and package docs live under `docs/`.
+Boring UI is a pnpm monorepo of publishable packages for agent-centric apps:
+chat expresses intent, and a workbench lets users inspect and steer results.
+Apps compose the packages; this repo does not own a production deployment.
 
-## Hard rules
+## Code map
 
-1. **Human override:** if the user tells you to do something, listen. The user is in charge.
-2. **No file deletion without explicit written permission.**
-3. **No destructive git/filesystem ops without explicit instruction:** no `rm -rf`, `git reset --hard`, `git clean -fd`, `git push --force`.
-4. **No secrets in git/logs.** Never paste tokens into commits, comments, or logs.
-5. **Never push directly to remote `main`.** Use a branch/worktree unless the
-   owner or Kanzen trunk procedure explicitly authorizes local-main work; keep
-   local `main` green.
-6. **Keep the canonical project checkout on `main`.** The primary
-   `boring-ui-v2` checkout is the coordination anchor and should track
-   `origin/main`, not an agent feature branch. Agents must do coding in
-   isolated branch worktrees (which must always be created inside the `.worktrees/`
-   directory) and leave the anchor clean/current for handoffs.
-7. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
-8. **Tangible progress, anti-ceremony, and honest credit.**
-   - No process porn: a process artifact exists only when it hard-gates a
-     named feature or capability.
-   - Feature-first ratio: process/ops beads capped at ~5% of open beads; each
-     must name the feature work it gates.
-   - Honesty is absolute: no fake tests, no weakened assertions, no false
-     closes. A false close is reopened with an incident comment.
-   - Refusal-only implementations earn partial credit, labeled
-     (`refusal-only`), and never close a feature work item.
-9. **Session history is host app user data:** Pi chat transcripts/session lists
-   are owned by the deployed core app host, not by the sandbox/workspace
-   runtime. Store them on the host app's durable volume via
-   `BORING_AGENT_SESSION_ROOT` (typically `/data/pi-sessions`), not in
-   container home/root. If host-side `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`,
-   keep the host session root as sibling `/data/pi-sessions` unless the user
-   explicitly chooses another mounted volume.
-10. **Default communication style:** concise, direct, high-signal. Honor user
-   requests for `stop caveman`, `normal mode`, or any other explicit tone
-   change.
-11. **Reconcile architecture proposals with the ratified long-term plan:** before
-   proposing cross-package architecture, ontology changes, or new durable
-   primitives, read the ratified long-term vision, architecture plan, and owner
-   rulings linked below. State how the proposal aligns and name every conflict.
-   Never silently supersede a frozen ruling; a conflict requires an explicit
-   owner decision and an update to the ratified plan.
-
-## Start here
-
-| Need | Read |
+| Work | Location and guidance |
 | --- | --- |
-| Project/package map | [`docs/README.md`](docs/README.md) |
-| Coding rules | [`docs/procedures/coding-rules.md`](docs/procedures/coding-rules.md) |
-| Coding invariants | [`docs/procedures/coding-invariants.md`](docs/procedures/coding-invariants.md) |
-| Repo commands | [`docs/procedures/repo-commands.md`](docs/procedures/repo-commands.md) |
-| Kanzen agent loop, review, commit, GitHub labels | [`docs/procedures/boring-loop.md`](docs/procedures/boring-loop.md) |
-| Model Card & delegation model | [`docs/procedures/MODEL-CARD.md`](docs/procedures/MODEL-CARD.md) |
-| Worktree agent coordination | [`docs/procedures/worktree-agent.md`](docs/procedures/worktree-agent.md) |
-| Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
-| Architecture proposals and durable primitives | [`VISION.md`](docs/plans/long-term/ratified/VISION.md), [`ARCHITECTURE-PLAN.md`](docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md), and [`RECONCILIATION.md`](docs/plans/long-term/ratified/RECONCILIATION.md) |
-| Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
-| Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
-| Troubleshooting map | [`docs/web/reference/troubleshooting.md`](docs/web/reference/troubleshooting.md) |
-| Design FAQ | [`docs/web/reference/design-faq.md`](docs/web/reference/design-faq.md) |
-| Factory stage contract (seats, gates, lanes, dynamics) | `.agents/factory/README.md` |
-| Full kanzen doc + procedure index | `docs/procedures/README.md` |
+| Identity, Postgres/Drizzle stores, invites, app composition | `packages/core/` — [Core docs](packages/core/docs/README.md) |
+| Agent Host, harness, tools, sessions, chat UI | `packages/agent/` — [Agent docs](packages/agent/docs/README.md) |
+| Workbench, panels, plugins, UI command bridge | `packages/workspace/` — [Workspace docs](packages/workspace/docs/README.md) |
+| Shared UI primitives | `packages/ui/` — [UI docs](packages/ui/README.md) |
+| Local CLI and plugin authoring CLI | `packages/cli/`, `packages/plugin-cli/` — their READMEs |
+| First-party capabilities and runnable compositions | `plugins/<name>/`, `apps/<name>/` — their READMEs |
 
-## The Delegation Model
+See [docs/README.md](docs/README.md) for the full map, including sandbox,
+Pi resources, reference apps, and Factory. Load the relevant package guidance
+before editing; contracts live beside their types.
 
-When executing, planning, or reviewing complex tasks, utilize the **Delegation Model** detailed in the [Model Card](docs/procedures/MODEL-CARD.md). This establishes a clear hierarchy:
-- Align intelligence, taste, and cost bounds with task complexity.
-- Delegate to specialized background subagents using the `pi-subagents` skill (runtime plugin skill — provided by the plugin system, not `.agents/skills/`) for parallel pipelines, independent audits, or thermonuclear codebase reviews.
-- Close the loop by converting output questions and approvals into **Inbox Human Intention** items, keeping the workspace as the unified control plane.
+## Hard boundaries
 
-## Package docs
+- **The user is in charge.** Keep communication concise and follow explicit
+  tone requests. Do not merge, deploy, or release without authorization.
+- No file deletion without explicit written permission. No destructive
+  git/filesystem operations without explicit instruction (`rm -rf`,
+  `git reset --hard`, `git clean -fd`, `git push --force`). No secrets in
+  git, commits, comments, or logs.
+- Never push directly to remote `main`. Explicit owner/Kanzen trunk
+  authorization applies only to local-main work. Keep the canonical checkout
+  clean, current, and on `main`;
+  code in isolated branch worktrees inside `.worktrees/`. Investigate
+  unexpected changes; never overwrite another agent's or the user's work.
+- Core owns application identity and Postgres stores. Keep standalone
+  agent/workspace usable without Core and inject application stores at
+  composition. Shared/browser code must not import Node APIs. Routes and
+  tools receive `Workspace`, not root paths; adapters own path validation.
+  `UiBridge.postCommand` owns UI dispatch. Follow the complete
+  [coding invariants](docs/procedures/coding-invariants.md).
+- Session history is host app user data, not sandbox data. Use the host's
+  durable `BORING_AGENT_SESSION_ROOT` (typically `/data/pi-sessions`), never
+  container home/root. With `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`,
+  keep sessions in the sibling `/data/pi-sessions` unless the user chooses
+  another mounted volume.
+- Before cross-package architecture, ontology, or durable-primitive changes,
+  read the ratified [vision](docs/plans/long-term/ratified/VISION.md),
+  [architecture](docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md), and
+  [owner rulings](docs/plans/long-term/ratified/RECONCILIATION.md). State
+  alignment/conflicts; changing a frozen ruling needs an explicit owner
+  decision and a ratified-plan update.
+- Make tangible progress: process artifacts must gate a named capability;
+  process/ops beads stay within ~5% of open beads. Preserve useful regression
+  coverage; remove checks only with evidence they are obsolete, redundant,
+  or ineffective. No fake tests, weakened assertions, or false closes (reopen
+  false closes with an incident comment). Refusal-only work gets partial
+  credit, labeled `refusal-only`, and does not close a feature.
 
-- Core: `packages/core/docs/README.md`
-- Agent: `packages/agent/docs/README.md`
-- Workspace: `packages/workspace/docs/README.md`
-- CLI: `packages/cli/docs/README.md`
-- UI kit: `packages/ui/README.md`
-- Pi references: `packages/pi/README.md`
-- Plugin CLI: `packages/plugin-cli/README.md`
+## Complete one outcome
 
-## Plugin docs
+Name the observable user outcome and the failure case before coding. Trace
+only the necessary path through UI, backend, persistence, workers, and
+external services. Reproduce the bug or establish the current behavior,
+make the smallest justified change, and exercise that path again. Report
+what passed, failed, or remains unverified; a passing mock is not evidence
+that a real service worked.
 
-- Plugin system spec: `packages/workspace/docs/PLUGIN_SYSTEM.md`
-- Plugin layout/code patterns: `packages/workspace/docs/PLUGIN_STRUCTURE.md`
-- First-party plugins: `plugins/<name>/README.md`
+One owner integrates and completes the change. Delegate bounded independent
+work only when it reduces total effort; do not recursively delegate or repeat
+reviews without new evidence. Match planning, testing, and review to risk,
+distinguish blocking defects from optional improvements, and stop when the
+agreed scope is complete. Existing review and approval gates still apply:
+[coding rules](docs/procedures/coding-rules.md), [Boring loop](docs/procedures/boring-loop.md),
+[Model Card](docs/procedures/MODEL-CARD.md), [worktree coordination](docs/procedures/worktree-agent.md).
 
-## Non-negotiable architectural invariants
+## Verification and skills
 
-See [`docs/procedures/coding-invariants.md`](docs/procedures/coding-invariants.md).
+Use [repo commands](docs/procedures/repo-commands.md) for the pinned toolchain,
+setup, affected-package checks, test selection, and local/CI prerequisites.
+Start with `pnpm typecheck:changed` and `pnpm test:changed`; include relevant
+lint/invariants and boundary-specific proofs. A skipped or unavailable check
+must be visible in the handoff. Do not weaken a gate to obtain a green result.
 
-## When coding
-
-1. State assumptions if the task is ambiguous.
-2. Make surgical, minimal changes.
-3. Add/update tests for behavior changes.
-4. Run relevant checks.
-5. For Kanzen issue/PR work, follow [`docs/procedures/boring-loop.md`](docs/procedures/boring-loop.md).
+Load a skill's `SKILL.md` only when its purpose matches the current work:
+`ask-boring` routes ambiguous workflow requests; `plan` defines unclear
+outcomes; `handoff` transfers live work; `present-pr` prepares the owner review
+artifact. These live in `.agents/skills/`. For Factory work, read
+[.agents/factory/README.md](.agents/factory/README.md): `exec` implements a
+Worker bead and `owner-gate` handles Orchestrator approval handoffs.
+The runtime `pi-subagents` skill applies when available and delegation is
+useful; report unavailable capabilities honestly. Deeper procedures and
+specialized guidance live in [docs/procedures/README.md](docs/procedures/README.md).
