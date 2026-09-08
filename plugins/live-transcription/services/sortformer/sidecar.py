@@ -17,12 +17,26 @@ import websockets
 PROTOCOL = "boring.sortformer.v1"
 FRAME_BYTES = 3_200
 MAX_MESSAGE_BYTES = 1_000_000
-MAX_SEGMENTS = 2_000
-MAX_SPEAKERS = 2
+MAX_SEGMENTS = 2_000  # per message (deltas), see MAX_SESSION_SEGMENTS
+MAX_SESSION_SEGMENTS = 20_000
+# Three slots by default. Measured 2026-09-04: on two-person audio (SimSAMU 12
+# calls, SUMM-RE 2-speaker meetings) a third slot is never admitted and the
+# scores are unchanged; on SUMM-RE 3-speaker meetings per-word speaker accuracy
+# goes from 68 % (2 slots) to 90 %. An accompanying parent or partner is common
+# in a consultation.
+MAX_SPEAKERS = 3
 SPEECH_THRESHOLD = 0.50
 NEW_SPEAKER_THRESHOLD = 0.70
 SWITCH_MARGIN = 0.12
-SWITCH_CONFIRM_FRAMES = 5
+# Tuned on SimSAMU (61 French two-speaker dispatch calls, word-level reference,
+# RTX 3080 Ti, 2026-09-04) by replaying this exact pipeline offline:
+#   chunk 1.0 s / confirm 5 frames (previous): DER 21.6 %, label latency p50 0.92 s
+#   chunk 0.5 s / confirm 2 frames (now):      DER 15.5 %, label latency p50 0.49 s
+# with per-word speaker accuracy unchanged (92.3 % vs 92.5 %). Chunks of 0.3 s
+# were faster still but lost 3 points of accuracy. Each 0.5 s chunk costs the
+# same ~45 ms of GPU as a 1 s chunk did, so the GPU duty cycle is ~9 %.
+SWITCH_CONFIRM_FRAMES = 2
+CHUNK_LEN = 5  # Sortformer chunk in 100 ms units (WhisperLiveKit's default is 10)
 
 
 @dataclass(frozen=True)
@@ -147,12 +161,21 @@ def append_segments(segments: list[Segment], new_segments, audio_through: float)
             segments.append(candidate)
 
 
-async def send_snapshot(socket, revision: int, samples: int, segments: list[Segment]) -> None:
+def delta_from_index(sent: int, total: int) -> int:
+    """append_segments may extend the last segment the client already holds, so a
+    delta always restarts at that segment; everything before it is immutable."""
+    return max(0, min(sent, total) - 1)
+
+
+async def send_snapshot(socket, revision: int, samples: int, segments: list[Segment], from_index: int = 0) -> None:
+    if len(segments) > MAX_SESSION_SEGMENTS:
+        raise ValueError("speaker segment limit exceeded")
     await socket.send(json.dumps({
         "type": "snapshot",
         "revision": revision,
         "throughSeconds": samples / 16_000,
-        "segments": [asdict(segment) for segment in segments],
+        "fromIndex": from_index,
+        "segments": [asdict(segment) for segment in segments[from_index:]],
     }, separators=(",", ":")))
 
 
@@ -194,8 +217,21 @@ class Sidecar:
 
         self.online_type = StableSortformerDiarizationOnline
         self.shared_model = SortformerDiarization(model_path=model_path) if model_path else SortformerDiarization()
+        modules = self.shared_model.diar_model.sortformer_modules
+        modules.chunk_len = CHUNK_LEN
+        modules._check_streaming_parameters()
         self.token = token
         self.session = asyncio.Semaphore(1)
+
+    async def warm_up(self) -> None:
+        """The first chunk of a process costs ~0.7 s (CUDA kernel selection) versus
+        ~50 ms afterwards; pay it at start-up rather than on the first patient."""
+        online = self.online_type(shared_model=self.shared_model)
+        try:
+            online.insert_audio_chunk(np.zeros(int(online.chunk_duration_seconds * 16_000), dtype=np.float32))
+            await online.diarize()
+        finally:
+            online.close()
 
     async def handle(self, socket) -> None:
         request = getattr(socket, "request", None)
@@ -228,6 +264,7 @@ class Sidecar:
             segments: list[Segment] = []
             revision = 0
             samples = 0
+            sent = 0
             async for message in socket:
                 if isinstance(message, bytes):
                     if len(message) != FRAME_BYTES:
@@ -239,10 +276,9 @@ class Sidecar:
                     if not new_segments:
                         continue
                     append_segments(segments, new_segments, samples / 16_000)
-                    if len(segments) > MAX_SEGMENTS:
-                        raise ValueError("speaker segment limit exceeded")
                     revision += 1
-                    await send_snapshot(socket, revision, samples, segments)
+                    await send_snapshot(socket, revision, samples, segments, delta_from_index(sent, len(segments)))
+                    sent = len(segments)
                     continue
                 stop_id = parse_stop(message)
                 # Sortformer emits only complete model chunks. Pad the private
@@ -253,10 +289,9 @@ class Sidecar:
                     final_segments = await online.diarize()
                     if final_segments:
                         append_segments(segments, final_segments, samples / 16_000)
-                        if len(segments) > MAX_SEGMENTS:
-                            raise ValueError("speaker segment limit exceeded")
                         revision += 1
-                        await send_snapshot(socket, revision, samples, segments)
+                        await send_snapshot(socket, revision, samples, segments, delta_from_index(sent, len(segments)))
+                        sent = len(segments)
                 await socket.send(json.dumps({"type": "stopped", "id": stop_id}))
                 return
         except (ValueError, asyncio.TimeoutError) as error:
@@ -267,17 +302,24 @@ class Sidecar:
 
 
 async def main() -> None:
+    global MAX_SPEAKERS
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18881)
     parser.add_argument("--model-path")
     parser.add_argument("--token", default=os.environ.get("BORING_SORTFORMER_TOKEN"))
+    parser.add_argument("--max-speakers", type=int, default=int(os.environ.get("BORING_SORTFORMER_MAX_SPEAKERS", MAX_SPEAKERS)),
+                        help="session speaker slots (default 3: doctor, patient, accompanying person)")
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("Sortformer sidecar must bind to loopback")
     if not args.token:
         raise SystemExit("BORING_SORTFORMER_TOKEN or --token is required")
+    if not 2 <= args.max_speakers <= 4:
+        raise SystemExit("--max-speakers must be between 2 and 4")
+    MAX_SPEAKERS = args.max_speakers
     sidecar = Sidecar(args.model_path, args.token)
+    await sidecar.warm_up()
     async with websockets.serve(sidecar.handle, args.host, args.port, max_size=MAX_MESSAGE_BYTES, max_queue=8):
         await asyncio.Future()
 
