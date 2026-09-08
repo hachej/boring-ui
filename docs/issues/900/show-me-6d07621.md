@@ -1,8 +1,8 @@
 # [MCP Program] What changed, visually
 
-**Gate 2 · planning-only delivery**  
-Reviewed planning SHA: `6d07621fce20ee8e103b6a63abe952639519e5df`  
-Target: `origin/main@3a594dceb`  
+**Gate 2 · planning-only delivery**
+Reviewed planning SHA: `6d07621fce20ee8e103b6a63abe952639519e5df`
+Target: `origin/main@3a594dceb`
 Demo: waived by the owner request because this epic changes planning documents and tracker metadata only.
 
 ## Changed shape
