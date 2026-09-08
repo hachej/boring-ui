@@ -82,7 +82,7 @@ describe('mail templates built via the real tsup esbuild config (#1438)', () => 
     const html = await render(element)
     expect(html.length).toBeGreaterThan(0)
     expect(html).toContain('Verify your email address')
-  })
+  }, 15_000) // Clean-checkout esbuild startup can exceed Vitest's 5s default.
 
   it('renderWelcome: built Welcome produces non-empty HTML without throwing', async () => {
     const mod = await buildTemplate('Welcome.tsx', 'Welcome.mjs')

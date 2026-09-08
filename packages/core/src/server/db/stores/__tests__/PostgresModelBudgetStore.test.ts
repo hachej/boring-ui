@@ -189,6 +189,7 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
   it('counts settled fallback holds against later budget checks without double-counting partial ledger rows', async () => {
     const now = new Date('2026-07-15T12:00:00Z')
     const fallback = await store.reserve({ userId: USER, runId: 'fallback-run', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+    await sqlClient`UPDATE boring_budget_reservations SET created_at = ${now.toISOString()}::timestamp WHERE id = ${fallback.reservationId}`
     await sqlClient`
       INSERT INTO boring_usage_ledger (id, user_id, run_id, provider, model, billed_cost_micros, created_at)
       VALUES ('usage-budget-partial-fallback', ${USER}, 'fallback-run', 'infomaniak', 'qwen', 200000, ${now.toISOString()}::timestamp)
@@ -264,7 +265,8 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
 
   it('does not double-count ledger rows for runs with active holds', async () => {
     const now = new Date('2026-07-15T12:00:00Z')
-    await store.reserve({ userId: USER, runId: 'same-run', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+    const active = await store.reserve({ userId: USER, runId: 'same-run', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+    await sqlClient`UPDATE boring_budget_reservations SET created_at = ${now.toISOString()}::timestamp WHERE id = ${active.reservationId}`
     await sqlClient`
       INSERT INTO boring_usage_ledger (id, user_id, run_id, provider, model, billed_cost_micros, created_at)
       VALUES ('usage-budget-2', ${USER}, 'same-run', 'infomaniak', 'qwen', 1000000, ${now.toISOString()}::timestamp)

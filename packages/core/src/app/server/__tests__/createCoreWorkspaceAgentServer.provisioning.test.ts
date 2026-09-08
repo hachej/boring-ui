@@ -71,7 +71,7 @@ test('core environment routes acquire one Host lease and release it after a fini
   } finally {
     await app.close()
   }
-}, 30_000) // Full Core composition can exceed 15 seconds on a cold module load.
+}, 60_000) // Clean-checkout source composition can exceed 30 seconds on a cold module load.
 
 test('core/full-app composition forwards collected runtime provisioning plugins to agent routes', async () => {
   const runtimePlugin = {
