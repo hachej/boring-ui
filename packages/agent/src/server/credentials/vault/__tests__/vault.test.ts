@@ -19,8 +19,8 @@ import type {
   CredentialVaultPersistenceV1,
   VaultCredentialStoreBackendV1,
 } from '..'
+import { createFakeAuthorityVerifierV1 } from '../../testing'
 import {
-  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   withResolvedCredential,
 } from '../..'

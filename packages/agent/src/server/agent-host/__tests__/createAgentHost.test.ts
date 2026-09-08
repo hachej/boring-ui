@@ -13,6 +13,7 @@ import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
+import { CREDENTIAL_ERROR_CODES } from '../../../shared/credentials'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
 const roots: string[] = []
@@ -48,6 +49,20 @@ function options(sessionRoot: string) {
 }
 
 describe('createAgentHost', () => {
+  it('fails at host startup (not first binding) when the credential vault env is misconfigured', async () => {
+    // [1082 slice B hardening F1b/F2] the vault composition is resolved once
+    // per host, at createAgentHost time; a typo'd KMS backend selection must
+    // reject host creation with a stable CREDENTIAL_* code instead of being
+    // deferred to (or silently forked across) runtime bindings.
+    await expect(createAgentHost({
+      ...options(await root()),
+      credentials: { env: { BORING_CREDENTIAL_KMS_BACKEND: 'aws-kms' } },
+    })).rejects.toMatchObject({
+      name: 'CredentialResolutionError',
+      code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+    })
+  })
+
   it('requires durable transactional ledger ownership for the direct projection unless test/dev in-memory mode is explicit', async () => {
     await expect(createAgentHost({
       ...options(await root()),
