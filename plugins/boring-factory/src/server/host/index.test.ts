@@ -10,6 +10,7 @@ import { createFactoryHost } from './index'
 import { readOrchestratorStatuses } from './factoryHub'
 import type { FactoryEpicEntry } from './epicRegistry'
 import { FACTORY_REQUEST_FILE_MAX_BYTES } from './epicRegistry'
+import { FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from '../../shared/constants'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../../../..')
 const execFileAsync = promisify(execFile)
@@ -110,7 +111,7 @@ describe('factory host composition', () => {
     const app = Fastify({ logger: false })
     const agentRequests: Array<{ method: string; url: string; invocationMode?: string }> = []
     app.addHook('onRequest', async (request) => {
-      if (request.url.startsWith('/api/v1/agents/boring-orchestrator/')) {
+      if (request.url.startsWith(`/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/`)) {
         agentRequests.push({
           method: request.method,
           url: request.url,
