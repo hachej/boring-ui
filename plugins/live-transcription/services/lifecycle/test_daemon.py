@@ -30,10 +30,15 @@ class ReadinessTests(unittest.TestCase):
             {"header": "Authorization", "value": "Bearer sortformer"},
             {"header": "Authorization", "value": "Bearer refine"},
         ]
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "two WebSocket targets and one HTTP"):
             MODULE.tcp_ready_targets(
                 "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b",
                 auth[:2],
+            )
+        with self.assertRaisesRegex(ValueError, "two WebSocket targets and one HTTP"):
+            MODULE.tcp_ready_targets(
+                "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b,ws://127.0.0.1:3/c",
+                auth,
             )
 
         class Connection:

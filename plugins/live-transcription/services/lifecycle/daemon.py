@@ -289,8 +289,9 @@ def tcp_ready_targets(raw_targets: str, auth_entries: list[dict[str, str]]) -> C
     import base64
     import socket
     targets = [urllib.parse.urlparse(item.strip()) for item in raw_targets.split(",") if item.strip()]
-    if len(targets) < 3:
-        raise ValueError("Kyutai, Sortformer, and refine authenticated readiness targets are required")
+    schemes = [target.scheme for target in targets]
+    if len(targets) != 3 or schemes.count("ws") != 2 or schemes.count("http") != 1:
+        raise ValueError("two WebSocket targets and one HTTP refine-health target are required")
     if len(targets) != len(auth_entries):
         raise ValueError("readiness target/auth count mismatch")
     for auth in auth_entries:
