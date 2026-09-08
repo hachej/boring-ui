@@ -9,7 +9,7 @@ import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/
 import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
-import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',

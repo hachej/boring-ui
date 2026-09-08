@@ -36,7 +36,6 @@ const unitTests = [
   "src/server/pi-chat/__tests__/piChatHistory.test.ts",
   "src/server/pi-chat/__tests__/piChatReplayBuffer.test.ts",
   "src/server/pi-chat/__tests__/piChatSnapshot.test.ts",
-  "src/server/pi-chat/__tests__/piSessionIdentity.test.ts",
 ];
 
 const e2eTests = [
