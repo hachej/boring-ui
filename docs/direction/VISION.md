@@ -90,3 +90,85 @@ component is tracked in [`STATE.md`](STATE.md), not here.
 Amend by dated addendum via owner-gated PR; never rewrite ratified sections.
 Proposed amendments queue inside the current dated snapshot under
 [`state/`](state/) until ratified here.
+
+### 2026-09-05 — Workspace Evolution
+
+> Retained product context; the 2026-09-07 native-creation ruling supersedes
+> this section's first consumer, timing and execution home.
+
+**Owner-requested amendment; implementation pending.**
+Extend the author-and-deploy vision above to the end user's own Experience.
+A user starts with a useful minimal workspace, directly requests interface,
+layout, workflow, and permitted behavior changes, then previews, keeps,
+compares, or undoes a version. The system maintains those choices through
+shared upgrades and can generalize an approved improvement into an optional
+package for others.
+
+The private branch is a resolved package composition plus scoped overlays and
+custom modules, rather than a requirement to fork the complete platform for
+every person. Existing business records and session history remain outside
+software rollback. Host-owned authority, independent Agent identity, isolated
+generated execution, and explicit private export remain mandatory.
+
+This adds a checkable vision component: **a customization requested without
+founder relay remains useful, survives a real upstream upgrade, and contributes
+an approved reusable part to a second workspace with different local choices.**
+The first workflow is Clinic; Seneca supplies the authenticated personal-scope
+proof. This is not a replacement for tenant-owned commercial ordering.
+
+**Clinic clarification — 2026-09-05:** begin with a French Documents médicaux
+dashboard and ambient assistance; chat is contextual and optional. Compose
+primary surfaces, domain capabilities, agent presence, work initiation, and
+scoped context independently. The same document unit must work in that
+dashboard and beside a chat-first expert. Domain records and admitted server
+work do not depend on a conversation or mounted UI; status, decisions, and
+recovery stay accessible outside chat. This makes §§8–10's existing product
+flexibility checkable rather than turning each product mode into another shell
+and runtime implementation.
+
+Normative amendment: [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+Readable vision: [vision overview](../vision/README.md#personal-software-evolution-owner-requested-extension-2026-09-05).
+Milestones/proof: [Workspace Evolution](../plans/native-creation/LIFECYCLE.md).
+The September 5 dispatch amendment is historical; current dispatch is the
+[DIRECTION amendment of 2026-09-07](DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).
+
+### 2026-09-06 — One software model, many Experiences
+
+> Retained as the §12 software model; the 2026-09-07 native-creation ruling
+> supersedes this section's first consumer and timing.
+
+**Owner-requested clarification; implementation pending.** The owner identified Clinic, Charlotte Ledoux/Seneca, and ESG
+portfolio-impact analysis as different adaptations and requested a general
+software model. This supersedes Clinic as the defining platform example and
+Seneca as merely an identity host in the 2026-09-05 extension above.
+
+**Boring lets people compose and maintain software around their work: connect
+records and knowledge, expose trustworthy domain operations, choose useful
+Experiences, and delegate bounded work to agents.** The software model is
+state/knowledge + domain operations + Experiences + durable work, under
+authority, evidence and lifecycle control. These are responsibilities over
+the existing substrate; no new kernel nouns, mandatory service split, or
+universal schema are introduced.
+
+A domain may own transactional records, use an attributed read-only corpus,
+or query an external system. Deterministic rules/calculations and manual work
+remain first-class; an agent is an optional participant, not the store or
+business-rule authority. Ordinary use does not require an optimization
+Objective. The operating loop and the software-change loop have separate
+state: interface undo never rewinds business records or completed effects.
+
+The checkable generality claim now needs structurally different consumers.
+E0 uses Clinic and Charlotte/Seneca synthetic fixtures plus an explicitly
+hypothetical ESG stress case. One selected live consumer earns the initial
+loop; a second structurally different live consumer must exercise a claimed
+shared capability before it is advertised as cross-domain. Every consumer
+keeps its own domain acceptance criteria. Clinic's migration does not gate a
+knowledge product, and a source-corpus skin does not prove clinical readiness.
+No all-client deployment or marketplace is required for a useful private edit.
+
+The [software model](../vision/software-model.md) owns the readable synthesis
+and pinned source scope. [RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof)
+records the named amendment. Its bounded September 6 dispatch change is
+historical; the [2026-09-07 amendment](DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+owns current dispatch. Host authority, the frozen ontology, premise priority,
+interface-first port doctrine and tenant-owned GTM remain intact.
