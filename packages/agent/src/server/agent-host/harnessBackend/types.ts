@@ -50,7 +50,7 @@ export interface AgentHarnessBackend {
   createSession(
     scope: HarnessAgentScope,
     ctx: HarnessRequestContext,
-    init?: { title?: string },
+    init?: import('../../../shared/session').SessionCreateInit,
   ): Promise<SessionSummary>
   readSnapshot(address: HarnessSessionAddress, ctx: HarnessRequestContext): Promise<PiChatSnapshot>
   watchEvents(
