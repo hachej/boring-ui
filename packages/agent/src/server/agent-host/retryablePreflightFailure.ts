@@ -15,6 +15,6 @@ export async function rejectRetryablePreflightFailure(
     'Agent runtime failed to load',
     { retryable: true },
   )
-  await ledger.retry(key, retryable.toJSON())
+  await ledger.markAdmissionRetryable(key)
   throw retryable
 }

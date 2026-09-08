@@ -8,6 +8,7 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type {
   AgentRequestKey,
   AgentRequestLedger,
@@ -192,9 +193,9 @@ describe('Agent Host lifecycle', () => {
         await releasePrepare.promise
         return await base.prepare(key, digest)
       },
+      markAdmissionRetryable: (key) => base.markAdmissionRetryable(key),
       acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
       beginEffect: (key) => base.beginEffect(key),
-      retry: (key, error) => base.retry(key, error),
       reject: (key, failure) => base.reject(key, failure),
       complete: (key, receipt) => base.complete(key, receipt),
       markOutcomeUnknown: (key, error) => base.markOutcomeUnknown(key, error),
@@ -351,6 +352,13 @@ describe('Agent Host lifecycle', () => {
     await expectBounded(() => created.host.close())
     expect(disposeRuntime).toHaveBeenCalledOnce()
     expect(disposeAdapter).toHaveBeenCalledOnce()
+
+    const reopened = new SqliteAgentRequestLedger(join(fixture.value.sessionRoot!, '.agent-request-ledger.sqlite'))
+    await expect(reopened.read(createRequestKey('harness-stuck'))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED } },
+    })
+    reopened.close()
 
     releaseHarness.resolve()
     await new Promise((resolve) => setTimeout(resolve, 20))

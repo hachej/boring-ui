@@ -400,7 +400,7 @@ function createRuntime(
   const ledger: import('./types').AgentRequestLedger = options.requestLedger
     ?? (options.inMemoryRequestLedgerMode || !durableLedgerPath
       ? new InMemoryAgentRequestLedger()
-      : new SqliteAgentRequestLedger(durableLedgerPath))
+      : new SqliteAgentRequestLedger(durableLedgerPath, { retentionMs: options.requestRetentionMs }))
 
   const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
     let disposal = bindingDisposals.get(binding)

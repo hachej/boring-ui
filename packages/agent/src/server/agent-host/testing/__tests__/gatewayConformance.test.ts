@@ -49,10 +49,10 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
       if (current.digest !== digest) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with a different payload')
       }
-      if (current.state === 'retryable') {
-        const record: AgentRequestLedgerRecord = { state: 'pending-admission', key, digest, updatedAt: this.tick() }
-        this.records.set(identity, record)
-        return { ownership: 'created', record }
+      if (current.state === 'pending-admission' && current.retryable) {
+        const record: AgentRequestLedgerRecord = { key, digest, state: 'pending-admission', updatedAt: this.tick() }
+        this.write(key, record)
+        return { ownership: 'reclaimed', record }
       }
       return { ownership: 'existing', record: current }
     }
@@ -66,22 +66,21 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
     return { ownership: 'created', record }
   }
 
+  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
+    const current = this.requireState(key, 'pending-admission')
+    if (current.retryable) throw new Error('admission is already retryable')
+    this.write(key, { ...current, retryable: true, updatedAt: this.tick() })
+  }
+
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
     const current = this.requireState(key, 'pending-admission')
+    if (current.retryable) throw new Error('admission must be claimed before accepting')
     this.write(key, { ...current, state: 'admission-accepted', admissionReceipt, updatedAt: this.tick() })
   }
 
   async beginEffect(key: AgentRequestKey): Promise<void> {
     const current = this.requireState(key, 'admission-accepted')
     this.write(key, { ...current, state: 'in-flight', updatedAt: this.tick() })
-  }
-
-  async retry(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void> {
-    const current = this.records.get(keyIdentity(key))
-    if (current?.state !== 'pending-admission' && current?.state !== 'admission-accepted') {
-      throw new Error(`invalid ledger transition: ${current?.state ?? 'missing'} -> retryable`)
-    }
-    this.write(key, { key: current.key, digest: current.digest, state: 'retryable', error, updatedAt: this.tick() })
   }
 
   async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
@@ -325,20 +324,12 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     }
   })
 
-  it('atomically reclaims retryable strong admission and process lifetime does not imply durability', async () => {
+  it('leaves retryable strong admission pending and process lifetime does not imply durability', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     const key = requestKey()
     await ledger.prepare(key, 'digest-a')
-    await ledger.retry(key, {
-      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
-      message: 'admission unavailable',
-      details: { retryable: true },
-    })
-    expect(await ledger.read(key)).toMatchObject({ state: 'retryable' })
-    expect(await ledger.prepare(key, 'digest-a')).toMatchObject({
-      ownership: 'created',
-      record: { state: 'pending-admission' },
-    })
+    await ledger.markAdmissionRetryable(key)
+    expect(await ledger.read(key)).toMatchObject({ state: 'pending-admission', retryable: true })
     expect(await new InMemoryAgentRequestLedger().read(key)).toBeUndefined()
   })
 })
@@ -372,6 +363,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     readonly digest: string
     readonly error: AgentGatewayError
   }>()
+  private readonly pendingRequests = new Map<string, string>()
   private readonly admissionQueue = new Map<AgentRequestKey['operation'], Array<'strong-reject' | 'retryable'>>()
   private readonly connections = new Set<{
     closed: boolean
@@ -758,6 +750,13 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
   }
 
   private replayRequest<T>(key: string, digest: string): T | undefined {
+    const pendingDigest = this.pendingRequests.get(key)
+    if (pendingDigest !== undefined) {
+      if (pendingDigest !== digest) {
+        throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with different payload')
+      }
+      this.pendingRequests.delete(key)
+    }
     const failure = this.requestFailures.get(key)
     if (failure !== undefined) {
       if (failure.digest !== digest) {
@@ -786,6 +785,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       throw error
     }
     if (disposition === 'retryable') {
+      this.pendingRequests.set(key, digest)
       throw this.error(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'admission temporarily unavailable')
     }
   }

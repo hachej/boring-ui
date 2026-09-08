@@ -52,15 +52,10 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     const existing = this.records.get(id)
     if (existing) {
       if (existing.digest !== digest) conflict()
-      if (existing.state === 'retryable') {
-        const record: AgentRequestLedgerRecord = {
-          key,
-          digest,
-          state: 'pending-admission',
-          updatedAt: Date.now(),
-        }
+      if (existing.state === 'pending-admission' && existing.retryable) {
+        const record: AgentRequestLedgerRecord = { key, digest, state: 'pending-admission', updatedAt: Date.now() }
         this.records.set(id, record)
-        return { ownership: 'created', record }
+        return { ownership: 'reclaimed', record }
       }
       return { ownership: 'existing', record: existing }
     }
@@ -74,9 +69,16 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     return { ownership: 'created', record }
   }
 
+  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
+    this.transition(key, 'retry admission', (record) => {
+      if (record.state !== 'pending-admission' || record.retryable) invalidTransition(record, 'retry admission')
+      return { ...record, retryable: true, updatedAt: Date.now() }
+    })
+  }
+
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
     this.transition(key, 'accept admission', (record) => {
-      if (record.state !== 'pending-admission') invalidTransition(record, 'accept admission')
+      if (record.state !== 'pending-admission' || record.retryable) invalidTransition(record, 'accept admission')
       return { ...record, state: 'admission-accepted', admissionReceipt, updatedAt: Date.now() }
     })
   }
@@ -85,18 +87,6 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     this.transition(key, 'begin effect', (record) => {
       if (record.state !== 'admission-accepted') invalidTransition(record, 'begin effect')
       return { key: record.key, digest: record.digest, state: 'in-flight', updatedAt: Date.now() }
-    })
-  }
-
-  async retry(
-    key: AgentRequestKey,
-    error: import('../../shared/index').AgentGatewayErrorDTO,
-  ): Promise<void> {
-    this.transition(key, 'mark retryable', (record) => {
-      if (record.state !== 'pending-admission' && record.state !== 'admission-accepted') {
-        invalidTransition(record, 'mark retryable')
-      }
-      return { key: record.key, digest: record.digest, state: 'retryable', error, updatedAt: Date.now() }
     })
   }
 

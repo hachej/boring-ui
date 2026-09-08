@@ -24,7 +24,6 @@ import { canonicalDigest } from './canonical'
 import { SessionInventoryPager } from './sessionInventoryPagination'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
-import { rejectRetryablePreflightFailure } from './retryablePreflightFailure'
 import type {
   AgentHarnessBackend,
   HarnessAgentScope,
@@ -66,14 +65,6 @@ type ReceiptObject = Readonly<Record<string, JsonValue>>
 
 function gatewayError(dto: AgentGatewayErrorDTO): AgentGatewayError {
   return new AgentGatewayError(dto.code, dto.message, dto.details)
-}
-
-function isRetryableGatewayError(error: AgentGatewayError): boolean {
-  const details = error.details
-  return typeof details === 'object'
-    && details !== null
-    && !Array.isArray(details)
-    && (details as Readonly<Record<string, JsonValue>>).retryable === true
 }
 
 function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
@@ -335,12 +326,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),
         ...(!agent.definition.version
           ? {}
-          : {
-              definition: {
-                version: agent.definition.version,
-                ...(agent.definition.digest === undefined ? {} : { digest: agent.definition.digest }),
-              },
-            }),
+          : { definition: { version: agent.definition.version, digest: canonicalDigest(agent.definition as unknown as JsonValue) } }),
       }))
   }
 
@@ -880,7 +866,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         requestId,
       },
     )
-    if (prepared.ownership === 'existing' && !guard) throw requestInProgress()
+    if (prepared.ownership === 'existing') throw requestInProgress()
 
     let effect: Promise<JsonValue>
     try {
@@ -893,7 +879,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           await reauthorizeOrReject()
           const admission = await this.runtime.effectAdmission.admit({ key, digest, scope: claim, operation, target })
           if (admission.type === 'retryable') {
-            await this.runtime.ledger.retry(key, admission.error)
+            await this.runtime.ledger.markAdmissionRetryable(key)
             throw gatewayError(admission.error)
           }
           if (admission.type === 'rejected') {
@@ -924,7 +910,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
           }
           if (serializedClassify) await this.applyClassification(key, serializedClassify)
           const retryableGuardError = await guard?.()
-          if (retryableGuardError) throw gatewayError(retryableGuardError)
+          if (retryableGuardError) {
+            await this.runtime.ledger.markAdmissionRetryable(key)
+            throw gatewayError(retryableGuardError)
+          }
           await reauthorizeOrReject()
           await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
           if (preflight) {
@@ -933,14 +922,16 @@ export class EmbeddedAgentGateway implements AgentGateway {
               this.runtime.assertOpen()
             } catch (error) {
               if (error instanceof AgentGatewayError) {
-                if (isRetryableGatewayError(error)) {
-                  await this.runtime.ledger.retry(key, error.toJSON())
-                } else {
-                  await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
-                }
+                await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
                 throw error
               }
-              await rejectRetryablePreflightFailure(this.runtime.ledger, key)
+              const unknown = new AgentGatewayError(
+                AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+                'effect outcome could not be safely replayed',
+              )
+              await this.runtime.ledger.beginEffect(key).catch(() => {})
+              await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+              throw unknown
             }
           }
           await this.runtime.ledger.beginEffect(key)
