@@ -43,7 +43,8 @@ const REFRESH_INTERVAL_MS = 15_000
 export function ObjectivePane({ params }: PaneProps<ObjectivePaneParams>) {
   const objectiveId = params?.objectiveId
   const apiBaseUrl = useApiBaseUrl()
-  const [objective, setObjective] = useState<Objective | null>(null)
+  const [displayed, setDisplayed] = useState<{ objectiveId: string; objective: Objective } | null>(null)
+  const objective = displayed && displayed.objectiveId === objectiveId ? displayed.objective : null
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,7 +58,7 @@ export function ObjectivePane({ params }: PaneProps<ObjectivePaneParams>) {
       const generation = ++requestGenerationRef.current
       if (!objectiveId) {
         setLoading(false)
-        setObjective(null)
+        setDisplayed(null)
         setError(null)
         return
       }
@@ -66,11 +67,11 @@ export function ObjectivePane({ params }: PaneProps<ObjectivePaneParams>) {
       try {
         const result = await createObjectivesClient({ apiBaseUrl }).get(objectiveId)
         if (requestGenerationRef.current !== generation) return // a newer request/target superseded this one
-        setObjective(result)
+        setDisplayed(result ? { objectiveId, objective: result } : null)
         setError(result ? null : `Objective ${objectiveId} not found.`)
       } catch (err) {
         if (requestGenerationRef.current !== generation) return
-        if (!isBackgroundRefresh) setObjective(null)
+        if (!isBackgroundRefresh) setDisplayed(null)
         setError(err instanceof ObjectivesClientError ? err.message : "Failed to load objective")
       } finally {
         if (requestGenerationRef.current === generation) setLoading(false)
