@@ -225,7 +225,7 @@ export type {
   AgentHostChannelStorage,
   CreateAgentHostChannelRuntimeOptions,
 } from './agent-host/channelRuntimeComposition'
-export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
+export { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
 export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 export type {
   LegacyRequestLedgerLocation,

@@ -278,7 +278,16 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         scope,
         agentTypeId: 'alpha',
         requestId: 'retryable',
-      }), 'AGENT_REQUEST_IN_PROGRESS')
+        title: 'conflicting retry',
+      }), 'AGENT_REQUEST_CONFLICT')
+      const retry = {
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'retryable',
+      }
+      const ref = await fixture.gateway.createSession(retry)
+      await expect(fixture.gateway.createSession(retry)).resolves.toEqual(ref)
+      await expect(fixture.gateway.listSessions({ scope })).resolves.toMatchObject({ sessions: [{ ref }] })
     })
 
     it('fails unknown agents and hidden cross-scope sessions with stable errors', async () => {
@@ -671,9 +680,11 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       await expectCode(fixture.gateway.listAgents({ scope }), 'AGENT_GATEWAY_CLOSED')
     })
 
+    // Durable request-ledger restart replay is a Level-B requirement, but this
+    // gateway-only factory has no Host restart control. The production seam is
+    // covered by createAgentHost.test.ts; only event continuity remains Level D.
     it.skip('Level D restart preserves sequence continuity [owner: streaming lane]', () => {})
-    it.skip('Level D durable request ledger replays receipts and create tombstones across restart [owner: streaming lane]', () => {})
-    it.skip('Level D durable admission/effect crash matrix resolves acknowledged and outcome-unknown work [owner: streaming lane]', () => {})
+    it.skip('Level D durable admission/effect crash matrix reconciles preserved unresolved work [owner: streaming lane]', () => {})
     it.skip('Level D durable activity index reconciles non-quiescent states at startup [owner: streaming lane]', () => {})
     it.skip('Level D/v2 immutable snapshot pagination is mutation-stable and expires [owner: #905 pool cursor]', () => {})
     it.skip('v2 remote wire validates JSON event leaves, paths, depth, and size [owner: #905 remote wire]', () => {})

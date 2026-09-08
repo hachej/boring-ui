@@ -184,6 +184,21 @@ replay source below `HarnessPiChatService`, not this interface. Later operations
 may extend the interface only in their named slices (`resumePausedToolCall` in
 A3b and `markTurnInterrupted` in A4); neither is part of the current seam.
 
+An explicit retryable admission result, or a returned prompt-state guard denial,
+releases its pending claim before any effect. The ledger persists
+`pending-admission` with `retryable: true`; `prepare` must atomically consume
+that marker before returning `ownership: 'reclaimed'`. The original key and
+payload digest stay binding, and overlapping requests still receive
+`AGENT_REQUEST_IN_PROGRESS`. This applies to both ordinary and strict-idle
+prompt guards, with their existing idle/error admission policies.
+
+Custom `AgentRequestLedger` implementations must implement
+`markAdmissionRetryable` and atomic reclaim, and refuse `acceptAdmission` until
+the released claim has been reclaimed. A thrown admission/guard error does not
+release ownership. Reopening a durable ledger permits only an explicitly marked
+retry; unmarked pending, admission-accepted, in-flight and outcome-unknown rows
+are never automatically re-executed. This is not general crash reconciliation.
+
 CI pins the boundary in three directions: Agent Host production code cannot
 import a Pi runtime, only `harnessBackend/**` can reference the concrete Pi chat
 service, and Workspace/Core/CLI/playground consumers cannot name the private
