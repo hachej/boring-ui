@@ -5,6 +5,13 @@ export {
   type CoreFrontendRootHandler,
   type CreateCoreWorkspaceAgentServerOptions,
 } from './createCoreWorkspaceAgentServer.js'
+export {
+  CORE_WHATSAPP_WEBHOOK_PATH,
+  assertCoreWhatsAppAgentAvailable,
+  mountCoreWhatsAppChannel,
+  type CoreWhatsAppChannelOptions,
+  type MountedCoreWhatsAppChannel,
+} from './whatsappChannelComposition.js'
 export type {
   AddressedAgentCapabilityContext,
   AgentPiCapabilityOptions,
