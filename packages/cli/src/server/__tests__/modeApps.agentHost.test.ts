@@ -13,6 +13,7 @@ import { createLocalWorkspaceRegistry } from "../localWorkspaces.js"
 import { createFolderModeApp, createWorkspacesModeApp } from "../modeApps.js"
 
 const automationFailure = vi.hoisted(() => ({ enabled: false }))
+const automationResolverCalls = vi.hoisted(() => [] as Array<{ workspaceId?: string; userId?: string }>)
 const pluginFrontFailure = vi.hoisted(() => ({ enabled: false, closeCalls: 0 }))
 const cliDefaultPluginPackages = vi.hoisted(() => ({ paths: [] as string[] }))
 const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
@@ -44,6 +45,10 @@ vi.mock("@hachej/boring-automation/server", async (importOriginal) => {
       if (automationFailure.enabled) throw new Error("injected post-mount CLI init failure")
       return await actual.automationRoutes(...args)
     },
+    resolveAutomationOperationsForActor: async (...args: Parameters<typeof actual.resolveAutomationOperationsForActor>) => {
+      automationResolverCalls.push({ ...args[1] })
+      return await actual.resolveAutomationOperationsForActor(...args)
+    },
   }
 })
 
@@ -73,6 +78,7 @@ function restoreEnv(name: "HOME" | "BORING_AGENT_SESSION_ROOT", value: string | 
 
 afterEach(async () => {
   automationFailure.enabled = false
+  automationResolverCalls.length = 0
   pluginFrontFailure.enabled = false
   pluginFrontFailure.closeCalls = 0
   cliDefaultPluginPackages.paths = []
@@ -178,6 +184,34 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("routes public automation PATCH requests through actor-bound operations", async () => {
+    const { app, workspace } = await fixtureApp(false)
+    const headers = { "x-boring-workspace-id": workspace.id }
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/boring-automation/automations",
+        headers,
+        payload: { title: "CLI route", timezone: "UTC", model: "host:approved-model" },
+      })
+      expect(created.statusCode, created.body).toBe(201)
+      const automationId = (created.json() as { automation: { id: string } }).automation.id
+      automationResolverCalls.length = 0
+
+      const patched = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/boring-automation/automations/${automationId}`,
+        headers,
+        payload: { title: "Updated through operations" },
+      })
+
+      expect(patched.statusCode, patched.body).toBe(200)
+      expect(patched.json()).toMatchObject({ automation: { id: automationId, title: "Updated through operations" } })
+      expect(automationResolverCalls).toEqual([{ workspaceId: workspace.id, userId: "local" }])
+    } finally {
+      await app.close()
+    }
+  })
   it("folder mode activates a launched authored agent package with scoped skills and knowledge", async () => {
     const home = await temporaryRoot("boring-cli-authored-home-")
     const workspaceRoot = await temporaryRoot("boring-cli-authored-workspace-")

@@ -1300,6 +1300,14 @@ export async function createWorkspacesModeApp(opts: {
         })
       },
       actorResolver: async (request) => ({ workspaceId: (await workspaceFromRequest(request)).id, userId: "local" }),
+      operationsForRequest: async (request) => {
+        const workspace = await workspaceFromRequest(request)
+        return (await resolveAutomationOperationsForActor({
+          mode: "local",
+          localUserId: "local",
+          resolveStore: async () => automationStore(workspace),
+        }, { workspaceId: workspace.id, userId: "local" })).operations
+      },
       eventBus: automationEventBus,
     })
 

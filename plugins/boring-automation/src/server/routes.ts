@@ -31,7 +31,7 @@ export interface AutomationRoutesOptions {
   hostedTriggerToken?: string
   actorResolver?: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
   /** Host-composed operation service; PATCH uses the same authority path as the agent tool. */
-  operationsForRequest?: (request: FastifyRequest) => Promise<Pick<AutomationOperations, "update">> | Pick<AutomationOperations, "update">
+  operationsForRequest: (request: FastifyRequest) => Promise<Pick<AutomationOperations, "update">> | Pick<AutomationOperations, "update">
   eventBus?: AutomationRunEventBus
 }
 
@@ -112,10 +112,8 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
       const input = parseBody(AutomationPatchSchema, request.body)
-      const operations = await opts.operationsForRequest?.(request)
-      const automation = operations
-        ? await operations.update(id, input)
-        : await (await resolveStore(opts, request)).updateAutomation(id, input)
+      const operations = await opts.operationsForRequest(request)
+      const automation = await operations.update(id, input)
       return { ok: true, automation }
     } catch (cause) {
       return sendError(reply, cause)
