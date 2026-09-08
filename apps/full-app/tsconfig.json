@@ -1,4 +1,5 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -23,12 +24,6 @@
       "@hachej/boring-agent/server": ["../../packages/agent/src/server/index.ts"],
       "@hachej/boring-bash/agent": ["../../packages/boring-bash/src/agent/index.ts"],
       "@hachej/boring-bash/server": ["../../packages/boring-bash/src/server/index.ts"],
-      "@hachej/boring-sandbox/shared": ["../../packages/boring-sandbox/src/shared/index.ts"],
-      "@hachej/boring-sandbox/providers/direct": ["../../packages/boring-sandbox/src/providers/direct/index.ts"],
-      "@hachej/boring-sandbox/providers/bwrap": ["../../packages/boring-sandbox/src/providers/bwrap/index.ts"],
-      "@hachej/boring-sandbox/providers/node-workspace": ["../../packages/boring-sandbox/src/providers/node-workspace/index.ts"],
-      "@hachej/boring-sandbox/providers/vercel-sandbox": ["../../packages/boring-sandbox/src/providers/vercel-sandbox/index.ts"],
-      "@hachej/boring-sandbox/providers/blaxel": ["../../packages/boring-sandbox/src/providers/blaxel/index.ts"],
       "@hachej/boring-core/app/front": ["../../packages/core/src/app/front/index.ts"],
       "@hachej/boring-core/app/server": ["../../packages/core/src/app/server/index.ts"],
       "@hachej/boring-core/app/vite": ["../../packages/core/src/app/vite/index.ts"],
