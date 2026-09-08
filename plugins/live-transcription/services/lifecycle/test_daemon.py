@@ -24,6 +24,42 @@ class FakeProvider:
 
 
 class ReadinessTests(unittest.TestCase):
+    def test_requires_refine_target_and_checks_http_health(self):
+        auth = [
+            {"header": "kyutai-api-key", "value": "kyutai"},
+            {"header": "Authorization", "value": "Bearer sortformer"},
+            {"header": "Authorization", "value": "Bearer refine"},
+        ]
+        with self.assertRaisesRegex(ValueError, "two WebSocket targets and one HTTP"):
+            MODULE.tcp_ready_targets(
+                "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b",
+                auth[:2],
+            )
+        with self.assertRaisesRegex(ValueError, "two WebSocket targets and one HTTP"):
+            MODULE.tcp_ready_targets(
+                "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b,ws://127.0.0.1:3/c",
+                auth,
+            )
+
+        class Connection:
+            def __init__(self, response): self.response, self.request = response, b""
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def sendall(self, request): self.request = request
+            def recv(self, _size): return self.response
+
+        connections = [Connection(b"HTTP/1.1 101 Switching Protocols\r\n"),
+                       Connection(b"HTTP/1.1 101 Switching Protocols\r\n"),
+                       Connection(b"HTTP/1.1 200 OK\r\n")]
+        ready = MODULE.tcp_ready_targets(
+            "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b,http://127.0.0.1:3/v1/health",
+            auth,
+        )
+        with mock.patch("socket.create_connection", side_effect=connections):
+            self.assertTrue(ready())
+        self.assertIn(b"GET /v1/health HTTP/1.1", connections[2].request)
+        self.assertIn(b"Authorization: Bearer refine", connections[2].request)
+
     def test_rejects_unsafe_authentication_headers(self):
         with self.assertRaises(ValueError):
             MODULE.tcp_ready_targets(
@@ -156,3 +192,28 @@ class LeaseControllerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WarmWindowTests(unittest.TestCase):
+    def test_parses_hours_and_days(self):
+        window = MODULE.WarmWindow.parse("08:00-19:00@mon-fri", 2700)
+        self.assertEqual((window.start_minute, window.end_minute), (480, 1140))
+        self.assertEqual(sorted(window.weekdays), [0, 1, 2, 3, 4])
+        self.assertTrue(window.active(time.struct_time((2026, 9, 4, 9, 30, 0, 4, 247, 0))))   # Friday 09:30
+        self.assertFalse(window.active(time.struct_time((2026, 9, 5, 9, 30, 0, 5, 248, 0))))  # Saturday
+        self.assertFalse(window.active(time.struct_time((2026, 9, 4, 19, 0, 0, 4, 247, 0))))  # closing minute
+
+    def test_rejects_empty_or_inverted_windows(self):
+        with self.assertRaises(ValueError):
+            MODULE.WarmWindow.parse("19:00-08:00", 60)
+
+    def test_controller_uses_long_grace_inside_the_window_only(self):
+        provider = FakeProvider()
+        window = MODULE.WarmWindow.parse("00:00-23:59@mon-sun", 2700)
+        controller = MODULE.LeaseController(provider, lambda: True, idle_grace=180, warm_window=window)
+        try:
+            self.assertEqual(controller.idle_grace, 2700)
+            controller.warm_window = MODULE.WarmWindow.parse("00:00-00:01@mon-sun", 2700)
+            self.assertEqual(controller.idle_grace, 180)
+        finally:
+            controller.close()

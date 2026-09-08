@@ -25,12 +25,21 @@ type ModuleLoader = {
   _load: (this: unknown, request: string, parent?: unknown, isMain?: boolean) => unknown
 }
 
-function mockJitiLoad(mock: "missing-createJiti" | "unavailable"): () => void {
+function mockJitiLoad(mock: "missing-createJiti" | "unavailable" | "import-rejected"): () => void {
   const loader = Module as unknown as ModuleLoader
   const originalLoad = loader._load
   loader._load = function (this: unknown, request: string, parent?: unknown, isMain?: boolean) {
     if (request === "jiti") {
       if (mock === "missing-createJiti") return {}
+      if (mock === "import-rejected") {
+        return {
+          createJiti: () => ({
+            import: async () => {
+              throw new Error("simulated jiti import rejection")
+            },
+          }),
+        }
+      }
       throw new Error("simulated jiti unavailable")
     }
     return originalLoad.call(this, request, parent, isMain)
@@ -91,6 +100,23 @@ describe("importServerModule", () => {
       await expect(importServerModule(serverPath, true)).resolves.toMatchObject({ default: { value: "native-fallback" } })
       expect(warn).toHaveBeenCalledTimes(1)
       expect(warn.mock.calls[0]?.[0]).toContain("simulated jiti unavailable")
+    } finally {
+      restoreLoad()
+    }
+  })
+
+  test("hotReload=true propagates jiti evaluation failures without executing the module again", async () => {
+    const dir = await tmp("boring-server-import-rejected-jiti-")
+    const serverPath = join(dir, "server.mjs")
+    await writeFile(serverPath, "export default { value: 'must-not-run' }\n", "utf8")
+
+    const restoreLoad = mockJitiLoad("import-rejected")
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const { importServerModule } = await importFreshServerModule()
+
+      await expect(importServerModule(serverPath, true)).rejects.toThrow("simulated jiti import rejection")
+      expect(warn).not.toHaveBeenCalled()
     } finally {
       restoreLoad()
     }
