@@ -166,6 +166,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
         return { content: [{ type: "text" as const, text: "ok" }] }
       },
     }
+    const projectedAgentTypeIds: string[] = []
     const hostFactory = () => undefined
     const result = collectWorkspaceAgentServerPlugins({
       workspaceRoot,
@@ -182,6 +183,17 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
           contentDigest: "test-plugin-composition-v1",
           systemPrompt: "Plugin prompt",
           agentTools: [domainTool],
+          agentToolFactory: ({ agentTypeId }) => {
+            projectedAgentTypeIds.push(agentTypeId)
+            return [{
+              name: `plugin_${agentTypeId}`,
+              description: "An Agent-specific plugin tool.",
+              parameters: { type: "object" as const, properties: {} },
+              async execute() {
+                return { content: [{ type: "text" as const, text: agentTypeId }] }
+              },
+            }]
+          },
           piPackages: ["npm:plugin-pi"],
           extensionPaths: ["/plugin/agent/index.ts"],
         },
@@ -189,6 +201,11 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
     })
 
     expect(result.agentOptions.extraTools?.map((tool) => tool.name)).toEqual(["plugin_ping"])
+    expect(result.projectAgentTools("default").map((tool) => tool.name)).toEqual([
+      "plugin_ping",
+      "plugin_default",
+    ])
+    expect(projectedAgentTypeIds).toEqual(["default"])
     expect(result.agentOptions.systemPromptAppend).toContain("Host prompt")
     expect(result.agentOptions.systemPromptAppend).toContain("Plugin prompt")
     expect(result.agentOptions.pi?.additionalSkillPaths).toEqual([

@@ -5,6 +5,8 @@ import { createTasksPlugin } from '@hachej/boring-tasks/front'
 import { WorkspaceAgentFront } from '@hachej/boring-workspace/app/front'
 import '@hachej/boring-agent/front/styles.css'
 import '@hachej/boring-workspace/globals.css'
+import './app.css'
+import { FactoryEpicsOverlay, factoryEpicsIcon } from './FactoryEpicsOverlay'
 
 const plugins = [
   createAskUserPlugin({ appLeftInbox: true }),
@@ -14,7 +16,7 @@ const plugins = [
 
 createRoot(document.getElementById('root')!).render(
   <WorkspaceAgentFront
-    workspaceId="factory-playground"
+    workspaceId="factory-hub"
     agentTypeId="boring-orchestrator"
     addressedAgentSelection
     apiBaseUrl=""
@@ -23,6 +25,12 @@ createRoot(document.getElementById('root')!).render(
     appTitle="Boring Factory"
     workspaceLabel="Native factory playground"
     workspaceLayout="plugin-tabs"
+    appLeftOverlayActions={[{
+      id: 'factory-epics',
+      label: 'Epics',
+      icon: factoryEpicsIcon,
+      render: ({ onClose }) => <FactoryEpicsOverlay onClose={onClose} />,
+    }]}
     defaultSessionTitle="Factory run"
     provisionWorkspace
     chatParams={{
