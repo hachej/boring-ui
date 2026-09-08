@@ -59,6 +59,11 @@ const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const SAFE_HOST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000
 
+/** Maps trusted HTTP invocation metadata to the credential authority carried by the runtime binding. */
+export function invocationFundingPolicyFromHeaderV1(value: unknown): AgentInvocationFundingPolicyV1 {
+  return value === 'unattended' ? 'api-key-only' : 'personal-subscription'
+}
+
 export interface RuntimeBinding {
   readonly key: string
   readonly agentTypeId: string
@@ -1114,9 +1119,7 @@ export async function createAgentHost(
       return async (app: import('fastify').FastifyInstance) => {
         app.addHook('onRequest', async (request) => {
           invocationFundingPolicy.enterWith(
-            request.headers['x-boring-invocation-mode'] === 'unattended'
-              ? 'api-key-only'
-              : 'personal-subscription',
+            invocationFundingPolicyFromHeaderV1(request.headers['x-boring-invocation-mode']),
           )
         })
         await app.register(routes)

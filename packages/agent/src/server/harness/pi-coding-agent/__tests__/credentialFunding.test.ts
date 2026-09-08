@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { createAssistantMessageEventStream, type OAuthCredential } from '@earendil-works/pi-ai'
 import { ModelRuntime } from '@mariozechner/pi-coding-agent'
 import { allowsSubscriptionOAuthForInvocationV1 } from '../../../agent-host/buildAgentComposition'
+import { invocationFundingPolicyFromHeaderV1 } from '../../../agent-host/createAgentHost'
 import {
   createInMemoryCredentialVaultPersistenceV1,
   createInMemoryCredentialVersionAnchorV1,
@@ -23,9 +24,13 @@ function backend() {
 describe('workspace credential funding policy', () => {
   test('invocation authority allows interactive OAuth and denies unattended agents regardless of name', async () => {
     const vaultBackend = backend()
+    const interactivePolicy = invocationFundingPolicyFromHeaderV1(undefined)
+    const unattendedPolicy = invocationFundingPolicyFromHeaderV1('unattended')
+    expect(interactivePolicy).toBe('personal-subscription')
+    expect(unattendedPolicy).toBe('api-key-only')
     const normal = createVaultCredentialStoreV1({
       workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
-      allowSubscriptionOAuth: allowsSubscriptionOAuthForInvocationV1('personal-subscription'),
+      allowSubscriptionOAuth: allowsSubscriptionOAuthForInvocationV1(interactivePolicy),
     })
     const oauth: OAuthCredential = {
       type: 'oauth', refresh: 'refresh-token', access: 'access-token', expires: Date.now() + 60_000,
@@ -36,7 +41,7 @@ describe('workspace credential funding policy', () => {
     for (const unattendedAgentTypeId of ['default', 'renamed-custom-worker']) {
       const unattended = createVaultCredentialStoreV1({
         workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
-        allowSubscriptionOAuth: allowsSubscriptionOAuthForInvocationV1('api-key-only'),
+        allowSubscriptionOAuth: allowsSubscriptionOAuthForInvocationV1(unattendedPolicy),
       })
       expect(unattendedAgentTypeId).not.toBe('boring-worker')
       expect(await unattended.read('openai-codex')).toBeUndefined()
@@ -53,8 +58,8 @@ describe('workspace credential funding policy', () => {
     await writer.modify('credential-proof', async () => ({ type: 'api_key', key: 'sk-factory-funded' }))
 
     for (const [agentTypeId, fundingPolicy] of [
-      ['default', 'personal-subscription'],
-      ['renamed-custom-worker', 'api-key-only'],
+      ['default', invocationFundingPolicyFromHeaderV1(undefined)],
+      ['renamed-custom-worker', invocationFundingPolicyFromHeaderV1('unattended')],
     ] as const) {
       const store = createVaultCredentialStoreV1({
         workspaceId: 'workspace-a', userId: 'user-a', vaultBackend,
