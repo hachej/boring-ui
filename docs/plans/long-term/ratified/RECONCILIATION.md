@@ -103,7 +103,7 @@ but reserve the name so session records don't absorb it silently.
 7. Agents reason over semantic resources/views/artifacts, never renderer concepts; plugins are packaging, modules are semantics. (doc 4-6, 10-13)
 8. Promote existing seams; a seam ships owner+impl+consumer; old APIs live until replacements are proven; Rule of Three gates promotion. (doc 9-10, R-33-09, doc §30)
 9. Products configure workspaces; the cloud is extracted from repeated demand. (doc 8 + v3 §6)
-10. Docs never precede the implementations they describe. (v3 §6, the G16 lesson)
+10. Docs never precede the implementations they describe. (v3 §6, the G16 lesson; pending §11(g) clarifies that this governs implementation claims, not explicitly unbuilt plans.)
 
 ## 5. Open to the owner
 
@@ -421,3 +421,355 @@ implementation obligation until the first Experience-layer slice.
 
 **Explicit non-change.** No new nouns, no A2A loopback, no shared-runtime
 room; §7 and §9 stand unaltered.
+
+## 11. OWNER-REQUESTED AMENDMENT — 2026-09-05 (Workspace Evolution)
+
+> Consumer scope is amended by §12 below (2026-09-06), and its first consumer,
+> timing and execution home are superseded by §13 (2026-09-07). Clinic-specific
+> requirements remain binding for Clinic; they do not define all products.
+
+The owner requested that the personal, self-evolving workspace design become
+a vision, milestone, and implementation-plan PR. It specifies future behavior;
+no capability is marked shipped by this documentation change. The September 5
+sequencing is historical; current sequencing is recorded only in the
+[2026-09-07 DIRECTION amendment](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).
+
+**(a) Product contract.** A minimal workspace is usable immediately and can
+adopt an optional domain starter. A direct user request can change its
+interface, layout, workflows, and permitted agent behavior. The user can
+preview, keep, compare, and undo versions. Adaptation should remove the
+founder's manual request relay. Successful arrangements persist; passive
+usage signals may suggest a change but do not themselves authorize one.
+
+**Clinic clarification (2026-09-05).** Its primary Experience is a French
+patient/document dashboard (**Documents médicaux**) with ambient assistance
+and optional contextual chat. Workspace is the governed world, not required
+visible chrome. This replaces the initial plan's split document/chat pilot.
+The first proof must work without a mounted chat or a Session created merely
+to open a domain record, then reuse the same document unit beside chat.
+
+**(b) A private branch is a versioned composition.** Resolve exact shared
+package versions plus workspace and personal overlays, behavior assets, and
+any private modules. Git can own custom source and lineage; ordinary
+preferences need not fork the entire platform. Active records, session
+history, private files, and credentials are separate from software revisions.
+The platform contract may be pinned within support policy; the host's current
+security implementation and revocation authority cannot be pinned away.
+
+A local behavior override constrains a binding or creates an explicit derived
+definition with provenance. It never mutates the shared Agent identity for
+other consumers. Preferences cannot widen the intersection of grants in §6.
+Publishing a new expert package and adopting it in a customer's workspace are
+different decisions.
+
+**(c) Evolution uses host-controlled release.** An admitted builder Run keeps
+RunId := RequestKey. Its immutable candidate identifies requester/scope,
+parent/base, package lock, artifact and behavior digests, state compatibility,
+and verification evidence. Records live in a product module using existing
+Artifact/Evaluation/accepted-work seams where available; this does not promote
+Experiment, Product, Schema, AgentState, or a module-runtime kernel noun.
+An uppercase optimization Candidate/Objective is optional, as in the scoped
+north star. Any durable job uses the existing Thread root (§9).
+
+The host validates the exact candidate, checks current authority, and
+atomically activates it against the expected revision generations across all
+affected scopes. A stale parent or incompatible contract stops activation.
+Candidate/source/evidence retrieval, preview access, and every brokered
+read/action also require current scoped authorization. A digest or preview URL
+is not a grant; revocation denies further access, not only activation, and
+cannot undo prior disclosure.
+The builder cannot alter protected checks, attest its own approval, or write
+the active pointer. A capability expansion requires a separate host grant or
+trusted package release, not an overlay field. Standing user policies may
+authorize bounded changes without asking on every edit.
+
+Undo is another authorized, append-only activation of a compatible prior
+revision. It preserves business records and admits no unsupported state
+rollback or repetition of external effects. Already admitted work retains its
+code/behavior identity subject to current revocation; incompatible migrations
+must drain or migrate it. Host recovery remains reachable outside custom UI.
+
+**(d) Three distinct loops.** Private adaptation builds and adopts a local
+candidate. Downstream maintenance reconciles old base, local intent, and new
+base, with stable semantic targets, explicit conflicts, and compatibility
+evidence. Shared improvement exports only approved portable material to an
+optional package after review. Neither a successful private change nor an
+upstream publication automatically changes another customer's workspace.
+Domain concepts stay in domain packages; broader extraction needs repeat-use
+evidence or an explicit owner promotion. No cross-tenant training or public
+marketplace is required.
+
+**(e) Named amendments and preserved boundaries.** VISION §8's universal-app
+generator exclusion is narrowed to admit this bounded program. The generic
+workspace/Meridian shell remains one supported Experience, not a mandatory
+layout for every vertical. ARCHITECTURE-PLAN R1/D-b/§6 remain binding:
+trusted registries are composition-time; generated code builds separately and
+is served only through the isolated tier. A disposable working directory or
+hot reload does not prove runtime confinement or release safety.
+
+§8(c)'s View contract remains a set. A product-specific configuration may
+select props of already registered components; it may not become a lookalike
+saved ViewDescriptor before [saved-views-kernel]. Durable agent-driven release
+waits for its accepted-work/Level-D prerequisites. Thread shape is a dependency
+only when the slice consumes Job Threads; it is not imposed on every layout
+preference. DIRECTION explicitly classifies the new lane rather than silently
+reopening the former non-chrome or Wave-4 freezes. Pricing/GTM stay tenant-side.
+
+**(f) Composability is an Experience contract.** Make §§8–10 operational in
+the first Experience slice. Compose domain resources/operations, primary
+surfaces/navigation, agent presence, work initiation, and scoped context/state
+independently through the existing AppComposition/View boundaries. Chat-first,
+document-first, conventional SaaS, embedded, headless, and hybrid recipes must
+share governed operation and work semantics; they are not separate runtime
+stacks behind a global mode switch. The §10 presence vocabulary stays closed;
+an ambient Experience may open a temporary contextual drawer without changing
+its underlying domain or staffing. A layout/presence choice grants no new
+authority and enables no unattended trigger.
+
+Domain packages own patient, encounter, and document identity and authoritative
+state. Sessions optionally bind conversations to that work; they do not own
+domain records. Clinic's consultation document path is currently session-keyed;
+its live proof requires a trusted, compatible migration/adapter. Ambiguous identity mappings require explicit
+resolution. Thread remains a job root with 0..n Sessions, never a replacement
+name for every patient/document. Its storage-shape/attribution prerequisites
+apply when consumed by either a UI or headless job.
+
+Shared components expose supported mounts, typed bindings/intents, provider
+lifetimes, instance/state isolation, compatibility, and accessibility. Domain
+operations are shared by UI and agents. Independent views/jobs retain explicit
+subject and version context; an active-patient selection cannot retarget
+admitted work or authorize another resource. Presentation preferences are
+separate from document content. Late proposals must not overwrite concurrent
+human edits or conceal provenance, freshness, and review state.
+
+Admitted server work and its status/results/decisions survive chat closure and
+browser absence under accepted-work recovery. They remain accessible through
+non-chat projections of existing Activity/Approval/artifact state. Browser
+capture has an explicit consent/interruption lifecycle, not a promise to keep
+recording after the browser closes. Changing a composition neither duplicates
+effects nor silently loses a required decision or capture control.
+
+E0 proves rendering reuse in two contract fixtures with normalized synthetic
+domain references and a fixture-only adapter/extraction if needed. It does not
+prove that Clinic's current data path is Session-independent. E1a earns durable
+composition activation; E1b earns the live Clinic identity/lifecycle claim
+only after the migration, [thread-storage-spike], and [seat-audit-attribution]
+proofs. Both subproofs complete E1. Supported combinations need evidence;
+this amendment does not require all mode combinations, a universal UI DSL,
+a new scheduler, or a complete component-library rewrite before the pilot.
+
+**(g) Documentation truthfulness — named clarification.** VISION invariant
+14, ARCHITECTURE-PLAN §6, and §4 invariant 10 above prohibit claiming an
+implementation guarantee before it is demonstrated. Explicitly labeled
+plans/specifications may precede implementation and may be ratified as targets;
+they must separate proposed behavior, dependencies, and required evidence from
+shipped guarantees. This replaces the literal blanket reading of "docs never
+precede implementation" while preserving the G16 evidence requirement.
+
+Plan and milestone acceptance: [Workspace Evolution](../../native-creation/LIFECYCLE.md).
+
+## 12. OWNER-REQUESTED AMENDMENT — 2026-09-06 (software model and cross-domain proof)
+
+The owner requested a step back from Clinic-specific framing and a stronger
+general software model, naming the Charlotte Ledoux/Seneca adaptation and ESG
+portfolio-impact analysis. This clarifies §§8–11 and makes the consumer-scope
+change below explicit. The [software model](../../../vision/software-model.md)
+is the readable synthesis. The September 6 DIRECTION amendment was the dispatch
+authority for this scope when adopted; §13 later supersedes its first consumer,
+timing and execution home, and the [September 7 amendment](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+is the current dispatch authority.
+
+**(a) Responsibilities, not new ontology.** The application model is state
+and knowledge + domain operations + Experiences + durable work, under
+authority, evidence and lifecycle control. Map these to existing semantic
+resources/artifacts/mounts, Capability/operation, AppComposition/View,
+Thread/Session/Run and trusted-host contracts. No universal SystemOfRecord,
+Schema, DataSource, Process, Product or workflow-DSL noun is promoted here.
+The full saved-View contract and existing promotion rules remain binding.
+
+**(b) Sources and domain truth.** An application may own records or consume
+authorized external systems and read-only corpora. It need not centralize them
+in Boring storage. The domain adapter owns source identity, authority,
+freshness/version semantics and write rules. Source evidence, derived results,
+proposals and accepted records remain distinguishable. Missing guarantees
+must be visible; a renderer or agent cannot infer them from a generic reference.
+
+**(c) Domain operations are the shared behavior boundary.** UI, agents,
+deterministic jobs and authorized external clients use the same governed
+operation implementation. Subject/resource bindings, input versions, current
+authority and effects are explicit. Domain code owns reproducible methods,
+validation and transitions. Agents may reason and propose within that boundary;
+they cannot mint grants or silently change domain policy. Ordinary queries,
+manual edits and deterministic calculations do not require an agent Run,
+Thread, or optimization Objective merely to fit the architecture. Admitted
+agent work still uses RunId := RequestKey, and Thread remains the job root
+with 0..n optional Sessions where a durable job is used.
+
+**(d) Separate operating and software lifecycles.** Performing domain work
+and changing the software that performs it are different loops. §11's immutable
+candidates, current authorization, independent checks, scoped previews,
+generation-checked activation, compatible undo and approved export continue
+to govern the software loop. Domain records, knowledge state, effects and
+already admitted work keep their own lifecycle; a software rollback cannot
+rewrite them. Behavior/knowledge/method changes need the compatibility and
+affected evaluation evidence appropriate to the changed class.
+
+**(e) Cross-domain evidence.** Clinic's document/record workflow,
+Charlotte/Seneca's source-grounded knowledge/draft workflow, and the owner's
+ESG analysis use case test different responsibilities. The Charlotte package
+and host seams are source-inspected, not production-activation proof. Charlotte
+refers here to a public-corpus governance knowledge package, not evidence
+about the person or their endorsement. ESG is
+an unverified architecture stress case until the client sources and method
+are provided. Synthetic fixtures and cosmetic variants do not qualify as real
+consumer reuse or satisfy Rule of Three. A claimed shared capability must
+work in a second structurally different live consumer before a cross-domain
+capability claim; kernel promotion retains its stricter existing gate.
+
+**(f) Explicit E-program scope change.** Replace §11's Clinic-only E0/E1
+selection and Seneca-only identity-host framing with:
+
+- E0 maps the owner-described Clinic request and a source-backed proposed
+  Charlotte/Seneca fixture request to supported contracts. It records requester
+  and provenance; a proposed request needs the intended requester's confirmation
+  before being called an actual customer request. It reuses a rendering unit
+  across two mounts and both synthetic domain
+  fixtures, and records a labeled ESG hypothesis. No live proof, saved-View
+  substitute or production activation follows.
+- E1a proves durable configuration in one selected consumer. E1b proves that
+  consumer's live domain identity/operations and bounded Job Thread with
+  non-chat status/results/decisions. Record the workflow and domain owner
+  before implementation. E1 still requires both subproofs.
+- E1b's [thread-storage-spike] and [seat-audit-attribution] gates remain
+  mandatory for every consumer; E1a retains P1-C and every premise it consumes.
+  Clinic's domain migration is mandatory when Clinic is selected. Selecting a
+  corpus-backed consumer neither performs nor waives Clinic's migration.
+- E2/E5 prove ownership and maintenance for supported capabilities. Repeat
+  a capability in a second structurally different live consumer before calling
+  it cross-domain. This does not make every client deployment or every mode
+  a prerequisite for an earlier bounded private change.
+- E3 is required before promising behavior personalization; E4 only when novel
+  code is needed. E5 configuration precedes E6 under DIRECTION; later behavior
+  and module classes extend the applicable upgrade proof. E6 export and
+  independent adoption remain separately authorized.
+
+**Preserved boundaries.** No commercial reprioritization, universal database
+or schema builder, shared-runtime room, marketplace prerequisite, second
+execution identity or authority model, frozen-port reopening, or bypass of
+confinement/accepted-work/attribution/View gates. The single-agent and ordinary
+operate paths remain first-class. Known old scope is amended by this section;
+the remaining implementation decisions are exposed in the consumer slices.
+
+## 13. OWNER RULING — 2026-09-07 (native creation: the first complete product journey)
+
+Ruled by the owner on 2026-09-07 after the native-creation reassessment and
+grill recorded in [`docs/plans/native-creation/`](../../native-creation/README.md).
+Additive to §6–§12; each clause names what it supersedes. **Merging #1561
+ratifies this section** (the same instrument pattern as #1409 for §8). Sequencing
+lives only in the DIRECTION amendment of the same date; this section decides
+meaning and authority.
+
+**(a) Product obligation and re-timing.** A tenant such as Seneca creates,
+uses, changes, installs and maintains expert software from inside the product,
+without founder source edits. Creation is itself a job. The first complete
+journey is: one private product → immutable release → installation for a
+separate consumer → retained method/UI change → supported upstream/private
+reconciliation. This **supersedes the timing** that placed Product extraction
+and creator publishing after two real verticals (VISION §5 K9; V2-IMPLEMENTATION-SPEC
+L7 and Part C M8; V2-PORT-HANDBOOK V2-13). Public marketplace, discovery,
+revenue share and cross-tenant learning remain deferred; private release and
+installation do not wait for them. The **Product** noun leaves R-e's deferred
+list for its private release/installation half only; its public-packaging
+half stays deferred. Release and Installation are product-module records
+(§11c), not kernel nouns; Rule of Three still gates kernel promotion.
+
+**(b) Three layers: host, product runtime, sandbox.**
+
+> **Host** = control plane and broker only: identity, membership, installation
+> records, activation, data/attention brokering, revocation. It never imports
+> product code except in `embedded` mode (c).
+> **Product runtime** = durable, **one per installed product**: runs the
+> product's agent loop(s), its generated domain operations, and serves its
+> generated UI. It survives any sandbox and is isolated by mode. The runtime
+> unit is the installation, not the agent; a single-agent product coincides
+> with today's per-agent-type rule (ARCHITECTURE-PLAN D-e), so nothing landed
+> changes.
+> **Sandbox** = disposable environment lease (DECISIONS D31) used by builders
+> and agents for tool calls, builds and checks. Never the product host.
+> Destroying it must leave the installed product and its data intact.
+
+**(c) Runtime modes are policy, not code.** `embedded` (in the host process;
+permitted only on single-tenant deployments where the curator is the operator;
+**default off**; today's `runtimeBackend/` hot-loading *is* this mode and is
+gated as such) · `local` (bwrap/runsc lease on the same host) · `remote`
+(hardware microVM: Vercel interim, sovereign Firecracker fleet per D31). One
+contract in every mode; the host selects the mode per installation, never the
+product or the builder. A product installed for a separate consumer on a
+shared host requires `local` or `remote`. This **supersedes** ARCHITECTURE-PLAN
+D-b's "server disabled" for the untrusted tier and **narrows** P0.6: generated
+server code is admitted *inside a product runtime* in `local`/`remote` mode,
+brokered by the host; it is never imported into the host process outside
+`embedded` mode. D-b's "no third plugin-host service" stands: the product
+runtime is the existing sandbox/runtime tier, not a new service class.
+
+**(d) One trusted installation/activation path.** A host-owned path resolves
+immutable released contributions per installation: a release declares
+requirements; an installation binds resources, grants and a runtime mode;
+activation is compare-and-set against the installation's generation and
+settles once (prepared → committed | aborted) under a request key; undo is a
+new activation of a prior release. Execution is authorized under
+actor ∩ installation ∩ job ∩ current policy. Publication, installation,
+activation and commercial launch are separate acts with separate receipts.
+This narrows DECISIONS D25/D28/D29/D30 exactly as recorded in **D33**: still
+one authorization/construction funnel, no agent-minted scope, no mutable
+registry of executable code in the trusted tier, no second composer. A curator
+or organization may set a **standing authorization** for private changes
+within a declared change class and budget; the founder is not the default
+approver. Default = preview/Keep, with standing authorization opt-in per
+installation.
+
+**(e) Builder agents are a distinct class.** Domain agents keep invariant 4
+(semantic resources, views, artifacts; never renderer concepts). An authorized
+**software builder**, seated as its own agent type with its own tool catalog,
+may inspect and change renderer code, CSS, domain operations and tests for the
+requested change — inside a candidate, never the active release, never
+protected checks or authority controls. This narrows VISION invariant 4 and the
+Port Handbook's renderer prohibition for that class only. Invariant 10 ("never
+live self-rewriting") is unchanged: builders produce candidates; the host
+activates.
+
+**(f) Execution home.** This repository (`hachej/boring-ui`) is the execution
+home for the journey. R-a (new repo, interface-first port) stands as doctrine
+but is **demoted** from "the next major build" to an evidence-triggered later
+port: `hachej/boring-v2` does not exist and nothing has been ported. DIRECTION
+records the consequence.
+
+**(g) First proof consumer.** A bounded **mathematics tutor product created by
+the Seneca curator** and installed for a second authorized learner; then a
+nontechnical curator's real workflow. Founder use alone is not usability proof.
+§12's Clinic / Charlotte / ESG consumers remain E0 preparation fixtures and
+later structurally different consumers; §12's second-consumer bar for any
+cross-domain claim stands.
+
+**(h) Platform/tenant boundary.** Re-rules the 2026-08-27 (night) Horizon
+split for Horizon 3: release identity, installation, activation, product-runtime
+modes and upgrade reconciliation are **platform substrate**. Offers, pricing,
+packaging of the offer and creator agreements stay tenant-side. "Packages and
+distribution" as a commercial motion remains tenant-side; its substrate is
+platform.
+
+**(i) Disposition of PR #1548 (Workspace Evolution).** Folded, not duplicated:
+§11 and §12 stand as the lifecycle "how" (release contract, layers, mutation
+lanes, E0–E6, cross-domain bar); this section supplies the obligation, the
+layers/modes ruling, the timing, the execution home and the first consumer.
+Its plan now lives at [`native-creation/LIFECYCLE.md`](../../native-creation/LIFECYCLE.md).
+Read §11(e)'s "served only through the isolated tier … never register its
+server routes" and E4's "C4 admitted isolation for build and serving" as:
+build in a sandbox lease, serve inside a product runtime in `local`/`remote`
+mode (c). #1548 closes as superseded when #1561 merges.
+
+**Explicit non-change.** Thread = durable job root, 0..n Sessions (§9a); no
+A2A loopback or shared-runtime room (§7, §9); one gateway session contract
+(D29); Seats grant participation, not identity; the durable-streams premise
+order; Rule of Three for kernel nouns; the premises-never-pricing split; the
+isolation floor of D31.
