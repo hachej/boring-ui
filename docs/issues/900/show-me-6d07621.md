@@ -2,8 +2,9 @@
 
 **Gate 2 · planning-only delivery, refreshed after main reconciliation**
 Planning/root-repair SHA: `6d07621fce20ee8e103b6a63abe952639519e5df`
-Reconciled candidate: `4354b00ef704468f1df7235c965c254f97c32a9f`
-Target: `origin/main@65c1059e7d5f0282dae4f988fbdff1bc29373b63`
+Current-main merge commit: `130f7773b584405b8ae9081180315534308be5ab`
+Target merged by that commit: `origin/main@966eaf78a134c32deb72fefc0f9f3ded39d7601e`
+Final review head is an evidence-only descendant of this merge; its exact immutable SHA and sandbox receipt are recorded in the Bead proof/handoff (a tracked file cannot contain its own Git object ID).
 Demo: waived by the owner request because this epic changes planning documents and tracker metadata only.
 
 ## Changed shape
@@ -69,5 +70,5 @@ sequenceDiagram
 - `bv --robot-insights` reports `Cycles: null`.
 - `pnpm lint:invariants` and `scripts/check-strategy-docs.sh` passed at the roadmap SHA.
 - Root-only repair passed exact-SHA sandbox proof and independent adversarial review at `6d07621f`.
-- Reconciliation candidate `4354b00ef` passed dedicated exact-SHA sandbox proof (sandbox `af39d929-7cd2-43b9-b785-ba02955304a7`): exact two-root readiness, no dependency cycles, valid `bv --robot-insights`, planning assertions, `pnpm lint:invariants`, strategy-doc checks, and `git diff --check`.
-- `origin/main@65c1059e7` is an ancestor of the reconciliation candidate, and PR #1568 reports that exact target/head pair `MERGEABLE`.
+- Earlier reconciliation candidate `1d630415` passed dedicated exact-SHA sandbox proof (sandbox `5e9eadac-2fae-48ca-a76a-50a52d6559a5`): exact two-root readiness, no dependency cycles, valid `bv --robot-insights`, planning assertions, `pnpm lint:invariants`, strategy-doc checks, and `git diff --check`.
+- Main then advanced; merge `130f7773` incorporates `origin/main@966eaf78a`. Final exact-SHA proof and PR #1568 target/head/mergeability are recorded on Bead `wt-391-forward-fz5p.6` after the evidence-only successor is pushed.
