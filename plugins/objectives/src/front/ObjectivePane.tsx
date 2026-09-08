@@ -70,7 +70,7 @@ export function ObjectivePane({ params }: PaneProps<ObjectivePaneParams>) {
         setError(result ? null : `Objective ${objectiveId} not found.`)
       } catch (err) {
         if (requestGenerationRef.current !== generation) return
-        setObjective(null)
+        if (!isBackgroundRefresh) setObjective(null)
         setError(err instanceof ObjectivesClientError ? err.message : "Failed to load objective")
       } finally {
         if (requestGenerationRef.current === generation) setLoading(false)

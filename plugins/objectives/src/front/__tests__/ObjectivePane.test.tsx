@@ -86,6 +86,27 @@ describe("ObjectivePane", () => {
     await waitFor(() => expect(screen.getByText("250 / 500")).toBeInTheDocument())
   })
 
+  it("keeps the loaded objective visible with a warning when a background refresh fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let shouldFail = false
+    const fetchMock = vi.fn(async () => {
+      if (shouldFail) return Response.json({ ok: false, error: { code: "BRIDGE_HANDLER_FAILED", message: "Refresh unavailable" } }, { status: 500 })
+      return bridgeResponse(objective({ current: 200 }))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<Pane params={{ objectiveId: "obj-1" }} />)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await screen.findByText("200 / 500")
+
+    shouldFail = true
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByText("Refresh unavailable")).toBeInTheDocument())
+    expect(screen.getByText("200 / 500")).toBeInTheDocument()
+    expect(screen.queryByText("Couldn't load objective")).not.toBeInTheDocument()
+  })
+
   it("refreshes when the tab becomes visible again", async () => {
     let current = 100
     const fetchMock = vi.fn(async () => bridgeResponse(objective({ current })))
