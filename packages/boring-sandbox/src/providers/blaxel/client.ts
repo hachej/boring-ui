@@ -2,6 +2,7 @@ import {
   SandboxInstance,
   VolumeInstance,
   getVolume,
+  type Preview,
   type SandboxCreateConfiguration,
   type SandboxLifecycle,
   type SandboxSpec,
@@ -65,6 +66,13 @@ export interface BlaxelRemoteSandbox {
       },
     ): { close(): void }
   }
+  createPreview(request: {
+    name: string
+    port: number
+    path?: string
+    ttl: string
+    tokenExpiresAt: Date
+  }): Promise<{ url: string; expiresAt: string }>
   readonly process: {
     exec(request: {
       command: string
@@ -100,6 +108,27 @@ function toSandbox(instance: SandboxInstance): BlaxelRemoteSandbox {
     status: instance.status,
     spec: instance.spec,
     fs: instance.fs,
+    async createPreview(request) {
+      const preview = await instance.previews.createIfNotExists({
+        metadata: { name: request.name },
+        spec: {
+          port: request.port,
+          public: false,
+          ttl: request.ttl,
+        },
+      } as Preview)
+      if (!preview.spec.url) throw new Error('Blaxel preview did not return a URL')
+      const token = await preview.tokens.create(request.tokenExpiresAt)
+      const url = new URL(preview.spec.url)
+      if (request.path) {
+        const target = new URL(request.path, 'http://runtime.invalid')
+        url.pathname = target.pathname
+        url.search = target.search
+        url.hash = target.hash
+      }
+      url.searchParams.set('bl_preview_token', token.value)
+      return { url: url.toString(), expiresAt: request.tokenExpiresAt.toISOString() }
+    },
     process: instance.process,
   }
 }

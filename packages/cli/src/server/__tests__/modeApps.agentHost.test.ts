@@ -427,6 +427,7 @@ describe.sequential("CLI Agent Host composition", () => {
     const localPackageRoot = join(workspaceARoot, "agents", "local-worker")
     const duplicatePackageRoot = join(workspaceARoot, "agents", "duplicate-repository-worker")
     const repositoryPackageRoot = join(fleetRoot, ".agents", "personas", "repository-worker")
+    const defaultPluginRoot = await temporaryRoot("boring-cli-agent-factory-plugin-")
     const registryPath = join(registryRoot, "workspaces.yaml")
     const registry = createLocalWorkspaceRegistry(registryPath)
     await registry.add(workspaceARoot)
@@ -434,6 +435,7 @@ describe.sequential("CLI Agent Host composition", () => {
     await mkdir(localPackageRoot, { recursive: true })
     await mkdir(join(duplicatePackageRoot, "knowledge"), { recursive: true })
     await mkdir(join(repositoryPackageRoot, "knowledge"), { recursive: true })
+    await mkdir(join(defaultPluginRoot, "server"), { recursive: true })
     await mkdir(join(workspaceARoot, ".pi"), { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
     await writeFile(join(localPackageRoot, "instructions.md"), "CLI local worker.\n", "utf8")
@@ -480,6 +482,24 @@ describe.sequential("CLI Agent Host composition", () => {
       },
       pi: { skills: [] },
     }), "utf8")
+    await writeFile(join(defaultPluginRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-agent-factory-plugin",
+      version: "1.0.0",
+      type: "module",
+      private: true,
+      boring: { server: "server/index.mjs" },
+    }), "utf8")
+    await writeFile(join(defaultPluginRoot, "server", "index.mjs"), `
+      export default {
+        id: "fixture-cli-agent-factory-plugin",
+        agentToolFactory: ({ agentTypeId }) => [{
+          name: \`factory_tool_\${agentTypeId}\`,
+          description: "Fixture Agent factory tool.",
+          parameters: { type: "object", properties: {} },
+          async execute() { return { content: [] } },
+        }],
+      }
+    `, "utf8")
     await writeFile(
       join(workspaceARoot, ".pi", "settings.json"),
       JSON.stringify({ packages: ["../agents/local-worker", "../agents/duplicate-repository-worker"] }),
@@ -506,6 +526,7 @@ describe.sequential("CLI Agent Host composition", () => {
     const previousFlag = process.env.BORING_AGENT_FLEET
     process.chdir(fleetRoot)
     process.env.BORING_AGENT_FLEET = "1"
+    cliDefaultPluginPackages.paths = [defaultPluginRoot]
     const createAgentHost = vi.spyOn(agentServer, "createAgentHost")
     let app: FastifyInstance | undefined
     try {
@@ -551,6 +572,16 @@ describe.sequential("CLI Agent Host composition", () => {
       expect(workspaceBAgents.json()).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
       ]))
+
+      const [defaultTools, repositoryWorkerTools] = await Promise.all([
+        app.inject({ method: "GET", url: "/api/v1/agents/default/tools", headers: { "x-boring-workspace-id": workspaceB.id } }),
+        app.inject({ method: "GET", url: "/api/v1/agents/fixture-cli-repository-worker/tools", headers: { "x-boring-workspace-id": workspaceB.id } }),
+      ])
+      expect(defaultTools.statusCode, defaultTools.body).toBe(200)
+      expect(repositoryWorkerTools.statusCode, repositoryWorkerTools.body).toBe(200)
+      expect(defaultTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("factory_tool_default")
+      expect(repositoryWorkerTools.json().tools.map((tool: { name: string }) => tool.name))
+        .toContain("factory_tool_fixture-cli-repository-worker")
     } finally {
       if (app) await app.close()
       process.chdir(previousCwd)
@@ -628,6 +659,7 @@ describe.sequential("CLI Agent Host composition", () => {
       },
       gateway: {} as never,
       acquireEnvironment: vi.fn(async () => { throw new Error("unused") }),
+      acquireSessionEnvironment: vi.fn(async () => { throw new Error("unused") }),
       runWithWorkspaceAgent: vi.fn(async () => { throw new Error("unused") }),
       registerDirectRoutes: vi.fn(() => async (app: FastifyInstance) => {
         app.addHook("onClose", hostClose)

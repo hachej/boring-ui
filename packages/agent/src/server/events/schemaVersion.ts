@@ -72,18 +72,18 @@ export function assertSupportedEventStreamSchemaVersion(
 }
 
 export function migrateEventStreamSqlSchema(sql: SqlStorage, options: MigrationOptions): void {
-  sql.exec(`
-    CREATE TABLE IF NOT EXISTS boring_event_stream_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    )
-  `)
-
   const priorBusyTimeout = Number(sql.exec('PRAGMA busy_timeout').toArray()[0]?.timeout ?? 0)
   sql.exec(`PRAGMA busy_timeout=${MIGRATION_BUSY_TIMEOUT_MS}`)
   let collisionCounts: Record<CollisionClass, number> | undefined
   try {
     collisionCounts = options.runTransaction(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS boring_event_stream_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      `)
+
       const stored = readStoredVersion(sql)
       if (stored === String(BORING_EVENT_STREAM_SCHEMA_VERSION)) {
         options.ensureCurrentSchema()

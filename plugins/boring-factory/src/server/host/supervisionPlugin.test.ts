@@ -3,11 +3,13 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createFactorySupervisionPlugin, SUPERVISION_MIN_INTERVAL_MS, SUPERVISION_MAX_INTERVAL_MS } from './supervisionPlugin'
+import type { FactoryEpicEntry, FactoryEpicRegistry } from './epicRegistry'
+import type { FactorySessionBindings } from './sessionBindings'
 
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(temporaryRoots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true })))
+  await Promise.all(temporaryRoots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
 })
 
 async function makeStateRoot(): Promise<string> {
@@ -21,6 +23,49 @@ async function writeSupervisionFile(stateRoot: string, entries: Record<string, u
   await writeFile(resolve(stateRoot, 'supervision.json'), JSON.stringify({ entries }, null, 2), 'utf8')
 }
 
+function epicDeps(orchestratorSessionId = 'session-orch-1', planDeadlineAt?: string): { registry: FactoryEpicRegistry; sessionBindings: FactorySessionBindings } {
+  const entry: FactoryEpicEntry = {
+    epicKey: 'live-farewell',
+    featureName: 'Live Farewell',
+    worktree: '/tmp/factory-live-farewell',
+    branch: 'epic/live-farewell',
+    repositoryRoot: '/tmp/repository',
+    orchestratorSessionId,
+    createdAt: '2026-09-05T00:00:00.000Z',
+    ...(planDeadlineAt ? { planDeadlineAt } : {}),
+    status: 'active',
+  }
+  const bindings: Record<string, string> = {
+    s1: entry.epicKey,
+    'session-orch-1': entry.epicKey,
+    'session-restart': entry.epicKey,
+    'session-busy': entry.epicKey,
+    'session-close': entry.epicKey,
+  }
+  return {
+    registry: {
+      load: async () => [entry],
+      list: async () => [entry],
+      get: async (key) => key === entry.epicKey ? entry : undefined,
+      register: async () => entry,
+      setOrchestratorSession: async () => entry,
+      markClosed: async () => ({ ...entry, status: 'closed' }),
+    },
+    sessionBindings: {
+      load: async () => ({ ...bindings }),
+      get: async (sessionId) => bindings[sessionId],
+      bind: async (sessionId, key) => { bindings[sessionId] = key },
+      unbind: async (sessionId) => { delete bindings[sessionId] },
+      inherit: async (parentSessionId, childSessionId) => {
+        const key = bindings[parentSessionId]!
+        bindings[childSessionId] = key
+        return key
+      },
+      reconcile: async () => ({ droppedSessionIds: [], restoredOrchestratorSessionIds: [] }),
+    },
+  }
+}
+
 interface FakeInjectCall {
   readonly method: string
   readonly url: string
@@ -29,7 +74,12 @@ interface FakeInjectCall {
 }
 
 /** Minimal fastify-shaped fake: `inject` is scripted, `addHook` just records the onClose callback. */
-function createFakeApp(options: { status: string }) {
+function createFakeApp(options: {
+  status: string
+  gate1Raised?: boolean
+  gate1AnsweredPage?: 1 | 2
+  gate1AnsweredStatus?: 'answered' | 'cancelled' | 'abandoned'
+}) {
   const calls: FakeInjectCall[] = []
   const prompts: string[] = []
   let onCloseHook: (() => Promise<void> | void) | undefined
@@ -47,6 +97,29 @@ function createFakeApp(options: { status: string }) {
         const payload = request.payload as { content: string }
         prompts.push(payload.content)
         return { statusCode: 202, json: <T>() => ({}) as T }
+      }
+      if (request.method === 'POST' && request.url === '/api/v1/workspace-bridge/call') {
+        const op = (request.payload as { op?: string } | undefined)?.op
+        const input = (request.payload as { input?: { cursor?: string } } | undefined)?.input
+        const pendingGate1 = [{ sessionId: 'session-restart', title: '[Live Farewell] Plan approval', status: 'ready' }]
+        const answeredGate1 = [{
+          sessionId: 'session-restart',
+          title: '[Live Farewell] Plan approval',
+          status: options.gate1AnsweredStatus ?? 'answered',
+        }]
+        if (op === 'ask-user.v1.pending-all') {
+          return { statusCode: 200, json: <T>() => ({ output: { pending: options.gate1Raised ? pendingGate1 : [] } }) as T }
+        }
+        const answered = options.gate1AnsweredPage === 1 || (options.gate1AnsweredPage === 2 && input?.cursor === 'page-2')
+          ? answeredGate1
+          : [{ sessionId: 'someone-else', title: '[Other Feature] Merge approval', status: 'answered' }]
+        return {
+          statusCode: 200,
+          json: <T>() => ({ output: {
+            answered,
+            ...(options.gate1AnsweredPage === 2 && !input?.cursor ? { nextCursor: 'page-2' } : {}),
+          } }) as T,
+        }
       }
       return { statusCode: 404, json: <T>() => ({}) as T }
     },
@@ -66,7 +139,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
 
 describe('factory supervision plugin', () => {
   it('grants `supervise` only to boring-orchestrator', () => {
-    const { plugin } = createFactorySupervisionPlugin({ stateRoot: '/tmp/does-not-matter', workspaceScopeId: 'factory-live-farewell' })
+    const { plugin } = createFactorySupervisionPlugin({ stateRoot: '/tmp/does-not-matter', workspaceScopeId: 'factory-hub', ...epicDeps() })
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }).map((tool) => tool.name)).toEqual(['supervise'])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-worker' })).toEqual([])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-reviewer' })).toEqual([])
@@ -76,7 +149,7 @@ describe('factory supervision plugin', () => {
   it('start persists an entry to supervision.json, status reads it back, and stop removes it', async () => {
     const stateRoot = await makeStateRoot()
     const { app } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
     handle.bind(app as never)
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     expect(tool).toBeDefined()
@@ -111,7 +184,7 @@ describe('factory supervision plugin', () => {
 
   it('rejects an unknown op and an out-of-range intervalMs before touching the state file', async () => {
     const stateRoot = await makeStateRoot()
-    const { plugin } = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const { plugin } = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
     const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const badOp = await tool!.execute({ op: 'pause' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
@@ -135,6 +208,7 @@ describe('factory supervision plugin', () => {
     const stateRoot = await makeStateRoot()
     await writeSupervisionFile(stateRoot, {
       'session-restart': {
+        epicKey: 'live-farewell',
         agentTypeId: 'boring-orchestrator',
         sessionId: 'session-restart',
         intervalMs: 50,
@@ -145,7 +219,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts, calls } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-restart') })
     handle.bind(app as never)
     const armedCount = await handle.rearm()
     expect(armedCount).toBe(1)
@@ -158,10 +232,174 @@ describe('factory supervision plugin', () => {
     handle.close()
   })
 
+  it('uses the host plan deadline to nag an idle pre-Gate-1 Orchestrator without stopping it', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts } = createFakeApp({ status: 'idle' })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot,
+      workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('raise Gate 1 now with what you have')
+    expect(prompts[0]).not.toContain('ordinary nudge')
+    handle.close()
+  })
+
+  it('keeps the ordinary prompt before the host plan deadline', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts, calls } = createFakeApp({ status: 'idle' })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2999-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('ordinary nudge')
+    expect(calls.some((call) => call.url === '/api/v1/workspace-bridge/call')).toBe(false)
+    handle.close()
+  })
+
+  it('does not nag after a pending Gate 1 has been raised', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts } = createFakeApp({ status: 'idle', gate1Raised: true })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('ordinary nudge')
+    expect(prompts[0]).not.toContain('raise Gate 1 now with what you have')
+    handle.close()
+  })
+
+  it('finds an answered Gate 1 beyond the first Inbox page', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts, calls } = createFakeApp({ status: 'idle', gate1AnsweredPage: 2 })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('ordinary nudge')
+    const answeredCalls = calls.filter((call) => (
+      call.url === '/api/v1/workspace-bridge/call'
+      && (call.payload as { op?: string } | undefined)?.op === 'ask-user.v1.answered-all'
+    ))
+    expect(answeredCalls).toHaveLength(2)
+    handle.close()
+  })
+
+  it.each(['cancelled', 'abandoned'] as const)('ignores a %s Gate 1 entry and keeps deadline nudging active', async (gate1AnsweredStatus) => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts } = createFakeApp({ status: 'idle', gate1AnsweredPage: 1, gate1AnsweredStatus })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('raise Gate 1 now with what you have')
+    expect(prompts[0]).not.toContain('ordinary nudge')
+    handle.close()
+  })
+
+  it('rearm() prunes entries that are not the bound registry Orchestrator', async () => {
+    const stateRoot = await makeStateRoot()
+    const entry = (sessionId: string, epicKey = 'live-farewell', agentTypeId = 'boring-orchestrator') => ({
+      epicKey,
+      agentTypeId,
+      sessionId,
+      intervalMs: 50,
+      prompt: `${sessionId} nudge`,
+      startedAt: '2026-09-05T00:00:00.000Z',
+      ticks: 0,
+    })
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': entry('session-restart'),
+      'adopted-away': entry('adopted-away'),
+      'missing-epic': entry('missing-epic', 'missing'),
+      'wrong-agent': entry('wrong-agent', 'live-farewell', 'boring-worker'),
+    })
+
+    const { app, prompts } = createFakeApp({ status: 'idle' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-restart') })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+    expect(Object.keys(JSON.parse(await readFile(resolve(stateRoot, 'supervision.json'), 'utf8')).entries)).toEqual(['session-restart'])
+    await waitFor(() => prompts.length > 0)
+    expect(prompts).toEqual([expect.stringContaining('session-restart nudge')])
+    handle.close()
+  })
+
+  it('transfers an epic supervision entry to the adopted session idempotently', async () => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      old: {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'old', intervalMs: 45_000,
+        prompt: 'preserved nudge', startedAt: '2026-09-05T00:00:00.000Z', lastTickAt: '2026-09-05T00:01:00.000Z',
+        lastTickOutcome: 'sent', ticks: 4,
+      },
+    })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('adopted') })
+    await handle.transferSupervision('live-farewell', 'old', 'adopted')
+    await handle.transferSupervision('live-farewell', 'adopted', 'adopted')
+    const state = JSON.parse(await readFile(resolve(stateRoot, 'supervision.json'), 'utf8')) as { entries: Record<string, unknown> }
+    expect(state.entries).toEqual({ adopted: expect.objectContaining({
+      epicKey: 'live-farewell', sessionId: 'adopted', intervalMs: 45_000, prompt: 'preserved nudge', ticks: 4,
+      lastTickOutcome: 'sent',
+    }) })
+    handle.close()
+  })
+
   it('skips a tick as "skipped-busy" and never sends a prompt while the session is not idle', async () => {
     const stateRoot = await makeStateRoot()
     await writeSupervisionFile(stateRoot, {
       'session-busy': {
+        epicKey: 'live-farewell',
         agentTypeId: 'boring-orchestrator',
         sessionId: 'session-busy',
         intervalMs: 50,
@@ -172,7 +410,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts, calls } = createFakeApp({ status: 'streaming' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-busy') })
     handle.bind(app as never)
     await handle.rearm()
 
@@ -199,6 +437,7 @@ describe('factory supervision plugin', () => {
     const stateRoot = await makeStateRoot()
     await writeSupervisionFile(stateRoot, {
       'session-close': {
+        epicKey: 'live-farewell',
         agentTypeId: 'boring-orchestrator',
         sessionId: 'session-close',
         intervalMs: 50,
@@ -208,7 +447,7 @@ describe('factory supervision plugin', () => {
       },
     })
     const { app, prompts, triggerClose } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps('session-close') })
     handle.bind(app as never)
     await handle.rearm()
 

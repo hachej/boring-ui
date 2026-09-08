@@ -33,6 +33,7 @@ import type {
   WorkspaceCredentialVaultCompositionV1,
 } from '../credentials/startupComposition'
 import type { AgentInvocationFundingPolicyV1 } from '../../shared/workspaceAgentDispatcher'
+import { assertChannelDurability } from '../channels'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -138,7 +139,7 @@ export interface BuildAgentCompositionInput {
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
     CreateAgentHostOptions,
-    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
+    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory' | 'eventStore'
   >
   /**
    * [1082 slice B] Host-scope credential-vault composition, resolved ONCE at
@@ -192,6 +193,7 @@ export function provisionedSkillPathsForAgent(
 export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
+  assertChannelDurability(isDurableStreamEnabled() || input.options.eventStore !== undefined)
   const { runtimeScope, options } = input
   const bindingIsVisible = (binding: RuntimeFilesystemBinding) =>
     binding.agentTypeIds === undefined || binding.agentTypeIds.includes(input.agent.agentTypeId)
@@ -367,13 +369,15 @@ export async function buildAgentComposition(
     telemetry: options.telemetry,
   })
   const sessionStore = harness.sessions
-  const durableEventStore = isDurableStreamEnabled()
-    ? openDurableEventStore({
-        sessionRoot: options.sessionRoot,
-        hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
-        telemetry: options.telemetry,
-      })
-    : undefined
+  const durableEventStore = options.eventStore
+    ? { store: options.eventStore, close: undefined }
+    : isDurableStreamEnabled()
+      ? openDurableEventStore({
+          sessionRoot: options.sessionRoot,
+          hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+          telemetry: options.telemetry,
+        })
+      : undefined
   const backend = createPiSessionHarnessBackend({
     agentTypeId: input.agent.agentTypeId,
     harness,
@@ -399,7 +403,7 @@ export async function buildAgentComposition(
     ...(getFilesystemBindings ? { getFilesystemBindings } : {}),
     credentials: input.credentialComposition?.runtimeView,
     dispose() {
-      disposed ??= backend.close().finally(() => durableEventStore?.close())
+      disposed ??= backend.close().finally(() => durableEventStore?.close?.())
       return disposed
     },
   }
