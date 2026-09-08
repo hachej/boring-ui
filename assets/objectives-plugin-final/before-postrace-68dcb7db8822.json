@@ -1,0 +1,14 @@
+{
+  "revision": "68dcb7db8822f721c6b45d0731e01a46fa364f28",
+  "label": "before-postrace",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "hasObjectiveSurface": false,
+  "assertions": [
+    "surface absent",
+    "probe interaction confirms no panel"
+  ],
+  "video": "assets/objectives-plugin-final/before-postrace-68dcb7db8822.webm"
+}

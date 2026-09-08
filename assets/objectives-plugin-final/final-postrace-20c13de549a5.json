@@ -1,0 +1,16 @@
+{
+  "revision": "20c13de549a5871c09622bc93b66a77871510f20",
+  "label": "final-postrace",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "hasObjectiveSurface": true,
+  "assertions": [
+    "initial progress 2 / 10",
+    "server update interaction",
+    "refreshed progress 7 / 10",
+    "constraint visible"
+  ],
+  "video": "assets/objectives-plugin-final/final-postrace-20c13de549a5.webm"
+}
