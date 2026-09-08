@@ -32,6 +32,47 @@ describe("LiveTranscriptProjector", () => {
     expect(markdown).toContain("[00:00:03] **Speaker unknown:** Bonjour")
   })
 
+  it("renders a Corrections line after Refined when corrections exist, deduplicated", () => {
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      refinedAt: "2026-09-05T10:00:00.000Z",
+      corrections: [
+        { from: "zylorique", to: "Zyloric" },
+        { from: "mucomiste", to: "Mucomyst" },
+        { from: "zylorique", to: "Zyloric" },
+      ],
+      lines: [],
+    })
+    const refinedIndex = markdown.indexOf("- Refined:")
+    const correctionsIndex = markdown.indexOf("- Corrections:")
+    expect(refinedIndex).toBeGreaterThanOrEqual(0)
+    expect(correctionsIndex).toBeGreaterThan(refinedIndex)
+    expect(markdown).toContain("- Corrections: zylorique → Zyloric, mucomiste → Mucomyst")
+  })
+
+  it("caps the Corrections line at 30 pairs and appends an ellipsis", () => {
+    const corrections = Array.from({ length: 35 }, (_, i) => ({ from: `orig${i}`, to: `Fixed${i}` }))
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      refinedAt: "2026-09-05T10:00:00.000Z",
+      corrections,
+      lines: [],
+    })
+    const line = markdown.split("\n").find((l) => l.startsWith("- Corrections:"))
+    expect(line).toBeDefined()
+    expect(line?.split(", ").filter((part) => part.includes("→"))).toHaveLength(30)
+    expect(line).toMatch(/…$/)
+  })
+
+  it("omits the Corrections line when there are none", () => {
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      refinedAt: "2026-09-05T10:00:00.000Z",
+      lines: [],
+    })
+    expect(markdown).not.toContain("- Corrections:")
+  })
+
   it("serializes throttled whole-document writes and terminal-flushes once", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)
@@ -60,6 +101,21 @@ describe("LiveTranscriptProjector", () => {
     expect(projector.projectionRevision).toBe(1)
     expect(await workspace.readFile("live-transcripts/a.md")).toContain("- State: complete")
     expect(await workspace.readFile("live-transcripts/a.md")).toContain("[00:00:03] **Speaker 1:** Bonjour")
+  })
+
+  it("refuses to overwrite a user edit that lands before background refinement", async () => {
+    const workspace = new MemoryWorkspace()
+    const path = "live-transcripts/refine-conflict.md"
+    const markdown = renderTranscriptMarkdown(initial)
+    const stat = await workspace.writeFileWithStat(path, markdown)
+    const projector = new LiveTranscriptProjector(workspace, path, { markdown, mtimeMs: stat.mtimeMs })
+    await projector.finalize({ ...initial, state: "complete" })
+
+    workspace.mutateExternally(path, "# Doctor notes\n")
+    await expect(projector.replaceAfterFinalize("# Refined\n")).rejects.toMatchObject({
+      code: "live_transcript_revision_conflict",
+    })
+    expect(await workspace.readFile(path)).toBe("# Doctor notes\n")
   })
 
   it("keeps rapid snapshots at least one second apart", async () => {

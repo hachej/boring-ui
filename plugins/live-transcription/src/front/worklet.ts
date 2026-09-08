@@ -1,9 +1,9 @@
-import { LIVE_PCM_FRAME_SAMPLES, LIVE_PCM_SAMPLE_RATE } from "../shared"
+import { LIVE_FRAMES_IN_FLIGHT, LIVE_PCM_FRAME_SAMPLES, LIVE_PCM_SAMPLE_RATE } from "../shared"
 
 export const LIVE_TRANSCRIPT_WORKLET_NAME = "boring-live-transcript-pcm16"
 
-export function createLiveTranscriptWorkletUrl(): string {
-  const source = `
+/** Worklet processor source; exported so tests can run it outside a browser. */
+export const LIVE_TRANSCRIPT_WORKLET_SOURCE = `
 class BoringLiveTranscriptPcm16 extends AudioWorkletProcessor {
   constructor(options) {
     super();
@@ -12,25 +12,27 @@ class BoringLiveTranscriptPcm16 extends AudioWorkletProcessor {
     this.input = [];
     this.position = 0;
     this.output = [];
-    this.awaitingAck = false;
-    // Two seconds of 100 ms frames absorbs tailnet/WebSocket ACK latency while
-    // remaining strictly bounded in memory.
+    // Sliding window: up to maxInFlight frames may await a server ACK, so
+    // throughput is maxInFlight frames per round trip instead of one. The
+    // queue behind it absorbs jitter and stays strictly bounded in memory.
+    this.maxInFlight = options.processorOptions?.maxInFlight || ${LIVE_FRAMES_IN_FLIGHT};
+    this.inFlight = 0;
     this.queued = [];
-    this.maxQueuedFrames = 20;
+    this.maxQueuedFrames = 30;
     this.failed = false;
     this.port.onmessage = (event) => {
       if (event.data?.type !== "ack" || this.failed) return;
-      this.awaitingAck = false;
+      this.inFlight = Math.max(0, this.inFlight - 1);
       const frame = this.queued.shift();
       if (frame) this.send(frame);
     };
   }
   send(frame) {
-    this.awaitingAck = true;
+    this.inFlight += 1;
     this.port.postMessage({ type: "frame", data: frame }, [frame]);
   }
   emitFrame(frame) {
-    if (!this.awaitingAck) return this.send(frame);
+    if (this.inFlight < this.maxInFlight) return this.send(frame);
     if (this.queued.length < this.maxQueuedFrames) {
       this.queued.push(frame);
       return;
@@ -78,5 +80,7 @@ class BoringLiveTranscriptPcm16 extends AudioWorkletProcessor {
 }
 registerProcessor(${JSON.stringify(LIVE_TRANSCRIPT_WORKLET_NAME)}, BoringLiveTranscriptPcm16);
 `
-  return URL.createObjectURL(new Blob([source], { type: "text/javascript" }))
+
+export function createLiveTranscriptWorkletUrl(): string {
+  return URL.createObjectURL(new Blob([LIVE_TRANSCRIPT_WORKLET_SOURCE], { type: "text/javascript" }))
 }
