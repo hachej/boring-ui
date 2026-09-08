@@ -1,0 +1,29 @@
+{
+  "challenge": {
+    "url": "/webhook?hub.mode=subscribe&hub.verify_token=verify-secret&hub.challenge=challenge-42",
+    "expected": "challenge-42"
+  },
+  "inbound": {
+    "object": "whatsapp_business_account",
+    "entry": [{
+      "changes": [{
+        "field": "messages",
+        "value": {
+          "messages": [
+            { "id": "wamid.text-1", "from": "41790000000", "timestamp": "1710000000", "type": "text", "text": { "body": "hello" } },
+            { "id": "wamid.button-1", "from": "41790000000", "timestamp": "1710000001", "type": "interactive", "interactive": { "type": "button_reply", "button_reply": { "id": "approve:question-1", "title": "Approve" } } }
+          ]
+        }
+      }]
+    }]
+  },
+  "outbound": {
+    "conversationKey": "41790000000",
+    "text": { "to": "41790000000", "type": "text", "messaging_product": "whatsapp" },
+    "template": {
+      "to": "41790000000",
+      "type": "template",
+      "template": { "name": "resume_request", "language": { "code": "en_GB" } }
+    }
+  }
+}

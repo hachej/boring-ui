@@ -249,6 +249,22 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
   }
 
+  async resolveSessionStreamPath(ctx: PiSessionRequestContext, sessionId: string): Promise<string> {
+    return this.lifecycle.run(async () => {
+      if (!this.eventStore) {
+        throw Object.assign(new Error('Durable event stream is unavailable.'), {
+          code: ErrorCode.enum.DURABLE_STREAM_UNAVAILABLE,
+        })
+      }
+      try {
+        await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      } catch (error) {
+        throw normalizeSessionAccessError(error, sessionId)
+      }
+      return sessionStreamPath(this.sessionIdentity(ctx, sessionId))
+    })
+  }
+
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     return this.lifecycle.run(() => this.deleteSessionBeforeDispose(ctx, sessionId))
   }
