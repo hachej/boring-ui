@@ -176,15 +176,29 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         (paintedDialogDistance(state) ?? -1) >= (state.viewport.name === "mobile" ? 1 : 5)
       )
       // A whole-viewport pHash can move more for background hydration than for
-      // the palette itself. Prefer the first Wait whose distinct dialog frame
-      // is corroborated by a later dialog frame with the same visual shape;
-      // this rejects a one-frame hydration spike without weakening replay's
-      // independent screenshot-distance gate.
+      // the palette itself, and a 64-bit pHash can also collide even when the
+      // exact screenshot changed. Prefer the first distinct Wait frame whose
+      // extracted visual-shell state and pHash are corroborated by a later Wait.
+      // Requiring two settled observations rejects one-frame hydration/action
+      // spikes without weakening replay's independent screenshot-distance gate.
+      const visualShellSignature = (state: UiReviewExplorationState): string => {
+        const palette = state.normalizedState.palette as Record<string, unknown>
+        return JSON.stringify({
+          dialogVisible: palette.dialogVisible,
+          inputFocused: palette.inputFocused,
+          horizontalOverflow: palette.horizontalOverflow,
+          modalOutOfBounds: palette.modalOutOfBounds,
+          visibleModalCount: palette.visibleModalCount,
+          focusedControlInvalid: palette.focusedControlInvalid,
+        })
+      }
       const earliestCorroboratedWait = waits.find((state) => {
         const closed = precedingClosedState(state)
         if (closed === undefined || state.screenshotDigest === closed.screenshotDigest) return false
-        return dialogStates.some((candidate) => (
+        return waits.some((candidate) => (
           candidate.ordinal > state.ordinal
+          && candidate.screenshotDigest !== state.screenshotDigest
+          && visualShellSignature(candidate) === visualShellSignature(state)
           && typeof state.screenshotPHash === "string"
           && typeof candidate.screenshotPHash === "string"
           && hexadecimalHammingDistance(state.screenshotPHash, candidate.screenshotPHash) <= 8
