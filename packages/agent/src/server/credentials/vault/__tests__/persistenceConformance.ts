@@ -11,7 +11,7 @@ import {
   CredentialResolutionError,
 } from '../../../../shared/credentials'
 import { createLocalKekWorkspaceKekProviderV1 } from '../kmsBackend'
-import type { CredentialVaultPersistenceV1 } from '../persistence'
+import type { CredentialVaultPersistenceV2 } from '../persistence'
 import { createInMemoryCredentialVersionAnchorV1 } from '../versionAnchor'
 import { createVaultCredentialStoreBackendV1 } from '../vaultStoreBackend'
 
@@ -44,7 +44,7 @@ function wrappedDek(seed: number): WrappedWorkspaceDekV1 {
 
 export function runCredentialVaultPersistenceConformanceV1(
   label: string,
-  createPersistence: () => Promise<CredentialVaultPersistenceV1>,
+  createPersistence: () => Promise<CredentialVaultPersistenceV2>,
 ): void {
   describe(`CredentialVaultPersistenceV1 conformance: ${label}`, () => {
     test('serializes workspace lifecycle mutations', async () => {
@@ -137,6 +137,52 @@ export function runCredentialVaultPersistenceConformanceV1(
       })
       await expect(persistence.putField(oldKey, envelope(7)))
         .rejects.toBeInstanceOf(CredentialResolutionError)
+    })
+
+    test('atomically applies authenticated V2 metadata and rejects stale metadata commits', async () => {
+      const persistence = await createPersistence()
+      const workspaceId = `ws-${randomUUID()}`
+      const record = {
+        credentialId: randomUUID(),
+        credentialVersion: 1,
+        dekGeneration: 1,
+        materialKind: 'field-set' as const,
+      }
+      await persistence.putWrappedDek(workspaceId, 1, wrappedDek(8))
+      await persistence.commitCredentialVersionV2({
+        workspaceId,
+        providerId,
+        expectedCredentialVersion: 0,
+        record,
+        fields: new Map([['api-key', envelope(8)]]),
+        metadataUpdate: {
+          state: 'active',
+          displayLabel: 'Conformance key',
+          credentialType: 'custom.v2',
+          maskedLastFourSuffix: '1234',
+        },
+      })
+      expect(await persistence.getCredentialMetadata(workspaceId, providerId)).toMatchObject({
+        credentialVersion: 1,
+        state: 'active',
+        displayLabel: 'Conformance key',
+        credentialType: 'custom.v2',
+        maskedLastFourSuffix: '1234',
+      })
+
+      await expect(persistence.commitCredentialVersionV2({
+        workspaceId,
+        providerId,
+        expectedCredentialVersion: 0,
+        record: { ...record, credentialVersion: 2 },
+        fields: new Map(),
+        metadataUpdate: { state: 'revoked', credentialType: 'tampered.v2' },
+      })).rejects.toBeInstanceOf(CredentialResolutionError)
+      expect(await persistence.getCredentialMetadata(workspaceId, providerId)).toMatchObject({
+        credentialVersion: 1,
+        state: 'active',
+        credentialType: 'custom.v2',
+      })
     })
 
     test('runs the vault-store rotation path against the persistence adapter', async () => {

@@ -23,7 +23,7 @@ import type {
 } from '../../../shared/credentials'
 import { bytesEqualConstantTimeV1 } from './envelopeCrypto'
 import { createLocalFileCredentialVersionAnchorV1 } from './versionAnchor'
-import type { WorkspaceCredentialVersionAnchorV1 } from './versionAnchor'
+import type { WorkspaceCredentialVersionAnchorV2 } from './versionAnchor'
 
 /**
  * Local-KEK `KmsBackend` implementation
@@ -478,7 +478,7 @@ export function createLocalKekWorkspaceKekProviderFromEnvV1(
 
 export function createLocalCredentialVersionAnchorFromEnvV1(
   env: Readonly<Record<string, string | undefined>>,
-): WorkspaceCredentialVersionAnchorV1 | undefined {
+): WorkspaceCredentialVersionAnchorV2 | undefined {
   const config = resolveLocalKekProviderConfigV1(env)
   if (!config) return undefined
   return createLocalFileCredentialVersionAnchorV1({

@@ -20,7 +20,7 @@ import {
   initializeLocalFileCredentialVersionAnchorV1,
   runCredentialVaultPostgresMigrationsV1,
 } from '..'
-import type { CredentialVaultPersistenceV1 } from '../persistence'
+import type { CredentialVaultPersistenceV2 } from '../persistence'
 import { runCredentialVaultPersistenceConformanceV1 } from './persistenceConformance'
 import { runVaultCredentialStoreConformanceV1 } from './vaultBackendConformance'
 
@@ -542,14 +542,15 @@ describe('Postgres credential rollback protection', () => {
 
       let injected = false
       const wrapPersistence = (
-        target: CredentialVaultPersistenceV1,
-      ): CredentialVaultPersistenceV1 => new Proxy(target, {
+        target: CredentialVaultPersistenceV2,
+      ): CredentialVaultPersistenceV2 => new Proxy(target, {
         get(current, property) {
           if (property === 'withWorkspaceLock') {
-            return async <T>(lockedWorkspaceId: string, mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>) =>
-              current.withWorkspaceLock(lockedWorkspaceId, async (locked) => mutate(wrapPersistence(locked)))
+            return async <T>(lockedWorkspaceId: string, mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>) =>
+              current.withWorkspaceLock(lockedWorkspaceId, async (locked) =>
+                mutate(wrapPersistence(locked)))
           }
-          const value = current[property as keyof CredentialVaultPersistenceV1]
+          const value = current[property as keyof CredentialVaultPersistenceV2]
           if (typeof value !== 'function') return value
           return async (...args: unknown[]) => {
             const result = await (value as (...callArgs: unknown[]) => Promise<unknown>)

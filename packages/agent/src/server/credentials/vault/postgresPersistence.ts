@@ -12,10 +12,11 @@ import type {
 } from '../../../shared/credentials'
 import type {
   CommitCredentialVersionInputV1,
+  CommitCredentialVersionInputV2,
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
   CredentialLifecycleStateV1,
-  CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
   WorkspaceCredentialLockOptionsV1,
@@ -222,7 +223,8 @@ async function destroyReservedConnection(
 
 /** Postgres implementation of the ciphertext-only credential vault port. */
 export class PostgresCredentialVaultPersistenceV1
-implements CredentialVaultPersistenceV1 {
+implements CredentialVaultPersistenceV2 {
+  readonly contractVersion = 'boring.credential-vault-persistence.v2' as const
   constructor(
     private readonly sql: Sql,
     private readonly options: PostgresCredentialVaultPersistenceOptionsV1,
@@ -231,7 +233,7 @@ implements CredentialVaultPersistenceV1 {
 
   async withWorkspaceLock<T>(
     workspaceId: string,
-    mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+    mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>,
     lockOptions: WorkspaceCredentialLockOptionsV1 = {},
   ): Promise<T> {
     if (this.lockedWorkspaceId === workspaceId) return mutate(this)
@@ -508,13 +510,22 @@ implements CredentialVaultPersistenceV1 {
     `
   }
 
-  async commitCredentialVersion(
-    input: CommitCredentialVersionInputV1,
+  async commitCredentialVersion(input: CommitCredentialVersionInputV1): Promise<void> {
+    return this.commitCredentialVersionV2({
+      ...input,
+      metadataUpdate: {
+        state: input.record.materialKind === 'none' ? 'intentionally_absent' : 'active',
+      },
+    })
+  }
+
+  async commitCredentialVersionV2(
+    input: CommitCredentialVersionInputV2,
   ): Promise<void> {
     if ('begin' in this.sql) {
       if (!this.lockedWorkspaceId) {
         return this.withWorkspaceLock(input.workspaceId, async (locked) => {
-          await locked.commitCredentialVersion(input)
+          await locked.commitCredentialVersionV2(input)
         })
       }
       await this.sql.begin(async (transaction) => {
@@ -522,7 +533,7 @@ implements CredentialVaultPersistenceV1 {
           transaction,
           this.options,
           this.lockedWorkspaceId,
-        ).commitCredentialVersion(input)
+        ).commitCredentialVersionV2(input)
       })
       return
     }
@@ -581,6 +592,9 @@ implements CredentialVaultPersistenceV1 {
       }, envelope)
     }
     await this.putCredentialRecord(input.workspaceId, input.providerId, input.record)
+    if (input.metadataUpdate) {
+      await this.updateCredentialMetadata(input.workspaceId, input.providerId, input.metadataUpdate)
+    }
     if (input.expectedCredentialVersion > 0 && input.supersededFieldsTombstone) {
       await this.tombstoneCredentialVersionFields(
         input.workspaceId,
@@ -1057,6 +1071,6 @@ implements CredentialVaultPersistenceV1 {
 export function createPostgresCredentialVaultPersistenceV1(
   sql: Sql,
   options: PostgresCredentialVaultPersistenceOptionsV1,
-): CredentialVaultPersistenceV1 {
+): CredentialVaultPersistenceV2 {
   return Object.freeze(new PostgresCredentialVaultPersistenceV1(sql, options))
 }

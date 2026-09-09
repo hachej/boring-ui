@@ -26,7 +26,7 @@ import {
   createLocalKekWorkspaceKekProviderFromEnvV1,
   createVaultCredentialStoreBackendV1,
 } from './vault'
-import type { CredentialVaultPersistenceV1 } from './vault'
+import type { CredentialVaultPersistenceV2 } from './vault'
 import type { VaultCredentialStoreBackendV1 } from './vault'
 import { createVaultCredentialStoreV1 } from './vaultCredentialStore'
 
@@ -271,7 +271,7 @@ export interface WorkspaceCredentialVaultCompositionOptionsV1 {
   /** Env-shaped record; the composition never reads `process.env` itself. */
   readonly env: Readonly<Record<string, string | undefined>>
   /** Durable persistence (#1145 Postgres in production). */
-  readonly persistence?: CredentialVaultPersistenceV1
+  readonly persistence?: CredentialVaultPersistenceV2
   /** Core-owned authority verifier; when present a resolver is pre-bound. */
   readonly authorityVerifier?: WorkspaceCredentialAuthorityVerifierV1
 }

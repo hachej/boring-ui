@@ -35,7 +35,7 @@ import type {
   VerifiedWorkspaceCredentialAuthorityV1,
   WorkspaceCredentialAuthorityVerifierV1,
 } from '../../shared/credentials'
-import type { CredentialVaultPersistenceV1 } from '../credentials/vault'
+import type { CredentialVaultPersistenceV2 } from '../credentials/vault'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -460,7 +460,7 @@ export interface AgentHostCredentialOptionsV1 {
   /** Env-shaped record override; defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>
   /** Durable vault persistence (#1145 Postgres in production). */
-  readonly vaultPersistence?: CredentialVaultPersistenceV1
+  readonly vaultPersistence?: CredentialVaultPersistenceV2
   /** Core-owned authority verifier; pre-binds the credential resolver. */
   readonly authorityVerifier?: WorkspaceCredentialAuthorityVerifierV1
   /** Host authentication adapter for owner-only credential HTTP routes. */
