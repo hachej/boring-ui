@@ -17,6 +17,7 @@ import type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeModeAdapter,
+  RuntimeTrustedServiceLeaseV1,
 } from '../runtime/mode'
 import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
@@ -30,6 +31,11 @@ import type {
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
+import type {
+  VerifiedWorkspaceCredentialAuthorityV1,
+  WorkspaceCredentialAuthorityVerifierV1,
+} from '../../shared/credentials'
+import type { CredentialVaultPersistenceV1 } from '../credentials/vault'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -78,7 +84,11 @@ export interface AgentRequestLedgerRecordBase {
 }
 
 export type AgentRequestLedgerRecord =
-  | (AgentRequestLedgerRecordBase & { readonly state: 'pending-admission' })
+  | (AgentRequestLedgerRecordBase & {
+      readonly state: 'pending-admission'
+      /** The last owner stopped before ledger admission acceptance or effect dispatch. */
+      readonly retryable?: true
+    })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'admission-accepted'
       readonly admissionReceipt: string
@@ -100,8 +110,10 @@ export type AgentRequestLedgerRecord =
 export interface AgentRequestLedger {
   /** Direct production projections require transactional durable ownership. */
   readonly durability: 'durable-transactional' | 'in-memory'
-  /** Atomic compare-and-create across every process sharing the durable store. */
+  /** Atomically create or reclaim explicitly retryable admission across all store users. */
   prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult>
+  /** Release only a pending claim whose owner has stopped before any effect. */
+  markAdmissionRetryable(key: AgentRequestKey): Promise<void>
   /** All transitions are compare-and-swap against the exact allowed prior state. */
   acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
   beginEffect(key: AgentRequestKey): Promise<void>
@@ -113,7 +125,7 @@ export interface AgentRequestLedger {
 }
 
 export interface AgentRequestLedgerPrepareResult {
-  readonly ownership: 'created' | 'existing'
+  readonly ownership: 'created' | 'reclaimed' | 'existing'
   readonly record: AgentRequestLedgerRecord
 }
 
@@ -327,6 +339,18 @@ export interface AgentHostEnvironmentScope extends ResolvedEnvironmentScope {
   }) => Promise<readonly RuntimeFilesystemBinding[] | undefined>
 }
 
+export interface AgentHostSessionEnvironmentLease {
+  readonly environmentGenerationId: string
+  readonly bindingGeneration: number
+  readonly signal: AbortSignal
+  acquireTrustedService(input: {
+    readonly leaseId: string
+    readonly idleTtlMs: number
+    readonly absoluteTtlMs: number
+  }): Promise<RuntimeTrustedServiceLeaseV1>
+  release(): void
+}
+
 export interface AgentHostEnvironmentLease {
   readonly workspace: Workspace
   readonly gitWorkspace: Workspace
@@ -356,6 +380,8 @@ export interface AgentHostDescription {
   readonly agents: readonly {
     readonly agentTypeId: string
     readonly label: string
+    /** Exact package-declared version, when this is a configured Agent. */
+    readonly definitionVersion?: string
     /** Computed definition identity digest (instructions + knowledge bytes), when the spec carries one. */
     readonly definitionDigest?: string
   }[]
@@ -400,12 +426,49 @@ export interface CreateAgentHostOptions {
   readonly requestLedger?: AgentRequestLedger
   /** Durable effect ledger path, independent of transcript/session storage. */
   readonly requestLedgerPath?: string
+  /** App-host-owned durable event store, shared with channel outbound tails. */
+  readonly eventStore?: import('../events/eventStreamStore').EventStreamStore
   /** Explicit test/dev opt-in for an in-memory ledger. */
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
+  /**
+   * Built-in SQLite terminal-payload retention. Values below 24 hours are
+   * raised to 24 hours; omitted retention keeps terminal payloads indefinitely.
+   * Injected ledgers retain ownership of their own storage policy.
+   */
   readonly requestRetentionMs?: number
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number
   readonly harnessFactory?: AgentHarnessFactory
+  /**
+   * [1082 slice B] BYOK credential-vault composition inputs. Enablement is
+   * env-driven (`BORING_CREDENTIAL_KMS_BACKEND`); when enabled the host embeds
+   * durable persistence (#1145) and the Core-owned authority verifier here.
+   * The composition is resolved exactly once, at `createAgentHost` startup:
+   * misconfigured env fails host creation with a stable `CREDENTIAL_*` error,
+   * and all runtime bindings share the single host-scope vault composition.
+   * Absent env → composition absent, behavior identical to env-key-only auth.
+   */
+  readonly credentials?: AgentHostCredentialOptionsV1
+}
+
+export interface WorkspaceCredentialLifecycleV1 {
+  /** Irreversibly fences and destroys credential key access for one workspace. */
+  cryptoShredWorkspace(workspaceId: string): Promise<void>
+}
+
+export interface AgentHostCredentialOptionsV1 {
+  /** Env-shaped record override; defaults to `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>
+  /** Durable vault persistence (#1145 Postgres in production). */
+  readonly vaultPersistence?: CredentialVaultPersistenceV1
+  /** Core-owned authority verifier; pre-binds the credential resolver. */
+  readonly authorityVerifier?: WorkspaceCredentialAuthorityVerifierV1
+  /** Host authentication adapter for owner-only credential HTTP routes. */
+  readonly authorizeOwnerRequest?: (
+    request: FastifyRequest,
+  ) => VerifiedWorkspaceCredentialAuthorityV1 | Promise<VerifiedWorkspaceCredentialAuthorityV1>
+  /** Core deletion composition receives only the narrow irreversible lifecycle seam. */
+  readonly onLifecycleReady?: (lifecycle: WorkspaceCredentialLifecycleV1) => void
 }
 
 export interface CreatedAgentHost {
@@ -416,6 +479,12 @@ export interface CreatedAgentHost {
     readonly authorizedScope: AuthorizedAgentScope
     readonly intent: AuthorizedEnvironmentIntent
   }): Promise<AgentHostEnvironmentLease>
+  /** Trusted composition-only acquisition of the addressed session's exact Environment generation. */
+  acquireSessionEnvironment(input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease>
   runWithWorkspaceAgent(
     input: AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,

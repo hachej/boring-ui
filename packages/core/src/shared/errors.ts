@@ -21,10 +21,13 @@ export const ERROR_CODES = {
   INVITE_ALREADY_ACCEPTED: 'invite_already_accepted',
   INVITE_EMAIL_MISMATCH: 'invite_email_mismatch',
   INVITE_LOCKED: 'invite_locked',
+  IDEMPOTENCY_KEY_CONFLICT: 'idempotency_key_conflict',
+  IDEMPOTENCY_IN_PROGRESS: 'idempotency_in_progress',
 
   // Provisioning
   PROVISION_FAILED: 'provision_failed',
   DESTROY_FAILED: 'destroy_failed',
+  CREDENTIAL_SHRED_FAILED: 'credential_shred_failed',
   RUNTIME_UNMANAGED: 'runtime_unmanaged',
   INVALID_RETRY_STATE: 'invalid_retry_state',
 

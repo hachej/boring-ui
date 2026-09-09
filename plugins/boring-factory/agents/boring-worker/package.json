@@ -1,0 +1,13 @@
+{
+  "name": "@hachej/boring-persona-worker",
+  "private": true,
+  "version": "1.0.0",
+  "boring": {
+    "agent": {
+      "definitionId": "boring-worker",
+      "version": "1.0.0",
+      "label": "Boring Worker",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}

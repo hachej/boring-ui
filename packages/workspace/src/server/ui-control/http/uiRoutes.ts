@@ -3,6 +3,12 @@ import { z, type ZodSchema } from "zod";
 import type { SequencedUiCommand, UiBridge, UiCommand } from "../../../shared/ui-bridge";
 import { updateUiState } from "../../bridge/updateUiState";
 import { resolveUrlPaneTarget, URL_PANE_PANEL_ID, type UrlPanePolicy } from "../../../shared/urlPane";
+import {
+  LEGACY_URL_PANE_RUNTIME_PREVIEW_PATH,
+  RUNTIME_WEB_VIEW_PREVIEW_PATH,
+  resolveRuntimeWebViewProjection,
+  runtimeWebViewTargetSchema,
+} from "../../../shared/runtimeWebView";
 import { resolveUrlPanePolicyFromEnv } from "../urlPanePolicy";
 import { createPaneRenderStatusStore, type PaneRenderStatusStore } from "../panelStatus/paneRenderStatusStore";
 import { paneRenderStatusRoutes, resolvePaneStatusWorkspaceId } from "./paneRenderStatusRoutes";
@@ -60,6 +66,11 @@ export interface UiRoutesOptions {
    * policy (loopback only unless the host opts in).
    */
   urlPanePolicy?: UrlPanePolicy;
+  /** Host-authorized projection from the current workspace runtime to HTTPS. */
+  resolveRuntimePreview?: (
+    request: FastifyRequest,
+    input: { workspaceId: string; port: number; path?: string },
+  ) => Promise<{ url: string; expiresAt?: string }>;
 }
 
 type UiCommandStreamSink = {
@@ -92,12 +103,22 @@ export async function subscribeUiCommandStream(
  * depth *and* ergonomics: an agent that asks for a disallowed origin gets a 400
  * with the reason instead of a silently blocked pane it cannot see.
  */
-function urlPaneCommandRejection(cmd: UiCommand, policy: UrlPanePolicy): string | undefined {
+function urlPaneCommandRejection(
+  cmd: UiCommand,
+  policy: UrlPanePolicy,
+  runtimePreviewEnabled: boolean,
+): string | undefined {
   if (cmd.kind !== "openPanel") return undefined;
-  const params = cmd.params as { component?: unknown; params?: { url?: unknown } } | undefined;
+  const params = cmd.params as { component?: unknown; params?: { url?: unknown; runtimePreview?: unknown } } | undefined;
   if (params?.component !== URL_PANE_PANEL_ID) return undefined;
-  const url = params.params?.url;
-  const resolved = resolveUrlPaneTarget(typeof url === "string" ? url : "", policy);
+  const paneParams = params.params;
+  if (paneParams?.runtimePreview !== undefined) {
+    if (paneParams.url !== undefined) return "URL pane accepts either url or runtimePreview, not both.";
+    if (!runtimePreviewEnabled) return "Runtime previews are unavailable for this host.";
+    const parsed = runtimeWebViewTargetSchema.safeParse(paneParams.runtimePreview);
+    return parsed.success ? undefined : parsed.error.issues[0]?.message ?? "Invalid runtime preview target.";
+  }
+  const resolved = resolveUrlPaneTarget(typeof paneParams?.url === "string" ? paneParams.url : "", policy);
   return resolved.ok ? undefined : resolved.message;
 }
 
@@ -115,6 +136,7 @@ export function uiRoutes(
   };
   const validateSetState = createBodyValidator(setStateBodySchema);
   const validatePostCommand = createBodyValidator(postCommandBodySchema);
+  const validateRuntimePreview = createBodyValidator(runtimeWebViewTargetSchema);
   const resolveBridge = async (request: FastifyRequest): Promise<UiBridge> => {
     if (opts.getBridge) return await opts.getBridge(request);
     if (fallbackBridge) return fallbackBridge;
@@ -176,7 +198,7 @@ export function uiRoutes(
       const body = request.body as z.infer<typeof postCommandBodySchema>;
       const bridge = await resolveBridge(request);
       const cmd: UiCommand = { kind: body.kind, params: body.params };
-      const rejection = urlPaneCommandRejection(cmd, urlPanePolicy);
+      const rejection = urlPaneCommandRejection(cmd, urlPanePolicy, opts.resolveRuntimePreview !== undefined);
       if (rejection) {
         return reply.code(400).send({ error: "url_pane_origin_not_allowed", message: rejection });
       }
@@ -187,6 +209,28 @@ export function uiRoutes(
   // The front fetches this to enforce the same rule before it sets an iframe
   // src, and to render an actionable "blocked" state naming the allowlist.
   app.get("/api/v1/ui/url-pane/policy", async () => ({ origins: urlPanePolicy.origins }));
+
+  const runtimePreviewHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!opts.resolveRuntimePreview) {
+      return reply.code(404).send({ error: "runtime_preview_unavailable", message: "Runtime previews are unavailable for this host." });
+    }
+    const workspaceId = await getPaneWorkspaceId(request);
+    if (!workspaceId) {
+      return reply.code(400).send({ error: "workspace_required", message: "workspace id is required" });
+    }
+    const body = request.body as z.infer<typeof runtimeWebViewTargetSchema>;
+    const preview = await opts.resolveRuntimePreview(request, { workspaceId, ...body });
+    const resolved = resolveRuntimeWebViewProjection(preview.url);
+    const expiry = preview.expiresAt === undefined ? undefined : Date.parse(preview.expiresAt);
+    if (!resolved.ok || (expiry !== undefined && (!Number.isFinite(expiry) || expiry <= Date.now() + 1_000))) {
+      return reply.code(502).send({ error: "runtime_preview_invalid", message: resolved.ok ? "The runtime preview returned an invalid expiry." : resolved.message });
+    }
+    reply.header("Cache-Control", "private, no-store");
+    return { url: resolved.url, expiresAt: preview.expiresAt };
+  };
+  app.post(RUNTIME_WEB_VIEW_PREVIEW_PATH, { preHandler: validateRuntimePreview }, runtimePreviewHandler);
+  // Preserve #1493 clients while callers migrate to the central shared route.
+  app.post(LEGACY_URL_PANE_RUNTIME_PREVIEW_PATH, { preHandler: validateRuntimePreview }, runtimePreviewHandler);
 
   app.get("/api/v1/ui/commands/next", async (request, reply) => {
     await touchUi(request);

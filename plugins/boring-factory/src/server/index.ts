@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import {
   BORING_FACTORY_RESOURCE_CONTRACT_VERSION,
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
-  FACTORY_WORKER_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+  FACTORY_WORKER_AGENT_TYPE_ID as FACTORY_RESOURCE_WORKER_AGENT_TYPE_ID,
 } from '../shared/constants'
 import {
   BORING_FACTORY_RESOURCE_ERROR_CODES,
@@ -20,7 +21,6 @@ import type {
 export {
   BORING_FACTORY_RESOURCE_CONTRACT_VERSION,
   FACTORY_AGENT_TYPE_IDS,
-  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
   FACTORY_WORKER_AGENT_TYPE_ID,
 } from '../shared/constants'
 export {
@@ -33,6 +33,117 @@ export type {
   BoringFactoryResources,
   FactoryAgentTypeId,
 } from '../shared/types'
+export {
+  createFactorySandboxPlugin,
+  createFactorySandboxProvider,
+  createLocalDisposableProvider,
+  createExactShaTemplateProvider,
+  buildFetchBootstrapFiles,
+  buildFactoryBootstrapScript,
+  FACTORY_BOOTSTRAP_SCRIPT,
+  FACTORY_BOOTSTRAP_TIMEOUT_MS,
+  FACTORY_COREPACK_HOME,
+  FACTORY_GIT_TOKEN_ENV_VAR,
+  FACTORY_WARM_REPO_ROOT,
+  FACTORY_WORKSPACE_SCOPE_ID,
+  getFactoryBootstrapLog,
+  getFactorySandboxSnapshotInfo,
+  gitFetchAuthShellSetup,
+  invalidateEpicSnapshot,
+  invalidateAllEpicSnapshots,
+  isBootstrapRefreshNeeded,
+  normalizeRemoteUrl,
+  peekEpicSnapshot,
+  registryKey,
+  resolveEpicSnapshot,
+  resolveFactoryEpicKey,
+  resolveFactoryGitToken,
+  sha256File,
+  snapshotCommittedHead,
+  warmUpFactorySandboxSnapshot,
+} from './sandbox'
+export type {
+  CreateFactorySandboxPluginOptions,
+  CreatePerEpicVercelProviderOptions,
+  FactorySandboxSnapshotInfo,
+  FactorySandboxSnapshotMode,
+} from './sandbox/sandboxComposition'
+export {
+  createFactoryHost,
+  createFactoryHostedApp,
+  deriveFactoryWorkspaceScopeId,
+} from './host'
+export { buildEpicKickoffPrompt } from './host/epicKickoff'
+export {
+  createFactoryEpicRegistry,
+  FACTORY_REQUEST_FILE_MAX_BYTES,
+  FactoryEpicRegistryError,
+  resolveFactoryEpicRequestFile,
+  validateFactoryEpicEntry,
+} from './host/epicRegistry'
+export type {
+  FactoryEpicEntry,
+  FactoryEpicModels,
+  FactoryEpicRegistry,
+} from './host/epicRegistry'
+export type { FactoryEpicLiveEntry } from './host/factoryHub'
+export {
+  createFactorySessionBindings,
+  FactoryEpicResolutionError,
+  FactorySessionBindingError,
+  resolveFactoryEpic,
+} from './host/sessionBindings'
+export type { FactorySessionBindings } from './host/sessionBindings'
+export type { FactorySessionBindingReconciliation } from './host/sessionBindings'
+export type {
+  CreateFactoryDemoPluginOptions,
+  DemoSandboxFactory,
+  DemoSandboxHandle,
+  FactoryDemoPluginControl,
+  FactoryDemoPluginHandle,
+  LocalDemoProcessRuntime,
+} from './host/demoPlugin'
+export {
+  executeCloseEpic,
+  formatFactoryStatusPr,
+  lookupFactoryPrStatus,
+} from './host/epicClosure'
+export {
+  loadNativeFactoryFleet,
+  deriveFeatureName,
+  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+} from './host/factoryFleet'
+export {
+  createFactoryDelegatePlugin,
+  FACTORY_DELEGATE_PLUGIN_ID,
+} from './host/delegatePlugin'
+export {
+  createFactorySupervisionPlugin,
+  FACTORY_SUPERVISION_PLUGIN_ID,
+} from './host/supervisionPlugin'
+export {
+  createFactoryDemoPlugin,
+  FACTORY_DEMO_PLUGIN_ID,
+} from './host/demoPlugin'
+export type {
+  ExactShaTemplateProviderOptions,
+  FetchBootstrapFile,
+  WarmSnapshotAuth,
+  WarmSnapshotResult,
+} from './sandbox'
+export type {
+  EpicClosureBeadOutcome,
+  EpicClosureDemoStopOutcome,
+  EpicClosureDeps,
+  EpicClosureIssue,
+  EpicClosurePullRequest,
+  EpicClosureReceipt,
+  FactoryPrLookup,
+  FactoryPrStatus,
+  FactoryStatusPrDetails,
+  PrLookupStatus,
+} from './host/epicClosure'
 
 const SHA256 = /^[a-f0-9]{64}$/
 
@@ -205,10 +316,15 @@ export function resolveBoringFactoryResources(): BoringFactoryResources {
           'agents',
           FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
         ),
-        [FACTORY_WORKER_AGENT_TYPE_ID]: path.join(
+        [FACTORY_RESOURCE_WORKER_AGENT_TYPE_ID]: path.join(
           resourceRoot,
           'agents',
-          FACTORY_WORKER_AGENT_TYPE_ID,
+          FACTORY_RESOURCE_WORKER_AGENT_TYPE_ID,
+        ),
+        [FACTORY_REVIEWER_AGENT_TYPE_ID]: path.join(
+          resourceRoot,
+          'agents',
+          FACTORY_REVIEWER_AGENT_TYPE_ID,
         ),
       }),
     })

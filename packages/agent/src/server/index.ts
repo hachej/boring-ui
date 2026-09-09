@@ -167,12 +167,65 @@ export type {
   ShareEntryMcpResourceOptions,
 } from './mcp'
 export { createStandaloneAgentHostApp } from './createStandaloneAgentHostApp'
+export {
+  CHANNEL_DURABLE_STREAM_REQUIRED,
+  CHANNEL_INBOUND_PARKED,
+  CHANNEL_OUTBOUND_PARKED,
+  CHANNEL_TURN_STALLED,
+  CHANNEL_UNKNOWN_BINDING,
+  CHANNELS_ENV_FLAG,
+  ChannelBindingStore,
+  ChannelInboundService,
+  ChannelIntentionService,
+  ChannelMessageRouter,
+  ChannelOutboundService,
+  ChannelSessionCreateTimeoutError,
+  assembleNextTurn,
+  createChannelIntentionRuntime,
+  shapeChannelText,
+  areChannelsEnabled,
+  assertChannelDurability,
+} from './channels'
+export type {
+  ChannelAdapter,
+  ChannelAgentInvocation,
+  ChannelAgentInvoker,
+  ChannelBinding,
+  ChannelInboundAck,
+  ChannelIntentionAck,
+  ChannelIntentionAdapter,
+  ChannelIntentionField,
+  ChannelIntentionOption,
+  ChannelIntentionQuestion,
+  ChannelIntentionRecord,
+  ChannelIntentionRuntime,
+  ChannelIntentionServiceOptions,
+  ChannelIntentionSource,
+  ChannelMessageAck,
+  ChannelOutboundAdapter,
+  ChannelOutboundRuntime,
+  ChannelOutboundServiceOptions,
+  ChannelOutboundTurn,
+  InboundChannelMessage,
+  ProvisionChannelBindingInput,
+  QueuedChannelInbound,
+} from './channels'
 export type { CreateStandaloneAgentHostAppOptions } from './createStandaloneAgentHostApp'
 export { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
 export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/environmentHttpProjection'
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
-export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
+export {
+  CHANNEL_RUNTIME_FILE_NAME,
+  createAgentHostChannelRuntime,
+  createAgentHostChannelStorage,
+} from './agent-host/channelRuntimeComposition'
+export type {
+  AgentHostChannelRuntime,
+  AgentHostChannelStorage,
+  CreateAgentHostChannelRuntimeOptions,
+} from './agent-host/channelRuntimeComposition'
+export { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
 export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 export type {
   LegacyRequestLedgerLocation,
@@ -205,6 +258,8 @@ export type {
   AgentHostEnvironmentLease,
   AgentHostEnvironmentScope,
   AgentHostHandle,
+  AgentHostCredentialOptionsV1,
+  WorkspaceCredentialLifecycleV1,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,
@@ -310,14 +365,32 @@ export {
 export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
 export { createUserFilesystemBinding } from './runtime/userFilesystemBinding'
 export {
-  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
+  createInMemoryCredentialVaultPersistenceV1,
+  createInMemoryCredentialVersionAnchorV1,
+  createLocalCredentialVersionAnchorFromEnvV1,
+  createLocalFileCredentialVersionAnchorV1,
+  createLocalKekWorkspaceKekProviderFromEnvV1,
+  createPostgresCredentialVaultPersistenceV1,
+  createVaultCredentialStoreBackendV1,
+  createVaultCredentialStoreV1,
+  createOpenAiCodexOAuthBrokerV1,
+  PI_OAUTH_CREDENTIAL_FIELD_ID_V1,
+  initializeLocalFileCredentialVersionAnchorV1,
+  runCredentialVaultPostgresMigrationsV1,
   withResolvedCredential,
 } from './credentials'
 export type {
   CredentialStoreBackendV1,
-  FakeAuthorityVerifierGrantV1,
   HostSideCredentialResolverOptionsV1,
   InMemoryCredentialBackendEntryV1,
+  CredentialVaultPersistenceV1,
+  LocalCredentialVersionAnchorOptionsV1,
+  StoredCredentialRecordV1,
+  OpenAiCodexOAuthBrokerV1,
+  VaultCredentialStoreBackendV1,
+  VaultCredentialStoreOptionsV1,
+  WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionStateV1,
 } from './credentials'

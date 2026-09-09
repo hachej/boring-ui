@@ -221,6 +221,9 @@
         "source": "packages/agent/src/server/index.ts",
         "symbols": [
           "AgentHostAgentSpec",
+          "AgentHostCredentialOptionsV1",
+          "AgentHostChannelRuntime",
+          "AgentHostChannelStorage",
           "AgentHostDescription",
           "AgentHostDirectProjectionOptions",
           "AgentHostDispatcherRunInput",
@@ -233,6 +236,7 @@
           "AgentRequestLedgerRecord",
           "CompiledAgentHostAgentSpec",
           "ConfiguredAgentHostAgentSpec",
+          "CreateAgentHostChannelRuntimeOptions",
           "CreateAgentHostOptions",
           "CreateConfiguredAgentHostAgentSpecInput",
           "CreateStandaloneAgentHostAppOptions",
@@ -240,6 +244,8 @@
           "InMemoryAgentRequestLedger",
           "SqliteAgentRequestLedger",
           "createAgentHost",
+          "createAgentHostChannelRuntime",
+          "createAgentHostChannelStorage",
           "createConfiguredAgentHostAgentSpec",
           "createStandaloneAgentHostApp",
           "registerAgentHostEnvironmentRoutes"
