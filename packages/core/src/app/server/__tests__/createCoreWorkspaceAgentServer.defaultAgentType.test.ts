@@ -165,6 +165,7 @@ test('unknown persisted default denies execution but preserves session and histo
       agentTypeId: 'default',
       context: { workspaceId: 'workspace-a', userId: 'user-a' },
       requestId: 'automation-history-read',
+      fundingPolicy: 'api-key-only',
     }, storageLease)).resolves.toBeUndefined()
     expect(mocks.hostRunWithWorkspaceAgent).toHaveBeenCalledOnce()
     expect(storageLease).toHaveBeenCalledWith({ marker: 'lease-bound-workspace-agent' })

@@ -77,7 +77,12 @@ describe("non-blocking answer delivery", () => {
     })
     const resolver = {
       async runWithWorkspaceAgent(input: unknown, run: (binding: { dispatch: typeof dispatch }) => Promise<void>) {
-        expect(input).toMatchObject({ agentTypeId: "orchestrator", context: { workspaceId: "workspace-1", userId: "owner-1" }, requestId: "ask-user-answer:q1" })
+        expect(input).toMatchObject({
+          agentTypeId: "orchestrator",
+          context: { workspaceId: "workspace-1", userId: "owner-1" },
+          requestId: "ask-user-answer:q1",
+          fundingPolicy: "api-key-only",
+        })
         await run({ dispatch })
       },
     } as unknown as WorkspaceAgentDispatcherResolver

@@ -65,6 +65,14 @@ export class LiveTranscriptBrowserController {
           ? await this.review()
           : "Usage: /review transcript",
       },
+      {
+        name: "transcribe",
+        description: "Refine an existing recording into a transcript",
+        kind: "local",
+        source: "local",
+        allowWhileBusy: () => true,
+        handler: async (args) => this.transcribeFile(args),
+      },
     ]
   }
 
@@ -425,6 +433,27 @@ export class LiveTranscriptBrowserController {
     return "Usage: /live start [optional title] | /live stop | /live status"
   }
 
+  private async transcribeFile(args: string): Promise<string> {
+    const trimmed = args.trim()
+    if (!trimmed) return "Usage: /transcribe <live-transcripts recording> [title]"
+    const separator = trimmed.indexOf(" ")
+    const path = separator < 0 ? trimmed : trimmed.slice(0, separator)
+    const title = separator < 0 ? undefined : trimmed.slice(separator + 1).trim() || undefined
+    try {
+      const result = await postJson<{ transcriptPath: string; words: number; speakers: number; durationSeconds: number }>(
+        `${LIVE_TRANSCRIPT_BASE_PATH}/transcribe-file`,
+        { path, ...(title ? { title } : {}) },
+      )
+      postUiCommand({
+        kind: "openSurface",
+        params: { kind: "workspace.open.path", target: result.transcriptPath },
+      })
+      return `Transcript refined: ${result.transcriptPath} (${result.words} words, ${result.speakers} speakers)`
+    } catch (error) {
+      return formatError(error, "File transcription failed.")
+    }
+  }
+
   private async prepareCompute(kind: "live" | "composer", generation: number): Promise<string> {
     const prepared = await postJson<{ preparationId: string; state: "warming" | "ready" | "failed"; error?: string }>(
       `${LIVE_TRANSCRIPT_BASE_PATH}/compute/prepare`,
@@ -473,7 +502,9 @@ export class LiveTranscriptBrowserController {
     onWord?: (word: string) => void
   }): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true },
+      // autoGainControl is explicit: Kyutai and Sortformer both degrade on very
+      // quiet input and browsers do not all default it on for a constrained track.
+      audio: { channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     })
     try {

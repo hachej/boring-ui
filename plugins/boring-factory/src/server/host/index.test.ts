@@ -10,6 +10,7 @@ import { createFactoryHost } from './index'
 import { readOrchestratorStatuses } from './factoryHub'
 import type { FactoryEpicEntry } from './epicRegistry'
 import { FACTORY_REQUEST_FILE_MAX_BYTES } from './epicRegistry'
+import { FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from '../../shared/constants'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../../../..')
 const execFileAsync = promisify(execFile)
@@ -31,9 +32,9 @@ describe('factory host composition', () => {
       createdAt: '2026-09-07T00:00:00.000Z',
       status: 'closed',
     }))
-    const calls: Array<{ method: string; payload?: { sessionIds: string[] }; url: string }> = []
+    const calls: Array<{ method: string; payload?: { sessionIds: string[] }; url: string; headers?: Record<string, string> }> = []
     const app = {
-      async inject(request: { method: string; payload?: { sessionIds: string[] }; url: string }) {
+      async inject(request: { method: string; payload?: { sessionIds: string[] }; url: string; headers?: Record<string, string> }) {
         calls.push(request)
         if (request.method === 'POST') {
           const sessionIds = request.payload?.sessionIds ?? []
@@ -50,6 +51,7 @@ describe('factory host composition', () => {
     expect(calls.filter((call) => call.method === 'GET').map((call) => call.url)).toEqual([
       '/api/v1/agents/boring-orchestrator/sessions/orch-50/state',
     ])
+    expect(calls.every((call) => call.headers?.['x-boring-invocation-mode'] === 'unattended')).toBe(true)
     expect(statuses.size).toBe(51)
     expect(statuses.get('orch-50')).toBe('running')
   })
@@ -107,6 +109,18 @@ describe('factory host composition', () => {
     let failNextCreate = false
     let failNextPrompt = false
     const app = Fastify({ logger: false })
+    const agentRequests: Array<{ method: string; url: string; invocationMode?: string }> = []
+    app.addHook('onRequest', async (request) => {
+      if (request.url.startsWith(`/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/`)) {
+        agentRequests.push({
+          method: request.method,
+          url: request.url,
+          ...(typeof request.headers['x-boring-invocation-mode'] === 'string'
+            ? { invocationMode: request.headers['x-boring-invocation-mode'] }
+            : {}),
+        })
+      }
+    })
     app.post('/api/v1/agents/boring-orchestrator/sessions', async (_request, reply) => {
       if (failNextCreate) { failNextCreate = false; return reply.code(503).send({ message: 'temporary failure' }) }
       const sessionId = `orch-${++created}`
@@ -164,6 +178,12 @@ describe('factory host composition', () => {
       expect(adopt.json()).toMatchObject({ orchestratorSessionId: 'existing-orch' })
       await expect(host.sessionBindings.get('orch-1')).resolves.toBeUndefined()
       await expect(host.sessionBindings.get('existing-orch')).resolves.toBe('intake-proof')
+      expect(agentRequests).toEqual(expect.arrayContaining([
+        expect.objectContaining({ method: 'POST', url: '/api/v1/agents/boring-orchestrator/sessions' }),
+        expect.objectContaining({ method: 'POST', url: '/api/v1/agents/boring-orchestrator/sessions/orch-1/prompt' }),
+        expect.objectContaining({ method: 'GET', url: '/api/v1/agents/boring-orchestrator/sessions/existing-orch/state' }),
+      ]))
+      expect(agentRequests.every((request) => request.invocationMode === 'unattended')).toBe(true)
       expect(JSON.parse(await readFile(resolve(stateRoot, 'supervision.json'), 'utf8'))).toEqual({ entries: {
         'existing-orch': expect.objectContaining({
           epicKey: 'intake-proof', sessionId: 'existing-orch', intervalMs: 45_000, prompt: 'preserve this cadence', ticks: 3,
@@ -218,6 +238,9 @@ describe('factory host composition', () => {
       expect(legacyAdopt.statusCode).toBe(200)
       expect(legacyAdopt.json()).toMatchObject({ orchestratorSessionId: legacySessionId })
       await expect(host.sessionBindings.get(legacySessionId)).resolves.toBe('default-path')
+      const legacyStateRequests = agentRequests.filter((request) => request.url === `/api/v1/agents/boring-orchestrator/sessions/${legacySessionId}/state`)
+      expect(legacyStateRequests).toHaveLength(2)
+      expect(legacyStateRequests.every((request) => request.invocationMode === 'unattended')).toBe(true)
       const importedFile = (await readdir(hubNamespace)).find((file) => file.endsWith(`_${legacySessionId}.jsonl`))
       expect(importedFile).toBeDefined()
       const importedHeader = JSON.parse((await readFile(resolve(hubNamespace, importedFile!), 'utf8')).trim()) as { boringSessionCtx: unknown }

@@ -181,6 +181,8 @@ export interface CreateCoreAppOptions {
   userStore?: UserStore
   workspaceStore?: WorkspaceStore
   provisioner?: WorkspaceProvisioner
+  /** Irreversible credential cleanup invoked before workspace destruction/deletion. */
+  shredWorkspaceCredentials?: (workspaceId: string) => Promise<void>
   manageShutdown?: boolean
   requestScopeResolver?: CoreRequestScopeResolver
 }
@@ -190,6 +192,7 @@ declare module 'fastify' {
     config: CoreConfig
     workspaceStore: WorkspaceStore
     provisioner: WorkspaceProvisioner | null
+    shredWorkspaceCredentials: ((workspaceId: string) => Promise<void>) | null
     addRedactionPaths(paths: string[]): void
     registerCapabilitiesContributor(
       name: string,

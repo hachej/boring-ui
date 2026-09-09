@@ -86,7 +86,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
       const actor = await options.trusted.actorResolver(request)
       if (options.trusted.actorVerifier && !await options.trusted.actorVerifier(actor)) throw new Error("actor verification failed")
       let result: T | undefined
-      await resolver.runWithWorkspaceAgent({ agentTypeId, context: actor, requestId: request.id, request }, async (lease) => {
+      await resolver.runWithWorkspaceAgent({ agentTypeId, context: actor, requestId: request.id, request, fundingPolicy: 'api-key-only' }, async (lease) => {
         result = await run({ workspaceId: actor.workspaceId, workspace: lease.workspace })
       })
       return result as T

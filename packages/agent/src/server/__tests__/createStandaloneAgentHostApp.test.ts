@@ -941,7 +941,7 @@ test('Final composed route/auth proof: standalone delegates its trusted scope to
     expect(addressed.json()).toEqual([{
       agentTypeId: 'default',
       label: 'Agent',
-      definition: { version: '1', digest: expect.any(String) },
+      definition: { version: '1' },
     }])
     assertComposedAgentHostRouteTable(app)
     expect(app.hasRoute({

@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
+import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
+import { InMemoryHarnessBackend } from '../testing/inMemoryHarnessBackend'
 import type { AgentGatewayEffect } from '../types'
 import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
@@ -29,7 +34,7 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toEqual({ sessions: [] })
   })
 
-  it('leaves retryable admission pending so the same request can be safely admitted later', async () => {
+  it('retries a denied admission with the same request without duplicating the effect', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const scope = fixture.issueScope()
     fixture.queueAdmission('session.create', 'retryable')
@@ -38,10 +43,118 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.createSession(input)).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
     })
-    await expect(fixture.gateway.createSession(input)).rejects.toMatchObject({
-      code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
-    })
     await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toMatchObject({ sessions: [] })
+    await expect(fixture.gateway.createSession({ ...input, title: 'changed payload' })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+    })
+
+    const admission = fixture.blockAdmission('session.create')
+    const retry = fixture.gateway.createSession(input)
+    try {
+      await Promise.race([admission.entered, retry.then(() => undefined)])
+      await expect(fixture.gateway.createSession(input)).rejects.toMatchObject({
+        code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+      })
+      await expect(fixture.gateway.listSessions({ scope })).resolves.toEqual({ sessions: [] })
+    } finally {
+      admission.release()
+    }
+    const ref = await retry
+    await expect(fixture.gateway.createSession(input)).resolves.toEqual(ref)
+    await expect(fixture.gateway.listSessions({ scope })).resolves.toMatchObject({ sessions: [{ ref }] })
+  })
+
+  it('does not let a duplicate guarded prompt bypass an active admission owner', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    const admission = fixture.blockAdmission('session.prompt')
+    const command = { kind: 'prompt' as const, requestId: 'one-prompt', clientNonce: 'one-prompt', content: 'hello' }
+    const pending = connection.send(command)
+    try {
+      await admission.entered
+      await expect(connection.send(command)).rejects.toMatchObject({
+        code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+      })
+      expect(fixture.modelLoopStarts(ref)).toBe(0)
+    } finally {
+      admission.release()
+      await pending
+      await connection.close()
+    }
+    expect(fixture.modelLoopStarts(ref)).toBe(1)
+  })
+
+  it.each([false, true])('preserves pre-effect prompt retries with requireIdle=%s', async (requireIdle) => {
+    const { fixture, scope, ref } = await createSession()
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    const command = {
+      kind: 'prompt' as const,
+      requestId: 'retry-prompt',
+      clientNonce: 'retry-prompt',
+      content: 'hello',
+      ...(requireIdle ? { requireIdle: true as const } : {}),
+    }
+    try {
+      fixture.setActivity(ref, 'running')
+      await expect(connection.send(command)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
+      await expect(connection.send({ ...command, content: 'changed' })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      expect(fixture.modelLoopStarts(ref)).toBe(0)
+      fixture.setActivity(ref, 'error')
+      if (requireIdle) {
+        await expect(connection.send(command)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
+        expect(fixture.modelLoopStarts(ref)).toBe(0)
+        fixture.setActivity(ref, 'idle')
+      }
+      const receipt = await connection.send(command)
+      await expect(connection.send(command)).resolves.toMatchObject({ ...receipt, duplicate: true })
+      expect(fixture.modelLoopStarts(ref)).toBe(1)
+    } finally {
+      await connection.close()
+    }
+  })
+
+  it('does not reclaim a pending prompt after its admission guard throws', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    const failure = new Error('snapshot unavailable')
+    const snapshot = vi.spyOn(InMemoryHarnessBackend.prototype, 'readSnapshot').mockRejectedValueOnce(failure)
+    const command = { kind: 'prompt' as const, requestId: 'uncertain-prompt', clientNonce: 'uncertain-prompt', content: 'hello' }
+    try {
+      await expect(connection.send(command)).rejects.toBe(failure)
+      await expect(connection.send(command)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS })
+      expect(fixture.modelLoopStarts(ref)).toBe(0)
+    } finally {
+      snapshot.mockRestore()
+      await connection.close()
+    }
+  })
+
+  it('can retry an explicitly denied admission after reopening the SQLite ledger', async () => {
+    const path = join(tmpdir(), `gateway-retry-${randomUUID()}.sqlite`)
+    const ledger = new SqliteAgentRequestLedger(path)
+    const first = await createEmbeddedGatewayFixture({ requestLedger: ledger })
+    first.queueAdmission('session.create', 'retryable')
+    const input = { agentTypeId: 'alpha', requestId: 'durable-retry' }
+    try {
+      await expect(first.gateway.createSession({ ...input, scope: first.issueScope() })).rejects.toMatchObject({
+        code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
+      })
+    } finally {
+      await first.gateway.close()
+      ledger.close()
+    }
+
+    const reopened = new SqliteAgentRequestLedger(path)
+    const next = await createEmbeddedGatewayFixture({ requestLedger: reopened })
+    const scope = next.issueScope()
+    try {
+      const ref = await next.gateway.createSession({ ...input, scope })
+      await expect(next.gateway.createSession({ ...input, scope })).resolves.toEqual(ref)
+      await expect(next.gateway.listSessions({ scope })).resolves.toMatchObject({ sessions: [{ ref }] })
+    } finally {
+      await next.gateway.close()
+      reopened.close()
+    }
   })
 
   it('admits rename, archive, and delete before any session mutation', async () => {

@@ -166,6 +166,7 @@ export class DispatchRunExecutor {
           agentTypeId,
           context: actor,
           requestId: run.id,
+          fundingPolicy: "api-key-only",
           ...(input.request ? { request: input.request } : {}),
         }, async (binding) => {
           stopTimedOutSession = async (timedOutSessionId) => {

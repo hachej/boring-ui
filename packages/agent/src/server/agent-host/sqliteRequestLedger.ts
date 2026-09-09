@@ -35,13 +35,33 @@ function validateTarget(key: AgentRequestKey): void {
   }
 }
 
+export const MIN_REQUEST_RETENTION_MS = 24 * 60 * 60 * 1_000
+
+export interface SqliteAgentRequestLedgerOptions {
+  /** Terminal payload retention. Values below 24 hours are raised to the minimum. */
+  readonly retentionMs?: number
+  /** Injectable clock for deterministic storage tests. */
+  readonly now?: () => number
+}
+
+const TERMINAL_STATES = ['rejected', 'completed', 'outcome-unknown'] as const
+
 /** SQLite-backed atomic ownership/CAS ledger for direct and production projections. */
 export class SqliteAgentRequestLedger implements AgentRequestLedger {
   readonly durability = 'durable-transactional' as const
   private readonly database: DatabaseSync
+  private readonly now: () => number
+  private readonly retentionMs: number | undefined
 
-  constructor(path: string) {
+  constructor(path: string, options: SqliteAgentRequestLedgerOptions = {}) {
     const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    if (options.retentionMs !== undefined && (!Number.isFinite(options.retentionMs) || options.retentionMs < 0)) {
+      throw new TypeError('request ledger retention must be a finite non-negative duration')
+    }
+    this.now = options.now ?? Date.now
+    this.retentionMs = options.retentionMs === undefined
+      ? undefined
+      : Math.max(MIN_REQUEST_RETENTION_MS, options.retentionMs)
     this.database = new SqliteDatabaseSync(path)
     this.database.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;')
     this.database.exec(`
@@ -51,39 +71,69 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         state TEXT NOT NULL,
         record_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
-      )
+      );
+      CREATE TABLE IF NOT EXISTS agent_request_tombstones (
+        request_key TEXT PRIMARY KEY,
+        digest TEXT NOT NULL,
+        key_json TEXT NOT NULL,
+        pruned_at INTEGER NOT NULL
+      );
     `)
   }
 
   async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult> {
     validateTarget(key)
-    const id = keyString(key)
-    const record: AgentRequestLedgerRecord = {
-      key,
-      digest,
-      state: 'pending-admission',
-      updatedAt: Date.now(),
-    }
-    const inserted = this.database.prepare(`
-      INSERT OR IGNORE INTO agent_request_ledger
-        (request_key, digest, state, record_json, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, digest, record.state, JSON.stringify(record), record.updatedAt)
-    const current = this.readSync(key)
-    if (!current) conflict('request ledger ownership claim was not persisted')
-    if (current.digest !== digest) {
-      conflict('requestId was already used with a different payload')
-    }
-    return { ownership: inserted.changes === 1 ? 'created' : 'existing', record: current }
+    return this.immediateTransaction(() => {
+      const now = this.now()
+      this.pruneExpiredTerminalRows(now)
+      const id = keyString(key)
+      const tombstone = this.readTombstoneSync(key)
+      if (tombstone) {
+        if (tombstone.digest !== digest) conflict('requestId was already used with a different payload')
+        return { ownership: 'existing', record: tombstone.record }
+      }
+      const record: AgentRequestLedgerRecord = {
+        key,
+        digest,
+        state: 'pending-admission',
+        updatedAt: now,
+      }
+      const inserted = this.database.prepare(`
+        INSERT OR IGNORE INTO agent_request_ledger
+          (request_key, digest, state, record_json, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(id, digest, record.state, JSON.stringify(record), record.updatedAt)
+      const current = this.readActiveSync(key)
+      if (!current) conflict('request ledger ownership claim was not persisted')
+      if (current.digest !== digest) {
+        conflict('requestId was already used with a different payload')
+      }
+      if (current.state === 'pending-admission' && current.retryable) {
+        const claimed = this.database.prepare(`
+          UPDATE agent_request_ledger SET record_json = ?, updated_at = ?
+          WHERE request_key = ? AND digest = ? AND state = 'pending-admission' AND record_json = ?
+        `).run(JSON.stringify(record), record.updatedAt, id, digest, JSON.stringify(current))
+        if (claimed.changes === 1) return { ownership: 'reclaimed', record }
+        const winner = this.readActiveSync(key)
+        if (!winner) conflict('request ledger ownership claim was not persisted')
+        return { ownership: 'existing', record: winner }
+      }
+      return { ownership: inserted.changes === 1 ? 'created' : 'existing', record: current }
+    })
+  }
+
+  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
+    this.transition(key, ['pending-admission'], (record) => {
+      if (record.state !== 'pending-admission' || record.retryable) conflict('request admission is already retryable')
+      return { ...record, retryable: true, updatedAt: this.now() }
+    })
   }
 
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
-    this.transition(key, ['pending-admission'], (record) => ({
-      ...record,
-      state: 'admission-accepted',
-      admissionReceipt,
-      updatedAt: Date.now(),
-    }))
+    this.transition(key, ['pending-admission'], (record) => {
+      if (record.state !== 'pending-admission' || record.retryable) conflict('request admission must be claimed before accepting')
+      return { ...record, state: 'admission-accepted', admissionReceipt, updatedAt: this.now() }
+    })
   }
 
   async beginEffect(key: AgentRequestKey): Promise<void> {
@@ -91,7 +141,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       key: record.key,
       digest: record.digest,
       state: 'in-flight',
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
@@ -104,7 +154,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       digest: record.digest,
       state: 'rejected',
       failure,
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
@@ -114,7 +164,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       digest: record.digest,
       state: 'completed',
       receipt,
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
@@ -127,7 +177,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       digest: record.digest,
       state: 'outcome-unknown',
       error,
-      updatedAt: Date.now(),
+      updatedAt: this.now(),
     }))
   }
 
@@ -140,10 +190,70 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   }
 
   private readSync(key: AgentRequestKey): AgentRequestLedgerRecord | undefined {
+    return this.readActiveSync(key) ?? this.readTombstoneSync(key)?.record
+  }
+
+  private readActiveSync(key: AgentRequestKey): AgentRequestLedgerRecord | undefined {
     const row = this.database.prepare(`
       SELECT record_json FROM agent_request_ledger WHERE request_key = ?
     `).get(keyString(key)) as { record_json: string } | undefined
     return row ? JSON.parse(row.record_json) as AgentRequestLedgerRecord : undefined
+  }
+
+  private readTombstoneSync(key: AgentRequestKey): {
+    readonly digest: string
+    readonly record: AgentRequestLedgerRecord
+  } | undefined {
+    const row = this.database.prepare(`
+      SELECT digest, key_json, pruned_at FROM agent_request_tombstones WHERE request_key = ?
+    `).get(keyString(key)) as { digest: string; key_json: string; pruned_at: number } | undefined
+    if (!row) return undefined
+    return {
+      digest: row.digest,
+      record: {
+        key: JSON.parse(row.key_json) as AgentRequestKey,
+        digest: row.digest,
+        state: 'outcome-unknown',
+        error: {
+          code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+          message: 'request result expired from the retention window',
+        },
+        updatedAt: row.pruned_at,
+      },
+    }
+  }
+
+  private pruneExpiredTerminalRows(now: number): void {
+    if (this.retentionMs === undefined) return
+    const cutoff = now - this.retentionMs
+    const placeholders = TERMINAL_STATES.map(() => '?').join(', ')
+    this.database.prepare(`
+      INSERT OR IGNORE INTO agent_request_tombstones (request_key, digest, key_json, pruned_at)
+      SELECT request_key, digest, json_extract(record_json, '$.key'), ?
+      FROM agent_request_ledger
+      WHERE state IN (${placeholders}) AND updated_at < ?
+    `).run(now, ...TERMINAL_STATES, cutoff)
+    this.database.prepare(`
+      DELETE FROM agent_request_ledger
+      WHERE state IN (${placeholders}) AND updated_at < ?
+        AND EXISTS (
+          SELECT 1 FROM agent_request_tombstones tombstone
+          WHERE tombstone.request_key = agent_request_ledger.request_key
+            AND tombstone.digest = agent_request_ledger.digest
+        )
+    `).run(...TERMINAL_STATES, cutoff)
+  }
+
+  private immediateTransaction<T>(run: () => T): T {
+    this.database.exec('BEGIN IMMEDIATE')
+    try {
+      const result = run()
+      this.database.exec('COMMIT')
+      return result
+    } catch (error) {
+      this.database.exec('ROLLBACK')
+      throw error
+    }
   }
 
   private transition(
@@ -160,7 +270,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     const result = this.database.prepare(`
       UPDATE agent_request_ledger
       SET state = ?, record_json = ?, updated_at = ?
-      WHERE request_key = ? AND digest = ? AND state IN (${placeholders})
+      WHERE request_key = ? AND digest = ? AND state IN (${placeholders}) AND record_json = ?
     `).run(
       next.state,
       JSON.stringify(next),
@@ -168,6 +278,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       keyString(key),
       current.digest,
       ...expectedStates,
+      JSON.stringify(current),
     )
     if (result.changes !== 1) conflict('request ledger transition lost its compare-and-swap race')
   }

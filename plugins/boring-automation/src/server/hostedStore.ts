@@ -30,6 +30,7 @@ export function createLeaseBoundHostedAutomationStore(
           agentTypeId,
           context: actor,
           requestId: randomUUID(),
+          fundingPolicy: 'api-key-only',
           ...(request ? { request } : {}),
         }, async ({ workspace }) => {
           const store = new PostgresAutomationStore(sql, actor, undefined, workspace)

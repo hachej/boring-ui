@@ -159,7 +159,7 @@ describe('agent-playground AgentGateway reference composition', () => {
     expect(addressed.json()).toEqual([{
       agentTypeId: PLAYGROUND_AGENT_TYPE_ID,
       label: 'Playground Agent',
-      definition: { version: '1', digest: expect.any(String) },
+      definition: { version: '1' },
     }])
     expect(runtime.app.hasRoute({
       method: 'POST',
