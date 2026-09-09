@@ -141,7 +141,8 @@ function createVaultCredentialStoreBackendInternalV1(
     || typeof options.versionAnchor.readPendingMutation !== 'function'
     || typeof options.versionAnchor.recoverPendingMutation !== 'function'
     || typeof options.versionAnchor.withRecoverableMutation !== 'function'
-    || options.versionAnchor.withRecoverableMutation === options.versionAnchor.withMutation
+    || (options.versionAnchor.withRecoverableMutation as unknown)
+      === options.versionAnchor.withMutation
   ) {
     notConfigured('Credential vault backend is misconfigured')
   }
