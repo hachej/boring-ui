@@ -196,8 +196,16 @@ function createVaultCredentialStoreBackendInternalV1(
         authTag: Buffer.from(envelope.authTag).toString('base64'),
         aadContext: Buffer.from(envelope.aadContext).toString('base64'),
       }))
+    const canonicalRecord = record
+      ? {
+          credentialId: record.credentialId,
+          credentialVersion: record.credentialVersion,
+          dekGeneration: record.dekGeneration,
+          materialKind: record.materialKind,
+        }
+      : null
     return createHash('sha256').update(JSON.stringify({
-      record: record ?? null,
+      record: canonicalRecord,
       state: state ?? null,
       credentialType: credentialType ?? null,
       fields: encodedFields,
@@ -303,8 +311,8 @@ function createVaultCredentialStoreBackendInternalV1(
           locked.read(workspaceId, providerId, allowedFieldIds), lockOptions)
       }
       // Recovery runs under the same DB workspace lock as normal mutations.
-      // The authenticated external intent decides whether the exact pre-commit
-      // or exact committed DB state is valid; no DB-ahead heuristic is used.
+      // The authenticated external intent advances only for the exact committed
+      // DB state; pre-commit and arbitrary DB-ahead states remain fail-stopped.
       await requireReady()
       await recoverPendingCredentialMutation(workspaceId)
       await requireNotShredded(workspaceId)

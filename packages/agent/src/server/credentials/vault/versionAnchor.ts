@@ -94,7 +94,8 @@ export interface WorkspaceCredentialVersionAnchorV1 {
   readPendingMutation(workspaceId: string): Promise<PendingCredentialVersionMutationV1 | undefined>
   /**
    * Resolves an authenticated pending intent from a digest of the durable DB state.
-   * Only exact pre-commit or exact committed states are accepted.
+   * Only the exact committed state advances automatically. The exact pre-commit
+   * state remains fail-stopped because a DB replay after commit is indistinguishable.
    */
   recoverPendingMutation(workspaceId: string, durableStateDigest: string): Promise<void>
   /** Serializes a persistence inspection with anchor mutations. */
@@ -106,8 +107,8 @@ export interface WorkspaceCredentialVersionAnchorV1 {
    * Holds the external workspace mutation lock through a write-ahead,
    * KEK-authenticated intent, the supplied DB CAS, and anchor finalization.
    * This is a recoverable protocol, not cross-store atomicity: interruption
-   * leaves a signed intent and later recovery accepts only its exact before or
-   * after DB digest; every other state fails closed.
+   * leaves a signed intent. Recovery advances only its exact committed DB
+   * digest; the pre-commit digest and every other state remain fail-closed.
    */
   withMutation<T>(
     workspaceId: string,

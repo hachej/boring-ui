@@ -591,8 +591,12 @@ describe('local-KEK credential version anchor', () => {
     )
 
     const beforeCommit = await createBoundaryFixture('ws-before-commit')
-    const rejectingPersistence: CredentialVaultPersistenceV1 = Object.freeze({
+    let rejectingPersistence!: CredentialVaultPersistenceV1
+    rejectingPersistence = Object.freeze({
       ...beforeCommit.persistence,
+      async withWorkspaceLock(_workspaceId, mutate) {
+        return mutate(rejectingPersistence)
+      },
       async commitCredentialVersion() {
         throw new Error('simulated DB commit failure')
       },
