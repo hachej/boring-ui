@@ -134,16 +134,15 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     expect(agents.find((agent) => agent.agentTypeId === 'boring-worker')).not.toHaveProperty('model')
   })
 
-  test('fails boot with a stable, redacted diagnostic when a canonical skill is unavailable', async () => {
+  test('excludes only the package whose canonical skill is unavailable', async () => {
     fsFailure.skill = 'triage'
     try {
-      const error = await loadBoringFactoryAgents({}).catch((cause: unknown) => cause)
-      expect(error).toMatchObject({
-        name: 'FleetConfigError',
-        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
-        field: 'seats',
-      })
-      expect(String(error)).not.toMatch(/private\/root|SKILL\.md missing/)
+      const agents = await loadBoringFactoryAgents({})
+      expect(agents.map((agent) => agent.agentTypeId)).toEqual([
+        'default',
+        'boring-orchestrator',
+        'boring-worker',
+      ])
     } finally {
       fsFailure.skill = ''
     }
