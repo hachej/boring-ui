@@ -335,23 +335,38 @@ describe('local-KEK credential version anchor', () => {
       .not.toMatchTypeOf<WorkspaceCredentialVersionAnchorV2>()
 
     const recoverable = createInMemoryCredentialVersionAnchorV1()
-    const { withRecoverableMutation: _recoverableMutation, ...legacyOnly } = recoverable
+    const {
+      contractVersion: _contractVersion,
+      withRecoverableMutation: _recoverableMutation,
+      ...legacyOnly
+    } = recoverable
     expectTypeOf(legacyOnly).toMatchTypeOf<WorkspaceCredentialVersionAnchorV1>()
+    const legacyAlias = {
+      ...recoverable,
+      withRecoverableMutation: recoverable.withMutation,
+    }
     const acceptVaultOptions = (_options: VaultCredentialStoreOptionsV1) => undefined
     if (false) {
       // @ts-expect-error A nominal V1 anchor cannot satisfy the V2 vault seam.
       acceptVaultOptions({ versionAnchor: legacyOnly })
+      // @ts-expect-error A legacy mutation callback cannot masquerade as deferred commit.
+      acceptVaultOptions({ versionAnchor: legacyAlias })
     }
 
-    expect(() => createVaultCredentialStoreBackendV1({
+    const commonOptions = {
       persistence: createInMemoryCredentialVaultPersistenceV1(),
       kmsBackend: createLocalKekWorkspaceKekProviderV1({
         keyRef: 'test-key',
         keyVersion: 1,
         loadKek: async () => new Uint8Array(32).fill(1),
       }),
-      versionAnchor: legacyOnly as WorkspaceCredentialVersionAnchorV2,
-    })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
+    }
+    for (const invalidAnchor of [legacyOnly, legacyAlias]) {
+      expect(() => createVaultCredentialStoreBackendV1({
+        ...commonOptions,
+        versionAnchor: invalidAnchor as WorkspaceCredentialVersionAnchorV2,
+      })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
+    }
   })
   test('serializes provider-list inspections with anchor mutations', async () => {
     const anchor = createInMemoryCredentialVersionAnchorV1()

@@ -137,9 +137,11 @@ function createVaultCredentialStoreBackendInternalV1(
     || options.kmsBackend.contractVersion !== 'boring.workspace-kek-provider.v1'
     || !options.persistence
     || !options.versionAnchor
+    || options.versionAnchor.contractVersion !== 'boring.workspace-credential-version-anchor.v2'
     || typeof options.versionAnchor.readPendingMutation !== 'function'
     || typeof options.versionAnchor.recoverPendingMutation !== 'function'
     || typeof options.versionAnchor.withRecoverableMutation !== 'function'
+    || options.versionAnchor.withRecoverableMutation === options.versionAnchor.withMutation
   ) {
     notConfigured('Credential vault backend is misconfigured')
   }

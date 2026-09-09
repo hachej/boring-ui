@@ -156,6 +156,7 @@ export interface WorkspaceCredentialVersionAnchorV1 {
 
 /** Recovery-capable authority required by the durable vault backend. */
 export interface WorkspaceCredentialVersionAnchorV2 extends WorkspaceCredentialVersionAnchorV1 {
+  readonly contractVersion: 'boring.workspace-credential-version-anchor.v2'
   readPendingMutation(
     workspaceId: string,
     options?: CredentialVersionAnchorReadOptionsV1,
@@ -545,6 +546,7 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
   let state = emptyState()
   let queue = Promise.resolve()
   const anchor: WorkspaceCredentialVersionAnchorV2 = {
+    contractVersion: 'boring.workspace-credential-version-anchor.v2',
     async read(workspaceId: string) {
       await queue
       return copyWorkspaceState(state, workspaceId)
@@ -923,6 +925,7 @@ export function createLocalFileCredentialVersionAnchorV1(
   options: LocalCredentialVersionAnchorOptionsV1,
 ): WorkspaceCredentialVersionAnchorV2 {
   const anchor: WorkspaceCredentialVersionAnchorV2 = {
+    contractVersion: 'boring.workspace-credential-version-anchor.v2',
     async read(workspaceId: string, readOptions?: CredentialVersionAnchorReadOptionsV1) {
       const state = readOptions
         ? await readSealedState(options, readOptions)
