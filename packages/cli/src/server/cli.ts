@@ -139,13 +139,12 @@ const AUTH_GUIDE = [
   "",
 ].join("\n")
 
-async function checkAuth(): Promise<number> {
+export async function checkAuth(): Promise<number> {
   // Keep pi-coding-agent out of the CLI's top-level module graph so help and
   // workspace-management commands stay lightweight.
-  const { AuthStorage, ModelRegistry } = await import("@mariozechner/pi-coding-agent")
-  const authStorage = AuthStorage.create()
-  const registry = ModelRegistry.create(authStorage)
-  return registry.getAvailable().length
+  const { ModelRuntime } = await import("@mariozechner/pi-coding-agent")
+  const modelRuntime = await ModelRuntime.create()
+  return modelRuntime.getAvailableSnapshot().length
 }
 
 function isLoopbackHost(host: string): boolean {
@@ -412,6 +411,15 @@ async function handleAgentCommand(argv: string[]) {
   }
 }
 
+export function readLiveTranscriptServiceEnvironment(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    refineUrl: env.BORING_LIVE_TRANSCRIPTS_REFINE_URL,
+    refineBearerToken: env.BORING_LIVE_TRANSCRIPTS_REFINE_BEARER_TOKEN,
+    audioRecordingDirectory: env.BORING_LIVE_TRANSCRIPTS_RECORDING_DIRECTORY,
+    audioRecordingFfmpegPath: env.BORING_LIVE_TRANSCRIPTS_FFMPEG_PATH,
+  }
+}
+
 async function startFolderMode(opts: {
   folderArg?: string
   publicDir: string
@@ -461,6 +469,7 @@ async function startFolderMode(opts: {
         : undefined,
       lifecycleUrl: process.env.BORING_LIVE_TRANSCRIPTS_LIFECYCLE_URL,
       lifecycleBearerToken: process.env.BORING_LIVE_TRANSCRIPTS_LIFECYCLE_BEARER_TOKEN,
+      ...readLiveTranscriptServiceEnvironment(),
     },
   })
 

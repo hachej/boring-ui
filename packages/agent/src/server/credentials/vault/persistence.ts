@@ -1,4 +1,5 @@
-import type { ProviderId } from '../../../shared/credentials'
+import type { CredentialLifecycleStateV1, ProviderId } from '../../../shared/credentials'
+export type { CredentialLifecycleStateV1 } from '../../../shared/credentials'
 import type {
   CredentialEnvelopeV1,
   WrappedWorkspaceDekV1,
@@ -13,12 +14,24 @@ import type {
  * `workspace_credential_keys` -> wrapped DEK,
  * `workspace_provider_credential_fields` -> field envelope.
  *
- * The Postgres implementation (schema + migration + backend selector) is a
- * later pass and deliberately out of scope for bead 16f.2. Only ciphertext,
- * nonce, tag and persisted AAD cross this port — never plaintext, never a KEK.
+ * S1 supplies both in-memory and Postgres implementations. Only ciphertext,
+ * nonce, tag, persisted AAD, and metadata-only tombstones cross this port —
+ * never plaintext, never a KEK.
  */
 
 export type CredentialMaterialKindV1 = 'field-set' | 'none'
+
+/** Metadata-only projection. Secret envelopes are deliberately unreachable here. */
+export interface StoredCredentialMetadataV1 {
+  readonly providerId: ProviderId
+  readonly displayLabel: string
+  readonly credentialType: string
+  readonly state: CredentialLifecycleStateV1
+  readonly credentialVersion: number
+  readonly maskedLastFourSuffix?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
 
 export interface StoredCredentialRecordV1 {
   /** Stable per-(workspace, provider) credential identity, bound into AAD. */
@@ -32,10 +45,91 @@ export interface CredentialFieldKeyV1 {
   readonly workspaceId: string
   readonly providerId: ProviderId
   readonly credentialVersion: number
+  /** Required when persisting a live envelope; omitted for keyed reads. */
+  readonly dekGeneration?: number
   readonly fieldId: string
 }
 
+export type CredentialFieldDeletionReasonV1 =
+  | 'superseded-version'
+  | 'credential-tombstone'
+  | 'crypto-shred'
+
+export interface WorkspaceDekRotationStateV1 {
+  /** Caller-stable idempotency key. A retry must present the same operation id. */
+  readonly operationId: string
+  readonly sourceGeneration: number
+  readonly targetGeneration: number
+  readonly phase: 'reencrypting' | 'verified' | 'anchor-advanced'
+}
+
+export interface WorkspaceDekRotationReceiptV1 {
+  readonly operationId: string
+  readonly sourceGeneration: number
+  readonly targetGeneration: number
+}
+
+export interface WorkspaceCredentialRecordV1 {
+  readonly providerId: ProviderId
+  readonly record: StoredCredentialRecordV1
+}
+
+export interface CommitDekRotationRecordInputV1 {
+  readonly workspaceId: string
+  readonly providerId: ProviderId
+  readonly expectedCredentialVersion: number
+  readonly sourceGeneration: number
+  readonly targetGeneration: number
+  readonly fields: ReadonlyMap<string, CredentialEnvelopeV1>
+}
+
+export interface CredentialFieldTombstoneV1 {
+  readonly deletedAt: string
+  readonly reason: CredentialFieldDeletionReasonV1
+}
+
+export interface CommitCredentialVersionInputV1 {
+  readonly workspaceId: string
+  readonly providerId: ProviderId
+  readonly expectedCredentialVersion: number
+  readonly record: StoredCredentialRecordV1
+  readonly fields: ReadonlyMap<string, CredentialEnvelopeV1>
+  readonly supersededFieldsTombstone?: CredentialFieldTombstoneV1
+}
+
+export interface WorkspaceCredentialLockOptionsV1 {
+  /** Cancels only while waiting to acquire the lock; a running mutation is never interrupted. */
+  readonly signal?: AbortSignal
+  /** Absolute Unix timestamp in milliseconds by which lock acquisition must finish. */
+  readonly deadlineMs?: number
+  /** Relative acquisition bound. The earliest of this and deadlineMs wins. */
+  readonly timeoutMs?: number
+}
+
 export interface CredentialVaultPersistenceV1 {
+  /** Serializes workspace-wide lifecycle mutations and supplies a scoped adapter. */
+  withWorkspaceLock<T>(
+    workspaceId: string,
+    mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+    options?: WorkspaceCredentialLockOptionsV1,
+  ): Promise<T>
+  getCredentialMetadata(
+    workspaceId: string,
+    providerId: ProviderId,
+  ): Promise<StoredCredentialMetadataV1 | undefined>
+  listCredentialMetadata(workspaceId: string): Promise<readonly StoredCredentialMetadataV1[]>
+  /** True when any credential row, key, field/tombstone, rotation, or shred fence remains. */
+  hasWorkspaceCredentialArtifacts(workspaceId: string): Promise<boolean>
+  updateCredentialMetadata(
+    workspaceId: string,
+    providerId: ProviderId,
+    update: Readonly<{
+      state: CredentialLifecycleStateV1
+      displayLabel?: string
+      credentialType?: string
+      maskedLastFourSuffix?: string | null
+    }>,
+  ): Promise<StoredCredentialMetadataV1>
   getCredentialRecord(
     workspaceId: string,
     providerId: ProviderId,
@@ -45,6 +139,8 @@ export interface CredentialVaultPersistenceV1 {
     providerId: ProviderId,
     record: StoredCredentialRecordV1,
   ): Promise<void>
+  /** Atomically CASes the record, fields, and superseded-version tombstones. */
+  commitCredentialVersion(input: CommitCredentialVersionInputV1): Promise<void>
   getWrappedDek(
     workspaceId: string,
     dekGeneration: number,
@@ -54,9 +150,40 @@ export interface CredentialVaultPersistenceV1 {
     dekGeneration: number,
     wrapped: WrappedWorkspaceDekV1,
   ): Promise<void>
+  deleteWrappedDek(workspaceId: string, dekGeneration: number): Promise<void>
+  listCredentialRecords(workspaceId: string): Promise<readonly WorkspaceCredentialRecordV1[]>
+  listFields(
+    workspaceId: string,
+    providerId: ProviderId,
+    credentialVersion: number,
+  ): Promise<ReadonlyMap<string, CredentialEnvelopeV1>>
+  /** Atomically replaces one current record's envelopes during DEK rotation. */
+  commitDekRotationRecord(input: CommitDekRotationRecordInputV1): Promise<void>
+  getDekRotationState(workspaceId: string): Promise<WorkspaceDekRotationStateV1 | undefined>
+  putDekRotationState(workspaceId: string, state: WorkspaceDekRotationStateV1): Promise<void>
+  getDekRotationReceipt(
+    workspaceId: string,
+    operationId: string,
+  ): Promise<WorkspaceDekRotationReceiptV1 | undefined>
+  /** Atomically destroys N, clears the active marker, and records the idempotency receipt. */
+  finalizeDekRotation(workspaceId: string, state: WorkspaceDekRotationStateV1): Promise<void>
+  clearDekRotationState(workspaceId: string): Promise<void>
+  isWorkspaceCryptoShredded(workspaceId: string): Promise<boolean>
+  /** Atomically tombstones ciphertext, destroys wrapped DEKs, and records the shred fence. */
+  cryptoShredWorkspace(workspaceId: string, shreddedAt: string): Promise<void>
   getField(key: CredentialFieldKeyV1): Promise<CredentialEnvelopeV1 | undefined>
   putField(
     key: CredentialFieldKeyV1,
     envelope: CredentialEnvelopeV1,
   ): Promise<void>
+  /** Deletes ciphertext and retains metadata-only tombstones for every field. */
+  tombstoneCredentialVersionFields(
+    workspaceId: string,
+    providerId: ProviderId,
+    credentialVersion: number,
+    tombstone: CredentialFieldTombstoneV1,
+  ): Promise<void>
+  getFieldTombstone(
+    key: CredentialFieldKeyV1,
+  ): Promise<CredentialFieldTombstoneV1 | undefined>
 }

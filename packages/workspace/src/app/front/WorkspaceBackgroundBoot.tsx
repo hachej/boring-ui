@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import {
   DEFAULT_BOOT_PRELOAD_PATHS,
+  errorCodeFromPayload,
   errorMessageFromPayload,
   isReadyStatusPath,
   parseReadyStatusSse,
@@ -10,6 +11,7 @@ import {
   readyStatusSupportsWorkspaceUse,
   resolveBootPreloadPaths,
   seedTreePreloadFromBody,
+  WorkspaceBootError,
   workspaceRequestHeaders,
   type ReadyStatusWarmupSnapshot,
   type WorkspaceRuntimeDependenciesWarmupStatus,
@@ -152,7 +154,10 @@ async function fetchWarmupPath({
     if (!response.ok) {
       const preparing = parseRetryableWarmupPreparing(payload)
       if (preparing) return { status: "preparing", ...preparing }
-      throw new Error(errorMessageFromPayload(payload) ?? `${path} failed with ${response.status}`)
+      throw new WorkspaceBootError(
+        errorMessageFromPayload(payload) ?? `${path} failed with ${response.status}`,
+        errorCodeFromPayload(payload) ?? undefined,
+      )
     }
 
     if (payload && typeof payload === "object") {
@@ -234,6 +239,7 @@ export function WorkspaceBackgroundBoot({
         onStatusChange?.({
           status: "failed",
           message: error instanceof Error ? error.message : "Workspace failed to prepare",
+          ...(error instanceof WorkspaceBootError && error.code ? { code: error.code } : {}),
         })
       }
     }

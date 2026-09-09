@@ -11,12 +11,14 @@ import { PROVIDER_CONTRACT_VERSION } from "./providerMatrix";
 export type ExtractedSandboxProviderIdV1 =
   | "direct"
   | "bwrap"
+  | "blaxel"
   | "vercel-sandbox"
   | "remote-worker";
 
 export type SandboxRuntimeModeIdV1 =
   | "direct"
   | "local"
+  | "blaxel"
   | "vercel-sandbox"
   | "remote-worker";
 
@@ -36,6 +38,19 @@ export interface SandboxProviderCreateContextV1 {
 
 export interface SandboxProviderInvalidateContextV1 {
   workspaceId: string;
+}
+
+export interface SandboxRuntimeProjectionRequestV1 {
+  /** Host-only pair-local endpoint. Never expose this request to plugins or clients. */
+  port: number;
+  path?: string;
+}
+
+export interface SandboxRuntimeProjectionLeaseV1 {
+  /** Sealed upstream consumed only by the same-origin Host broker. */
+  readonly url: string;
+  readonly expiresAt: string;
+  revoke(): Promise<void>;
 }
 
 export type SandboxPairHealthV1 =
@@ -89,8 +104,24 @@ export type WorkspaceSandboxPairV1 = Readonly<{
   sandbox: Sandbox;
   provisioning?: SandboxProvisioningOperationsV1;
   checkHealth?(): Promise<SandboxPairHealthV1>;
+  /** Pair-owned projection authority; disposal fences all future leases. */
+  createRuntimeProjection?(
+    request: SandboxRuntimeProjectionRequestV1,
+  ): Promise<SandboxRuntimeProjectionLeaseV1>;
   dispose(): Promise<void>;
 }>;
+
+export interface SandboxProviderCreateCleanupDebtV1 {
+  readonly sandboxProviderCleanupDebt: Readonly<{ retry(): Promise<void> }>;
+}
+
+export function attachSandboxProviderCleanupDebt<T extends Error>(error: T, retry: () => Promise<void>): T {
+  Object.defineProperty(error, "sandboxProviderCleanupDebt", { value: Object.freeze({ retry }) });
+  return error;
+}
+
+export const DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 =
+  'boring-sandbox.disposable-provider.v1' as const;
 
 export interface SandboxProviderV1 {
   readonly contractVersion: typeof PROVIDER_CONTRACT_VERSION;
@@ -104,6 +135,33 @@ export interface SandboxProviderV1 {
     context: SandboxProviderInvalidateContextV1,
   ): Promise<void> | void;
   close?(): Promise<void>;
+}
+
+/** Host-only refinement required by mutable lease composition. */
+export interface DisposableSandboxProviderProfileV1 {
+  readonly contractVersion: typeof DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1;
+  readonly resume: false;
+  readonly publishedCleanupOwner: 'returned-pair';
+  readonly ambiguousCreate: 'correlated-reconciliation';
+  readonly providerConfigDigest: `sha256:${string}`;
+}
+
+export interface DisposableSandboxProviderV1 extends SandboxProviderV1 {
+  readonly disposableProfile: DisposableSandboxProviderProfileV1;
+}
+
+export function isDisposableSandboxProviderV1(
+  provider: SandboxProviderV1,
+): provider is DisposableSandboxProviderV1 {
+  const profile = (provider as Partial<DisposableSandboxProviderV1>).disposableProfile;
+  if (
+    profile?.contractVersion !== DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 ||
+    profile.resume !== false ||
+    profile.publishedCleanupOwner !== 'returned-pair' ||
+    profile.ambiguousCreate !== 'correlated-reconciliation' ||
+    !/^sha256:[a-f0-9]{64}$/.test(profile.providerConfigDigest)
+  ) return false;
+  return true;
 }
 
 export class SandboxProviderError extends Error {

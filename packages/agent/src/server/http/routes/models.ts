@@ -19,12 +19,11 @@
  * available}, never any key material.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import {
   readConfiguredDefaultModel,
-  registerConfiguredModelProviders,
   type AgentModelSelection,
 } from '../../models/modelConfig.js'
+import { createConfiguredModelRuntime } from '../../models/modelRuntime.js'
 
 export interface ModelSummary {
   provider: string
@@ -58,35 +57,32 @@ export interface ModelsRoutesOptions {
   ) => ModelFilterResult | Promise<ModelFilterResult>
 }
 
-export function modelsRoutes(
+export async function modelsRoutes(
   app: FastifyInstance,
   opts: ModelsRoutesOptions,
-  done: (err?: Error) => void,
-): void {
-  // Build one registry per process — reads env + ~/.pi/agent/auth.json.
-  // Cached so repeated GETs don't re-scan auth every request.
-  const authStorage = AuthStorage.create()
-  const registry = ModelRegistry.create(authStorage)
-  const configuredModels = registerConfiguredModelProviders(registry)
+): Promise<void> {
+  // Build one runtime per plugin registration — reads env +
+  // ~/.pi/agent/auth.json. Cached so repeated GETs don't re-scan auth.
+  const { modelRuntime, configuredModels } = await createConfiguredModelRuntime()
   const configuredModelSet = new Set(
     configuredModels.map((model) => `${model.provider}:${model.id}`),
   )
   app.get(opts.path ?? '/api/v1/agents/:agentTypeId/models', async (request, reply) => {
     await opts.authorizeRequest?.(request)
-    const availableModels = registry.getAvailable()
+    const availableModels = modelRuntime.getAvailableSnapshot()
     const availableSet = new Set(
       availableModels.map((m) => `${m.provider}:${m.id}`),
     )
     const allModels = configuredModelSet.size > 0
-      ? registry.getAll().filter((m) => configuredModelSet.has(`${m.provider}:${m.id}`))
-      : registry.getAll()
+      ? modelRuntime.getModels().filter((m) => configuredModelSet.has(`${m.provider}:${m.id}`))
+      : modelRuntime.getModels()
     const models: ModelSummary[] = allModels.map((m) => ({
       provider: m.provider,
       id: m.id,
       label: (m as unknown as { label?: string }).label ?? m.id,
       // Keep this endpoint cheap: it is fetched on chat mount, so it must never
-      // block workspace load on deep provider auth resolution. ModelRegistry's
-      // available set is already derived from configured auth sources. When
+      // block workspace load on deep provider auth resolution. ModelRuntime's
+      // available snapshot is already derived from configured auth sources. When
       // hosts configure launch/custom providers, those configured models are an
       // allowlist: do not leak the built-in registry's unavailable catalog.
       available: availableSet.has(`${m.provider}:${m.id}`),
@@ -121,5 +117,4 @@ export function modelsRoutes(
     return reply.code(200).send(payload)
   })
 
-  done()
 }

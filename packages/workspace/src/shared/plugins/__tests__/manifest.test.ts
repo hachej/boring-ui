@@ -89,6 +89,46 @@ describe("validateBoringPluginManifest", () => {
     }
   })
 
+  it("accepts boring.agent packages and the bare-name/package-path pi.skills grammar", () => {
+    const result = validateBoringPluginManifest({
+      name: "persona-plugin",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "persona-plugin",
+          version: "1.0.0",
+          label: "Persona",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: ["shared-skill", "skills/local"] },
+    })
+
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.packageJson.boring?.agent?.definitionId).toBe("persona-plugin")
+      expect(result.packageJson.pi?.skills).toEqual(["shared-skill", "skills/local"])
+    }
+  })
+
+  it("rejects invalid boring.agent fields and unsafe path-form skills", () => {
+    const result = validateBoringPluginManifest({
+      boring: {
+        agent: { definitionId: "Bad Agent", version: "", instructionsRef: "../instructions.md" },
+      },
+      pi: { skills: ["skills/../escape"] },
+    })
+
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ field: "boring.agent.definitionId" }),
+        expect.objectContaining({ field: "boring.agent.instructionsRef" }),
+        expect.objectContaining({ field: "pi.skills[0]" }),
+      ]))
+    }
+  })
+
   it("accepts one package with both pi and boring namespaces", () => {
     const result = validateBoringPluginManifest({
       name: "boring-plugin-full-stack",

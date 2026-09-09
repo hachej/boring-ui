@@ -105,6 +105,10 @@ Authoring:
   and key algorithms. Code and tests cite it as `Per PLUGIN_SYSTEM.md §X`, so its
   section numbering is stable.
 
+- [`URL_PANE.md`](./URL_PANE.md) — the built-in live-demo pane: how an agent
+  opens it, its origin allowlist and sandbox rules, and how it pairs with the
+  HTML viewer for the two-artifact worker handoff.
+
 Boundaries / contracts:
 - [`INTERFACES.md`](./INTERFACES.md) — package boundaries, core contracts, and
   ownership rules across `src/front`, `src/server`, `src/shared`, `src/plugins`,

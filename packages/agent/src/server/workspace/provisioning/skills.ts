@@ -41,6 +41,10 @@ export async function mirrorPluginSkills(options: {
 }): Promise<MirrorPluginSkillsResult> {
   await options.adapter.workspaceFs.rm(GENERATED_SKILLS_REL)
   await options.adapter.workspaceFs.mkdir(GENERATED_SKILLS_REL)
+  // This path is user-owned: create it when absent, but never prune or replace
+  // it. Besides making the supported authoring location immediately writable,
+  // this keeps Pi reload diagnostics from reporting the optional path missing.
+  await options.adapter.workspaceFs.mkdir(USER_SKILLS_REL)
 
   const seen = new Set<string>()
   let copiedSkillCount = 0

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gh-1355 · Persistent multi-project agent Console</title>
+<style>
+:root{color-scheme:light dark;--bg:#f3f5f8;--card:#fff;--ink:#172033;--muted:#647084;--line:#d9dee8;--blue:#2456d6;--green:#137a52;--amber:#916500;--red:#b42318} @media(prefers-color-scheme:dark){:root{--bg:#0f131b;--card:#181e29;--ink:#eef3fa;--muted:#a9b4c5;--line:#303a4b;--blue:#8cadff;--green:#65d7a5;--amber:#efc75f;--red:#ff8c84}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:1080px;margin:auto;padding:20px}.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #0000000d}.hero{padding:22px 24px;border-top:5px solid var(--blue)}.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.09em}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}h1{font-size:clamp(25px,4vw,39px);line-height:1.12;margin:6px 0}.pill{padding:4px 9px;border-radius:999px;background:#fff0c7;color:#6b4900;font-weight:700;font-size:12px}.meta,.small{color:var(--muted)}.tldr{font-size:18px;max-width:900px}.card{padding:20px 22px;margin-top:16px}h2{margin:0 0 12px;font-size:21px}table{border-collapse:collapse;width:100%;display:block;overflow:auto}th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}th{background:color-mix(in srgb,var(--blue) 8%,var(--card))}.two td{width:50%}ul{margin:5px 0;padding-left:20px}code{background:color-mix(in srgb,var(--muted) 13%,transparent);padding:2px 5px;border-radius:5px}.mermaid{white-space:pre-wrap;background:color-mix(in srgb,var(--blue) 5%,var(--card));border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font:13px/1.45 ui-monospace,SFMono-Regular,monospace}.low{background:color-mix(in srgb,var(--green) 14%,var(--card))}.med{background:color-mix(in srgb,var(--amber) 15%,var(--card))}.high{background:color-mix(in srgb,var(--red) 14%,var(--card))}.callout{border-left:4px solid var(--blue);padding:4px 0 4px 14px}.review{border-left:4px solid var(--amber);padding-left:14px}a{color:var(--blue)}
+</style></head><body><main class="wrap">
+<header class="hero"><div class="eyebrow">Gate 1 · Architecture plan approval</div><div class="row"><h1>Persistent multi-project agent Console</h1><span class="pill">OWNER DECISION</span></div><p class="tldr">Keep one authorized Console mounted across Projects, Agents, Threads, Tasks, Inbox, and Automations—without turning Project into authority or booting inactive runtimes.</p><div class="meta">Steward · 21 Aug 2026 · Epic gh-1355 · Bead wt-391-forward-gh-1355-persistent-console-q9ba.1</div></header>
+<section class="card"><h2>Proposed architecture</h2><pre class="mermaid">flowchart TB
+  Principal[Authenticated principal] --> Console[Persistent Console shell]
+  Console --> Catalog[Cold authorized catalog]
+  Catalog --> W[Workspace registry]
+  Catalog --> S[Seats / Agents]
+  Catalog --> T[SessionCatalog / Threads]
+  Catalog --> P[Personal ConsoleCollection assignments\nUI label: Project]
+  Console --> Global[Tasks · Inbox · Automations projections]
+  Console --> Active{Explicitly activate?}
+  Active -->|No| Cold[Keep inactive Workspaces as DTOs]
+  Active -->|Yes| Workbench[Mount one active Workspace projection]
+  Workbench --> Authority[Reauthorize effect at origin Workspace]
+  P -. organization only .-> T
+  classDef changed fill:#dbe7ff,stroke:#2456d6,color:#172033;
+  class Console,Catalog,P,Global changed;</pre><div class="callout"><strong>Boundary:</strong> canonical Workspace still owns Seats, Threads, Mounts, shared state, and artifacts. The internal ConsoleCollection is personal host/control-plane saved navigation metadata, displayed as Project and explicitly not ported as a V2 noun. It has no grants, runtime, cwd, credentials, or origin-record ownership.</div></section>
+<section class="card"><h2>Goals / Non-goals</h2><table class="two"><tr><th>Goals</th><th>Non-goals</th></tr><tr><td><ul><li>One persistent CLI and hosted Console contract</li><li>Server-side authorized global inventory</li><li>Project/Agent/Task/flat organization modes</li><li>Organizational Session assignment and movement</li><li>Per-target Automation authorization and Runs</li></ul></td><td><ul><li>No new V2 kernel noun</li><li>No cross-Workspace Thread migration</li><li>No canonical Task database</li><li>No caller-selected runtime/credentials</li><li>No all-Workspace runtime prewarm</li></ul></td></tr></table></section>
+<section class="card"><h2>Ratified ontology fit</h2><table><tr><th>Frozen noun</th><th>Console treatment</th></tr><tr><td>Workspace</td><td>Durable governed world and Thread owner; never renamed Product Workspace.</td></tr><tr><td>Agent / Seat</td><td>Agent remains independent; Seat carries Workspace grants and participation.</td></tr><tr><td>Thread = Session</td><td>One record, many Runs. Console stores a scope-safe reference, not another Session.</td></tr><tr><td>Run = RequestKey</td><td>Each target dispatch uses the host-admitted identity; no Console UUID.</td></tr><tr><td>Authority / Mount</td><td>Reauthorized at origin; ConsoleCollection never grants access and is not a Mount.</td></tr><tr><td>Product</td><td>Remains deferred packaging; not used as an organization or Project parent.</td></tr></table></section>
+<section class="card"><h2>Collection assignment and effect flow</h2><pre class="mermaid">sequenceDiagram
+  actor Human
+  participant C as Console
+  participant Cat as Catalog/assignment service
+  participant O as Origin Workspace authority
+  participant R as Runtime/Thread record
+  Human->>C: Move Session to Project-labelled collection B
+  C->>Cat: assign(projectB, scopedThreadRef)
+  Cat->>O: reauthorize visibility of Thread ref
+  O-->>Cat: authorized
+  Cat-->>C: assignment changed
+  Note over R: Workspace, Agent/Seat, cwd, transcript, runtime binding unchanged
+  Human->>C: Trigger target Automation
+  C->>O: authorize target Workspace + Seat
+  O->>R: create Thread and admit Run=RequestKey
+  R-->>C: independent target receipt/status</pre></section>
+<section class="card"><h2>Decisions requested</h2><table><tr><th>Decision</th><th>Options</th><th>Recommended</th><th>Why</th></tr><tr><td>Project label</td><td>Workspace alias / kernel noun / compatibility collection</td><td>Personal host-owned <code>ConsoleCollection</code>, displayed as Project</td><td>Allows organizational movement without making Project a thirteenth V2 noun or authority owner.</td></tr><tr><td>Hosted ownership</td><td>Invent organization boundary / current personal authority</td><td>Server-derived <code>(appId, principalId)</code></td><td>Matches current Core; organization-shared collections wait for real identity/roles.</td></tr><tr><td>Move semantics</td><td>Rebind authority / copy transcript / collection assignment</td><td>CAS-protected assignment only</td><td>Preserves Workspace, Seat, cwd, runtime, record, Runs, and links.</td></tr><tr><td>Automation fan-out</td><td>New central definition / child references</td><td>Non-executable group over canonical Workspace child definitions</td><td>Prompts and execution truth stay Workspace-owned; each target has deterministic identity and independent authority.</td></tr><tr><td>Rollout</td><td>Global flag framework / host capability</td><td>Injected provider capability</td><td>Additive composition and clean rollback to existing Workspace-scoped behavior.</td></tr></table></section>
+<section class="card"><h2>Bead dependency graph</h2><pre class="mermaid">graph LR
+  G[.1 Owner approval] --> C0[.2 Vocabulary + DTOs]
+  C0 --> C1[.3 Cold CLI catalog]
+  C1 --> AS[.5 CLI collection store]
+  AS --> SH[.4 Persistent shell]
+  SH --> T[.6 Task projection] --> TR[.16 CLI Task routes] --> TU[.14 By Task UI]
+  AS --> I[.13 Intention adapter] --> IR[.17 CLI Intention routes] --> IU[.15 Inbox UI]
+  TR --> IR
+  SH --> IU
+  AS --> A[.7 AutomationGroup store] --> AE[.9 Sole local + hosted scheduler] --> AR[.18 CLI Group routes] --> AU[.10 UI]
+  IR --> AR
+  SH --> AU
+  AS --> H[.8 Hosted store] --> HR[.11 Hosted catalog routes] --> HD[.19 Hosted domain routes] --> HC[.12 Full-app + reconcile]
+  C0 --> MS[.20 Metadata-only scanner] --> HC
+  AR --> HD
+  T --> HD
+  I --> HD
+  AE --> HD
+  SH --> HC
+  classDef gate fill:#fff0c7,stroke:#916500,color:#172033;
+  classDef tracer fill:#dbe7ff,stroke:#2456d6,color:#172033;
+  class G gate; class C0,C1,AS,SH tracer;</pre><p class="small"><code>br dep cycles</code>: no cycles. Twenty Definition-of-Ready beads separate domain adapters, CLI/Core host routes, UI, local+hosted scheduling, metadata scanner, stores, and full-app composition with exact package commands.</p></section>
+<section class="card"><h2>Risks</h2><table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr><tr><td>Project label becomes competing Workspace ontology</td><td class="med">Medium</td><td class="high">High</td><td>Compatibility-only ConsoleCollection, explicit non-port ruling, no origin ownership/authority, ratify before implementation.</td></tr><tr><td>Global inventory leaks metadata</td><td class="med">Medium</td><td class="high">High</td><td>Provider filters server-side; every effect reauthorizes origin; cross-membership denial tests.</td></tr><tr><td>Catalog boots runtimes or legacy indexing reads private content</td><td class="high">High today</td><td class="high">High</td><td>Zero-call counters; exported scanner reads only header + contiguous session_info, stops before messages/tools, and leaves title incomplete.</td></tr><tr><td>Move implies authority migration</td><td class="med">Medium</td><td class="high">High</td><td>Assignment-only API; cross-Workspace fork/migration explicitly absent.</td></tr><tr><td>Automation creates competing truth, unions grants, or double-dispatches</td><td class="med">Medium</td><td class="high">High</td><td>Group references canonical children; managed children are excluded from local and hosted due evaluation; one authoritative scheduler and one target Run.</td></tr><tr><td>CLI/hosted stores drift</td><td class="med">Medium</td><td class="med">Medium</td><td>Shared DTO and conformance suite; separate providers remain intentional.</td></tr></table></section>
+<section class="card"><h2>Proof path</h2><table><tr><th>Claim</th><th>Proof</th></tr><tr><td>Cold means cold</td><td>Instrument runtime provisioning, Agent service construction, plugin warmup, due-run service, and executor creation; catalog load leaves all counters at zero.</td></tr><tr><td>Authorization stays local</td><td>Cross-membership and scope-collision tests; every action routes to the origin Workspace and current Authority.</td></tr><tr><td>Move is organizational</td><td>Before/after invariant test over Workspace, Agent/Seat, runtime binding, cwd, transcript ID, active connection, Runs, and Task links.</td></tr><tr><td>Persistent shell</td><td>Component identity/state survives organization and active-Workspace changes; inactive workbench mount count remains zero.</td></tr><tr><td>Plan</td><td><code>docs/issues/1355/plan.md</code> · issue https://github.com/hachej/boring-ui/issues/1355</td></tr></table></section>
+<section class="card"><h2>Adversarial review</h2><div class="review"><p><strong>Fresh-context reviewer:</strong> Sol high. Pass 1: 3 blockers + 6 majors. Pass 2: 3 majors. Pass 3 fallback: 4 majors. Pass 4: CLEAN on the exact revision.</p><p><strong>Pass 1 accepted:</strong> replaced cross-domain ConsoleProject with compatibility-only ConsoleCollection; selected current personal Core authority; preserved Workspace child Automation truth; added assignment integrity/CAS; reordered shell after assignment; specified cold index/backfill and independent cursor bounds; kept Task-link v1 with provider scope; named ask-user as C5 compatibility; split broad concerns into Definition-of-Ready beads with exact commands.</p><p><strong>Pass 2 accepted:</strong> group-managed children are excluded from ordinary due scheduling and one-scheduler conformance is mandatory; legacy indexing allows bounded metadata-prefix parsing while forbidding message/tool bodies; added explicit CLI Task/Intention/Automation host-route beads and a Core domain-route bead before any UI/full-app consumer.</p><p><strong>Pass 3 accepted:</strong> extended scheduler exclusion/tests to hosted due service; added exported metadata-only scanner before reconciliation; removed unsupported approval from ask-user compatibility UI; made Core domain routes depend on the complete CLI route chain.</p><p><strong>Pass 4:</strong> CLEAN after removing the last stale existing-parser/summary-field reconciliation wording; `.12` now depends exclusively on `.20` for metadata scanning.</p><p><strong>Provider note:</strong> required Opus cross-model review was attempted first but blocked by expired Anthropic credentials; configured xAI fallback was absent from the active model registry. The independent fresh-context review is recorded honestly rather than represented as cross-model.</p></div></section>
+<section class="card"><h2>Owner action</h2><p>Approve the four requested decisions, request changes, defer, or reject. Approval unlocks only Slice 0 contracts; it does not authorize implementation to skip per-slice proof/review or merge gates.</p></section>
+</main></body></html>

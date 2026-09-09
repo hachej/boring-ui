@@ -99,6 +99,9 @@ export function resolveCliBoringPluginDirs(
   ]
   const includeDefaultPackages = options.includeDefaultPackages ?? true
   const roots: BoringPluginSourceInput[] = [
+    ...(process.env.BORING_AGENT_FLEET === "1"
+      ? [{ rootDir: resolve(process.cwd(), ".agents", "personas"), kind: "internal" as const }]
+      : []),
     ...(includeDefaultPackages
       ? resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: options.includeFolderModeAutomation }).map((rootDir): BoringPluginSourceInput => ({ rootDir, kind: "internal" }))
       : []),

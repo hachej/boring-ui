@@ -26,6 +26,8 @@ export interface WorkspaceAgentDispatcherDispatchInput extends WorkspaceAgentDis
   clientNonce?: string
   /** Defaults to prompt; follow-up requires a non-negative clientSeq. */
   kind?: 'prompt' | 'followup'
+  /** Server-only atomic admission for durable background prompt delivery. */
+  requireIdle?: true
   clientSeq?: number
 }
 
@@ -54,10 +56,14 @@ export interface LeaseBoundWorkspaceAgent {
   stop(sessionId: string, requestId: string): Promise<StopReceipt>
 }
 
+export type AgentInvocationFundingPolicyV1 = 'personal-subscription' | 'api-key-only'
+
 export interface WorkspaceAgentDirectRunInput {
   readonly agentTypeId: string
   readonly context: WorkspaceAgentDispatcherContext
   readonly requestId: string
+  /** Dispatcher invocations are unattended by contract and can never opt into personal OAuth. */
+  readonly fundingPolicy: 'api-key-only'
 }
 
 export type WorkspaceAgentDirectRunCallback = (

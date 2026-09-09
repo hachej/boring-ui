@@ -1,6 +1,15 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z, type ZodSchema } from "zod";
-import type { UiBridge, UiCommand } from "../../../shared/ui-bridge";
+import type { SequencedUiCommand, UiBridge, UiCommand } from "../../../shared/ui-bridge";
+import { updateUiState } from "../../bridge/updateUiState";
+import { resolveUrlPaneTarget, URL_PANE_PANEL_ID, type UrlPanePolicy } from "../../../shared/urlPane";
+import {
+  LEGACY_URL_PANE_RUNTIME_PREVIEW_PATH,
+  RUNTIME_WEB_VIEW_PREVIEW_PATH,
+  resolveRuntimeWebViewProjection,
+  runtimeWebViewTargetSchema,
+} from "../../../shared/runtimeWebView";
+import { resolveUrlPanePolicyFromEnv } from "../urlPanePolicy";
 import { createPaneRenderStatusStore, type PaneRenderStatusStore } from "../panelStatus/paneRenderStatusStore";
 import { paneRenderStatusRoutes, resolvePaneStatusWorkspaceId } from "./paneRenderStatusRoutes";
 
@@ -52,6 +61,65 @@ export interface UiRoutesOptions {
   preserveStateKeys?: string[];
   getPreserveStateKeys?: (request: FastifyRequest) => string[] | Promise<string[]>;
   paneStatusStore?: PaneRenderStatusStore;
+  /**
+   * Origin allowlist the URL pane may embed. Defaults to the env-resolved
+   * policy (loopback only unless the host opts in).
+   */
+  urlPanePolicy?: UrlPanePolicy;
+  /** Host-authorized projection from the current workspace runtime to HTTPS. */
+  resolveRuntimePreview?: (
+    request: FastifyRequest,
+    input: { workspaceId: string; port: number; path?: string },
+  ) => Promise<{ url: string; expiresAt?: string }>;
+}
+
+type UiCommandStreamSink = {
+  isOpen(): boolean;
+  onReady(): void;
+  onCommand(command: SequencedUiCommand): boolean;
+};
+
+export async function subscribeUiCommandStream(
+  bridge: UiBridge,
+  sink: UiCommandStreamSink,
+): Promise<() => void> {
+  if (!sink.isOpen()) return () => undefined;
+  sink.onReady();
+  if (!sink.isOpen()) return () => undefined;
+
+  // The canonical bridge subscribes before synchronously replaying queued
+  // commands, so rejected writes retain their original sequence identity.
+  const unsubscribe = bridge.subscribeCommands((command) => (
+    sink.isOpen() ? sink.onCommand(command) : false
+  ));
+  if (sink.isOpen()) return unsubscribe;
+  unsubscribe();
+  return () => undefined;
+}
+
+/**
+ * The URL pane's origin rule is enforced in the front, which is the only thing
+ * that renders an iframe. Rejecting the command here as well is defence in
+ * depth *and* ergonomics: an agent that asks for a disallowed origin gets a 400
+ * with the reason instead of a silently blocked pane it cannot see.
+ */
+function urlPaneCommandRejection(
+  cmd: UiCommand,
+  policy: UrlPanePolicy,
+  runtimePreviewEnabled: boolean,
+): string | undefined {
+  if (cmd.kind !== "openPanel") return undefined;
+  const params = cmd.params as { component?: unknown; params?: { url?: unknown; runtimePreview?: unknown } } | undefined;
+  if (params?.component !== URL_PANE_PANEL_ID) return undefined;
+  const paneParams = params.params;
+  if (paneParams?.runtimePreview !== undefined) {
+    if (paneParams.url !== undefined) return "URL pane accepts either url or runtimePreview, not both.";
+    if (!runtimePreviewEnabled) return "Runtime previews are unavailable for this host.";
+    const parsed = runtimeWebViewTargetSchema.safeParse(paneParams.runtimePreview);
+    return parsed.success ? undefined : parsed.error.issues[0]?.message ?? "Invalid runtime preview target.";
+  }
+  const resolved = resolveUrlPaneTarget(typeof paneParams?.url === "string" ? paneParams.url : "", policy);
+  return resolved.ok ? undefined : resolved.message;
 }
 
 export function uiRoutes(
@@ -60,6 +128,7 @@ export function uiRoutes(
   done: (err?: Error) => void,
 ): void {
   const fallbackBridge = opts.bridge;
+  const urlPanePolicy = opts.urlPanePolicy ?? resolveUrlPanePolicyFromEnv();
   const paneStatusStore = opts.paneStatusStore ?? createPaneRenderStatusStore();
   const getPaneWorkspaceId = async (request: FastifyRequest, presentedWorkspaceId?: unknown) => (await opts.getWorkspaceId?.(request, presentedWorkspaceId)) ?? resolvePaneStatusWorkspaceId(request);
   const touchUi = async (request: FastifyRequest) => {
@@ -67,6 +136,7 @@ export function uiRoutes(
   };
   const validateSetState = createBodyValidator(setStateBodySchema);
   const validatePostCommand = createBodyValidator(postCommandBodySchema);
+  const validateRuntimePreview = createBodyValidator(runtimeWebViewTargetSchema);
   const resolveBridge = async (request: FastifyRequest): Promise<UiBridge> => {
     if (opts.getBridge) return await opts.getBridge(request);
     if (fallbackBridge) return fallbackBridge;
@@ -94,16 +164,29 @@ export function uiRoutes(
       await touchUi(request);
       const body = request.body as z.infer<typeof setStateBodySchema>;
       const bridge = await resolveBridge(request);
-      const current = (await bridge.getState()) ?? {};
       const preserveStateKeys = opts.getPreserveStateKeys
         ? await opts.getPreserveStateKeys(request)
         : opts.preserveStateKeys ?? [];
-      const preserved = Object.fromEntries(
-        preserveStateKeys
-          .filter((key) => !(key in body.state) && key in current)
-          .map((key) => [key, current[key]]),
-      );
-      await bridge.setState({ ...body.state, ...preserved });
+      await updateUiState(bridge, (current) => {
+        const next = { ...body.state };
+        // Preserved keys are server-owned. Two callers reach this route and they
+        // need opposite treatment:
+        //
+        //  - A browser view-state snapshot (the front always stamps `causedBy`)
+        //    echoes back whatever it last read. Letting it write these keys means
+        //    a snapshot taken before a server publish silently reverts it, so the
+        //    stored value always wins over the body.
+        //  - A publisher writing the slot directly sends no `causedBy`. That is
+        //    how server-published state is seeded over HTTP; dropping those
+        //    writes loses the publish entirely.
+        const isBrowserSnapshot = body.causedBy !== undefined;
+        for (const key of preserveStateKeys) {
+          if (!isBrowserSnapshot && key in body.state) continue;
+          delete next[key];
+          if (Object.prototype.hasOwnProperty.call(current, key)) next[key] = current[key];
+        }
+        return next;
+      });
       return reply.code(204).send();
     },
   );
@@ -111,13 +194,43 @@ export function uiRoutes(
   app.post(
     "/api/v1/ui/commands",
     { preHandler: validatePostCommand },
-    async (request) => {
+    async (request, reply) => {
       const body = request.body as z.infer<typeof postCommandBodySchema>;
       const bridge = await resolveBridge(request);
       const cmd: UiCommand = { kind: body.kind, params: body.params };
+      const rejection = urlPaneCommandRejection(cmd, urlPanePolicy, opts.resolveRuntimePreview !== undefined);
+      if (rejection) {
+        return reply.code(400).send({ error: "url_pane_origin_not_allowed", message: rejection });
+      }
       return await bridge.postCommand(cmd);
     },
   );
+
+  // The front fetches this to enforce the same rule before it sets an iframe
+  // src, and to render an actionable "blocked" state naming the allowlist.
+  app.get("/api/v1/ui/url-pane/policy", async () => ({ origins: urlPanePolicy.origins }));
+
+  const runtimePreviewHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!opts.resolveRuntimePreview) {
+      return reply.code(404).send({ error: "runtime_preview_unavailable", message: "Runtime previews are unavailable for this host." });
+    }
+    const workspaceId = await getPaneWorkspaceId(request);
+    if (!workspaceId) {
+      return reply.code(400).send({ error: "workspace_required", message: "workspace id is required" });
+    }
+    const body = request.body as z.infer<typeof runtimeWebViewTargetSchema>;
+    const preview = await opts.resolveRuntimePreview(request, { workspaceId, ...body });
+    const resolved = resolveRuntimeWebViewProjection(preview.url);
+    const expiry = preview.expiresAt === undefined ? undefined : Date.parse(preview.expiresAt);
+    if (!resolved.ok || (expiry !== undefined && (!Number.isFinite(expiry) || expiry <= Date.now() + 1_000))) {
+      return reply.code(502).send({ error: "runtime_preview_invalid", message: resolved.ok ? "The runtime preview returned an invalid expiry." : resolved.message });
+    }
+    reply.header("Cache-Control", "private, no-store");
+    return { url: resolved.url, expiresAt: preview.expiresAt };
+  };
+  app.post(RUNTIME_WEB_VIEW_PREVIEW_PATH, { preHandler: validateRuntimePreview }, runtimePreviewHandler);
+  // Preserve #1493 clients while callers migrate to the central shared route.
+  app.post(LEGACY_URL_PANE_RUNTIME_PREVIEW_PATH, { preHandler: validateRuntimePreview }, runtimePreviewHandler);
 
   app.get("/api/v1/ui/commands/next", async (request, reply) => {
     await touchUi(request);
@@ -136,26 +249,7 @@ export function uiRoutes(
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    reply.raw.write(
-      `event: init\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
-    );
-
-    // Drain any commands queued BEFORE this subscriber connected. Without
-    // this, a command posted in the gap between page-reload and EventSource-
-    // reconnect is silently dropped: postCommand broadcasts to the (empty)
-    // subscriber set, the message lands in pendingCommands, and the next
-    // subscriber only sees future broadcasts. Tests that bootClean → POST
-    // openPanel hit this race when Vite is cold.
-    if (bridge.drainCommands) {
-      const queued = await bridge.drainCommands();
-      for (const cmd of queued) {
-        reply.raw.write(
-          `event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`,
-        );
-      }
-    }
-
-    const unsub = bridge.subscribeCommands((cmd) => {
+    const writeCommand = (cmd: SequencedUiCommand): boolean => {
       if (reply.raw.destroyed || reply.raw.writableEnded) return false;
       try {
         reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
@@ -163,8 +257,37 @@ export function uiRoutes(
       } catch {
         return false;
       }
+    };
+    let unsub: () => void = () => undefined;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      if (heartbeat) clearInterval(heartbeat);
+      unsub();
+    };
+    request.raw.once("close", cleanup);
+    reply.raw.once("close", cleanup);
+
+    unsub = await subscribeUiCommandStream(bridge, {
+      isOpen: () => !cleanedUp && !reply.raw.destroyed && !reply.raw.writableEnded,
+      onReady: () => {
+        // Establish the connection-ready handshake before subscribeCommands
+        // synchronously replays queued commands.
+        reply.raw.write(
+          `event: init\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
+        );
+      },
+      onCommand: writeCommand,
     });
-    const heartbeat = setInterval(() => {
+    if (cleanedUp || reply.raw.destroyed || reply.raw.writableEnded) {
+      unsub();
+      reply.hijack();
+      return;
+    }
+
+    heartbeat = setInterval(() => {
       if (reply.raw.writableEnded) return;
       void touchUi(request);
       reply.raw.write(
@@ -172,19 +295,9 @@ export function uiRoutes(
       );
     }, HEARTBEAT_MS);
 
-    let cleanedUp = false;
-    const cleanup = () => {
-      if (cleanedUp) return;
-      cleanedUp = true;
-      clearInterval(heartbeat);
-      unsub();
-    };
     // `reply.raw` is the authoritative lifetime of this long-lived response.
     // Behind a dev/reverse proxy the request body can remain open even after
     // the downstream EventSource closes, stranding upstream SSE connections.
-    request.raw.once("close", cleanup);
-    reply.raw.once("close", cleanup);
-
     reply.hijack();
   });
 

@@ -12,6 +12,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import type { SandboxProviderV1 } from '../../shared/providerV1'
 import { createBwrapSandboxProvider } from '../bwrap/createBwrapProvider'
+import { createBlaxelSandboxProvider } from '../blaxel/createBlaxelSandboxProvider'
+import { createMockBlaxelClient } from '../blaxel/__tests__/mockBlaxelClient'
 import { createDirectSandboxProvider } from '../direct/createDirectProvider'
 import { createVercelSandboxProvider } from '../vercel-sandbox/createVercelSandboxProvider'
 import type { VercelSandboxClient } from '../vercel-sandbox/resolveSandboxHandle'
@@ -21,7 +23,7 @@ import { workspaceConformance } from './conformance/workspace'
 import { createMockVercelSandboxHarness } from './mockVercelSandbox'
 
 const TARGET = 'boring-sandbox-package'
-type ProviderCase = 'direct' | 'bwrap' | 'vercel-sandbox'
+type ProviderCase = 'direct' | 'bwrap' | 'blaxel' | 'vercel-sandbox'
 
 interface TargetHarness {
   provider: SandboxProviderV1
@@ -94,8 +96,23 @@ async function makeVercelHarness(): Promise<TargetHarness> {
   }
 }
 
+async function makeBlaxelHarness(): Promise<TargetHarness> {
+  const client = await createMockBlaxelClient()
+  return {
+    provider: createBlaxelSandboxProvider({
+      client,
+      handleStore: new MemoryHandleStore(),
+      region: 'eu-fra-1',
+    }),
+    acquisitionCount: () => client.sandboxes.size,
+    closeCount: () => 0,
+    async cleanup() {},
+  }
+}
+
 async function makeHarness(providerCase: ProviderCase): Promise<TargetHarness> {
   if (providerCase === 'vercel-sandbox') return await makeVercelHarness()
+  if (providerCase === 'blaxel') return await makeBlaxelHarness()
   return {
     provider: providerCase === 'direct'
       ? createDirectSandboxProvider()
@@ -154,7 +171,7 @@ async function makeProviderConformanceHarness(providerCase: ProviderCase) {
   }
 }
 
-for (const providerCase of ['direct', 'bwrap', 'vercel-sandbox'] as const) {
+for (const providerCase of ['direct', 'bwrap', 'blaxel', 'vercel-sandbox'] as const) {
   const id = `${TARGET}:${providerCase}`
   const skip = providerCase === 'bwrap' && !bwrapAvailable
   const skipReason = skip ? 'bubblewrap is unavailable on this runner' : undefined
@@ -162,7 +179,7 @@ for (const providerCase of ['direct', 'bwrap', 'vercel-sandbox'] as const) {
   providerPairConformance(id, async () => {
     return await makeProviderConformanceHarness(providerCase)
   }, {
-    expectProvisioning: providerCase === 'vercel-sandbox',
+    expectProvisioning: providerCase === 'vercel-sandbox' || providerCase === 'blaxel',
     skip,
     skipReason,
   })
@@ -197,7 +214,7 @@ afterEach(async () => {
 })
 
 describe(`${TARGET} target`, () => {
-  describe.each<ProviderCase>(['direct', 'bwrap', 'vercel-sandbox'])('%s provider', (providerCase) => {
+  describe.each<ProviderCase>(['direct', 'bwrap', 'blaxel', 'vercel-sandbox'])('%s provider', (providerCase) => {
     test.skipIf(providerCase === 'bwrap' && !bwrapAvailable)(
       'passes the shared pair/workspace/exec/lifecycle conformance',
       async () => {
@@ -229,13 +246,15 @@ describe(`${TARGET} target`, () => {
         expect(Buffer.from(execResult.stdout).toString('utf8')).toContain('parity-ok')
         expect(execResult.exitCode).toBe(0)
 
-        if (providerCase === 'vercel-sandbox') {
+        if (providerCase === 'vercel-sandbox' || providerCase === 'blaxel') {
           expect(pair.provisioning).toBeDefined()
           await expect(pair.provisioning!.workspaceFs.exists('../escape'))
             .rejects.toThrow('Path escapes workspace root')
           const provisionResult = await pair.provisioning!.exec('echo', ['provisioning-ok'])
           expect(provisionResult?.stdout).toContain('provisioning-ok')
-          expect(pair.provisioning!.getRuntimeCacheRoot()).toBe('/tmp/boring-agent-cache')
+          expect(pair.provisioning!.getRuntimeCacheRoot()).toBe(
+            providerCase === 'blaxel' ? '/workspace/.boring/cache' : '/tmp/boring-agent-cache',
+          )
           const installSourceRoot = await mkdtemp(join(
             tmpdir(),
             `boring-sandbox-parity-source-${TARGET}-`,
@@ -256,8 +275,8 @@ describe(`${TARGET} target`, () => {
           await expect(pair.workspace.stat(
             '.boring-agent/tmp/parity-fixture-v1-parity123.tar.gz',
           )).resolves.toMatchObject({ kind: 'file' })
-          await expect(pair.provisioning!.exec('exit', ['7']))
-            .rejects.toThrow('Command failed (exit)')
+          await expect(pair.provisioning!.exec('sh', ['-c', 'exit 7']))
+            .rejects.toThrow()
           expect(harness.acquisitionCount?.()).toBe(1)
           await expect(pair.checkHealth?.()).resolves.toEqual({ state: 'ok' })
         }

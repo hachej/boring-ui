@@ -1,20 +1,32 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import type { AgentRequestLedger } from '../types'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
+import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
+import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
+import { CREDENTIAL_ERROR_CODES } from '../../../shared/credentials'
+import {
+  createLocalKekFileSourceV1,
+  initializeLocalFileCredentialVersionAnchorV1,
+} from '../../credentials/vault'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
+const require = createRequire(import.meta.url)
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
 
@@ -24,7 +36,34 @@ async function root() {
   return value
 }
 
+async function credentialEnv(): Promise<Record<string, string>> {
+  const directory = await root()
+  const keyFilePath = join(directory, 'kek')
+  const anchorFilePath = join(directory, 'anchor')
+  await writeFile(keyFilePath, Buffer.alloc(32, 0x2a).toString('hex'))
+  await initializeLocalFileCredentialVersionAnchorV1({
+    anchorFilePath,
+    loadKek: createLocalKekFileSourceV1(keyFilePath),
+  })
+  return {
+    BORING_CREDENTIAL_KMS_BACKEND: 'local-kek',
+    BORING_CREDENTIAL_LOCAL_KEK_FILE: keyFilePath,
+    BORING_CREDENTIAL_LOCAL_KEK_ANCHOR_FILE: anchorFilePath,
+    BORING_CREDENTIAL_PERSISTENCE: 'memory',
+  }
+}
+
 const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
+
+const persistedScriptedHarness: AgentHarnessFactory = async (input) => ({
+  ...createScriptedPiHarness(input),
+  sessions: new PiSessionStore(input.cwd, {
+    sessionDir: input.sessionDir,
+    sessionRoot: input.sessionRoot,
+    sessionNamespace: input.sessionNamespace,
+    storageCwd: input.cwd,
+  }),
+})
 
 function options(sessionRoot: string) {
   return {
@@ -48,6 +87,61 @@ function options(sessionRoot: string) {
 }
 
 describe('createAgentHost', () => {
+  it('fails at host startup (not first binding) when the credential vault env is misconfigured', async () => {
+    // [1082 slice B hardening F1b/F2] the vault composition is resolved once
+    // per host, at createAgentHost time; a typo'd KMS backend selection must
+    // reject host creation with a stable CREDENTIAL_* code instead of being
+    // deferred to (or silently forked across) runtime bindings.
+    await expect(createAgentHost({
+      ...options(await root()),
+      credentials: { env: { BORING_CREDENTIAL_KMS_BACKEND: 'aws-kms' } },
+    })).rejects.toMatchObject({
+      name: 'CredentialResolutionError',
+      code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+    })
+  })
+
+  it('publishes only the narrow credential lifecycle seam for Core deletion composition', async () => {
+    const onLifecycleReady = vi.fn()
+    const created = await createAgentHost({
+      ...options(await root()),
+      credentials: { env: await credentialEnv(), onLifecycleReady },
+    })
+
+    expect(onLifecycleReady).toHaveBeenCalledOnce()
+    const lifecycle = onLifecycleReady.mock.calls[0]![0]
+    expect(Object.keys(lifecycle)).toEqual(['cryptoShredWorkspace'])
+    await expect(lifecycle.cryptoShredWorkspace('workspace-a')).resolves.toBeUndefined()
+    await expect(lifecycle.cryptoShredWorkspace('workspace-a')).resolves.toBeUndefined()
+    await created.host.close()
+  })
+
+  it('maps unattended HTTP requests to a policy-isolated runtime binding', async () => {
+    const workspaceRoot = await root()
+    const harnessFactory = vi.fn<AgentHarnessFactory>(async (input) => createScriptedPiHarness(input))
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      harnessFactory,
+      credentials: { env: await credentialEnv() },
+    })
+    const app = Fastify()
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    await app.ready()
+
+    const createSession = (requestId: string, unattended = false) => app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      headers: unattended ? { 'x-boring-invocation-mode': 'unattended' } : {},
+      payload: { requestId },
+    })
+    expect((await createSession('interactive-session')).statusCode).toBe(201)
+    expect((await createSession('factory-session', true)).statusCode).toBe(201)
+    expect((await createSession('factory-session-two', true)).statusCode).toBe(201)
+    expect(harnessFactory).toHaveBeenCalledTimes(2)
+
+    await app.close()
+  })
+
   it('requires durable transactional ledger ownership for the direct projection unless test/dev in-memory mode is explicit', async () => {
     await expect(createAgentHost({
       ...options(await root()),
@@ -71,6 +165,29 @@ describe('createAgentHost', () => {
       authorizeAgentRequest: async () => scope,
     })).not.toThrow()
     await inMemory.host.close()
+
+    const customRoot = await root()
+    const backingLedger = new SqliteAgentRequestLedger(join(customRoot, 'custom.sqlite'))
+    // A current custom implementation needs no retention hook: the Host option
+    // configures only a ledger the Host constructs itself.
+    const customLedger: AgentRequestLedger = {
+      durability: 'durable-transactional',
+      prepare: (...args) => backingLedger.prepare(...args),
+      markAdmissionRetryable: (...args) => backingLedger.markAdmissionRetryable(...args),
+      acceptAdmission: (...args) => backingLedger.acceptAdmission(...args),
+      beginEffect: (...args) => backingLedger.beginEffect(...args),
+      reject: (...args) => backingLedger.reject(...args),
+      complete: (...args) => backingLedger.complete(...args),
+      markOutcomeUnknown: (...args) => backingLedger.markOutcomeUnknown(...args),
+      read: (...args) => backingLedger.read(...args),
+      close: () => backingLedger.close(),
+    }
+    const custom = await createAgentHost({
+      ...options(customRoot),
+      requestLedger: customLedger,
+      requestRetentionMs: 0,
+    })
+    await custom.host.close()
   })
 
   it('awaits compilation, freezes the fleet, and publishes a stable durable identity', async () => {
@@ -87,6 +204,278 @@ describe('createAgentHost', () => {
     const second = await createAgentHost(options(sessionRoot))
     expect(second.host.hostId).toBe(first.host.hostId)
     await second.host.close()
+  })
+
+  it('replays a completed create receipt across Host restart without a second transcript', async () => {
+    const sessionRoot = await root()
+    const input = { scope, agentTypeId: 'alpha', requestId: 'restart-create' }
+    const harnessFactory = vi.fn(persistedScriptedHarness)
+
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      harnessFactory,
+    })
+    const ref = await first.gateway.createSession(input)
+    await first.host.close()
+
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      harnessFactory,
+    })
+    await expect(restarted.gateway.createSession(input)).resolves.toEqual(ref)
+    expect(harnessFactory).toHaveBeenCalledOnce()
+    await restarted.host.close()
+  })
+
+  it('keeps a create tombstone after its configured terminal receipt retention expires', async () => {
+    const sessionRoot = await root()
+    const ledgerPath = join(sessionRoot, '.agent-request-ledger.sqlite')
+    const input = { scope, agentTypeId: 'alpha', requestId: 'expired-create' }
+    const harnessFactory = vi.fn(persistedScriptedHarness)
+
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      requestRetentionMs: MIN_REQUEST_RETENTION_MS,
+      harnessFactory,
+    })
+    await first.gateway.createSession(input)
+    await first.host.close()
+
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const database = new DatabaseSync(ledgerPath)
+    database.prepare('UPDATE agent_request_ledger SET updated_at = 0 WHERE state = ?').run('completed')
+    database.close()
+
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      requestRetentionMs: MIN_REQUEST_RETENTION_MS,
+      harnessFactory,
+    })
+    await expect(restarted.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+    })
+    expect(harnessFactory).toHaveBeenCalledOnce()
+
+    const inspect = new DatabaseSync(ledgerPath)
+    expect(inspect.prepare('SELECT count(*) AS count FROM agent_request_ledger WHERE state = ?').get('completed'))
+      .toEqual({ count: 0 })
+    expect(inspect.prepare('SELECT count(*) AS count FROM agent_request_tombstones').get())
+      .toEqual({ count: 1 })
+    inspect.close()
+    await restarted.host.close()
+  })
+
+  it('keeps abrupt-restart in-flight work in progress without implicit outcome reconciliation', async () => {
+    const sessionRoot = await root()
+    const ledgerPath = join(sessionRoot, 'abrupt-request-ledger.sqlite')
+    const firstLedger = new SqliteAgentRequestLedger(ledgerPath)
+    let signalEffectStarted!: () => void
+    const effectStarted = new Promise<void>((resolve) => { signalEffectStarted = resolve })
+    let releaseEffect!: () => void
+    const effectGate = new Promise<void>((resolve) => { releaseEffect = resolve })
+    const input = { scope, agentTypeId: 'alpha', requestId: 'abrupt-create' }
+    const requestKey = {
+      workspaceScopeId: scope.workspaceScopeId,
+      authSubjectId: scope.authSubjectId,
+      operation: 'session.create' as const,
+      target: { kind: 'agent' as const, agentTypeId: 'alpha' },
+      requestId: input.requestId,
+    }
+    const first = await createAgentHost({
+      ...options(sessionRoot),
+      requestLedger: firstLedger,
+      harnessFactory: async (harnessInput) => {
+        const harness = createScriptedPiHarness(harnessInput)
+        return {
+          ...harness,
+          sessions: {
+            ...harness.sessions,
+            async create(...args: Parameters<typeof harness.sessions.create>) {
+              signalEffectStarted()
+              await effectGate
+              return await harness.sessions.create(...args)
+            },
+          },
+        }
+      },
+    })
+    const pending = first.gateway.createSession(input)
+    pending.catch(() => {})
+    await effectStarted
+    await expect(firstLedger.read(requestKey)).resolves.toMatchObject({ state: 'in-flight' })
+
+    // Model abrupt process loss: the durable connection disappears without
+    // host.drain(), so no live owner can prove a terminal outcome.
+    firstLedger.close()
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      requestLedger: new SqliteAgentRequestLedger(ledgerPath),
+      harnessFactory: createScriptedPiHarness,
+    })
+    await expect(restarted.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+    })
+    await restarted.host.close()
+
+    releaseEffect()
+    await pending.catch(() => {})
+    await first.host.close().catch(() => {})
+  })
+
+  it('filters the catalog and rejects an unseated Agent before runtime resolution', async () => {
+    const sessionRoot = await root()
+    const base = options(sessionRoot)
+    const resolveAgentAccess = vi.fn(async ({ agentTypeId }: { agentTypeId: string }) =>
+      agentTypeId === 'alpha'
+        ? { state: 'allowed' as const, seatId: 'seat-alpha' }
+        : { state: 'not-available' as const, reason: 'not-seated' as const },
+    )
+    const created = await createAgentHost({
+      ...base,
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
+      resolveAgentAccess,
+    })
+
+    await expect(created.gateway.listAgents({ scope })).resolves.toEqual([
+      expect.objectContaining({ agentTypeId: 'alpha' }),
+    ])
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'beta',
+      requestId: 'create-beta',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+    expect(base.resolveAuthorizedAgentRuntimeScope).not.toHaveBeenCalled()
+    await created.host.close()
+  })
+
+  it('preserves structured entitlement and policy-unavailable failures', async () => {
+    const sessionRoot = await root()
+    const base = options(sessionRoot)
+    const decision = vi.fn(async () => ({
+      state: 'entitlement-denied' as const,
+      seatId: 'seat-alpha',
+      denial: 'subscription-required' as const,
+    }))
+    const created = await createAgentHost({ ...base, resolveAgentAccess: decision })
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'requires-subscription',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED })
+
+    decision.mockResolvedValueOnce({ state: 'policy-unavailable' } as never)
+    await expect(created.gateway.listAgents({ scope }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE })
+    await created.host.close()
+  })
+
+  it('maps structured access failures on runtime capability routes', async () => {
+    let unavailable = false
+    const created = await createAgentHost({
+      ...options(await root()),
+      resolveAgentAccess: vi.fn(async () => unavailable
+        ? { state: 'policy-unavailable' as const }
+        : {
+            state: 'entitlement-denied' as const,
+            seatId: 'seat-alpha',
+            denial: 'subscription-required' as const,
+          }),
+    })
+    const app = Fastify()
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    await app.ready()
+
+    const payment = await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/describe' })
+    expect(payment.statusCode).toBe(402)
+    expect(payment.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED } })
+
+    unavailable = true
+    const outage = await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/describe' })
+    expect(outage.statusCode).toBe(503)
+    expect(outage.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE } })
+
+    await app.close()
+    await created.host.close()
+  })
+
+  it('fails closed when the product access resolver throws', async () => {
+    const created = await createAgentHost({
+      ...options(await root()),
+      resolveAgentAccess: vi.fn(async () => { throw new Error('policy database unavailable') }),
+    })
+
+    await expect(created.gateway.listAgents({ scope }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE })
+    await created.host.close()
+  })
+
+  it('rechecks access immediately before effect admission', async () => {
+    const base = options(await root())
+    let decisions = 0
+    const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'should-not-run' }))
+    const created = await createAgentHost({
+      ...base,
+      effectAdmission: { admit },
+      resolveAgentAccess: vi.fn(async () => {
+        decisions += 1
+        return decisions === 3
+          ? { state: 'not-available' as const, reason: 'not-seated' as const }
+          : { state: 'allowed' as const, seatId: 'seat-alpha' }
+      }),
+    })
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'revoked-before-admission',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+    expect(admit).not.toHaveBeenCalled()
+    expect(base.resolveAuthorizedAgentRuntimeScope).not.toHaveBeenCalled()
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'revoked-before-admission',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+    expect(admit).not.toHaveBeenCalled()
+    await created.host.close()
+  })
+
+  // The ledger path chain now has one canonical owner. These pin this host's
+  // effective default so delegating to it cannot move the file.
+  it('keeps its durable ledger default at <sessionRoot>/.agent-request-ledger.sqlite', async () => {
+    const originalSessionRootEnv = getEnv('BORING_AGENT_SESSION_ROOT')
+    const sessionRoot = await root()
+    const explicitRoot = await root()
+    const explicitPath = join(explicitRoot, 'nested', 'requests.sqlite')
+    try {
+      // This host never consults BORING_AGENT_SESSION_ROOT: outer hosts own that.
+      setEnvForTest('BORING_AGENT_SESSION_ROOT', await root())
+
+      const fromSessionRoot = await createAgentHost({ ...options(sessionRoot), hostId: 'ledger-default' })
+      await fromSessionRoot.host.close()
+      expect(existsSync(join(sessionRoot, '.agent-request-ledger.sqlite'))).toBe(true)
+
+      const explicit = await createAgentHost({
+        ...options(sessionRoot),
+        hostId: 'ledger-explicit',
+        requestLedgerPath: explicitPath,
+      })
+      await explicit.host.close()
+      expect(existsSync(explicitPath)).toBe(true)
+
+      await expect(createAgentHost({
+        ...options(sessionRoot),
+        hostId: 'ledger-fail-closed',
+        sessionRoot: undefined,
+      })).rejects.toThrow('requestLedgerPath or sessionRoot')
+    } finally {
+      restoreEnvForTest('BORING_AGENT_SESSION_ROOT', originalSessionRootEnv)
+    }
   })
 
   it('requires a stable host identity source and validates explicit IDs', async () => {
@@ -146,6 +535,58 @@ describe('createAgentHost', () => {
     ].join('\n\n')
     expect(renderedPrompts).toEqual([golden, golden])
     expect(Buffer.from(renderedPrompts[0]!).equals(Buffer.from(renderedPrompts[1]!))).toBe(true)
+  })
+
+  it('acquires trusted service from the addressed session exact Environment generation and revokes on Host close', async () => {
+    const workspaceRoot = await root()
+    const base = options(workspaceRoot)
+    const adapter = createTestRuntimeModeAdapter('direct')
+    const serviceClose = vi.fn(async () => {})
+    const serviceAcquire = vi.fn(async () => ({
+      qualification: {
+        serviceRef: 'trusted-service-v1' as const,
+        protocolDigest: `sha256:${'a'.repeat(64)}`,
+        imageDigest: `sha256:${'b'.repeat(64)}`,
+        isolation: 'dedicated-uid-private-channel' as const,
+      },
+      invoke: async () => ({ status: 'ok' as const }),
+      createProjection: async () => { throw new Error('unused') },
+      close: serviceClose,
+    }))
+    const created = await createAgentHost({
+      ...base,
+      inMemoryRequestLedgerMode: 'test',
+      runtimeModeAdapter: {
+        ...adapter,
+        async create(context) {
+          const bundle = await adapter.create(context)
+          return {
+            ...bundle,
+            trustedServiceV1: {
+              qualification: {
+                serviceRef: 'trusted-service-v1',
+                protocolDigest: `sha256:${'a'.repeat(64)}`,
+                imageDigest: `sha256:${'b'.repeat(64)}`,
+                isolation: 'dedicated-uid-private-channel',
+              },
+              acquire: serviceAcquire,
+            },
+          }
+        },
+      },
+    })
+    const ref = await created.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'exact-env-session' })
+    const lease = await created.acquireSessionEnvironment({ authorizedScope: scope, ref, requestId: 'browser-acquire' })
+    expect(lease.environmentGenerationId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(lease.bindingGeneration).toBeGreaterThan(0)
+    await lease.acquireTrustedService({ leaseId: 'browser-lease', idleTtlMs: 1_000, absoluteTtlMs: 2_000 })
+    expect(serviceAcquire).toHaveBeenCalledWith(expect.objectContaining({
+      leaseId: 'browser-lease',
+      signal: lease.signal,
+    }))
+    await created.host.close()
+    expect(lease.signal.aborted).toBe(true)
+    lease.release()
   })
 
   it('separates verified Environment and per-Agent resolution and revokes app/dispatcher leases', async () => {
@@ -220,11 +661,20 @@ describe('createAgentHost', () => {
     })).toThrow(expect.objectContaining({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED }))
 
     let retained: import('../types').LeaseBoundWorkspaceAgent | undefined
+    expect(() => created.runWithWorkspaceAgent({
+      authorizedScope: scope,
+      agentTypeId: 'alpha',
+      context: { workspaceId: 'workspace-a', userId: 'subject-a' },
+      requestId: 'dispatcher-invalid-funding',
+      fundingPolicy: 'personal-subscription',
+    } as never, async () => undefined)).toThrow('must use api-key-only funding')
+
     await created.runWithWorkspaceAgent({
       authorizedScope: scope,
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'dispatcher-1',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       expect(Object.keys(binding).sort()).toEqual([
@@ -265,6 +715,8 @@ describe('createAgentHost', () => {
     const company = binding('company_context', 'company')
     const nutritionist = binding('nutritionist_context', 'nutritionist')
     const legal = binding('legal_context', 'legal')
+    const humanOnly = { ...binding('human_only_context', 'human'), agentTypeIds: [] as readonly string[] }
+    const dynamicSibling = { ...binding('dynamic_sibling_context', 'sibling'), agentTypeIds: ['other'] as readonly string[] }
     const toolsByAgent = new Map<string, Parameters<AgentHarnessFactory>[0]['tools']>()
     const harnessFactory: AgentHarnessFactory = async (input) => {
       toolsByAgent.set(input.systemPromptAppend!, input.tools)
@@ -273,6 +725,7 @@ describe('createAgentHost', () => {
     const resolveAgentBindings = vi.fn(async (agentTypeId: string) => [
       company,
       agentTypeId === 'nutritionist' ? nutritionist : legal,
+      dynamicSibling,
     ])
     const created = await createAgentHost({
       ...options(workspaceRoot),
@@ -285,7 +738,7 @@ describe('createAgentHost', () => {
         placementIdentity: 'context-catalog-environment',
         workspaceRoot,
         provisioningFingerprint: 'context-catalog-environment-v1',
-        resolveFilesystemBindings: async () => [company, nutritionist, legal],
+        resolveFilesystemBindings: async () => [company, nutritionist, legal, humanOnly],
       }),
       resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
         identity: `context-runtime:${agentTypeId}`,
@@ -309,6 +762,7 @@ describe('createAgentHost', () => {
         'company_context',
         'nutritionist_context',
         'legal_context',
+        'human_only_context',
       ])
 
       await created.gateway.createSession({
@@ -343,6 +797,16 @@ describe('createAgentHost', () => {
         toolContext('nutritionist-foreign-read'),
       )).rejects.toThrow('No filesystem binding is available for legal_context')
       expect(legal.operations.read).not.toHaveBeenCalled()
+      await expect(nutritionistRead.execute(
+        { filesystem: 'human_only_context', path: 'knowledge.md' },
+        toolContext('nutritionist-human-only-read'),
+      )).rejects.toThrow('No filesystem binding is available for human_only_context')
+      expect(humanOnly.operations.read).not.toHaveBeenCalled()
+      await expect(nutritionistRead.execute(
+        { filesystem: 'dynamic_sibling_context', path: 'knowledge.md' },
+        toolContext('nutritionist-dynamic-sibling-read'),
+      )).rejects.toThrow('No filesystem binding is available for dynamic_sibling_context')
+      expect(dynamicSibling.operations.read).not.toHaveBeenCalled()
 
       const ownLegal = await legalRead.execute(
         { filesystem: 'legal_context', path: 'knowledge.md' },
@@ -353,8 +817,106 @@ describe('createAgentHost', () => {
       expect(resolveAgentBindings.mock.calls.map(([agentTypeId]) => agentTypeId)).toEqual([
         'nutritionist',
         'nutritionist',
+        'nutritionist',
+        'nutritionist',
         'legal',
       ])
+    } finally {
+      await app.close()
+      await created.host.close()
+    }
+  })
+
+  it('mounts an agent definition knowledge/ folder as a readonly agent-scoped agent_knowledge binding invisible to sibling agents', async () => {
+    const workspaceRoot = await root()
+    const knowledgeRoot = await root()
+    await writeFile(join(knowledgeRoot, 'facts.md'), 'knowledge facts', 'utf8')
+    const toolsByAgent = new Map<string, Parameters<AgentHarnessFactory>[0]['tools']>()
+    const harnessFactory: AgentHarnessFactory = async (input) => {
+      toolsByAgent.set(input.systemPromptAppend!, input.tools)
+      return createScriptedPiHarness(input)
+    }
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      agents: [
+        {
+          agentTypeId: 'scholar',
+          definition: { instructions: 'scholar', label: 'Scholar', digest: `sha256:${'a'.repeat(64)}` },
+          knowledge: { rootDir: knowledgeRoot },
+        },
+        { agentTypeId: 'plain', definition: { instructions: 'plain', label: 'Plain' } },
+      ],
+      harnessFactory,
+      resolveAuthorizedEnvironmentScope: async () => ({
+        placementIdentity: 'knowledge-environment',
+        workspaceRoot,
+        provisioningFingerprint: 'knowledge-environment-v1',
+      }),
+      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
+        identity: `knowledge-runtime:${agentTypeId}`,
+        physicalBindingIdentity: `knowledge-runtime:${agentTypeId}`,
+        resourceInputDigest: `knowledge-resources:${agentTypeId}:v1`,
+        sessionNamespace: `knowledge:${agentTypeId}`,
+      }),
+    })
+    const app = Fastify({ logger: false })
+    await registerAgentHostEnvironmentRoutes(app, {
+      created,
+      authorizeAgentRequest: async () => scope,
+    })
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+
+    try {
+      // The computed definition digest is surfaced as identity on describe().
+      expect((await created.host.describe()).agents).toContainEqual({
+        agentTypeId: 'scholar',
+        label: 'Scholar',
+        definitionDigest: `sha256:${'a'.repeat(64)}`,
+      })
+
+      // Knowledge is agent-scoped: it never appears in the shared
+      // Environment-level filesystem catalog.
+      const catalog = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+      expect(catalog.statusCode).toBe(200)
+      expect(catalog.json().filesystems).toEqual([
+        expect.objectContaining({ filesystem: 'user', label: 'Workspace', access: 'readwrite' }),
+      ])
+      expect(catalog.body).not.toContain('agent_knowledge')
+      expect(catalog.body).not.toContain('agent_resources')
+      await created.gateway.createSession({ scope, agentTypeId: 'scholar', requestId: 'scholar-knowledge-session' })
+      await created.gateway.createSession({ scope, agentTypeId: 'plain', requestId: 'plain-knowledge-session' })
+      const toolContext = (requestId: string) => ({
+        abortSignal: new AbortController().signal,
+        toolCallId: requestId,
+        userId: 'subject-a',
+        workspaceId: 'workspace-a',
+        requestId,
+      })
+
+      const scholarRead = toolsByAgent.get('scholar')!.find((tool) => tool.name === 'read')!
+      const ownRead = await scholarRead.execute(
+        { filesystem: 'agent_knowledge', path: 'facts.md' },
+        toolContext('scholar-knowledge-read'),
+      )
+      expect(ownRead.isError).not.toBe(true)
+      expect(JSON.stringify(ownRead)).toContain('knowledge facts')
+
+      // Readonly no-leak conformance: mutations are rejected and bytes stay intact.
+      const scholarWrite = toolsByAgent.get('scholar')!.find((tool) => tool.name === 'write')
+      if (scholarWrite) {
+        await expect(scholarWrite.execute(
+          { filesystem: 'agent_knowledge', path: 'facts.md', content: 'overwritten' },
+          toolContext('scholar-knowledge-write'),
+        )).rejects.toThrow()
+      }
+      expect(await readFile(join(knowledgeRoot, 'facts.md'), 'utf8')).toBe('knowledge facts')
+
+      // Sibling agents never see another definition's knowledge.
+      const plainRead = toolsByAgent.get('plain')!.find((tool) => tool.name === 'read')!
+      await expect(plainRead.execute(
+        { filesystem: 'agent_knowledge', path: 'facts.md' },
+        toolContext('plain-knowledge-read'),
+      )).rejects.toThrow('No filesystem binding is available for agent_knowledge')
     } finally {
       await app.close()
       await created.host.close()
@@ -426,6 +988,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'fire-and-forget',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       const watcher = binding.workspace.watch?.()
@@ -493,6 +1056,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'never-settling-operation',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       await binding.workspace.writeFile('never.txt', 'never')
@@ -526,6 +1090,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'stuck-callback',
+      fundingPolicy: 'api-key-only',
     }, async () => {
       markStarted()
       await new Promise<never>(() => {})
@@ -579,6 +1144,10 @@ describe('createAgentHost', () => {
     }))
     const created = await createAgentHost({
       ...options(workspaceRoot),
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
       inMemoryRequestLedgerMode: 'test',
       metering: {
         isEnabled: () => meteringEnabled,
@@ -683,6 +1252,23 @@ describe('createAgentHost', () => {
       expect(missing.statusCode, url).toBe(404)
       expect(missing.json(), url).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND } })
     }
+    const betaSession = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/beta/sessions',
+      payload: { requestId: 'create-beta-direct' },
+    })
+    const betaSessionId = betaSession.json<{ sessionId: string }>().sessionId
+    const alphaCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/alpha/commands?sessionId=${sessionId}`,
+    })
+    const betaCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/beta/commands?sessionId=${betaSessionId}`,
+    })
+    expect(alphaCommands.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)).toEqual(['check'])
+    expect(betaCommands.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)).toEqual(['check'])
+
     const commandPayload = {
       requestId: 'command-direct',
       sessionId,
@@ -861,14 +1447,28 @@ describe('createAgentHost', () => {
     expect(reloadSession).toHaveBeenCalledTimes(2)
     expect(applyReload).toHaveBeenCalledTimes(3)
 
-    // A candidate identity observed by another sessionless capability route
-    // must neither replace nor bypass the Host generation's current binding.
+    // Every route fails closed once the resolved semantic identity drifts from
+    // the one canonical published binding. A new session must not silently run
+    // the retired grant set or publish a parallel generation.
     activeRuntimeIdentity = 'direct-route-runtime-v2'
     const bindingCountBeforeCandidate = harnessFactory.mock.calls.length
-    expect((await app.inject({
+    const driftedTools = await app.inject({
       method: 'GET',
       url: '/api/v1/agents/alpha/tools',
-    })).statusCode).toBe(200)
+    })
+    expect(driftedTools.statusCode).toBe(409)
+    expect(driftedTools.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
+    })
+    const driftedSessionCreate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { requestId: 'create-after-runtime-identity-drift' },
+    })
+    expect(driftedSessionCreate.statusCode).toBe(409)
+    expect(driftedSessionCreate.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
+    })
     expect(harnessFactory).toHaveBeenCalledTimes(bindingCountBeforeCandidate)
     const candidateWasPublished = await app.inject({
       method: 'POST',
@@ -911,7 +1511,58 @@ describe('createAgentHost', () => {
     await duplicateApp.close()
   })
 
-  it('durably replays insufficient-credit rejection instead of reporting an unknown outcome', async () => {
+  it('fails a concurrent mismatched semantic candidate closed behind the reserved physical slot', async () => {
+    const workspaceRoot = await root()
+    let releaseHarness!: () => void
+    let markHarnessStarted!: () => void
+    const harnessStarted = new Promise<void>((resolve) => { markHarnessStarted = resolve })
+    const harnessGate = new Promise<void>((resolve) => { releaseHarness = resolve })
+    let identity = 'reserved-runtime-v1'
+    const harnessFactory = vi.fn(async (input: Parameters<AgentHarnessFactory>[0]) => {
+      markHarnessStarted()
+      await harnessGate
+      return createScriptedPiHarness(input)
+    })
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      inMemoryRequestLedgerMode: 'test',
+      harnessFactory,
+      resolveAuthorizedEnvironmentScope: async () => ({
+        placementIdentity: 'reserved-environment',
+        workspaceRoot,
+        provisioningFingerprint: 'reserved-environment-v1',
+      }),
+      resolveAuthorizedAgentRuntimeScope: async () => ({
+        identity,
+        physicalBindingIdentity: 'reserved-physical-slot',
+        resourceInputDigest: `resources:${identity}`,
+        sessionNamespace: 'reserved-race',
+      }),
+    })
+    const app = Fastify({ logger: false })
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+
+    const first = app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { requestId: 'reserve-runtime-v1' },
+    })
+    await harnessStarted
+    identity = 'reserved-runtime-v2'
+    const drifted = app.inject({ method: 'GET', url: '/api/v1/agents/alpha/tools' })
+    releaseHarness()
+
+    expect((await first).statusCode).toBe(201)
+    const driftedResponse = await drifted
+    expect(driftedResponse.statusCode).toBe(409)
+    expect(driftedResponse.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
+    })
+    expect(harnessFactory).toHaveBeenCalledOnce()
+    await app.close()
+  })
+
+  it('durably replays insufficient-credit rejection across Host restart instead of reporting an unknown outcome', async () => {
     const workspaceRoot = await root()
     const reserveRun = vi.fn(async () => {
       throw Object.assign(new Error('insufficient credits'), {
@@ -919,18 +1570,26 @@ describe('createAgentHost', () => {
         statusCode: 402,
       })
     })
-    const created = await createAgentHost({
-      ...options(workspaceRoot),
-      metering: {
-        isEnabled: () => true,
-        reserveRun,
-        recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
-        settleRun: vi.fn(async () => {}),
-        releaseRun: vi.fn(async () => {}),
-      },
-    })
-    const app = Fastify({ logger: false })
-    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    const startHost = async () => {
+      const created = await createAgentHost({
+        ...options(workspaceRoot),
+        // Metering rejects this request before harness execution. Keep the test
+        // on that causal seam instead of paying real-provider discovery.
+        harnessFactory: persistedScriptedHarness,
+        metering: {
+          isEnabled: () => true,
+          reserveRun,
+          recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
+          settleRun: vi.fn(async () => {}),
+          releaseRun: vi.fn(async () => {}),
+        },
+      })
+      const app = Fastify({ logger: false })
+      await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+      return app
+    }
+
+    let app = await startHost()
     const createdSession = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions',
@@ -946,14 +1605,18 @@ describe('createAgentHost', () => {
         content: 'hello',
       },
     }
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const expectInsufficientCredit = async () => {
       const response = await app.inject(prompt)
       expect(response.statusCode).toBe(402)
       expect(response.json()).toEqual({
         error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'insufficient credits' },
       })
     }
+
+    await expectInsufficientCredit()
+    await app.close()
+    app = await startHost()
+    await expectInsufficientCredit()
     expect(reserveRun).toHaveBeenCalledOnce()
     await app.close()
   })

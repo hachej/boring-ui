@@ -303,6 +303,7 @@ function WorkspacePluginProviders({
   activeSessionId,
   activeSessionAgentTypeId,
   openSessionIds,
+  sessionRefs,
   children,
 }: {
   plugins: CapturedFrontPlugin[]
@@ -316,6 +317,7 @@ function WorkspacePluginProviders({
   /** Addressed owner for active-session work; defaults to the future-session Agent. */
   activeSessionAgentTypeId?: string | null
   openSessionIds?: readonly string[]
+  sessionRefs?: readonly WorkspaceSessionRef[]
   children: ReactNode
 }) {
   const providerAgentTypeId = activeSessionAgentTypeId ?? agentTypeId
@@ -336,6 +338,7 @@ function WorkspacePluginProviders({
         apiTimeout={apiTimeout}
         activeSessionId={activeSessionId}
         openSessionIds={openSessionIds}
+        sessionRefs={sessionRefs}
       >
         {acc}
       </Provider>
@@ -706,6 +709,7 @@ export function WorkspaceProvider({
                     activeSessionId={activeSessionId}
                     activeSessionAgentTypeId={activeSessionAgentTypeId}
                     openSessionIds={openSessionIds}
+                    sessionRefs={attentionSessions}
                   >
                     <WorkspacePluginBindings plugins={pluginsWithBindings} />
                     <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} />

@@ -1,5 +1,21 @@
 import type { SlashCommand } from './registry'
 
+/** Longest reload report handed to the model; warnings past it are elided. */
+const MAX_RELOAD_MODEL_MESSAGE = 2_000
+
+/**
+ * Frame the reload outcome as a short labelled report. The host message already
+ * reads as a summary ("Extensions reloaded." / "Extension update failed: …"
+ * plus a warnings block), so this only names the source and bounds the length.
+ */
+export function reloadResultForModel(message: string): string {
+  const body = message.trim() || 'No result reported.'
+  const bounded = body.length > MAX_RELOAD_MODEL_MESSAGE
+    ? `${body.slice(0, MAX_RELOAD_MODEL_MESSAGE)}\n… (truncated)`
+    : body
+  return `/reload result:\n${bounded}`
+}
+
 export const builtinCommands: SlashCommand[] = [
   {
     name: 'reset',
@@ -21,11 +37,14 @@ export const builtinCommands: SlashCommand[] = [
     name: 'reload',
     description: 'Reload agent plugins',
     clickBehavior: 'execute',
-    handler(_, ctx) {
+    async handler(_, ctx) {
       // Use the banner status UX when the host has wired pluginUpdate;
       // otherwise fall back to printing the result inline in chat.
-      if (ctx.pluginUpdate) return ctx.pluginUpdate.run()
-      return ctx.reloadAgentPlugins()
+      const message = ctx.pluginUpdate ? await ctx.pluginUpdate.run() : await ctx.reloadAgentPlugins()
+      // The banner and the local notice are browser-only. Reload changes the
+      // agent's own tools/skills, so the outcome — including a failure — has to
+      // reach the model's context too.
+      return { message, modelMessage: reloadResultForModel(message) }
     },
   },
   {

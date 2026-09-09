@@ -4,6 +4,7 @@ import {
   createPiAgentSessionAdapter,
   type PiAgentSessionLike,
 } from "../PiAgentSessionAdapter.js";
+import { PiChatEventMapper } from "../piChatEvents.js";
 
 function createFakeSession(overrides: Partial<PiAgentSessionLike> = {}) {
   const listeners = new Set<(event: AgentSessionEvent) => void>();
@@ -95,6 +96,50 @@ describe("PiAgentSessionAdapter", () => {
     expect(seen).toEqual([event]);
   });
 
+  it("shares cancellation normalization across wrappers for one Pi session", async () => {
+    const { session, emit } = createFakeSession();
+    const subscriber = createPiAgentSessionAdapter(session);
+    const controller = createPiAgentSessionAdapter(session);
+    const mapper = new PiChatEventMapper({ sessionId: "pi-session-1" });
+    const seen = [] as ReturnType<PiChatEventMapper["map"]>;
+
+    subscriber.subscribe((event) => seen.push(...mapper.map(event)));
+    emit({ type: "agent_start", turnId: "turn-1" } as unknown as AgentSessionEvent);
+    await controller.abort();
+    emit({
+      type: "agent_end",
+      messages: [{
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "AbortError: tool execution was cancelled",
+      }],
+      willRetry: false,
+    } as unknown as AgentSessionEvent);
+
+    expect(session.abort).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "agent-end", status: "aborted" }),
+    ]));
+    expect(seen.some((event) => event.type === "error")).toBe(false);
+  });
+
+  it("leaves normal events unchanged when cancellation was not requested", () => {
+    const { session, emit } = createFakeSession();
+    const adapter = createPiAgentSessionAdapter(session);
+    const seen: AgentSessionEvent[] = [];
+    const event = {
+      type: "agent_end",
+      messages: [{ role: "assistant", content: [], stopReason: "error" }],
+      willRetry: false,
+    } as unknown as AgentSessionEvent;
+
+    adapter.subscribe((value) => seen.push(value));
+    emit(event);
+
+    expect(seen).toEqual([event]);
+  });
+
   it("forwards prompt text and prompt options to Pi", async () => {
     const { session } = createFakeSession();
     const adapter = createPiAgentSessionAdapter(session);
@@ -132,6 +177,45 @@ describe("PiAgentSessionAdapter", () => {
 
     // Selector that matches nothing must not blow away pi's queue.
     adapter.clearFollowUp({ clientNonce: "other" });
+  });
+
+  it("shares selective-clear metadata across wrappers for the same native session", async () => {
+    const nativeFollowUps: string[] = [];
+    const { session } = createFakeSession({
+      getFollowUpMessages: vi.fn(() => nativeFollowUps),
+      followUp: vi.fn(async (text: string) => { nativeFollowUps.push(text); }),
+    });
+    Object.assign(session, { _followUpMessages: nativeFollowUps });
+
+    const postingAdapter = createPiAgentSessionAdapter(session);
+    const clearingAdapter = createPiAgentSessionAdapter(session);
+    await postingAdapter.followUp("held", { clientNonce: "n-cross-wrapper", clientSeq: 7 });
+
+    clearingAdapter.clearFollowUp({ clientNonce: "n-cross-wrapper", clientSeq: 7 });
+
+    expect(nativeFollowUps).toEqual([]);
+  });
+
+  it("allows a cross-wrapper nonce retry after native enqueue rejection", async () => {
+    const nativeFollowUps: string[] = [];
+    let attempts = 0;
+    const { session } = createFakeSession({
+      getFollowUpMessages: vi.fn(() => nativeFollowUps),
+      followUp: vi.fn(async (text: string) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("enqueue rejected");
+        nativeFollowUps.push(text);
+      }),
+    });
+    Object.assign(session, { _followUpMessages: nativeFollowUps });
+
+    const first = createPiAgentSessionAdapter(session);
+    const retry = createPiAgentSessionAdapter(session);
+    await expect(first.followUp("held", { clientNonce: "retry-nonce", clientSeq: 4 })).rejects.toThrow("enqueue rejected");
+    await expect(retry.followUp("held", { clientNonce: "retry-nonce", clientSeq: 4 })).resolves.toBeUndefined();
+
+    expect(nativeFollowUps).toEqual(["held"]);
+    expect(session.followUp).toHaveBeenCalledTimes(2);
   });
 
   it("omits abortRetry when the installed Pi session does not expose it", () => {

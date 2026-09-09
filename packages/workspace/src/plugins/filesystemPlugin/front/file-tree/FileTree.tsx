@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react"
 import { Tree, type NodeRendererProps, type TreeApi } from "react-arborist"
 import {
@@ -16,7 +17,14 @@ import {
   Loader2Icon,
 } from "lucide-react"
 import { getFileIcon } from "../../../../front/registry/getFileIcon"
-import { EmptyState, Input } from "@hachej/boring-ui-kit"
+import {
+  EmptyState,
+  Input,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
 import { getFileTreeDndManager } from "./dndManager"
 
@@ -53,7 +61,10 @@ export interface FileTreeProps {
   revealPath?: string | null
   /** Paths currently being mutated — render a small spinner on those rows. */
   pendingPaths?: ReadonlySet<string>
+  /** Called when a file is activated (double-click/Enter). */
   onSelect?: (path: string) => void
+  /** Called whenever the typed tree selection changes. */
+  onSelectionChange?: (node: FileTreeNode | null) => void
   onExpand?: (path: string) => void
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
@@ -209,6 +220,44 @@ function countVisibleNodes(
   return countMatches(nodes)
 }
 
+/**
+ * Row name plus a hover/focus tooltip carrying the full name — but only when
+ * the name is actually clipped by the `truncate` ellipsis. Radix asks to open;
+ * we answer with a live overflow measurement, so a name that already fits never
+ * pops a tooltip that just repeats what is on screen.
+ */
+function FileTreeNodeName({
+  name,
+  isPending,
+}: {
+  name: string
+  isPending: boolean
+}) {
+  const nameRef = useRef<HTMLSpanElement>(null)
+  const [open, setOpen] = useState(false)
+
+  const handleOpenChange = useCallback((next: boolean) => {
+    const el = nameRef.current
+    setOpen(next && !!el && el.scrollWidth > el.clientWidth)
+  }, [])
+
+  return (
+    <Tooltip open={open} onOpenChange={handleOpenChange}>
+      <TooltipTrigger asChild>
+        <span
+          ref={nameRef}
+          className={cn("truncate", isPending && "text-muted-foreground italic")}
+        >
+          {name}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right" data-testid="file-tree-name-tooltip">
+        {name}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
   const { onContextMenu, editing, pendingPaths, onSubmitEdit, onCancelEdit } =
     useContext(TreeHandlersCtx)
@@ -240,6 +289,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
         if (isEditingHere) return
         e.stopPropagation()
         if (isDir) {
+          node.select()
           node.toggle()
         } else {
           node.select()
@@ -281,14 +331,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
           onCancel={() => onCancelEdit?.()}
         />
       ) : (
-        <span
-          className={cn(
-            "truncate",
-            isPending && "text-muted-foreground italic",
-          )}
-        >
-          {data.name}
-        </span>
+        <FileTreeNodeName name={data.name} isPending={isPending} />
       )}
       {isPending && !isEditingHere && (
         <Loader2Icon
@@ -311,6 +354,7 @@ export function FileTree({
   revealPath,
   pendingPaths,
   onSelect,
+  onSelectionChange,
   onExpand,
   onCollapse,
   onContextMenu,
@@ -376,12 +420,14 @@ export function FileTree({
 
   const handleActivate = useCallback(
     (node: { data: FileTreeNode }) => {
-      if (node.data.kind === "file") {
-        onSelect?.(node.data.path)
-      }
+      if (node.data.kind === "file") onSelect?.(node.data.path)
     },
     [onSelect],
   )
+
+  const handleSelect = useCallback((nodes: Array<{ data: FileTreeNode }>) => {
+    onSelectionChange?.(nodes[0]?.data ?? null)
+  }, [onSelectionChange])
 
   const handleToggle = useCallback(
     (id: string) => {
@@ -489,30 +535,39 @@ export function FileTree({
 
   return (
     <TreeHandlersCtx.Provider value={handlers}>
-      <div data-boring-workspace-part="file-tree" className={cn("file-tree", className)}>
-        <Tree<FileTreeNode>
-          ref={treeRef}
-          data={safeFiles}
-          idAccessor="path"
-          childrenAccessor="children"
-          openByDefault={false}
-          width="100%"
-          height={height}
-          rowHeight={26}
-          indent={14}
-          selection={selection}
-          searchTerm={searchQuery ?? ""}
-          searchMatch={searchMatch}
-          onActivate={handleActivate}
-          onToggle={handleToggle}
-          onMove={handleMove}
-          disableDrop={disableDrop}
-          disableEdit={true}
-          dndManager={getFileTreeDndManager()}
+      {/* One provider for the whole tree: rows come and go as the virtualizer
+          recycles them, and per-row providers would each restart the delay. */}
+      <TooltipProvider delayDuration={500} skipDelayDuration={300}>
+        <div
+          data-boring-workspace-part="file-tree"
+          className={cn("file-tree", className)}
         >
-          {Node}
-        </Tree>
-      </div>
+          <Tree<FileTreeNode>
+            ref={treeRef}
+            data={safeFiles}
+            idAccessor="path"
+            childrenAccessor="children"
+            openByDefault={false}
+            selectionFollowsFocus
+            width="100%"
+            height={height}
+            rowHeight={26}
+            indent={14}
+            selection={selection}
+            searchTerm={searchQuery ?? ""}
+            searchMatch={searchMatch}
+            onActivate={handleActivate}
+            onSelect={handleSelect}
+            onToggle={handleToggle}
+            onMove={handleMove}
+            disableDrop={disableDrop}
+            disableEdit={true}
+            dndManager={getFileTreeDndManager()}
+          >
+            {Node}
+          </Tree>
+        </div>
+      </TooltipProvider>
     </TreeHandlersCtx.Provider>
   )
 }

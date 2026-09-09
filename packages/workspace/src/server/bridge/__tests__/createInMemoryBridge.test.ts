@@ -84,7 +84,7 @@ describe("createInMemoryBridge", () => {
     unsub();
   });
 
-  it("no commands delivered before subscription", async () => {
+  it("replays commands queued before subscription in sequence order", async () => {
     const bridge = createInMemoryBridge();
     await bridge.emitUiEffect({ kind: "openFile", params: { path: "/a.ts" } });
 
@@ -92,7 +92,8 @@ describe("createInMemoryBridge", () => {
     bridge.subscribeCommands((cmd) => received.push(cmd.seq));
 
     await bridge.emitUiEffect({ kind: "openFile", params: { path: "/b.ts" } });
-    expect(received).toEqual([2]);
+    expect(received).toEqual([1, 2]);
+    expect(await bridge.drainCommands?.()).toEqual([]);
   });
 
   it("drainCommands returns queued commands in order", async () => {
@@ -156,6 +157,44 @@ describe("createInMemoryBridge", () => {
 
     expect(firstDrain).toHaveLength(1);
     expect(secondDrain).toEqual([]);
+  });
+
+  it("offers a queued command to an already-ready subscriber when another subscriber joins", async () => {
+    const bridge = createInMemoryBridge();
+    const received: number[] = [];
+    let ready = false;
+    bridge.subscribeCommands((command) => {
+      if (!ready) return false;
+      received.push(command.seq);
+      return true;
+    });
+    await bridge.postCommand({ kind: "openPanel", params: { id: "queued", component: "demo" } });
+
+    ready = true;
+    const disconnectRejecting = bridge.subscribeCommands(() => false);
+
+    expect(received).toEqual([1]);
+    await expect(bridge.drainCommands!()).resolves.toEqual([]);
+    disconnectRejecting();
+  });
+
+  it("retains one queued copy until a subscriber accepts it", async () => {
+    const bridge = createInMemoryBridge();
+    bridge.subscribeCommands(() => {
+      throw new Error("closed sink");
+    });
+    const disconnectRejecting = bridge.subscribeCommands(() => false);
+    await bridge.postCommand({ kind: "openPanel", params: { id: "once", component: "demo" } });
+
+    const accepted: number[] = [];
+    bridge.subscribeCommands((command) => {
+      accepted.push(command.seq);
+      return true;
+    });
+
+    expect(accepted).toEqual([1]);
+    await expect(bridge.drainCommands!()).resolves.toEqual([]);
+    disconnectRejecting();
   });
 
   it("drain queue is bounded to the most recent 1000 commands", async () => {

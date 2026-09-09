@@ -16,9 +16,14 @@ and implements the crypto core**. This revision replans only what remains.
 r3 folds the adversarial review of r2: external rollback anchor (S1),
 envelope deletion port ops (S1), authenticated store pointer + dual-read
 write rules (S8), S3 shipping dependency.
-Companion decision memo: [`key-scope-decision.md`](key-scope-decision.md)
-(per-workspace vs per-seat DEK scoping — owner decision required before the
-rotation slice).
+Companion decisions:
+
+- [`key-scope-decision.md`](key-scope-decision.md) — retain per-workspace DEK
+  scope.
+- [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md)
+  — accepted 2026-08-31: migrate from Pi 0.80.7's synchronous
+  `AuthStorageBackend` integration to Pi 0.84.3's asynchronous
+  `CredentialStore` + `ModelRuntime` before provider onboarding.
 
 ## What #1132 already delivers (verified against the PR diff)
 

@@ -4,10 +4,12 @@ import type {
   FollowUpPayload,
   FollowUpReceipt,
   InterruptReceipt,
+  InterruptPayload,
   PiChatStatus,
   PromptPayload,
   PromptReceipt,
   QueuedUserMessage,
+  QueueClearPayload,
   QueueClearReceipt,
   StopReceipt,
 } from '../../../shared/chat'
@@ -17,8 +19,8 @@ export interface PiQueueSessionLike {
   getState(): PiChatState
   prompt(payload: PromptPayload): Promise<PromptReceipt>
   followUp(payload: FollowUpPayload): Promise<FollowUpReceipt>
-  clearQueue(): Promise<QueueClearReceipt>
-  interrupt(): Promise<InterruptReceipt>
+  clearQueue(payload?: QueueClearPayload): Promise<QueueClearReceipt>
+  interrupt(payload?: InterruptPayload): Promise<InterruptReceipt>
   stop(): Promise<StopReceipt>
 }
 
@@ -39,6 +41,7 @@ export interface PiQueueControllerOptions {
   onWarning?: (message: string) => void
   onPromptSubmitStarted?: (clientNonce: string) => void
   allowPromptDuringInitialHydration?: boolean
+  onQueueMutationPending?: (pending: boolean) => void
 }
 
 export type PiQueueSubmitResult =
@@ -49,10 +52,12 @@ export type PiQueueSubmitResult =
 export type PiQueueEditQueuedResult =
   | { type: 'cleared'; draft: string }
   | { type: 'empty'; message: string }
+  | { type: 'busy'; message: string }
   | { type: 'clear-failed'; draft: string; error: unknown; message: string }
 
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
+  private queueMutationPending = false
 
   constructor(
     private readonly session: PiQueueSessionLike,
@@ -102,33 +107,70 @@ export class PiFollowUpQueueController {
     return { type: 'prompt', clientNonce, cursor: receipt.cursor }
   }
 
-  async editQueued(): Promise<PiQueueEditQueuedResult> {
-    const followUps = this.session.getState().queue.followUps
-    if (followUps.length === 0) {
-      const message = 'No queued messages to edit.'
-      this.options.onWarning?.(message)
-      return { type: 'empty', message }
-    }
+  editQueued(): Promise<PiQueueEditQueuedResult> {
+    return this.runQueueMutation<PiQueueEditQueuedResult>(
+      { type: 'busy', message: 'Another queue action is already in progress.' },
+      async () => {
+        const followUps = this.session.getState().queue.followUps
+        if (followUps.length === 0) {
+          const message = 'No queued messages to edit.'
+          this.options.onWarning?.(message)
+          return { type: 'empty', message }
+        }
 
-    const draft = buildEditedQueuedDraft(followUps, this.options.getDraft?.() ?? '')
-    this.options.onDraftChange?.(draft)
-
-    try {
-      await this.session.clearQueue()
-      return { type: 'cleared', draft }
-    } catch (error) {
-      const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued or Stop.'
-      this.options.onWarning?.(message)
-      return { type: 'clear-failed', draft, error, message }
-    }
+        const currentDraft = this.options.getDraft?.() ?? ''
+        const draft = buildEditedQueuedDraft(followUps, currentDraft)
+        if (draft !== currentDraft) this.options.onDraftChange?.(draft)
+        try {
+          await this.session.clearQueue()
+          return { type: 'cleared', draft }
+        } catch (error) {
+          const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit or Remove.'
+          this.options.onWarning?.(message)
+          return { type: 'clear-failed', draft, error, message }
+        }
+      },
+    )
   }
 
-  interrupt(): Promise<CommandReceipt> {
-    return this.session.interrupt()
+  removeAllQueued(): Promise<{ ok: true } | { ok: false; message: string }> {
+    return this.runQueueMutation<{ ok: true } | { ok: false; message: string }>(
+      { ok: false, message: 'Another queue action is already in progress.' },
+      async () => {
+        try {
+          await this.session.clearQueue()
+          return { ok: true }
+        } catch {
+          const message = 'Could not remove the queued messages. They may still send unless you retry or use Edit.'
+          this.options.onWarning?.(message)
+          return { ok: false, message }
+        }
+      },
+    )
+  }
+
+  interrupt(payload: InterruptPayload = {}): Promise<CommandReceipt> {
+    return this.session.interrupt(payload)
+  }
+
+  resumeQueued(): Promise<CommandReceipt> {
+    return this.session.interrupt({ queueAction: 'resume' })
   }
 
   stop(): Promise<StopReceipt> {
     return this.session.stop()
+  }
+
+  private async runQueueMutation<T>(busyResult: T, action: () => Promise<T>): Promise<T> {
+    if (this.queueMutationPending) return busyResult
+    this.queueMutationPending = true
+    this.options.onQueueMutationPending?.(true)
+    try {
+      return await action()
+    } finally {
+      this.queueMutationPending = false
+      this.options.onQueueMutationPending?.(false)
+    }
   }
 
   private nextFollowUpClientSeq(): number {
@@ -190,6 +232,7 @@ export function buildEditedQueuedDraft(followUps: readonly QueuedUserMessage[], 
   const draft = existingDraft.trim()
   if (!queuedText) return draft
   if (!draft) return queuedText
+  if (draft === queuedText || draft.startsWith(`${queuedText}\n\n`)) return draft
   return `${queuedText}\n\n${draft}`
 }
 

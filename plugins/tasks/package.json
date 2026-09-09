@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-tasks",
-  "version": "0.1.95",
+  "version": "0.1.109",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -28,6 +28,10 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
+    "./front/descriptor": {
+      "types": "./dist/front/descriptor.d.ts",
+      "import": "./dist/front/descriptor.js"
+    },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
@@ -40,7 +44,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
+    "build": "tsup --config tsup.config.ts && tsup --config tsup.descriptor.config.ts && node scripts/assert-declarations.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "proof:beads-readonly": "pnpm build && node scripts/prove-beads-readonly.mjs",
@@ -49,7 +53,7 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.27.0"
+    "lucide-react": "^1.31.0"
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
@@ -58,17 +62,17 @@
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^4.0.0",
-    "jsdom": "^29.0.2",
+    "jsdom": "^30.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tsup": "^8.4.0",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

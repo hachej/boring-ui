@@ -30,6 +30,8 @@ const requiredFiles = [
   "dist/bridge-client.d.ts",
   "dist/events.js",
   "dist/events.d.ts",
+  "dist/loading.js",
+  "dist/loading.d.ts",
   "dist/workspace.css",
 ]
 

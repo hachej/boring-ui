@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createBridgeClient, type BridgeClientOptions } from "../client"
 import type { WorkspaceBridge, CommandResult } from "../types"
 import type { WorkspaceStore } from "../../store/types"
+import { events, workspaceEvents } from "../../events"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../../shared/ui-bridge"
 
 function ok(seq = 1): CommandResult {
   return { seq, status: "ok" }
@@ -210,6 +212,44 @@ describe("createBridgeClient", () => {
       client.disconnect()
     })
 
+    it("forwards valid UI state invalidations to reactive domain listeners", () => {
+      const received: unknown[] = []
+      const off = events.on(workspaceEvents.uiStateInvalidated, (event) => received.push(event))
+      const { client } = createClient()
+      client.connect()
+      const es = MockEventSource.instances[0]
+
+      es.emit(
+        "command",
+        JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending"] } }),
+      )
+
+      expect(received).toEqual([expect.objectContaining({ cause: "remote", keys: ["questions.pending"] })])
+      off()
+      client.disconnect()
+    })
+
+    it("ignores malformed UI state invalidations", () => {
+      const received: unknown[] = []
+      const off = events.on(workspaceEvents.uiStateInvalidated, (event) => received.push(event))
+      const { client } = createClient()
+      client.connect()
+      const es = MockEventSource.instances[0]
+
+      es.emit(
+        "command",
+        JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: null }),
+      )
+      es.emit(
+        "command",
+        JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending", 42] } }),
+      )
+
+      expect(received).toEqual([])
+      off()
+      client.disconnect()
+    })
+
     it("dispatches openPanel command", async () => {
       const { client, bridge } = createClient()
       client.connect()
@@ -375,6 +415,7 @@ describe("createBridgeClient", () => {
       expect(onConnectionChange).toHaveBeenCalledWith(false)
       client.disconnect()
     })
+
   })
 
   describe("PUT state publisher", () => {
@@ -638,13 +679,14 @@ describe("createBridgeClient", () => {
       client.disconnect()
     })
 
-    it("resets agent command depth when a poll UI effect dispatch fails", async () => {
+    it("continues a polled batch and resets agent command depth when one UI effect fails", async () => {
       fetchMock
         .mockResolvedValueOnce({
           status: 200,
           ok: true,
           json: async () => [
             { v: 1, kind: "openFile", params: { path: "/a.ts" } },
+            { v: 1, kind: "openFile", params: { path: "/b.ts" } },
           ],
         })
         .mockResolvedValue({ status: 204, ok: true })
@@ -653,6 +695,7 @@ describe("createBridgeClient", () => {
       client.connect()
       await vi.advanceTimersByTimeAsync(0)
 
+      expect(bridge.openFile).toHaveBeenCalledWith("/b.ts", undefined)
       store.notify()
       await vi.advanceTimersByTimeAsync(200)
 
@@ -748,6 +791,37 @@ describe("createBridgeClient", () => {
           body: expect.stringContaining('"causedBy":"restore"'),
         }),
       )
+      client.disconnect()
+    })
+
+    it("falls back to authenticated polling after the SSE reconnect budget is exhausted", async () => {
+      fetchMock.mockResolvedValue({
+        status: 200,
+        ok: true,
+        json: async () => [
+          { v: 1, kind: "openFile", params: { path: "/poll-only.ts" } },
+        ],
+      })
+      const { client, bridge } = createClient({ authToken: "test-token" })
+      client.connect()
+
+      for (let attempt = 0; attempt <= 5; attempt += 1) {
+        MockEventSource.instances[attempt].emit("error")
+        if (attempt < 5) await vi.advanceTimersByTimeAsync(1000 * (attempt + 1))
+      }
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(MockEventSource.instances).toHaveLength(6)
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:3000/api/v1/ui/commands/next?poll=true",
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+        }),
+      )
+      expect(bridge.openFile).toHaveBeenCalledWith("/poll-only.ts", undefined)
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(MockEventSource.instances).toHaveLength(6)
       client.disconnect()
     })
   })

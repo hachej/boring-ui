@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import type WebSocket from "ws"
-import { KYUTAI_PCM_FRAME_BYTES, LIVE_NONCE_BYTES, LIVE_SOCKET_HIGH_WATER_BYTES } from "../shared"
+import { KYUTAI_PCM_FRAME_BYTES, LIVE_NONCE_BYTES, LIVE_SERVER_PENDING_FRAMES, LIVE_SOCKET_HIGH_WATER_BYTES } from "../shared"
 import { LiveTranscriptError } from "./errors"
 import { KyutaiConnection } from "./kyutai"
 import type { WhisperLiveKitSnapshot } from "./whisperLiveKit"
@@ -68,11 +68,12 @@ export class KyutaiComposerManager {
     const session = this.active
     if (!session || session.id !== id || session.phase === "terminal") return socket.close(4404, "live_transcript_not_active")
     let redeemed = false
-    let processing = false
+    let pending = 0
+    let chain: Promise<void> = Promise.resolve()
     socket.on("message", (raw, isBinary) => {
-      if (processing) return this.fail(session, "live_transcript_backpressure")
-      processing = true
-      void (async () => {
+      if ((redeemed && pending >= LIVE_SERVER_PENDING_FRAMES) || (!redeemed && pending > 0)) return this.fail(session, "live_transcript_backpressure")
+      pending += 1
+      chain = chain.then(async () => {
         if (!isBinary) return this.fail(session, "live_transcript_invalid_audio")
         const data = rawDataBytes(raw)
         if (!redeemed) {
@@ -106,7 +107,7 @@ export class KyutaiComposerManager {
         } catch (error) {
           return this.fail(session, error instanceof LiveTranscriptError ? error.code : "live_transcript_upstream_failed")
         }
-      })().finally(() => { processing = false })
+      }).catch(() => this.fail(session, "live_transcript_upstream_failed")).finally(() => { pending -= 1 })
     })
     socket.on("close", () => { if (redeemed && session.phase !== "stopping" && session.phase !== "terminal") this.terminate(session) })
     socket.on("error", () => { if (redeemed) this.terminate(session) })

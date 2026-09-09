@@ -6,6 +6,7 @@ import {
 } from "../../shared/providerMatrix";
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
   REMOTE_WORKER_PROTOCOL_VERSION,
   REMOTE_WORKER_RUNTIME_CWD,
@@ -340,6 +341,10 @@ export function createRemoteWorkerSandboxProviderV1(
           client: leaseClient,
           leaseExpiresAtMs: () => leaseExpiresAtMs,
           now,
+          supportsExclusiveBinaryCreate:
+            health.negotiatedCapabilities?.includes(
+              REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+            ) ?? false,
         });
         const sandbox = createRemoteSandboxV1({
           client: leaseClient,

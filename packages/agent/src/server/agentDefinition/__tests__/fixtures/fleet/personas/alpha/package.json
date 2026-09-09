@@ -10,5 +10,6 @@
       "description": "Fixture persona for loader tests.",
       "instructionsRef": "instructions.md"
     }
-  }
+  },
+  "pi": { "skills": ["greet", "skills/local"] }
 }

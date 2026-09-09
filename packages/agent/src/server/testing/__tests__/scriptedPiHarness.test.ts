@@ -5,6 +5,17 @@ import { PiChatEventMapper } from '../../pi-chat/piChatEvents'
 import { createScriptedPiHarness } from '../scriptedPiHarness'
 
 describe('createScriptedPiHarness', () => {
+  it('tracks the requested model as addressed session authority', async () => {
+    const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
+    const model = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '', model }, {
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+    })
+
+    expect(adapter.currentModel?.()).toEqual(model)
+  })
+
   it('clears the selected queued follow-up by client selector', async () => {
     const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
     const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
@@ -111,6 +122,66 @@ describe('createScriptedPiHarness', () => {
       status: 'aborted',
     })
     expect(JSON.stringify(events)).not.toContain('PI_NATIVE_ASSISTANT_DONE')
+  })
+
+  it('marks the active assistant and unresolved tool call aborted in snapshots', async () => {
+    const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+    })
+    const toolCallStarted = new Promise<void>((resolve) => {
+      adapter.subscribe((event) => {
+        if (event.type !== 'message_update') return
+        if (event.assistantMessageEvent.type === 'toolcall_end') resolve()
+      })
+    })
+
+    const prompt = adapter.prompt('inspect workspace')
+    await toolCallStarted
+    await adapter.abort()
+    await prompt
+
+    const assistant = adapter.readSnapshot().messages.find((message) => (message as { role?: unknown }).role === 'assistant') as {
+      stopReason?: unknown
+      content?: Array<Record<string, unknown>>
+    } | undefined
+    expect(assistant).toMatchObject({ stopReason: 'aborted' })
+    expect(assistant?.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'toolCall', id: 'tool-1', state: 'aborted' }),
+    ]))
+  })
+
+  it('preserves completed tool output when the active assistant is aborted', async () => {
+    const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+    })
+    const toolCompleted = new Promise<void>((resolve) => {
+      adapter.subscribe((event) => {
+        if (event.type === 'tool_execution_end') resolve()
+      })
+    })
+
+    const prompt = adapter.prompt('inspect workspace')
+    await toolCompleted
+    await adapter.abort()
+    await prompt
+
+    const assistant = adapter.readSnapshot().messages.find((message) => (message as { role?: unknown }).role === 'assistant') as {
+      stopReason?: unknown
+      content?: Array<Record<string, unknown>>
+    } | undefined
+    expect(assistant).toMatchObject({ stopReason: 'aborted' })
+    expect(assistant?.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'toolCall',
+        id: 'tool-1',
+        state: 'output-available',
+        output: 'TOOL_E2E_OUTPUT',
+      }),
+    ]))
   })
 
   it('continues the next queued follow-up after an abort', async () => {

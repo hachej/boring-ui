@@ -51,6 +51,80 @@ test('can isolate networking and drop capabilities for hardened worker mode', ()
   expect(findTupleIndex(args, ['--cap-drop', 'ALL'])).toBeGreaterThanOrEqual(0)
 })
 
+test('docker profile avoids the user namespace and retains explicit isolation', () => {
+  const args = buildBwrapArgs('/tmp/workspace', { namespaceProfile: 'docker' })
+
+  expect(args).not.toContain('--unshare-all')
+  expect(args.slice(0, 4)).toEqual([
+    '--unshare-ipc',
+    '--unshare-pid',
+    '--unshare-uts',
+    '--unshare-cgroup',
+  ])
+  expect(args).not.toContain('--unshare-user')
+  expect(args).not.toContain('--unshare-net')
+  expect(args).not.toContain('--share-net')
+})
+
+test('rejects unsupported namespace profiles at runtime', () => {
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    namespaceProfile: 'typo' as 'docker',
+  })).toThrow('unsupported bwrap namespace profile: typo')
+})
+
+test('rejects unsupported network modes at runtime', () => {
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    namespaceProfile: 'docker',
+    network: 'isoltaed' as 'isolated',
+  })).toThrow('unsupported bwrap network mode: isoltaed')
+})
+
+test('docker profile always drops capabilities even when explicitly disabled', () => {
+  const args = buildBwrapArgs('/tmp/workspace', {
+    namespaceProfile: 'docker',
+    dropAllCapabilities: false,
+  })
+
+  expect(findTupleIndex(args, ['--cap-drop', 'ALL'])).toBeGreaterThanOrEqual(0)
+})
+
+test('docker profile isolates networking only when requested', () => {
+  const args = buildBwrapArgs('/tmp/workspace', {
+    namespaceProfile: 'docker',
+    network: 'isolated',
+  })
+
+  expect(args).toContain('--unshare-net')
+  expect(args).not.toContain('--share-net')
+  expect(findTupleIndex(args, ['--cap-drop', 'ALL'])).toBeGreaterThanOrEqual(0)
+})
+
+test.each([
+  ['extraArgs', '--cap-add'],
+  ['extraArgs', '--share-net'],
+  ['extraArgs', '--unshare-user'],
+  ['extraArgs', '--args'],
+  ['postWorkspaceArgs', '--cap-add=ALL'],
+  ['postWorkspaceArgs', '--unshare-all'],
+] as const)('docker profile rejects raw policy counter-option in %s: %s', (source, flag) => {
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    namespaceProfile: 'docker',
+    [source]: [flag],
+  })).toThrow(`forbids ${flag.split('=', 1)[0]} in ${source}`)
+})
+
+test('docker profile still permits controlled raw mount arguments', () => {
+  const args = buildBwrapArgs('/tmp/workspace', {
+    namespaceProfile: 'docker',
+    extraArgs: ['--dir', '/mnt'],
+    postWorkspaceArgs: ['--ro-bind', '/tmp/source', '/workspace/source'],
+  })
+
+  expect(findTupleIndex(args, ['--dir', '/mnt'])).toBeGreaterThanOrEqual(0)
+  expect(findTupleIndex(args, ['--ro-bind', '/tmp/source', '/workspace/source']))
+    .toBeGreaterThanOrEqual(0)
+})
+
 test('binds workspace root exactly once and keeps it writable', () => {
   const workspaceRoot = '/tmp/workspace root/$(whoami)'
   const args = buildBwrapArgs(workspaceRoot)

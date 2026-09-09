@@ -35,17 +35,18 @@ export interface WorkspaceRuntimeStoreLike {
   ): Promise<WorkspaceRuntimeResource[]>
 }
 
-const SANDBOX_RESOURCE: WorkspaceRuntimeResourceSelector = {
-  kind: 'sandbox',
-  purpose: 'main',
-  provider: 'vercel',
-}
-
 export class WorkspaceRuntimeSandboxHandleStore {
-  constructor(private readonly store: WorkspaceRuntimeStoreLike) {}
+  private readonly resource: WorkspaceRuntimeResourceSelector
+
+  constructor(
+    private readonly store: WorkspaceRuntimeStoreLike,
+    provider: 'vercel' | 'blaxel' = 'vercel',
+  ) {
+    this.resource = { kind: 'sandbox', purpose: 'main', provider }
+  }
 
   async get(workspaceId: string): Promise<WorkspaceSandboxHandleRecord | null> {
-    const resource = await this.store.getWorkspaceRuntimeResource(workspaceId, SANDBOX_RESOURCE)
+    const resource = await this.store.getWorkspaceRuntimeResource(workspaceId, this.resource)
     return resourceToHandle(resource)
   }
 
@@ -53,12 +54,12 @@ export class WorkspaceRuntimeSandboxHandleStore {
     const seenAt = new Date().toISOString()
     await this.store.putWorkspaceRuntimeResource(
       record.workspaceId,
-      handleToResourceInput(record, seenAt),
+      handleToResourceInput(record, seenAt, this.resource),
     )
   }
 
   async delete(workspaceId: string): Promise<void> {
-    await this.store.deleteWorkspaceRuntimeResource(workspaceId, SANDBOX_RESOURCE)
+    await this.store.deleteWorkspaceRuntimeResource(workspaceId, this.resource)
   }
 
   async list(): Promise<WorkspaceSandboxHandleRecord[]> {
@@ -66,9 +67,9 @@ export class WorkspaceRuntimeSandboxHandleStore {
     return resources
       .filter(
         (resource) =>
-          resource.kind === SANDBOX_RESOURCE.kind &&
-          resource.purpose === SANDBOX_RESOURCE.purpose &&
-          resource.provider === SANDBOX_RESOURCE.provider &&
+          resource.kind === this.resource.kind &&
+          resource.purpose === this.resource.purpose &&
+          resource.provider === this.resource.provider &&
           resource.state !== 'deleted',
       )
       .map((resource) => resourceToHandle(resource))
@@ -79,15 +80,16 @@ export class WorkspaceRuntimeSandboxHandleStore {
 function handleToResourceInput(
   record: WorkspaceSandboxHandleRecord,
   seenAt: string,
+  resource: WorkspaceRuntimeResourceSelector,
 ): WorkspaceRuntimeResourceInput {
   return {
-    ...SANDBOX_RESOURCE,
-    provider: record.provider ?? SANDBOX_RESOURCE.provider,
+    ...resource,
     handleKind: record.handleKind ?? 'session',
     stableKey: record.stableKey ?? null,
     providerResourceId: record.sandboxId,
     state: 'ready',
-    persistenceMode: record.persistenceMode ?? (record.snapshotId ? 'snapshot' : 'ephemeral'),
+    persistenceMode: record.persistenceMode
+      ?? (record.snapshotId ? 'snapshot' : resource.provider === 'blaxel' ? 'persistent' : 'ephemeral'),
     providerMeta: {
       ...(record.providerMeta ?? {}),
       ...(record.snapshotId ? { snapshotId: record.snapshotId } : {}),

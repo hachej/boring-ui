@@ -109,10 +109,10 @@ func executeWorkspaceOperation(rootFD int, operation workspaceOperation) (any, e
 			return map[string]any{"content": string(content), "stat": fileStat(stat)}, nil
 		}
 		return map[string]string{"content": string(content)}, nil
-	case "writeFile", "writeBinaryFile", "writeFileWithStat", "writeBinaryFileWithStat":
+	case "writeFile", "writeBinaryFile", "createBinaryFile", "writeFileWithStat", "writeBinaryFileWithStat":
 		content := []byte(operation.Data)
 		maximum := maxTextTransferBytes
-		if operation.Op == "writeBinaryFile" || operation.Op == "writeBinaryFileWithStat" {
+		if operation.Op == "writeBinaryFile" || operation.Op == "createBinaryFile" || operation.Op == "writeBinaryFileWithStat" {
 			var err error
 			content, err = base64.StdEncoding.DecodeString(operation.DataBase64)
 			if err != nil {
@@ -124,7 +124,11 @@ func executeWorkspaceOperation(rootFD int, operation workspaceOperation) (any, e
 		if len(content) > maximum {
 			return nil, syscall.EFBIG
 		}
-		fd, err := openWorkspacePath(rootFD, operation.Path, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_TRUNC|syscall.O_CLOEXEC, 0o660)
+		flags := syscall.O_WRONLY | syscall.O_CREAT | syscall.O_TRUNC | syscall.O_CLOEXEC
+		if operation.Op == "createBinaryFile" {
+			flags = syscall.O_WRONLY | syscall.O_CREAT | syscall.O_EXCL | syscall.O_CLOEXEC
+		}
+		fd, err := openWorkspacePath(rootFD, operation.Path, flags, 0o660)
 		if err != nil {
 			return nil, err
 		}
@@ -393,6 +397,9 @@ func syscallStat(stat syscall.Stat_t) statResult {
 }
 
 func workspaceErrorCode(err error) string {
+	if errors.Is(err, syscall.EEXIST) {
+		return codeAlreadyExists
+	}
 	if errors.Is(err, syscall.ENOSYS) || errors.Is(err, syscall.EOPNOTSUPP) {
 		return codePrimitiveUnavailable
 	}

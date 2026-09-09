@@ -196,6 +196,123 @@ describe('SignUpPage', () => {
   )
 
   it(
+    'derives invite_token from a redirect=/invites/:token param and hides Google sign-up',
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
+      mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+      window.history.pushState(
+        {},
+        '',
+        `/auth/signup?redirect=${encodeURIComponent('/invites/3fa85f64-5717-4562-b3fc-2c963f66afa6')}`,
+      )
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.queryByRole('button', { name: /continue with google/i })).toBeNull()
+
+      const user = userEvent.setup()
+      await user.type(screen.getByLabelText(/name/i), 'Invited')
+      await user.type(screen.getByLabelText(/email/i), 'invited@example.com')
+      await user.type(screen.getByLabelText(/password/i), 'secret12345')
+      await user.click(screen.getByRole('button', { name: /sign up/i }))
+
+      await waitFor(() =>
+        expect(mockSignUpEmail).toHaveBeenCalledWith(
+          { email: 'invited@example.com', password: 'secret12345', name: 'Invited' },
+          { headers: { 'x-invite-token': '3fa85f64-5717-4562-b3fc-2c963f66afa6' } },
+        ),
+      )
+      assertionPassed('signup-invite-token-from-redirect')
+    }),
+  )
+
+  it(
+    'does not derive an invite_token header from a hostile redirect with a trailing segment',
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
+      mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+      window.history.pushState(
+        {},
+        '',
+        `/auth/signup?redirect=${encodeURIComponent('/invites/3fa85f64-5717-4562-b3fc-2c963f66afa6/trailing')}`,
+      )
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      // No plausible-looking token was carried, so Google sign-up stays available.
+      expect(screen.queryByRole('button', { name: /continue with google/i })).toBeTruthy()
+
+      const user = userEvent.setup()
+      await user.type(screen.getByLabelText(/name/i), 'NotInvited')
+      await user.type(screen.getByLabelText(/email/i), 'not-invited@example.com')
+      await user.type(screen.getByLabelText(/password/i), 'secret12345')
+      await user.click(screen.getByRole('button', { name: /sign up/i }))
+
+      await waitFor(() =>
+        expect(mockSignUpEmail).toHaveBeenCalledWith(
+          { email: 'not-invited@example.com', password: 'secret12345', name: 'NotInvited' },
+          undefined,
+        ),
+      )
+      assertionPassed('signup-rejects-hostile-redirect-token')
+    }),
+  )
+
+  it(
+    'forwards redirect and invite_token query params through the Sign-in link',
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      window.history.pushState(
+        {},
+        '',
+        '/auth/signup?redirect=%2Finvites%2Ftok-123&invite_token=tok-123',
+      )
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.getByText(/already have an account/i).closest('div')
+        ?.querySelector('a')?.getAttribute('href')).toBe(
+        '/auth/signin?redirect=%2Finvites%2Ftok-123&invite_token=tok-123',
+      )
+      assertionPassed('signup-forwards-invite-context')
+    }),
+  )
+
+  it(
+    'forwards a redirect-only (no invite_token) query param through the Sign-in link',
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      window.history.pushState({}, '', '/auth/signup?redirect=%2Fw%2Fsome-workspace%2Fsettings')
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      const href = screen.getByText(/already have an account/i).closest('div')
+        ?.querySelector('a')?.getAttribute('href')
+      expect(href).toBe('/auth/signin?redirect=%2Fw%2Fsome-workspace%2Fsettings')
+      // A non-invite redirect must not fabricate an invite_token on the reverse link.
+      expect(href).not.toContain('invite_token')
+      assertionPassed('signup-forwards-redirect-only')
+    }),
+  )
+
+  it(
+    'derives invite_token for the Sign-in link from a redirect-only invite-accept path',
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      window.history.pushState(
+        {},
+        '',
+        `/auth/signup?redirect=${encodeURIComponent('/invites/3fa85f64-5717-4562-b3fc-2c963f66afa6')}`,
+      )
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.getByText(/already have an account/i).closest('div')
+        ?.querySelector('a')?.getAttribute('href')).toBe(
+        `/auth/signin?redirect=${encodeURIComponent('/invites/3fa85f64-5717-4562-b3fc-2c963f66afa6')}&invite_token=3fa85f64-5717-4562-b3fc-2c963f66afa6`,
+      )
+      assertionPassed('signup-derives-invite-token-for-signin-link')
+    }),
+  )
+
+  it(
     'displays server error inline',
     withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockSignUpEmail.mockResolvedValue({

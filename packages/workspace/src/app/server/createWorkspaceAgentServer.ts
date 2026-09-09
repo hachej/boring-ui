@@ -22,7 +22,7 @@ import {
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   registerAgentHostEnvironmentRoutes,
-  resolveBuiltinRuntimeLayoutRoot,
+  resolveRequestLedgerPath,
   sandboxRuntimeHostOperations,
   withRuntimeEnvContributions,
   type AgentFleetCompiler,
@@ -52,6 +52,7 @@ import {
   AGENT_RESOURCES_FILESYSTEM_ID,
   AgentGatewayError,
   AgentGatewayErrorCode,
+  ErrorCode,
   type AgentTool,
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
@@ -64,12 +65,19 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import { discoverRepositoryAgentPackages } from "../../server/agentPlugins/discoverAgentPackages"
 import { PLUGIN_SIGNATURE_CACHE_FILE } from "../../server/agentPlugins/signatureCache"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runtimeBackend"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
+import {
+  readPiSettingsBoringPluginSources,
+  readPiSettingsLocalAgentPackageSources,
+  uniqueBoringPluginSources,
+} from "../../server/agentPlugins/settingsSources"
+export { readPiSettingsBoringPluginSources } from "../../server/agentPlugins/settingsSources"
 import {
   assertWorkspaceBridgeHandlersTrusted,
   hasDirServerPlugin,
@@ -88,6 +96,10 @@ import { registerWorkspaceUiBridge } from "../../shared/plugins/uiBridgeRegistry
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
+  runtimeProjectionRoutes,
+  type RuntimeProjectionRoutesOptions,
+} from "../../server/runtimeProjection/runtimeProjectionRoutes"
+import {
   createLocalCliBridgeAuthPolicy,
   createWorkspaceBridgeRuntimeCore,
   InMemoryWorkspaceBridgeIdempotencyStore,
@@ -102,6 +114,7 @@ import {
 import {
   bootstrapServer,
   compactPiPackages,
+  type ServerBootstrapResult,
   type ServerBootstrapOptions,
   type WorkspacePackageResourceRecord,
   type WorkspacePiPackageSource,
@@ -114,8 +127,8 @@ import {
   discoverPackageResourceRecords,
   enumerateExternalSkillFiles,
   packageResourceHandlesPath,
-  packageResourceSystemPrompt,
   resolveWorkspacePackageResourceSnapshot,
+  selectAgentPackageResourceView,
   type ResolvedWorkspacePackageResourceRegistry,
 } from "../../server/plugins/packageResources"
 
@@ -128,7 +141,6 @@ interface WorkspacePiSessionRequestContext {
   authEmail?: string
   authEmailVerified?: boolean
   sessionAuthority?: "workspace-scope"
-  runtimeScopeIdentity?: string
   requestId: string
 }
 
@@ -144,6 +156,10 @@ interface WorkspaceReloadHookResult {
 
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
+  /** Disable ambient Pi extensions while preserving explicitly composed package/extension grants. */
+  noExtensions?: boolean
+  /** Ignore packages from user/project Pi settings while preserving explicit host package grants. */
+  noAmbientPackages?: boolean
   noSkills?: boolean
   additionalSkillPaths?: string[]
   packages?: WorkspacePiPackageSource[]
@@ -191,6 +207,12 @@ export interface WorkspaceAgentCreateOptions {
     runtimeBundle: RuntimeBundle
   }) => Promise<void>
   sessionRoot?: string
+  /**
+   * Durable request ledger file. Host application state, not workspace content:
+   * point it at host-owned storage. Defaults per
+   * {@link resolveRequestLedgerPath}.
+   */
+  requestLedgerPath?: string
   externalPlugins?: boolean
   /** Independently trusted roots for configured Pi resources outside the workspace/plugin roots. */
   piResourceAuthorizedRoots?: string[]
@@ -243,6 +265,13 @@ export interface CreateWorkspaceAgentServerOptions
   fleetCompiler?: AgentFleetCompiler
   /** Default Agent selected for package-level server plugin ownership. */
   defaultAgentTypeId?: string
+  /**
+   * Compose app-declared default plugin Agent contributions into every Agent
+   * in the workspace. This is intentionally limited to `defaultPluginPackages`:
+   * arbitrary host plugins and workspace-local packages still require an
+   * explicit per-Agent binding.
+   */
+  workspaceScopedDefaultPluginAgentContributions?: boolean
   /** Optional host admission called immediately before each Agent effect. */
   admitEffect?: AgentEffectAdmission
   /**
@@ -252,6 +281,8 @@ export interface CreateWorkspaceAgentServerOptions
    * when explicitly marked `trust: "internal"`.
    */
   plugins?: WorkspacePluginEntry[]
+  /** Explicit Host-owned same-origin projection authority; absent by default. */
+  runtimeProjection?: RuntimeProjectionRoutesOptions
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
@@ -451,6 +482,16 @@ function useLocalPackageProvisioning(): boolean {
   return process.env.BORING_USE_LOCAL_PACKAGES === "1"
 }
 
+function isUsableBoringPiPackageRoot(candidate: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: unknown }
+    return pkg.name === "@hachej/boring-pi"
+      && existsSync(join(candidate, "skills", "boring-plugin-authoring", "SKILL.md"))
+  } catch {
+    return false
+  }
+}
+
 function resolveBoringPiPackageRoot(): string | null {
   const workspacePackageRoot = resolveWorkspacePackageRoot()
   const candidates = [
@@ -458,19 +499,19 @@ function resolveBoringPiPackageRoot(): string | null {
     join(workspacePackageRoot, "node_modules", "@hachej", "boring-pi"),
   ]
   for (const candidate of candidates) {
-    try {
-      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
-      if (pkg.name === "@hachej/boring-pi") return candidate
-    } catch {
-      // try next layout
-    }
+    if (isUsableBoringPiPackageRoot(candidate)) return candidate
   }
   try {
-    return dirname(require.resolve("@hachej/boring-pi/package.json"))
+    const resolved = dirname(require.resolve("@hachej/boring-pi/package.json"))
+    return isUsableBoringPiPackageRoot(resolved) ? resolved : null
   } catch {
     return null
   }
 }
+
+// 0.1.101 interim (see #848): boring-pi is OPTIONAL again — it has never been
+// published to npm, so a hard requirement would crash every published install.
+// 0.1.102 retires the package entirely (content moves to the plugin CLI).
 
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
   try {
@@ -524,13 +565,18 @@ function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProv
   }
 }
 
-function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
-  const workspacePackageRoot = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
-  const source = existsSync(join(workspacePackageRoot, "package.json"))
-    ? workspacePackageRoot
-    : resolveBoringPiPackageRoot()
-  if (!source || !existsSync(join(source, "package.json"))) return undefined
-  return { source, skills: ["skills/boring-plugin-authoring"] }
+function createBoringPiPackageSource(): WorkspacePiPackageSource | undefined {
+  // The Pi runtime is part of the host's trusted computing base. Resolving it
+  // from the opened workspace would let that workspace substitute executable
+  // host code and, in pnpm projects, selects a symlink rejected by the resource
+  // containment guard. Only the host installation is consulted; absence is
+  // tolerated (published installs never carried this package — see #848).
+  const source = resolveBoringPiPackageRoot()
+  if (!source) return undefined
+  return {
+    source,
+    skills: ["skills/boring-plugin-authoring"],
+  }
 }
 
 /**
@@ -547,12 +593,10 @@ function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageS
  * even under noSkills. Belt-and-suspenders so the agent always sees the
  * plugin-authoring skill.
  */
-export function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
-  const pkg = createBoringPiPackageSource(workspaceRoot)
-  const root = typeof pkg === "string" ? pkg : pkg?.source
+export function resolveBoringPiSkillPaths(_workspaceRoot?: string): string[] {
+  const root = resolveBoringPiPackageRoot()
   if (!root) return []
-  const skillFile = join(root, "skills", "boring-plugin-authoring", "SKILL.md")
-  return existsSync(skillFile) ? [skillFile] : []
+  return [join(root, "skills", "boring-plugin-authoring", "SKILL.md")]
 }
 
 
@@ -573,6 +617,11 @@ export interface AgentSpecPluginArtifactProjection {
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "pi"
   >
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
 }
 
 type IdentityJson = null | boolean | number | string | IdentityJson[] | { [key: string]: IdentityJson }
@@ -585,7 +634,20 @@ interface NormalizedAgentRuntimeContribution {
   readonly bindingInputs: IdentityJson
   readonly runtimePlugins: readonly WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
+  readonly onSessionDelete?: AgentSpecPluginArtifactProjection["onSessionDelete"]
   readonly includeAllDiscoveredPluginResources: boolean
+}
+
+export const CONFIGURED_DEFAULT_AGENT_ERROR_CODE = ErrorCode.enum.CONFIG_INVALID
+
+export class ConfiguredDefaultAgentError extends Error {
+  readonly code = CONFIGURED_DEFAULT_AGENT_ERROR_CODE
+  readonly field = "defaultAgentTypeId"
+
+  constructor(defaultAgentTypeId: string) {
+    super(`defaultAgentTypeId ${JSON.stringify(defaultAgentTypeId)} is not in the configured Agent fleet`)
+    this.name = "ConfiguredDefaultAgentError"
+  }
 }
 
 export const AGENT_RUNTIME_IDENTITY_ERROR_CODE = "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE"
@@ -645,6 +707,8 @@ function pluginHasAgentRuntimeContribution(plugin: WorkspaceServerPlugin): boole
   return Boolean(
     plugin.systemPrompt
     || plugin.agentTools?.length
+    || plugin.agentToolFactory
+    || plugin.onAgentSessionDelete
     || plugin.piPackages?.length
     || plugin.extensionPaths?.length
     || plugin.skills?.length
@@ -706,17 +770,16 @@ function agentRuntimeContributionIdentityInput(input: {
   readonly includeAllDiscoveredPluginResources: boolean
 }): Pick<NormalizedAgentRuntimeContribution, "artifacts" | "validatedConfig" | "grants" | "toolContractDigests" | "bindingInputs"> {
   const { agent, projection } = input
-  const configuredBindings = "legacyDefault" in agent ? [] : (agent.plugins ?? [])
+  const configuredBindings = agent.plugins ?? []
   const toolContractDigests = (projection.agentOptions.extraTools ?? []).map(toolContractDigest)
   const bindingInputs = jsonIdentityValue({
-    agent: "legacyDefault" in agent
-      ? { agentTypeId: agent.agentTypeId, legacyDefault: true }
-      : {
-          agentTypeId: agent.agentTypeId,
-          definition: agent.definition,
-          model: agent.model,
-          pluginOrder: configuredBindings.map((binding) => binding.name),
-        },
+    agent: {
+      agentTypeId: agent.agentTypeId,
+      definition: agent.definition,
+      model: agent.model,
+      provisioning: agent.provisioning,
+      pluginOrder: configuredBindings.map((binding) => binding.name),
+    },
     resolvedPolicy: resolvedPolicyIdentity(input.resolvedPolicy, input.agent.resolvedPolicyDigest),
     contribution: {
       selectedArtifactOrder: projection.artifacts.map((artifact) => artifact.id),
@@ -755,6 +818,51 @@ export class AgentSpecPluginProjectionError extends Error {
 }
 
 /**
+ * Materialize the Agent tools collected from trusted server plugins for one
+ * canonical Agent identity. Hosts that compose their own Agent runtime use
+ * this same projection as the workspace Agent host, so selected-Agent tool
+ * factories cannot disappear at a host boundary.
+ */
+function projectWorkspaceAgentTools(
+  agentTypeId: string,
+  projection: Pick<ServerBootstrapResult, "agentTools" | "agentToolFactories">,
+  existingTools: readonly AgentTool[] = [],
+): AgentTool[] {
+  const generatedTools = projection.agentToolFactories.flatMap(({ id, createTools }) => {
+    const tools = createTools({ agentTypeId })
+    if (!Array.isArray(tools)) {
+      throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory must return an array`)
+    }
+    return tools.map((tool, index) => {
+      if (
+        !tool
+        || typeof tool !== "object"
+        || typeof tool.name !== "string"
+        || !tool.name
+        || typeof tool.description !== "string"
+        || !tool.parameters
+        || typeof tool.parameters !== "object"
+        || typeof tool.execute !== "function"
+      ) {
+        throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory returned an invalid tool at index ${index}`)
+      }
+      return tool
+    })
+  })
+  const occupiedToolNames = new Set([
+    ...existingTools.map((tool) => tool.name),
+    ...projection.agentTools.map((tool) => tool.name),
+  ])
+  for (const tool of generatedTools) {
+    if (occupiedToolNames.has(tool.name)) {
+      throw new AgentSpecPluginProjectionError(`generated Agent tool collides with existing tool "${tool.name}"`)
+    }
+    occupiedToolNames.add(tool.name)
+  }
+  return [...projection.agentTools, ...generatedTools]
+}
+
+/**
  * Projects only Agent-site contributions from canonical artifacts that the app
  * resolver already imported and preflighted. It never discovers or loads a
  * package, so Workspace and fleet activation cannot grow separate machinery.
@@ -762,6 +870,9 @@ export class AgentSpecPluginProjectionError extends Error {
 export function projectAgentSpecPluginArtifacts(
   agent: AgentHostAgentSpec,
   artifacts: readonly ResolvedWorkspacePluginArtifact[],
+  workspaceScopedArtifacts: readonly ResolvedWorkspacePluginArtifact[] = [],
+  hostDefaults: Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> = {},
+  existingTools: readonly AgentTool[] = [],
 ): AgentSpecPluginArtifactProjection {
   const byId = new Map<string, ResolvedWorkspacePluginArtifact>()
   for (const artifact of artifacts) {
@@ -771,15 +882,28 @@ export function projectAgentSpecPluginArtifacts(
     byId.set(artifact.id, artifact)
   }
 
-  const requested = "legacyDefault" in agent ? [] : (agent.plugins ?? [])
+  const requested = agent.plugins ?? []
   const selected: ResolvedWorkspacePluginArtifact[] = []
-  const selectedIds = new Set<string>()
-  for (const binding of requested) {
-    if (selectedIds.has(binding.name)) {
+  const selectedIds = new Set(selected.map((artifact) => artifact.id))
+  const workspaceScopedIds = new Set(workspaceScopedArtifacts.map((artifact) => artifact.id))
+  const requestedIds = new Set<string>()
+  for (const artifact of workspaceScopedArtifacts) {
+    if (selectedIds.has(artifact.id)) continue
+    const canonical = byId.get(artifact.id)
+    if (!canonical) {
       throw new AgentSpecPluginProjectionError(
-        `agent "${agent.agentTypeId}" selects plugin "${binding.name}" more than once`,
+        `agent "${agent.agentTypeId}" receives workspace-scoped plugin "${artifact.id}" without a preflighted artifact`,
       )
     }
+    selectedIds.add(artifact.id)
+    selected.push(canonical)
+  }
+  for (const binding of requested) {
+    if (requestedIds.has(binding.name)) {
+      throw new AgentSpecPluginProjectionError(`agent "${agent.agentTypeId}" selects plugin "${binding.name}" more than once`)
+    }
+    requestedIds.add(binding.name)
+    if (workspaceScopedIds.has(binding.name)) continue
     selectedIds.add(binding.name)
     const artifact = byId.get(binding.name)
     if (!artifact) {
@@ -790,18 +914,42 @@ export function projectAgentSpecPluginArtifacts(
     selected.push(artifact)
   }
 
-  const projected = bootstrapServer({ plugins: selected.map((artifact) => artifact.plugin) })
+  const projected = bootstrapServer({
+    ...hostDefaults,
+    plugins: selected.map((artifact) => artifact.plugin),
+  })
+  const agentTools = projectWorkspaceAgentTools(agent.agentTypeId, projected, existingTools)
+  const deleteContributions = projected.agentSessionDeleteContributions
   return {
     artifacts: selected,
     runtimePlugins: projected.runtimePlugins,
     agentOptions: {
-      extraTools: projected.agentTools,
+      extraTools: agentTools,
       systemPromptAppend: projected.systemPromptAppend || undefined,
       pi: {
         packages: projected.piPackages,
         extensionPaths: projected.extensionPaths,
       },
     },
+    ...(deleteContributions.length > 0
+      ? {
+          async onSessionDelete(input: {
+            readonly workspaceScopeId: string
+            readonly agentTypeId: string
+            readonly sessionId: string
+          }) {
+            const results = await Promise.allSettled(
+              deleteContributions.map(async (contribution) => await contribution.onDelete(input)),
+            )
+            const failures = results
+              .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+              .map((result) => result.reason)
+            if (failures.length > 0) {
+              throw new AggregateError(failures, "selected plugin session cleanup failed")
+            }
+          },
+        }
+      : {}),
   }
 }
 
@@ -815,6 +963,8 @@ export interface WorkspaceAgentServerPluginCollection {
   agentReloadBlockers: WorkspaceAgentReloadBlocker[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
+  /** Project static and selected-Agent factory tools for a host-owned runtime. */
+  projectAgentTools(agentTypeId: string, existingTools?: readonly AgentTool[]): AgentTool[]
   defaultPluginPackagePaths: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
@@ -911,6 +1061,8 @@ export function collectWorkspaceAgentServerPlugins(
     agentReloadBlockers: result.agentReloadBlockers,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
+    projectAgentTools: (agentTypeId, existingTools) =>
+      projectWorkspaceAgentTools(agentTypeId, result, existingTools),
     defaultPluginPackagePaths: [],
     agentOptions: {
       extraTools: result.agentTools,
@@ -951,7 +1103,9 @@ export async function resolveWorkspaceAgentServerPluginCollection(
     .filter((entry) => hasDirServerPlugin(entry))
   const allPluginEntries: WorkspacePluginEntry[] = []
   const seenDirEntries = new Set<string>()
-  for (const entry of [...defaultPluginDirEntries, ...(opts.plugins ?? [])]) {
+  // Explicit host entries take precedence over matching package defaults so a
+  // host can configure a bundled plugin without activating it twice.
+  for (const entry of [...(opts.plugins ?? []), ...defaultPluginDirEntries]) {
     if ("dir" in entry) {
       const key = resolve(entry.dir)
       if (seenDirEntries.has(key)) continue
@@ -995,58 +1149,6 @@ export async function provisionWorkspaceAgentServer(opts: {
   })
 }
 
-function uniquePluginSources(sources: BoringPluginSource[]): BoringPluginSource[] {
-  const byRoot = new Map<string, BoringPluginSource>()
-  for (const source of sources) {
-    const existing = byRoot.get(source.rootDir)
-    if (!existing || (!existing.workspaceId && source.workspaceId)) byRoot.set(source.rootDir, source)
-  }
-  return [...byRoot.values()]
-}
-
-const REMOTE_PI_PACKAGE_SOURCE_PREFIXES = ["npm:", "git:", "github:", "http:", "https:", "ssh:"]
-
-function piPackageSourceValue(entry: unknown): string | undefined {
-  if (typeof entry === "string") return entry
-  if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-    const source = (entry as { source?: unknown }).source
-    return typeof source === "string" ? source : undefined
-  }
-  return undefined
-}
-
-function resolveLocalPiPackageSource(settingsDir: string, source: string): string | undefined {
-  const path = source.startsWith("file:") ? source.slice("file:".length) : source
-  if (!path) return undefined
-  if (REMOTE_PI_PACKAGE_SOURCE_PREFIXES.some((prefix) => path.startsWith(prefix))) return undefined
-  if (!isAbsolute(path) && path !== "." && path !== "./" && !path.startsWith("./") && !path.startsWith("../")) return undefined
-  return resolve(settingsDir, path)
-}
-
-export function readPiSettingsBoringPluginSources(settingsPath: string, workspaceId?: string): BoringPluginSource[] {
-  let raw: unknown
-  try {
-    raw = JSON.parse(readFileSync(settingsPath, "utf8"))
-  } catch {
-    return []
-  }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return []
-  const packages = (raw as { packages?: unknown }).packages
-  if (!Array.isArray(packages)) return []
-  const settingsDir = dirname(settingsPath)
-  return uniquePluginSources(
-    packages
-      .map(piPackageSourceValue)
-      .map((source) => source ? resolveLocalPiPackageSource(settingsDir, source) : undefined)
-      .filter((rootDir): rootDir is string => Boolean(rootDir))
-      .map((rootDir): BoringPluginSource => ({
-        rootDir,
-        kind: "external",
-        ...(workspaceId ? { workspaceId } : {}),
-      })),
-  )
-}
-
 function collectBoringPluginSources(
   workspaceRoot: string,
   pluginCollection: WorkspaceAgentServerPluginCollection,
@@ -1069,7 +1171,7 @@ function collectBoringPluginSources(
     ...readPiSettingsBoringPluginSources(join(workspaceRoot, ".pi", "settings.json"), workspaceRoot),
     ...readPiSettingsBoringPluginSources(join(homedir(), ".pi", "agent", "settings.json")),
   ] : []
-  return uniquePluginSources([
+  return uniqueBoringPluginSources([
     ...externalSources,
     ...pluginRoots.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
     ...additionalPluginDirs.map((entry): BoringPluginSource => typeof entry === "string"
@@ -1194,7 +1296,9 @@ function resolveWorkspaceBridgeBrowserAuthPolicy(
 
   emitLocalCliBridgeAuthWarning()
   return createLocalCliBridgeAuthPolicy({
-    workspaceId: "default",
+    // The owner workspace is the host scope agents stamp on their records; a literal "default" would
+    // never match records written by scoped agent sessions (e.g. the Factory hub).
+    workspaceId: opts.sessionId ?? "default",
     capabilities: registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
     forceOwnerWorkspaceId: true,
   })
@@ -1249,7 +1353,7 @@ function registerWorkspaceHealthRoutes(
 }
 
 function emitLocalCliBridgeAuthWarning(): void {
-  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
+  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to the fixed local principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
   if (typeof process.emitWarning === "function") {
     process.emitWarning(message, { code: "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH" })
     return
@@ -1267,18 +1371,29 @@ export async function createWorkspaceAgentServer(
   const readonlyWorkspacePolicy = resolvedReadonlyWorkspacePaths.length > 0
     ? normalizeRuntimeReadonlyFilesystemPolicy(resolvedReadonlyWorkspacePaths)
     : undefined
-  // Resolved early: `legacyGlobalPluginAgentContributions` below must key off
-  // the RESOLVED fleet, not `opts.agents`'s presence — with BORING_AGENT_FLEET=1
-  // and no explicit `opts.agents`, the resolved fleet has 6 agents even though
-  // the option was omitted, and must not inherit the legacy global-contribution
-  // route shape (gh-1106 slice 3 fix round 1, M3).
-  const agents = opts.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: opts.fleetRepositoryRoot, workspaceRoot })
-  const isLegacyDefaultFleet = agents.length === 1 && "legacyDefault" in agents[0]!
+  // Everything fleet-related stays behind the flag check, including the
+  // `process.cwd()` fallback: with BORING_AGENT_FLEET unset this seam must do
+  // no eager work at all (gh-1107 slice 1 fix round: flag-off purity).
+  const fleetEnabled = !opts.agents && process.env.BORING_AGENT_FLEET === '1'
+  const fleetRepositoryRoot = fleetEnabled ? opts.fleetRepositoryRoot ?? process.cwd() : undefined
+  const fleetLocalPackageSources = fleetEnabled && opts.externalPlugins !== false
+    ? readPiSettingsLocalAgentPackageSources(join(workspaceRoot, '.pi', 'settings.json'), workspaceRoot)
+    : []
+  const discoveredPackages = fleetRepositoryRoot
+    ? await discoverRepositoryAgentPackages(fleetRepositoryRoot, {
+        localPackageSources: fleetLocalPackageSources,
+      })
+    : undefined
+  const agents = opts.agents ?? await resolveDefaultAgentFleet({
+    ...(fleetRepositoryRoot ? { repositoryRoot: fleetRepositoryRoot } : {}),
+    ...(discoveredPackages ? { discoveredPackages } : {}),
+  })
+  if (opts.defaultAgentTypeId !== undefined && !agents.some((agent) => agent.agentTypeId === opts.defaultAgentTypeId)) {
+    throw new ConfiguredDefaultAgentError(opts.defaultAgentTypeId)
+  }
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
-    resolvedMode as 'direct' | 'local' | 'vercel-sandbox',
-  )
+  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1323,55 +1438,79 @@ export async function createWorkspaceAgentServer(
     bridge,
     installPluginAuthoring: pluginAuthoringEnabled,
   })
+  // Host-created fleets always begin with the built-in default. Materialize
+  // its ambient app plugins as ordinary bindings; explicit fleets keep only
+  // the bindings their caller declared, regardless of fleet cardinality.
+  const hostOwnedDefaultAgentTypeId = opts.agents === undefined ? agents[0]?.agentTypeId : undefined
+  const hostAgents = hostOwnedDefaultAgentTypeId
+    ? [
+        {
+          ...agents[0],
+          plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => ({ name: artifact.id })),
+        },
+        ...agents.slice(1),
+      ]
+    : agents
+  const humanKnowledgeBindingsPromise = Promise.all(hostAgents.flatMap((agent) => {
+    if (!("knowledge" in agent) || !agent.knowledge?.rootDir) return []
+    return [runtimeHost.createAgentResourceFilesystemBinding(
+      `agent_knowledge:${agent.agentTypeId}`,
+      [{ logicalRoot: "/", sourceRoot: agent.knowledge.rootDir }],
+    ).then((binding) => ({
+      ...binding,
+      catalog: {
+        visible: true,
+        label: agent.definition.label ?? agent.agentTypeId,
+        rootDir: "/" as const,
+      },
+      // Human routes expose this alias. Agent composition filters it and
+      // mounts only the addressed Agent's canonical `agent_knowledge` binding.
+      agentTypeIds: [] as readonly string[],
+    }))]
+  }))
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
-  // The legacy one-Agent composition (no explicit fleet, flag off) keeps its
-  // route options byte-for-byte compatible; any resolved multi-agent fleet
-  // (explicit `opts.agents`, or BORING_AGENT_FLEET=1) is scoped per Agent.
-  // Keyed off the RESOLVED fleet, not `opts.agents`'s presence (M3 fix).
-  const legacyGlobalPluginAgentContributions = isLegacyDefaultFleet
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
-  const allPluginEntries: WorkspacePluginEntry[] = [
-    ...defaultPluginPackagePaths
-      .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
-      .filter((entry) => hasDirServerPlugin(entry)),
-    ...(opts.plugins ?? []),
-  ]
+  const allPluginEntries: WorkspacePluginEntry[] = pluginCollection.resolvedPluginArtifacts
+    .map((artifact) => artifact.entry)
 
   const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
     registry: opts.workspaceBridge?.registry,
-    ownerWorkspaceId: "default",
+    ownerWorkspaceId: opts.sessionId ?? "default",
     handlers: [
       ...(opts.workspaceBridge?.handlers ?? []),
       ...(pluginCollection.workspaceBridgeHandlers ?? []),
     ],
   })
 
+  const runtimeWorkspaceRoot = modeAdapter.getRuntimeLayoutRoot({
+    workspaceRoot,
+    sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
+    workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
+  })
+  const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
+  const runtimeUserSkillsPath = join(runtimeWorkspaceRoot, ".agents", "skills")
+  const hostUserSkillsPath = join(workspaceRoot, ".agents", "skills")
+
   // Static app resources are global to every Agent. Plugin Agent resources are
-  // added later from the app-owned normalized contribution for that Agent.
-  // Plugin package.json#pi resources remain dynamic for legacyDefault only.
-  const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource(workspaceRoot) : undefined
+  // added later from the normalized contribution for that Agent.
+  const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource() : undefined
   const builtInBoringPiSkillPaths = pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []
   const baseStaticPiSkillPaths = [
     ...builtInBoringPiSkillPaths,
-    ...(legacyGlobalPluginAgentContributions
-      ? pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []
-      : [join(workspaceRoot, ".agents", "skills"), ...(opts.pi?.additionalSkillPaths ?? [])]),
+    ...(opts.pi?.noSkills === true ? [] : [runtimeUserSkillsPath]),
+    ...(opts.pi?.additionalSkillPaths ?? []),
   ]
-  const baseStaticPiPackages = [
-    workspacePackagePiPackage,
-    ...(legacyGlobalPluginAgentContributions
-      ? pluginCollection.agentOptions.pi?.packages ?? []
-      : opts.pi?.packages ?? []),
-  ]
-  const baseStaticPiExtensionPaths = legacyGlobalPluginAgentContributions
-    ? pluginCollection.agentOptions.pi?.extensionPaths ?? []
-    : opts.pi?.extensionPaths ?? []
+  const baseStaticPiPackages = [workspacePackagePiPackage, ...(opts.pi?.packages ?? [])]
+  const baseStaticPiExtensionPaths = opts.pi?.extensionPaths ?? []
 
   // Boring plugin discovery: scan external workspace/global extension
   // collections plus internal app/plugin-provided sources. Source kind is
   // explicit so later activation code does not infer trust from paths.
-  const resolveBoringPluginDirs = (): BoringPluginSource[] => uniquePluginSources([
+  const resolveBoringPluginDirs = (): BoringPluginSource[] => uniqueBoringPluginSources([
       ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
+      ...(process.env.BORING_AGENT_FLEET === '1'
+        ? [{ rootDir: join(opts.fleetRepositoryRoot ?? process.cwd(), '.agents', 'personas'), kind: 'internal' as const }]
+        : []),
       ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs, externalPluginsEnabled),
     ])
   const boringPluginDirs: BoringPluginSource[] = []
@@ -1388,27 +1527,27 @@ export async function createWorkspaceAgentServer(
   // arrays the harness already captured.
   interface PackageResourceSnapshot {
     readonly registry: ResolvedWorkspacePackageResourceRegistry
-    readonly binding?: RuntimeFilesystemBinding
+    readonly diagnostics: readonly { source: string; message: string; pluginId?: string }[]
   }
   let currentPackageResourceSnapshot: PackageResourceSnapshot | undefined
   let packageResourceDiagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
-  // Always empty: the dynamic package.json#pi snapshot is resolved per-reload
-  // via getHotReloadablePiResources instead. Kept only so the static prompt
-  // concatenation below has a stable (currently absent) systemPromptAppend slot.
-  const staticPluginPackagePiSnapshot = emptyPackageJsonPiSnapshot()
   const staticPiSkillPaths = [...baseStaticPiSkillPaths]
   const staticPiPackages = compactPiPackages(baseStaticPiPackages)
   const staticPiExtensionPaths = [...baseStaticPiExtensionPaths]
 
-  const getHotReloadablePiResources = () => {
+  const getHotReloadablePiResources = (registry = currentPackageResourceSnapshot?.registry) => {
     const discovered = readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
-    const registry = currentPackageResourceSnapshot?.registry
     return {
       ...discovered,
       additionalSkillPaths: uniqueStrings([
         ...discovered.additionalSkillPaths.filter((path) => !registry || !packageResourceHandlesPath(path, registry.handledPackageRoots)),
         ...(registry?.additionalSkillPaths ?? []),
       ]),
+      // Package-registry extensions are executable and selected per Agent
+      // below; never reintroduce them through the ambient discovery path.
+      extensionPaths: discovered.extensionPaths.filter((path) =>
+        !registry || !packageResourceHandlesPath(path, registry.handledPackageRoots),
+      ),
     }
   }
 
@@ -1435,15 +1574,6 @@ export async function createWorkspaceAgentServer(
     return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
-  const runtimeWorkspaceRoot = modeAdapter.getRuntimeLayoutRoot?.({
-    workspaceRoot,
-    sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
-    workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
-  }) ?? resolveBuiltinRuntimeLayoutRoot(
-    resolvedMode as "direct" | "local" | "vercel-sandbox",
-    workspaceRoot,
-  )
-  const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
   type RuntimeProvisionerContext = Parameters<NonNullable<WorkspaceAgentCreateOptions["runtimeProvisioner"]>>[0]
   const runRuntimeProvisioning = async (runtimeBundle: RuntimeProvisionerContext["runtimeBundle"]) => {
     if (opts.provisionWorkspace === false) return currentRuntimeProvisioning
@@ -1494,10 +1624,15 @@ export async function createWorkspaceAgentServer(
     plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => artifact.plugin),
     excludeDefaults: opts.excludeDefaults,
   })
-  const rebuildPackageResourceRegistry = async (): Promise<void> => {
-    const ambientSkillsEnabled = (legacyGlobalPluginAgentContributions
-      ? pluginCollection.agentOptions.pi?.noSkills
-      : opts.pi?.noSkills) === false
+  const canonicalDefaultPluginPackagePaths = new Set(defaultPluginPackagePaths.map((path) => resolve(path)))
+  const workspaceScopedDefaultArtifacts = opts.workspaceScopedDefaultPluginAgentContributions
+    ? pluginCollection.resolvedPluginArtifacts.filter((artifact) =>
+        "dir" in artifact.entry
+        && canonicalDefaultPluginPackagePaths.has(resolve(artifact.entry.dir)),
+      )
+    : []
+  const resolvePackageResourceSnapshot = async (): Promise<PackageResourceSnapshot> => {
+    const ambientSkillsEnabled = opts.pi?.noSkills === false
     const sharedSkillPaths = await enumerateExternalSkillFiles([
       ...baseStaticPiSkillPaths,
       ...(ambientSkillsEnabled ? [join(homedir(), ".pi", "agent", "skills")] : []),
@@ -1506,15 +1641,14 @@ export async function createWorkspaceAgentServer(
       declared: allPluginAgentProjection.packageResources,
       scanned: await discoverPackageResourceRecords(refreshBoringPluginDirs()),
       sharedSkillPaths,
-      createBinding: (mounts) => runtimeHost.createAgentResourceFilesystemBinding(
-        AGENT_RESOURCES_FILESYSTEM_ID,
-        mounts,
-      ),
     })
+    return snapshot
+  }
+  const commitPackageResourceSnapshot = (snapshot: PackageResourceSnapshot): void => {
     currentPackageResourceSnapshot = snapshot
     packageResourceDiagnostics = [...snapshot.diagnostics]
   }
-  await rebuildPackageResourceRegistry()
+  commitPackageResourceSnapshot(await resolvePackageResourceSnapshot())
   const normalizedRuntimeContributions = new Map<string, NormalizedAgentRuntimeContribution>()
   const resolvedFleetCompiler: AgentFleetCompiler = {
     async compile({ agents: fleet }) {
@@ -1522,23 +1656,16 @@ export async function createWorkspaceAgentServer(
         ? await opts.fleetCompiler.compile({ agents: fleet })
         : fleet
       return compiled.map((agent) => {
-        const legacyDefault = "legacyDefault" in agent
-        const projection = legacyDefault
-          ? {
-              artifacts: pluginCollection.resolvedPluginArtifacts,
-              runtimePlugins: legacyGlobalPluginAgentContributions ? [] : allPluginAgentProjection.runtimePlugins,
-              agentOptions: legacyGlobalPluginAgentContributions
-                ? { extraTools: [], systemPromptAppend: undefined, pi: {} }
-                : {
-                    extraTools: allPluginAgentProjection.agentTools,
-                    systemPromptAppend: allPluginAgentProjection.systemPromptAppend || undefined,
-                    pi: {
-                      packages: allPluginAgentProjection.piPackages,
-                      extensionPaths: allPluginAgentProjection.extensionPaths,
-                    },
-                  },
-            }
-          : projectAgentSpecPluginArtifacts(agent, pluginCollection.resolvedPluginArtifacts)
+        const receivesHostOwnedComposition = agent.agentTypeId === hostOwnedDefaultAgentTypeId
+        const projection = projectAgentSpecPluginArtifacts(
+          agent,
+          pluginCollection.resolvedPluginArtifacts,
+          workspaceScopedDefaultArtifacts,
+          receivesHostOwnedComposition
+            ? { defaults: opts.defaults, excludeDefaults: opts.excludeDefaults }
+            : undefined,
+          baseExtraTools,
+        )
         const pluginIds = projection.artifacts.map((artifact) => artifact.id)
         const resolvedPolicy = {
           ...("resolvedPolicy" in agent && agent.resolvedPolicy && typeof agent.resolvedPolicy === "object"
@@ -1546,17 +1673,17 @@ export async function createWorkspaceAgentServer(
             : {}),
           pluginIds,
         }
-        const includeAllDiscoveredPluginResources = legacyDefault && !legacyGlobalPluginAgentContributions
         normalizedRuntimeContributions.set(agent.agentTypeId, {
           ...agentRuntimeContributionIdentityInput({
             agent,
             resolvedPolicy,
             projection,
-            includeAllDiscoveredPluginResources,
+            includeAllDiscoveredPluginResources: receivesHostOwnedComposition,
           }),
           runtimePlugins: projection.runtimePlugins,
           agentOptions: projection.agentOptions,
-          includeAllDiscoveredPluginResources,
+          onSessionDelete: projection.onSessionDelete,
+          includeAllDiscoveredPluginResources: receivesHostOwnedComposition,
         })
         return { ...agent, resolvedPolicy }
       })
@@ -1576,21 +1703,14 @@ export async function createWorkspaceAgentServer(
   const basePi: WorkspaceAgentPiOptions & {
     getHotReloadableResources?: () => WorkspacePluginPackagePiSnapshot
   } = {
-    ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.pi : opts.pi),
+    ...opts.pi,
     additionalSkillPaths: staticPiSkillPaths,
     packages: staticPiPackages,
     extensionPaths: staticPiExtensionPaths,
     extensionFactories: opts.pi?.extensionFactories,
-    ...(legacyGlobalPluginAgentContributions
-      ? { getHotReloadableResources: getHotReloadablePiResources }
-      : {}),
   }
-  const baseExtraTools = [
-    ...(opts.extraTools ?? []),
-    ...uiTools,
-    ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.extraTools ?? [] : []),
-  ]
-  const baseSystemPromptAppend = [
+  const baseExtraTools = [...(opts.extraTools ?? []), ...uiTools]
+  const appSystemPromptParts = [
     workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
     pluginAuthoringEnabled ? buildBoringSystemPrompt({
       scaffoldCommand: "boring-ui-plugin scaffold",
@@ -1601,13 +1721,14 @@ export async function createWorkspaceAgentServer(
         opts.provisionWorkspace !== false,
       ),
     }) : undefined,
-    legacyGlobalPluginAgentContributions
-      ? pluginCollection.agentOptions.systemPromptAppend
-      : opts.systemPromptAppend,
-    staticPluginPackagePiSnapshot.systemPromptAppend,
+  ]
+  const baseSystemPromptAppend = [
+    ...appSystemPromptParts,
+    opts.systemPromptAppend,
   ].filter(Boolean).join("\n\n") || undefined
   const refreshWorkspaceAgentResources = async (input?: {
     availabilityPrechecked?: boolean
+    packageResourceSnapshot?: PackageResourceSnapshot
   }): Promise<WorkspaceReloadHookResult | undefined> => {
     if (!input?.availabilityPrechecked) {
       await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
@@ -1618,7 +1739,7 @@ export async function createWorkspaceAgentServer(
     const rebuild = await rebuildPlugins()
     let packageResourceRebuildDiagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
     try {
-      await rebuildPackageResourceRegistry()
+      commitPackageResourceSnapshot(input?.packageResourceSnapshot ?? await resolvePackageResourceSnapshot())
     } catch {
       packageResourceRebuildDiagnostics = [{
         source: "package-resource-registry",
@@ -1674,14 +1795,19 @@ export async function createWorkspaceAgentServer(
   }))
   const scopeIssuer = createWorkspaceAgentScopeIssuer(workspaceScopeId)
   const agentHost = await createAgentHost({
-    agents,
+    agents: hostAgents,
     fleetCompiler,
     hostId: "workspace-agent-host",
     scopeVerifier: scopeIssuer.verifier,
     runtimeModeAdapter: modeAdapter,
     runtimeHost,
     sessionRoot: opts.sessionRoot,
-    requestLedgerPath: join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"),
+    requestLedgerPath: resolveRequestLedgerPath({
+      requestLedgerPath: opts.requestLedgerPath,
+      sessionRoot: opts.sessionRoot,
+      acceptSessionRootEnv: true,
+      legacy: { layout: "workspace-boring-dir", workspaceRoot },
+    }),
     telemetry: opts.telemetry,
     metering: opts.metering,
     harnessFactory: opts.harnessFactory,
@@ -1751,11 +1877,15 @@ export async function createWorkspaceAgentServer(
             userId: verifiedClaim.authSubjectId,
             requestId,
           }) ?? []
-          const packageBinding = currentPackageResourceSnapshot?.binding
-          return [
-            ...callerBindings,
-            ...(legacyGlobalPluginAgentContributions && packageBinding ? [packageBinding] : []),
-          ]
+          const humanKnowledgeBindings = await humanKnowledgeBindingsPromise
+          const packageRegistry = currentPackageResourceSnapshot?.registry
+          const packageBinding = hostOwnedDefaultAgentTypeId && packageRegistry?.readonlyMounts.length
+            ? await runtimeHost.createAgentResourceFilesystemBinding(
+                AGENT_RESOURCES_FILESYSTEM_ID,
+                packageRegistry.readonlyMounts,
+              )
+            : undefined
+          return [...callerBindings, ...humanKnowledgeBindings, ...(packageBinding ? [packageBinding] : [])]
         },
       }
     },
@@ -1768,26 +1898,74 @@ export async function createWorkspaceAgentServer(
     }) {
       scopeIssuer.context(authorizedScope)
       const contribution = normalizedRuntimeContributions.get(agentTypeId)
-      if (!contribution) throw new Error(`Agent runtime contribution was not compiled: ${agentTypeId}`)
+      if (!contribution) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN,
+          `Unknown agent type: ${agentTypeId}`,
+        )
+      }
+      // Reload resolves one immutable package candidate before admission. The
+      // same candidate drives digest, prompt, locator, binding, and commit.
+      const stagedPackageResourceSnapshot = intent.operation === "reload"
+        ? await resolvePackageResourceSnapshot()
+        : undefined
+      const getEffectivePackageResourceSnapshot = () =>
+        stagedPackageResourceSnapshot ?? currentPackageResourceSnapshot
 
       const selectedSkillPaths = contribution.runtimePlugins.flatMap((plugin) =>
         (plugin.skills ?? []).map((skill) => join(runtimeLayout.skills, plugin.id, skill.name)),
       )
+      const selectedSourceSkillPaths = contribution.runtimePlugins.flatMap((plugin) =>
+        (plugin.skills ?? []).map((skill) => skill.source instanceof URL ? fileURLToPath(skill.source) : skill.source),
+      )
       const selectedPluginIds = new Set(contribution.artifacts.map((artifact) => artifact.pluginId))
-      const resourceRegistry = currentPackageResourceSnapshot?.registry
-      const selectedPackageSkillPaths = resourceRegistry?.skills
-        .filter((skill) => skill.packageName !== "shared/pi-agent"
-          && skill.pluginIds.some((pluginId) => selectedPluginIds.has(pluginId)))
-        .map((skill) => skill.mountRoot) ?? []
-      const selectedPackagePrompt = mergePromptContents(resourceRegistry?.systemPrompts
-        .filter((prompt) => prompt.pluginIds.some((pluginId) => selectedPluginIds.has(pluginId)))
-        .map((prompt) => prompt.content) ?? [])
+      const getAgentPackageResourceView = () => {
+        const registry = getEffectivePackageResourceSnapshot()?.registry
+        return registry ? selectAgentPackageResourceView(registry, {
+          pluginIds: selectedPluginIds,
+          includeAll: contribution.includeAllDiscoveredPluginResources,
+        }) : undefined
+      }
+      const createAgentPackageBinding = async () => {
+        const view = getAgentPackageResourceView()
+        return view && view.readonlyMounts.length > 0
+          ? await runtimeHost.createAgentResourceFilesystemBinding(
+              AGENT_RESOURCES_FILESYSTEM_ID,
+              view.readonlyMounts,
+            )
+          : undefined
+      }
+      const locateAgentPackageSkill = (filePath: string) => getAgentPackageResourceView()?.locateSkill(filePath)
       const resolvedBasePi = basePi
       const selectedPi = contribution.agentOptions.pi
+      const staticPiResources = contribution.includeAllDiscoveredPluginResources
+        ? {
+            packages: compactPiPackages([
+              workspacePackagePiPackage,
+              ...(selectedPi?.packages ?? []),
+              ...(basePi.packages ?? []).filter((entry) => entry !== workspacePackagePiPackage),
+            ]),
+            extensionPaths: uniqueStrings([
+              ...(selectedPi?.extensionPaths ?? []),
+              ...(basePi.extensionPaths ?? []),
+            ]),
+          }
+        : {
+            packages: compactPiPackages([
+              ...(basePi.packages ?? []),
+              ...(selectedPi?.packages ?? []),
+            ]),
+            extensionPaths: uniqueStrings([
+              ...(basePi.extensionPaths ?? []),
+              ...(selectedPi?.extensionPaths ?? []),
+            ]),
+          }
       const baseBindingInputs = jsonIdentityValue({
         systemPromptAppend: baseSystemPromptAppend ?? null,
         piHarnessPolicy: {
           noContextFiles: resolvedBasePi.noContextFiles ?? null,
+          noExtensions: resolvedBasePi.noExtensions ?? null,
+          noAmbientPackages: resolvedBasePi.noAmbientPackages ?? null,
           noSkills: resolvedBasePi.noSkills ?? null,
         },
         toolContractOrder: baseExtraTools.map(toolContractDigest),
@@ -1795,23 +1973,24 @@ export async function createWorkspaceAgentServer(
       const getBaseHotResources = resolvedBasePi.getHotReloadableResources
       const getHotReloadableResources = getBaseHotResources
         || selectedSkillPaths.length > 0
-        || selectedPackageSkillPaths.length > 0
+        || getEffectivePackageResourceSnapshot()
         || contribution.includeAllDiscoveredPluginResources
         ? () => {
             const baseHot: Partial<WorkspacePluginPackagePiSnapshot> = getBaseHotResources?.() ?? {}
             const discovered = contribution.includeAllDiscoveredPluginResources
-              ? getHotReloadablePiResources()
+              ? getHotReloadablePiResources(getEffectivePackageResourceSnapshot()?.registry)
               : emptyPackageJsonPiSnapshot()
             const baseSkillPaths = (baseHot.additionalSkillPaths ?? []).filter((path) =>
               contribution.includeAllDiscoveredPluginResources || path !== runtimeLayout.skills,
             )
+            const packageView = getAgentPackageResourceView()
             return {
               ...baseHot,
               ...discovered,
               additionalSkillPaths: uniqueStrings([
                 ...baseSkillPaths,
                 ...selectedSkillPaths,
-                ...selectedPackageSkillPaths,
+                ...(packageView?.additionalSkillPaths ?? []),
                 ...discovered.additionalSkillPaths,
               ]),
               packages: compactPiPackages([
@@ -1820,20 +1999,19 @@ export async function createWorkspaceAgentServer(
               ]),
               extensionPaths: uniqueStrings([
                 ...(baseHot.extensionPaths ?? []),
+                ...(packageView?.extensionPaths ?? []),
                 ...discovered.extensionPaths,
               ]),
             }
           }
         : undefined
       const baseDynamicPrompt = opts.systemPromptDynamic
-      const loadSystemPromptAppend = baseDynamicPrompt || getHotReloadableResources || selectedPackagePrompt || contribution.includeAllDiscoveredPluginResources
+      const loadSystemPromptAppend = baseDynamicPrompt || getHotReloadableResources || getEffectivePackageResourceSnapshot()
         ? async () => mergePromptContents([
             await baseDynamicPrompt?.(),
             getHotReloadableResources?.().systemPromptAppend,
             contribution.includeAllDiscoveredPluginResources ? aggregatePluginPrompts(boringAssetManager) : undefined,
-            contribution.includeAllDiscoveredPluginResources && currentPackageResourceSnapshot
-              ? packageResourceSystemPrompt(currentPackageResourceSnapshot.registry)
-              : selectedPackagePrompt,
+            ...(getAgentPackageResourceView()?.systemPrompts ?? []),
           ])
         : undefined
 
@@ -1862,28 +2040,35 @@ export async function createWorkspaceAgentServer(
         .join("\n\n") || undefined
       const buildResourceDigestInput = async () => {
         const hotResources = getHotReloadableResources?.()
+        // Provisioned runtime skill paths are outputs of applyReload. Hash the
+        // admitted source paths instead so reload does not invalidate its own
+        // post-effect resource fence.
+        const packageRoots = getEffectivePackageResourceSnapshot()?.registry.handledPackageRoots ?? []
+        const digestHotSkillPaths = (hotResources?.additionalSkillPaths ?? []).filter((path) =>
+          !packageResourceHandlesPath(path, [runtimeLayout.skills, ...packageRoots]),
+        )
         const additionalSkillPaths = uniqueStrings([
-            ...(resolvedBasePi.additionalSkillPaths ?? []),
+            ...(resolvedBasePi.additionalSkillPaths ?? []).map((path) =>
+              path === runtimeUserSkillsPath ? hostUserSkillsPath : path,
+            ),
             ...(selectedPi?.additionalSkillPaths ?? []),
-            ...(hotResources?.additionalSkillPaths ?? []),
+            ...selectedSourceSkillPaths,
+            ...digestHotSkillPaths,
           ])
         const packages = compactPiPackages([
-            ...(basePi.packages ?? []),
-            ...(selectedPi?.packages ?? []),
+            ...staticPiResources.packages,
             ...(hotResources?.packages ?? []),
+            ...packageRoots.map((source) => ({ source })),
           ])
         const extensionPaths = uniqueStrings([
-            ...(basePi.extensionPaths ?? []),
-            ...(selectedPi?.extensionPaths ?? []),
+            ...staticPiResources.extensionPaths,
             ...(hotResources?.extensionPaths ?? []),
           ])
-        const dynamicSystemPromptAppend = [
-          await baseDynamicPrompt?.(),
-          hotResources?.systemPromptAppend,
-        ].filter((part): part is string => Boolean(part)).join("\n\n") || undefined
+        const dynamicSystemPromptAppend = await loadSystemPromptAppend?.()
         return createPiResourceDigestInput({
           piCwd: workspaceRoot,
           noSkills: selectedPi?.noSkills ?? resolvedBasePi.noSkills,
+          noContextFiles: selectedPi?.noContextFiles ?? resolvedBasePi.noContextFiles,
           resourceSets: [{
             promptParts: [staticSystemPromptAppend, dynamicSystemPromptAppend],
             additionalSkillPaths,
@@ -1895,10 +2080,11 @@ export async function createWorkspaceAgentServer(
             ...defaultPluginPackagePaths,
             ...resolveBoringPluginDirs().map((source) => source.rootDir),
             runtimeLayout.skills,
+            ...selectedSourceSkillPaths,
             ...builtInBoringPiSkillPaths,
             ...[localPiPackageRoot(workspacePackagePiPackage)]
               .filter((path): path is string => Boolean(path)),
-            ...(currentPackageResourceSnapshot?.registry.handledPackageRoots ?? []),
+            ...(getEffectivePackageResourceSnapshot()?.registry.handledPackageRoots ?? []),
             ...(opts.piResourceAuthorizedRoots ?? []),
           ]),
         })
@@ -1922,20 +2108,16 @@ export async function createWorkspaceAgentServer(
             ...(resolvedBasePi.additionalSkillPaths ?? []),
             ...(selectedPi?.additionalSkillPaths ?? []),
           ]),
-          packages: compactPiPackages([
-            ...(basePi.packages ?? []),
-            ...(selectedPi?.packages ?? []),
-          ]),
-          extensionPaths: uniqueStrings([
-            ...(basePi.extensionPaths ?? []),
-            ...(selectedPi?.extensionPaths ?? []),
-          ]),
+          packages: staticPiResources.packages,
+          extensionPaths: staticPiResources.extensionPaths,
           ...(getHotReloadableResources ? { getHotReloadableResources } : {}),
+          locateSkillResource: locateAgentPackageSkill,
         },
         extraTools: [
           ...baseExtraTools,
           ...(contribution.agentOptions.extraTools ?? []),
         ],
+        onSessionDelete: contribution.onSessionDelete,
         includeFilesystemTools: opts.disableDefaultFileTools !== true,
         includeUploadTools: true,
         getFilesystemBindings: async ({ scope, sessionId, requestId }) => {
@@ -1946,26 +2128,17 @@ export async function createWorkspaceAgentServer(
             userId: scope.authSubjectId,
             requestId,
           }) ?? []
-          const packageBinding = currentPackageResourceSnapshot?.binding
-          return [
-            ...callerBindings,
-            ...(legacyGlobalPluginAgentContributions && packageBinding ? [packageBinding] : []),
-          ]
+          const packageBinding = await createAgentPackageBinding()
+          return [...callerBindings, ...(packageBinding ? [packageBinding] : [])]
         },
         getSkillResourceSnapshot: async () => {
-          const skillRegistry = currentPackageResourceSnapshot?.registry
-          if (!skillRegistry) return undefined
-          // Package skill locators point at paths served through the
-          // `agent_resources` filesystem binding. That binding is only
-          // granted when `legacyGlobalPluginAgentContributions` is true
-          // (see `packageBinding` gating in getFilesystemBindings above) —
-          // an explicit fleet (`opts.agents` set) never receives it. Advertise
-          // locateSkill only when the binding it points at actually exists,
-          // otherwise callers resolve a locator whose `/files` fetch 404s.
+          const view = getAgentPackageResourceView()
+          if (!view) return undefined
+          const binding = await createAgentPackageBinding()
           return {
-            generation: skillRegistry.generation,
-            managedSkills: legacyGlobalPluginAgentContributions ? skillRegistry.managedSkills : [],
-            locateSkill: legacyGlobalPluginAgentContributions ? skillRegistry.locateSkill : () => undefined,
+            generation: view.generation,
+            managedSkills: view.managedSkills,
+            locateSkill: binding ? view.locateSkill : () => undefined,
           }
         },
         ...(intent.operation === "reload"
@@ -1973,7 +2146,10 @@ export async function createWorkspaceAgentServer(
               async applyReload(input?: { runtimeBundle: RuntimeProvisionerContext["runtimeBundle"] }) {
                 await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
                 if (input) await runRuntimeProvisioning(input.runtimeBundle)
-                const result = await refreshWorkspaceAgentResources({ availabilityPrechecked: true })
+                const result = await refreshWorkspaceAgentResources({
+                  availabilityPrechecked: true,
+                  packageResourceSnapshot: stagedPackageResourceSnapshot,
+                })
                 return result && {
                   diagnostics: result.diagnostics,
                   restartWarnings: result.restart_warnings,
@@ -2109,12 +2285,18 @@ export async function createWorkspaceAgentServer(
     refreshBoringPluginDirs()
     await boringAssetManager.load()
     await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-    await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
+    await app.register(uiRoutes, {
+      bridge,
+      preserveStateKeys: pluginCollection.preservedUiStateKeys,
+    })
+    if (opts.runtimeProjection) {
+      await app.register(runtimeProjectionRoutes, opts.runtimeProjection)
+    }
     await app.register(workspaceBridgeHttpRoutes, {
       registry: workspaceBridgeRegistry,
       runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
       runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
-      ownerWorkspaceId: "default",
+      ownerWorkspaceId: opts.sessionId ?? "default",
       idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
       browserAuthPolicy: resolveWorkspaceBridgeBrowserAuthPolicy(opts, workspaceBridgeRegistry),
     })

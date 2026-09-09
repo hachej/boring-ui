@@ -1,11 +1,38 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
+import { ErrorCode } from '../../../shared/error-codes'
 import type { WorkspaceChangeEvent, WorkspaceWatchControlEvent } from '../../../shared/workspace'
 import { createRemoteWorkerWorkspace } from '../createRemoteWorkerWorkspace'
 import type { RemoteWorkerClient } from '../../sandbox/remote-worker/workerClient'
 
+const EEXIST_CODE = 'EEXIST'
+
 afterEach(() => {
   vi.useRealTimers()
+})
+
+test('exclusive binary create propagates the operation and normalizes remote EEXIST', async () => {
+  const workspaceRequest = vi.fn()
+    .mockResolvedValueOnce({ ok: true })
+    .mockRejectedValueOnce(Object.assign(new Error('already exists'), { code: ErrorCode.enum.REMOTE_WORKER_ALREADY_EXISTS }))
+  const workspace = createRemoteWorkerWorkspace(
+    { workspace: workspaceRequest } as unknown as RemoteWorkerClient,
+    true,
+  )
+  const bytes = new TextEncoder().encode('binary')
+
+  await workspace.createBinaryFile?.('new.bin', bytes)
+  expect(workspaceRequest).toHaveBeenCalledWith({
+    op: 'createBinaryFile',
+    path: 'new.bin',
+    dataBase64: 'YmluYXJ5',
+  })
+  await expect(workspace.createBinaryFile?.('existing.bin', bytes)).rejects.toMatchObject({ code: EEXIST_CODE })
+})
+
+test('new client omits exclusive create when an old worker advertises no capability', () => {
+  const workspace = createRemoteWorkerWorkspace({} as RemoteWorkerClient, false)
+  expect(workspace.createBinaryFile).toBeUndefined()
 })
 
 test('remote watcher reconnects after the worker event stream closes', async () => {

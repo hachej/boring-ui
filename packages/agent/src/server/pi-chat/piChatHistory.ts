@@ -126,6 +126,7 @@ function toolInputFromCall(part: RecordLike): unknown {
 
 function assistantParts(message: RecordLike, messageId: string): BoringChatPart[] {
   const content = message.content
+  const assistantAborted = message.stopReason === 'aborted'
   if (typeof content === 'string') return [{ type: 'text', id: `${messageId}:text:0`, text: content }]
   if (!Array.isArray(content)) return []
 
@@ -150,7 +151,9 @@ function assistantParts(message: RecordLike, messageId: string): BoringChatPart[
         ? 'output-error'
         : part.state === 'output-available'
           ? 'output-available'
-          : 'input-available'
+          : part.state === 'aborted' || assistantAborted
+            ? 'aborted'
+            : 'input-available'
       return [
         {
           type: 'tool-call',

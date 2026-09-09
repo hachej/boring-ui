@@ -1,12 +1,14 @@
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createWorkerServer, WORKER_ERROR_CODES, type WorkerConfig } from '../index'
+import type { Workspace } from '../../../shared/workspace'
+import { createWorkerServer, runWorkspaceOp, WORKER_ERROR_CODES, type WorkerConfig } from '../index'
 import { WORKER_INTERNAL_TOKEN_HEADER } from '../../index'
 
 const INTERNAL_TOKEN = 'test-internal-token'
+const EEXIST_CODE = 'EEXIST'
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111'
 
 async function stubConfig(): Promise<WorkerConfig> {
@@ -28,6 +30,15 @@ async function stubConfig(): Promise<WorkerConfig> {
   }
 }
 
+it('maps workspace EEXIST to the stable remote-worker collision code', async () => {
+  const createBinaryFile = vi.fn().mockRejectedValue(Object.assign(new Error('exists'), { code: EEXIST_CODE }))
+  await expect(runWorkspaceOp({ createBinaryFile } as unknown as Workspace, {
+    op: 'createBinaryFile',
+    path: 'existing.bin',
+    dataBase64: 'eA==',
+  })).rejects.toMatchObject({ statusCode: 409, code: WORKER_ERROR_CODES.ALREADY_EXISTS })
+})
+
 describe('createWorkerServer', () => {
   let close: (() => Promise<void>) | undefined
 
@@ -45,6 +56,17 @@ describe('createWorkerServer', () => {
     const health = await app.inject({ method: 'GET', url: '/health' })
     expect(health.statusCode).toBe(200)
     expect(health.json()).toEqual({ ok: true })
+
+    const internalHealth = await app.inject({
+      method: 'GET',
+      url: '/internal/health',
+      headers: { [WORKER_INTERNAL_TOKEN_HEADER]: INTERNAL_TOKEN },
+    })
+    expect(internalHealth.statusCode).toBe(200)
+    expect(internalHealth.json()).toEqual({
+      ok: true,
+      capabilities: ['exclusive-binary-create'],
+    })
   })
 
   it('rejects internal routes without a valid internal token', async () => {

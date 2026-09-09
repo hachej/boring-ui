@@ -20,6 +20,7 @@ const BASE_CONFIG: CoreConfig = {
   staticDir: null,
   databaseUrl: TEST_DB_URL,
   stores: 'postgres',
+  defaultAgentTypeId: 'default',
   cors: { origins: ['http://localhost:3000'], credentials: true },
   bodyLimit: 16 * 1024 * 1024,
   logLevel: 'silent' as CoreConfig['logLevel'],
@@ -69,8 +70,8 @@ beforeEach(async () => {
   `
 
   await sqlClient`
-    INSERT INTO workspaces (id, app_id, name, created_by)
-    VALUES (${WS_ID}, 'test-app', 'Invites WS', ${OWNER_ID})
+    INSERT INTO workspaces (id, app_id, name, created_by, default_agent_type_id)
+    VALUES (${WS_ID}, 'test-app', 'Invites WS', ${OWNER_ID}, 'default')
   `
 })
 

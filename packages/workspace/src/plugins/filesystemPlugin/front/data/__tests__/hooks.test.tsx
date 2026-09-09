@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
-import { renderHook, waitFor, act } from "@testing-library/react"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { renderHook, waitFor, act, cleanup } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import {
@@ -13,6 +13,7 @@ import {
   useDeleteFile,
 } from "../hooks"
 import { FetchError } from "../fetchClient"
+import { setPreloadedTreeEntries } from "../treePreloadCache"
 import { events } from "../../../../../front/events"
 import { filesystemEvents } from "../../../shared/events"
 
@@ -43,6 +44,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -56,6 +58,19 @@ beforeEach(() => {
     createDir: vi.fn(),
     moveFile: vi.fn(),
     deleteFile: vi.fn(),
+  }
+})
+
+afterEach(async () => {
+  try {
+    cleanup()
+    await queryClient.cancelQueries()
+    queryClient.clear()
+    // Drain queued query notifications before the jsdom environment is torn down.
+    await vi.runOnlyPendingTimersAsync()
+  } finally {
+    events._reset()
+    vi.useRealTimers()
   }
 })
 
@@ -155,6 +170,36 @@ describe("useFileList", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual(entries)
     expect(mockClient.getTree).toHaveBeenCalledWith("/", expect.any(AbortSignal))
+  })
+
+  it("refetches when the seeded preload snapshot is older than the stale window", async () => {
+    // Regression: a workspace round-trip remounts the tree pane, which reseeds
+    // itself from the boot-time preload. Dating that snapshot as "just
+    // fetched" left the pane showing the old listing forever — a file created
+    // in the meantime only appeared after a manual refresh.
+    const stale = [{ name: "alpha.md", kind: "file" as const, path: "alpha.md" }]
+    const fresh = [...stale, { name: "notes.md", kind: "file" as const, path: "notes.md" }]
+    setPreloadedTreeEntries(TEST_BASE, TEST_WORKSPACE_ID, ".", stale)
+    vi.setSystemTime(new Date(Date.now() + 60_000))
+    mockClient.getTree.mockResolvedValue(fresh)
+
+    const { result } = renderHook(() => useFileList("."), { wrapper })
+
+    expect(result.current.data).toEqual(stale)
+    await waitFor(() => expect(result.current.data).toEqual(fresh))
+    expect(mockClient.getTree).toHaveBeenCalledWith(".", expect.any(AbortSignal))
+  })
+
+  it("serves a just-captured preload without refetching", async () => {
+    const entries = [{ name: "alpha.md", kind: "file" as const, path: "alpha.md" }]
+    setPreloadedTreeEntries(TEST_BASE, TEST_WORKSPACE_ID, "fresh-dir", entries)
+    mockClient.getTree.mockResolvedValue([])
+
+    const { result } = renderHook(() => useFileList("fresh-dir"), { wrapper })
+
+    expect(result.current.data).toEqual(entries)
+    await waitFor(() => expect(result.current.isFetching).toBe(false))
+    expect(mockClient.getTree).not.toHaveBeenCalled()
   })
 })
 

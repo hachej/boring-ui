@@ -162,4 +162,22 @@ describe('WorkspaceRuntimeSandboxHandleStore', () => {
       expect.objectContaining({ workspaceId: 'ws-live', sandboxId: 'sbx_live' }),
     ])
   })
+
+  it('isolates Vercel and Blaxel handles for the same workspace', async () => {
+    const { store } = makeResourceStore()
+    const vercel = new WorkspaceRuntimeSandboxHandleStore(store, 'vercel')
+    const blaxel = new WorkspaceRuntimeSandboxHandleStore(store, 'blaxel')
+    const base = { workspaceId: 'same', createdAt: '2026-04-29T00:00:00.000Z', lastUsedAt: '2026-04-29T00:02:00.000Z' }
+    await vercel.put({ ...base, sandboxId: 'vercel-one', provider: 'blaxel' })
+    await blaxel.put({ ...base, sandboxId: 'blaxel-one', provider: 'vercel' })
+
+    expect((await vercel.get('same'))?.sandboxId).toBe('vercel-one')
+    expect((await blaxel.get('same'))?.sandboxId).toBe('blaxel-one')
+    expect((await vercel.get('same'))?.provider).toBe('vercel')
+    expect((await blaxel.get('same'))?.provider).toBe('blaxel')
+    expect((await blaxel.get('same'))?.persistenceMode).toBe('persistent')
+    await blaxel.delete('same')
+    expect(await blaxel.get('same')).toBeNull()
+    expect((await vercel.get('same'))?.sandboxId).toBe('vercel-one')
+  })
 })

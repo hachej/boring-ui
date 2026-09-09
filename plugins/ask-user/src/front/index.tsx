@@ -1,6 +1,7 @@
 "use client"
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
+import { Artifact, ArtifactAction, ArtifactActions, ArtifactDescription, ArtifactHeader, ArtifactTitle, useOpenArtifact } from "@hachej/boring-agent/front/artifacts"
 import {
   WORKSPACE_COMPOSER_STOP_EVENT,
   postUiCommand,
@@ -8,28 +9,31 @@ import {
   useWorkspaceContext,
   useWorkspaceContextOptional,
   workspaceComposerStopAppliesToSession,
+  type HumanArtifact,
   type PaneProps,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
-import { CheckCircle2, HelpCircle, Inbox, SquareArrowOutUpRight, XCircle } from "lucide-react"
+import { CheckCircle2, ExternalLink, FileText, HelpCircle, Inbox, SquareArrowOutUpRight, XCircle } from "lucide-react"
 import { useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
+import { AskUserToolInputSchema } from "../shared/schema"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
-import { createQuestionsClient, QuestionsClientError } from "./client"
+import { createQuestionsClient, QuestionsClientError, readPendingQuestionReceipt } from "./client"
 import { createQuestionsStore, pendingQuestionSnapshot, QuestionsRuntimeContext, isSessionOpen, useQuestionsRuntime, type QuestionsRuntime } from "./runtime"
 import { useAskUserAttentionActions, useAskUserAttentionBlockers, useAskUserComposerStopCancel, useAskUserPendingRefresh } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
-function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, sessionRefs, children }: PluginProviderProps) {
   const workspaceId = useWorkspaceContextOptional()?.workspaceId
   const authIdentity = useMemo(
     () => authScopeKey ?? JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right))),
     [authHeaders, authScopeKey],
   )
   const store = useMemo(() => createQuestionsStore(), [agentTypeId, apiBaseUrl, authIdentity, workspaceId])
+  const requestPendingRefresh = useAskUserPendingRefresh(store, { activeSessionId, apiBaseUrl, authHeaders })
   const runtime = useMemo<QuestionsRuntime>(() => ({
     ...store,
     agentTypeId,
@@ -37,17 +41,18 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, a
     authHeaders,
     activeSessionId,
     openSessionIds,
-    async refreshPending(sessionId) {
-      const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
-      store.setPending(pending, sessionId)
-      return pending
+    agentTypeIdForSession(sessionId) {
+      if (!sessionRefs) return agentTypeId
+      const matches = sessionRefs.filter((session) => session.sessionId === sessionId)
+      if (matches.length === 1) return matches[0]?.agentTypeId
+      return activeSessionId === sessionId ? agentTypeId : undefined
     },
-  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, store])
+    requestPendingRefresh,
+  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, requestPendingRefresh, sessionRefs, store])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
-  useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
@@ -84,7 +89,7 @@ async function resolveQuestionAction(
     const client = createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders })
     if (action === "submit") await client.submit(question, values ?? {})
     else await client.cancel(question)
-    runtime.setPending(null, question.sessionId)
+    runtime.removePending(question.questionId)
     return true
   } finally {
     runtime.finishQuestionAction(question)
@@ -131,17 +136,28 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const sessionId = paneQuestionSessionId(runtime, params)
   const pending = runtime.getPending(sessionId)
   const question = hasExplicitTarget(params)
-    ? (pending?.questionId === params.questionId ? pending : null)
+    ? runtime.getPendingByQuestionId(params.questionId)
     : pending
+  const explicitQuestionId = hasExplicitTarget(params) ? params.questionId : undefined
   useEffect(() => {
     if (!sessionId) return
-    if (!pending || (hasExplicitTarget(params) && pending.questionId !== params.questionId)) void runtime.refreshPending(sessionId).catch(() => undefined)
-  }, [params, pending, runtime, sessionId])
+    if (!explicitQuestionId) {
+      if (!pending) runtime.requestPendingRefresh(sessionId)
+      return
+    }
+    if (pending?.questionId === explicitQuestionId) return
+    const controller = new AbortController()
+    void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders })
+      .pending(sessionId, controller.signal, explicitQuestionId)
+      .then((question) => { if (question) runtime.setPending(question) })
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [explicitQuestionId, pending, runtime, sessionId])
   useEffect(() => {
     const onStop = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail
       if (!question || !workspaceComposerStopAppliesToSession(detail, question.sessionId)) return
-      runtime.setPending(null, question.sessionId)
+      runtime.removePending(question.questionId)
       api.close()
     }
     window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
@@ -155,28 +171,113 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
+function inlineArtifactsFromInput(input: unknown): HumanArtifact[] {
+  const result = AskUserToolInputSchema.safeParse(input)
+  return result.success ? result.data.artifacts ?? [] : []
+}
+
+function InlineArtifactList({ artifacts }: { artifacts: HumanArtifact[] }) {
+  const openArtifact = useOpenArtifact()
+  if (artifacts.length === 0) return null
+  return <ul className="mt-3 space-y-2" aria-label="Artifacts">
+    {artifacts.map((artifact) => {
+      const opensWorkspacePath = artifact.surfaceKind === "workspace.open.path"
+      const open = () => {
+        if (opensWorkspacePath) openArtifact?.(artifact.target)
+        else postUiCommand({ kind: "openSurface", params: { kind: artifact.surfaceKind, target: artifact.target } })
+      }
+      const canOpen = !opensWorkspacePath || openArtifact !== null
+      return <li key={artifact.id}><Artifact className="shadow-none">
+        <ArtifactHeader className="gap-3 border-b-0 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <ArtifactTitle className="truncate">{artifact.title}</ArtifactTitle>
+            {artifact.description ? <ArtifactDescription className="mt-0.5 line-clamp-2 text-xs">{artifact.description}</ArtifactDescription> : null}
+          </div>
+          <ArtifactActions>
+            <ArtifactAction
+              icon={opensWorkspacePath ? FileText : ExternalLink}
+              label={`Open ${artifact.title}`}
+              tooltip={canOpen ? `Open ${artifact.title}` : "Workspace file opening is unavailable"}
+              disabled={!canOpen}
+              onClick={open}
+            />
+          </ArtifactActions>
+        </ArtifactHeader>
+      </Artifact></li>
+    })}
+  </ul>
+}
+
 function InlineQuestion({ part }: { part: unknown }) {
   const runtime = useQuestionsRuntime()
   useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
-  const toolPart = typeof part === "object" && part ? part as { toolCallId?: unknown; state?: unknown; input?: unknown } : null
+  const toolPart = typeof part === "object" && part ? part as { toolCallId?: unknown; state?: unknown; input?: unknown; output?: unknown } : null
   const toolCallId = typeof toolPart?.toolCallId === "string" ? toolPart.toolCallId : null
-  const question = toolCallId ? runtime.getPendingByToolCallId(toolCallId) : null
-  if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm"><PendingQuestionBody question={question} compact onOpen={() => postUiCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })} /></section>
+  const receipt = toolPart?.state === "output-available" ? readPendingQuestionReceipt(toolPart.output) : null
+  const question = receipt
+    ? runtime.getPendingByQuestionId(receipt.questionId)
+    : toolCallId ? runtime.getPendingByToolCallId(toolCallId) : null
+  useEffect(() => {
+    if (!receipt || !runtime.activeSessionId || question) return
+    runtime.requestPendingRefresh(runtime.activeSessionId, receipt.questionId)
+  }, [question, receipt?.questionId, runtime])
+  const artifacts = inlineArtifactsFromInput(toolPart?.input)
+  if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm">
+    <PendingQuestionBody question={question} compact onOpen={() => postUiCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })} />
+    <InlineArtifactList artifacts={artifacts} />
+  </section>
+  if (receipt) return <section data-boring-ask-user-pending-receipt="true" className="my-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 text-sm">
+    <div className="flex items-center gap-3">
+      <HelpCircle className="h-4 w-4 text-muted-foreground" />
+      <div className="min-w-0"><div className="truncate font-medium text-foreground">{typeof (toolPart?.input as { title?: unknown } | undefined)?.title === "string" ? (toolPart!.input as { title: string }).title : "Agent question"}</div><div className="text-xs text-muted-foreground">Question pending</div></div>
+    </div>
+    <InlineArtifactList artifacts={artifacts} />
+  </section>
   if (toolPart?.state !== "output-available" && toolPart?.state !== "output-error" && toolPart?.state !== "aborted") return null
   const input = typeof toolPart.input === "object" && toolPart.input ? toolPart.input as { title?: unknown } : null
   const title = typeof input?.title === "string" ? input.title : "Agent question"
   const cancelled = toolPart.state !== "output-available"
-  return <section data-boring-ask-user-resolved-question="true" className="my-3 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 text-sm">
-    {cancelled ? <XCircle className="h-4 w-4 text-muted-foreground" /> : <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-    <div className="min-w-0"><div className="truncate font-medium text-foreground">{title}</div><div className="text-xs text-muted-foreground">{cancelled ? "Question cancelled" : "Answer submitted"}</div></div>
+  return <section data-boring-ask-user-resolved-question="true" className="my-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 text-sm">
+    <div className="flex items-center gap-3">
+      {cancelled ? <XCircle className="h-4 w-4 text-muted-foreground" /> : <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+      <div className="min-w-0"><div className="truncate font-medium text-foreground">{title}</div><div className="text-xs text-muted-foreground">{cancelled ? "Question cancelled" : "Answer submitted"}</div></div>
+    </div>
+    <InlineArtifactList artifacts={artifacts} />
   </section>
 }
 
+/**
+ * The Inbox is the single triage surface, so its badge is THE "a human is
+ * blocking" signal in the app-left rail — and it says the same thing, the same
+ * way, as the attention rollups on the pane's collapsed group headers: amber
+ * dot plus a count of SESSIONS, not of items.
+ *
+ * It counted raw blockers before, which double-counts a chat that asked two
+ * questions and disagrees with every other attention count on the surface. It
+ * was also accent blue, which in this palette reads as "selected/active" —
+ * the wrong register for something waiting on you.
+ */
 function InboxCountBadge() {
   const { blockers } = useWorkspaceAttention()
-  const count = blockers.filter(isInboxAttentionBlocker).length
+  const sessions = new Set<string>()
+  for (const blocker of blockers) {
+    if (!isInboxAttentionBlocker(blocker)) continue
+    // A blocker with no session still needs a human; key it by its own id so
+    // it counts once rather than collapsing every session-less item into one.
+    sessions.add(blocker.sessionId ? `session:${blocker.agentTypeId ?? ""}\u0000${blocker.sessionId}` : `blocker:${blocker.id}`)
+  }
+  const count = sessions.size
   if (count === 0) return null
-  return <span data-boring-workspace-part="app-left-inbox-count" aria-label={`${count} inbox item${count === 1 ? "" : "s"}`} className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm">{count > 99 ? "99+" : String(count)}</span>
+  return (
+    <span
+      data-boring-workspace-part="app-left-inbox-count"
+      aria-label={`${count} chat${count === 1 ? "" : "s"} waiting for you`}
+      className="inline-flex items-center gap-1 text-[10px] font-medium tabular-nums leading-4 text-[color:var(--attention)]"
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-[color:var(--attention)]" />
+      {count > 99 ? "99+" : String(count)}
+    </span>
+  )
 }
 function AskUserInboxOverlay({ onClose, params }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()

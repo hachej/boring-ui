@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@hachej/boring-ui-kit"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
@@ -28,6 +29,33 @@ import {
 
 function DummyPanel() {
   return <div data-testid="dummy-panel">panel</div>
+}
+
+function DrawerFocusPanel({ params }: { params?: Record<string, unknown> }) {
+  const drawer = String(params?.drawer)
+  return (
+    <div>
+      <button type="button">{drawer} first action</button>
+      <button type="button">{drawer} last action</button>
+    </div>
+  )
+}
+
+function NestedDialogPanel() {
+  return (
+    <Dialog>
+      <DialogTrigger>Open nested dialog</DialogTrigger>
+      <DialogContent>
+        <DialogTitle>Nested confirmation</DialogTitle>
+        <DialogDescription>Confirm without closing the drawer.</DialogDescription>
+        <button type="button">Nested action</button>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ComposerPanel() {
+  return <textarea name="message" aria-label="Chat composer" />
 }
 
 function WorkbenchHostControlProbe({ params }: { params?: Record<string, unknown> }) {
@@ -418,6 +446,13 @@ describe("IdeLayout responsive behavior", () => {
 
 describe("ChatLayout component", () => {
   beforeEach(() => { vi.restoreAllMocks() })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    setViewport(1280)
+    document.body.removeAttribute("style")
+    document.body.removeAttribute("data-scroll-locked")
+  })
 
   it("renders main-style flex chrome", () => {
     const { container } = renderWithRegistry(
@@ -583,10 +618,10 @@ describe("ChatLayout component", () => {
 
     fireShortcut("1", { metaKey: true })
     fireShortcut("2", { metaKey: true })
-    fireShortcut("Escape")
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
 
     expect(closeNav).toHaveBeenCalledTimes(2)
-    expect(closeSurface).toHaveBeenCalledTimes(2)
+    expect(closeSurface).toHaveBeenCalledOnce()
   })
 
   it("lets active chat Escape stop streaming before shell close shortcuts run", () => {
@@ -701,7 +736,8 @@ describe("ChatLayout component", () => {
       ["chat", "session-list"],
     )
 
-    expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
+    // The dockview stage is code-split and mounts after its chunk resolves.
+    expect(await screen.findByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
     expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
     expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
@@ -739,7 +775,7 @@ describe("ChatLayout component", () => {
       ["chat", "session-list"],
     )
 
-    await user.click(screen.getByLabelText("Close First pane"))
+    await user.click(await screen.findByLabelText("Close First pane"))
     expect(closePane).toHaveBeenCalledWith("s1")
     expect(setActive).not.toHaveBeenCalled()
 
@@ -808,6 +844,288 @@ describe("ChatLayout component", () => {
     expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Expand workbench" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Close workbench" })).not.toBeInTheDocument()
+  })
+
+  // #1457 review findings 1 & 2. jsdom has no real layout: the vitest-wide
+  // `ResizeObserver` polyfill (vitest.setup.ts) is a no-op that never calls
+  // back, and `getBoundingClientRect` always reports zeros, which ChatLayout
+  // now treats as "no usable measurement yet" rather than letting it zero
+  // out sizing. That makes jsdom exercise exactly the pre-measurement
+  // fallback path (`rowWidthEstimate`) end to end — never a value the
+  // ResizeObserver later corrects — which is the right target for both
+  // findings: (1) the estimate must account for ChatLayout's own open
+  // drawers (not just the raw viewport), and (2) that estimate must already
+  // be the safe, reserved value on the very first render, with no
+  // intermediate frame at the old unclamped width.
+  it("reserves room for a chat overlay on first render, accounting for an open workbench-left drawer (#1451/#1457)", () => {
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-initial-reserve"
+    window.localStorage.setItem(`${storageKey}:surfaceWidth`, "680")
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: vi.fn() }}
+        chatOverlay={<div>Tasks overlay</div>}
+      />,
+      ["chat", "artifact-surface", "workbench-left"],
+    )
+
+    // Reproduces finding 1's example: nav closed, a 280px workbench-left
+    // drawer open, 1024px viewport → a 744px row. Pre-fix, the width budget
+    // was computed off the *outer shell* (or, before that, the raw
+    // viewport), which does not subtract the open workbench-left drawer —
+    // so the workbench could be sized as if it owned the whole row and the
+    // chat/overlay column got squeezed to near 0. Post-fix the estimate
+    // subtracts the drawer, so the workbench is capped well under its
+    // persisted 680px width, leaving the reserved 280px for the overlay.
+    const workbench = screen.getByRole("complementary", { name: "Workbench" })
+    const width = Number(workbench.style.width.replace("px", ""))
+    expect(Number.isFinite(width)).toBe(true)
+    expect(width).toBeLessThan(680) // shrank off the persisted width
+    expect(width).toBeLessThanOrEqual(744 - 280) // left >= the overlay reserve
+    expect(workbench.style.width).toBe(workbench.style.minWidth)
+    expect(workbench.style.width).toBe(workbench.style.maxWidth)
+
+    // No later correction changes it: this IS the first-render value (no
+    // `act`/`waitFor` beyond what `render` itself flushes), so there was no
+    // intermediate frame at the old, unclamped width for the browser to
+    // paint before a passive effect fixed it up.
+    expect(screen.getByRole("complementary", { name: "Workbench" }).style.width).toBe(workbench.style.width)
+  })
+
+  it("does not widen the workbench to fill the whole row when no chat overlay is open (#1457)", () => {
+    // Wide enough (>= CHAT_AUTOCOLLAPSE_MAX_WIDTH) that ChatLayout's separate
+    // narrow-viewport auto-collapse effect does not also kick in here — this
+    // test is only about the reserve/estimate math, not that unrelated
+    // behavior (which the 1024px-viewport test above deliberately keeps
+    // out of play by supplying a chatOverlay).
+    setViewport(1280)
+    const storageKey = "chat-layout-1457-no-overlay"
+    window.localStorage.setItem(`${storageKey}:surfaceWidth`, "680")
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    // No sidebar drawer open and no chatOverlay: the persisted 680px width
+    // fits inside the row untouched — the reserve/estimate logic must not
+    // shrink the workbench when nothing needs the room.
+    const workbench = screen.getByRole("complementary", { name: "Workbench" })
+    expect(workbench.style.width).toBe("680px")
+  })
+
+  // #1457 re-review probes. The reviewer judged both non-blocking from code
+  // reading alone and flagged that the global `ResizeObserver` mock (a
+  // no-op) leaves this behavior untested. These install a *controllable*
+  // `ResizeObserver` for the duration of one test so the row's real
+  // measurement callback can be fired on demand, closing that gap with
+  // actual evidence instead of just re-reading the source.
+  function installControllableResizeObserver() {
+    let deliver: (() => void) | null = null
+    class ControllableResizeObserver {
+      constructor(callback: () => void) { deliver = callback }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    const original = globalThis.ResizeObserver
+    vi.stubGlobal("ResizeObserver", ControllableResizeObserver)
+    return {
+      fire: () => act(() => { deliver?.() }),
+      restore: () => vi.stubGlobal("ResizeObserver", original),
+    }
+  }
+
+  it("ignores a transient 0-width row sample and recovers on the next positive one (#1457 probe 1)", () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-zero-guard"
+    window.localStorage.setItem(`${storageKey}:surfaceWidth`, "680")
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+        chatOverlay={<div>Tasks overlay</div>}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+    const workbenchWidth = () => screen.getByRole("complementary", { name: "Workbench" }).style.width
+
+    // Mount already exercised the 0-guard once (jsdom's real
+    // getBoundingClientRect is always zero), landing on the pre-measurement
+    // estimate. This is the value a legitimate collapse-to-0 must not
+    // disturb.
+    const beforeCollapse = workbenchWidth()
+
+    // A row that is legitimately, fully squeezed (or behind a momentary
+    // `display:none` ancestor) reports 0 — this must not be treated as "the
+    // real width is now 0" and propagated into sizing math.
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 0 } as DOMRect)
+    ro.fire()
+    expect(workbenchWidth()).toBe(beforeCollapse)
+
+    // Recovery: the next positive sample is applied normally — the guard
+    // does not get "stuck" ignoring real data after a 0 reading.
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 744 } as DOMRect)
+    ro.fire()
+    // 744 row, 280 chatOverlay reserve, persisted surfaceWidth 680 clamped
+    // to surfaceMax = max(480, floor(744*0.72)) = 535 → min(535, 744-280) = 464.
+    expect(workbenchWidth()).toBe("464px")
+    expect(workbenchWidth()).not.toBe(beforeCollapse)
+
+    ro.restore()
+  })
+
+  it("dedupes an identical resize sample: no further geometry change reaches the DOM (#1457 probe 2)", async () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-dedupe"
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 900 } as DOMRect)
+    const workbenchWidth = () => screen.getByRole("complementary", { name: "Workbench" }).style.width
+
+    // First real sample changes the measured width (0 → 900): a real
+    // geometry change lands in the DOM.
+    ro.fire()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    const widthAfterFirstSample = workbenchWidth()
+    expect(widthAfterFirstSample).not.toBe("")
+
+    // Second delivery reports the *identical* width. React's own docs note
+    // that returning the same value from a state updater can still let the
+    // owning component "render" once more before bailing out of
+    // committing — so a raw render/commit-count assertion here would be an
+    // implementation-detail-sensitive, not-quite-accurate proxy (verified:
+    // an earlier version of this test asserting zero additional commits via
+    // a `Profiler` was flaky against exactly that documented behavior). What
+    // the reviewer's finding was actually about — and what matters for
+    // correctness — is that no *second geometry update* reaches the DOM.
+    ro.fire()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(workbenchWidth()).toBe(widthAfterFirstSample)
+
+    ro.restore()
+  })
+
+  function workbenchTransitionClassPresent(): boolean {
+    return screen.getByRole("complementary", { name: "Workbench" }).className
+      .includes("transition-[flex-grow,flex-basis,width,min-width,max-width]")
+  }
+
+  it("arms the workbench width transition once the row settles (#1457 lifecycle)", async () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-transition-arm-basic"
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+
+    // Not armed yet: no real measurement has landed (jsdom's real
+    // `getBoundingClientRect` is always 0, guarded away by the 0-width
+    // check).
+    expect(workbenchTransitionClassPresent()).toBe(false)
+
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 900 } as DOMRect)
+    ro.fire()
+
+    // Still not armed the instant the value lands — arming is deliberately
+    // deferred to a later frame so "transition on" and "width changed" are
+    // never the same commit (see #1457 finding 2).
+    expect(workbenchTransitionClassPresent()).toBe(false)
+
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)) })
+    expect(workbenchTransitionClassPresent()).toBe(true)
+
+    ro.restore()
+  })
+
+  it("still arms the workbench width transition when an earlier schedule is cancelled by a superseding measurement (#1457 cleanup-safety)", async () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-transition-arm-reschedule"
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+    expect(workbenchTransitionClassPresent()).toBe(false)
+
+    // Reproduces the reported repro exactly: a *second, distinct*
+    // `measuredRowWidth` update lands before the first arming frame has a
+    // chance to run. The effect's cleanup cancels the first schedule — a
+    // buggy "armed" ref set *before* scheduling (rather than by the frame
+    // actually firing) would stay `true` from the first run and make the
+    // second effect run bail out without rescheduling, permanently
+    // disabling this transition (not just for the plugin-tabs case — for
+    // every later legitimate change too: collapse/restore, fullscreen,
+    // drag-resize, a genuine host-chrome resize).
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 900 } as DOMRect)
+    ro.fire()
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 901 } as DOMRect)
+    ro.fire()
+
+    expect(workbenchTransitionClassPresent()).toBe(false) // pre-settle, as above
+
+    // The rescheduled frame must still fire and arm the transition — it
+    // must not have been silently dropped by the first schedule's
+    // cancellation.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)) })
+    expect(workbenchTransitionClassPresent()).toBe(true)
+
+    ro.restore()
   })
 
   it("owns collapsed, split, fullscreen, restore, and collapse transitions at the ChatLayout host", async () => {
@@ -1142,11 +1460,391 @@ describe("ChatLayout component", () => {
 
     const sessionBrowser = screen.getByLabelText("Session browser")
     expect(sessionBrowser).toHaveAttribute("role", "dialog")
-    expect(sessionBrowser).toHaveAttribute("aria-modal", "true")
+    expect(sessionBrowser).toHaveAttribute("aria-modal", "false")
 
     const workbenchLeft = screen.getByLabelText("Workbench left panel")
     expect(workbenchLeft).toHaveAttribute("role", "dialog")
     expect(workbenchLeft).toHaveAttribute("aria-modal", "true")
     expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+    expect(container.querySelectorAll('[aria-modal="true"]')).toHaveLength(1)
+  })
+
+  it("closes the topmost workbench drawer first when both drawers are open", () => {
+    const closeNav = vi.fn()
+    const closeSidebar = vi.fn()
+    renderWithRegistry(
+      <ChatLayout
+        nav="session-list"
+        navParams={{ onClose: closeNav }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: closeSidebar }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Workbench left panel" }), { key: "Escape" })
+
+    expect(closeSidebar).toHaveBeenCalledOnce()
+    expect(closeNav).not.toHaveBeenCalled()
+  })
+
+  it("treats the visually topmost session drawer as active on mobile", () => {
+    setViewport(375)
+    const closeNav = vi.fn()
+    const closeSidebar = vi.fn()
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        nav="session-list"
+        navParams={{ onClose: closeNav }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: closeSidebar }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
+
+    expect(closeNav).toHaveBeenCalledOnce()
+    expect(closeSidebar).not.toHaveBeenCalled()
+    setViewport(1280)
+  })
+
+  it("keeps focus in the topmost workbench drawer when the session drawer closes", async () => {
+    const user = userEvent.setup()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    panelRegistry.register("workbench-focus", { title: "workbench-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [navOpen, setNavOpen] = useState(true)
+      return (
+        <ChatLayout
+          center="chat"
+          nav={navOpen ? "drawer-focus" : null}
+          navParams={{ drawer: "session", onClose: () => setNavOpen(false) }}
+          sidebar="workbench-focus"
+          sidebarParams={{ drawer: "workbench", onClose: vi.fn() }}
+        />
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const workbenchFirst = screen.getByRole("button", { name: "workbench first action" })
+    expect(workbenchFirst).toHaveFocus()
+    screen.getByRole("button", { name: "session first action" }).focus()
+    await user.keyboard("{Meta>}1{/Meta}")
+    expect(screen.getByLabelText("Session browser")).toHaveAttribute("data-boring-state", "collapsed")
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Workbench left panel" })).toContainElement(document.activeElement as HTMLElement))
+  })
+
+  it.each([
+    {
+      drawer: "session",
+      dialogName: "Session browser",
+      openButtonName: "Open session drawer",
+    },
+    {
+      drawer: "workbench",
+      dialogName: "Workbench left panel",
+      openButtonName: "Open workbench drawer",
+    },
+  ])("traps focus, closes with Escape, and restores the $drawer drawer trigger", async ({ drawer, dialogName, openButtonName }) => {
+    const user = userEvent.setup()
+    const closeSurface = vi.fn()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: DummyPanel })
+    panelRegistry.register("artifact-surface", { title: "artifact-surface", lazy: false, component: DummyPanel })
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [open, setOpen] = useState(false)
+      const isSession = drawer === "session"
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>{openButtonName}</button>
+          <ChatLayout
+            center="chat"
+            surface="artifact-surface"
+            surfaceParams={{ onClose: closeSurface }}
+            nav={isSession && open ? "drawer-focus" : null}
+            onOpenNav={isSession ? () => setOpen(true) : undefined}
+            navParams={isSession ? { drawer, onClose: () => setOpen(false) } : undefined}
+            sidebar={!isSession && open ? "drawer-focus" : null}
+            onOpenSidebar={!isSession ? () => setOpen(true) : undefined}
+            sidebarParams={!isSession ? { drawer, onClose: () => setOpen(false) } : undefined}
+          />
+        </>
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const trigger = screen.getByRole("button", { name: openButtonName })
+    await user.click(trigger)
+
+    const dialog = screen.getByRole("dialog", { name: dialogName })
+    expect(dialog).toHaveAttribute("aria-modal", "true")
+    const first = screen.getByRole("button", { name: `${drawer} first action` })
+    const last = screen.getByRole("button", { name: `${drawer} last action` })
+    Object.defineProperty(first, "offsetParent", { configurable: true, value: dialog })
+    Object.defineProperty(last, "offsetParent", { configurable: true, value: dialog })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true })
+    expect(last).toHaveFocus()
+    fireEvent.keyDown(last, { key: "Tab" })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument())
+    expect(closeSurface).not.toHaveBeenCalled()
+    expect(trigger).toHaveFocus()
+  })
+
+  it("keeps focus in a nested portaled dialog and lets Escape close it before the drawer", async () => {
+    const user = userEvent.setup()
+    const closeNav = vi.fn()
+    const { panelRegistry } = renderWithPanelRegistry(
+      <ChatLayout center="empty" nav="nested-dialog" navParams={{ onClose: closeNav }} />,
+      ["empty"],
+    )
+    act(() => {
+      panelRegistry.register("nested-dialog", { title: "nested-dialog", lazy: false, component: NestedDialogPanel })
+    })
+
+    await user.click(await screen.findByRole("button", { name: "Open nested dialog" }))
+    const nestedDialog = screen.getByRole("dialog", { name: "Nested confirmation" })
+    const nestedAction = screen.getByRole("button", { name: "Nested action" })
+    nestedAction.focus()
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+    })
+
+    expect(nestedDialog).toContainElement(document.activeElement as HTMLElement)
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nested confirmation" })).not.toBeInTheDocument())
+    expect(screen.getByRole("dialog", { name: "Session browser" })).toBeInTheDocument()
+    expect(closeNav).not.toHaveBeenCalled()
+  })
+
+  it("does not schedule focus ping-pong when two ChatLayout shells are open", async () => {
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame")
+    renderWithRegistry(<ChatLayout center="empty" nav="drawer-focus" />, ["drawer-focus", "empty"])
+    renderWithRegistry(<ChatLayout center="empty" nav="drawer-focus" />, ["drawer-focus", "empty"])
+    requestFrame.mockClear()
+    const secondDrawer = screen.getAllByRole("dialog", { name: "Session browser" })[1]
+
+    secondDrawer.focus()
+    await act(async () => { await Promise.resolve() })
+
+    expect(secondDrawer).toHaveFocus()
+    expect(requestFrame).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the local composer when the drawer opener unmounts without delayed focus theft", async () => {
+    vi.useFakeTimers()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: ComposerPanel })
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          {open ? null : <button type="button" onClick={() => setOpen(true)}>Open transient drawer</button>}
+          <button type="button">Later interaction</button>
+          <ChatLayout
+            center="chat"
+            nav={open ? "drawer-focus" : null}
+            navParams={{ drawer: "session", onClose: () => setOpen(false) }}
+          />
+        </>
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Open transient drawer" }))
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect(screen.getByRole("textbox", { name: "Chat composer" })).toHaveFocus()
+
+    const laterInteraction = screen.getByRole("button", { name: "Later interaction" })
+    laterInteraction.focus()
+    await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    expect(laterInteraction).toHaveFocus()
+  })
+
+  it("keeps body scrolling locked until both modal drawers close", async () => {
+    const user = userEvent.setup()
+    const previousOverflow = "clip"
+    document.body.style.overflow = previousOverflow
+
+    function Host() {
+      const [navOpen, setNavOpen] = useState(false)
+      const [sidebarOpen, setSidebarOpen] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setNavOpen(true)}>Open sessions</button>
+          <button type="button" onClick={() => setSidebarOpen(true)}>Open workbench left</button>
+          <button type="button" onClick={() => setNavOpen(false)}>Close sessions</button>
+          <button type="button" onClick={() => setSidebarOpen(false)}>Close workbench left</button>
+          <ChatLayout
+            center="empty"
+            nav={navOpen ? "session-list" : null}
+            navParams={{ onClose: () => setNavOpen(false) }}
+            sidebar={sidebarOpen ? "workbench-left" : null}
+            sidebarParams={{ onClose: () => setSidebarOpen(false) }}
+          />
+        </>
+      )
+    }
+
+    const result = renderWithRegistry(<Host />, ["session-list", "empty", "workbench-left"])
+    await user.click(screen.getByRole("button", { name: "Open sessions" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Open workbench left" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Close sessions" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Close workbench left" }))
+    expect(document.body.style.overflow).toBe(previousOverflow)
+
+    result.unmount()
+  })
+})
+
+describe("ChatLayout compact shell", () => {
+  afterEach(() => {
+    setViewport(1280)
+  })
+
+  it("sizes the mobile drawers from CSS insets, never from window.innerWidth", () => {
+    setViewport(320)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        nav="session-list"
+        navParams={{ onClose: vi.fn() }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: vi.fn() }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    // A JS pixel width both fought the drawer's own right inset and hard-floored
+    // the nav drawer at 280px, overflowing anything narrower by construction.
+    const nav = screen.getByRole("dialog", { name: "Session browser" })
+    expect(nav.style.width).toBe("")
+    expect(nav.style.minWidth).toBe("")
+    expect(nav.style.willChange).toBe("")
+    expect(nav.className).toContain("w-[min(86%,360px)]")
+
+    const sidebar = screen.getByRole("dialog", { name: "Workbench left panel" })
+    expect(sidebar.style.width).toBe("")
+    expect(sidebar.className).toContain("inset-0")
+  })
+
+  it("animates the compact drawers on transform, not on layout properties", () => {
+    setViewport(375)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        nav="session-list"
+        navParams={{ onClose: vi.fn() }}
+        center="chat"
+      />,
+      ["session-list", "chat"],
+    )
+
+    const nav = screen.getByRole("dialog", { name: "Session browser" })
+    // `visibility` rides the same transition so the drawer stays painted while
+    // it slides out and is hidden (not merely translated) once off-screen.
+    expect(nav.className).toContain("transition-[transform,visibility]")
+    expect(nav.className).not.toContain("transition-[width,min-width,max-width]")
+  })
+
+  it("keeps the desktop drawers on explicit widths", () => {
+    setViewport(1280)
+    renderWithRegistry(
+      <ChatLayout
+        nav="session-list"
+        navParams={{ onClose: vi.fn() }}
+        center="chat"
+      />,
+      ["session-list", "chat"],
+    )
+
+    const nav = screen.getByRole("dialog", { name: "Session browser" })
+    expect(nav).toHaveStyle({ width: "260px" })
+    expect(nav.className).toContain("transition-[width,min-width,max-width]")
+  })
+
+  it("renders exactly one mobile bar, carrying the real session title", () => {
+    setViewport(375)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        center="chat"
+        nav={null}
+        onOpenNav={vi.fn()}
+        chatPanes={[{ id: "pane-a", title: "Planning" }, { id: "pane-b", title: "Review" }]}
+        activeChatPaneId="pane-a"
+      />,
+      ["session-list", "chat"],
+    )
+
+    expect(document.querySelectorAll('[data-boring-workspace-part="mobile-chat-bar"]').length).toBe(1)
+    expect(screen.getByText("Planning")).toBeInTheDocument()
+    expect(screen.queryByText("Chat")).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="mobile-chat-pane-count"]')?.textContent).toContain("1/2")
+  })
+
+  it("insets the full-bleed workbench takeover for the home indicator", () => {
+    setViewport(375)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        center="chat"
+        nav={null}
+        surface="empty"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["session-list", "chat", "empty"],
+    )
+
+    const bar = document.querySelector('[data-boring-workspace-part="mobile-workspace-bar"]')
+    const content = bar?.nextElementSibling
+    // Bottom inset includes the keyboard inset so iOS (whose layout viewport
+    // never shrinks for the keyboard) keeps workbench content above it.
+    expect(content?.className).toContain("pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))]")
+    expect(content?.className).toContain("pl-[var(--sa-left,0px)]")
+    expect(content?.className).toContain("pr-[var(--sa-right,0px)]")
   })
 })

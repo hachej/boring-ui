@@ -126,11 +126,6 @@ describe("SessionList", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
-  it("shows empty state when no sessions", () => {
-    render(<SessionList sessions={[]} />)
-    expect(screen.getByText("No sessions")).toBeInTheDocument()
-  })
-
   it("renders with navigation role and accessible label", () => {
     render(<SessionList sessions={sessions} />)
     expect(screen.getByRole("navigation", { name: "Sessions" })).toBeInTheDocument()

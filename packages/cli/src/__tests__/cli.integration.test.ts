@@ -6,8 +6,12 @@ import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
 import { fileURLToPath } from "node:url"
 import fastify from "fastify"
-import { afterEach, beforeAll, expect, test } from "vitest"
+import { afterEach, beforeAll, expect, test, vi } from "vitest"
+
 import { registerStatic } from "../server/cli.js"
+
+// Each case spawns the built CLI (~5s cold on CI runners); the default 5s budget is a coin flip.
+vi.setConfig({ testTimeout: 30_000 })
 
 const execFile = promisify(execFileCallback)
 const testDir = dirname(fileURLToPath(import.meta.url))
@@ -144,7 +148,7 @@ test("boring-ui agent validate reports a valid directory in human format without
   expect(result.stdout).not.toContain("tools:")
   expect(result.stdout).not.toContain("Do not print this prompt")
   expect(result.stdout).not.toContain(root)
-})
+}, 15_000)
 
 
 test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async () => {
@@ -174,7 +178,7 @@ test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async
   })
   expect(result.stdout).not.toContain(instructions.trim())
   expect(result.stdout).not.toContain(root)
-})
+}, 15_000)
 
 
 test.each([
@@ -199,7 +203,7 @@ test.each([
     },
   })
   expect(failure.stderr).not.toMatch(/shell\.read|workspace-ready|triage|linear/)
-})
+}, 30_000)
 
 
 test("boring-ui agent validate accepts empty legacy selector arrays but omits them from output", async () => {

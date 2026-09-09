@@ -1,4 +1,11 @@
 import { ErrorCode } from '../../../shared/error-codes'
+import { safeRandomUUID } from '../../../shared/random-id'
+import { AgentGatewayErrorCode } from '../../../shared/gateway/errors'
+import {
+  errorResponseCode,
+  GatewayResponseError,
+  gatewayResponseErrorFromBody,
+} from '../gatewayResponseError'
 import type {
   CommandReceipt,
   FollowUpPayload,
@@ -43,6 +50,11 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000
 // a slow/hung attempt surfaces as a (retryable) error and the reconnect loop
 // re-issues a fresh request against the recovered server.
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
+// Prompt admission may cold-start the agent runtime and load plugins before it
+// can return its 202 receipt. Keep state/stream recovery bounded tightly, but
+// give commands enough time to finish admission instead of rolling back an
+// accepted prompt after the client-side deadline.
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000
 const DEFAULT_LARGE_STATE_WARNING_BYTES = 5 * 1024 * 1024
 const DEFAULT_LARGE_STATE_WARNING_MESSAGES = 300
 const EVENT_TYPE_RING_LIMIT = 20
@@ -79,9 +91,12 @@ export interface RemotePiSessionOptions {
   }
   setTimeoutFn?: typeof globalThis.setTimeout
   clearTimeoutFn?: typeof globalThis.clearTimeout
-  // Per-attempt timeout for /state and command fetches. Defaults to
-  // DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
+  // Per-attempt timeout for /state and event-stream connection fetches.
+  // Defaults to DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
   requestTimeoutMs?: number
+  // Per-attempt timeout for command fetches. Defaults to
+  // DEFAULT_COMMAND_TIMEOUT_MS; exposed mainly for tests.
+  commandTimeoutMs?: number
 }
 
 export interface RemotePiSessionLargeStateWarning {
@@ -133,6 +148,7 @@ export class RemotePiSession {
   private readonly setTimeoutFn: typeof globalThis.setTimeout
   private readonly clearTimeoutFn: typeof globalThis.clearTimeout
   private readonly requestTimeoutMs: number
+  private readonly commandTimeoutMs: number
   private generation = 0
   private streamRunId = 0
   private reconnectAttempt = 0
@@ -154,6 +170,7 @@ export class RemotePiSession {
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+    this.commandTimeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
     this.store = createPiChatStore(createInitialPiChatState({
       sessionId: options.sessionId,
       workspaceId: options.workspaceId,
@@ -225,6 +242,9 @@ export class RemotePiSession {
     else if (!this.suspended) this.ensureReconnectScheduled()
     try {
       const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
+      if (!this.disposed && payload.model) {
+        this.store.dispatch({ type: 'model-confirmed', model: payload.model }, { flush: true })
+      }
       return receipt
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
@@ -248,11 +268,28 @@ export class RemotePiSession {
   }
 
   async clearQueue(payload: QueueClearPayload = {}): Promise<QueueClearReceipt> {
-    const receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+    const receipt = await this.postQueueClear({ ...payload, requestId: `queue-clear:${safeRandomUUID()}` })
     if (!this.disposed && receipt.cleared > 0) {
       this.store.dispatch({ type: 'clear-optimistic-followups', ...payload }, { flush: true })
     }
     return receipt
+  }
+
+  private async postQueueClear(commandPayload: QueueClearPayload & { requestId: string }): Promise<QueueClearReceipt> {
+    let transportRetried = false
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.postCommand('/queue/clear', commandPayload, QueueClearReceiptSchema)
+      } catch (error) {
+        if (!(error instanceof GatewayResponseError)) {
+          if (transportRetried) throw error
+          transportRetried = true
+          continue
+        }
+        if (errorResponseCode(error) !== AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS || attempt >= 40) throw error
+        await new Promise<void>((resolve) => { this.setTimeoutFn(resolve, 50) })
+      }
+    }
   }
 
   async interrupt(payload: InterruptPayload = {}): Promise<CommandReceipt> {
@@ -411,7 +448,13 @@ export class RemotePiSession {
           markOpen()
           return
         }
-        this.dispatchProtocolError(routeErrorMessage(body, `Pi chat event stream failed with HTTP ${response.status}.`))
+        const responseError = gatewayResponseErrorFromBody(
+          response.status,
+          body,
+          `Pi chat event stream failed with HTTP ${response.status}.`,
+          'events',
+        )
+        this.dispatchProtocolError(responseError.message)
         this.scheduleReconnect(generation)
         markOpen()
         return
@@ -437,8 +480,8 @@ export class RemotePiSession {
           }
 
           this.recordEventType(frame.type)
-          this.options.onEvent?.(frame)
-          this.store.dispatch({ type: 'event', event: frame })
+          const accepted = this.store.dispatchEvent(frame)
+          if (accepted && this.isStreamActive(generation, runId)) this.options.onEvent?.(frame)
           if (this.store.getState().needsResync && this.isStreamActive(generation, runId)) {
             this.gapCount += 1
             this.rehydrateAfterStreamReset(generation)
@@ -520,7 +563,7 @@ export class RemotePiSession {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(this.addressedCommandPayload(path, payload)),
-    })
+    }, this.commandTimeoutMs)
     if (!this.isGenerationActive(generation)) {
       throw abortError('Remote Pi session disposed before command receipt.')
     }
@@ -540,7 +583,7 @@ export class RemotePiSession {
     this.store.dispatch({ type: 'remove-optimistic-user-message', clientNonce }, { flush: true })
   }
 
-  private async fetchJson(url: string, init: RequestInit): Promise<unknown> {
+  private async fetchJson(url: string, init: RequestInit, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
     const controller = new AbortController()
     this.fetchControllers.add(controller)
     // Bound the attempt: a hung request (saturated server right after a
@@ -551,17 +594,17 @@ export class RemotePiSession {
     const timer = globalThis.setTimeout(() => {
       timedOut = true
       controller.abort()
-    }, this.requestTimeoutMs)
+    }, timeoutMs)
     try {
       const response = await this.fetchImpl(url, { ...init, signal: controller.signal })
       const body = await safeReadJson(response)
-      if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(body, `HTTP ${response.status}`), body, routeErrorCode(body))
+      if (!response.ok) throw gatewayResponseErrorFromBody(response.status, body, `HTTP ${response.status}`, url)
       return body
     } catch (error) {
       // Distinguish our own timeout abort from a dispose-driven abort: a
       // dispose abort must stay an (ignored) AbortError, but a timeout should
       // throw a real error so the caller's catch reaches scheduleReconnect.
-      if (timedOut) throw new Error(`Request to ${url} timed out after ${this.requestTimeoutMs}ms.`)
+      if (timedOut) throw new Error(`Request to ${url} timed out after ${timeoutMs}ms.`)
       throw error
     } finally {
       globalThis.clearTimeout(timer)
@@ -699,27 +742,12 @@ export function createRemotePiSession(options: RemotePiSessionOptions): RemotePi
   return new RemotePiSession(options)
 }
 
-class RemotePiSessionHttpError extends Error {
-  constructor(readonly status: number, message: string, readonly body: unknown, readonly errorCode?: string) {
-    super(message)
-    this.name = 'RemotePiSessionHttpError'
-  }
-}
-
 /**
- * Extract the stable, CANONICAL server error code (a member of the shared ErrorCode
- * enum, e.g. `SESSION_LOCKED`) from an error thrown by a command call (prompt/follow-up/
- * etc). Returns undefined for non-HTTP errors, bodies without a code, or non-canonical
- * codes. This is the agent's generic seam: callers map a code to UI (a notice action)
- * WITHOUT the agent knowing what the code means.
+ * Extract a stable shared or AgentGateway server error code from a rejected chat
+ * operation. Hosts use it to attach recovery actions without parsing error text.
  */
 export function piChatErrorCode(error: unknown): string | undefined {
-  if (error instanceof RemotePiSessionHttpError) return error.errorCode
-  // Also accept a plain `errorCode` carried on any thrown value, so callers that
-  // re-wrap or synthesize a command error can still surface a stable code — but only
-  // when it's a canonical ErrorCode, never an arbitrary string.
-  const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
-  return parsed.success ? parsed.data : undefined
+  return errorResponseCode(error)
 }
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
@@ -760,16 +788,6 @@ function routeErrorMessage(body: unknown, fallback: string): string {
   const error = (body as Record<string, unknown>).error
   const payload = typeof error === 'object' && error !== null ? error as Record<string, unknown> : body as Record<string, unknown>
   return typeof payload.message === 'string' && payload.message ? payload.message : fallback
-}
-
-function routeErrorCode(body: unknown): string | undefined {
-  if (typeof body !== 'object' || body === null) return undefined
-  const error = (body as Record<string, unknown>).error
-  const payload = typeof error === 'object' && error !== null ? error as Record<string, unknown> : body as Record<string, unknown>
-  // Only surface a CANONICAL code: hosts treat notice.errorCode as a stable action
-  // key, so a malformed/legacy body must not leak an arbitrary string.
-  const parsed = ErrorCode.safeParse(payload.code)
-  return parsed.success ? parsed.data : undefined
 }
 
 function errorMessage(error: unknown, fallback: string): string {

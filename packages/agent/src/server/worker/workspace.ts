@@ -56,6 +56,20 @@ export async function runWorkspaceOp(workspace: Workspace, op: RemoteWorkerWorks
       if (!workspace.writeBinaryFile) throw Object.assign(new Error('binary write unsupported'), { statusCode: 501, code: WORKER_ERROR_CODES.NOT_IMPLEMENTED })
       await workspace.writeBinaryFile(op.path, new Uint8Array(Buffer.from(op.dataBase64, 'base64')))
       return { ok: true }
+    case 'createBinaryFile':
+      if (!workspace.createBinaryFile) throw Object.assign(new Error('exclusive binary create unsupported'), { statusCode: 501, code: WORKER_ERROR_CODES.NOT_IMPLEMENTED })
+      try {
+        await workspace.createBinaryFile(op.path, new Uint8Array(Buffer.from(op.dataBase64, 'base64')))
+      } catch (error) {
+        if ((error as { code?: unknown })?.code === 'EEXIST') {
+          throw Object.assign(new Error('exclusive binary create destination exists'), {
+            statusCode: 409,
+            code: WORKER_ERROR_CODES.ALREADY_EXISTS,
+          })
+        }
+        throw error
+      }
+      return { ok: true }
     case 'readFileWithStat':
       if (!workspace.readFileWithStat) {
         return { content: await workspace.readFile(op.path), stat: await workspace.stat(op.path) }

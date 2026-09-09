@@ -1,4 +1,5 @@
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
+import { randomUUID } from 'node:crypto'
 
 import type {
   Entry,
@@ -7,6 +8,7 @@ import type {
   WorkspaceWatchControlEvent,
 } from '@hachej/boring-agent/shared'
 import { validatePath } from '../node-workspace/paths'
+import { createLogger } from '../runtimeSupport'
 
 type WorkspaceWatcher = ReturnType<NonNullable<Workspace['watch']>>
 type WorkspaceChangeEvent = Parameters<WorkspaceWatcher['subscribe']>[0] extends (
@@ -163,6 +165,7 @@ export interface VercelSandboxWorkspace extends Workspace {
 
 export interface VercelSandboxWorkspaceOptions {
   onMutation?: () => void
+  logger?: { warn?(message: string, metadata?: Record<string, unknown>): void }
 }
 
 /**
@@ -257,6 +260,7 @@ export function createVercelSandboxWorkspace(
 
   const { emit: emitChange, emitControl, watcher } = createSandboxBroadcaster()
   const remote = sandbox as VercelSandboxCompat
+  const logger = workspaceOpts.logger ?? createLogger('vercel-sandbox:workspace')
 
   async function assertRealPathWithinSandboxRoot(sandboxPath: string): Promise<void> {
     const isWithinRoot = await runJson<boolean>(
@@ -265,6 +269,19 @@ export function createVercelSandboxWorkspace(
     )
     if (!isWithinRoot) {
       throw Object.assign(new Error('resolved path escapes workspace root'), { code: EPERM_CODE })
+    }
+  }
+
+  async function assertMutationTargetWithinSandboxRoot(sandboxPath: string): Promise<void> {
+    const result = await runJson<{ ok: boolean; reason?: 'symlink' | 'escape' }>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); const path=require('path'); const root=fs.realpathSync(process.argv[1]); const target=process.argv[2]; function nearestExistingAncestor(input){ let current=input; for (;;) { try { return { path: current, stat: fs.lstatSync(current) }; } catch (error) { if (error.code !== 'ENOENT') throw error; const parent=path.dirname(current); if (parent===current) throw error; current=parent; } } } let targetStat; try { targetStat=fs.lstatSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; } if (targetStat?.isSymbolicLink()) { process.stdout.write(JSON.stringify({ok:false,reason:'symlink'})); } else { const ancestor=nearestExistingAncestor(target).path; const resolved=fs.realpathSync(ancestor); const rel=path.relative(root,resolved); const ok=rel===''||(!rel.startsWith('..')&&!path.isAbsolute(rel)); process.stdout.write(JSON.stringify(ok?{ok:true}:{ok:false,reason:'escape'})); }`)} ${shellQuote(VERCEL_SANDBOX_REMOTE_ROOT)} ${shellQuote(sandboxPath)}`,
+    )
+    if (!result.ok) {
+      const message = result.reason === 'symlink'
+        ? 'symbolic-link mutation targets are not allowed'
+        : 'resolved mutation target escapes workspace root'
+      throw Object.assign(new Error(message), { code: EPERM_CODE })
     }
   }
 
@@ -309,6 +326,28 @@ export function createVercelSandboxWorkspace(
       remote,
       `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
     )
+  }
+
+  const cleanupTempFile = async (tempPath: string): Promise<void> => {
+    const attempts: Array<() => Promise<unknown>> = remote.fs
+      ? [
+          () => remote.fs!.rm(tempPath, { force: true }),
+          () => runShell(remote, `rm -f -- ${shellQuote(tempPath)}`),
+          () => remote.fs!.rm(tempPath, { force: true }),
+        ]
+      : [
+          () => runShell(remote, `rm -f -- ${shellQuote(tempPath)}`),
+          () => runShell(remote, `rm -f -- ${shellQuote(tempPath)}`),
+        ]
+    for (const attempt of attempts) {
+      try {
+        await attempt()
+        return
+      } catch {
+        // Try the independent guest/SDK cleanup path next.
+      }
+    }
+    throw new Error('Vercel upload temporary file cleanup was incomplete')
   }
 
   const workspace: VercelSandboxWorkspace = {
@@ -372,6 +411,35 @@ export function createVercelSandboxWorkspace(
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'write', path: relPath })
+    },
+    async createBinaryFile(relPath, data) {
+      const sandboxPath = toSandboxPath(relPath)
+      await assertMutationTargetWithinSandboxRoot(sandboxPath)
+      const tempPath = `${sandboxPath}.boring-upload-${randomUUID()}`
+      try {
+        await sandbox.writeFiles([{ path: tempPath, content: Buffer.from(data) }])
+        const result = await runJson<{ ok: boolean; code?: string }>(
+          remote,
+          `node -e ${shellQuote(`const fs=require('fs'); try { fs.copyFileSync(process.argv[1],process.argv[2],fs.constants.COPYFILE_EXCL); process.stdout.write(JSON.stringify({ok:true})) } catch (error) { process.stdout.write(JSON.stringify({ok:false,code:error.code})) }`)} ${shellQuote(tempPath)} ${shellQuote(sandboxPath)}`,
+        )
+        if (!result.ok) throw Object.assign(new Error(`${result.code ?? 'EIO'}: exclusive binary create failed`), { code: result.code ?? 'EIO' })
+        invalidateMetadataCache()
+        workspaceOpts.onMutation?.()
+        emitChange({ op: 'write', path: relPath })
+      } finally {
+        try {
+          await cleanupTempFile(tempPath)
+        } catch (error) {
+          try {
+            logger.warn?.('exclusive create temporary-file cleanup failed', {
+              path: relPath,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          } catch {
+            // Warning sinks must not replace the authoritative create outcome.
+          }
+        }
+      }
     },
     async readFileWithStat(relPath) {
       const sandboxPath = toSandboxPath(relPath)

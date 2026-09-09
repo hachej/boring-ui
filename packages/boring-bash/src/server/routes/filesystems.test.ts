@@ -31,13 +31,14 @@ describe('filesystemsRoutes', () => {
     const response = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
 
     expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
     expect(response.json()).toEqual({
       filesystems: [{
         filesystem: 'user',
         label: 'Workspace',
         rootDir: '.',
         access: 'readwrite',
-        capabilities: { read: true, list: true, search: true, write: true, delete: true, move: true, mkdir: true },
+        capabilities: { read: true, list: true, search: true, write: true, upload: true, delete: true, move: true, mkdir: true },
       }],
     })
     await app.close()
@@ -66,15 +67,66 @@ describe('filesystemsRoutes', () => {
       label: 'readonly_docs',
       rootDir: '/',
       access: 'readonly',
-      capabilities: { read: true, list: true, search: true, write: false, delete: false, move: false, mkdir: false },
+      capabilities: { read: true, list: true, search: true, write: false, upload: false, delete: false, move: false, mkdir: false },
     })
     expect(partial).toEqual({
       filesystem: 'partial',
       label: 'partial',
       rootDir: '/',
       access: 'readwrite',
-      capabilities: { read: true, list: true, search: true, write: true, delete: false, move: true, mkdir: false },
+      capabilities: { read: true, list: true, search: true, write: true, upload: false, delete: false, move: true, mkdir: false },
     })
+    await app.close()
+  })
+
+  it('advertises exact upload only when the primary binding supports create and replace', async () => {
+    const app = Fastify()
+    await app.register(filesystemsRoutes, {
+      filesystemBindings: [binding({
+        filesystem: 'user',
+        access: 'readwrite',
+        operations: operations({ write: vi.fn(), writeBinary: vi.fn(), createBinary: vi.fn() }),
+      })],
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+    expect(response.json().filesystems[0].capabilities).toMatchObject({ write: true, upload: true })
+    await app.close()
+  })
+
+  it.each([
+    { label: 'exclusive create', binary: { writeBinary: vi.fn() } },
+    { label: 'binary replace', binary: { createBinary: vi.fn() } },
+  ])('reports upload unavailable without $label', async ({ binary }) => {
+    const app = Fastify()
+    await app.register(filesystemsRoutes, {
+      filesystemBindings: [binding({
+        filesystem: 'user',
+        access: 'readwrite',
+        operations: operations({ write: vi.fn(), ...binary }),
+      })],
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+    expect(response.json().filesystems[0].capabilities).toMatchObject({ write: true, upload: false })
+    await app.close()
+  })
+
+  it('projects user-facing labels and hides internal-only bindings without renaming ids', async () => {
+    const app = Fastify()
+    await app.register(filesystemsRoutes, {
+      filesystemBindings: [
+        binding({ filesystem: 'agent_resources', catalog: { visible: false } }),
+        binding({ filesystem: 'agent_knowledge:author', catalog: { visible: true, label: 'Author', rootDir: '/' } }),
+      ],
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+    expect(response.json().filesystems).toEqual([
+      expect.objectContaining({ filesystem: 'user', label: 'Workspace', access: 'readwrite' }),
+      expect.objectContaining({ filesystem: 'agent_knowledge:author', label: 'Author', access: 'readonly' }),
+    ])
+    expect(response.body).not.toContain('agent_resources')
     await app.close()
   })
 

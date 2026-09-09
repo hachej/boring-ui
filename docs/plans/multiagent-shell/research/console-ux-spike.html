@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Console UX spike — issue 1355</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;650&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap");
+    :root {
+      color-scheme: dark;
+      --bg: #101112;
+      --shell: #131516;
+      --panel: #17191a;
+      --panel-2: #1b1d1f;
+      --line: #2b2e30;
+      --line-soft: #232628;
+      --text: #f0f1ef;
+      --muted: #a2a6a3;
+      --faint: #737875;
+      --accent: #9dbb9d;
+      --accent-ink: #101510;
+      --focus: #bdd7bd;
+      --danger: #d7aaa5;
+      --radius-sm: 6px;
+      --radius: 8px;
+      --radius-lg: 10px;
+      --sans: "Albert Sans", "Helvetica Neue", sans-serif;
+      --display: "Source Serif 4", Georgia, serif;
+      --mono: "Berkeley Mono", "SFMono-Regular", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.45 var(--sans); }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button, input, select { outline: none; }
+    :focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus) !important; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+    .app { display: grid; grid-template-columns: 68px 342px minmax(0, 1fr); height: 100%; background: var(--bg); }
+    .rail { display: flex; flex-direction: column; align-items: center; gap: 5px; border-right: 1px solid var(--line); background: #111314; padding: 15px 10px 10px; z-index: 4; }
+    .mark { display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 15px; border: 1px solid #3a3d3e; border-radius: var(--radius); color: var(--text); font: 650 15px var(--mono); }
+    .rail button, .mobile-menu { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+    .rail button:hover { background: #1d2021; color: var(--text); }
+    .rail button.active { background: #242826; color: var(--accent); }
+    .rail .spacer { flex: 1; }
+    .avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #292c2b; color: #d6d8d5; font-size: 10px; font-weight: 700; }
+    .sidebar { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--shell); z-index: 3; }
+    .sidebar-head { min-height: 116px; padding: 18px 16px 12px; border-bottom: 1px solid var(--line-soft); }
+    .eyebrow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; color: var(--muted); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
+    .prototype { border: 1px solid #3d423e; border-radius: 999px; padding: 2px 7px; color: var(--accent); letter-spacing: .07em; }
+    h1 { margin: 0; font-size: 18px; line-height: 1.2; letter-spacing: -.015em; font-weight: 620; }
+    .persistent { display: flex; gap: 6px; align-items: center; margin-top: 7px; color: var(--faint); font-size: 11px; }
+    .persistent i { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; }
+    .toolbar { padding: 12px 12px 10px; border-bottom: 1px solid var(--line-soft); }
+    .search { display: flex; align-items: center; gap: 8px; height: 34px; border: 1px solid var(--line); border-radius: var(--radius); background: #101213; padding: 0 9px; color: var(--faint); }
+    .search input { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--text); }
+    .search input::placeholder { color: #717673; }
+    .kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 10px; color: var(--faint); }
+    .group-bar { display: flex; gap: 2px; margin-top: 10px; padding: 2px; background: #101213; border: 1px solid var(--line-soft); border-radius: var(--radius); }
+    .group-bar button { flex: 1; border: 0; border-radius: 5px; padding: 5px 3px; background: transparent; color: var(--muted); font-size: 11px; }
+    .group-bar button:hover { color: var(--text); }
+    .group-bar button.active { background: #282b2a; color: var(--text); }
+    .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px 7px; color: var(--faint); font-size: 10px; font-weight: 650; letter-spacing: .11em; text-transform: uppercase; }
+    .new-button { display: flex; align-items: center; gap: 7px; width: calc(100% - 24px); margin: 0 12px 7px; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--text); text-align: left; }
+    .new-button:hover { background: var(--panel-2); }
+    .new-button span:last-child { margin-left: auto; color: var(--faint); font-size: 11px; }
+    .create-form { margin: 0 12px 9px; padding: 10px; border: 1px solid #414541; border-radius: var(--radius); background: var(--panel); }
+    .create-form label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; }
+    .create-form input, .create-form select { width: 100%; height: 32px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #111314; padding: 0 8px; margin-bottom: 8px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .form-note { margin: -1px 0 8px; color: var(--faint); font-size: 10px; line-height: 1.4; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .btn { border: 1px solid var(--line); border-radius: var(--radius-sm); background: #202324; padding: 6px 10px; }
+    .btn:hover { background: #292c2d; }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+    .tree { overflow: auto; padding: 0 8px 18px; scrollbar-color: #343837 transparent; }
+    .tree ul { list-style: none; margin: 0; padding: 0; }
+    .group { margin: 1px 0; }
+    .group-row, .session-row { position: relative; display: flex; align-items: center; width: 100%; border: 0; background: transparent; text-align: left; }
+    .group-row { height: 32px; padding: 0 7px; border-radius: var(--radius-sm); gap: 7px; color: #dadcda; }
+    .group-row:hover, .session-row:hover { background: #1d2021; }
+    .chev { width: 13px; color: var(--faint); transition: transform 140ms ease-out; }
+    .group-row[aria-expanded="true"] .chev { transform: rotate(90deg); }
+    .group-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .count { margin-left: auto; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .children { margin-left: 13px; padding-left: 8px; border-left: 1px solid var(--line); }
+    .children[hidden] { display: none; }
+    .session-row { min-height: 38px; padding: 5px 7px 5px 22px; border-radius: var(--radius-sm); color: var(--muted); }
+    .session-row.active { background: #252926; color: var(--text); }
+    .session-row.active::before { content: ""; position: absolute; left: 9px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+    .session-copy { min-width: 0; }
+    .session-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+    .session-meta { display: block; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: 10px; }
+    .move-mini { display: none; margin-left: auto; border: 0; background: transparent; color: var(--faint); border-radius: 4px; padding: 3px 4px; }
+    .session-row:hover .move-mini, .session-row:focus-within .move-mini { display: block; }
+    .empty { padding: 18px 10px; color: var(--faint); text-align: center; }
+    .workspace { display: flex; min-width: 0; flex-direction: column; background: var(--bg); }
+    .workspace-head { height: 57px; flex: 0 0 auto; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding: 0 22px; }
+    .mobile-menu { display: none; border: 1px solid var(--line); }
+    .crumb { color: var(--faint); }
+    .crumb strong { color: var(--text); font-weight: 560; }
+    .workspace-head .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+    .status i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .workspace-body { flex: 1; min-height: 0; overflow: auto; }
+    .conversation { width: min(760px, calc(100% - 48px)); margin: 0 auto; padding: 54px 0 140px; }
+    .session-kicker { color: var(--accent); font: 11px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+    .conversation h2 { max-width: 680px; margin: 13px 0 10px; font: 560 clamp(28px, 3vw, 42px)/1.06 var(--display); letter-spacing: -.025em; }
+    .lede { max-width: 630px; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+    .facts { display: flex; flex-wrap: wrap; gap: 18px; margin: 32px 0 42px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .fact { min-width: 110px; }
+    .fact span { display: block; color: var(--faint); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
+    .fact strong { display: block; margin-top: 4px; font-weight: 520; }
+    .message { max-width: 650px; margin: 26px 0; }
+    .message .author { margin-bottom: 7px; color: var(--faint); font-size: 11px; }
+    .message p { margin: 0; color: #d5d7d4; font-size: 14px; line-height: 1.68; }
+    .composer { position: sticky; bottom: 0; width: min(760px, calc(100% - 32px)); margin: -104px auto 16px; background: var(--bg); padding-top: 10px; }
+    .composer-box { min-height: 76px; border: 1px solid #373b39; border-radius: var(--radius-lg); background: #181a1b; padding: 12px; box-shadow: 0 10px 30px #080909b3; color: var(--faint); }
+    .composer-foot { display: flex; align-items: center; margin-top: 12px; font-size: 11px; }
+    .send { margin-left: auto; border: 0; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-ink); width: 29px; height: 29px; font-weight: 800; }
+    .scenario-toggle { position: fixed; right: 18px; bottom: 18px; z-index: 9; border: 1px solid #4a504b; border-radius: var(--radius); background: #1b1e1c; padding: 8px 12px; color: var(--text); box-shadow: 0 12px 30px #0008; }
+    .scenario-panel { position: fixed; right: 18px; bottom: 62px; z-index: 8; width: min(340px, calc(100vw - 28px)); border: 1px solid #454a46; border-radius: var(--radius-lg); background: #171918; padding: 14px; box-shadow: 0 20px 55px #000b; }
+    .scenario-panel[hidden] { display: none; }
+    .scenario-panel h3 { margin: 0 0 3px; font-size: 14px; }
+    .scenario-panel > p { margin: 0 0 11px; color: var(--muted); font-size: 11px; }
+    .scenario-list { display: grid; gap: 5px; }
+    .scenario-list button { border: 1px solid var(--line); border-radius: var(--radius); background: transparent; padding: 8px 9px; text-align: left; }
+    .scenario-list button:hover, .scenario-list button.active { border-color: #555c56; background: #222522; }
+    .scenario-list strong { display: block; font-size: 12px; }
+    .scenario-list span { color: var(--faint); font-size: 10px; }
+    dialog { width: min(480px, calc(100vw - 32px)); border: 1px solid #4a4f4b; border-radius: var(--radius-lg); background: #191b1b; color: var(--text); padding: 0; box-shadow: 0 24px 80px #000c; }
+    dialog::backdrop { background: #080909c9; }
+    .dialog-head, .dialog-body, .dialog-foot { padding: 16px 18px; }
+    .dialog-head { border-bottom: 1px solid var(--line); }
+    .dialog-head h3 { margin: 0 0 3px; font-size: 16px; }
+    .dialog-head p, .dialog-body p { margin: 0; color: var(--muted); font-size: 12px; }
+    .dialog-body label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; }
+    .dialog-body select { width: 100%; height: 36px; border: 1px solid var(--line); border-radius: var(--radius); background: #111313; padding: 0 9px; }
+    .invariant { margin-top: 13px !important; border: 1px solid #363b37; border-radius: var(--radius); background: #141615; padding: 10px; color: #c8cbc7 !important; }
+    .dialog-foot { display: flex; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--line); }
+    .toast { position: fixed; left: 50%; bottom: 20px; z-index: 12; transform: translateX(-50%); border: 1px solid #484e49; border-radius: var(--radius); background: #202320; color: var(--text); padding: 8px 12px; box-shadow: 0 8px 30px #0009; }
+    .toast[hidden] { display: none; }
+    @media (max-width: 800px) {
+      .app { grid-template-columns: 1fr; padding-bottom: 58px; }
+      .rail { position: fixed; inset: auto 0 0; height: 58px; flex-direction: row; justify-content: space-around; border: 0; border-top: 1px solid var(--line); padding: 8px 12px; }
+      .rail .mark, .rail .spacer, .rail .avatar { display: none; }
+      .rail button { width: min(82px, 22vw); height: 42px; display: flex; flex-direction: column; gap: 2px; font-size: 9px; }
+      .rail button::after { content: attr(aria-label); }
+      .sidebar { position: fixed; inset: 0 auto 58px 0; width: min(342px, calc(100vw - 36px)); transform: translateX(-105%); box-shadow: 12px 0 40px #000b; transition: transform 150ms ease-out; }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-menu { display: grid; }
+      .workspace-head { padding: 0 13px; }
+      .status span { display: none; }
+      .conversation { width: calc(100% - 32px); padding-top: 36px; }
+      .scenario-toggle { right: 12px; bottom: 70px; }
+      .scenario-panel { right: 12px; bottom: 114px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+  </style>
+</head>
+<body>
+  <!-- PROTOTYPE ONLY: disposable, frontend-only UX exploration for issue #1355. -->
+  <div class="app" id="app">
+    <nav class="rail" aria-label="Global Console navigation">
+      <div class="mark" aria-label="Boring Console">B</div>
+      <button class="active" data-view="sessions" aria-label="Sessions" title="Sessions"><svg class="icon"><path d="M3 4.5h10v7H7l-3.5 2v-2H3z"/></svg></button>
+      <button data-view="tasks" aria-label="Tasks" title="Tasks"><svg class="icon"><path d="m3 8 2 2 4-5"/><path d="M8 5h5M8 9h5M3 13h10"/></svg></button>
+      <button data-view="inbox" aria-label="Inbox" title="Inbox"><svg class="icon"><path d="M2.5 4h11v9h-11z"/><path d="M2.5 9h3l1 2h3l1-2h3"/></svg></button>
+      <button data-view="automations" aria-label="Automations" title="Automations"><svg class="icon"><path d="M8 2v3M8 11v3M2 8h3M11 8h3"/><circle cx="8" cy="8" r="3"/></svg></button>
+      <div class="spacer"></div><div class="avatar" title="Personal Console">HJ</div>
+    </nav>
+
+    <aside class="sidebar" id="sidebar" aria-label="Session catalog">
+      <header class="sidebar-head">
+        <div class="eyebrow"><span>Console</span><span class="prototype">Prototype</span></div>
+        <h1 id="catalog-title">Sessions</h1>
+        <div class="persistent"><i></i><span>Persistent shell · mock memory only</span></div>
+      </header>
+      <div class="toolbar" id="session-tools">
+        <label class="search"><svg class="icon"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><span class="sr-only">Filter sessions</span><input id="search" type="search" placeholder="Filter sessions…"><span class="kbd">/</span></label>
+        <div class="group-bar" id="group-bar" aria-label="Group sessions by"></div>
+      </div>
+      <div class="tree-head"><span id="tree-label">All sessions</span><span id="total-count"></span></div>
+      <button class="new-button" id="new-session"><svg class="icon"><path d="M8 3v10M3 8h10"/></svg><span>New session</span><span>N</span></button>
+      <form class="create-form" id="create-form" hidden>
+        <label for="session-name">Session title</label><input id="session-name" required value="Untitled session" autocomplete="off">
+        <div class="form-grid">
+          <div><label for="create-workspace">Authorized Workspace</label><select id="create-workspace" required></select></div>
+          <div><label for="create-agent">Agent / Seat</label><select id="create-agent" required></select></div>
+        </div>
+        <p class="form-note">Workspace authorization determines the available Agent seats.</p>
+        <label for="create-project">Project <span aria-hidden="true">·</span> organizational metadata</label><select id="create-project"></select>
+        <p class="form-note">Project organizes the session only; it does not choose or change Workspace.</p>
+        <div class="form-actions"><button type="button" class="btn" id="cancel-create">Cancel</button><button class="btn primary">Create</button></div>
+      </form>
+      <nav class="tree" id="tree" aria-label="Grouped sessions"></nav>
+    </aside>
+
+    <main class="workspace" id="workspace">
+      <header class="workspace-head">
+        <button class="mobile-menu" id="mobile-menu" aria-label="Open session catalog" aria-expanded="false"><svg class="icon"><path d="M2 4h12M2 8h12M2 12h12"/></svg></button>
+        <div class="crumb"><span id="crumb-project">Northstar</span> / <strong id="crumb-session">API error budget review</strong></div>
+        <div class="right"><span class="status"><i></i><span>Workspace projection active</span></span><button class="btn" id="move-session">Move project…</button></div>
+      </header>
+      <div class="workspace-body">
+        <article class="conversation" aria-live="polite">
+          <div class="session-kicker" id="session-kicker">Session · Claude</div>
+          <h2 id="session-title">API error budget review</h2>
+          <p class="lede" id="session-lede">A quiet working surface remains mounted while the Console catalog is regrouped, filtered, and reorganized.</p>
+          <div class="facts">
+            <div class="fact"><span>Project</span><strong id="fact-project">Northstar</strong></div>
+            <div class="fact"><span>Workspace</span><strong id="fact-workspace">ws-platform</strong></div>
+            <div class="fact"><span>Agent</span><strong id="fact-agent">Claude</strong></div>
+            <div class="fact"><span>Task</span><strong id="fact-task">BOR-1355</strong></div>
+          </div>
+          <div class="message"><div class="author">You · 24 minutes ago</div><p>Review the current Console navigation model. Keep runtime identity stable if I reorganize this thread.</p></div>
+          <div class="message"><div class="author">Assistant</div><p>The organizational Project can change without moving the Workspace, Agent seat, runtime, working directory, transcript, or active connection. I’ll treat that boundary as visible UI copy rather than an implicit migration.</p></div>
+        </article>
+      </div>
+      <div class="composer"><div class="composer-box">Continue this session…<div class="composer-foot"><span id="composer-context">Claude · ws-platform</span><button class="send" aria-label="Send message">↑</button></div></div></div>
+    </main>
+  </div>
+
+  <button class="scenario-toggle" id="scenario-toggle" aria-expanded="false" aria-controls="scenario-panel">Review scenarios</button>
+  <section class="scenario-panel" id="scenario-panel" hidden aria-label="Review scenarios">
+    <h3>Owner walkthrough</h3><p>Switch catalog capabilities without remounting the shell.</p><div class="scenario-list" id="scenario-list"></div>
+  </section>
+
+  <dialog id="move-dialog" aria-labelledby="move-title">
+    <form method="dialog" id="move-form">
+      <div class="dialog-head"><h3 id="move-title">Move to project</h3><p id="move-subtitle">Reorganize this session in the Console.</p></div>
+      <div class="dialog-body"><label for="move-project-select">Destination project</label><select id="move-project-select"></select><p class="invariant"><strong>Metadata only.</strong> Workspace, Agent, runtime, working directory, transcript, task links, and active connection stay unchanged.</p></div>
+      <div class="dialog-foot"><button class="btn" value="cancel">Cancel</button><button class="btn primary" value="default" id="confirm-move">Move session</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script>
+    (() => {
+      "use strict";
+      const $ = (selector) => document.querySelector(selector);
+      const projects = [
+        { id: "northstar", name: "Northstar" },
+        { id: "relay", name: "Relay" },
+        { id: "unassigned", name: "Unassigned" }
+      ];
+      const agents = [
+        { id: "claude", name: "Claude" },
+        { id: "pi", name: "Pi" },
+        { id: "reviewer", name: "Reviewer" }
+      ];
+      const workspaces = [
+        { id: "ws-platform", name: "Platform · ws-platform", agents: ["claude", "pi"] },
+        { id: "ws-ops", name: "Operations · ws-ops", agents: ["reviewer", "claude"] },
+        { id: "ws-relay", name: "Relay · ws-relay", agents: ["claude", "pi"] },
+        { id: "ws-labs", name: "Labs · ws-labs", agents: ["claude"] }
+      ];
+      let sessions = [
+        { id: "s1", title: "API error budget review", project: "northstar", agent: "claude", task: "BOR-1355", workspace: "ws-platform", age: "24m" },
+        { id: "s2", title: "Catalog pagination contract", project: "northstar", agent: "pi", task: "BOR-1355", workspace: "ws-platform", age: "1h" },
+        { id: "s3", title: "Triage deploy regression", project: "northstar", agent: "reviewer", task: "OPS-421", workspace: "ws-ops", age: "2h" },
+        { id: "s4", title: "Design token cleanup", project: "relay", agent: "claude", task: "UI-208", workspace: "ws-relay", age: "Yesterday" },
+        { id: "s5", title: "Webhook retry policy", project: "relay", agent: "pi", task: null, workspace: "ws-relay", age: "Tue" },
+        { id: "s6", title: "Explore auth boundary", project: "unassigned", agent: "claude", task: null, workspace: "ws-labs", age: "Fri" }
+      ];
+      const state = { grouping: "project", selected: "s1", expanded: new Set(["project:northstar", "agent:project:northstar:claude"]), agents: 3, tracker: true, scenario: "full", view: "sessions" };
+      const scenarios = [
+        { id: "full", title: "Full catalog", note: "3 Agents · Task tracker available", agents: 3, tracker: true },
+        { id: "single", title: "Single-Agent fleet", note: "Agent grouping must disappear", agents: 1, tracker: true },
+        { id: "notracker", title: "No Task source", note: "Task grouping must disappear", agents: 3, tracker: false },
+        { id: "minimal", title: "Minimal capabilities", note: "1 Agent · no Task source", agents: 1, tracker: false }
+      ];
+      const labels = { project: "Project", agent: "Agent", task: "Task", flat: "Flat" };
+      const nameOf = (list, id) => list.find(x => x.id === id)?.name || id;
+      const visibleSessions = () => sessions.filter(s => state.agents > 1 || s.agent === "claude");
+
+      function availableGroups() {
+        return ["project", ...(state.agents > 1 ? ["agent"] : []), ...(state.tracker ? ["task"] : []), "flat"];
+      }
+      function ensureGrouping() {
+        if (!availableGroups().includes(state.grouping)) state.grouping = "project";
+      }
+      function groupButton(group) {
+        return `<button type="button" data-group="${group}" class="${state.grouping === group ? "active" : ""}" aria-pressed="${state.grouping === group}">${labels[group]}</button>`;
+      }
+      function sessionRow(session, depth = 0) {
+        const meta = state.grouping === "flat" ? `${nameOf(projects, session.project)} · ${nameOf(agents, session.agent)} · ${session.age}` : `${nameOf(agents, session.agent)} · ${session.age}`;
+        return `<li><div class="session-row ${state.selected === session.id ? "active" : ""}" style="padding-left:${depth ? 22 : 10}px">
+          <button type="button" data-session="${session.id}" aria-current="${state.selected === session.id ? "page" : "false"}" style="all:unset;min-width:0;flex:1;cursor:pointer"><span class="session-copy"><span class="session-title">${escapeHtml(session.title)}</span><span class="session-meta">${escapeHtml(meta)}</span></span></button>
+          <button type="button" class="move-mini" data-move="${session.id}" aria-label="Move ${escapeHtml(session.title)} to another project">•••</button></div></li>`;
+      }
+      function partition(list, keyFor) {
+        const map = new Map();
+        list.forEach(s => { const key = keyFor(s); if (!map.has(key)) map.set(key, []); map.get(key).push(s); });
+        return map;
+      }
+      function groupItem(kind, key, rows, parentToken, children) {
+        const names = { project: id => nameOf(projects, id), agent: id => nameOf(agents, id), task: id => id };
+        const token = parentToken ? `${kind}:${parentToken}:${key}` : `${kind}:${key}`;
+        const open = state.expanded.has(token);
+        return `<li class="group"><button type="button" class="group-row" data-toggle="${escapeHtml(token)}" aria-expanded="${open}"><span class="chev">›</span><span class="group-label">${escapeHtml(names[kind](key))}</span><span class="count">${rows.length}</span></button><ul class="children" ${open ? "" : "hidden"}>${children(token, rows)}</ul></li>`;
+      }
+      function groupedRows(grouping, list) {
+        const hierarchy = {
+          project: ["project", "agent"],
+          agent: ["agent", "project"],
+          task: ["task", "agent"]
+        }[grouping];
+        const keyFor = { project: s => s.project, agent: s => s.agent, task: s => s.task || "No linked task" };
+        const renderLevel = (level, rows, parentToken = "") => {
+          const kind = hierarchy[level];
+          return [...partition(rows, keyFor[kind])].map(([key, grouped]) => groupItem(kind, key, grouped, parentToken, (token, nestedRows) => level === hierarchy.length - 1
+            ? nestedRows.map(s => sessionRow(s, 1)).join("")
+            : renderLevel(level + 1, nestedRows, token))).join("");
+        };
+        return `<ul>${renderLevel(0, list)}</ul>`;
+      }
+      function renderTree() {
+        ensureGrouping();
+        const query = $("#search").value.trim().toLowerCase();
+        const list = visibleSessions().filter(s => [s.title, s.task, nameOf(projects,s.project), nameOf(agents,s.agent)].some(v => (v || "").toLowerCase().includes(query)));
+        $("#group-bar").innerHTML = availableGroups().map(groupButton).join("");
+        $("#total-count").textContent = `${list.length}`;
+        $("#tree-label").textContent = `By ${labels[state.grouping]}`;
+        $("#tree").innerHTML = list.length ? (state.grouping === "flat" ? `<ul>${list.map(sessionRow).join("")}</ul>` : groupedRows(state.grouping, list)) : `<div class="empty">No sessions match this view.</div>`;
+      }
+      function renderSession() {
+        let s = sessions.find(x => x.id === state.selected);
+        if (!s || !visibleSessions().includes(s)) { s = visibleSessions()[0]; state.selected = s?.id; }
+        if (!s) return;
+        const p = nameOf(projects, s.project), a = nameOf(agents, s.agent);
+        $("#crumb-project").textContent = p; $("#crumb-session").textContent = s.title;
+        $("#session-title").textContent = s.title; $("#session-kicker").textContent = `Session · ${a}`;
+        $("#fact-project").textContent = p; $("#fact-workspace").textContent = s.workspace;
+        $("#fact-agent").textContent = a; $("#fact-task").textContent = s.task || "Not linked";
+        $("#composer-context").textContent = `${a} · ${s.workspace}`;
+      }
+      function renderScenarios() {
+        $("#scenario-list").innerHTML = scenarios.map(s => `<button type="button" data-scenario="${s.id}" class="${state.scenario === s.id ? "active" : ""}"><strong>${s.title}</strong><span>${s.note}</span></button>`).join("");
+      }
+      function renderAll() { renderTree(); renderSession(); renderScenarios(); }
+      function openMove(id = state.selected) {
+        state.selected = id; renderSession(); renderTree();
+        const s = sessions.find(x => x.id === id);
+        $("#move-subtitle").textContent = `Reorganize “${s.title}” in the Console.`;
+        $("#move-project-select").innerHTML = projects.map(p => `<option value="${p.id}" ${p.id === s.project ? "selected" : ""}>${p.name}</option>`).join("");
+        $("#move-dialog").showModal();
+      }
+      function toast(message) { const el = $("#toast"); el.textContent = message; el.hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => el.hidden = true, 2800); }
+      function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c])); }
+
+      $("#group-bar").addEventListener("click", e => { const b = e.target.closest("[data-group]"); if (!b) return; state.grouping = b.dataset.group; renderTree(); });
+      $("#tree").addEventListener("click", e => {
+        const toggle = e.target.closest("[data-toggle]"); if (toggle) { const key = toggle.dataset.toggle; state.expanded.has(key) ? state.expanded.delete(key) : state.expanded.add(key); renderTree(); return; }
+        const move = e.target.closest("[data-move]"); if (move) { openMove(move.dataset.move); return; }
+        const row = e.target.closest("[data-session]"); if (row) { state.selected = row.dataset.session; renderAll(); $("#sidebar").classList.remove("open"); $("#mobile-menu").setAttribute("aria-expanded", "false"); }
+      });
+      $("#search").addEventListener("input", renderTree);
+      $("#new-session").addEventListener("click", () => { $("#create-form").hidden = false; $("#session-name").focus(); });
+      $("#cancel-create").addEventListener("click", () => { $("#create-form").hidden = true; });
+      $("#create-form").addEventListener("submit", e => {
+        e.preventDefault();
+        const id = `mock-${Date.now()}`, agent = $("#create-agent").value, workspace = $("#create-workspace").value, project = $("#create-project").value;
+        sessions.unshift({ id, title: $("#session-name").value, project, agent, task: null, workspace, age: "Now" });
+        state.selected = id; state.expanded.add(`project:${project}`); state.expanded.add(`agent:project:${project}:${agent}`); $("#create-form").hidden = true; renderAll(); toast("Prototype session created in the selected authorized Workspace");
+      });
+      $("#move-session").addEventListener("click", () => openMove());
+      $("#move-form").addEventListener("submit", e => {
+        if (e.submitter?.value === "cancel") return; e.preventDefault(); const s = sessions.find(x => x.id === state.selected); s.project = $("#move-project-select").value; state.expanded.add(`project:${s.project}`); $("#move-dialog").close(); renderAll(); toast("Project metadata updated · Workspace, Agent, and runtime unchanged");
+      });
+      $("#scenario-toggle").addEventListener("click", () => { const panel = $("#scenario-panel"); panel.hidden = !panel.hidden; $("#scenario-toggle").setAttribute("aria-expanded", String(!panel.hidden)); });
+      $("#scenario-list").addEventListener("click", e => { const b = e.target.closest("[data-scenario]"); if (!b) return; const scenario = scenarios.find(s => s.id === b.dataset.scenario); Object.assign(state, { scenario: scenario.id, agents: scenario.agents, tracker: scenario.tracker }); ensureGrouping(); renderAll(); toast(`Scenario: ${scenario.title} · shell stayed mounted`); });
+      $("#mobile-menu").addEventListener("click", () => { const open = $("#sidebar").classList.toggle("open"); $("#mobile-menu").setAttribute("aria-expanded", String(open)); });
+      document.querySelectorAll(".rail button[data-view]").forEach(b => b.addEventListener("click", () => {
+        document.querySelectorAll(".rail button[data-view]").forEach(x => { const active = x === b; x.classList.toggle("active", active); x.setAttribute("aria-current", active ? "page" : "false"); });
+        state.view = b.dataset.view;
+        if (state.view === "sessions") { $("#catalog-title").textContent = "Sessions"; $("#session-tools").hidden = false; $("#tree").hidden = false; $("#new-session").hidden = false; renderTree(); }
+        else { $("#catalog-title").textContent = b.getAttribute("aria-label"); $("#session-tools").hidden = true; $("#new-session").hidden = true; $("#tree-label").textContent = "Global surface"; $("#total-count").textContent = ""; $("#tree").hidden = false; $("#tree").innerHTML = `<div class="empty"><strong>${b.getAttribute("aria-label")}</strong><br>Persistent global navigation placeholder.<br><small>No product behavior in this spike.</small></div>`; }
+        if (matchMedia("(max-width: 800px)").matches) { $("#sidebar").classList.add("open"); $("#mobile-menu").setAttribute("aria-expanded", "true"); }
+      }));
+      document.addEventListener("keydown", e => {
+        if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $("#search").focus(); }
+        if (e.key.toLowerCase() === "n" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) $("#new-session").click();
+        if (e.key === "Escape") { $("#scenario-panel").hidden = true; $("#scenario-toggle").setAttribute("aria-expanded", "false"); $("#sidebar").classList.remove("open"); }
+      });
+      function populateAuthorizedAgents() {
+        const workspace = workspaces.find(w => w.id === $("#create-workspace").value);
+        $("#create-agent").disabled = !workspace;
+        $("#create-agent").innerHTML = workspace
+          ? `<option value="" disabled selected>Choose Agent / Seat…</option>${workspace.agents.map(id => `<option value="${id}">${nameOf(agents, id)}</option>`).join("")}`
+          : `<option value="" selected>Choose Workspace first…</option>`;
+      }
+      $("#create-project").innerHTML = projects.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+      $("#create-workspace").innerHTML = `<option value="" disabled selected>Choose authorized Workspace…</option>${workspaces.map(w => `<option value="${w.id}">${w.name}</option>`).join("")}`;
+      $("#create-workspace").addEventListener("change", populateAuthorizedAgents);
+      populateAuthorizedAgents();
+      document.querySelector('.rail button[data-view="sessions"]').setAttribute("aria-current", "page");
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

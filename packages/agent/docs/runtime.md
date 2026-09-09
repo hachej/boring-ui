@@ -3,7 +3,7 @@
 # Runtime Modes and Provisioning
 
 Every v1 agent is bound to an authorized workspace and an approved runtime
-adapter. The agent supports three built-in execution modes controlling how
+adapter. The agent supports multiple built-in execution modes controlling how
 `bash` and filesystem tools run. A headless host may omit its UI/presentation
 surface, but it still supplies the same workspace-backed runtime contract.
 
@@ -14,6 +14,7 @@ surface, but it still supplies the same workspace-backed runtime contract.
 | `direct` | tools run directly in the host process | local dev, trusted environments |
 | `local` | tools run in a `bwrap` sandbox (Linux only) | self-hosted, untrusted input |
 | `vercel-sandbox` | tools run in Vercel Firecracker microVMs | production on Vercel |
+| `blaxel` | tools run in a Blaxel sandbox pinned to an explicit EU region | sovereign-compute bridge; production safety gate remains opt-in |
 
 Set via env var:
 
@@ -53,8 +54,24 @@ Mode-specific roots:
 - `direct`: `runtimeCwd` is the real host workspace path.
 - `local`/bwrap: `runtimeCwd` is `/workspace`; the host workspace is adapter-private.
 - `vercel-sandbox`: `runtimeCwd` is `/workspace`; `/vercel/sandbox` is adapter-private.
+- `blaxel`: `runtimeCwd` is the EU-pinned persistent Volume mount at `/workspace`.
 
 Never expose adapter-private paths (host workspace roots for bwrap, `/vercel/sandbox` for Vercel) in model-facing prompts, tool descriptions, or observations.
+
+### Blaxel v1 fidelity limits
+
+Blaxel SDK 0.3.11 does not expose a server-side output byte limit. The adapter
+therefore reads the terminal process record and applies Boring's single combined
+byte budget locally, allocating stdout before stderr. The SDK's live log stream
+is line based rather than byte exact, so v1 intentionally does not invoke
+`onStdout`/`onStderr`; callers receive byte-capped terminal output instead.
+
+Abort and timeout are implemented with a stable named process plus
+`process.kill()`. This is best effort across control-plane races: Boring preserves
+the caller's exact abort reason and returns exit 124 on timeout, but a provider
+transport failure can delay confirmation that the remote process stopped.
+Snapshots, forking, and Agent Drive remain out of scope because those Blaxel
+surfaces are private preview in the pinned SDK.
 
 ## `.boring-agent/` runtime layout
 
@@ -244,7 +261,7 @@ substrate as one runtime bundle.
 
 ```ts
 interface RuntimeModeAdapter {
-  id: string                                  // built-ins: 'direct' | 'local' | 'vercel-sandbox'
+  id: string                                  // built-ins: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
   workspaceFsCapability?: Workspace['fsCapability']
                                               // describes how much host-side fs access exists before create();
                                               // remote backends must not claim strong host visibility

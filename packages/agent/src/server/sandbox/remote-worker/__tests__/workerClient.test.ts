@@ -56,6 +56,24 @@ describe('RemoteWorkerClient', () => {
     expect(result.exitCode).toBe(0)
   })
 
+  test('negotiates new and old worker health responses compatibly', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+      .mockResolvedValueOnce(Response.json({ ok: true, capabilities: ['exclusive-binary-create'] }))
+    const client = new RemoteWorkerClient({
+      baseUrl: 'http://worker',
+      token: 'secret',
+      workspaceId: 'ws-1',
+      fetchImpl: fetchImpl as typeof fetch,
+    })
+
+    await expect(client.health()).resolves.toEqual({ ok: true })
+    await expect(client.health()).resolves.toEqual({
+      ok: true,
+      capabilities: ['exclusive-binary-create'],
+    })
+  })
+
   test('rejects remote errors with stable code', async () => {
     const fetchImpl = vi.fn(async () => Response.json({
       error: { code: ERROR_CODE_AUTH_INVALID, message: 'invalid internal token', statusCode: 401 },

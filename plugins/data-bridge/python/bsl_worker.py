@@ -19,6 +19,7 @@ MODEL_CACHE: Dict[str, Any] = {}
 BSL_INVALID_SYNTAX = "DATA_BRIDGE_BSL_INVALID_SYNTAX"
 BSL_DEFERRED_RESULT = "DATA_BRIDGE_BSL_DEFERRED_RESULT"
 BSL_NON_TABULAR_RESULT = "DATA_BRIDGE_BSL_NON_TABULAR_RESULT"
+BSL_INVALID_ARGUMENTS = "DATA_BRIDGE_BSL_INVALID_ARGUMENTS"
 BSL_EXECUTION_FAILED = "DATA_BRIDGE_BSL_EXECUTION_FAILED"
 
 
@@ -68,6 +69,24 @@ def _guard_query(query: str) -> None:
             raise ValueError("private/dunder attribute access is not allowed")
 
 
+def _safe_evaluation_error(error: BaseException) -> BaseException:
+    diagnostic = str(error)
+    if error.__class__.__name__ != "SignatureValidationError":
+        return error
+
+    if "SemanticAggregateOp" in diagnostic and "`aggs`" in diagnostic:
+        return BslQueryError(
+            BSL_INVALID_ARGUMENTS,
+            "Invalid semantic aggregation arguments: pass measure names positionally, for example "
+            "aggregate(\"measure\"); named aggregate aliases require callable expressions",
+        )
+
+    return BslQueryError(
+        BSL_INVALID_ARGUMENTS,
+        "BSL operation received invalid argument types; check the operation arguments",
+    )
+
+
 def _dtype_for_value(value):
     dtype = str(value)
     if dtype.startswith("int"):
@@ -102,7 +121,10 @@ def _query_to_table(payload: Dict[str, Any]) -> Dict[str, Any]:
     evaluated = safe_eval(payload["query"], context={**models, "sm": model, "ibis": ibis, "_": _})
 
     if isinstance(evaluated, Failure):
-        raise evaluated.failure()
+        failure = evaluated.failure()
+        if isinstance(failure, BaseException):
+            raise _safe_evaluation_error(failure)
+        raise RuntimeError(str(failure))
 
     if not isinstance(evaluated, Success):
         failure = evaluated.failure()

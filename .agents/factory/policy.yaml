@@ -52,10 +52,14 @@ trust_ladder:
 
 models:
   # Tiers resolve via docs/procedures/MODEL-CARD.md (priority-ordered).
+  # Seats, owner-ratified 2026-08-10 (gh-1187 S0): triage / orchestrator /
+  # worker. `worker`'s tier is only its DEFAULT — model routing lives at
+  # dispatch (per-session, or per-automation via #1143), so a taste-heavy UI
+  # bead opens a worker session on a higher tier without a roster change.
+  # Deferred grow-on-demand seats (concierge, reviewer, auditor, beadle) get
+  # their tier back here when they get a fleet.yaml entry back.
   seats:
-    concierge: T1
-    steward: T1
-    reviewer: T2
+    orchestrator: T1
     worker: T3
     triage: T3
     automation: T4

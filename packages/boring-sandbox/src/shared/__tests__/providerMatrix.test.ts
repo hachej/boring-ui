@@ -81,11 +81,29 @@ describe("provider capability matrix", () => {
     });
   });
 
+  it("declares the EU-capable Blaxel provider row", () => {
+    expect(PROVIDER_CAPABILITIES.blaxel).toMatchObject({
+      fs: "readwrite",
+      exec: true,
+      realBash: "unknown",
+      realBinaries: true,
+      networkIsolation: "provider",
+      watch: true,
+      search: true,
+      sourceOfTruth: "sandbox-primary",
+      provisioningSupport: true,
+      runtimeImage: true,
+      hardening: "provider",
+      filesystemPersistence: "provider",
+    });
+  });
+
   it("preserves mode id to provider id distinctions", () => {
     expect(MODE_TO_PROVIDER.local).toBe("bwrap");
     expect(MODE_TO_PROVIDER.direct).toBe("direct");
     expect(MODE_TO_PROVIDER.pure).toBe("none");
     expect(MODE_TO_PROVIDER.readonly).toBe("readonly");
+    expect(MODE_TO_PROVIDER.blaxel).toBe("blaxel");
   });
 
   it("keeps non-exec providers non-executable", () => {

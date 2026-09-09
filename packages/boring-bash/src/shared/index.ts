@@ -57,6 +57,13 @@ export interface RuntimeBindingPlan {
   bindings: PreparedFilesystemBinding[];
 }
 
+export type { ExactBinaryWriteOutcome, ExactBinaryWritePolicy } from "./exactBinaryWrite";
+export {
+  EXACT_BINARY_WRITE_POLICIES,
+  isExactBinaryWritePolicy,
+  parseExactBinaryWriteOutcome,
+} from "./exactBinaryWrite";
+
 export type {
   FilesystemCatalogCapabilities,
   FilesystemCatalogCapabilityKey,

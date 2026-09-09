@@ -14,6 +14,7 @@ const agentMock = vi.hoisted(() => ({
 }))
 
 const coreAppMock = vi.hoisted(() => ({
+  authOptions: [] as Array<Record<string, unknown> | undefined>,
   debugLogs: [] as unknown[][],
 }))
 
@@ -58,7 +59,10 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     runtimePlugins: [],
     routeContributions: [],
   }),
-  createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
+  createSandboxRuntimeModeAdapter: () => ({
+    id: 'direct',
+    getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
+  }),
   hasDirServerPlugin: () => false,
   provisionWorkspaceAgentServer: vi.fn(),
   readWorkspacePluginPackagePiSnapshot: () => ({
@@ -95,10 +99,12 @@ vi.mock('@hachej/boring-workspace/server', () => ({
 }))
 
 vi.mock('../../../server/auth/index.js', () => ({
+  assertCoreDynamicAuthBaseURL: () => {},
   authHook: async () => {},
-  createAuth: () => ({
-    handler: vi.fn(),
-  }),
+  createAuth: (_config: CoreConfig, _db: unknown, options?: Record<string, unknown>) => {
+    coreAppMock.authOptions.push(options)
+    return { handler: vi.fn() }
+  },
 }))
 
 vi.mock('../../../server/app/index.js', () => ({
@@ -132,7 +138,10 @@ vi.mock('../../../server/db/index.js', () => ({
     sql: { end: vi.fn() },
   }),
   PostgresUserStore: class PostgresUserStore {},
-  PostgresWorkspaceStore: class PostgresWorkspaceStore {},
+  PostgresWorkspaceStore: class PostgresWorkspaceStore {
+    async countNullDefaultAgentTypeIds() { return 0 }
+    async compareAndSetNullDefaultAgentTypeId() { return 0 }
+  },
 }))
 
 vi.mock('../../../server/config/index.js', () => ({
@@ -142,6 +151,7 @@ vi.mock('../../../server/config/index.js', () => ({
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },
     stores: 'postgres',
+    defaultAgentTypeId: 'default',
   }),
 }))
 
@@ -191,6 +201,7 @@ function makeBootConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
     },
     features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
     ...overrides,
+    defaultAgentTypeId: overrides.defaultAgentTypeId ?? 'default',
   }
 }
 
@@ -198,6 +209,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   beforeEach(() => {
     resetTelemetryEnv()
     agentMock.registerOptions.length = 0
+    coreAppMock.authOptions.length = 0
     coreAppMock.debugLogs.length = 0
     dbMock.rows.length = 0
     dbMock.insert.mockClear()
@@ -213,7 +225,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     await expect(createCoreWorkspaceAgentServer({
       serveFrontend: false,
       config: makeBootConfig({ signupAgentDefaults: { 'legal.example': 'ghost-agent' } }),
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: [{ agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
     })
@@ -224,7 +236,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     await expect(createCoreWorkspaceAgentServer({
       serveFrontend: false,
       config: makeBootConfig({ signupAgentDefaults: { '*.example': 'default' } }),
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: [{ agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
     })
@@ -238,11 +250,30 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
         security: { csp: { enabled: false }, trustedProxy: 'legacy-unsafe' },
         signupAgentDefaults: { 'legal.example': 'default' },
       }),
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: [{ agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
     })
     expect(agentMock.registerOptions).toHaveLength(0)
+  })
+
+  it('passes the dynamic auth base URL into Core auth creation', async () => {
+    const authBaseURL = {
+      allowedHosts: ['app.example.test', 'agent.example.test'],
+      protocol: 'https' as const,
+    }
+    const app = await createCoreWorkspaceAgentServer({
+      authBaseURL,
+      config: makeBootConfig(),
+      serveFrontend: false,
+    })
+
+    try {
+      expect(coreAppMock.authOptions).toHaveLength(1)
+      expect(coreAppMock.authOptions[0]).toMatchObject({ baseURL: authBaseURL })
+    } finally {
+      await app.close()
+    }
   })
 
   it('uses the core DB telemetry env helper by default and passes the sink to agent routes', async () => {
@@ -446,6 +477,8 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
 
       const forwarded = handler.mock.calls[0]?.[0]
       expect(forwarded).toBeInstanceOf(Request)
+      expect(forwarded?.headers.get('host')).toBe('legal.example:443')
+      expect(forwarded?.headers.get('x-forwarded-host')).toBe('attacker.example')
       expect(forwarded?.headers.get(TRUSTED_SIGNUP_HOSTNAME_HEADER)).toBe('legal.example')
     } finally {
       await app.close()

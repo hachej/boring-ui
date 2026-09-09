@@ -1,4 +1,8 @@
-import { parseFilesystemCatalog } from "@hachej/boring-bash/shared"
+import {
+  parseExactBinaryWriteOutcome,
+  parseFilesystemCatalog,
+} from "@hachej/boring-bash/shared"
+import type { ExactBinaryWriteOutcome, ExactBinaryWritePolicy } from "@hachej/boring-bash/shared"
 import type {
   FetchClientOptions,
   FileContent,
@@ -69,6 +73,7 @@ export class FetchClient {
     parseResponse: (response: Response) => Promise<T> = async (response) => await response.json() as T,
     credentials?: RequestCredentials,
     maxRetries = this.maxRetries,
+    cache?: RequestCache,
   ): Promise<T> {
     const effectiveTimeout = requestTimeout ?? this.timeout
     let lastError: Error | null = null
@@ -93,6 +98,7 @@ export class FetchClient {
           body: hasBody ? JSON.stringify(body) : undefined,
           signal: controller.signal,
           ...(credentials ? { credentials } : {}),
+          ...(cache ? { cache } : {}),
         })
 
         clearTimeout(timer)
@@ -159,6 +165,7 @@ export class FetchClient {
       async (response) => parseFilesystemCatalog(await response.json()),
       "include",
       0,
+      "no-store",
     )
   }
 
@@ -240,6 +247,26 @@ export class FetchClient {
     }
   }
 
+  async writeBinaryFile(
+    path: string,
+    file: Blob,
+    options: { ifExists: ExactBinaryWritePolicy; signal?: AbortSignal },
+  ): Promise<ExactBinaryWriteOutcome> {
+    const contentBase64 = await blobToBase64(file, options.signal)
+    const outcome = await this.request<ExactBinaryWriteOutcome>(
+      "POST",
+      "/api/v1/files/binary",
+      { path, contentBase64, ifExists: options.ifExists },
+      undefined,
+      options.signal,
+      async (response) => parseExactBinaryWriteOutcome(await response.json()),
+      "include",
+      0,
+    )
+    if (outcome.path !== path) throw new TypeError("exact binary write outcome path mismatch")
+    return outcome
+  }
+
   async deleteFile(path: string, options?: { filesystem?: string }): Promise<void> {
     const params = new URLSearchParams({ path })
     if (options?.filesystem) params.set("filesystem", options.filesystem)
@@ -299,6 +326,38 @@ export class FetchClient {
   async moveFile(from: string, to: string, options?: { filesystem?: string }): Promise<void> {
     await this.request<void>("POST", "/api/v1/files/move", { from, to, ...(options?.filesystem ? { filesystem: options.filesystem } : {}) })
   }
+}
+
+function abortError(): DOMException {
+  return new DOMException("Upload aborted", "AbortError")
+}
+
+function blobToBase64(blob: Blob, signal?: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError())
+    const reader = new FileReader()
+    const cleanup = () => signal?.removeEventListener("abort", handleAbort)
+    const handleAbort = () => {
+      reader.abort()
+      cleanup()
+      reject(abortError())
+    }
+    reader.onload = () => {
+      cleanup()
+      const result = String(reader.result ?? "")
+      resolve(result.slice(result.indexOf(",") + 1))
+    }
+    reader.onerror = () => {
+      cleanup()
+      reject(reader.error ?? new Error("Could not read upload"))
+    }
+    reader.onabort = () => {
+      cleanup()
+      reject(abortError())
+    }
+    signal?.addEventListener("abort", handleAbort, { once: true })
+    reader.readAsDataURL(blob)
+  })
 }
 
 export class FetchError extends Error {

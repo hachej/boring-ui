@@ -6,8 +6,6 @@ import {
 } from '../../shared/gateway/errors'
 import type { JsonValue } from '../../shared/gateway/types'
 
-export const RUNTIME_SCOPE_MISMATCH_MESSAGE = 'This chat belongs to a previous runtime configuration and can no longer be changed.'
-
 export type GatewayResponseErrorCode = AgentGatewayErrorCodeValue | ErrorCode
 
 export class GatewayResponseError extends Error {
@@ -47,9 +45,7 @@ export function gatewayResponseErrorFromBody(
   const serverMessage = typeof payload?.message === 'string' && payload.message.trim().length > 0
     ? payload.message
     : fallbackMessage
-  const message = code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
-    ? RUNTIME_SCOPE_MISMATCH_MESSAGE
-    : serverMessage
+  const message = serverMessage
   const details = isJsonValue(payload?.details) ? payload.details : undefined
   return new GatewayResponseError(status, message, code, details, body, operation)
 }
@@ -68,10 +64,6 @@ export function errorResponseCode(error: unknown): GatewayResponseErrorCode | un
     ? error as { code?: unknown; errorCode?: unknown }
     : undefined
   return gatewayResponseErrorCode(record?.code ?? record?.errorCode)
-}
-
-export function isRuntimeScopeMismatchError(error: unknown): boolean {
-  return errorResponseCode(error) === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
 }
 
 async function safeReadJson(response: Response): Promise<unknown> {

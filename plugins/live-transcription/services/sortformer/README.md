@@ -36,12 +36,19 @@ diarizer URL and restart the app for immediate rollback.
    mono, little-endian PCM16 and 100 ms frames.
 2. Server replies with JSON `ready`.
 3. Every client audio message is one 3,200-byte binary frame.
-4. Server emits bounded full JSON `snapshot` messages containing monotonic
-   revisions and `{speaker,startSeconds,endSeconds}` segments.
+4. Server emits bounded JSON `snapshot` messages containing monotonic
+   revisions, `{speaker,startSeconds,endSeconds}` segments and `fromIndex`:
+   the client replaces its session list from that index (the last segment it
+   holds may have been extended by the new chunk). A snapshot without
+   `fromIndex` is a full replacement. The sidecar sends a snapshot per model
+   chunk, so a message carries one or two segments, not the whole session.
 5. Client sends `{ "type": "stop", "id": N }`; server replies `stopped`.
 
-Speaker slots are anonymous, arrival-ordered, session-local, and capped at four
-by the model. The follow-up LLM may infer conversational roles; the sidecar does
-not claim biometric identity. MacWhisper uses the same anonymous-label product
+Speaker slots are anonymous, arrival-ordered, session-local, and capped at
+three for clinic consultations (`--max-speakers`, or `BORING_SORTFORMER_MAX_SPEAKERS`). The sidecar applies confidence gating
+and requires sustained evidence before changing speakers; this suppresses brief
+four-channel Sortformer fluctuations that would otherwise create false speaker
+turns. The follow-up LLM may infer conversational roles; the sidecar does not
+claim biometric identity. MacWhisper uses the same anonymous-label product
 pattern but performs local speaker recognition after transcription completes;
 this PoC emits revisable labels during `/live` capture.

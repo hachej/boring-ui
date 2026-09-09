@@ -23,6 +23,7 @@ describe('Pi chat shared schemas', () => {
       seq: 42,
       status: 'streaming',
       activeTurnId: 'turn-1',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
       messages: [
         {
           id: 'entry-user-1',
@@ -55,6 +56,7 @@ describe('Pi chat shared schemas', () => {
       seq: 42,
       status: 'streaming',
       activeTurnId: 'turn-1',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
       queue: { followUps: [{ displayText: 'next question' }] },
     })
   })
@@ -99,6 +101,7 @@ describe('Pi chat shared schemas', () => {
     expect(QueueClearPayloadSchema.parse(undefined)).toEqual({})
     expect(QueueClearPayloadSchema.parse({ clientNonce: 'nonce-q', clientSeq: 1 })).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
     expect(InterruptPayloadSchema.parse({})).toEqual({})
+    expect(InterruptPayloadSchema.parse({ queueAction: 'hold' })).toEqual({ queueAction: 'hold' })
     expect(StopPayloadSchema.parse({})).toEqual({})
     expect(QueueClearPayloadSchema.safeParse({ unexpected: true }).success).toBe(false)
 

@@ -35,6 +35,7 @@ export function createUiReviewStagingPolicy(spec: UiReviewSpec) {
 
 export type UiReviewSelectionState = UiReviewState & {
   source: "bombadil"
+  screenshotPHash: string
   ordinal: number
   action: unknown
   hashCurrent: string | number | null
@@ -82,7 +83,10 @@ export async function stageBombadilSelection(input: {
   rawViolations: Array<{ ordinal: number; violations: unknown[] }>
 }> {
   const policy = createUiReviewStagingPolicy(input.spec)
-  const entries = await parseBombadilTrace(input.rawRoot)
+  const entries = await parseBombadilTrace(
+    input.rawRoot,
+    input.spec.exploration?.normalizeReplayState,
+  )
   const rawViolations = entries.flatMap((entry) => (
     entry.violations.length > 0 ? [{ ordinal: entry.ordinal, violations: entry.violations }] : []
   ))
@@ -177,6 +181,7 @@ export async function stageBombadilSelection(input: {
       screenshotPath,
       screenshotDigest: entry.screenshotDigest,
       screenshotBytes: entry.screenshotBytes,
+      screenshotPHash: entry.screenshotPHash,
       source: "bombadil",
       ordinal: entry.ordinal,
       action: entry.action,

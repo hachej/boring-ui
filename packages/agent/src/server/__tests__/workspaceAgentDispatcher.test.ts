@@ -42,6 +42,7 @@ function createFakeGateway(): AgentGateway & {
     async listSessions() { return { sessions: [] } },
     async readSessionState() { throw new Error('not implemented') },
     async renameSession() { throw new Error('not implemented') },
+    async setSessionArchived() { throw new Error('not implemented') },
     async deleteSession() {},
     async close() {},
   }
@@ -90,6 +91,22 @@ describe('workspace agent dispatcher', () => {
     expect(gateway.sends).toEqual([
       expect.objectContaining({ kind: 'followup', requestId: 'follow-1', clientSeq: 1 }),
       expect.objectContaining({ kind: 'followup', requestId: 'follow-2', clientSeq: 2 }),
+    ])
+  })
+
+  it('forwards trusted require-idle prompt admission to the Gateway', async () => {
+    const gateway = createFakeGateway()
+    const dispatcher = createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, CTX)
+
+    await dispatcher.dispatch!({
+      requestId: 'answer-q1',
+      sessionId: 'shared',
+      content: 'Owner answered',
+      requireIdle: true,
+    })
+
+    expect(gateway.sends).toEqual([
+      expect.objectContaining({ kind: 'prompt', requestId: 'answer-q1', requireIdle: true }),
     ])
   })
 

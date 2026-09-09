@@ -4,7 +4,9 @@ import type { PendingQuestionHint } from "./client"
 
 export type QuestionsStore = {
   getPending(sessionId: string | null | undefined): AskUserQuestion | null
+  getPendingByQuestionId(questionId: string): AskUserQuestion | null
   setPending(question: AskUserQuestion | null, sessionId?: string | null): void
+  removePending(questionId: string): void
   getPendingHints(): PendingQuestionHint[]
   getPendingByToolCallId(toolCallId: string): AskUserQuestion | null
   getHydratedPendingKeys(): string[]
@@ -22,61 +24,80 @@ export type QuestionsRuntime = QuestionsStore & {
   authHeaders?: Record<string, string>
   activeSessionId?: string | null
   openSessionIds?: readonly string[]
-  refreshPending(sessionId: string): Promise<AskUserQuestion | null>
+  agentTypeIdForSession(sessionId: string): string | undefined
+  requestPendingRefresh(sessionId?: string, questionId?: string): void
 }
 
 export function createQuestionsStore(): QuestionsStore {
   const listeners = new Set<() => void>()
-  const pendingBySession = new Map<string, AskUserQuestion>()
-  const hintsBySession = new Map<string, PendingQuestionHint>()
+  const pendingByQuestion = new Map<string, AskUserQuestion>()
+  const hintsByQuestion = new Map<string, PendingQuestionHint>()
   const actionsInFlight = new Set<string>()
   const actionKey = (question: AskUserQuestion) => `${question.sessionId}:${question.questionId}`
   const emit = () => { for (const listener of [...listeners]) listener() }
   return {
     getPending(sessionId) {
-      return sessionId ? pendingBySession.get(sessionId) ?? null : null
+      if (!sessionId) return null
+      const questions = [...pendingByQuestion.values()].filter((question) => question.sessionId === sessionId && question.status === "ready")
+      return questions.find((question) => question.blocking !== false) ?? questions.at(-1) ?? null
+    },
+    getPendingByQuestionId(questionId) {
+      const question = pendingByQuestion.get(questionId)
+      return question?.status === "ready" ? question : null
     },
     setPending(question, sessionId) {
       if (question) {
-        pendingBySession.set(question.sessionId, question)
-        hintsBySession.set(question.sessionId, {
+        pendingByQuestion.set(question.questionId, question)
+        hintsByQuestion.set(question.questionId, {
           questionId: question.questionId,
           sessionId: question.sessionId,
           ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
           status: question.status,
+          ...(question.blocking === false ? { blocking: false as const } : {}),
         })
       } else if (sessionId) {
-        pendingBySession.delete(sessionId)
-        hintsBySession.delete(sessionId)
+        for (const [questionId, candidate] of pendingByQuestion) {
+          if (candidate.sessionId === sessionId) pendingByQuestion.delete(questionId)
+        }
+        for (const [questionId, hint] of hintsByQuestion) {
+          if (hint.sessionId === sessionId) hintsByQuestion.delete(questionId)
+        }
       } else {
-        pendingBySession.clear()
-        hintsBySession.clear()
+        pendingByQuestion.clear()
+        hintsByQuestion.clear()
       }
       emit()
     },
+    removePending(questionId) {
+      const changed = pendingByQuestion.delete(questionId) || hintsByQuestion.delete(questionId)
+      if (changed) {
+        hintsByQuestion.delete(questionId)
+        emit()
+      }
+    },
     getPendingHints() {
-      return [...hintsBySession.values()]
+      return [...hintsByQuestion.values()]
     },
     getPendingByToolCallId(toolCallId) {
-      for (const question of pendingBySession.values()) {
+      for (const question of pendingByQuestion.values()) {
         if (question.status === "ready" && question.toolCallId === toolCallId) return question
       }
       return null
     },
     getHydratedPendingKeys() {
-      return [...pendingBySession.values()].map((question) => `${question.sessionId}:${question.questionId}:${question.status}`)
+      return [...pendingByQuestion.values()].map((question) => `${question.sessionId}:${question.questionId}:${question.status}`)
     },
     setPendingHints(hints) {
-      hintsBySession.clear()
-      const authoritativeHints = new Map<string, PendingQuestionHint>()
+      hintsByQuestion.clear()
+      const authoritativeQuestionIds = new Set<string>()
       for (const hint of hints) {
-        hintsBySession.set(hint.sessionId, hint)
-        authoritativeHints.set(hint.sessionId, hint)
+        hintsByQuestion.set(hint.questionId, hint)
+        authoritativeQuestionIds.add(hint.questionId)
       }
-      for (const [sessionId, question] of [...pendingBySession.entries()]) {
-        const hint = authoritativeHints.get(sessionId)
-        if (!hint || hint.questionId !== question.questionId || (hint.status && hint.status !== question.status)) {
-          pendingBySession.delete(sessionId)
+      for (const [questionId, question] of [...pendingByQuestion.entries()]) {
+        const hint = hintsByQuestion.get(questionId)
+        if (!authoritativeQuestionIds.has(questionId) || (hint?.status && hint.status !== question.status)) {
+          pendingByQuestion.delete(questionId)
         }
       }
       emit()

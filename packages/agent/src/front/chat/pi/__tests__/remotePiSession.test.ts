@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
-import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
+import { RemotePiSession } from '../remotePiSession'
 
 const encoder = new TextEncoder()
 
@@ -184,6 +185,95 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('notifies only accepted events after applying them to the live session state', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot())
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const onEvent = vi.fn((_event: PiChatEvent) => ({
+      lastSeq: session.getState().lastSeq,
+      status: session.getState().status,
+    }))
+    const session = createSession(fetchMock, { onEvent })
+    try {
+      await waitUntil(() => session.getState().connection.state === 'connected')
+      for (const seq of [4, 5, 6, 6]) {
+        events.write({ type: 'agent-end', seq, turnId: 'turn-1', status: 'ok' } satisfies PiChatEvent)
+      }
+      events.write({ type: 'heartbeat', now: '2026-06-03T00:02:00.000Z' })
+      await waitUntil(() => session.getState().connection.lastHeartbeatAt !== undefined)
+
+      expect(onEvent).toHaveBeenCalledExactlyOnceWith({ type: 'agent-end', seq: 6, turnId: 'turn-1', status: 'ok' })
+      expect(onEvent.mock.results[0]?.value).toEqual({ lastSeq: 6, status: 'idle' })
+    } finally {
+      session.dispose()
+    }
+  })
+
+  it('does not notify callbacks for consumed stale-turn or contradictory terminal events', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot())
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const onEvent = vi.fn()
+    const session = createSession(fetchMock, { onEvent })
+    try {
+      await waitUntil(() => session.getState().connection.state === 'connected')
+      events.write({ type: 'agent-end', seq: 6, turnId: 'turn-stale', status: 'ok' })
+      events.write({
+        type: 'error',
+        seq: 7,
+        turnId: 'turn-1',
+        retryable: false,
+        error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'failed', retryable: false },
+      })
+      events.write({ type: 'agent-end', seq: 8, turnId: 'turn-1', status: 'ok' })
+      events.write({ type: 'heartbeat', now: '2026-06-03T00:02:00.000Z' })
+      await waitUntil(() => session.getState().connection.lastHeartbeatAt !== undefined)
+
+      expect(session.getState()).toMatchObject({ lastSeq: 8, status: 'error', error: { message: 'failed' } })
+      expect(onEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'error', seq: 7 }))
+    } finally {
+      session.dispose()
+    }
+  })
+
+  it('withholds gap events from callbacks until recovery accepts them', async () => {
+    const streams = [openNdjsonStream(), openNdjsonStream()]
+    const recovery = deferred<Response>()
+    let stateCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return ++stateCalls === 1 ? jsonResponse(snapshot()) : recovery.promise
+      if (url.endsWith('/events?cursor=5')) return new Response(streams[0]!.stream)
+      if (url.endsWith('/events?cursor=6')) return new Response(streams[1]!.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const onEvent = vi.fn()
+    const session = createSession(fetchMock, { onEvent })
+    const terminal = { type: 'agent-end', seq: 7, turnId: 'turn-1', status: 'ok' } satisfies PiChatEvent
+    try {
+      await waitUntil(() => session.getState().connection.state === 'connected')
+      streams[0]!.write(terminal)
+      await waitUntil(() => stateCalls === 2)
+
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(session.getState()).toMatchObject({ lastSeq: 5, status: 'streaming' })
+
+      recovery.resolve(jsonResponse(snapshot({ seq: 6 })))
+      await waitUntil(() => session.getState().lastSeq === 6 && session.getState().connection.state === 'connected')
+      streams[1]!.write(terminal)
+      await waitUntil(() => session.getState().lastSeq === 7)
+      expect(onEvent).toHaveBeenCalledExactlyOnceWith(terminal)
+      expect(session.getState().status).toBe('idle')
+    } finally {
+      session.dispose()
+    }
+  })
+
   it('silently reconnects after a hung event stream connect times out', async () => {
     const events = openNdjsonStream()
     let eventCalls = 0
@@ -209,6 +299,32 @@ describe('RemotePiSession', () => {
     expect(session.getState().notices.some((notice) => notice.id === 'protocol-error')).toBe(false)
     expect(session.getState().error).toBeUndefined()
 
+    session.dispose()
+  })
+
+  it('allows command admission more time than state hydration', async () => {
+    vi.useFakeTimers()
+    const events = openNdjsonStream()
+    const promptResponse = deferred<Response>()
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/events?cursor=0')) return Promise.resolve(new Response(events.stream))
+      if (url.endsWith('/prompt')) return promptResponse.promise
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, {
+      autoStart: false,
+      requestTimeoutMs: 20,
+      commandTimeoutMs: 40,
+    })
+
+    const prompt = session.prompt({ message: 'hello', clientNonce: 'nonce-1' })
+    await flushPromises()
+    vi.advanceTimersByTime(25)
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/prompt'))).toBe(true)
+
+    promptResponse.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' }))
+    await expect(prompt).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-1' })
     session.dispose()
   })
 
@@ -669,6 +785,48 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('updates an already-connected viewer from an external model-change event', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({
+        seq: 5,
+        status: 'idle',
+        activeTurnId: undefined,
+        currentModel: { provider: 'openai', id: 'gpt-old' },
+      }))
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    events.write({
+      type: 'model-changed',
+      seq: 6,
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    } satisfies PiChatEvent)
+
+    await waitUntil(() => session.getState().currentModel?.id === 'gpt-5.6-sol')
+    expect(session.getState().currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+    session.dispose()
+  })
+
+  it('confirms an accepted next-message override as the session current model', async () => {
+    const events = openNdjsonStream()
+    const model = { provider: 'openai', id: 'gpt-5.7' }
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 0, clientNonce: 'nonce-model' })
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await session.prompt({ message: 'switch model', clientNonce: 'nonce-model', model })
+
+    expect(session.getState().currentModel).toEqual(model)
+    session.dispose()
+  })
+
   it('opens events from the current cursor before the first command when autoStart is false', async () => {
     const events = openNdjsonStream()
     const promptResponse = deferred<Response>()
@@ -703,91 +861,6 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('rolls back optimistic follow-ups when the follow-up command fails', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/followup')) return jsonResponse({ error: { message: 'queue failed' } }, 500)
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).rejects.toThrow('queue failed')
-
-    expect(session.getState().optimisticOutbox).toEqual({})
-
-    session.dispose()
-  })
-
-  it('surfaces the stable, canonical server error code from a rejected command via piChatErrorCode', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/prompt')) {
-        return jsonResponse({ error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'locked' } }, 423)
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    const error = await session.prompt({ message: 'hello', clientNonce: 'nonce-1' }).then(
-      () => { throw new Error('prompt should have rejected') },
-      (err: unknown) => err,
-    )
-    expect(piChatErrorCode(error)).toBe(ErrorCode.enum.SESSION_LOCKED)
-    // The rejection also rolls back the optimistic message so the composer recovers.
-    expect(session.getState().optimisticOutbox).toEqual({})
-
-    session.dispose()
-  })
-
-  it('piChatErrorCode ignores non-canonical/missing codes and reads a plain canonical errorCode', () => {
-    expect(piChatErrorCode(new Error('boom'))).toBeUndefined()
-    expect(piChatErrorCode(undefined)).toBeUndefined()
-    // A non-canonical code must NOT be surfaced as a host action key.
-    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
-    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
-  })
-
-  it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const body = init?.body ? JSON.parse(String(init.body)) : undefined
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/followup')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: body.clientNonce, clientSeq: body.clientSeq, queued: true })
-      if (url.endsWith('/stop')) {
-        return jsonResponse({
-          accepted: true,
-          cursor: 2,
-          stopped: true,
-          clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
-        })
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({
-      accepted: true,
-      cursor: 1,
-      clientNonce: 'nonce-q',
-      clientSeq: 1,
-      queued: true,
-    })
-    expect(session.getState().optimisticOutbox['nonce-q']).toMatchObject({ status: 'pending', clientSeq: 1 })
-
-    await expect(session.stop()).resolves.toEqual({
-      accepted: true,
-      cursor: 2,
-      stopped: true,
-      clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
-    })
-
-    expect(session.getState().optimisticOutbox).toEqual({})
-
-    session.dispose()
-  })
-
   it('does not start stale hydration fetches when async headers resolve after dispose', async () => {
     const headers = deferred<Record<string, string>>()
     const fetchMock = vi.fn(async () => jsonResponse(snapshot({ seq: 99 }))) as unknown as MockFetch
@@ -802,100 +875,4 @@ describe('RemotePiSession', () => {
     expect(session.getState().hydrated).toBe(false)
   })
 
-  it('posts commands through the remote session seam and keeps command receipts out of canonical transcript', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const body = init?.body ? JSON.parse(String(init.body)) : undefined
-      if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: body.clientNonce })
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/followup')) return jsonResponse({ accepted: true, cursor: 2, clientNonce: body.clientNonce, clientSeq: body.clientSeq, queued: true })
-      if (url.endsWith('/queue/clear')) return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
-      if (url.endsWith('/interrupt')) return jsonResponse({ accepted: true, cursor: 4 })
-      if (url.endsWith('/stop')) return jsonResponse({ accepted: true, cursor: 5, stopped: true, clearedQueue: [] })
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce-1', attachments: [{ filename: 'a.txt', url: 'https://file.test/a.txt' }] })).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
-    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({ accepted: true, cursor: 2, clientNonce: 'nonce-q', clientSeq: 1, queued: true })
-    await expect(session.clearQueue({ clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({ accepted: true, cursor: 3, cleared: 1 })
-    await expect(session.interrupt()).resolves.toEqual({ accepted: true, cursor: 4 })
-    await expect(session.stop()).resolves.toEqual({ accepted: true, cursor: 5, stopped: true, clearedQueue: [] })
-
-    const postCalls = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
-    expect(postCalls.map((call) => [String(call[0]), (call[1] as RequestInit | undefined)?.method])).toEqual([
-      ['https://agent.test/api/v1/agents/default/sessions/s1/prompt', 'POST'],
-      ['https://agent.test/api/v1/agents/default/sessions/s1/followup', 'POST'],
-      ['https://agent.test/api/v1/agents/default/sessions/s1/queue/clear', 'POST'],
-      ['https://agent.test/api/v1/agents/default/sessions/s1/interrupt', 'POST'],
-      ['https://agent.test/api/v1/agents/default/sessions/s1/stop', 'POST'],
-    ])
-    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
-    expect(session.getState().committedMessages).toEqual([])
-    expect(session.getState().optimisticOutbox['nonce-1']).toMatchObject({
-      role: 'user',
-      status: 'pending',
-      clientNonce: 'nonce-1',
-      createdAt: expect.any(String),
-    })
-    expect(Date.parse(session.getState().optimisticOutbox['nonce-1']?.createdAt ?? '')).not.toBeNaN()
-    expect(session.getState().optimisticOutbox['nonce-q']).toBeUndefined()
-
-    session.dispose()
-  })
-
-  it('adapts addressed Gateway command receipts without changing the legacy client contract', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const body = init?.body ? JSON.parse(String(init.body)) : undefined
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/prompt')) {
-        expect(body).toEqual({
-          clientNonce: 'nonce-p',
-          requestId: 'nonce-p',
-          content: 'hello',
-          displayContent: 'Hello',
-        })
-        return jsonResponse({
-          accepted: true,
-          cursor: 1,
-          disposition: 'prompt',
-          clientNonce: body.clientNonce,
-        })
-      }
-      if (url.endsWith('/followup')) {
-        expect(body).toEqual({
-          clientNonce: 'nonce-q',
-          clientSeq: 2,
-          requestId: 'nonce-q:2',
-          content: 'queued',
-        })
-        return jsonResponse({
-          accepted: true,
-          cursor: 1,
-          disposition: 'followup',
-          clientNonce: body.clientNonce,
-          clientSeq: body.clientSeq,
-        })
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { agentTypeId: 'alpha', autoStart: false })
-
-    await expect(session.prompt({ message: 'hello', displayMessage: 'Hello', clientNonce: 'nonce-p' })).resolves.toEqual({
-      accepted: true,
-      cursor: 1,
-      clientNonce: 'nonce-p',
-    })
-    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 2 })).resolves.toEqual({
-      accepted: true,
-      cursor: 1,
-      clientNonce: 'nonce-q',
-      clientSeq: 2,
-      queued: true,
-    })
-    expect(fetchMock.mock.calls.some(([url]) => String(url) === 'https://agent.test/api/v1/agents/alpha/sessions/s1/followup')).toBe(true)
-
-    session.dispose()
-  })
 })

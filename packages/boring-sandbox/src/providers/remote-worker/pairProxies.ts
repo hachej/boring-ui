@@ -71,6 +71,7 @@ export function createRemoteWorkspaceV1(options: {
   client: RemoteWorkerLeaseClientV1;
   leaseExpiresAtMs: () => number;
   now: () => number;
+  supportsExclusiveBinaryCreate: boolean;
 }): { workspace: Workspace; closeWatcher(): void } {
   let watcher: WorkspaceWatcher | undefined;
   let stream: RemoteWorkerEventStreamV1 | undefined;
@@ -218,6 +219,29 @@ export function createRemoteWorkspaceV1(options: {
         dataBase64: Buffer.from(data).toString("base64"),
       });
     },
+    ...(options.supportsExclusiveBinaryCreate
+      ? {
+          async createBinaryFile(path: string, data: Uint8Array) {
+            try {
+              await workspaceRequest({
+                op: "createBinaryFile",
+                path,
+                dataBase64: Buffer.from(data).toString("base64"),
+              });
+            } catch (error) {
+              if (
+                (error as { code?: unknown })?.code ===
+                REMOTE_WORKER_ERROR_CODES_V1.alreadyExists
+              ) {
+                throw Object.assign(new Error("EEXIST: file already exists"), {
+                  code: "EEXIST",
+                });
+              }
+              throw error;
+            }
+          },
+        }
+      : {}),
     async readFileWithStat(path) {
       const result = await workspaceRequest({ op: "readFileWithStat", path });
       if ("content" in result && "stat" in result) return result;

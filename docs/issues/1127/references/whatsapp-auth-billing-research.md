@@ -8,20 +8,20 @@ are flagged `[UNVERIFIED]` inline.
 
 Scope note: this file grounds the **WhatsApp consumer**, not the generic channel
 mechanism. Auth (OTP vs magic-link) is WhatsApp-consumer-specific; the generic
-`isIdentityProvider` capability flag is what the mechanism exposes.
+`canOriginateIdentity` capability flag is what the mechanism exposes.
 
 ---
 
-## 1. WhatsApp auth — OTP authentication templates do NOT need the 24h window
+## 1. WhatsApp auth — authentication-template window behavior is unverified
 
-The single most important finding, because it removes a blocker the plan
-previously assumed:
+**[UNVERIFIED — load-bearing]** This secondary-research claim has no primary
+Meta documentation citation in the repository. It must be verified before the
+Phase-2 WhatsApp OTP path is built; otherwise use SMS OTP or the web round trip.
 
-- Meta's **authentication-category message templates** (OTP / one-time-passcode
-  templates) are a distinct template category from UTILITY and MARKETING. They
-  are **business-initiated** and therefore do **not** depend on an open 24-hour
-  customer-service window. A signup/login OTP can be sent to a number that has
-  never messaged us.
+- Authentication-category message templates (OTP / one-time-passcode templates)
+  appear to be a distinct category from UTILITY and MARKETING. The working
+  hypothesis is that they can be business-initiated without an open 24-hour
+  customer-service window, allowing an OTP to reach a cold number.
 - Auth templates support the **copy-code** and **one-tap** button types. The
   **copy-code** button is the low-friction default: the user taps "Copy code",
   the code is placed on the clipboard, they paste it back.
@@ -44,9 +44,9 @@ conversation-billed like other template categories (see §3).
 While the WhatsApp Business Account (WABA) quality tier ramps, per-number
 messaging limits apply:
 
-- A newly-verified number starts in a **low messaging tier** and is **capped at
-  ~2,000 business-initiated conversations/day** until quality + volume raise the
-  tier. User-initiated replies inside a service window do not count against this
+- **[UNVERIFIED]** A newly-verified number reportedly starts in a low messaging
+  tier capped at ~2,000 business-initiated conversations/day until quality and
+  volume raise the tier. User-initiated replies inside a service window do not count against this
   the same way, but business-initiated OTP/login sends do.
 - **Mitigation: SMS fallback for the auth OTP/login path during the ramp.** If a
   WhatsApp auth send is throttled or the number is not yet on WhatsApp, fall back
@@ -70,9 +70,10 @@ progressive-email ladder makes email effectively required here).
 - **Email + VAT collected at Checkout.** Swiss/EU invoicing needs a billing
   email and, for business customers, a **VAT/UID number**. Stripe Tax /
   Checkout can collect and validate these.
-- **Swiss QR-bill is mandatory for CH invoicing.** Swiss B2B invoices must carry
-  a **QR-bill** (the standardized payment slip with the Swiss QR code). Use the
-  **`swissqrbill`** library to generate it. The QR-bill embeds the creditor
+- **Swiss QR-bill is the standardized format when an invoice uses a Swiss
+  payment slip.** It replaced legacy payment slips; an invoice settled by other
+  means does not inherently require one. Use the **`swissqrbill`** library to
+  generate the QR-bill when that payment method is offered. The QR-bill embeds the creditor
   reference, IBAN (QR-IBAN), and amount.
 - **Swiss VAT rate: 8.1%** (standard rate, 2024+). Invoices show the **UID**
   (Unternehmens-Identifikationsnummer, `CHE-###.###.###` formatted with the
@@ -92,7 +93,7 @@ vs standard-IBAN reference-type at implementation time.
 
 | Finding | Lands in |
 | --- | --- |
-| OTP auth-templates skip the 24h window; 10-min TTL copy-code | §6.6 identity (fallback path), §7.5 security, slice 1c |
+| **[UNVERIFIED]** OTP auth-templates bypass the 24h window; 10-min TTL copy-code | §6.6 identity (gated fallback path), §7.5 security, slice 1c |
 | SMS fallback during WABA ramp (2000/day cap) | §7.6 billing/ramp note, §7.2 policy |
 | Stripe Checkout at first payment; email+VAT | §6.6 progressive-email ladder, §7.6 |
 | Swiss QR-bill (`swissqrbill`), 8.1% VAT, UID | §7.6 billing note |

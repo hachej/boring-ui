@@ -383,6 +383,9 @@ it("reports JSON error envelope messages for non-retryable warmup failures", asy
   await waitFor(() => {
     expect(onStatusChange).toHaveBeenLastCalledWith({
       status: "failed",
+      // gh-1402: the server's stable code rides along so hosts can discriminate
+      // one boot failure from another (default-Agent recovery vs generic error).
+      code: "RUNTIME_PROVISIONING_FAILED",
       message: "Agent runtime failed to prepare",
     })
   })

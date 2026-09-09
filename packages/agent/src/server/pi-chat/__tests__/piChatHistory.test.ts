@@ -152,6 +152,47 @@ describe('buildPiChatHistory', () => {
     ])
   })
 
+  it('terminalizes unresolved tools under an aborted assistant without overwriting terminal output', () => {
+    const history = buildPiChatHistory(
+      [
+        {
+          id: 'entry-explicit-abort',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'toolCall', id: 'call-explicit-abort', name: 'read', state: 'aborted' }],
+            stopReason: 'stop',
+            timestamp: 1,
+          },
+        },
+        {
+          id: 'entry-aborted-assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'toolCall', id: 'call-unresolved', name: 'grep', state: 'input-available' },
+              { type: 'toolCall', id: 'call-output', name: 'bash', state: 'output-available', output: 'done' },
+              { type: 'toolCall', id: 'call-error', name: 'write', state: 'output-error', errorText: 'failed' },
+            ],
+            stopReason: 'aborted',
+            timestamp: 2,
+          },
+        },
+      ],
+      { sessionId: 'session-1' },
+    )
+
+    expect(history[0]).toMatchObject({ role: 'assistant', status: 'done' })
+    expect(history[0]?.parts).toEqual([
+      expect.objectContaining({ id: 'call-explicit-abort', state: 'aborted' }),
+    ])
+    expect(history[1]).toMatchObject({ role: 'assistant', status: 'aborted' })
+    expect(history[1]?.parts).toEqual([
+      expect.objectContaining({ id: 'call-unresolved', state: 'aborted' }),
+      expect.objectContaining({ id: 'call-output', state: 'output-available', output: 'done' }),
+      expect.objectContaining({ id: 'call-error', state: 'output-error', errorText: 'failed' }),
+    ])
+  })
+
   it('uses stable fallback ids only when Pi entry ids are unavailable', () => {
     const history = buildPiChatHistory(
       [

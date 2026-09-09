@@ -27,9 +27,13 @@ describe('production full-app safety guards', () => {
     ).toThrow(/BORING_AGENT_MODE=local is not allowed/)
   })
 
-  it('allows vercel-sandbox and explicit unsafe override', () => {
+  it('allows approved remote modes and the explicit unsafe override', () => {
     expect(() =>
       assertProductionAgentModeIsSafe({ NODE_ENV: 'production', BORING_AGENT_MODE: 'vercel-sandbox' }),
+    ).not.toThrow()
+
+    expect(() =>
+      assertProductionAgentModeIsSafe({ NODE_ENV: 'production', BORING_AGENT_MODE: 'blaxel' }),
     ).not.toThrow()
 
     expect(() =>

@@ -9,7 +9,7 @@ import { COMMAND_PALETTE_TOUCH_EXEMPTIONS } from "./touchPolicy"
 
 export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
   schemaVersion: UI_REVIEW_SCHEMA_VERSION,
-  contractVersion: "command-palette-v3",
+  contractVersion: "command-palette-v4",
   minimumTouchWidth: 44,
   minimumTouchHeight: 44,
   allowedHttpErrors: [] as Array<{ urlIncludes: string; statuses: number[] }>,
@@ -25,7 +25,7 @@ export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
       rationale: "The fixture shell cancels duplicate startup tree refreshes when its fresh-state reset completes.",
     },
     {
-      path: "/api/v1/agents/default/ready-status",
+      path: "/api/v1/agents/alpha/ready-status",
       errorText: "net::ERR_ABORTED",
       rationale: "The fixture shell cancels its readiness poll after the workspace becomes ready.",
     },
@@ -95,7 +95,7 @@ const ALWAYS_REQUIRED_GATES = [
 export type UiHardGateSnapshot = {
   stateId: string
   origin: string
-  viewport: { width: number; height: number; mobile: boolean }
+  viewport: { width: number; height: number; compact: boolean; coarsePointer: boolean }
   consoleErrors: string[]
   pageErrors: string[]
   requestFailures: Array<{ url: string; errorText: string }>
@@ -205,7 +205,7 @@ export function evaluateCommandPaletteHardGates(snapshot: UiHardGateSnapshot): U
   add("command-palette-visibility", palette.visible === expectedVisible, `checkpoint=${palette.checkpoint};visible=${palette.visible}`)
   if (expectedVisible) {
     add("command-palette-input-divider", palette.inputDividerCount === 1, `count=${palette.inputDividerCount}`)
-    if (!snapshot.viewport.mobile) {
+    if (!snapshot.viewport.compact) {
       add("command-palette-desktop-width", palette.dialogWidth !== null && palette.dialogWidth > 600 && palette.dialogWidth <= 640, `width=${palette.dialogWidth ?? "missing"}`)
       add("command-palette-keyboard-hints", palette.keyboardHintsPresent, `present=${palette.keyboardHintsPresent}`)
     } else {
@@ -214,7 +214,7 @@ export function evaluateCommandPaletteHardGates(snapshot: UiHardGateSnapshot): U
     add("command-palette-command-mode", palette.commandModePressed === (palette.checkpoint === "commands"), `pressed=${palette.commandModePressed}`)
   }
 
-  const touchFailures = snapshot.viewport.mobile
+  const touchFailures = snapshot.viewport.coarsePointer
     ? snapshot.undersizedTouchTargets.filter((target) => !target.exempt)
     : []
   add(

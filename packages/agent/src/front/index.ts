@@ -8,6 +8,8 @@ export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 export { PiChatPanel, PiChatPanel as ChatPanel } from './chat/PiChatPanel'
 export type {
   AgentPluginReloadResult,
+  ChatBeforeSubmitResult,
+  ChatSubmitContext,
   ComposerBlocker,
   ComposerBlockerAction,
   PiChatPanelProps,
@@ -24,16 +26,32 @@ export {
   errorResponseCode,
   gatewayResponseError,
   gatewayResponseErrorFromBody,
-  isRuntimeScopeMismatchError,
-  RUNTIME_SCOPE_MISMATCH_MESSAGE,
 } from './chat/gatewayResponseError'
 export type { GatewayResponseErrorCode } from './chat/gatewayResponseError'
 export { DebugDrawer } from './DebugDrawer'
+export { CredentialSettingsSurface } from './settings/CredentialSettingsSurface'
+export type { CredentialSettingsSurfaceProps } from './settings/CredentialSettingsSurface'
+export { createCredentialSettingsClient } from './settings/credentialSettingsClient'
+export type {
+  CredentialFundingMethod,
+  CredentialOAuthEvent,
+  CredentialOAuthFlow,
+  CredentialOAuthPrompt,
+  CredentialSettingsClient,
+} from './settings/credentialSettingsClient'
 export {
   ArtifactOpenProvider,
   useOpenArtifact,
   type OpenArtifactHandler,
 } from './ArtifactOpenContext'
+export {
+  Artifact,
+  ArtifactAction,
+  ArtifactActions,
+  ArtifactDescription,
+  ArtifactHeader,
+  ArtifactTitle,
+} from './primitives/artifact'
 export { ChatEmptyState, defaultChatSuggestions } from './ChatEmptyState'
 export type { ChatEmptyStateProps, ChatSuggestion } from './ChatEmptyState'
 export { ModelSelect, ModelPickerMenu, ModelSelectTrigger, ThinkingSelect } from './chatPanelComposerControls'

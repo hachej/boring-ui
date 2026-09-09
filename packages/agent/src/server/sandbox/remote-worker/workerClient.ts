@@ -12,6 +12,7 @@ import {
   type RemoteWorkerExecRequest,
   type RemoteWorkerExecResponse,
   type RemoteWorkerFsEventEnvelope,
+  type RemoteWorkerHealthResponse,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
 } from './protocol'
@@ -167,11 +168,17 @@ export class RemoteWorkerClient {
     }
   }
 
-  async health(): Promise<void> {
+  async health(): Promise<RemoteWorkerHealthResponse> {
     const response = await this.fetchWithTimeout(`${this.baseUrl}/internal/health`, {
       headers: makeHeaders({ token: this.token, workspaceId: this.workspaceId, requestId: this.requestId }),
     }, this.requestTimeoutMs)
     if (!response.ok) throw await parseError(response)
+    const body = await response.json().catch(() => ({})) as Partial<RemoteWorkerHealthResponse>
+    const capabilities = Array.isArray(body.capabilities)
+      ? body.capabilities.filter((capability): capability is NonNullable<RemoteWorkerHealthResponse['capabilities']>[number] =>
+          capability === 'exclusive-binary-create')
+      : undefined
+    return { ok: true, ...(capabilities ? { capabilities } : {}) }
   }
 
   async workspace(op: RemoteWorkerWorkspaceOp): Promise<RemoteWorkerWorkspaceResult> {

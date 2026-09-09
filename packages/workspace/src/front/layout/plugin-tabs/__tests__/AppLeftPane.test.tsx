@@ -1,16 +1,27 @@
-import { useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
-import { AppLeftPane, AppLeftRail } from "../AppLeftPane"
+import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries, type AppLeftPaneAction } from "../AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../PluginTabsWorkspaceShell"
 
 const sessions = [
   { id: "s1", title: "First session" },
   { id: "s2", title: "Second session" },
 ]
+
+function testNavigationEntries(
+  actions: readonly AppLeftPaneAction[] = [],
+  callbacks: { onOpenChats?: () => void; onOpenCommandPalette?: () => void } = {},
+) {
+  return createAppLeftNavigationEntries({
+    actions,
+    onOpenChats: callbacks.onOpenChats ?? vi.fn(),
+    onOpenCommandPalette: callbacks.onOpenCommandPalette ?? vi.fn(),
+  })
+}
 
 function renderPane() {
   return render(
@@ -22,7 +33,7 @@ function renderPane() {
         openSessionIds={["s1"]}
         pinnedSessionIds={[]}
         onCreateSession={vi.fn()}
-        onOpenCommandPalette={vi.fn()}
+        navigationEntries={testNavigationEntries()}
         onSwitchSession={vi.fn()}
         onOpenSessionAsPane={vi.fn()}
         onToggleSessionPinned={vi.fn()}
@@ -72,7 +83,7 @@ describe("AppLeftPane", () => {
             { id: "alpha-two", agentTypeId: "alpha", title: "Alpha follow-up" },
             { id: "beta-one", agentTypeId: "beta", title: "Beta session" },
           ]}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -364,7 +375,7 @@ describe("AppLeftPane", () => {
           onCreateSession={vi.fn()}
           onCreateSplitSession={vi.fn()}
           onCreatePopoverSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -378,7 +389,13 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Project")).toBeInTheDocument()
   })
 
-  it("gives a one-Agent addressed fleet its own card", async () => {
+  // Supersedes "gives a one-Agent addressed fleet its own card". Owner ruling:
+  // a fleet of one is not a fleet — the per-Agent section, its card and the New
+  // chat Agent picker all describe a choice that does not exist, so the pane
+  // falls back to the plain "Chats" list. Known consequence, accepted by the
+  // owner: the card was the pane's route to that Agent's settings, so with one
+  // Agent those settings are reached from the Agent surfaces outside the pane.
+  it("renders a flat Chats list with no fleet chrome for a one-Agent fleet", async () => {
     const user = userEvent.setup()
     const onOpenAgentSettings = vi.fn()
     const onCreateSession = vi.fn()
@@ -389,9 +406,10 @@ describe("AppLeftPane", () => {
           agents={[{ agentTypeId: "solo", label: "Boring Solo", sessionsStatus: "loaded" }]}
           selectedAgentTypeId="solo"
           sessions={[{ id: "s1", agentTypeId: "solo", title: "Solo session" }]}
+          activeSessionRef={{ agentTypeId: "solo", sessionId: "s1" }}
           onCreateSession={onCreateSession}
           onOpenAgentSettings={onOpenAgentSettings}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -399,13 +417,38 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    // A fleet of one still gets a card, which is the only route to per-Agent
-    // settings now that they no longer live on a generic control.
-    expect(screen.getByRole("button", { name: /Boring Solo; 1 chat$/ })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "New chat with Boring Solo" }))
-    expect(onCreateSession).toHaveBeenCalledWith("solo")
-    await user.click(screen.getByRole("button", { name: "Settings for Boring Solo" }))
-    expect(onOpenAgentSettings).toHaveBeenCalledWith("solo")
+    // Header + flat list, exactly like the no-fleet shell.
+    expect(screen.getByRole("heading", { name: "Chats" })).toBeInTheDocument()
+    expect(screen.getByText("Solo session")).toBeInTheDocument()
+    // No grouping chrome: no Agents section, no Agent card, no seat count.
+    expect(document.querySelector('[data-boring-workspace-part="app-left-pane-agents"]')).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agent-tree"]')).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toBeNull()
+    expect(screen.queryByRole("button", { name: /Boring Solo; 1 chat$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Settings for Boring Solo" })).not.toBeInTheDocument()
+    expect(onOpenAgentSettings).not.toHaveBeenCalled()
+    // New chat is a plain button: no Agent dropdown, no per-Agent variant.
+    expect(document.querySelector('[data-boring-workspace-part="app-left-new-chat"]')).not.toBeNull()
+    expect(screen.queryByRole("button", { name: /^Start new chat with / })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Choose Agent for new chat" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "New chat with Boring Solo" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(onCreateSession).toHaveBeenCalled()
+    // Session cards keep the fleet row idiom: the active rail only renders when
+    // the row is in fleet (accent-dot) mode, so its presence proves the cards
+    // are untouched by dropping the surrounding chrome.
+    expect(document.querySelector('[data-boring-workspace-part="app-session-active-rail"]')).not.toBeNull()
+  })
+
+  it("keeps the fleet sections and the New chat Agent picker for two or more Agents", () => {
+    renderFleetPane()
+
+    expect(document.querySelector('[data-boring-workspace-part="app-left-pane-agents"]')).not.toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Boring Beta;/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Start new chat with Boring Alpha" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Chats" })).not.toBeInTheDocument()
   })
 
   it("unifies the multi-project fleet: labeled project rows, a lens that filters them, and a global new chat", async () => {
@@ -431,7 +474,7 @@ describe("AppLeftPane", () => {
           onCreateSplitSession={vi.fn()}
           onCreatePopoverSession={vi.fn()}
           onOpenAgentSettings={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -474,25 +517,30 @@ describe("AppLeftPane", () => {
   })
 
   it("renders icon-only collapsed shortcuts with accessible labels", () => {
+    const onOpenChats = vi.fn()
     const onCreateSession = vi.fn()
     const onOpenCommandPalette = vi.fn()
     const onOpenTasks = vi.fn()
+    const navigationEntries = testNavigationEntries([
+      { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: onOpenTasks, active: true },
+      { id: "inbox", label: "Inbox", icon: null, trailing: "3", onClick: vi.fn() },
+    ], { onOpenChats, onOpenCommandPalette })
     render(
       <AppLeftRail
-        actions={[
-          { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: onOpenTasks, active: true },
-          { id: "inbox", label: "Inbox", icon: null, trailing: "3", onClick: vi.fn() },
-        ]}
+        navigationEntries={navigationEntries}
         onCreateSession={onCreateSession}
-        onOpenCommandPalette={onOpenCommandPalette}
       />,
     )
 
     const rail = screen.getByLabelText("Collapsed app navigation")
+    expect(rail).toHaveClass("border-border")
+    expect(rail).toHaveClass("bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]")
+    fireEvent.click(within(rail).getByRole("button", { name: "Chats" }))
     fireEvent.click(within(rail).getByRole("button", { name: "Search" }))
     fireEvent.click(within(rail).getByRole("button", { name: "Tasks" }))
     fireEvent.click(within(rail).getByRole("button", { name: "New chat" }))
 
+    expect(onOpenChats).toHaveBeenCalledOnce()
     expect(onOpenCommandPalette).toHaveBeenCalledOnce()
     expect(onOpenTasks).toHaveBeenCalledOnce()
     expect(onCreateSession).toHaveBeenCalledOnce()
@@ -500,7 +548,67 @@ describe("AppLeftPane", () => {
     expect(within(rail).getByRole("button", { name: "Inbox" }).querySelector("svg")).toBeInTheDocument()
     expect(within(rail).getByText("3")).toBeInTheDocument()
     expect(within(rail).queryByText("Search")).not.toBeInTheDocument()
+    expect(within(rail).queryByText("Chats")).not.toBeInTheDocument()
     expect(within(rail).queryByText("New chat")).not.toBeInTheDocument()
+  })
+
+  it("keeps collapsed and expanded navigation entries in the same order", () => {
+    const actions = [
+      { id: "inbox", label: "Inbox", icon: <span>I</span>, onClick: vi.fn() },
+      { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: vi.fn() },
+      { id: "automations", label: "Automations", icon: <span>A</span>, onClick: vi.fn() },
+      { id: "skills", label: "Agent", icon: <span>S</span>, onClick: vi.fn() },
+    ]
+    const navigationEntries = testNavigationEntries(actions)
+    render(
+      <WorkspaceAttentionProvider>
+        <div data-testid="expanded-navigation">
+          <AppLeftPane
+            appTitle="Test"
+            sessions={sessions}
+            navigationEntries={navigationEntries}
+            onCreateSession={vi.fn()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+          />
+        </div>
+        <div data-testid="collapsed-navigation">
+          <AppLeftRail
+            navigationEntries={navigationEntries}
+            onCreateSession={vi.fn()}
+          />
+        </div>
+      </WorkspaceAttentionProvider>,
+    )
+
+    const orderWithin = (root: HTMLElement) => Array.from(
+      root.querySelectorAll<HTMLElement>("[data-boring-app-left-nav-key]"),
+      (entry) => entry.dataset.boringAppLeftNavKey,
+    )
+
+    const expandedOrder = orderWithin(screen.getByTestId("expanded-navigation"))
+    const collapsedOrder = orderWithin(screen.getByTestId("collapsed-navigation"))
+    expect(expandedOrder).toEqual(navigationEntries.map((entry) => entry.key))
+    expect(collapsedOrder).toEqual(expandedOrder)
+  })
+
+  it("uses the rail icon and hit-area tokens for the app-navigation toggle", () => {
+    render(
+      <PluginTabsWorkspaceShell
+        collapsed
+        leftPane={<div>App navigation</div>}
+        collapsedRail={<div>Rail</div>}
+        onExpand={vi.fn()}
+        onCollapse={vi.fn()}
+      >
+        <div>Content</div>
+      </PluginTabsWorkspaceShell>,
+    )
+
+    const toggle = screen.getByRole("button", { name: "Open app navigation" })
+    expect(toggle).toHaveClass("h-8", "w-8")
+    expect(toggle.querySelector("svg")).toHaveClass("size-4")
   })
 
   it("keeps mobile drawer controls open for multi-step interactions", () => {
@@ -537,24 +645,80 @@ describe("AppLeftPane", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth })
   })
 
-  it("distinguishes a loading chat list from an empty one", () => {
-    render(
+  it("shows loading, then a resolved empty state, then loaded chats without flashing empty", () => {
+    const baseProps = {
+      appTitle: "Test",
+      onCreateSession: vi.fn(),
+      navigationEntries: testNavigationEntries(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
-          appTitle="Test"
+          {...baseProps}
           sessions={[]}
           sessionsLoading
-          onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
-          onSwitchSession={vi.fn()}
-          onOpenSessionAsPane={vi.fn()}
-          onToggleSessionPinned={vi.fn()}
         />
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Loading chats" })).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded", title: "Loaded chat" }]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+    expect(screen.getByText("Loaded chat")).toBeInTheDocument()
+  })
+
+  it("keeps multi-project chats loading until the active project inventory resolves", () => {
+    const baseProps = {
+      appTitle: "Test",
+      layoutMode: "multi-project" as const,
+      projects: [{ id: "project", name: "Project" }],
+      activeProjectId: "project",
+      onCreateSession: vi.fn(),
+      navigationEntries: testNavigationEntries(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded-project", title: "Loaded project chat" }]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+    expect(screen.getByText("Loaded project chat")).toBeInTheDocument()
   })
 
   it("shows working state beside session names", () => {
@@ -594,7 +758,7 @@ describe("AppLeftPane", () => {
       openSessionIds: ["s1"],
       pinnedSessionIds: [],
       onCreateSession: vi.fn(),
-      onOpenCommandPalette: vi.fn(),
+      navigationEntries: testNavigationEntries(),
       onSwitchSession: vi.fn(),
       onOpenSessionAsPane: vi.fn(),
       onToggleSessionPinned: vi.fn(),
@@ -631,7 +795,7 @@ describe("AppLeftPane", () => {
           pinnedSessionIds={[]}
           onCreateSession={onCreateSession}
           onCreatePopoverSession={onCreatePopoverSession}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -658,7 +822,7 @@ describe("AppLeftPane", () => {
           pinnedSessionIds={[]}
           onCreateSession={onCreateSession}
           onCreatePopoverSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -682,7 +846,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -704,7 +868,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -727,7 +891,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -764,7 +928,7 @@ describe("AppLeftPane", () => {
           openSessionIds={[addressedKey]}
           pinnedSessionRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={onToggleSessionPinned}
@@ -807,7 +971,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -819,5 +983,239 @@ describe("AppLeftPane", () => {
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
     expect(screen.getByText("question")).toBeInTheDocument()
+  })
+
+  describe("archived chats", () => {
+    function renderWithArchived(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {
+      return render(
+        <WorkspaceAttentionProvider>
+          <AppLeftPane
+            appTitle="Test"
+            sessions={[
+              { id: "s1", title: "First session" },
+              { id: "s2", title: "Second session", archived: true },
+            ]}
+            activeSessionId="s1"
+            openSessionIds={["s1"]}
+            pinnedSessionIds={[]}
+            onCreateSession={vi.fn()}
+            navigationEntries={testNavigationEntries()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+            {...overrides}
+          />
+        </WorkspaceAttentionProvider>,
+      )
+    }
+
+    it("keeps archived chats out of the default list but one click away", async () => {
+      renderWithArchived()
+
+      expect(screen.getByText("First session")).toBeInTheDocument()
+      expect(screen.queryByText("Second session")).not.toBeInTheDocument()
+
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure).toHaveTextContent("1")
+      expect(disclosure).toHaveAttribute("aria-expanded", "false")
+
+      await userEvent.click(disclosure)
+      expect(screen.getByRole("button", { name: /Archived/ })).toHaveAttribute("aria-expanded", "true")
+      expect(screen.getByText("Second session")).toBeInTheDocument()
+    })
+
+    it("loads and exposes archived pages beyond the first 50", async () => {
+      const onLoadArchived = vi.fn()
+      const onSetSessionArchived = vi.fn()
+      renderWithArchived({
+        sessions: Array.from({ length: 51 }, (_, index) => ({
+          id: `archived-${index}`,
+          title: `Archived session ${index}`,
+          archived: true,
+        })),
+        archivedLoaded: true,
+        hasMoreArchived: true,
+        onLoadArchived,
+        onSetSessionArchived,
+      })
+
+      await userEvent.click(screen.getByRole("button", { name: /Archived/ }))
+      expect(screen.getByText("Archived session 50")).toBeInTheDocument()
+      await userEvent.click(screen.getByRole("button", { name: "Load more archived chats" }))
+      expect(onLoadArchived).toHaveBeenCalledTimes(1)
+
+      const row = screen.getByText("Archived session 50").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(row as HTMLElement).getByRole("button", { name: "Chat actions for Archived session 50" }))
+      await userEvent.click(screen.getByText("Restore session"))
+      expect(onSetSessionArchived).toHaveBeenCalledWith("archived-50", false, undefined)
+    })
+
+    // #1453: archiving was a one-way door in the UI. The way back is the same
+    // kebab, in the same place, on the archived row itself — and the restored
+    // chat must rejoin the active list (count included) with no reload.
+    it("restores an archived chat to the active list from the row's own menu", async () => {
+      const setArchived = vi.fn()
+
+      function RestoreHarness() {
+        const [archived, setArchivedState] = useState(true)
+        return (
+          <WorkspaceAttentionProvider>
+            <AppLeftPane
+              appTitle="Test"
+              sessions={[
+                { id: "s1", title: "First session" },
+                { id: "s2", title: "Second session", archived },
+              ]}
+              activeSessionId="s1"
+              openSessionIds={["s1"]}
+              pinnedSessionIds={[]}
+              onCreateSession={vi.fn()}
+              navigationEntries={testNavigationEntries()}
+              onSwitchSession={vi.fn()}
+              onOpenSessionAsPane={vi.fn()}
+              onToggleSessionPinned={vi.fn()}
+              archivedLoaded
+              onLoadArchived={vi.fn()}
+              onSetSessionArchived={(id, next) => {
+                setArchived(id, next)
+                setArchivedState(next)
+              }}
+            />
+          </WorkspaceAttentionProvider>
+        )
+      }
+
+      render(<RestoreHarness />)
+
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure).toHaveTextContent("1")
+      await userEvent.click(disclosure)
+
+      const row = screen.getByText("Second session").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(row as HTMLElement).getByRole("button", { name: "Chat actions for Second session" }))
+      await userEvent.click(screen.getByText("Restore session"))
+      expect(setArchived).toHaveBeenCalledWith("s2", false)
+
+      // The count is the section: at zero archived chats the disclosure goes
+      // away entirely, and the chat is back in the list above it.
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument())
+      expect(screen.getByText("Second session")).toBeInTheDocument()
+    })
+
+    it("shows no Archived section when nothing is archived", () => {
+      renderWithArchived({ sessions: [{ id: "s1", title: "First session" }] })
+      expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
+    })
+
+    // #1429: a session API always wires up `onLoadArchived`, so the control
+    // used to render on every screen — including at zero archived chats —
+    // because the render check was `archivedSessions.length > 0 ||
+    // onLoadArchived` and the second half is true unconditionally. This is
+    // the shape production actually renders: a handler is present, nothing
+    // is archived yet, and the pager has not resolved. The disclosure must
+    // stay hidden, and the component probes silently in the background
+    // (never expanding) to learn that the count is zero.
+    it("stays hidden at zero archived chats even though onLoadArchived is wired up", async () => {
+      const onLoadArchived = vi.fn()
+      renderWithArchived({
+        sessions: [{ id: "s1", title: "First session" }],
+        onLoadArchived,
+      })
+
+      await waitFor(() => expect(onLoadArchived).toHaveBeenCalledTimes(1))
+      expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Archived" })).not.toBeInTheDocument()
+    })
+
+    // #1429 thermo-review follow-up: a bare `vi.fn()` never drives the real
+    // loading/error state transitions, so it could not catch the retry-storm
+    // bug. `usePiSessions.loadArchived`'s failure path leaves `archivedLoaded`
+    // false and resets `archivedLoading` to false in a `finally` — exactly
+    // the transition that used to re-satisfy the background probe's own
+    // trigger condition (and `loadArchived`'s identity also changes with
+    // `archivedLoading`), so a persistent failure turned the "one-shot"
+    // probe into an unbounded sequential fetch loop. This harness owns
+    // `archivedLoaded`/`archivedLoading` state exactly the way the real hook
+    // does, rejects every call, and proves the probe attempts exactly once.
+    it("does not retry the background probe after it rejects", async () => {
+      const onLoadArchivedImpl = vi.fn(() => Promise.reject(new Error("network down")))
+
+      function ArchiveFailureHarness() {
+        const [archivedLoaded, setArchivedLoaded] = useState(false)
+        const [archivedLoading, setArchivedLoading] = useState(false)
+        // Mirrors usePiSessions.loadArchived's real shape: loading flips on,
+        // the request rejects, `archivedLoaded` never becomes true, and
+        // `finally` resets loading back to false. The callback's identity
+        // also changes with `archivedLoading`, like the real hook's
+        // `useCallback` dep list.
+        const onLoadArchived = useCallback(async () => {
+          setArchivedLoading(true)
+          try {
+            await onLoadArchivedImpl()
+            setArchivedLoaded(true)
+          } catch {
+            // left unloaded, exactly like a rejected fetch in production
+          } finally {
+            setArchivedLoading(false)
+          }
+        }, [archivedLoading])
+        return (
+          <WorkspaceAttentionProvider>
+            <AppLeftPane
+              appTitle="Test"
+              sessions={[{ id: "s1", title: "First session" }]}
+              activeSessionId="s1"
+              openSessionIds={["s1"]}
+              pinnedSessionIds={[]}
+              onCreateSession={vi.fn()}
+              navigationEntries={testNavigationEntries()}
+              onSwitchSession={vi.fn()}
+              onOpenSessionAsPane={vi.fn()}
+              onToggleSessionPinned={vi.fn()}
+              archivedLoaded={archivedLoaded}
+              archivedLoading={archivedLoading}
+              onLoadArchived={onLoadArchived}
+            />
+          </WorkspaceAttentionProvider>
+        )
+      }
+
+      render(<ArchiveFailureHarness />)
+
+      await waitFor(() => expect(onLoadArchivedImpl).toHaveBeenCalledTimes(1))
+      // Let every re-render triggered by the loading->false transition (and
+      // any consequent effect re-run) play out before asserting there was no
+      // second call.
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument())
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      })
+      expect(onLoadArchivedImpl).toHaveBeenCalledTimes(1)
+    })
+
+    // #1429: the disclosure is a full-width text row, not an icon slot, so it
+    // gets its own coarse-pointer rule (`.app-left-pane-archived-toggle` in
+    // globals.css) rather than joining the fixed 44x44px block the icon
+    // controls share. Pin the class so the CSS contract cannot silently drift
+    // off the button the way the row shortcuts' sizing utility once did.
+    it("carries the coarse-pointer touch-target class when it renders", () => {
+      renderWithArchived()
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure.className).toContain("app-left-pane-archived-toggle")
+    })
+
+    it("routes the row's archive action back to the host with the chat's owner", async () => {
+      const onSetSessionArchived = vi.fn()
+      renderWithArchived({
+        sessions: [{ id: "s1", title: "First session", agentTypeId: "alpha" }],
+        onSetSessionArchived,
+      })
+
+      const sessionRow = screen.getByText("First session").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(sessionRow as HTMLElement).getByRole("button", { name: "Chat actions for First session" }))
+      await userEvent.click(screen.getByText("Archive session"))
+
+      expect(onSetSessionArchived).toHaveBeenCalledWith("s1", true, "alpha")
+    })
   })
 })

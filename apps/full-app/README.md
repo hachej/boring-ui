@@ -134,6 +134,7 @@ Common optional:
 | `BORING_AGENT_SESSION_ROOT` | — | Durable Pi chat transcript root. Production app owners should use a mounted-volume path such as `/data/pi-sessions`; do not rely on container `/root/.pi`. |
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER`, `BORING_AGENT_DEFAULT_MODEL_ID`, `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, `BORING_AGENT_INFOMANIAK_MODEL` | — | Default chat model, incl. OpenAI-compatible Infomaniak endpoint |
 | `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM. Also configure Vercel credentials such as `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and local/dev auth via `VERCEL_TOKEN` when OIDC is not available. |
+| `BORING_BLAXEL_REGION` | — | Required explicit EU region (for example `eu-fra-1`) when `BORING_AGENT_MODE=blaxel`. Blaxel also requires `BL_WORKSPACE` and secret `BL_API_KEY`; production full-app still requires the explicit unsafe-mode override pending the separate security gate. |
 | `BORING_MCP_ENABLED` | `1` | Enables the generic boring-mcp server plugin/prompt for app-owned Sources wiring. |
 | `BORING_MANAGED_AGENT_MCP_ENABLED` | `0` | Set `1` to expose `GET|POST|DELETE /mcp/managed-agent`. Requires the bearer, workspace, and user vars below. |
 | `BORING_MANAGED_AGENT_MCP_BEARER_TOKEN` | — | Server-only bearer token required by MCP clients via `Authorization: Bearer ...`. |

@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { open, realpath, stat, type FileHandle } from 'node:fs/promises'
+import { lstat, open, readdir, realpath, stat, type FileHandle } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 import {
@@ -17,8 +17,11 @@ import { AgentDefinitionErrorCode, ErrorCode } from '../../shared/error-codes'
 const AGENT_MANIFEST = 'agent.json'
 const AGENT_PACKAGE_MANIFEST = 'package.json'
 const AGENT_INSTRUCTIONS = 'instructions.md'
+export const AGENT_KNOWLEDGE_DIR = 'knowledge'
 const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_INSTRUCTIONS_BYTES = 256 * 1024
+const MAX_KNOWLEDGE_FILE_BYTES = 256 * 1024
+const MAX_KNOWLEDGE_FILES = 128
 
 export type AgentDirectoryCompilerErrorCode =
   | 'AGENT_DIRECTORY_NOT_FOUND'
@@ -140,12 +143,12 @@ async function resolveAgentRoot(directory: string): Promise<string> {
 interface ReadContainedFileOptions {
   root: string
   path: string
-  field: 'agent.json' | 'package.json' | 'instructionsRef'
+  field: string
   kind: 'manifest' | 'asset'
   maxBytes: number
 }
 
-function definitionTooLarge(field: ReadContainedFileOptions['field'], maxBytes: number): never {
+function definitionTooLarge(field: string, maxBytes: number): never {
   throw new AgentDefinitionValidationError({
     code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     field,
@@ -155,7 +158,7 @@ function definitionTooLarge(field: ReadContainedFileOptions['field'], maxBytes: 
 
 async function readBounded(
   handle: FileHandle,
-  field: ReadContainedFileOptions['field'],
+  field: string,
   maxBytes: number,
 ): Promise<Uint8Array> {
   const bytes = new Uint8Array(maxBytes + 1)
@@ -190,7 +193,7 @@ function sameFileVersion(left: FileSnapshot, right: FileSnapshot): boolean {
   )
 }
 
-function pathChangedDuringRead(field: ReadContainedFileOptions['field']): never {
+function pathChangedDuringRead(field: string): never {
   throw new AgentDirectoryCompilerError({
     code: ErrorCode.enum.CONFIG_INVALID,
     compilerCode: 'AGENT_PATH_CHANGED_DURING_READ',
@@ -313,7 +316,7 @@ async function readContainedFile({
 
 function decodeUtf8(
   bytes: Uint8Array,
-  field: 'agent.json' | 'package.json' | 'instructionsRef',
+  field: string,
 ): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
@@ -389,9 +392,108 @@ function freezeDefinition(definition: AgentDefinition): CompiledAgentDefinition 
   })
 }
 
+function knowledgeInvalid(field: string, message: string, cause?: unknown): never {
+  throw new AgentDirectoryCompilerError({
+    code: ErrorCode.enum.CONFIG_INVALID,
+    compilerCode: 'AGENT_DIRECTORY_IO_FAILED',
+    field,
+    message,
+    ...(cause === undefined ? {} : { cause }),
+  })
+}
+
+interface CollectedKnowledge {
+  readonly knowledgeDir: string
+  readonly assets: readonly Readonly<AgentDefinitionDigestAsset>[]
+}
+
+/**
+ * Enumerates the optional `knowledge/` folder of a persona package into
+ * digest assets. Absent folder = undefined (no binding, no digest change).
+ * Symlinks anywhere under `knowledge/` fail closed; every file is read
+ * through the same contained-read fence as `instructions.md`, so knowledge
+ * bytes fold into the definition digest with identical trust guarantees.
+ */
+async function collectKnowledgeAssets(root: string): Promise<CollectedKnowledge | undefined> {
+  const knowledgeDir = resolve(root, AGENT_KNOWLEDGE_DIR)
+  let rootStat
+  try {
+    rootStat = await lstat(knowledgeDir)
+  } catch (error) {
+    if (isNotFound(error)) return undefined
+    knowledgeInvalid(AGENT_KNOWLEDGE_DIR, 'knowledge directory could not be inspected', error)
+  }
+  if (rootStat.isSymbolicLink()) {
+    throw new AgentDirectoryCompilerError({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
+      field: AGENT_KNOWLEDGE_DIR,
+      message: 'knowledge must not be a symbolic link',
+    })
+  }
+  if (!rootStat.isDirectory()) {
+    knowledgeInvalid(AGENT_KNOWLEDGE_DIR, 'knowledge must be a directory')
+  }
+
+  const relativePaths: string[] = []
+  const walk = async (dir: string, relPrefix: string): Promise<void> => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch (error) {
+      knowledgeInvalid(relPrefix || AGENT_KNOWLEDGE_DIR, 'knowledge directory could not be listed', error)
+    }
+    entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
+    for (const entry of entries) {
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : `${AGENT_KNOWLEDGE_DIR}/${entry.name}`
+      if (entry.isSymbolicLink()) {
+        throw new AgentDirectoryCompilerError({
+          code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+          compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
+          field: rel,
+          message: `${rel} must not be a symbolic link`,
+        })
+      }
+      if (entry.isDirectory()) {
+        await walk(resolve(dir, entry.name), rel)
+      } else if (entry.isFile()) {
+        relativePaths.push(rel)
+        if (relativePaths.length > MAX_KNOWLEDGE_FILES) {
+          throw new AgentDefinitionValidationError({
+            code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+            field: AGENT_KNOWLEDGE_DIR,
+            message: `knowledge must contain at most ${MAX_KNOWLEDGE_FILES} files`,
+          })
+        }
+      } else {
+        knowledgeInvalid(rel, `${rel} must be a regular file or directory`)
+      }
+    }
+  }
+  await walk(knowledgeDir, '')
+
+  const assets: Readonly<AgentDefinitionDigestAsset>[] = []
+  for (const path of relativePaths) {
+    const content = decodeUtf8(await readContainedFile({
+      root,
+      path,
+      field: path,
+      kind: 'asset',
+      maxBytes: MAX_KNOWLEDGE_FILE_BYTES,
+    }), path)
+    assets.push(Object.freeze({
+      path,
+      digest: await createAgentAssetDigest(content),
+      content,
+    }))
+  }
+  return Object.freeze({ knowledgeDir, assets: Object.freeze(assets) })
+}
+
 async function compileFromManifestObject(
   root: string,
   rawManifest: unknown,
+  extra?: CollectedKnowledge,
 ): Promise<CompiledAgentBundle> {
   const validation = validateAgentDefinition(rawManifest)
   if (!validation.valid) throw new AgentDefinitionValidationError(validation.issues[0])
@@ -422,14 +524,19 @@ async function compileFromManifestObject(
     digest: await createAgentAssetDigest(instructionsContent),
     content: instructionsContent,
   })
-  const assets = Object.freeze([instructionsAsset])
+  const assets = Object.freeze([instructionsAsset, ...(extra?.assets ?? [])])
   const definitionDigest = await createAgentDefinitionDigest({
     definition: validation.value,
     assets,
   })
   const definition = freezeDefinition(validation.value)
 
-  return Object.freeze({ definition, definitionDigest, assets })
+  return Object.freeze({
+    definition,
+    definitionDigest,
+    assets,
+    ...(extra === undefined ? {} : { knowledgeDir: extra.knowledgeDir }),
+  })
 }
 
 export async function compileAgentDirectory(directory: string): Promise<CompiledAgentBundle> {
@@ -459,5 +566,6 @@ export async function compilePersonaPackageDirectory(directory: string): Promise
     maxBytes: MAX_MANIFEST_BYTES,
   }), 'package.json')
   const boringAgent = extractBoringAgentBlock(parseManifest(manifestContent, 'package.json'))
-  return compileFromManifestObject(root, boringAgent)
+  const knowledge = await collectKnowledgeAssets(root)
+  return compileFromManifestObject(root, boringAgent, knowledge)
 }

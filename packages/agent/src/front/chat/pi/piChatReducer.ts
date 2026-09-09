@@ -69,6 +69,7 @@ export interface PiChatState {
   workspaceId?: string
   storageScope: string
   status: PiChatStatus
+  currentModel?: PiChatSnapshot['currentModel']
   turnId?: string
   lastSeq: number
   committedMessages: BoringChatMessage[]
@@ -92,6 +93,7 @@ export interface PiChatState {
 export type PiChatReducerAction =
   | { type: 'hydrate'; snapshot: PiChatSnapshot; allowSeqRewind?: boolean }
   | { type: 'cursor-sync'; cursor: number }
+  | { type: 'model-confirmed'; model: NonNullable<PiChatSnapshot['currentModel']> }
   | { type: 'event'; event: PiChatEvent }
   | { type: 'optimistic-user-message'; message: OptimisticUserMessage }
   | { type: 'remove-optimistic-user-message'; clientNonce: string }
@@ -127,14 +129,21 @@ export function createInitialPiChatState(options: CreatePiChatStateOptions): PiC
   }
 }
 
+export interface PiChatEventReduction {
+  state: PiChatState
+  accepted: boolean
+}
+
 export function piChatReducer(state: PiChatState, action: PiChatReducerAction): PiChatState {
   switch (action.type) {
     case 'hydrate':
       return hydrateFromSnapshot(state, action.snapshot, { allowSeqRewind: action.allowSeqRewind })
     case 'cursor-sync':
       return syncCursor(state, action.cursor)
+    case 'model-confirmed':
+      return { ...state, currentModel: action.model }
     case 'event':
-      return applySequencedEvent(state, action.event)
+      return reducePiChatEvent(state, action.event).state
     case 'optimistic-user-message':
       return {
         ...state,
@@ -259,6 +268,7 @@ function hydrateFromSnapshot(
     ...state,
     sessionId: snapshot.sessionId,
     status: snapshot.status,
+    currentModel: snapshot.currentModel,
     turnId: snapshot.activeTurnId,
     lastSeq: snapshot.seq,
     committedMessages,
@@ -313,28 +323,44 @@ function mergeSnapshotMessagesIntoLocal(
   return merged
 }
 
-function applySequencedEvent(state: PiChatState, event: PiChatEvent): PiChatState {
-  if (event.seq <= state.lastSeq) return state
+export function reducePiChatEvent(state: PiChatState, event: PiChatEvent): PiChatEventReduction {
+  if (event.seq <= state.lastSeq) return { state, accepted: false }
   const expectedSeq = state.lastSeq + 1
   if (event.seq > expectedSeq) {
     return {
-      ...state,
-      connection: { ...state.connection, state: 'reconnecting' },
-      needsResync: { expectedSeq, actualSeq: event.seq, lastSeq: state.lastSeq },
+      state: {
+        ...state,
+        connection: { ...state.connection, state: 'reconnecting' },
+        needsResync: { expectedSeq, actualSeq: event.seq, lastSeq: state.lastSeq },
+      },
+      accepted: false,
     }
   }
 
-  const next = reduceEvent({ ...state, lastSeq: event.seq, needsResync: undefined }, event)
-  return next
+  const sequencedState = { ...state, lastSeq: event.seq, needsResync: undefined }
+  if (isRejectedTerminalEvent(sequencedState, event)) {
+    // Rejected frames still consume their canonical sequence number. Keep that
+    // cursor movement separate from semantic acceptance so downstream callbacks
+    // cannot mistake a consumed stale/contradictory terminal for a settled turn.
+    return { state: sequencedState, accepted: false }
+  }
+  return { state: reduceEvent(sequencedState, event), accepted: true }
+}
+
+function isRejectedTerminalEvent(state: PiChatState, event: PiChatEvent): boolean {
+  if (event.type === 'error') return isStaleTurnScopedEvent(state, event.turnId)
+  if (event.type !== 'agent-end') return false
+  return isStaleTurnScopedEvent(state, event.turnId)
+    || isLateNonErrorAgentEndAfterTerminalError(state, event.status)
 }
 
 function reduceEvent(state: PiChatState, event: PiChatEvent): PiChatState {
   switch (event.type) {
+    case 'model-changed':
+      return { ...state, currentModel: event.currentModel }
     case 'agent-start':
       return { ...state, status: 'streaming', turnId: event.turnId, error: undefined, streamingPreservedTextPartKeys: undefined }
     case 'agent-end':
-      if (isStaleTurnScopedEvent(state, event.turnId)) return state
-      if (isLateNonErrorAgentEndAfterTerminalError(state, event.status)) return state
       return settleTurn({
         ...state,
         status: event.status === 'error' ? 'error' : 'idle',
@@ -386,7 +412,6 @@ function reduceEvent(state: PiChatState, event: PiChatEvent): PiChatState {
             }),
       }
     case 'error':
-      if (isStaleTurnScopedEvent(state, event.turnId)) return state
       return settleTurn({
         ...state,
         status: 'error',

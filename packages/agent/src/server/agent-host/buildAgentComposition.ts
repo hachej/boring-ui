@@ -7,24 +7,33 @@ import {
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
 import type { SessionStore } from '../../shared/session'
-import { withPiHarnessDefaults } from '../harness/pi-coding-agent/createHarness'
+import { withPiHarnessDefaults, type ResolvedPiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
 import { parseEncodedModelSelection } from '../models/modelConfig'
-import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
-import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle } from '../runtime/mode'
+import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding } from '../runtime/mode'
+import { AGENT_KNOWLEDGE_FILESYSTEM_ID } from '../../shared/skill-resource'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { openDatabase, type OpenDatabaseResult } from '../events/sqlStorage'
 import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventStreamStore'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry'
 import { ErrorCode } from '../../shared/error-codes'
-import type {
-  CompiledAgentHostAgentSpec,
-  CreateAgentHostOptions,
-  ResolvedAgentRuntimeScope,
+import {
+  type CompiledAgentHostAgentSpec,
+  type CreateAgentHostOptions,
+  type ResolvedAgentRuntimeScope,
 } from './types'
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
+import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
+import type { AgentHarnessBackend } from './harnessBackend/types'
+import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
+import type {
+  WorkspaceCredentialRuntimeViewV1,
+  WorkspaceCredentialVaultCompositionV1,
+} from '../credentials/startupComposition'
+import type { AgentInvocationFundingPolicyV1 } from '../../shared/workspaceAgentDispatcher'
+import { assertChannelDurability } from '../channels'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -74,17 +83,21 @@ export function openDurableEventStore(input: {
     throw new DurableStreamUnavailableError('(no host-resolvable root)', reason)
   }
   const path = join(root, EVENT_STORE_FILE_NAME)
-  let opened: OpenDatabaseResult
+  let opened: OpenDatabaseResult | undefined
   try {
     opened = openDatabase(path)
+    const store = new SqliteEventStreamStore(opened.sql, opened.runTransaction, {
+      telemetry: input.telemetry,
+    })
+    return {
+      store,
+      close: () => opened?.db.close(),
+    }
   } catch (error) {
+    opened?.db.close()
     const reason = error instanceof Error ? error.message : String(error)
     reportEventStoreOpenFailure(input.telemetry, path, reason)
     throw new DurableStreamUnavailableError(path, reason, error)
-  }
-  return {
-    store: new SqliteEventStreamStore(opened.sql, opened.runTransaction),
-    close: () => opened.db.close(),
   }
 }
 
@@ -117,25 +130,59 @@ function reportEventStoreOpenFailure(telemetry: TelemetrySink | undefined, path:
 export interface BuildAgentCompositionInput {
   readonly agent: CompiledAgentHostAgentSpec
   readonly workspaceScopeId: string
+  /** Verified claim subject; omitted only by direct test/dev composition. */
+  readonly actorUserId?: string
+  /** Invocation authority, independent of the authored Agent's mutable name/id. */
+  readonly fundingPolicy: AgentInvocationFundingPolicyV1
   readonly runtimeScope: ResolvedAgentRuntimeScope
   readonly runtimeBundle: RuntimeBundle
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
     CreateAgentHostOptions,
-    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
+    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory' | 'eventStore'
   >
+  /**
+   * [1082 slice B] Host-scope credential-vault composition, resolved ONCE at
+   * host startup (`createAgentHost`) and shared by every runtime binding so
+   * all bindings see the same vault. This function never resolves env or
+   * constructs vault state itself; it only attaches the narrowed per-binding
+   * view. Env misconfiguration therefore throws at host startup, not here.
+   */
+  readonly credentialComposition?: WorkspaceCredentialVaultCompositionV1
   readonly observeSessionEvent?: (sessionId: string, event: import('../../shared/chat').PiChatEvent) => void
 }
 
 export interface BuiltAgentComposition {
   readonly harness: AgentHarness
   readonly sessionStore: SessionStore
-  readonly service: HarnessPiChatService
+  readonly backend: AgentHarnessBackend
   readonly tools: readonly AgentTool[]
+  readonly pi: ResolvedPiHarnessOptions
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
-  readonly runtimeScopeIdentity: string
+  readonly getFilesystemBindings?: (ctx: { sessionId?: string; userId?: string; requestId?: string }) => Promise<readonly RuntimeFilesystemBinding[]>
+  /**
+   * [1082 slice B] Narrowed per-binding credential view (registries + the
+   * pre-bound resolver). Present only when `BORING_CREDENTIAL_KMS_BACKEND`
+   * selected a backend at host startup. The raw vault backend and resolver
+   * minting stay on the host-scope composition and are deliberately not
+   * exposed here.
+   */
+  readonly credentials?: WorkspaceCredentialRuntimeViewV1
   dispose(): Promise<void>
+}
+
+/** Only an explicitly authorized interactive invocation may spend personal subscription OAuth. */
+export function allowsSubscriptionOAuthForInvocationV1(policy: AgentInvocationFundingPolicyV1): boolean {
+  return policy === 'personal-subscription'
+}
+
+/** Environment skill roots require an ordinary trusted host provisioning grant. */
+export function provisionedSkillPathsForAgent(
+  agent: CompiledAgentHostAgentSpec,
+  provisioning: EnvironmentProvisioningSnapshot | undefined,
+): readonly string[] {
+  return agent.provisioning?.inheritSkillPaths ? provisioning?.skillPaths ?? [] : []
 }
 
 /**
@@ -146,12 +193,73 @@ export interface BuiltAgentComposition {
 export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
+  assertChannelDurability(isDurableStreamEnabled() || input.options.eventStore !== undefined)
   const { runtimeScope, options } = input
-  const runtimeBundle = input.runtimeBundle
+  const bindingIsVisible = (binding: RuntimeFilesystemBinding) =>
+    binding.agentTypeIds === undefined || binding.agentTypeIds.includes(input.agent.agentTypeId)
+  const visibleBindings = input.runtimeBundle.filesystemBindings?.filter(bindingIsVisible)
+  const runtimeBundle = visibleBindings === input.runtimeBundle.filesystemBindings
+    ? input.runtimeBundle
+    : { ...input.runtimeBundle, filesystemBindings: visibleBindings }
+  // Resource loading is host authority: only the mode adapter's explicit
+  // storageRoot proves that guest workspace bytes are mirrored on this host.
+  const hostStorageRoot = runtimeBundle.storageRoot
   const bashRuntimeBundle = {
     ...runtimeBundle,
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   }
+  // Agent-carried knowledge (`knowledge/` inside the definition package)
+  // becomes a readonly, agent-scoped filesystem binding. Built here — the
+  // one Agent-owned assembly funnel — so every host (workspace, core, CLI hub)
+  // gets it without per-host wiring, and sibling agents never see it. A
+  // declared-but-unmountable knowledge folder fails this agent's composition
+  // closed.
+  const authoredAgent = input.agent
+  const knowledgeRootDir = authoredAgent.knowledge?.rootDir
+  let knowledgeBinding: RuntimeFilesystemBinding | undefined
+  if (knowledgeRootDir !== undefined && authoredAgent) {
+    const runtimeHostOperations = options.runtimeHost ?? runtimeBundle.runtimeHost
+    if (!runtimeHostOperations) {
+      throw Object.assign(
+        new Error('agent knowledge requires runtime host filesystem-binding operations'),
+        { code: ErrorCode.enum.CONFIG_INVALID },
+      )
+    }
+    knowledgeBinding = Object.freeze({
+      ...await runtimeHostOperations.createAgentResourceFilesystemBinding(
+        AGENT_KNOWLEDGE_FILESYSTEM_ID,
+        [{ logicalRoot: '/', sourceRoot: knowledgeRootDir }],
+      ),
+      catalog: {
+        visible: true,
+        label: authoredAgent.definition.label,
+        rootDir: '/' as const,
+      },
+    })
+  }
+  const scopedKnowledgeBinding = knowledgeBinding
+  // Request-scoped bindings REPLACE the bundle defaults at the tool layer, so
+  // the bundle's own bindings must be merged back in (host policy intersecting
+  // any same-id request binding) before appending the agent-scoped knowledge
+  // filesystem — same merge seam as origin/feat/1107-s1-discovery.
+  const getFilesystemBindings = runtimeScope.getFilesystemBindings || scopedKnowledgeBinding
+    ? async (ctx: { sessionId?: string; userId?: string; requestId?: string }) => [
+        ...(mergeRuntimeFilesystemBindings(
+          runtimeBundle.filesystemBindings,
+          [
+            ...await runtimeScope.getFilesystemBindings?.({
+              scope: {
+                workspaceScopeId: input.workspaceScopeId,
+                authSubjectId: ctx.userId ?? '',
+              },
+              sessionId: ctx.sessionId,
+              requestId: ctx.requestId ?? '',
+            }) ?? [],
+            ...(scopedKnowledgeBinding ? [scopedKnowledgeBinding] : []),
+          ],
+        ) ?? []).filter(bindingIsVisible),
+      ]
+    : undefined
   const standardTools: AgentTool[] = [
     ...buildHarnessAgentTools(bashRuntimeBundle, input.environmentProvisioning
       ? {
@@ -162,50 +270,75 @@ export async function buildAgentComposition(
         }
       : undefined),
     ...(runtimeScope.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
-      getFilesystemBindings: runtimeScope.getFilesystemBindings
-          ? async (ctx) => [...mergeRuntimeFilesystemBindings(
-              runtimeBundle.filesystemBindings,
-              await runtimeScope.getFilesystemBindings!({
-                scope: {
-                  workspaceScopeId: input.workspaceScopeId,
-                  authSubjectId: ctx.userId ?? '',
-                },
-                sessionId: ctx.sessionId,
-                requestId: ctx.requestId ?? '',
-              }),
-            ) ?? []]
-          : undefined,
+      getFilesystemBindings,
     })),
     ...(runtimeScope.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
   ]
   const tools = [...standardTools, ...(runtimeScope.extraTools ?? [])]
 
   const readyTracker = createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
-  const encodedPreferredModel = 'legacyDefault' in input.agent
-    ? undefined
-    : input.agent.model?.preferred
-  const pi = withPiHarnessDefaults({
+  const encodedPreferredModel = input.agent.model?.preferred
+  const unprojectedPi = withPiHarnessDefaults({
     ...runtimeScope.pi,
     defaultModel: parseEncodedModelSelection(encodedPreferredModel) ?? runtimeScope.pi?.defaultModel,
     strictModelResolution: encodedPreferredModel === undefined
       ? runtimeScope.pi?.strictModelResolution
       : true,
     additionalSkillPaths: [
-      ...(input.environmentProvisioning?.skillPaths ?? []),
+      ...provisionedSkillPathsForAgent(input.agent, input.environmentProvisioning),
       ...(runtimeScope.pi?.additionalSkillPaths ?? []),
     ],
   })
+  const projectSkillPaths = (skillPaths: readonly string[]) => skillPaths.flatMap((skillPath) => {
+    const projected = projectRuntimeSkillPathToHost({
+      skillPath,
+      runtimeWorkspaceRoot: runtimeBundle.workspace.root,
+      hostStorageRoot,
+    })
+    return projected === undefined ? [] : [projected]
+  })
+  const getUnprojectedHotResources = unprojectedPi.getHotReloadableResources
+  const pi = {
+    ...unprojectedPi,
+    ...(input.credentialComposition
+      ? {
+          credentialStore: input.credentialComposition.createPiCredentialStore(
+            input.workspaceScopeId,
+            input.actorUserId,
+            {
+              allowSubscriptionOAuth: input.actorUserId !== undefined
+                && allowsSubscriptionOAuthForInvocationV1(input.fundingPolicy),
+            },
+          ),
+        }
+      : {}),
+    additionalSkillPaths: projectSkillPaths(unprojectedPi.additionalSkillPaths ?? []),
+    ...(getUnprojectedHotResources
+      ? {
+          getHotReloadableResources: () => {
+            const resources = getUnprojectedHotResources()
+            return {
+              ...resources,
+              additionalSkillPaths: projectSkillPaths(resources.additionalSkillPaths ?? []),
+            }
+          },
+        }
+      : {}),
+    locateSkillResource: (filePath: string) =>
+      unprojectedPi.locateSkillResource?.(filePath)
+      ?? locateHostWorkspaceSkill({
+        filePath,
+        runtimeWorkspaceRoot: runtimeBundle.workspace.root,
+        hostStorageRoot,
+      }),
+  }
   const baseHarnessFactory = options.harnessFactory
-  const configured = !('legacyDefault' in input.agent)
   const configuredNamespace = sessionNamespaceForAgent(
     input.agent,
     input.workspaceScopeId,
     runtimeScope.sessionNamespace,
   )
-  const authoredInstructions = configured
-    ? input.agent.definition.instructions
-    : undefined
-  const staticPromptAppend = [authoredInstructions, runtimeScope.systemPromptAppend]
+  const staticPromptAppend = [input.agent.definition.instructions, runtimeScope.systemPromptAppend]
     .filter((part): part is string => Boolean(part))
     .join('\n\n') || undefined
 
@@ -236,14 +369,17 @@ export async function buildAgentComposition(
     telemetry: options.telemetry,
   })
   const sessionStore = harness.sessions
-  const durableEventStore = isDurableStreamEnabled()
-    ? openDurableEventStore({
-        sessionRoot: options.sessionRoot,
-        hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
-        telemetry: options.telemetry,
-      })
-    : undefined
-  const service = new HarnessPiChatService({
+  const durableEventStore = options.eventStore
+    ? { store: options.eventStore, close: undefined }
+    : isDurableStreamEnabled()
+      ? openDurableEventStore({
+          sessionRoot: options.sessionRoot,
+          hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+          telemetry: options.telemetry,
+        })
+      : undefined
+  const backend = createPiSessionHarnessBackend({
+    agentTypeId: input.agent.agentTypeId,
     harness,
     sessionStore,
     workdir: runtimeBundle.workspace.root,
@@ -259,13 +395,15 @@ export async function buildAgentComposition(
   return {
     harness,
     sessionStore,
-    service,
+    backend,
     tools,
+    pi,
     runtimeBundle,
     readyTracker,
-    runtimeScopeIdentity: runtimeScope.identity,
+    ...(getFilesystemBindings ? { getFilesystemBindings } : {}),
+    credentials: input.credentialComposition?.runtimeView,
     dispose() {
-      disposed ??= service.dispose().finally(() => durableEventStore?.close())
+      disposed ??= backend.close().finally(() => durableEventStore?.close?.())
       return disposed
     },
   }

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { Sparkles } from "lucide-react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { Bot, Search } from "lucide-react"
+import { IconButton } from "@hachej/boring-ui-kit"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -9,7 +10,7 @@ import {
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps, type ChatPanePendingPlacement, type ChatPaneSplitDirection } from "../../front/layout"
+import { ChatLayout, TopBar, ThemeToggle, useKeyboardInset, type ChatLayoutProps, type ChatPanePendingPlacement, type ChatPaneSplitDirection } from "../../front/layout"
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
@@ -18,12 +19,9 @@ import type {
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
-import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverlay"
-import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { chatPaneAgentLabels } from "../../front/layout/chatPaneAgentLabels"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
@@ -70,6 +68,10 @@ import {
 } from "../../front/sessionIdentity"
 import { startSessionActivityStream } from "../../front/sessionActivity"
 
+const AgentPage = lazy(() => import("../../front/chrome/skills/AgentPage").then((module) => ({ default: module.AgentPage })))
+const PluginsOverlay = lazy(() => import("../../front/chrome/plugins/PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })))
+const AgentDetailsOverlay = lazy(() => import("../../front/chrome/agents/AgentDetailsOverlay").then((module) => ({ default: module.AgentDetailsOverlay })))
+
 const AGENT_OVERLAY_PREFIX = "agent-details:"
 const NATIVE_SESSION_UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 
@@ -96,7 +98,7 @@ interface PendingCreatePane {
   workspaceId: string
   placementDirection?: ChatPaneSplitDirection
   createdId?: string
-  mode: "insert" | "replace"
+  mode: "insert" | "replace" | "replace-all"
 }
 
 export interface WorkspaceAgentSession {
@@ -110,6 +112,8 @@ export interface WorkspaceAgentSession {
   hasAssistantReply?: boolean
   ephemeral?: boolean
   status?: "idle" | "running" | "aborting" | "error"
+  /** Visibility only: archived chats leave the main list, never the volume. */
+  archived?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -121,6 +125,9 @@ export interface WorkspaceAgentSessionsApi<
   loading: boolean
   loadingMore?: boolean
   hasMore?: boolean
+  archivedLoaded?: boolean
+  archivedLoading?: boolean
+  hasMoreArchived?: boolean
   /** True only when missing rows may be pruned across every addressed owner. */
   inventoryAuthoritative?: boolean
   error?: Error | null
@@ -135,8 +142,11 @@ export interface WorkspaceAgentSessionsApi<
   /** Returns the canonical created row; void providers are a protocol violation. */
   create: (input?: { title?: string; resumeSessionId?: string; agentTypeId?: string }) => TSession | Promise<TSession>
   rename?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
+  /** Explicit typed archive capability; absence hides archive controls. */
+  setArchived?: (id: string, archived: boolean, agentTypeId?: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
+  loadArchived?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
 }
 
@@ -332,8 +342,19 @@ export interface WorkspaceAgentFrontProps<
    */
   hotReloadEnabled?: boolean
   extraPanels?: string[]
+  /** Fleet-wide commands supplied to every chat pane. */
   extraCommands?: SlashCommand[]
+  /** Commands resolved for the Agent that owns each individual chat pane. */
+  getExtraCommandsForAgent?: (agentTypeId: string) => readonly SlashCommand[]
   provisionWorkspace?: boolean
+  /**
+   * Opt in/out of server-backed pi-chat sessions independently of workspace
+   * provisioning. When omitted, remote sessions follow `provisionWorkspace`
+   * (enabled unless `provisionWorkspace={false}`). Apps that disable
+   * provisioning but still reach the agent pi-chat routes should pass `true`
+   * so chat uses real server session ids instead of local-only ones.
+   */
+  remoteSessionsEnabled?: boolean
   bootPreloadPaths?: string[]
   onWorkspaceWarmupStatusChange?: (status: WorkspaceWarmupStatus) => void
 }
@@ -442,6 +463,14 @@ function useStoredNullableStringState(
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
+// An optimistically-created pane loses its protection once its owning
+// Agent's session snapshot acknowledges it (the normal, fast path). This is
+// the terminal fallback for the abnormal one: the session was deleted (in
+// app or out of band) or a provider returned an id that never materializes,
+// so no snapshot will EVER acknowledge it. Past this window the key is
+// dropped and reconciliation falls back to the real authoritative session
+// instead of protecting a pane that may no longer exist.
+export const OPTIMISTIC_CREATE_ACK_WINDOW_MS = 10_000
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect
 
 function sessionCreateProtocolError(message: string): SessionCreateProtocolError {
@@ -541,6 +570,10 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     switch: (id, owner) => {
       if (owner && owner !== options.agentTypeId) return
       piSessions.switch(id)
+    },
+    setArchived: async (id, archived, owner) => {
+      if (owner && owner !== options.agentTypeId) throw new Error("session owner does not match this archive capability")
+      return await piSessions.setArchived(id, archived)
     },
     delete: async (id, owner) => {
       if (!owner || owner === options.agentTypeId) return await piSessions.delete(id)
@@ -755,7 +788,9 @@ export function WorkspaceAgentFront<
   frontPluginHotReload,
   extraPanels,
   extraCommands,
+  getExtraCommandsForAgent,
   provisionWorkspace,
+  remoteSessionsEnabled,
   bootPreloadPaths,
   onWorkspaceWarmupStatusChange,
   onOpenNav,
@@ -766,6 +801,9 @@ export function WorkspaceAgentFront<
 }: WorkspaceAgentFrontProps<TSession>) {
   const viewport = useViewportWidth()
   const mobileShellActive = mobileShellEnabled && isCompactViewport(viewport)
+  // Publishes `--keyboard-inset` on <html> for every surface below. This is the
+  // outermost component that always mounts, so it is the one place it belongs.
+  useKeyboardInset()
   const externalPluginsEnabled = externalPlugins !== false
   const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
   const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
@@ -803,8 +841,15 @@ export function WorkspaceAgentFront<
     storageScope: workspaceId,
     enabled: fleetModeEnabled,
   })
+  const singleAgentSkillsActionEnabled = skillsActionEnabled && (
+    !fleetModeEnabled || (!addressedAgents.loading && addressedAgents.agents.length === 1)
+  )
   const effectiveAgentTypeId = addressedAgents.selectedAgentTypeId ?? defaultAgentTypeId
   const selectedAgentTypeId = effectiveAgentTypeId
+  // Fleet selection is session/pane-local. Workspace transport, plugin, and
+  // provisioning identity remains the configured Workspace default; otherwise
+  // switching to another Agent reboots the filesystem and plugin shell.
+  const workspaceTransportAgentTypeId = fleetModeEnabled ? defaultAgentTypeId : effectiveAgentTypeId
   // The New chat picker chooses who the *next* chat belongs to. It is
   // deliberately separate from the addressed selection that drives the open
   // chat, so retargeting never navigates away from what the user is reading.
@@ -903,7 +948,22 @@ export function WorkspaceAgentFront<
   const chatPanel = (chatPanelProp ?? DefaultPiChatPanel) as ComponentType<WorkspaceChatPanelProps>
   const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
-  const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
+  // Provisioning and server-backed sessions are separate concerns: apps can
+  // disable workspace provisioning and still use real pi-chat sessions.
+  const remoteSessionsResolved = remoteSessionsEnabled ?? (provisionWorkspace !== false)
+  const remoteSessionHookEnabled = shouldUseRemoteSessions && remoteSessionsResolved
+  const remoteSessionsDisabledWarnedRef = useRef(false)
+  useEffect(() => {
+    if (remoteSessionsDisabledWarnedRef.current) return
+    if (!shouldUseRemoteSessions || remoteSessionsResolved || provisionWorkspace !== false) return
+    if (remoteSessionsEnabled !== undefined) return
+    remoteSessionsDisabledWarnedRef.current = true
+    if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+      console.warn(
+        "[boring-ui] WorkspaceAgentFront: provisionWorkspace={false} also disabled server-backed chat sessions, so the chat panel will use local-only session ids while still reaching the agent pi-chat routes. Pass remoteSessionsEnabled={true} to keep remote sessions.",
+      )
+    }
+  }, [provisionWorkspace, remoteSessionsEnabled, remoteSessionsResolved, shouldUseRemoteSessions])
   const fleetAgentIdentity = addressedAgents.agents.map((agent) => agent.agentTypeId).sort().join(",")
   const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,
@@ -1132,6 +1192,14 @@ export function WorkspaceAgentFront<
       && !pendingRemoteActiveSessionId,
   )
   const remoteSessionsTransitioning = remoteSessionsInitialLoading || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
+  // A persisted chat pane can render while its list inventory is still
+  // resolving. Keep that shell available, but do not mistake the temporary
+  // empty inventory for an authoritative empty list in app-left navigation.
+  const remoteSessionInventoryLoading = remoteSessionsTransitioning || Boolean(
+    remoteSessionsPending
+      && !remoteSessionsHaveStaleData
+      && !remoteSessionApi.error,
+  )
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
@@ -1218,10 +1286,10 @@ export function WorkspaceAgentFront<
     const attempt = { workspaceId, agentTypeId: selectedAgentTypeId }
     autoSubmitSessionCreateRef.current = attempt
     setAutoSubmitSessionAgentTypeId(attempt.agentTypeId)
-    void Promise.resolve(remoteSessionApi.create({
-      ...automaticSessionCreateInput(defaultSessionTitle),
-      agentTypeId: attempt.agentTypeId,
-    }))
+    const createInput = automaticSessionCreateInput(defaultSessionTitle)
+    void Promise.resolve(remoteSessionApi.create(
+      fleetModeEnabled ? { ...createInput, agentTypeId: attempt.agentTypeId } : createInput,
+    ))
       .then((session) => {
         if (autoSubmitSessionCreateRef.current !== attempt || autoSubmitSessionWorkspaceRef.current !== attempt.workspaceId) return
         if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
@@ -1236,7 +1304,7 @@ export function WorkspaceAgentFront<
         setAutoSubmitSessionAgentTypeId(undefined)
         setAutoSubmitSessionId(undefined)
       })
-  }, [autoSubmitSessionId, defaultSessionTitle, remoteSessionApi.create, selectedAgentTypeId, sessionApi, workspaceId])
+  }, [autoSubmitSessionId, defaultSessionTitle, fleetModeEnabled, remoteSessionApi.create, selectedAgentTypeId, sessionApi, workspaceId])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
   const effectiveActiveSessionAgentTypeId = autoSubmitSessionId !== undefined
     ? autoSubmitSessionAgentTypeId ?? selectedAgentTypeId
@@ -1263,7 +1331,7 @@ export function WorkspaceAgentFront<
       sessionCreation.cancel((task) => task.phase === "queued" && task.dedupeKey === "initial-auto")
       return coordinateRemoteCreate(
         dedupeKey,
-        ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined,
+        fleetModeEnabled && ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined,
       ).catch((error) => {
         // A canceled queued boot create resolves without running its own error
         // path. Re-arm boot creation if the user-owned request failed.
@@ -1276,7 +1344,7 @@ export function WorkspaceAgentFront<
     }
     const created = onCreateSession ? onCreateSession() : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
-  }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
     if (!sessionSourceIsCurrent() || remoteSessionsPending || !sessionApi?.rename) return undefined
     return sessionApi.rename(id, title, sessionAgentTypeId)
@@ -1386,7 +1454,7 @@ export function WorkspaceAgentFront<
       && !addressedAgents.loading
       && !addressedAgents.agents.some((agent) => agent.agentTypeId === parsedAgentOverlay.agentTypeId))
     if (
-      (leftOverlay === "skills" && !skillsActionEnabled)
+      (leftOverlay === "skills" && !singleAgentSkillsActionEnabled)
       || (leftOverlay === "plugins" && !pluginsActionEnabled)
       || agentOverlayMissing
       || (leftOverlay !== null
@@ -1398,7 +1466,7 @@ export function WorkspaceAgentFront<
     ) {
       setLeftOverlay(null)
     }
-  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
+  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, singleAgentSkillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -1425,7 +1493,28 @@ export function WorkspaceAgentFront<
   const autoCreateSessionRef = useRef(false)
   const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
-  const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
+  // Maps an optimistically-created pane key to the time it was created, so a
+  // never-acknowledged create (deleted before its Agent's first snapshot
+  // observed it, or a phantom id a provider never materializes) can be aged
+  // out instead of protecting a pane forever. See OPTIMISTIC_CREATE_ACK_WINDOW_MS.
+  const optimisticCreatedPaneKeysRef = useRef<Map<string, number>>(new Map())
+  // Nothing else re-renders once a create's ack window merely elapses (no
+  // session list changed, no user action happened) — this tick forces the
+  // reconciliation effect below to re-run so the aged-out key is actually
+  // dropped and reconciliation falls back to the real session.
+  const [optimisticCreateAckTick, setOptimisticCreateAckTick] = useState(0)
+  const optimisticCreateAckTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  useEffect(() => () => {
+    for (const timer of optimisticCreateAckTimersRef.current) clearTimeout(timer)
+    optimisticCreateAckTimersRef.current.clear()
+  }, [])
+  // A workspace/source switch resets chatPaneState to empty (see the
+  // chatPaneSourceIdentity effect above) and abandons whatever pane a create
+  // was protecting — any leftover optimistic keys belong to a pane that no
+  // longer exists on screen, so nothing should still be aging them out.
+  useEffect(() => {
+    optimisticCreatedPaneKeysRef.current.clear()
+  }, [chatPaneSourceIdentity, workspaceId])
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
@@ -1705,8 +1794,15 @@ export function WorkspaceAgentFront<
       pendingCreatePaneRef.current = null
       if (ownedPendingCreatePane.placementDirection) setChatPaneSplitPending(false)
     }
-    for (const key of optimisticCreatedPaneKeysRef.current) {
-      if (resolvedSessionsByKey.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
+    const optimisticCreateDeadline = Date.now() - OPTIMISTIC_CREATE_ACK_WINDOW_MS
+    for (const [key, createdAt] of optimisticCreatedPaneKeysRef.current) {
+      // Acknowledged (the normal path): the owning Agent's session snapshot
+      // now contains it. Aged out (the abnormal path this review flagged):
+      // deleted before ever being observed, or a phantom id that never
+      // materializes — stop protecting a pane that may no longer exist.
+      if (resolvedSessionsByKey.has(key) || createdAt <= optimisticCreateDeadline) {
+        optimisticCreatedPaneKeysRef.current.delete(key)
+      }
     }
     const newlyObservedSession = pendingCreatePane
       ? resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(workspaceSessionKeyFor(session)))
@@ -1747,12 +1843,28 @@ export function WorkspaceAgentFront<
       if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
       const currentActiveRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
       const activeOwnerIsExplicit = Boolean(effectiveActiveSessionAgentTypeId)
-      const currentMatchesControlledSession = activeOwnerIsExplicit
+      // #1472 review: a fleet create's addressed-Agent switch and its pane
+      // update land in the same tick, but the newly addressed Agent's OWN
+      // session snapshot (`addressedFleetSessions.tsx`'s `snapshots` map)
+      // only catches up a render or two later, via that Agent's session
+      // source publishing through its own passive effect. In the gap,
+      // `chatSessionKey` still names the Agent's PREVIOUS active session, so
+      // without this the optimistic pane got judged "uncontrolled" and
+      // replaced by that stale session — a `new → stale → new` visible stomp.
+      // Trust an optimistically-created pane over the (possibly stale)
+      // controlled session until its own key is cleared from the ref above
+      // (once the real session list actually contains it).
+      const currentIsOptimisticCreate = Boolean(current.activeId && optimisticCreatedPaneKeysRef.current.has(current.activeId))
+      const currentMatchesControlledSession = currentIsOptimisticCreate || (activeOwnerIsExplicit
         ? current.activeId === chatSessionKey
-        : currentActiveRef?.sessionId === chatSessionId
+        : currentActiveRef?.sessionId === chatSessionId)
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
-        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
+        // An optimistic create bypasses the "known session" gate too: it is
+        // by definition not in `resolvedSessionsByKey` yet (that is what
+        // "optimistic" means here), so requiring membership would undo the
+        // protection `currentMatchesControlledSession` just granted it.
+        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId) || currentIsOptimisticCreate)
         && currentMatchesControlledSession
         ? current.activeId
         : desiredSessionId
@@ -1767,9 +1879,11 @@ export function WorkspaceAgentFront<
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
       const nextIds = pendingCreatedId
-        ? pendingCreatePane?.mode === "replace"
-          ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
-          : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        ? pendingCreatePane?.mode === "replace-all"
+          ? [pendingCreatedId]
+          : pendingCreatePane?.mode === "replace"
+            ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
+            : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
         : resolvedDesiredSessionId === activeId || ids.includes(resolvedDesiredSessionId)
           ? ids
           : replaceActivePane(ids, activeId, resolvedDesiredSessionId)
@@ -1786,7 +1900,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
+  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, optimisticCreateAckTick, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -1885,7 +1999,7 @@ export function WorkspaceAgentFront<
 
   const createChatPaneTransaction = useCallback((
     afterId: string,
-    mode: "insert" | "replace",
+    mode: "insert" | "replace" | "replace-all",
     placementDirection?: ChatPaneSplitDirection,
     ownerAgentTypeId?: string,
   ) => {
@@ -1910,7 +2024,13 @@ export function WorkspaceAgentFront<
     const createReason = placementDirection
       ? `split:${afterId}:${placementDirection}`
       : "manual"
-    const created = resolvedCreate(createReason, ownerAgentTypeId)
+    let created: ReturnType<typeof resolvedCreate>
+    try {
+      created = resolvedCreate(createReason, ownerAgentTypeId)
+    } catch (error) {
+      settleIfOwner()
+      throw error
+    }
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       // Some session providers signal creation through a later sessions update.
@@ -1933,13 +2053,25 @@ export function WorkspaceAgentFront<
         ? (session as { agentTypeId: string }).agentTypeId
         : ownerAgentTypeId ?? effectiveAgentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
-      const nextIds = mode === "replace"
-        ? replaceActivePane(ids, afterId, createdKey)
-        : insertPaneAfter(ids, afterId, createdKey)
+      const nextIds = mode === "replace-all"
+        ? [createdKey]
+        : mode === "replace"
+          ? replaceActivePane(ids, afterId, createdKey)
+          : insertPaneAfter(ids, afterId, createdKey)
       const nextState = { workspaceId, ids: nextIds, activeId: createdKey }
 
       if (!settleIfOwner()) return
-      optimisticCreatedPaneKeysRef.current.add(createdKey)
+      optimisticCreatedPaneKeysRef.current.set(createdKey, Date.now())
+      if (typeof window !== "undefined") {
+        const timer = setTimeout(() => {
+          optimisticCreateAckTimersRef.current.delete(timer)
+          // Force the reconciliation effect to re-evaluate even if nothing
+          // else changed in the meantime — that is exactly the abnormal case
+          // (deleted/never-materialized) this window exists to catch.
+          setOptimisticCreateAckTick((tick) => tick + 1)
+        }, OPTIMISTIC_CREATE_ACK_WINDOW_MS)
+        optimisticCreateAckTimersRef.current.add(timer)
+      }
       chatPaneStateRef.current = nextState
       setChatPaneState(nextState)
       if (placementDirection) {
@@ -1952,6 +2084,17 @@ export function WorkspaceAgentFront<
         if (createdAgentTypeId) rawSwitch(id, createdAgentTypeId)
         else rawSwitch(id)
       }
+      // A fleet create can target an Agent OTHER than the one currently
+      // addressed (#1470: the New chat Agent picker retargets independently
+      // of the addressed selection). The pane-reconciliation effect below
+      // resolves its desired session from the ADDRESSED Agent's own session
+      // API, so without this the new pane got immediately stomped back to
+      // whatever the previously addressed chat was — created, but never
+      // shown. Address the created Agent so every creation entry point (the
+      // rail "+", the card, and the picker alike) opens on what it just made.
+      if (fleetModeEnabled && createdAgentTypeId && createdAgentTypeId !== addressedAgents.selectedAgentTypeId) {
+        addressedAgents.selectAgentTypeId(createdAgentTypeId)
+      }
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
       settleIfOwner()
@@ -1959,7 +2102,7 @@ export function WorkspaceAgentFront<
       // transaction only owns clearing its pending state.
     })
     return created
-  }, [chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentTypeId, sessionApi, workspaceId])
+  }, [addressedAgents.selectAgentTypeId, addressedAgents.selectedAgentTypeId, chatSessionKey, fleetModeEnabled, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentTypeId, sessionApi, workspaceId])
 
   useEffect(() => {
     const pending = pendingCreatePaneRef.current
@@ -1969,7 +2112,7 @@ export function WorkspaceAgentFront<
   }, [workspaceId])
 
   const createChatSession = useCallback((ownerAgentTypeId = fleetModeEnabled ? newChatAgentTypeId : undefined) => (
-    createChatPaneTransaction(activeChatPaneId, "replace", undefined, ownerAgentTypeId)
+    createChatPaneTransaction(activeChatPaneId, "replace-all", undefined, ownerAgentTypeId)
   ), [activeChatPaneId, newChatAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
 
   const closeChatPane = useCallback((sessionKey: string) => {
@@ -2004,6 +2147,10 @@ export function WorkspaceAgentFront<
 
   const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
+    // We know FOR CERTAIN this session is gone — no need to wait out the ack
+    // window. Deleting an optimistic key we never created is a harmless
+    // no-op, so this is safe to call unconditionally.
+    optimisticCreatedPaneKeysRef.current.delete(sessionKey)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
@@ -2024,10 +2171,9 @@ export function WorkspaceAgentFront<
     return resolvedDelete(sessionId, sessionAgentTypeId)
   }, [chatPaneState, chatSessionKey, resolvedDelete, resolvedSwitch, workspaceId])
 
-  // "New chat" from the left bar. With a split already open, the new session
-  // gets its OWN dedicated pane (inserted after the active one) so the existing
-  // panes are never hijacked; with a single pane it just becomes the active
-  // chat — no gratuitous split for the common case.
+  // Every primary "New chat" affordance starts a fresh single-pane surface.
+  // Splits are retained only when the user explicitly chooses a split action;
+  // an Agent-card "+" must never make the new Agent look like a side chat.
   /**
    * Splitting a pane is NOT a "new chat" affordance: the button names the pane
    * it splits ("Split <title> chat vertically"), so the new chat must belong to
@@ -2048,11 +2194,6 @@ export function WorkspaceAgentFront<
     )
   ), [createChatPaneAfter, fleetModeEnabled, effectiveAgentTypeId])
 
-  const createChatSessionPreferNewPane = useCallback((ownerAgentTypeId = newChatAgentTypeId) => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
-    return createChatSession(ownerAgentTypeId)
-  }, [activeChatPaneId, newChatAgentTypeId, chatPaneIds.length, createChatPaneAfter, createChatSession])
-
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
   useEffect(() => {
@@ -2071,7 +2212,7 @@ export function WorkspaceAgentFront<
   // A restored/open active pane that survived authoritative inventory
   // reconciliation owns enough addressed identity to hydrate even when the
   // mutable global active preference is absent. An implicit placeholder does not.
-  const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
+  const hydrateMessages = !autoSubmitHydrationDisabled && remoteSessionsResolved && (
     shouldUseRemoteSessions
       ? Boolean(effectiveActiveSessionId || activeChatPaneIsInventoried)
       : true
@@ -2112,13 +2253,18 @@ export function WorkspaceAgentFront<
     await sessionApi?.refresh?.({ background: true })
   }, [apiBaseUrl, onRenameSession, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
 
-  const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
+  const setChatSessionArchived = useCallback(async (sessionId: string, archived: boolean, sessionAgentTypeId?: string) => {
+    if (!sessionApi?.setArchived) throw new Error("session provider does not support archiving")
+    await sessionApi.setArchived(sessionId, archived, sessionAgentTypeId)
+  }, [sessionApi])
+
+  const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId?: string }) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(ref.agentTypeId)}/reload`
     const requestId = `reload:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
-      body: JSON.stringify({ requestId, sessionId: ref.sessionId }),
+      body: JSON.stringify({ requestId, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }),
     })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string }
@@ -2149,6 +2295,8 @@ export function WorkspaceAgentFront<
     (sessionKey: string) => {
       const sessionRef = workspaceSessionRefFromKey(sessionKey)
       const sessionId = sessionRef.sessionId
+      const paneAgentTypeId = sessionRef.agentTypeId ?? selectedAgentTypeId
+      const paneExtraCommands = getExtraCommandsForAgent?.(paneAgentTypeId) ?? []
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
@@ -2156,7 +2304,7 @@ export function WorkspaceAgentFront<
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
-      agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId,
+      agentTypeId: paneAgentTypeId,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
@@ -2167,7 +2315,7 @@ export function WorkspaceAgentFront<
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: null,
       surfaceDispatch,
-      extraCommands,
+      extraCommands: [...(extraCommands ?? []), ...paneExtraCommands],
       workspaceWarmupStatus,
       hydrateMessages,
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
@@ -2203,7 +2351,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, getExtraCommandsForAgent, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
@@ -2303,6 +2451,35 @@ export function WorkspaceAgentFront<
   const topBarLeftContent = topBarLeft ? (
     <div className="flex min-w-0 items-center gap-2">{topBarLeft}</div>
   ) : undefined
+  // At compact the mobile chat bar already carries the real session title, so a
+  // top bar above it is a second title row over the same chat — three stacked
+  // headers before the first pixel of transcript. It is dropped there, except
+  // when the host supplied opaque chrome of its own (brand + site nav, sign-in,
+  // version badge) that lives nowhere else; that bar then shows the app name
+  // rather than repeating the session title.
+  const hostSuppliedTopBarChrome = Boolean(topBarLeftContent) || topBarRight != null
+  const showTopBar = !mobileShellActive || hostSuppliedTopBarChrome
+  // The two actions the top bar owned that ARE relocatable follow it into the
+  // mobile bar when it is gone. The command palette especially: a phone has no
+  // ⌘K, so this button is its only entry point.
+  const mobileChatBarActions = mobileShellActive && !showTopBar ? (
+    <>
+      {/* 44px hit area: the UI-review mobile touch-target gate requires it and
+          the merged bar is a phone-only surface. */}
+      <IconButton
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="mobile-shell-bar-action size-11"
+        onClick={openCommandPalette}
+        aria-label="Search catalogs and commands"
+        title="Search"
+      >
+        <Search className="size-4" />
+      </IconButton>
+      {showThemeToggle ? <ThemeToggle className="size-11" /> : null}
+    </>
+  ) : undefined
   const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null
   const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => workspaceSessionRefFromKey(id)), [chatPaneIds])
   const pinnedRefs = useMemo(() => pinnedIds.map((id) => workspaceSessionRefFromKey(id)), [pinnedIds])
@@ -2369,7 +2546,15 @@ export function WorkspaceAgentFront<
     // became independent is no longer always the addressed one.
     const requestedAgentTypeId = options?.agentTypeId ?? selectedAgentTypeId
     try {
-      const session = await coordinateRemoteCreate(dedupeKey, options)
+      // `agentTypeId` addresses the fleet wrapper; it is not part of the
+      // canonical single-Agent create-session body. Forwarding the synthetic
+      // `default` owner made strict Agent hosts reject quick-chat creation.
+      const createInput = fleetModeEnabled
+        ? options
+        : options?.title
+          ? { title: options.title }
+          : undefined
+      const session = await coordinateRemoteCreate(dedupeKey, createInput)
       const sessionId = createdSessionId(session)
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
       const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
@@ -2403,7 +2588,7 @@ export function WorkspaceAgentFront<
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [coordinateRemoteCreate, rawDelete, rawSwitch, selectedAgentTypeId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, rawDelete, rawSwitch, selectedAgentTypeId])
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     shellSessionCreateSequenceRef.current += 1
     return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
@@ -2456,35 +2641,6 @@ export function WorkspaceAgentFront<
   }, [createAddressedSessionWithoutActivating, defaultSessionTitle, newChatAgentTypeId, fleetModeEnabled, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
-  const chatTopOverlayActions = useMemo(() => {
-    if (!isPluginTabsLayout || !appLeftOverlayActions?.length) return null
-    return (
-      <div className="flex items-center gap-1">
-        {appLeftOverlayActions.map((action) => (
-          <button
-            key={action.id}
-            type="button"
-            data-boring-workspace-part="chat-pane-control"
-            className="inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-muted/70 hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
-            aria-label={action.label}
-            aria-pressed={leftOverlay === action.id}
-            title={action.label}
-            onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
-            onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setLeftOverlay((cur) => cur === action.id ? null : action.id)
-            }}
-          >
-            {action.icon ? <span className="grid size-3.5 place-items-center">{action.icon}</span> : null}
-            <span>{action.label}</span>
-          </button>
-        ))}
-      </div>
-    )
-  }, [appLeftOverlayActions, isPluginTabsLayout, leftOverlay])
-
   const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
     const actions: WorkspaceAgentAppLeftAction[] = [...pluginAppLeftActions, ...(appLeftActions ?? [])]
     for (const action of appLeftOverlayActions ?? []) {
@@ -2498,18 +2654,26 @@ export function WorkspaceAgentFront<
         onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
       })
     }
-    if (skillsActionEnabled) {
+    if (singleAgentSkillsActionEnabled) {
       actions.push({
         id: "skills",
-        label: "Skills",
-        icon: <Sparkles className="h-4 w-4" strokeWidth={1.75} />,
+        label: "Agent",
+        icon: <Bot className="h-4 w-4" strokeWidth={1.75} />,
         active: leftOverlay === "skills",
         onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
       })
     }
     assertUniqueAppLeftActionIds(actions)
     return actions
-  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, singleAgentSkillsActionEnabled])
+  const openAppLeftChats = useCallback(() => {
+    setLeftOverlay(null)
+  }, [])
+  const appLeftNavigationEntries = useMemo(() => createAppLeftNavigationEntries({
+    actions: managementActions,
+    onOpenChats: openAppLeftChats,
+    onOpenCommandPalette: openCommandPalette,
+  }), [managementActions, openAppLeftChats, openCommandPalette])
 
   const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
     plugins: capturedPlugins,
@@ -2537,12 +2701,21 @@ export function WorkspaceAgentFront<
     <AgentDetailsOverlay
       agent={activeAgentOverlayOption}
       onClose={() => setLeftOverlay(null)}
+      // Persona instructions only recompile through the `agent.reload` host
+      // effect, so the page that shows them also offers the reload. Targets the
+      // agent this overlay describes, NOT the addressed chat agent.
+      // Resolves with no message so the overlay tells the AGENT story (runtime
+      // pin semantics) rather than the extension-reload wording this shared
+      // helper writes for the Plugins surface.
+      onReloadAgent={async (agentTypeId) => {
+        await reloadAgentPluginsForSession({ agentTypeId })
+      }}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
     />
   ) : null
-  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
-    <SkillsPage
+  const unresolvedLeftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && singleAgentSkillsActionEnabled ? (
+    <AgentPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
@@ -2558,6 +2731,11 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
+  const leftOverlayNode = unresolvedLeftOverlayNode ? (
+    <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>}>
+      {unresolvedLeftOverlayNode}
+    </Suspense>
+  ) : null
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -2568,8 +2746,7 @@ export function WorkspaceAgentFront<
       center="chat"
       centerParams={centerParams}
       chatPanes={chatPanes}
-      chatTopActions={chatTopOverlayActions}
-      chatPaneSessionActions={chatPaneSessionActions}
+        chatPaneSessionActions={chatPaneSessionActions}
       activeChatPaneId={activeChatPaneId}
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}
@@ -2578,6 +2755,7 @@ export function WorkspaceAgentFront<
       chatPaneSplitPending={chatPaneSplitPending}
       pendingChatPanePlacement={pendingChatPanePlacement}
       onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
+      chatTopActions={mobileChatBarActions}
       onDropChatSession={openChatPane}
       flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
       surface={surfaceOpen ? "artifact-surface" : null}
@@ -2630,9 +2808,8 @@ export function WorkspaceAgentFront<
       mobileShellEnabled={mobileShellEnabled}
       collapsedRail={(
         <AppLeftRail
-          actions={managementActions}
+          navigationEntries={appLeftNavigationEntries}
           footerSlot={showThemeToggle ? <ThemeToggle /> : undefined}
-          onOpenCommandPalette={openCommandPalette}
           onCreateSession={() => {
             setLeftOverlay(null)
             void createChatSession()
@@ -2658,7 +2835,7 @@ export function WorkspaceAgentFront<
             // without a switch needs the pending-entry contract (plan §5.1) — deferred.
             if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
               setLeftOverlay(null)
-              void createChatSessionPreferNewPane()
+              void createChatSession()
             } else {
               onSwitchAppLeftProject?.(projectId)
             }
@@ -2681,7 +2858,7 @@ export function WorkspaceAgentFront<
           addressedAgentTypeId={fleetModeEnabled ? effectiveAgentTypeId : undefined}
           onSelectAgent={fleetModeEnabled ? setNewChatAgentTypeIdOverride : undefined}
           onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
-          sessionsLoading={remoteSessionsTransitioning}
+          sessionsLoading={remoteSessionInventoryLoading}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}
@@ -2695,7 +2872,7 @@ export function WorkspaceAgentFront<
             void createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
           }}
           onCreatePopoverSession={createChatSessionInPopover}
-          onOpenCommandPalette={openCommandPalette}
+          navigationEntries={appLeftNavigationEntries}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onOpenSessionDetached={(sessionId, ownerAgentTypeId) => {
@@ -2708,7 +2885,15 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
-          actions={managementActions}
+          onSetSessionArchived={sessionApi?.setArchived ? setChatSessionArchived : undefined}
+          archivedLoaded={sessionApi?.archivedLoaded}
+          archivedLoading={sessionApi?.archivedLoading}
+          hasMoreArchived={sessionApi?.hasMoreArchived}
+          onLoadArchived={sessionApi?.loadArchived}
+          // The cohort that owns those archived rows. When the source changes
+          // the pane is looking at a different inventory and probes it once
+          // more, instead of trusting a latch from the previous one (#1453).
+          archivedInventoryKey={sessionApi?.sourceIdentity ?? undefined}
         />
       )}
     >
@@ -2716,9 +2901,12 @@ export function WorkspaceAgentFront<
     </PluginTabsWorkspaceShell>
   ) : (
     <div className="flex h-full min-h-0 flex-col">
+      {showTopBar ? (
       <TopBar
         appTitle={appTitle}
-        sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
+        sessionTitle={mobileShellActive
+          ? undefined
+          : remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
         // The non-plugin-tabs shell shows the active chat's title in its bar,
         // so it is a chat header too and names its Agent like the others.
         // Undefined below two Agents, which is when the map itself is null.
@@ -2727,6 +2915,7 @@ export function WorkspaceAgentFront<
         topBarLeft={topBarLeftContent}
         topBarRight={topBarRightContent}
       />
+      ) : null}
       {mainContent}
     </div>
   )
@@ -2737,7 +2926,7 @@ export function WorkspaceAgentFront<
     <div className="relative h-full bg-background text-foreground">
       <WorkspaceShellCapabilitiesProvider value={shellCapabilitiesHost.shellCapabilities}>
       <WorkspaceProvider
-        agentTypeId={selectedAgentTypeId}
+        agentTypeId={workspaceTransportAgentTypeId}
         chatPanel={chatPanel}
         panels={providerPanels}
         commands={commands}
@@ -2774,7 +2963,7 @@ export function WorkspaceAgentFront<
         {addressedFleetSessions.sources}
         {!fleetModeEnabled || addressedAgents.selectedAgentTypeId ? (
           <WorkspaceBackgroundBoot
-            agentTypeId={effectiveAgentTypeId}
+            agentTypeId={workspaceTransportAgentTypeId}
             workspaceId={workspaceId}
             requestHeaders={resolvedRequestHeaders}
             apiBaseUrl={apiBaseUrl}

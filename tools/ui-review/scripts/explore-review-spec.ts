@@ -1,13 +1,16 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { chromium } from "@playwright/test"
+import { resetBombadilOutputDirectory, runWithBombadilStartupRetry } from "../src/core/bombadilProcess"
 import { createUiReviewStagingPolicy, assertStagingBounds, stageBombadilSelection, writeSelection, type UiReviewSelection } from "../src/core/exploration"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir, installUiReviewTempCleanupHandlers } from "../src/core/tempRoot"
 import { readReproduceManifest, validateReproduceOwnership, verifyReproducedFinalState } from "../src/core/replay"
 import { getUiReviewSpec } from "../src/registry"
 
+installUiReviewTempCleanupHandlers()
 const spec = getUiReviewSpec(requiredEnv("UI_REVIEW_SPEC"))
 if (!spec.exploration) process.exit(0)
 const repoRoot = resolve(import.meta.dirname, "../../..")
@@ -36,7 +39,7 @@ try {
     viewports: [], stagedFiles: 1, stagedBytes: 0,
   }
   for (const viewport of spec.viewports) {
-    const rawRoot = await mkdtemp(join(tmpdir(), `boring-ui-review-${viewport.name}.`))
+    const rawRoot = await createUiReviewTempDir(`explore-${viewport.name}.`)
     await runBombadil(["browser", "test", origin, spec.exploration.bombadilSpecPath, "--time-limit", timeLimit, "--output-path", rawRoot, "--headless", "--width", String(viewport.width), "--height", String(viewport.height), "--device-scale-factor", String(viewport.deviceScaleFactor), "--instrument-javascript", "inline"], targetRoot)
     const staged = await stageBombadilSelection({ rawRoot, outputRoot, runId, origin, viewport, existingFiles: selection.stagedFiles, existingBytes: selection.stagedBytes, spec })
     selection.stagedFiles = staged.stagedFiles
@@ -51,12 +54,15 @@ try {
     const bundleArgument = selected.reproducePath!
     const manifest = await readReproduceManifest(resolve(outputRoot, bundleArgument, "reproduce.json"), spec)
     await validateReproduceOwnership({ outputRoot, selected: selected as never, manifest, origin, targetUrl: origin, spec })
-    const replayRoot = await mkdtemp(join(tmpdir(), `boring-ui-review-replay-${viewport.viewport.name}.`))
+    const replayRoot = await createUiReviewTempDir(`replay-${viewport.viewport.name}.`)
     await runBombadil(["browser", "test", manifest.targetUrl, spec.exploration.bombadilSpecPath, "--output-path", replayRoot, "--headless", "--width", String(manifest.viewport.width), "--height", String(manifest.viewport.height), "--device-scale-factor", String(manifest.viewport.deviceScaleFactor), "--instrument-javascript", "inline", "--reproduce", bundleArgument], outputRoot)
-    await verifyReproducedFinalState(replayRoot, manifest)
+    await verifyReproducedFinalState(replayRoot, manifest, spec)
     console.log(`verified Bombadil replay final state: ${selected.id}`)
   }
-} finally { await stop(server) }
+} finally {
+  await stop(server)
+  cleanupUiReviewTempRootSync()
+}
 
 function startTarget(): ChildProcess {
   const [command, ...args] = spec.target.serverCommand
@@ -121,10 +127,27 @@ async function warmTarget(): Promise<void> {
   } finally { await browser.close() }
 }
 async function runBombadil(args: string[], cwd: string): Promise<void> {
-  await new Promise<void>((resolveRun, reject) => {
-    const child = spawn(bombadil, args, { cwd, env: process.env, stdio: "inherit" })
-    child.on("error", reject)
-    child.on("exit", (code) => code === 0 || code === 2 ? resolveRun() : reject(new Error(`UI_REVIEW_BOMBADIL_FAILED:${code ?? "unknown"}`)))
+  const outputIndex = args.indexOf("--output-path")
+  const outputPath = outputIndex >= 0 ? args[outputIndex + 1] : undefined
+  if (!outputPath) throw new Error("UI_REVIEW_BOMBADIL_OUTPUT_PATH_MISSING")
+  await runWithBombadilStartupRetry({
+    runAttempt: () => new Promise((resolveRun, reject) => {
+      const child = spawn(bombadil, args, { cwd, env: process.env, stdio: ["ignore", "inherit", "pipe"] })
+      let stderr = ""
+      child.stderr.setEncoding("utf8")
+      child.stderr.on("data", (chunk: string) => {
+        if (!process.stderr.write(chunk)) {
+          child.stderr.pause()
+          process.stderr.once("drain", () => child.stderr.resume())
+        }
+        stderr = `${stderr}${chunk}`.slice(-64 * 1024)
+      })
+      child.on("error", reject)
+      child.on("close", (code) => resolveRun({ code, stderr }))
+    }),
+    resetOutput: () => resetBombadilOutputDirectory(cwd, outputPath),
+    waitBeforeRetry: () => sleep(1_000),
+    onRetry: () => console.warn("UI_REVIEW_BOMBADIL_STARTUP_RETRY"),
   })
 }
 async function stop(server: ChildProcess): Promise<void> {

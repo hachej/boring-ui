@@ -174,9 +174,9 @@ export function PluginTabsWorkspaceShell({
           onClick={mobileShell ? () => setMobileOpen((open) => !open) : collapsed ? onExpand : onCollapse}
         >
           {effectiveCollapsed ? (
-            <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
+            <PanelLeftOpen className="size-4" strokeWidth={1.75} />
           ) : (
-            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+            <PanelLeftClose className="size-4" strokeWidth={1.75} />
           )}
         </PaneCollapseButton>
       </div>

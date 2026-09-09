@@ -38,6 +38,10 @@ function binding(): RuntimeFilesystemBinding {
       },
       async write({ path, content }) { files.set(path, content); return { mtimeMs: 2 } },
       async writeBinary({ path, content }) { files.set(path, new TextDecoder().decode(content)); return { mtimeMs: 2 } },
+      async createBinary({ path, content }) {
+        if (files.has(path)) throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' })
+        files.set(path, new TextDecoder().decode(content)); return { mtimeMs: 2 }
+      },
       async delete({ path }) { files.delete(path); return {} },
       async move({ from, to }) { files.set(to, files.get(from) ?? ''); files.delete(from); return {} },
       async mkdir({ path }) { dirs.add(path); return {} },
@@ -133,6 +137,34 @@ describe('primary filesystem access projection', () => {
     await app.close()
   })
 
+  test('denies exact binary writes to protected binding paths', async () => {
+    const { app, user } = await appWithBinding()
+    const writeBinary = vi.spyOn(user.operations, 'writeBinary')
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/binary',
+      payload: { path: 'protected/new.txt', ifExists: 'replace', contentBase64: 'eA==' },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: { code: 'readonly', message: 'user binding is readonly' } })
+    expect(writeBinary).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  test('atomically creates exact binary paths through a binding', async () => {
+    const { app, user } = await appWithBinding()
+    const createBinary = vi.spyOn(user.operations, 'createBinary')
+    const request = () => app.inject({
+      method: 'POST',
+      url: '/api/v1/files/binary',
+      payload: { path: 'a/raced.txt', ifExists: 'error', contentBase64: 'eA==' },
+    })
+    const responses = await Promise.all([request(), request()])
+    expect(createBinary).toHaveBeenCalledTimes(2)
+    expect(responses.map((response) => response.json().status).sort()).toEqual(['conflict', 'written'])
+    await app.close()
+  })
+
   test('routes real Pi read/write tools through the user binding capabilities', async () => {
     const user = binding()
     const write = vi.spyOn(user.operations, 'write')
@@ -171,6 +203,43 @@ describe('primary filesystem access projection', () => {
     expect(write).toHaveBeenCalledTimes(2)
     const filesystemSchema = (read.parameters as { properties: { filesystem: { enum: string[] } } }).properties.filesystem
     expect(filesystemSchema.enum).toEqual(['user'])
+  })
+
+  test('host grep searches the storage root when the runtime root differs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-grep-root-'))
+    await mkdir(join(root, 'knowledge'), { recursive: true })
+    await writeFile(join(root, 'knowledge/notes.md'), 'first line\nneedle here\n')
+    // Sandboxed bash sees the workspace at /workspace; the host process does not.
+    const bundle = {
+      storageRoot: root,
+      workspace: workspace('/workspace'),
+      sandbox: { placement: 'local' },
+      fileSearch: {},
+      filesystemBindings: [binding()],
+    } as unknown as RuntimeBundle
+    const grep = buildFilesystemAgentTools(bundle).find((tool) => tool.name === 'grep')!
+    const ctx = { abortSignal: new AbortController().signal, toolCallId: 'grep-root' }
+    const result = await grep.execute({ path: 'knowledge', pattern: 'needle' }, ctx)
+    const text = result.content.map((part) => ('text' in part ? part.text : '')).join('\n')
+    expect(text).toContain('notes.md:2: needle here')
+    expect(text).not.toContain('/workspace')
+  })
+
+  test('anchors host grep at the storage root when runtime and storage roots differ', async () => {
+    const user = binding()
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-grep-'))
+    await writeFile(join(root, 'needle.txt'), 'needle')
+    const bundle = {
+      storageRoot: root,
+      workspace: workspace('/workspace'),
+      sandbox: { placement: 'local' },
+      fileSearch: {},
+      filesystemBindings: [user],
+    } as unknown as RuntimeBundle
+    const grep = buildFilesystemAgentTools(bundle).find((tool) => tool.name === 'grep')!
+    const result = await grep.execute({ path: '.', pattern: 'needle' }, { abortSignal: new AbortController().signal, toolCallId: 'grep-test' })
+    expect(result).toMatchObject({ isError: false })
+    expect(String(result.content?.[0]?.text ?? '')).toContain('needle.txt')
   })
 
   test('routes upload_file through primary binding policy', async () => {

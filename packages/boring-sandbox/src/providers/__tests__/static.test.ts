@@ -8,16 +8,18 @@ import {
 } from '../static'
 
 describe('static SandboxProviderV1 composition', () => {
-  test('maps only the three current runtime modes', () => {
+  test('maps the built-in runtime modes', () => {
     const providers = createStaticSandboxProvidersV1()
 
     expect(Object.keys(providers)).toEqual([
       'direct',
       'local',
+      'blaxel',
       'vercel-sandbox',
     ])
     expect(resolveStaticSandboxProviderV1('direct', providers).providerId).toBe('direct')
     expect(resolveStaticSandboxProviderV1('local', providers).providerId).toBe('bwrap')
+    expect(resolveStaticSandboxProviderV1('blaxel', providers).providerId).toBe('blaxel')
     expect(resolveStaticSandboxProviderV1('vercel-sandbox', providers).providerId).toBe('vercel-sandbox')
     expect(Object.values(providers).every(
       (provider) => provider.contractVersion === PROVIDER_CONTRACT_VERSION,

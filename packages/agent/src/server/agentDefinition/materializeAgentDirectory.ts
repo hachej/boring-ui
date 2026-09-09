@@ -20,6 +20,13 @@ export type AuthoredAgentSourceV1 = Readonly<{
   label?: string
   description?: string
   instructions: string
+  /**
+   * Computed identity of the compiled definition (instructions + knowledge
+   * bytes). The digest, not the version string, is the definition identity.
+   */
+  definitionDigest?: string
+  /** Host path of the package's optional `knowledge/` folder, when present. */
+  knowledgeDir?: string
 }>
 
 export interface MaterializeAgentDirectoryInput {
@@ -117,5 +124,7 @@ export async function materializeAgentDirectory(
     ...(definition.label === undefined ? {} : { label: definition.label }),
     ...(definition.description === undefined ? {} : { description: definition.description }),
     instructions,
+    definitionDigest: bundle.definitionDigest,
+    ...(bundle.knowledgeDir === undefined ? {} : { knowledgeDir: bundle.knowledgeDir }),
   })
 }

@@ -2,12 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { AgentCoreHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type {
   AgentRequestKey,
   AgentRequestLedger,
@@ -77,6 +78,23 @@ async function expectBounded(operation: () => Promise<void>): Promise<void> {
 }
 
 describe('Agent Host lifecycle', () => {
+  it('preserves a catalog definition version when no digest is supplied', async () => {
+    const fixture = await options({
+      agents: [{
+        agentTypeId: 'alpha',
+        definition: { instructions: 'alpha', label: 'Alpha', version: '1.2.3' },
+      }],
+    })
+    const created = await createAgentHost(fixture.value)
+
+    await expect(created.gateway.listAgents({ scope })).resolves.toEqual([{
+      agentTypeId: 'alpha',
+      label: 'Alpha',
+      definition: { version: '1.2.3' },
+    }])
+    await created.host.close()
+  })
+
   it('closes active unbounded subscriptions and disposes bindings, Environment, and adapter once', async () => {
     const fixture = await options()
     const created = await createAgentHost(fixture.value)
@@ -90,6 +108,56 @@ describe('Agent Host lifecycle', () => {
     await expect(created.gateway.listAgents({ scope })).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
     })
+  })
+
+  it('awaits later cleanup after an Environment failure and preserves the first error', async () => {
+    const fixture = await options()
+    const baseAdapter = fixture.value.runtimeModeAdapter
+    const firstError = new Error('Environment cleanup failed')
+    const disposeRuntime = vi.fn(async () => { throw firstError })
+    const disposeAdapter = vi.fn(async () => { throw new Error('adapter cleanup failed') })
+    const ledgerCloseStarted = deferred<void>()
+    const releaseLedgerClose = deferred<void>()
+    const closeLedger = vi.fn(async () => {
+      ledgerCloseStarted.resolve()
+      await releaseLedgerClose.promise
+      throw new Error('ledger cleanup failed')
+    })
+    const ledger = Object.assign(new InMemoryAgentRequestLedger(), { close: closeLedger })
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      runtimeModeAdapter: {
+        ...baseAdapter,
+        async create(ctx) {
+          const bundle = await baseAdapter.create(ctx)
+          return { ...bundle, disposeRuntime }
+        },
+        dispose: disposeAdapter,
+      },
+    })
+    await created.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'cleanup-errors' })
+
+    const closing = created.host.close()
+    const rejection = expect(closing).rejects.toBe(firstError)
+    let settled = false
+    const settlement = closing.then(() => { settled = true }, () => { settled = true })
+    await ledgerCloseStarted.promise
+    try {
+      expect(settled).toBe(false)
+      expect(disposeRuntime).toHaveBeenCalledOnce()
+      expect(disposeAdapter).toHaveBeenCalledOnce()
+      expect(closeLedger).toHaveBeenCalledOnce()
+    } finally {
+      releaseLedgerClose.resolve()
+    }
+    await rejection
+    await settlement
+    await expect(created.host.close()).rejects.toBe(firstError)
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+    expect(disposeAdapter).toHaveBeenCalledOnce()
+    expect(closeLedger).toHaveBeenCalledOnce()
   })
 
   it('bounds a stuck admitted effect by shutdownGraceMs and fences late completion', async () => {
@@ -125,6 +193,7 @@ describe('Agent Host lifecycle', () => {
         await releasePrepare.promise
         return await base.prepare(key, digest)
       },
+      markAdmissionRetryable: (key) => base.markAdmissionRetryable(key),
       acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
       beginEffect: (key) => base.beginEffect(key),
       reject: (key, failure) => base.reject(key, failure),
@@ -284,6 +353,13 @@ describe('Agent Host lifecycle', () => {
     expect(disposeRuntime).toHaveBeenCalledOnce()
     expect(disposeAdapter).toHaveBeenCalledOnce()
 
+    const reopened = new SqliteAgentRequestLedger(join(fixture.value.sessionRoot!, '.agent-request-ledger.sqlite'))
+    await expect(reopened.read(createRequestKey('harness-stuck'))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED } },
+    })
+    reopened.close()
+
     releaseHarness.resolve()
     await new Promise((resolve) => setTimeout(resolve, 20))
     await Promise.all([created.host.drain(), created.host.close()])
@@ -292,6 +368,80 @@ describe('Agent Host lifecycle', () => {
     await expect(created.gateway.listAgents({ scope })).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
     })
+  })
+
+  it('isolates a retryable runtime load failure without removing the Agent or its sibling', async () => {
+    let alphaLoads = 0
+    const fixture = await options({
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
+      harnessFactory: async (input) => {
+        if (input.systemPromptAppend === 'alpha' && alphaLoads++ === 0) {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'transient Agent application load failure',
+            { retryable: true },
+          )
+        }
+        return await createScriptedPiHarness(input)
+      },
+      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
+        identity: `runtime:${agentTypeId}`,
+        physicalBindingIdentity: `runtime:${agentTypeId}`,
+        resourceInputDigest: `runtime:${agentTypeId}`,
+        sessionNamespace: agentTypeId,
+      }),
+    })
+    const created = await createAgentHost(fixture.value)
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'alpha-load-fails',
+    })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      details: { retryable: true },
+    })
+    expect((await created.gateway.listAgents({ scope })).map((agent) => agent.agentTypeId)).toEqual(['alpha', 'beta'])
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'beta',
+      requestId: 'beta-still-live',
+    })).resolves.toMatchObject({ agentTypeId: 'beta' })
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'alpha-load-fails',
+    })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+
+    await created.host.close()
+  })
+
+  it('reclaims the same request key after a plain Error runtime preflight failure', async () => {
+    let loads = 0
+    const fixture = await options({
+      harnessFactory: async (input) => {
+        if (loads++ === 0) throw new Error('transient plain runtime load failure')
+        return await createScriptedPiHarness(input)
+      },
+    })
+    const created = await createAgentHost(fixture.value)
+    const input = {
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'plain-error-same-key',
+    }
+
+    await expect(created.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      details: { retryable: true },
+    })
+    await expect(created.gateway.createSession(input)).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    expect(loads).toBe(2)
+
+    await created.host.close()
   })
 
   it('keeps gateway.close facade-local and idempotent', async () => {

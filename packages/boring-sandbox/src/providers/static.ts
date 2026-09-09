@@ -7,6 +7,10 @@ import {
   type SandboxProviderV1,
 } from '../shared/providerV1'
 import {
+  createBlaxelSandboxProvider,
+  type BlaxelSandboxProviderOptions,
+} from './blaxel/createBlaxelSandboxProvider'
+import {
   createBwrapSandboxProvider,
   type BwrapSandboxProviderOptions,
 } from './bwrap/createBwrapProvider'
@@ -26,6 +30,7 @@ import {
 export interface StaticSandboxProviderOptionsV1 {
   direct?: DirectSandboxProviderOptions
   bwrap?: BwrapSandboxProviderOptions
+  blaxel?: BlaxelSandboxProviderOptions
   vercelSandbox?: VercelSandboxProviderOptions
   remoteWorker?: RemoteWorkerSandboxProviderOptionsV1
 }
@@ -33,6 +38,7 @@ export interface StaticSandboxProviderOptionsV1 {
 export type StaticSandboxProvidersV1 = Readonly<{
   direct: SandboxProviderV1
   local: SandboxProviderV1
+  blaxel: SandboxProviderV1
   'vercel-sandbox': SandboxProviderV1
   'remote-worker'?: SandboxProviderV1
 }>
@@ -43,6 +49,7 @@ export function createStaticSandboxProvidersV1(
   const providers: StaticSandboxProvidersV1 = Object.freeze({
     direct: createDirectSandboxProvider(options.direct),
     local: createBwrapSandboxProvider(options.bwrap),
+    blaxel: createBlaxelSandboxProvider(options.blaxel),
     'vercel-sandbox': createVercelSandboxProvider(options.vercelSandbox),
     ...(options.remoteWorker
       ? { 'remote-worker': createRemoteWorkerSandboxProviderV1(options.remoteWorker) }

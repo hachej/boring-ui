@@ -73,8 +73,11 @@ export {
   QUALIFICATION_BUNDLE_SCHEMA_VERSION,
 } from "./qualificationBundle";
 export type {
+  DisposableSandboxProviderProfileV1,
+  DisposableSandboxProviderV1,
   ExtractedSandboxProviderIdV1,
   SandboxPairHealthV1,
+  SandboxProviderCreateCleanupDebtV1,
   SandboxProviderCreateContextV1,
   SandboxProviderInvalidateContextV1,
   SandboxProviderV1,
@@ -86,7 +89,11 @@ export type {
   SandboxRuntimeModeIdV1,
   WorkspaceSandboxPairV1,
 } from "./providerV1";
-export { SandboxProviderError } from "./providerV1";
+export {
+  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
+  SandboxProviderError,
+  isDisposableSandboxProviderV1,
+} from "./providerV1";
 export type {
   RemoteWorkerBindingReceiptPayloadV1,
   RemoteWorkerBindingReceiptV1,
@@ -107,10 +114,13 @@ export type {
 } from "./remoteWorkerProtocolV1";
 export {
   REMOTE_WORKER_ERROR_CODES_V1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
   REMOTE_WORKER_HEADERS_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
+  REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   REMOTE_WORKER_RUNTIME_CWD,
+  negotiateRemoteWorkerHealthCapabilitiesV1,
   RemoteWorkerBindingReceiptPayloadSchemaV1,
   RemoteWorkerBindingReceiptSchemaV1,
   RemoteWorkerCapabilityClaimsSchemaV1,

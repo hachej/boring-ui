@@ -2,12 +2,12 @@
 github: https://github.com/hachej/boring-ui/issues/1127
 issue: 1127
 state: external-channels reframe (r4.1) — generic channel registry + descriptor mechanism, WhatsApp as v1 consumer; adversarial-review reframe folded in (2026-08-11): PILOT = provisioned bindings / fail-closed; self-serve signup DEMOTED to Phase 2 but FEASIBLE NOW in two forms (phone-native via better-auth phoneNumber plugin tier-b; email-anchored via accountLinking) per authoritative capability check; better-auth claims corrected against code; descriptor = rendering-only + adapter-owned opaque conversation key; slice 6 verdict = build thin (seed Flue edge + Hermes reference); ready for owner gate merge
-updated: 2026-08-11
+updated: 2026-09-04
 supersedes: docs/issues/1127/plan.md (r2.1) — for the channels lane only
 flag: BORING_AGENT_CHANNELS (from r2.1; channel registry + adapter host are dead code when off)
 ---
 
-# gh-1127 — External Channels — execution plan (WhatsApp as v1 consumer) (r4)
+# gh-1127 — External Channels — execution plan (WhatsApp as v1 consumer) (r4.1)
 
 The #1127 channels epic, matured from a WhatsApp-specific lane into a **generic
 channel registry**. A "channel" is any external surface that drives an agent
@@ -75,7 +75,7 @@ the four new lanes.
 
 | Ruling | Effect on this plan |
 | --- | --- |
-| **Channels are a REGISTRY of typed descriptors**, not WhatsApp-specific code | New §0.5. A channel descriptor `{ id, label, icon, sessionsReadOnlyInWorkspace, dialect/formatting, isIdentityProvider }` drives all per-channel workspace behavior; sessions carry an `originChannel` (this **is** the implementation of the already-planned "channel = typed session property", §6.4). |
+| **Channels are a REGISTRY of typed descriptors**, not WhatsApp-specific code | New §0.5. A channel descriptor `{ id, label, icon, sessionsReadOnlyInWorkspace, dialect/formatting, canOriginateIdentity }` drives all per-channel workspace behavior; sessions carry an `originChannel` (this **is** the implementation of the already-planned "channel = typed session property", §6.4). |
 | **A channel has TWO ORTHOGONAL capabilities:** (a) interaction surface (chat with the agent — ALL channels); (b) identity provider (sign up / auth — only some) | New §0.5. WhatsApp = both; Slack/email/pi-excel = interaction only. This split is the core design insight — made explicit so identity work (§6.6, slice 1c) is understood as the *identity-provider capability of the WhatsApp consumer*, not a channel-universal requirement. |
 | **Session pane renders icon + read-only badge PURELY from the descriptor** | Re-anchors §6.4/§6.5: no per-channel UI code. `sessionsReadOnlyInWorkspace` and `icon` are descriptor fields the pane reads; the read-only reopen (§6.5) is a **generic descriptor property**, not WhatsApp UI. |
 | **WhatsApp = the ONE fully-built consumer for v1; Slack/email/pi-excel = future consumers, NOTED ONLY, zero implementation scope** | New §0.6. No work items/slices for future consumers. `demo/pi-excel-coupling` exists as a prior demo branch validating the pattern. |
@@ -89,8 +89,8 @@ These are honesty/architecture fixes, not cosmetic.
 | Finding | Fix applied |
 | --- | --- |
 | **R1** — pilot's "unknown sender = signup" (old slice 1c) contradicts 1a's fail-closed | **Pilot = provisioned bindings, fail-closed** (new §0.7). Open signup demoted to Phase 2 (§6.6). |
-| **R2/R3** — false "just a magic-link delivery adapter / provider #4 is a config line" claims | Corrected against code + an authoritative better-auth capability check (§6.6, `scratchpad/better-auth-phone-capability.md`). Two **feasible** self-serve flows, neither a config line: **phone-native** via the `phoneNumber` plugin (`signUpOnVerification` + `sendOTP`→WhatsApp + `getTempEmail` placeholder; tier (b), moderate — NOT hard/deferred), and **email-anchored** via `accountLinking` (currently unconfigured — `grep accountLinking packages/core/src` → zero hits). magic-link is a separate email-keyed plugin and does not block phone-only auth. |
-| **R4** — v1 merge flow asserted, not specified | "Replace placeholder email with real email" (phone-native, at first payment) is a plain **user-update, not a merge**. The genuine merge case (two independent accounts) is a narrow tail with no better-auth primitive — detect + support-assisted, never automated; linking email onto a phone-first account is custom glue (accountLinking matches on email, not phone). Pilot needs none of it. |
+| **R2/R3** — false "just a magic-link delivery adapter / provider #4 is a config line" claims | Corrected against code + the recovered better-auth composition report (§6.6, `references/betterauth-spike-report.md`). Two **feasible** self-serve flows, neither a config line: **phone-native** via the `phoneNumber` plugin (`signUpOnVerification` + `sendOTP`→WhatsApp + `getTempEmail` placeholder; tier (b), moderate — NOT hard/deferred), and **email-anchored** via `accountLinking` (currently unconfigured — `grep accountLinking packages/core/src` → zero hits). magic-link is a separate email-keyed plugin and does not block phone-only auth. |
+| **R4** — v1 merge flow asserted, not specified | “Replace placeholder email with real email” (phone-native, at first payment) is a stateful **`changeEmail` workflow, not a merge and not `updateUser`**. The genuine merge case (two independent accounts) is a narrow tail with no better-auth primitive — detect + support-assisted, never automated; linking email onto a phone-first account is custom glue (`accountLinking` does not attach phone). Pilot needs none of it. |
 | **R5** — open signup is an unpriced abuse surface | Abuse controls moved to a **Phase-2** §7.2 subsection; the pilot's fail-closed posture (§0.7) avoids the surface entirely. |
 | **R6** — descriptor doesn't distinguish channels; binding key is WhatsApp-shaped | Descriptor reframed as **rendering-only** contract; delivery/threading/credentials are **adapter-owned**; binding key is an **opaque adapter-owned conversation key** (§0.5.1, §0.5.5). |
 | **R7** — `isIdentityProvider` boolean does no work, `web:false` self-contradicts | Renamed `canOriginateIdentity`, given **teeth** (gates whether inbound may reach an identity route), **web=true** (§0.5.1/§0.5.3). |
@@ -257,9 +257,9 @@ removes the "unknown sender = signup" ruling from the **pilot** path.
 
 **Self-serve product signup is Phase 2 — and it is FEASIBLE NOW in two forms.**
 Self-serve signup is moved **off the pilot critical path**, but it is not a hard
-build. The authoritative better-auth capability check
-(`scratchpad/better-auth-phone-capability.md`, verified against docs +
-`@better-auth/core` source) establishes **two feasible flows** (§6.6):
+build. The recovered better-auth composition report
+(`references/betterauth-spike-report.md`, with its reproducibility limitation
+stated explicitly) establishes **two feasible flows** (§6.6):
 **Flow 1 — phone-native** (WhatsApp-first) signup via better-auth's `phoneNumber`
 plugin (`signUpOnVerification` + `sendOTP` over WhatsApp + `getTempEmail`
 placeholder, replaced by the real email at first payment) — **tier (b),
@@ -273,7 +273,7 @@ product signup = phone-native OR email-anchored, both feasible now (Phase 2).**
 | Inbound from unknown number | fail-closed, no session | phone-OTP signup from thread (`phoneNumber` plugin) | signed-token → web email signup, link WhatsApp |
 | Identity anchor | pre-provisioned account | **phone** + `getTempEmail` placeholder | **email** (native today) |
 | Enabling work | bindings only | add `phoneNumber` plugin + `sendOTP`→WhatsApp (tier b, moderate) | turn on `accountLinking` (§6.6) |
-| Real email | at first payment (replaces placeholder — plain user-update) | day one | at first payment |
+| Real email | already present on the provisioned account | at first payment (`changeEmail`, not `updateUser`) | day one |
 | Abuse controls | rate-limited rejection | account-minting caps (§7.2 Phase 2) | account-minting caps (§7.2 Phase 2) |
 | `canOriginateIdentity` (WhatsApp) | **closed** | opened (mints phone account) | opened (mints email account) |
 
@@ -473,9 +473,10 @@ D25/D26/D28/D29 rejected four times."
 ### 2.2 What we ALREADY took: the durable event store
 
 Our `SqliteEventStreamStore` **is a port of Flue's code**.
-`.../work/T1-durable-events/TODO.md:10`: "Reference impl to adapt (Apache-2.0
-…): Flue `packages/runtime/src/runtime/event-stream-store.ts` (388 LOC) +
-`handle-stream-routes.ts` (594 LOC)." We renamed `flue_*` → `boring_event_*`
+`docs/issues/807/runtime-refactor/work/T1-durable-events/TODO.md:14,57`
+records the reference implementation and transaction requirement: Flue
+`packages/runtime/src/runtime/event-stream-store.ts` (388 LOC) +
+`handle-stream-routes.ts` (594 LOC). We renamed `flue_*` → `boring_event_*`
 and fixed a real bug in the original: "Flue's `appendEvent` runs two
 non-transactional statements… Wrap both in one transaction. Delete Flue's 'safe
 for single-process' comment."
@@ -573,9 +574,12 @@ surfaced by the owner 2026-08-11. Four takes:
 
 Two ratified-ish positions conflict, and neither cites the other:
 
-- **`docs/DECISIONS.md:302` decision 3** (ratified): "Channel/surface packages
-  follow the **Flue-style package model** rather than `boring-agent` subpaths"
-  — i.e. `packages/channels/<name>`.
+- **`docs/DECISIONS.md` Decision 19, locked item 3** (ratified):
+  "Channel/surface packages follow the **Flue-style package model** rather than
+  `boring-agent` subpaths" — i.e. `packages/channels/<name>`. Decision 19 now
+  carries a **“Current scope: Decision 28…”** banner that supersedes its
+  dependency details while retaining package layering and named-consumer
+  principles; this plan narrows only the retained surface-package placement.
 - **`plan.md` r2.1 open question 1** (review-endorsed, owner-ungated):
   "`packages/agent/src/server/channels/`".
 
@@ -590,12 +594,14 @@ The split is not a compromise; it follows from evidence:
 1. It calls `HarnessPiChatService` directly and uses the event store's
    `subscribe` seam, which is an **in-process listener** (r2.1 decision 5:
    "A separate adapter process is not 'add workers later': it is a redesign").
-2. It mints `AuthorizedAgentScope` — a **branded type** whose only legitimate
-   minting authority is the host (`agent-host/types.ts:307`). A separate package
+2. It mints `AuthorizedAgentScope` — a trusted scope whose only legitimate
+   minting authority is the host (`shared/gateway/types.ts:45`; consumed by
+   `agent-host/types.ts`). A separate package
    minting scopes would either export the brand (unacceptable) or go through
    HTTP with its own tokens (the redesign above).
 3. It needs `sessionKey(ctx, id)` to compute the stream path. That method is
-   **private** today (`harnessPiChatService.ts:944`), and r2.1 already requires
+   **private** today (`pi-chat/harnessPiChatService.ts:1412` at this plan's
+   landing baseline), and r2.1 already requires
    "a **new exported resolver on the pi-chat service**". Exporting a resolver to
    an in-package consumer is a small seam; exporting it cross-package widens the
    public API surface for one caller.
@@ -1065,11 +1071,12 @@ workspace. **Everything below this line is Phase 2, not pilot.**
 
 #### Phase 2 (product self-serve): TWO feasible signup flows — both buildable now
 
-> **Spike findings (2026-08-11) — read before this subsection.** An isolated
-> better-auth composition SPIKE
-> (`references/betterauth-spike-report.md`) ran better-auth **1.6.26** (npm
-> resolves `^1.6.3`→`1.6.26`) through all five identity flows against a real
-> SQLite database. It **corrects several assumptions that earlier drafts of this
+> **Spike findings (2026-08-11) — read before this subsection.** The recovered
+> better-auth composition report
+> (`references/betterauth-spike-report.md`) records a better-auth **1.6.26** run
+> (npm resolved `^1.6.3`→`1.6.26`) through all five identity flows against a
+> real SQLite database. Its original harness was not committed, so Phase 2 must
+> recreate and automate the flows before implementation. It **corrects several assumptions that earlier drafts of this
 > section got wrong**, and its verdicts are folded in below. The headline
 > corrections: (a) `account.accountLinking` does **NOT** link phone to email —
 > it is social/OAuth-only, and phone lives on the `user` row, not as an account
@@ -1086,9 +1093,9 @@ Self-serve signup is **off the pilot critical path** but is **feasible now** in
 **two** forms — the product can offer whichever fits the discovery path. This
 supersedes the r4 draft's false "provider #4 / just a delivery adapter" framing
 **and** an earlier over-correction that called phone-first "genuinely hard, maybe
-never". The authoritative better-auth capability check
-(`scratchpad/better-auth-phone-capability.md`, verified against docs +
-`@better-auth/core` source `db/get-tables.ts`) settles it: **phone-native signup
+never". The recovered better-auth composition report
+(`references/betterauth-spike-report.md`) plus the verified
+`@better-auth/core` `db/get-tables.ts` schema settle it: **phone-native signup
 is a tier-(b), moderate build via the `phoneNumber` plugin** — not hard, not
 deferred.
 
@@ -1313,7 +1320,7 @@ on the same account model, at honest effort cost.
 #### Consumers of this identity mechanism
 
 The identity **mechanism** — the two-door signup, the reconciliation/merge rule,
-the four auth additions, and the progressive-email ladder — **lives here**, in
+the six auth additions, and the progressive-email ladder — **lives here**, in
 the single WhatsApp plan, as the WhatsApp channel's identity-provider capability.
 Vertical **product** plans do not re-specify it; they **consume** it and
 reference this section:
@@ -1447,8 +1454,9 @@ does not discover these constraints late. Grounded in
   required, §6.6 ladder) triggers a **Stripe Checkout** session, which collects
   the billing email and — for business customers — the **VAT/UID** number. This
   keeps signup zero-friction and defers PII to when the customer chooses to pay.
-- **Swiss QR-bill is mandatory for CH invoicing.** Swiss invoices must carry a
-  **QR-bill** (standardized payment slip). Use the **`swissqrbill`** library;
+- **Swiss QR-bill is the required payment-slip format when a Swiss invoice uses
+  a payment slip.** It replaced the legacy slips; invoices settled by other
+  means do not inherently require one. Use the **`swissqrbill`** library;
   it embeds the QR-IBAN, creditor reference, and amount.
 - **Swiss VAT = 8.1%** (standard rate, 2024+); invoices display the **UID**
   (`CHE-###.###.###`, VAT-registered form). Stripe Tax / Checkout collects and
@@ -1470,7 +1478,28 @@ so Phase-2 progressive-email collection (§6.6) lands on the right ladder.
 
 ## 8. Slices
 
-**Pilot pipeline:** `1a-i → 1a-ii → 1a-iii → 1b → {3, 4, 5, 7} → 6`; slices
+### Adopted execution subset (2026-09-04)
+
+The epic branch adopts the smallest owner-requested pilot path from the broader
+r4.1 plan. The dependency graph is:
+
+```text
+plan landing (.9) → channel core/bindings/inbound (.2)
+                 → durable tail/outbound/24h (.3)
+                    ├─ in-chat owner approval (.5)
+                    └─ thin Cloud API adapter + app-host wiring (.8)
+owner Meta review (.1) runs in parallel and gates only the live pilot receipt
+```
+
+Slices 1a-i/ii/iii are combined at the `.2` Bead's bounded core seam. Deployment
+wiring from historical slice 2 is included with `.8`. Artifact drop, inbound
+media, descriptor-driven workspace UI, self-serve identity, and two-way takeover
+(slices 4, 5, 7, 1c, and 8) are **not adopted for this execution epic**; their
+sections below remain design context, not dispatch authority. The current Bead
+graph is authoritative for execution and preserves fixture-backed progress while
+owner-owned Meta approval runs in parallel.
+
+**Full r4.1 design pipeline (historical/context):** `1a-i → 1a-ii → 1a-iii → 1b → {3, 4, 5, 7} → 6`; slices
 3/4/5/7 are parallel after 1b. **Slice 1c (identity) is Phase 2**, off the pilot
 critical path. Slice 8 is **v2**.
 
@@ -1549,7 +1578,7 @@ existing `workspaceId`; flag off → byte-identical host.
   plugin (`signUpOnVerification`); deliver OTP via `sendOTP`→WhatsApp; use
   `getTempEmail(phoneNumber)` for the placeholder email (core `user.email` is
   required+unique per `db/get-tables.ts`); the placeholder is **replaced by the
-  real email at first payment** (plain user-update, §7.6 ladder).
+  real email at first payment** (`changeEmail` workflow, not `updateUser`; §7.6 ladder).
 - **Flow 2 — email-anchored:** enable + configure `account.accountLinking`
   (currently absent from `createAuth.ts`); Flow 2a = LP email signup → link
   WhatsApp via nao's linking-code; Flow 2b = unknown-sender bot → **signed

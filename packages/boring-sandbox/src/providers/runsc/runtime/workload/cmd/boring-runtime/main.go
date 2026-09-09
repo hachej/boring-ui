@@ -14,9 +14,9 @@ const (
 	maxCredentialBytes        = 65_536
 	maxCredentialFrameBytes   = 128 * 1024
 	maxCredentialNameBytes    = 256
-	maxWorkspaceEnvelopeBytes = 8 * 1024 * 1024
+	maxWorkspaceEnvelopeBytes = 15 * 1024 * 1024
 	maxTextTransferBytes      = 6 * 1024 * 1024
-	maxBinaryTransferBytes    = maxTextTransferBytes / 4 * 3
+	maxBinaryTransferBytes    = 10 * 1024 * 1024
 	maxOutputBytes            = 4 * 1024 * 1024
 	maxEnvEntries             = 128
 	maxEnvValueBytes          = 64 * 1024
@@ -34,6 +34,7 @@ const (
 	resolveBeneath      = 0x08
 
 	codePathUnsafe           = "REMOTE_WORKER_PATH_UNSAFE"
+	codeAlreadyExists        = "REMOTE_WORKER_ALREADY_EXISTS"
 	codePrimitiveUnavailable = "REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE"
 	codeQuotaExceeded        = "REMOTE_WORKER_QUOTA_EXCEEDED"
 )

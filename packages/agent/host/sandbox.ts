@@ -1,6 +1,12 @@
 import {
+  createBlaxelSandboxProvider,
+  BLAXEL_WORKSPACE_ROOT,
+} from '@hachej/boring-sandbox/providers/blaxel'
+import {
   buildBwrapArgs,
   createBwrapSandboxProvider,
+  type BwrapArgsOptions,
+  type BwrapSandboxProviderOptions,
 } from '@hachej/boring-sandbox/providers/bwrap'
 import {
   createDirectSandboxProvider,
@@ -32,9 +38,12 @@ import type { AgentRuntimeHostOperations } from '../src/server/runtime/runtimeHo
 import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from '../src/server/runtime/mode'
 import { createDirectModeAdapter } from '../src/server/runtime/modes/direct'
 import { createLocalModeAdapter } from '../src/server/runtime/modes/local'
+import { createBlaxelSandboxModeAdapter } from '../src/server/runtime/modes/blaxel'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 
 export {
+  createBlaxelSandboxProvider,
+  BLAXEL_WORKSPACE_ROOT,
   buildBwrapArgs,
   createBwrapSandboxProvider,
   createNodeWorkspace,
@@ -75,6 +84,39 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
+  readonly bwrap?: BwrapSandboxProviderOptions
+}
+
+type ResolvedBwrapPolicy = Required<Pick<
+  BwrapArgsOptions,
+  'namespaceProfile' | 'network' | 'dropAllCapabilities'
+>>
+
+function resolveBwrapPolicy(options: BwrapSandboxProviderOptions | undefined): ResolvedBwrapPolicy {
+  const sandbox = options?.sandbox
+  const namespaceProfile = sandbox?.namespaceProfile ?? 'full'
+  return {
+    namespaceProfile,
+    network: sandbox?.network ?? 'shared',
+    // Docker mode runs outside a nested user namespace. Never allow the outer
+    // container's SYS_ADMIN capability to reach any local execution path.
+    dropAllCapabilities: namespaceProfile === 'docker' || sandbox?.dropAllCapabilities === true,
+  }
+}
+
+function withBwrapPolicy(
+  runtimeHost: AgentRuntimeHostOperations,
+  policy: ResolvedBwrapPolicy,
+): AgentRuntimeHostOperations {
+  return {
+    ...runtimeHost,
+    buildBwrapArgs(workspaceRoot, executionOptions) {
+      return runtimeHost.buildBwrapArgs(workspaceRoot, {
+        ...executionOptions,
+        ...policy,
+      })
+    },
+  }
 }
 
 /** Built-in runtime layout root without exposing provider package constants to consumers. */
@@ -82,11 +124,13 @@ export function resolveBuiltinRuntimeLayoutRoot(
   mode: BuiltinRuntimeModeId,
   workspaceRoot: string,
 ): string {
-  return mode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : workspaceRoot
+  return mode === 'blaxel'
+    ? BLAXEL_WORKSPACE_ROOT
+    : mode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : workspaceRoot
 }
 
 export function createSandboxRuntimeModeAdapter(
-  mode: BuiltinRuntimeModeId,
+  mode: RuntimeModeId,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
   switch (mode) {
@@ -95,11 +139,20 @@ export function createSandboxRuntimeModeAdapter(
         provider: createDirectSandboxProvider(),
         runtimeHost: agentSandboxRuntimeHostOperations,
       })
-    case 'local':
+    case 'local': {
+      const policy = resolveBwrapPolicy(options.bwrap)
+      const runtimeHost = withBwrapPolicy(agentSandboxRuntimeHostOperations, policy)
       return createLocalModeAdapter({
-        provider: createBwrapSandboxProvider(),
-        runtimeHost: agentSandboxRuntimeHostOperations,
+        provider: createBwrapSandboxProvider({
+          ...options.bwrap,
+          sandbox: {
+            ...options.bwrap?.sandbox,
+            ...policy,
+          },
+        }),
+        runtimeHost,
       })
+    }
     case 'vercel-sandbox':
       return createVercelSandboxModeAdapter({
         provider: createVercelSandboxProvider({
@@ -111,6 +164,13 @@ export function createSandboxRuntimeModeAdapter(
         remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
         workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
       })
+    case 'blaxel':
+      return createBlaxelSandboxModeAdapter({
+        provider: createBlaxelSandboxProvider({
+          ...(options.sandboxHandleStore ? { handleStore: options.sandboxHandleStore } : {}),
+        }),
+        runtimeHost: agentSandboxRuntimeHostOperations,
+      })
     default:
       throw new Error(
         `Runtime mode "${String(mode)}" has no built-in adapter. Pass runtimeModeAdapter to use a custom sandbox mode.`,
@@ -119,5 +179,5 @@ export function createSandboxRuntimeModeAdapter(
 }
 
 export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
-  return createSandboxRuntimeModeAdapter(mode as BuiltinRuntimeModeId)
+  return createSandboxRuntimeModeAdapter(mode)
 }

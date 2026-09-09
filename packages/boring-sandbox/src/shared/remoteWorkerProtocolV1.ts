@@ -8,11 +8,33 @@ import { ProviderCredentialRefSchemaV1 } from "./invocationSecretsV1";
 export const REMOTE_WORKER_PROTOCOL_VERSION = "boring.remote-worker.v1";
 export const REMOTE_WORKER_RUNTIME_CWD = "/workspace";
 export const REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS = 5 * 60 * 1000;
+/** Accommodates one 10 MiB binary after base64 and JSON envelope expansion. */
+export const REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1 = 15 * 1024 * 1024;
+export const REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1 =
+  "exclusive-binary-create";
+
+export function negotiateRemoteWorkerHealthCapabilitiesV1(
+  requestedCapabilitiesHeader: string | undefined,
+): { negotiatedCapabilities?: Array<typeof REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1> } {
+  const requestedCapabilities = requestedCapabilitiesHeader
+    ?.split(",")
+    .map((value) => value.trim());
+  return requestedCapabilities?.includes(
+    REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+  )
+    ? {
+        negotiatedCapabilities: [
+          REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+        ],
+      }
+    : {};
+}
 
 export const REMOTE_WORKER_HEADERS_V1 = Object.freeze({
   capability: "x-boring-internal-token",
   requestId: "x-boring-request-id",
   protocolVersion: "x-boring-protocol-version",
+  requestedCapabilities: "x-boring-requested-capabilities",
 } as const);
 
 export const REMOTE_WORKER_ERROR_CODES_V1 = Object.freeze({
@@ -43,6 +65,7 @@ export const REMOTE_WORKER_ERROR_CODES_V1 = Object.freeze({
   incompleteCleanup: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
   dockerCommandFailed: "REMOTE_WORKER_DOCKER_COMMAND_FAILED",
   pathUnsafe: "REMOTE_WORKER_PATH_UNSAFE",
+  alreadyExists: "REMOTE_WORKER_ALREADY_EXISTS",
   pathPrimitiveUnavailable: "REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE",
   quotaExceeded: "REMOTE_WORKER_QUOTA_EXCEEDED",
   secretReferenceRejected: "REMOTE_WORKER_SECRET_REFERENCE_REJECTED",
@@ -55,7 +78,8 @@ export const REMOTE_WORKER_ERROR_CODES_V1 = Object.freeze({
 const opaqueIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const envNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const sha256Pattern = /^sha256:[a-f0-9]{64}$/;
-const maxTransferChars = 6 * 1024 * 1024;
+// A 10 MiB binary expands to roughly 13.34 MiB as base64.
+const maxTransferChars = 14 * 1024 * 1024;
 const maxOutputBytes = 4 * 1024 * 1024;
 const maxInvocationTimeoutMs = 15 * 60 * 1000;
 const maxIdleTimeoutMs = 30 * 60 * 1000;
@@ -128,6 +152,10 @@ export const RemoteWorkerHealthResponseSchemaV1 = z
       .array(z.enum(["fs", "events", "exec", "renew", "delete"]))
       .length(5)
       .refine((values) => new Set(values).size === values.length),
+    negotiatedCapabilities: z
+      .array(z.literal(REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1))
+      .max(1)
+      .optional(),
   })
   .strict();
 
@@ -230,6 +258,13 @@ export const RemoteWorkerWorkspaceOperationSchemaV1 = z.discriminatedUnion(
     z
       .object({
         op: z.literal("writeBinaryFile"),
+        path: workspacePath,
+        dataBase64: z.string().max(maxTransferChars),
+      })
+      .strict(),
+    z
+      .object({
+        op: z.literal("createBinaryFile"),
         path: workspacePath,
         dataBase64: z.string().max(maxTransferChars),
       })

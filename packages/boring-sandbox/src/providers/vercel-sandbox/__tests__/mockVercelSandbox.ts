@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile, realpath, lstat } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile, realpath, lstat, copyFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import type { Writable } from 'node:stream'
@@ -15,6 +16,7 @@ interface WriteInput {
 
 export interface MockVercelSandboxHarness {
   sandbox: VercelSandbox
+  hostRoot: string
   cleanup(): Promise<void>
   lastWriteFiles: Array<{ path: string; content: Uint8Array }>
 }
@@ -161,6 +163,12 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         return emitResult(0, `${normalizedScript.slice(5)}\n`, '')
       }
 
+      if (normalizedScript.startsWith('rm -f -- ')) {
+        const targetPath = normalizedScript.slice('rm -f -- '.length).trim().replace(/^'(.*)'$/, '$1')
+        await rm(toHostPath(hostRoot, targetPath), { force: true })
+        return emitResult(0, '', '')
+      }
+
       if (script.startsWith('node -e ')) {
         const writeMatch = script.match(/\s'((?:\/workspace|\/vercel\/sandbox)[^']*)'\s'([^']*)'$/)
         const readOrStatMatch = script.match(/\s'((?:\/workspace|\/vercel\/sandbox)[^']*)'$/)
@@ -170,6 +178,33 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
 
         try {
           const hostPath = toHostPath(hostRoot, pathArg)
+          if (script.includes('nearestExistingAncestor')) {
+            const targetHostPath = toHostPath(hostRoot, dataArg ?? '')
+            try {
+              if ((await lstat(targetHostPath)).isSymbolicLink()) {
+                return emitResult(0, JSON.stringify({ ok: false, reason: 'symlink' }), '')
+              }
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+            }
+            let ancestor = targetHostPath
+            for (;;) {
+              try {
+                await lstat(ancestor)
+                break
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+                const parent = dirname(ancestor)
+                if (parent === ancestor) throw error
+                ancestor = parent
+              }
+            }
+            const rootPath = await realpath(hostRoot)
+            const resolvedAncestor = await realpath(ancestor)
+            const rel = relative(rootPath, resolvedAncestor)
+            const ok = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+            return emitResult(0, JSON.stringify(ok ? { ok: true } : { ok: false, reason: 'escape' }), '')
+          }
           if (script.includes('lstatSync')) {
             return emitResult(0, JSON.stringify((await lstat(hostPath)).isSymbolicLink()), '')
           }
@@ -179,6 +214,14 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
             const targetPath = await realpath(toHostPath(hostRoot, targetMatch?.[2] ?? pathArg))
             const rel = relative(rootPath, targetPath)
             return emitResult(0, JSON.stringify(rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))), '')
+          }
+          if (script.includes('copyFileSync')) {
+            try {
+              await copyFile(hostPath, toHostPath(hostRoot, dataArg ?? ''), constants.COPYFILE_EXCL)
+              return emitResult(0, JSON.stringify({ ok: true }), '')
+            } catch (error) {
+              return emitResult(0, JSON.stringify({ ok: false, code: (error as NodeJS.ErrnoException).code }), '')
+            }
           }
           if (script.includes('fs.writeFileSync')) {
             await mkdir(dirname(hostPath), { recursive: true })
@@ -209,6 +252,7 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
 
   return {
     sandbox,
+    hostRoot,
     lastWriteFiles,
     async cleanup() {
       await rm(hostRoot, { recursive: true, force: true })

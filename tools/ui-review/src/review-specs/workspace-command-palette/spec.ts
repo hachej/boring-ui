@@ -1,8 +1,9 @@
 import { createRequire } from "node:module"
 import { resolve } from "node:path"
 import { expect } from "@playwright/test"
-import type { UiReviewSpec } from "../../core/reviewSpec"
+import type { UiReviewExplorationState, UiReviewSpec } from "../../core/reviewSpec"
 import type { UiReviewViewport } from "../../core/contracts"
+import { hexadecimalHammingDistance } from "../../core/imageHash"
 import { observeBrowserDocument } from "../../core/browserObservation"
 import { observeCommandPaletteSurface } from "./browserObservation"
 import { COMMAND_PALETTE_HARD_GATE_CONTRACT, evaluateCommandPaletteHardGates, validateCommandPaletteHardGateReport, type UiHardGateSnapshot } from "./hardGates"
@@ -10,12 +11,12 @@ import { COMMAND_PALETTE_HARD_GATE_CONTRACT, evaluateCommandPaletteHardGates, va
 const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min.js")
 const viewports: UiReviewViewport[] = [
   { name: "desktop", width: 1440, height: 900, deviceScaleFactor: 1 },
-  { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 },
+  { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1, hasTouch: true },
 ]
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v1",
+  specRevision: "workspace-command-palette-v5",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -37,6 +38,9 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
     }),
     ready: async (page, timeoutMs) => {
       await expect(page.getByRole("main", { name: "Chat" })).toBeVisible({ timeout: timeoutMs })
+      // The dock stage is code-split; wait for either it or the compact single
+      // pane so no checkpoint ever captures the chunk's Suspense fallback.
+      await expect(page.locator('.dv-chat-stage, [data-boring-workspace-part="mobile-chat-pane"]').first()).toBeVisible({ timeout: timeoutMs })
     },
   },
   viewports,
@@ -76,27 +80,108 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         }),
         page.evaluate(observeCommandPaletteSurface, { checkpoint }),
       ])
-      return { stateId, viewport: { width: viewport.width, height: viewport.height, mobile: viewport.name === "mobile" }, axeViolations, commandPalette, ...errors, ...observed }
+      return {
+        stateId,
+        viewport: {
+          width: viewport.width,
+          height: viewport.height,
+          compact: viewport.name === "mobile",
+          coarsePointer: viewport.hasTouch === true,
+        },
+        axeViolations,
+        commandPalette,
+        ...errors,
+        ...observed,
+      }
     },
     evaluate: (snapshot) => evaluateCommandPaletteHardGates(snapshot as UiHardGateSnapshot),
     validate: validateCommandPaletteHardGateReport,
   },
   exploration: {
     bombadilSpecPath: resolve(import.meta.dirname, "bombadil.spec.ts"),
+    normalizeReplayState: (state) => {
+      const palette = state.palette
+      if (!palette || typeof palette !== "object" || Array.isArray(palette)) return state
+      const durablePalette = { ...palette } as Record<string, unknown>
+      delete durablePalette.workspaceReady
+      delete durablePalette.lastActionWasPaletteOpen
+      delete durablePalette.lastActionWasNavigationOpen
+      delete durablePalette.lastActionWasInitial
+      durablePalette.controls = Array.isArray(durablePalette.controls)
+        ? durablePalette.controls.flatMap((control) => (
+            control && typeof control === "object" && !Array.isArray(control)
+              && typeof (control as Record<string, unknown>).name === "string"
+              ? [(control as Record<string, unknown>).name]
+              : []
+          ))
+        : []
+      return { ...state, palette: durablePalette }
+    },
     ready: async (page, timeoutMs) => {
       await Promise.all([
         expect(page.getByRole("main", { name: "Chat" })).toBeVisible({ timeout: timeoutMs }),
-        expect(page.locator("button").filter({ hasText: /^Search/ }).first()).toBeVisible({ timeout: timeoutMs }),
+        expect(page.locator(
+          'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"]',
+        ).first()).toBeVisible({ timeout: timeoutMs }),
       ])
     },
-    selectReplayState: (states) => states.find((state) => {
-      const palette = state.normalizedState
-        && typeof state.normalizedState.palette === "object"
-        && state.normalizedState.palette !== null
-        && !Array.isArray(state.normalizedState.palette)
-        ? state.normalizedState.palette as Record<string, unknown>
-        : null
-      return state.ordinal > 2 && state.action === "Wait" && palette?.dialogVisible === true
-    }),
+    selectReplayState: (states) => {
+      const dialogStates = states.filter((state) => {
+        const palette = state.normalizedState
+          && typeof state.normalizedState.palette === "object"
+          && state.normalizedState.palette !== null
+          && !Array.isArray(state.normalizedState.palette)
+          ? state.normalizedState.palette as Record<string, unknown>
+          : null
+        return state.ordinal > 2 && palette?.dialogVisible === true
+      })
+      const ordered = [...states].sort((left, right) => left.ordinal - right.ordinal)
+      const waits = dialogStates
+        .filter((state) => state.action === "Wait")
+        .sort((left, right) => left.ordinal - right.ordinal)
+      const replayableDialogActions = dialogStates
+        .filter((state) => state.action !== "Wait" && state.action !== null)
+        .sort((left, right) => left.ordinal - right.ordinal)
+      // DOM visibility can precede paint. Desktop replay therefore prefers the
+      // earliest settled Wait over an action-frame screenshot that may still be
+      // hydrating. Compact replay prefers the earliest strongly painted action:
+      // waiting for its much smaller full-frame pHash change can cross unrelated
+      // async workspace hydration and session creation during replay.
+      // Encoded PNG byte size is not a monotonic paint signal.
+      // The pHash threshold is viewport-aware: the whole-viewport hash is
+      // calibrated against desktop, where the palette covers a large share of
+      // the frame. At compact the dialog is deliberately small and top-anchored,
+      // so opening it legitimately moves the full-page pHash by only a few bits
+      // — a strict >4 would reject every genuinely painted mobile state.
+      const paintedDialogDistance = (state: UiReviewExplorationState): number | null => {
+        const closed = ordered.filter((candidate) => {
+          const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
+          return (candidate.ordinal > 2 || candidate.action === "Wait")
+            && candidate.ordinal < state.ordinal
+            && palette?.dialogVisible === false
+        }).at(-1)
+        return closed !== undefined
+          && state.screenshotDigest !== closed.screenshotDigest
+          && typeof state.screenshotPHash === "string"
+          && typeof closed.screenshotPHash === "string"
+          ? hexadecimalHammingDistance(state.screenshotPHash, closed.screenshotPHash)
+          : null
+      }
+      const hasGenuinelyPaintedDialog = (state: UiReviewExplorationState): boolean => (
+        (paintedDialogDistance(state) ?? -1) >= (state.viewport.name === "mobile" ? 1 : 5)
+      )
+      const earliestStrongWait = waits.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
+      const earliestStrongAction = replayableDialogActions.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
+      const isCompact = ordered[0]?.viewport.name === "mobile"
+      return isCompact
+        ? earliestStrongAction
+          ?? earliestStrongWait
+          ?? waits.find(hasGenuinelyPaintedDialog)
+          ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
+        : earliestStrongWait
+          ?? waits.find(hasGenuinelyPaintedDialog)
+          ?? earliestStrongAction
+          ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
+    },
   },
 }

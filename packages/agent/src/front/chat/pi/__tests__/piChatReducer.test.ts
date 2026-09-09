@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { BoringChatMessage, PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
-import { createInitialPiChatState, piChatReducer, type OptimisticUserMessage } from '../piChatReducer'
+import { createInitialPiChatState, piChatReducer, reducePiChatEvent, type OptimisticUserMessage } from '../piChatReducer'
 
 function initial() {
   return createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
@@ -78,6 +78,20 @@ describe('piChatReducer', () => {
     expect(state.committedMessages).toEqual([userMessage('u1', 'committed')])
     expect(state.optimisticOutbox).toEqual({})
     expect(state.notices).toContainEqual(expect.objectContaining({ id: 'stale-outbox-cleared', level: 'warning' }))
+  })
+
+  it('refreshes the authoritative current model from each addressed state snapshot', () => {
+    const first = piChatReducer(initial(), {
+      type: 'hydrate',
+      snapshot: snapshot({ currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' } }),
+    })
+    expect(first.currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+
+    const refreshed = piChatReducer(first, {
+      type: 'hydrate',
+      snapshot: snapshot({ seq: 11, currentModel: { provider: 'openai', id: 'gpt-5.7' } }),
+    })
+    expect(refreshed.currentModel).toEqual({ provider: 'openai', id: 'gpt-5.7' })
   })
 
   it('preserves a first prompt submitted while the empty session snapshot is hydrating', () => {
@@ -2154,6 +2168,38 @@ describe('piChatReducer', () => {
     expect(state.error?.message).toBe('boom')
     expect(state.committedMessages).toEqual([])
     expect(state.notices).toContainEqual(expect.objectContaining({ level: 'error', text: 'boom' }))
+  })
+
+  it('reports semantic rejection separately from consuming terminal event sequence numbers', () => {
+    const active = reduceEvents([
+      { type: 'agent-start', seq: 1, turnId: 'turn-current' },
+    ])
+
+    const staleTurn = reducePiChatEvent(active, {
+      type: 'agent-end',
+      seq: 2,
+      turnId: 'turn-stale',
+      status: 'ok',
+    })
+    expect(staleTurn).toMatchObject({ accepted: false, state: { lastSeq: 2, status: 'streaming', turnId: 'turn-current' } })
+
+    const terminalError = reducePiChatEvent(staleTurn.state, {
+      type: 'error',
+      seq: 3,
+      turnId: 'turn-current',
+      retryable: false,
+      error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'failed', retryable: false },
+    })
+    expect(terminalError).toMatchObject({ accepted: true, state: { lastSeq: 3, status: 'error', turnId: undefined } })
+
+    const contradictoryEnd = reducePiChatEvent(terminalError.state, {
+      type: 'agent-end',
+      seq: 4,
+      turnId: 'turn-current',
+      status: 'ok',
+    })
+    expect(contradictoryEnd).toMatchObject({ accepted: false, state: { lastSeq: 4, status: 'error' } })
+    expect(contradictoryEnd.state.error?.message).toBe('failed')
   })
 
   it('ignores stale turn-scoped errors and agent-end events while a newer turn is active', () => {

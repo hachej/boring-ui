@@ -56,6 +56,12 @@ export interface CompiledAgentBundle {
   readonly definition: CompiledAgentDefinition
   readonly definitionDigest: Sha256Digest
   readonly assets: readonly Readonly<AgentDefinitionDigestAsset>[]
+  /**
+   * Host path of the package's optional `knowledge/` folder. Present only
+   * when the compiled package ships knowledge; the folder's file bytes are
+   * already folded into `definitionDigest` via `assets`.
+   */
+  readonly knowledgeDir?: string
 }
 
 const SHA256_DIGEST_RE = /^sha256:[a-f0-9]{64}$/

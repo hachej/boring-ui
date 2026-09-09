@@ -61,6 +61,19 @@ The only human surface. Plan approval, merge approval, escalations, and
 only when `ask_user` is unavailable. Merge approval must name the exact SHA and
 expected target head. A seat may never approve its own request.
 
+`ask_user` is contributed by the `ask-user` workspace plugin, which the CLI hub
+bundles by default and composes **per workspace, not per seat** — so every seat
+in a hub workspace holds the tool, verifiable at
+`GET /api/v1/agents/<agentTypeId>/tools`. That is availability, not compliance:
+the tool being present is what makes "chat message instead of a gate" a seat
+defect rather than a platform limitation.
+
+The wire contract — payload shape, the `[br-###]` subject rule, which
+`surfaceKind` values actually open, and why an abandoned intention is never
+consent — is in `.agents/skills/owner-gate/SKILL.md`, which is pinned into every
+seat's instructions. `docs/procedures/owner-review-card.md` remains the
+authority on the card's content.
+
 ## Models
 
 Seats bind to tiers, never to model IDs; tiers resolve through the model card

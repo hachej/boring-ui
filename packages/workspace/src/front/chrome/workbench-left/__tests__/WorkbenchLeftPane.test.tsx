@@ -405,6 +405,7 @@ describe("WorkbenchLeftPane", () => {
     })
 
     const rail = screen.getByRole("navigation", { name: "Workspace categories" })
+    expect(rail).toHaveClass("bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]")
     const filesButton = screen.getByRole("button", { name: "Files" })
     const filesSlot = Array.from(rail.children).findIndex((child) => child.contains(filesButton))
     expect(rail.querySelector('[data-boring-workspace-part="workbench-host-control-slot"]')).not.toBeInTheDocument()

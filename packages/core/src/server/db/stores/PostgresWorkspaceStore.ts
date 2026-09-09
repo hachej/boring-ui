@@ -2,11 +2,16 @@ import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
+import type {
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import type {
   MemberRole,
   User,
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRuntime,
@@ -20,11 +25,12 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
-import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
+import { parseRequiredDefaultAgentTypeId } from '../../defaultAgentType.js'
 import {
   userSettings,
   users,
   workspaces,
+  workspaceAgentSeats,
   workspaceInvites,
   workspaceMembers,
   workspaceRuntimeResources,
@@ -123,6 +129,17 @@ function toWorkspaceInvite(row: typeof workspaceInvites.$inferSelect): Workspace
   }
 }
 
+function toWorkspaceAgentSeat(row: typeof workspaceAgentSeats.$inferSelect): WorkspaceAgentSeat {
+  return {
+    seatId: row.seatId,
+    workspaceId: row.workspaceId,
+    agentTypeId: row.agentTypeId,
+    source: row.source as WorkspaceAgentSeatSource,
+    enrolledByUserId: row.enrolledByUserId,
+    createdAt: toIso(row.createdAt)!,
+  }
+}
+
 function toWorkspaceMember(row: typeof workspaceMembers.$inferSelect): WorkspaceMember {
   return {
     workspaceId: row.workspaceId,
@@ -171,31 +188,37 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   // Workspace CRUD (Sub-PR 1)
   // ---------------------------------------------------------------------------
 
-  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const additionalAgentSeat = opts.additionalAgentSeat
+      ? {
+          agentTypeId: parseRequiredDefaultAgentTypeId(opts.additionalAgentSeat.agentTypeId),
+          source: opts.additionalAgentSeat.source,
+        }
+      : undefined
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)
         .values({
-          ...(opts?.id ? { id: opts.id } : {}),
+          ...(opts.id ? { id: opts.id } : {}),
           appId,
           workspaceTypeId,
           name,
           createdBy: userId,
-          isDefault: opts?.isDefault ?? false,
-          managedBy: opts?.managedBy ?? null,
+          isDefault: opts.isDefault ?? false,
+          managedBy: opts.managedBy ?? null,
           defaultAgentTypeId,
         })
 
-      const insertedRows = opts?.id
+      const insertedRows = opts.id
         ? await insert.onConflictDoNothing().returning()
         : await insert.returning()
 
-      const row = insertedRows[0] ?? (opts?.id
+      const row = insertedRows[0] ?? (opts.id
         ? (await tx.select().from(workspaces).where(eq(workspaces.id, opts.id)).limit(1))[0]
         : undefined)
-      if (!row) throw new Error(`Workspace ${opts?.id ?? name} was not created`)
+      if (!row) throw new Error(`Workspace ${opts.id ?? name} was not created`)
       assertWorkspaceTypeIdMatches(row.workspaceTypeId, workspaceTypeId)
 
       if (insertedRows.length > 0) {
@@ -204,6 +227,22 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
           userId,
           role: 'owner',
         })
+        await tx.insert(workspaceAgentSeats).values([
+          {
+            workspaceId: row.id,
+            agentTypeId: defaultAgentTypeId,
+            source: opts.initialAgentSeatSource ?? 'generic-default',
+            enrolledByUserId: opts.enrolledByUserId ?? userId,
+          },
+          ...(additionalAgentSeat && additionalAgentSeat.agentTypeId !== defaultAgentTypeId
+            ? [{
+                workspaceId: row.id,
+                agentTypeId: additionalAgentSeat.agentTypeId,
+                source: additionalAgentSeat.source,
+                enrolledByUserId: opts.enrolledByUserId ?? userId,
+              }]
+            : []),
+        ])
       }
 
       return toWorkspace(row)
@@ -225,6 +264,102 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       .orderBy(desc(workspaces.isDefault), desc(workspaces.createdAt))
 
     return rows.map((r) => toWorkspace(r.ws))
+  }
+
+  async listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]> {
+    const rows = await this.db
+      .select()
+      .from(workspaceAgentSeats)
+      .where(eq(workspaceAgentSeats.workspaceId, workspaceId))
+      .orderBy(workspaceAgentSeats.createdAt, workspaceAgentSeats.agentTypeId)
+    return rows.map(toWorkspaceAgentSeat)
+  }
+
+  async hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const rows = await this.db
+      .select({ seatId: workspaceAgentSeats.seatId })
+      .from(workspaceAgentSeats)
+      .where(and(
+        eq(workspaceAgentSeats.workspaceId, workspaceId),
+        eq(workspaceAgentSeats.agentTypeId, parsedAgentTypeId),
+      ))
+      .limit(1)
+    return rows.length > 0
+  }
+
+  async addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const inserted = await this.db
+      .insert(workspaceAgentSeats)
+      .values({
+        workspaceId,
+        agentTypeId: parsedAgentTypeId,
+        source,
+        enrolledByUserId: enrolledByUserId ?? null,
+      })
+      .onConflictDoNothing({
+        target: [workspaceAgentSeats.workspaceId, workspaceAgentSeats.agentTypeId],
+      })
+      .returning()
+    const row = inserted[0] ?? (await this.db
+      .select()
+      .from(workspaceAgentSeats)
+      .where(and(
+        eq(workspaceAgentSeats.workspaceId, workspaceId),
+        eq(workspaceAgentSeats.agentTypeId, parsedAgentTypeId),
+      ))
+      .limit(1))[0]
+    if (!row) throw new Error(`Agent Seat ${workspaceId}/${parsedAgentTypeId} was not created`)
+    return toWorkspaceAgentSeat(row)
+  }
+
+  async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
+    const rows = await this.db
+      .select({ count: sql<number>`count(*)::integer` })
+      .from(workspaces)
+      .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+    return Number(rows[0]?.count ?? 0)
+  }
+
+  async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    return await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(workspaces)
+        .set({ defaultAgentTypeId })
+        .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+        .returning({ id: workspaces.id, createdBy: workspaces.createdBy })
+      if (rows.length > 0) {
+        await tx.insert(workspaceAgentSeats).values(rows.map((row) => ({
+          workspaceId: row.id,
+          agentTypeId: defaultAgentTypeId,
+          source: 'migration-default',
+          enrolledByUserId: row.createdBy,
+        }))).onConflictDoNothing()
+      }
+      return rows.length
+    })
+  }
+
+  async setDefaultAgentTypeId(id: string, expected: string, value: string): Promise<Workspace | null> {
+    const expectedDefaultAgentTypeId = parseRequiredDefaultAgentTypeId(expected)
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    const rows = await this.db
+      .update(workspaces)
+      .set({ defaultAgentTypeId })
+      .where(and(
+        eq(workspaces.id, id),
+        isNull(workspaces.deletedAt),
+        eq(workspaces.defaultAgentTypeId, expectedDefaultAgentTypeId),
+      ))
+      .returning()
+    return rows.length > 0 ? toWorkspace(rows[0]) : null
   }
 
   async get(id: string): Promise<Workspace | null> {
@@ -267,6 +402,11 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return rows.length > 0 ? toWorkspace(rows[0]) : null
   }
 
+  // Plain, unconditional soft-delete primitive — used directly by callers
+  // (tests, admin tooling) that don't need the #1463 "never zero active
+  // workspaces" guarantee. The workspace-delete route uses
+  // deleteAndRecreateDefaultIfEmpty() below instead, which wraps the
+  // equivalent soft-delete in one atomic transaction with the replacement.
   async delete(
     id: string,
   ): Promise<{
@@ -282,6 +422,114 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       .where(eq(workspaces.id, id))
 
     return { removed: true }
+  }
+
+  // #1463: see the interface doc on WorkspaceStore.deleteAndRecreateDefaultIfEmpty.
+  // Everything here runs in ONE transaction: the soft-delete, the "does the
+  // acting user still have an active workspace" lock+count, and (if not) the
+  // replacement workspace + owner member + initial Agent seat inserts. If any
+  // insert fails (including a unique-constraint collision on the replacement
+  // default), Postgres rolls back the whole transaction — the original
+  // workspace is NOT deleted. The route surfaces that as a 500 instead of a
+  // false "deleted: true", so the account can never end up committed at zero
+  // active workspaces.
+  async deleteAndRecreateDefaultIfEmpty(
+    id: string,
+    actingUserId: string,
+    recreate: {
+      name: string
+      defaultAgentTypeId: string
+      initialAgentSeatSource?: WorkspaceAgentSeatSource
+      enrolledByUserId?: string
+    },
+  ): Promise<{
+    removed: boolean
+    code?: typeof ERROR_CODES.NOT_FOUND
+    recreated: Workspace | null
+  }> {
+    return this.db.transaction(async (tx) => {
+      const wsRows = await tx
+        .select()
+        .from(workspaces)
+        .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+        .limit(1)
+      const ws = wsRows[0]
+      if (!ws) return { removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null }
+
+      // Lock every active workspace the acting user is a member of in this
+      // app — in a stable order (ORDER BY id), and BEFORE mutating anything —
+      // so two concurrent deletes for the same user's workspace set serialize
+      // on this lock instead of deadlocking on each other's delete target.
+      // (An earlier version locked this set AFTER soft-deleting the target,
+      // which meant two concurrent deletes of two different workspaces
+      // belonging to the same user each held their own target row locked via
+      // UPDATE and then blocked wanting the other's — a real deadlock. Locking
+      // the whole ordered set first means whichever transaction gets there
+      // first acquires every row it needs before the other can start.)
+      await tx.execute(sql`
+        SELECT w.id
+        FROM workspaces w
+        JOIN workspace_members m ON m.workspace_id = w.id
+        WHERE m.user_id = ${actingUserId}
+          AND w.app_id = ${ws.appId}
+          AND w.deleted_at IS NULL
+        ORDER BY w.id
+        FOR UPDATE OF w
+      `)
+
+      // Re-check under lock: another transaction we were blocked behind may
+      // have already deleted this exact workspace.
+      const stillActive = await tx
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+        .limit(1)
+      if (stillActive.length === 0) return { removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null }
+
+      await tx
+        .update(workspaces)
+        .set({ deletedAt: new Date() })
+        .where(eq(workspaces.id, id))
+
+      const remaining = await tx
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
+        .where(and(
+          eq(workspaceMembers.userId, actingUserId),
+          eq(workspaces.appId, ws.appId),
+          isNull(workspaces.deletedAt),
+        ))
+
+      let recreated: Workspace | null = null
+      if (remaining.length === 0) {
+        const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(recreate.defaultAgentTypeId)
+        const [row] = await tx
+          .insert(workspaces)
+          .values({
+            appId: ws.appId,
+            name: recreate.name,
+            createdBy: actingUserId,
+            isDefault: true,
+            defaultAgentTypeId: parsedAgentTypeId,
+          })
+          .returning()
+        await tx.insert(workspaceMembers).values({
+          workspaceId: row.id,
+          userId: actingUserId,
+          role: 'owner',
+        })
+        await tx.insert(workspaceAgentSeats).values({
+          workspaceId: row.id,
+          agentTypeId: parsedAgentTypeId,
+          source: recreate.initialAgentSeatSource ?? 'generic-default',
+          enrolledByUserId: recreate.enrolledByUserId ?? actingUserId,
+        })
+        recreated = toWorkspace(row)
+      }
+
+      return { removed: true, recreated }
+    })
   }
 
   // ---------------------------------------------------------------------------

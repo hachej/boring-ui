@@ -13,14 +13,31 @@
  */
 // Testing utilities (for tests that need custom bridge wiring)
 export { createInMemoryBridge } from "./bridge/createInMemoryBridge"
+export { updateUiState } from "./bridge/updateUiState"
 export { uiRoutes } from "./ui-control/http/uiRoutes"
 export type { UiRoutesOptions } from "./ui-control/http/uiRoutes"
+export { RuntimeProjectionBroker } from "./runtimeProjection/runtimeProjectionBroker"
+export type {
+  RuntimeProjectionGrant,
+  RuntimeProjectionIdentity,
+  RuntimeProjectionUpstreamLease,
+} from "./runtimeProjection/runtimeProjectionBroker"
+export { runtimeProjectionRoutes } from "./runtimeProjection/runtimeProjectionRoutes"
+export type { RuntimeProjectionRoutesOptions } from "./runtimeProjection/runtimeProjectionRoutes"
 export {
   createGetUiStateTool,
   createExecUiTool,
   createWorkspaceUiTools,
 } from "./ui-control/tools/uiTools"
-export type { UiBridge, WorkspaceBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
+export { UI_STATE_INVALIDATION_COMMAND } from "../shared/ui-bridge"
+export type {
+  UiBridge,
+  WorkspaceBridge,
+  UiState,
+  UiCommand,
+  SequencedUiCommand,
+  CommandResult,
+} from "../shared/ui-bridge"
 export {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
@@ -147,6 +164,8 @@ export {
 export type {
   ServerBootstrapOptions,
   ServerBootstrapResult,
+  WorkspaceAgentSessionDeleteContext,
+  WorkspaceAgentToolFactoryContext,
   WorkspaceBridgeHandlerContribution,
   WorkspacePackageResourceContribution,
   WorkspacePackageResourceRecord,
@@ -173,11 +192,17 @@ export type {
   PackageResourceScanSource,
   ResolvedAgentManagedSkill,
   ResolvedAgentPackageSkill,
+  ResolveWorkspacePackageResourcesOptions,
   ResolvedWorkspacePackageResourceRegistry,
+  SharedSkillPath,
 } from "./plugins/packageResources"
 // Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
+export type { DiscoveredBoringAgentPackage } from "./agentPlugins/types"
+export { discoverAgentPackagesAtRoots, discoverRepositoryAgentPackages } from "./agentPlugins/discoverAgentPackages"
+export type { DiscoverRepositoryAgentPackagesOptions } from "./agentPlugins/discoverAgentPackages"
+export { isRemoteMaterializedPiPackageRoot } from "./agentPlugins/settingsSources"
 export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/routes"
 export type { PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"

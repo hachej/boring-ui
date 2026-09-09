@@ -1,8 +1,9 @@
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { createNodeWorkspace } from '@agent-test-host'
+import type { Workspace } from '../../../shared/workspace'
 import { READONLY_FILESYSTEM_MUTATION_CODE } from '../../../shared/workspace'
 import { normalizeRuntimeReadonlyFilesystemPolicy } from '../readonlyFilesystemPolicy'
 import { sandboxRuntimeHostOperations } from '../sandboxRuntimeHost'
@@ -43,6 +44,29 @@ describe('createUserFilesystemBinding', () => {
     await expect(binding.operations.write?.({ filesystem: 'user', path: '.agents/rules.md', content: 'bypass' }))
       .rejects.toMatchObject({ code: READONLY_FILESYSTEM_MUTATION_CODE })
     await expect(readFile(join(root, 'writable/rules.md'), 'utf8')).resolves.toBe('rules')
+  })
+
+  test('does not stat after a committed exclusive binary create', async () => {
+    const createBinaryFile = vi.fn().mockResolvedValue(undefined)
+    const stat = vi.fn().mockRejectedValue(new Error('transient stat failure'))
+    const workspace = {
+      root: '/workspace',
+      createBinaryFile,
+      stat,
+    } as unknown as Workspace
+    const binding = createUserFilesystemBinding(
+      workspace,
+      normalizeRuntimeReadonlyFilesystemPolicy([]),
+      async (path) => path,
+    )
+
+    await expect(binding.operations.createBinary?.({
+      filesystem: 'user',
+      path: 'committed.bin',
+      content: new Uint8Array([1, 2, 3]),
+    })).resolves.toEqual({})
+    expect(createBinaryFile).toHaveBeenCalledWith('committed.bin', new Uint8Array([1, 2, 3]))
+    expect(stat).not.toHaveBeenCalled()
   })
 
   test('enforces readonly mutations while preserving writable siblings', async () => {

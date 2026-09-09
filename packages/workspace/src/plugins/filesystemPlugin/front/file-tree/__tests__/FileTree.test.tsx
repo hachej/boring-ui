@@ -105,11 +105,12 @@ describe("FileTree", () => {
     expect(container.querySelector(".custom-tree")).toBeTruthy()
   })
 
-  it("calls onSelect when file is activated", () => {
+  it("reports selection and activates a clicked file through distinct callbacks", () => {
+    const onSelectionChange = vi.fn()
     const onSelect = vi.fn()
-    render(<FileTree files={sampleFiles} onSelect={onSelect} height={200} />)
-    const pkg = screen.getByText("package.json")
-    fireEvent.click(pkg)
+    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} onSelect={onSelect} height={200} />)
+    fireEvent.click(screen.getByText("package.json"))
+    expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ path: "package.json", kind: "file" }))
     expect(onSelect).toHaveBeenCalledWith("package.json")
   })
 
@@ -150,21 +151,38 @@ describe("FileTree", () => {
     expect(node.kind).toBe("file")
   })
 
-  it("context menu does not trigger onSelect", () => {
-    const onSelect = vi.fn()
+  it("context menu does not trigger selection", () => {
+    const onSelectionChange = vi.fn()
     const onContextMenu = vi.fn()
     render(
       <FileTree
         files={sampleFiles}
-        onSelect={onSelect}
+        onSelectionChange={onSelectionChange}
         onContextMenu={onContextMenu}
         height={200}
       />,
     )
     const pkg = screen.getByText("package.json")
+    onSelectionChange.mockClear()
     fireEvent.contextMenu(pkg)
     expect(onContextMenu).toHaveBeenCalled()
-    expect(onSelect).not.toHaveBeenCalled()
+    expect(onSelectionChange).not.toHaveBeenCalled()
+  })
+
+  it("reports directory selection through the canonical tree callback", () => {
+    const onSelectionChange = vi.fn()
+    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} height={300} />)
+    fireEvent.click(screen.getByText("src"))
+    expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ path: "src", kind: "dir" }))
+  })
+
+  it("reports keyboard selection through the same canonical tree callback", async () => {
+    const onSelectionChange = vi.fn()
+    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} height={300} />)
+    const tree = screen.getByRole("tree")
+    tree.focus()
+    fireEvent.keyDown(tree, { key: "Home" })
+    await waitFor(() => expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ path: "src", kind: "dir" })))
   })
 
   it("toggles directory on click", () => {
@@ -317,5 +335,42 @@ describe("FileTree", () => {
     )
 
     await waitFor(() => expect(onRevealHandled).toHaveBeenCalledWith("deck"))
+  })
+})
+
+describe("FileTree name tooltip", () => {
+  const longName = "a-really-long-component-file-name-that-does-not-fit.tsx"
+
+  // jsdom has no layout, so overflow has to be stated explicitly. Scope the
+  // stub to the one label element rather than HTMLElement.prototype, so the
+  // virtualizer's own width reads are left alone.
+  function stubOverflow(el: HTMLElement, scrollWidth: number, clientWidth: number) {
+    Object.defineProperty(el, "scrollWidth", { configurable: true, value: scrollWidth })
+    Object.defineProperty(el, "clientWidth", { configurable: true, value: clientWidth })
+  }
+
+  it("reveals the full name on hover when the label is clipped", async () => {
+    render(
+      <FileTree files={[{ name: longName, kind: "file", path: longName }]} height={200} />,
+    )
+    const label = screen.getByText(longName)
+    stubOverflow(label, 420, 120)
+
+    fireEvent.focusIn(label)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree-name-tooltip")).toHaveTextContent(longName)
+    })
+  })
+
+  it("stays silent when the name already fits (no tooltip that just repeats the row)", async () => {
+    render(<FileTree files={[{ name: "a.ts", kind: "file", path: "a.ts" }]} height={200} />)
+    const label = screen.getByText("a.ts")
+    stubOverflow(label, 120, 120)
+
+    fireEvent.focusIn(label)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByTestId("file-tree-name-tooltip")).toBeNull()
   })
 })

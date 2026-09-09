@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-cli",
-  "version": "0.1.95",
+  "version": "0.1.109",
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",
@@ -12,15 +12,16 @@
     "public/"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "node scripts/generate-host-singleton-exports.mjs --check && tsup",
+    "generate:singleton-exports": "node scripts/generate-host-singleton-exports.mjs",
     "build:front": "vite build",
     "build:full": "node scripts/build-full.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@fastify/compress": "^9.1.0",
-    "@fastify/static": "^10.1.2",
+    "@fastify/compress": "^9.2.0",
+    "@fastify/static": "^10.1.3",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-bash": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
@@ -32,23 +33,24 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-ui-plugin-cli": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.3",
     "@vitejs/plugin-react": "^4.0.0",
-    "cjs-module-lexer": "^2.0.0",
-    "fastify": "^5.11.0",
-    "lucide-react": "^1.27.0",
+    "cjs-module-lexer": "^2.2.1",
+    "fastify": "^5.12.1",
+    "lucide-react": "^1.31.0",
     "typescript": "^6.0.3",
-    "vite": "^8.2.0",
+    "vite": "^8.2.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
     "tsup": "^8.4.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   },
   "repository": {
     "type": "git",

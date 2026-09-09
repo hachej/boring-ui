@@ -55,7 +55,10 @@ describe("FileTaskSessionLinkStore", () => {
     expect(firstReceipt).toMatchObject({ changed: true, snapshot: { adapterId: "github", taskId: "776", links: [first] } })
     expect(duplicate).toEqual({ ...firstReceipt, changed: false })
     expect(await store.list("github", "776")).toEqual([first])
-    expect(first.id).not.toContain("776")
+    // The link id must be opaque — never derived from the adapter/task pair.
+    // Asserting the UUID shape says that deterministically; a substring check
+    // against a random UUID flakes whenever the task id happens to appear in it.
+    expect(first.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
     expect(workspace.files.has(".pi/tasks/session-links.json")).toBe(true)
     expect(workspace.writes.every((path) => path.startsWith(".pi/tasks/session-links.json.tmp-"))).toBe(true)
   })

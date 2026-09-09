@@ -63,18 +63,31 @@ describe("dirfd workspace helper client", () => {
     });
   });
 
-  test("accepts a filesystem write larger than the invocation envelope", async () => {
+  test("preserves exclusive-create collisions as an already-exists error", async () => {
+    await expect(
+      new RunscWorkspaceHelperClientV1(runner({
+        ok: false,
+        code: REMOTE_WORKER_ERROR_CODES_V1.alreadyExists,
+      })).execute("a".repeat(32), {
+        op: "createBinaryFile",
+        path: "file.bin",
+        dataBase64: "eA==",
+      }),
+    ).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.alreadyExists });
+  });
+
+  test("accepts a real 10 MiB binary workspace request envelope", async () => {
     const commandRunner = runner({ ok: true });
     await new RunscWorkspaceHelperClientV1(commandRunner).execute(
       "a".repeat(32),
       {
-        op: "writeFile",
-        path: "large.txt",
-        data: "x".repeat(1024 * 1024),
+        op: "createBinaryFile",
+        path: "limit.bin",
+        dataBase64: Buffer.alloc(10 * 1024 * 1024, 1).toString("base64"),
       },
     );
     expect(commandRunner.run).toHaveBeenCalledOnce();
     const input = vi.mocked(commandRunner.run).mock.calls[0]?.[0];
-    expect(input?.stdin?.byteLength).toBeGreaterThan(1024 * 1024);
+    expect(input?.stdin?.byteLength).toBeGreaterThan(13 * 1024 * 1024);
   });
 });

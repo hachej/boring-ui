@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Bot, ChevronDown, X } from "lucide-react"
+import { Bot, ChevronDown, RefreshCw, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { postUiCommand } from "../../bridge"
@@ -29,6 +29,16 @@ export interface AgentDetailsOverlayAgent {
 export interface AgentDetailsOverlayProps {
   agent: AgentDetailsOverlayAgent
   onClose: () => void
+  /**
+   * Reload this agent's composition (the `agent.reload` host effect). The host
+   * owns the request; this overlay owns only the chrome. Absent ⇒ the host
+   * cannot reload agents here, and the action is not rendered at all: a
+   * permanently dead control teaches the user nothing.
+   *
+   * Resolves with the host's own message when it has one, and REJECTS on
+   * failure — the overlay reports either outcome.
+   */
+  onReloadAgent?: (agentTypeId: string) => Promise<string | undefined | void>
   headerInsetStart?: boolean
   headerInsetEnd?: boolean
 }
@@ -38,9 +48,16 @@ const INSTRUCTION_ROLE_COPY = {
   persona: { name: "Persona instructions", blurb: "What this agent is asked to be and to do." },
 } as const
 
+/**
+ * Runtime-scope pin semantics, said in user words: a reload recompiles the
+ * agent, but chats already running keep the composition they were pinned to.
+ */
+const RELOADED_MESSAGE = "Agent reloaded. New chats use the updated instructions; chats already open keep the composition they started with."
+
 export function AgentDetailsOverlay({
   agent,
   onClose,
+  onReloadAgent,
   headerInsetStart = false,
   headerInsetEnd = false,
 }: AgentDetailsOverlayProps) {
@@ -50,6 +67,7 @@ export function AgentDetailsOverlay({
   // Refs whose file turned out not to exist when the user clicked them. Keyed
   // by resource so the row that failed — and only that row — degrades.
   const [missingResourceKeys, setMissingResourceKeys] = useState<ReadonlySet<string>>(() => new Set())
+  const [reloading, setReloading] = useState(false)
 
   // Every commit is stamped with the generation that started it: switching
   // agents fast must never let a slow response for agent A land on agent B.
@@ -72,8 +90,40 @@ export function AgentDetailsOverlay({
   useEffect(() => {
     setExpandedTool(null)
     setMissingResourceKeys(new Set())
+    setReloading(false)
     void load()
   }, [load])
+
+  /**
+   * Persona instructions are compiled into the composition at host load and
+   * only refresh through the `agent.reload` host effect — there is no watcher.
+   * Editing `instructions.md` from THIS page and seeing nothing happen is the
+   * failure this action removes.
+   */
+  const reloadAgent = useCallback(async () => {
+    if (!onReloadAgent) return
+    // Invalidate any in-flight load: it describes the composition the host is
+    // in the middle of replacing, so it must not commit on top of the reload.
+    const generation = ++generationRef.current
+    setReloading(true)
+    let message: string | undefined
+    let failure: string | undefined
+    try {
+      message = (await onReloadAgent(agentTypeId)) || undefined
+    } catch (error) {
+      failure = error instanceof Error ? error.message : "Agent reload failed."
+    }
+    // A newer generation means the panel moved on (agent switch or unmount):
+    // neither the toast nor the refresh belongs to this panel any more.
+    if (generationRef.current !== generation) return
+    setReloading(false)
+    postUiCommand({
+      kind: "showNotification",
+      params: { msg: failure ?? message ?? RELOADED_MESSAGE, level: failure ? "error" : "info" },
+    })
+    // Only a reload that actually landed changes what this page should show.
+    if (!failure) await load()
+  }, [agentTypeId, load, onReloadAgent])
 
   const loading = capabilities.status === "loading"
   const description = capabilities.description.status === "loaded"
@@ -198,7 +248,21 @@ export function AgentDetailsOverlay({
             <Bot className="size-4" strokeWidth={1.75} aria-hidden="true" />
           </span>
         )}
-        actions={(
+        actions={(<>
+          {onReloadAgent ? (
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => void reloadAgent()}
+              disabled={reloading || loading}
+              aria-label={`Reload ${agent.label}`}
+              title="Reload agent"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className={cn("size-3", (reloading || loading) && "animate-spin")} strokeWidth={1.75} />
+            </IconButton>
+          ) : null}
           <IconButton
             type="button"
             variant="ghost"
@@ -210,7 +274,7 @@ export function AgentDetailsOverlay({
           >
             <X className="size-3" strokeWidth={1.75} />
           </IconButton>
-        )}
+        </>)}
       >
         <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4">
           <div className="grid max-w-3xl gap-7">

@@ -4,10 +4,11 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import {
-  compactPiPackages,
   autoDetectMode,
   createAgentHost,
+  createAgentHostChannelStorage,
   createEnvironmentProvisioningFingerprint,
+  createPostgresCredentialVaultPersistenceV1,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   createRemoteWorkerModeAdapter,
@@ -16,11 +17,17 @@ import {
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   resolveDefaultAgentFleet,
+  resolveRequestLedgerPath,
+  runCredentialVaultPostgresMigrationsV1,
   withRuntimeEnvContributions,
+  type AgentAccessDecision,
+  type AgentAccessOperation,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
+  type AgentGatewayEffect,
   type AgentHarnessFactory,
   type AgentHostAgentSpec,
+  type AgentHostCredentialOptionsV1,
   type AgentHostDirectProjectionOptions,
   type AgentHostEnvironmentScope,
   type AgentMeteringSink,
@@ -36,7 +43,10 @@ import {
   type RuntimeProvisioningContribution,
   type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
+  type WorkspaceCredentialLifecycleV1,
 } from '@hachej/boring-agent/server'
+import { AgentGatewayErrorCode } from '@hachej/boring-agent/shared'
+import type { VerifiedWorkspaceCredentialAuthorityV1 } from '@hachej/boring-agent/shared'
 import type {
   AgentTool,
   SandboxHandleStore,
@@ -60,6 +70,8 @@ import {
 } from '@hachej/boring-workspace/app/server'
 import {
   createWorkspaceUiTools,
+  discoverRepositoryAgentPackages,
+  runtimeProjectionRoutes,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -68,7 +80,16 @@ import {
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRuntimeEnvOptions,
   type WorkspaceServerPlugin,
+  type RuntimeProjectionRoutesOptions,
 } from '@hachej/boring-workspace/server'
+import {
+  applyRuntimePiExtensionIsolation,
+  composeAddressedAgentRuntimeScope,
+  mergePiOptions,
+  normalizeAgentPiCapabilityOptions,
+  type AddressedAgentCapabilityContext,
+  type AgentPiCapabilityOptions,
+} from './addressedAgentRuntimeScope.js'
 import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
 import { registerCoreAgentHostEnvironmentRoutes } from './coreAgentHostEnvironmentRoutes.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
@@ -77,11 +98,17 @@ import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
+  assertCoreDynamicAuthBaseURL,
   authHook,
   createAuth,
   type BetterAuthInstance,
+  type CoreDynamicAuthBaseURL,
+  type ResolveInitialAgentSeat,
 } from '../../server/auth/index.js'
-import { REQUEST_SCOPE_WORKSPACE_HEADER } from '../../server/auth/requestWorkspaceScope.js'
+import {
+  authorizeRequestScopedWorkspace,
+  REQUEST_SCOPE_WORKSPACE_HEADER,
+} from '../../server/auth/requestWorkspaceScope.js'
 import {
   createCoreApp,
   registerRoutes,
@@ -107,9 +134,34 @@ import {
   TRUSTED_SIGNUP_HOSTNAME_HEADER,
   type ValidatedSignupAgentDefaults,
 } from '../../server/signupAgentDefaults.js'
-import { resolveWorkspaceDefaultAgentTypeId } from '../../server/defaultAgentType.js'
+import {
+  DefaultAgentTypeError,
+  parseRequiredDefaultAgentTypeId,
+  resolveApplicationDefaultAgentTypeId,
+  resolveWorkspaceDefaultAgentTypeId,
+} from '../../server/defaultAgentType.js'
+import { reconcileWorkspaceDefaultAgentTypes } from '../../server/reconcileWorkspaceDefaultAgentTypes.js'
+import {
+  WORKSPACE_DEFAULT_AGENT_ROUTE,
+  type WorkspaceDefaultAgentOption,
+  type WorkspaceDefaultAgentState,
+} from '../../shared/workspaceDefaultAgent.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
+import {
+  assertCoreWhatsAppAgentAvailable,
+  mountCoreWhatsAppChannel,
+  type CoreWhatsAppChannelOptions,
+  type MountedCoreWhatsAppChannel,
+} from './whatsappChannelComposition.js'
+
+const WORKSPACE_DEFAULT_AGENT_GATED_EFFECTS = new Set<AgentGatewayEffect>([
+  'session.create',
+  'session.prompt',
+  'session.followup',
+  'agent.reload',
+  'session.command.execute',
+])
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -197,6 +249,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   mode?: RuntimeModeId
   runtimeModeAdapter?: RuntimeModeAdapter
   runtimeHost?: AgentRuntimeHostOperations
+  /** Explicit Host-owned same-origin projection authority; absent by default. */
+  runtimeProjection?: RuntimeProjectionRoutesOptions
   extraTools?: AgentTool[]
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -205,6 +259,10 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   piResourceAuthorizedRoots?: string[]
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  /** Mount the owner-only workspace credential routes with durable Core Postgres storage. */
+  credentials?: boolean
+  /** Trusted, provisioned-only WhatsApp Cloud API mount. Omit to keep the edge disabled. */
+  whatsAppChannel?: CoreWhatsAppChannelOptions
   filterModels?: AgentHostDirectProjectionOptions['filterModels']
   shareEntryStore?: ShareEntryStore
   externalPlugins?: boolean
@@ -223,6 +281,20 @@ export interface CreateCoreWorkspaceAgentServerOptions {
     workspaceRoot: string
     request?: FastifyRequest
   }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
+  /**
+   * Trusted host Pi capability policy for one already-authorized Agent seat.
+   * Authored agent directories cannot enable packages/extensions themselves.
+   * Paths must remain under the workspace, plugin roots, or an explicitly
+   * configured `piResourceAuthorizedRoots` entry. Grant changes alter semantic
+   * identity and therefore require a Host process restart once a binding has
+   * been published. In isolated modes, static, authored, and hot-reloaded host
+   * extensions remain blocked; explicit resources returned here are trusted
+   * app composition for this addressed seat. Scoped skills and packages remain
+   * supported.
+   */
+  getAgentPi?: (
+    ctx: AddressedAgentCapabilityContext,
+  ) => AgentPiCapabilityOptions | undefined | Promise<AgentPiCapabilityOptions | undefined>
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -242,6 +314,13 @@ export interface CreateCoreWorkspaceAgentServerOptions {
     workspaceFsCapability?: RuntimeModeAdapter['workspaceFsCapability']
     authSubject?: string
   }) => AgentTool[] | Promise<AgentTool[]>
+  /**
+   * Trusted host tools granted to one addressed agent type only. These are
+   * composed after Host authorization, so a fleet sibling never receives or
+   * advertises another agent's capabilities. Tool contract changes alter
+   * semantic identity and require a Host process restart once published.
+   */
+  getAgentExtraTools?: (ctx: AddressedAgentCapabilityContext) => AgentTool[] | Promise<AgentTool[]>
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
     workspaceId: string
@@ -256,6 +335,10 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   /** Compatibility only for Core's workspace-bridge admission; Host effects use effectAdmission. */
   admitEffect?: (ctx: { workspaceId: string; requestId: string }) => Promise<void>
   appRoot?: string
+  /** Opt into host-local auth callback URLs for an exact host allowlist. */
+  authBaseURL?: CoreDynamicAuthBaseURL
+  /** Trusted app-owned resolver for an additional specialist signup Seat. */
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
   plugins?: CoreWorkspacePluginEntry[]
@@ -291,6 +374,24 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   /** Trusted Agent fleet compiled before any Agent route is mounted. */
   agents?: readonly AgentHostAgentSpec[]
   /**
+   * Workspace Seat enforcement is opt-in for rolling migrations. `compat`
+   * preserves legacy fleet-wide access; `enforce` requires a durable Seat.
+   */
+  workspaceAgentAccessMode?: 'compat' | 'enforce'
+  /** Product-owned entitlement decision, evaluated only after a Seat exists. */
+  resolveAgentEntitlement?: (ctx: {
+    workspaceId: string
+    userId: string
+    agentTypeId: string
+    operation: AgentAccessOperation
+  }) => Promise<AgentAccessDecision>
+  /** Explicit app policy enabling add-only Seat management for eligible products. */
+  canEnrollAgent?: (ctx: {
+    workspaceId: string
+    userId: string
+    agentTypeId: string
+  }) => boolean | Promise<boolean>
+  /**
    * Repository root used to resolve `.agents/{personas,factory}` when
    * `BORING_AGENT_FLEET=1` composes the fleet and `agents` is not supplied.
    * Defaults to `process.cwd()`.
@@ -298,11 +399,9 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   fleetRepositoryRoot?: string
   /** Optional stricter app compiler layered over Core's loaded-plugin preflight. */
   fleetCompiler?: AgentFleetCompiler
-  /** Legacy route alias target; defaults to the first configured Agent. */
-  defaultAgentTypeId?: string
   /** Stable logical Host identity when no durable session root is configured. */
   agentHostId?: string
-  /** Strong idempotent admission for all eight Gateway effects. */
+  /** Strong idempotent admission for all Gateway effects. */
   effectAdmission?: AgentEffectAdmission
 }
 
@@ -331,6 +430,7 @@ function createCoreAgentScopeAuthority(input: {
   readonly userStore: UserStore
 }) {
   const records = new WeakMap<AuthorizedAgentScope, CoreAgentScopeRecord>()
+  const workspaceIdsByClaim = new WeakMap<VerifiedAgentScopeClaim, string>()
 
   const issueScope = ({
     claim,
@@ -352,6 +452,7 @@ function createCoreAgentScopeAuthority(input: {
       environment,
       agentRuntime,
     })
+    workspaceIdsByClaim.set(verifiedClaim, claim.workspaceScopeId)
     return scope
   }
 
@@ -366,6 +467,11 @@ function createCoreAgentScopeAuthority(input: {
       const record = records.get(scope)
       if (!record) throw new Error('agent scope was not issued by Core')
       return record.agentRuntime
+    },
+    resolveWorkspaceId(claim: VerifiedAgentScopeClaim): string {
+      const workspaceId = workspaceIdsByClaim.get(claim)
+      if (!workspaceId) throw new Error('agent scope claim was not issued by Core')
+      return workspaceId
     },
     verifier: {
       async verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim> {
@@ -392,7 +498,7 @@ function createCoreAgentScopeAuthority(input: {
 }
 
 function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
-  if (runtimeMode !== 'vercel-sandbox') return undefined
+  if (runtimeMode !== 'vercel-sandbox' && runtimeMode !== 'blaxel') return undefined
   const resolvedRoot = path.resolve(workspaceRoot)
   if (path.basename(resolvedRoot) !== 'workspaces') return undefined
   return path.join(path.dirname(resolvedRoot), 'pi-sessions')
@@ -414,10 +520,6 @@ export function resolveCoreLoadConfigOptions(
   }
 }
 
-function dedupeStrings(values: string[]): string[] {
-  return Array.from(new Set(values))
-}
-
 function isDirPluginEntry(entry: unknown): entry is DirPluginEntry {
   return typeof entry === 'object' && entry !== null && 'dir' in entry
 }
@@ -429,33 +531,6 @@ function assertCoreStaticPluginEntries(entries: readonly unknown[] | undefined):
         'createCoreWorkspaceAgentServer does not support hotReload yet; directory plugin entries must omit hotReload or set hotReload: false. Use createWorkspaceAgentServer for standalone hot reload.',
       )
     }
-  }
-}
-
-function mergePiOptions(
-  base?: AgentPiOptions,
-  override?: AgentPiOptions,
-): AgentPiOptions {
-  if (!base && !override) return undefined
-  return {
-    ...base,
-    ...override,
-    additionalSkillPaths: dedupeStrings([
-      ...(base?.additionalSkillPaths ?? []),
-      ...(override?.additionalSkillPaths ?? []),
-    ]),
-    packages: compactPiPackages([
-      ...(base?.packages ?? []),
-      ...(override?.packages ?? []),
-    ]),
-    extensionPaths: dedupeStrings([
-      ...(base?.extensionPaths ?? []),
-      ...(override?.extensionPaths ?? []),
-    ]),
-    extensionFactories: [
-      ...(base?.extensionFactories ?? []),
-      ...(override?.extensionFactories ?? []),
-    ],
   }
 }
 
@@ -871,8 +946,8 @@ function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: Teleme
   })
 }
 
-async function registerFrontendAuthPages(
-  app: CoreWorkspaceAgentServer,
+export async function registerFrontendAuthPages(
+  app: FastifyInstance,
   appRoot: string,
   telemetry: TelemetrySink,
 ) {
@@ -882,6 +957,18 @@ async function registerFrontendAuthPages(
   for (const pagePath of FRONTEND_AUTH_PAGES) {
     app.get(pagePath, async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
   }
+
+  // No route is registered here for better-auth's default path-token
+  // reset-password shape (/auth/reset-password/<token>): that path is a real
+  // better-auth endpoint (`resetPasswordCallback` in
+  // better-auth/dist/api/routes/password.mjs) that validates the token's
+  // existence/expiry against the DB and redirects to callbackURL. Shadowing
+  // it here — as an earlier version of this change did — would silently
+  // "succeed" for invalid/expired tokens and discard callbackURL. Leave it to
+  // registerAuthProxy's /auth/* proxy so better-auth's own validated
+  // redirect runs. The Vite-dev-only compatibility redirect for this shape
+  // lives client-side instead (CoreFront.tsx's ResetPasswordLegacyRedirect),
+  // where it never intercepts a real server-validated request.
 }
 
 export async function registerFrontendFallback(
@@ -936,8 +1023,12 @@ export async function registerFrontendFallback(
 async function createCoreRuntime(
   config: CoreConfig,
   signupAgentDefaults: ValidatedSignupAgentDefaults,
+  applicationAgentTypeIds: readonly string[],
   customTelemetry?: TelemetrySink,
   requestScopeResolver?: CoreRequestScopeResolver,
+  authBaseURL?: CoreDynamicAuthBaseURL,
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat,
+  shredWorkspaceCredentials?: (workspaceId: string) => Promise<void>,
 ): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
@@ -958,7 +1049,10 @@ async function createCoreRuntime(
     config.encryption.workspaceSettingsKey,
   )
 
-  const app = await createCoreApp(config, { requestScopeResolver }) as CoreWorkspaceAgentServer
+  const app = await createCoreApp(config, {
+    requestScopeResolver,
+    shredWorkspaceCredentials,
+  }) as CoreWorkspaceAgentServer
   // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
   const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
   const telemetrySource = customTelemetry
@@ -968,11 +1062,14 @@ async function createCoreRuntime(
       : 'noop-env'
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
   const auth = createAuth(config, db, {
+    baseURL: authBaseURL,
     workspaceStore,
     signupAgentDefaults,
+    applicationAgentTypeIds,
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
+    resolveInitialAgentSeat,
   })
 
   app.decorate('db', db)
@@ -1024,28 +1121,79 @@ export async function createCoreWorkspaceAgentServer(
     )
   }
   assertCoreStaticPluginEntries(options.plugins)
+  if (options.authBaseURL !== undefined) assertCoreDynamicAuthBaseURL(options.authBaseURL)
 
   const rawConfig = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  // `null`, not the base root: core serves `<workspaceRoot>/<workspaceId>` and
-  // NEVER the base itself (resolveWorkspaceRoot rejects it), so no single root
-  // exists at composition time. Passing the base would let a persona tree that
-  // happens to sit inside it publish a path relative to the wrong root — a
-  // live "Open" button that opens nothing.
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot, workspaceRoot: null })
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3, B2 fix round 1) from discovered agent packages plus
+  // .agents/factory for the deployed core app host (apps/full-app), same
+  // helper as createWorkspaceAgentServer and the CLI hub; flag absence uses
+  // the regular built-in default Agent.
+  //
+  // workspaceRoot is `null`, not the base root: core serves
+  // `<workspaceRoot>/<workspaceId>` and NEVER the base itself
+  // (resolveWorkspaceRoot rejects it), so no single root exists at
+  // composition time. Passing the base would let a persona tree that happens
+  // to sit inside it publish a path relative to the wrong root — a live
+  // "Open" button that opens nothing.
+  const fleetRepositoryRoot = options.fleetRepositoryRoot ?? process.cwd()
+  const discoveredPackages = !options.agents && process.env.BORING_AGENT_FLEET === '1'
+    ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
+    : undefined
+  const agents = options.agents ?? await resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    ...(discoveredPackages ? { discoveredPackages } : {}),
+  })
+  const agentTypeIds = agents.map((agent) => agent.agentTypeId)
+  // gh-1402: the pickable fleet offered by the default-Agent recovery surface.
+  const availableAgents: readonly WorkspaceDefaultAgentOption[] = agents.map((agent) => ({
+    agentTypeId: agent.agentTypeId,
+    label: agent.definition.label || agent.agentTypeId,
+  }))
+  const applicationDefaultAgentTypeId = resolveApplicationDefaultAgentTypeId({
+    configuredDefaultAgentTypeId: rawConfig.defaultAgentTypeId,
+    regularAgentTypeIds: agentTypeIds,
+  })
   const signupAgentDefaults = compileSignupAgentDefaults(
     rawConfig.signupAgentDefaults,
-    agents.map((agent) => agent.agentTypeId),
+    agentTypeIds,
     rawConfig.security?.trustedProxy,
   )
-  // Decision 28 hook: validate all trusted signup config before allocating DB
-  // or HTTP resources. Unknown seats and malformed server options fail boot.
-  const config: CoreConfig = { ...rawConfig, signupAgentDefaults }
+  // Validate trusted signup/default config before allocating DB or HTTP
+  // resources. Every Workspace persists the application default; a mapped
+  // signup intent adds a specialist Seat without replacing it.
+  const config: CoreConfig = {
+    ...rawConfig,
+    defaultAgentTypeId: applicationDefaultAgentTypeId,
+    signupAgentDefaults,
+  }
+  let credentialLifecycle: WorkspaceCredentialLifecycleV1 | undefined
+  const shredWorkspaceCredentials = options.credentials
+    ? async (workspaceId: string) => {
+        const lifecycle = credentialLifecycle
+        if (!lifecycle) throw new Error('credential lifecycle is not ready')
+        await lifecycle.cryptoShredWorkspace(workspaceId)
+      }
+    : undefined
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
     config,
     signupAgentDefaults,
+    agentTypeIds,
     options.telemetry,
     options.requestScopeResolver,
+    options.authBaseURL,
+    options.resolveInitialAgentSeat,
+    shredWorkspaceCredentials,
   )
+  // Credential advisory locks need an independently pooled control connection:
+  // it must remain available to terminate a reserved lock holder even when the
+  // application pool is saturated or its unlock query stalls.
+  // postgres() is lazy: this allocates no socket/handle during startup, so a
+  // construction failure before first credential use has no live pool to leak.
+  const credentialEvictionSql = options.credentials ? createDatabase(config).sql : undefined
+  if (credentialEvictionSql) {
+    app.addHook('onClose', async () => { await credentialEvictionSql.end() })
+  }
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
@@ -1073,6 +1221,10 @@ export async function createCoreWorkspaceAgentServer(
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: pluginWorkspaceRoot,
     defaultPluginPackages: options.defaultPluginPackages,
+    // Anchor npm-name resolution on the host app's own root so plugin
+    // packages resolve through the app's node_modules regardless of the
+    // process cwd (production hosts often chdir before boot).
+    anchorDir: appRoot,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
   const defaultPackageRuntimePlugins = readWorkspacePluginPackageRuntimePlugins(defaultPluginPackagePaths)
@@ -1087,6 +1239,14 @@ export async function createCoreWorkspaceAgentServer(
     ...defaultPluginDirEntries,
     ...(options.plugins ?? []),
   ]
+  const pluginEntryDirs = pluginEntries.flatMap((entry) => isDirPluginEntry(entry) ? [entry.dir] : [])
+  const resolvePiResourceAuthorizedRoots = (runtimeWorkspaceRoot: string): string[] => Array.from(new Set([
+    runtimeWorkspaceRoot,
+    pluginWorkspaceRoot,
+    ...defaultPluginPackagePaths,
+    ...pluginEntryDirs,
+    ...(options.piResourceAuthorizedRoots ?? []),
+  ]))
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
     async runWithWorkspaceAgent(input, run) {
@@ -1115,8 +1275,8 @@ export async function createCoreWorkspaceAgentServer(
   const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
-    ...(options.defaultAgentTypeId ? { agentTypeId: options.defaultAgentTypeId } : {}),
-    availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
+    agentTypeId: applicationDefaultAgentTypeId,
+    availableAgentTypeIds: agentTypeIds,
   }
   const defaultPluginActorResolver = async (request: FastifyRequest) => {
     const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
@@ -1156,6 +1316,15 @@ export async function createCoreWorkspaceAgentServer(
       return plugin
     }),
   )
+
+  // Resolver-created fleets begin with the host-owned built-in default. Give
+  // that Agent ordinary app-plugin bindings; explicit fleets remain isolated.
+  const hostAgents = options.agents === undefined && agents[0]
+    ? [
+        { ...agents[0], plugins: resolvedPlugins.map((plugin) => ({ name: plugin.id })) },
+        ...agents.slice(1),
+      ]
+    : agents
 
   const externalPluginsEnabled = options.externalPlugins !== false
   const installPluginAuthoring = externalPluginsEnabled && options.installPluginAuthoring === true
@@ -1224,16 +1393,26 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
-  const sandboxHandleStore = options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore)
+  const selectedMode = options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()
+  const handleProvider = selectedMode === 'blaxel'
+    ? 'blaxel'
+    : selectedMode === 'vercel-sandbox' ? 'vercel' : undefined
+  const sandboxHandleStore = options.sandboxHandleStore
+    ?? (handleProvider ? new WorkspaceRuntimeSandboxHandleStore(workspaceStore, handleProvider) : undefined)
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
-    ?? createSandboxRuntimeModeAdapter(
-      (options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()) as 'direct' | 'local' | 'vercel-sandbox',
-      { sandboxHandleStore },
-    )
+    ?? createSandboxRuntimeModeAdapter(selectedMode, { sandboxHandleStore })
+  // Static app/plugin Pi configuration is known at construction time. Reject
+  // invalid remote host extensions before serving requests; dynamic policies
+  // are rechecked when their workspace-scoped values are resolved.
+  applyRuntimePiExtensionIsolation(
+    pluginCollection.agentOptions.pi ?? {},
+    runtimeModeAdapter.id,
+    'static Core Pi options',
+  )
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
@@ -1283,11 +1462,38 @@ export async function createCoreWorkspaceAgentServer(
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
-  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
-  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
-  // the deployed core app host (apps/full-app), same helper as
-  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
-  // legacy single-default-agent boot byte-identically.
+  const credentialOptions: AgentHostCredentialOptionsV1 | undefined = options.credentials
+    ? {
+        env: process.env,
+        vaultPersistence: createPostgresCredentialVaultPersistenceV1(sql, {
+          evictionSql: credentialEvictionSql!,
+        }),
+        onLifecycleReady(lifecycle) {
+          credentialLifecycle = lifecycle
+        },
+        async authorizeOwnerRequest(request): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
+          const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
+          const userId = request.user?.id
+          if (!userId) throw httpError('authentication required', 401)
+          const [workspace, membershipRole] = await Promise.all([
+            workspaceStore.get(workspaceId),
+            workspaceStore.getMemberRole(workspaceId, userId),
+          ])
+          if (!workspace || workspace.appId !== config.appId || !membershipRole) {
+            throw httpError('workspace access denied', 403)
+          }
+          return {
+            workspaceId,
+            appId: config.appId,
+            principal: { kind: 'user', userId, membershipRole },
+            authorizationReceiptId: `credential-owner:${request.id}`,
+            expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          }
+        },
+      }
+    : undefined
+  if (credentialOptions) await runCredentialVaultPostgresMigrationsV1(sql)
+
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,
@@ -1357,7 +1563,12 @@ export async function createCoreWorkspaceAgentServer(
     const templatePath = options.getTemplatePath
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
-    const pi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
+    const resolvedPi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
+    const pi = applyRuntimePiExtensionIsolation(
+      resolvedPi,
+      runtimeModeAdapter.id,
+      'resolved Core Pi options',
+    )
     const sessionNamespace = await resolveSessionNamespace({
       workspaceId,
       workspaceRoot: root,
@@ -1420,7 +1631,7 @@ export async function createCoreWorkspaceAgentServer(
     const identity = createResolvedRuntimeScopeIdentity({
       artifacts: pluginArtifacts,
       validatedConfig: piIdentity,
-      grants: options.getExtraTools ? [userId] : [],
+      grants: options.getExtraTools || options.getAgentExtraTools || options.getAgentPi ? [userId] : [],
       placementClassIdentity: runtimeModeAdapter.id,
       isolationMode: runtimeModeAdapter.id,
       toolContractDigests: extraTools.map((tool) => tool.name),
@@ -1432,11 +1643,13 @@ export async function createCoreWorkspaceAgentServer(
       placementIdentity,
       provisioningFingerprint,
     })).digest('hex')
+    const authorizedPiResourceRoots = resolvePiResourceAuthorizedRoots(root)
     const buildResourceDigestInput = async () => {
       const hotResources = pi.getHotReloadableResources?.()
       return createPiResourceDigestInput({
         piCwd: root,
         noSkills: pi.noSkills,
+        noContextFiles: pi.noContextFiles,
         resourceSets: [{
           promptParts: [
             pluginCollection.agentOptions.systemPromptAppend,
@@ -1455,13 +1668,7 @@ export async function createCoreWorkspaceAgentServer(
             ...(hotResources?.extensionPaths ?? []),
           ],
         }],
-        authorizedRoots: [
-          root,
-          pluginWorkspaceRoot,
-          ...defaultPluginPackagePaths,
-          ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
-          ...(options.piResourceAuthorizedRoots ?? []),
-        ],
+        authorizedRoots: authorizedPiResourceRoots,
       })
     }
     const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
@@ -1484,6 +1691,7 @@ export async function createCoreWorkspaceAgentServer(
     const environment: AgentHostEnvironmentScope = {
       placementIdentity,
       provisioningFingerprint,
+      runtimeWorkspaceId: workspaceId,
       workspaceRoot: root,
       templatePath,
       resolveFilesystemBindings: resolveFilesystemBindings
@@ -1495,14 +1703,14 @@ export async function createCoreWorkspaceAgentServer(
             if (signal.aborted) throw new Error('runtime provisioning aborted')
             if (!runtimeBundle.provisioningAdapter) return undefined
             const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(
-              hostRuntimeModeAdapter.getRuntimeLayoutRoot?.({
+              hostRuntimeModeAdapter.getRuntimeLayoutRoot({
                 workspaceRoot: root,
                 sessionId: workspaceId,
                 workspaceId,
                 templatePath,
                 requestId: request?.id,
                 telemetry,
-              }) ?? root,
+              }),
             )
             const result = await provisionWorkspaceRuntime({
               plugins: runtimeModeAdapter.id === 'direct'
@@ -1547,8 +1755,80 @@ export async function createCoreWorkspaceAgentServer(
     })
   }
 
+  const getActiveAppWorkspace = async (workspaceId: string) => {
+    const workspace = await workspaceStore.get(workspaceId)
+    if (!workspace || workspace.appId !== config.appId) throw httpError('workspace access denied', 403)
+    return workspace
+  }
+  const assertWorkspaceDefaultAgentExecutionAvailable = async (workspaceId: string): Promise<void> => {
+    const workspace = await getActiveAppWorkspace(workspaceId)
+    resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
+      applicationDefaultAgentTypeId,
+      regularAgentTypeIds: agentTypeIds,
+      onUnknownPersistedSeat: (diagnostic) => {
+        app.log.warn(
+          { workspaceId, ...diagnostic },
+          'workspace default Agent is not in the validated fleet; execution denied',
+        )
+      },
+    })
+  }
+  const coreEffectAdmission: AgentEffectAdmission = {
+    async admit(input) {
+      if (WORKSPACE_DEFAULT_AGENT_GATED_EFFECTS.has(input.operation)) {
+        const workspaceId = scopeAuthority.resolveWorkspaceId(input.scope)
+        try {
+          await assertWorkspaceDefaultAgentExecutionAvailable(workspaceId)
+        } catch (error) {
+          if (
+            error instanceof DefaultAgentTypeError
+            && error.code === ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT
+          ) {
+            return {
+              type: 'rejected',
+              error: {
+                code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN,
+                message: 'Workspace default Agent is unavailable',
+                details: { code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT },
+                target: input.target,
+                requestId: input.key.requestId,
+              },
+            }
+          }
+          if ((error as { statusCode?: unknown })?.statusCode === 403) {
+            return {
+              type: 'rejected',
+              error: {
+                code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED,
+                message: 'workspace access denied',
+                target: input.target,
+                requestId: input.key.requestId,
+              },
+            }
+          }
+          return {
+            type: 'retryable',
+            error: {
+              code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+              message: 'Workspace default Agent availability could not be verified',
+              target: input.target,
+              requestId: input.key.requestId,
+            },
+          }
+        }
+      }
+      if (options.effectAdmission) return await options.effectAdmission.admit(input)
+      return { type: 'accepted', admissionReceipt: `core-trusted-local:${input.key.requestId}` }
+    },
+  }
+
+  assertCoreWhatsAppAgentAvailable(options.whatsAppChannel, agentTypeIds)
+  const channelStorage = options.whatsAppChannel
+    ? createAgentHostChannelStorage({ sessionRoot: sessionRoot ?? workspaceRoot })
+    : undefined
   const agentHost = await createAgentHost({
-    agents,
+    agents: hostAgents,
     fleetCompiler: createValidatingAgentFleetCompiler({
       plugins: resolvedPlugins.map((plugin) => ({
         id: plugin.id,
@@ -1558,54 +1838,223 @@ export async function createCoreWorkspaceAgentServer(
       requireCompilerForModelPolicy: true,
     }),
     sessionRoot,
-    requestLedgerPath: path.join(sessionRoot ?? workspaceRoot, '.agent-request-ledger.sqlite'),
+    requestLedgerPath: resolveRequestLedgerPath({
+      // `sessionRoot` above already folds in BORING_AGENT_SESSION_ROOT and the
+      // per-mode inference, so the canonical chain must not re-read the env.
+      sessionRoot,
+      legacy: { layout: 'workspace-host-file', workspaceRoot },
+    }),
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
     scopeVerifier: scopeAuthority.verifier,
+    ...(credentialOptions ? { credentials: credentialOptions } : {}),
+    ...(options.workspaceAgentAccessMode === 'enforce'
+      ? {
+          resolveAgentAccess: async ({ verifiedClaim, agentTypeId, operation }) => {
+            const workspaceId = scopeAuthority.resolveWorkspaceId(verifiedClaim)
+            const seated = await workspaceStore.hasAgentSeat(workspaceId, agentTypeId)
+            if (!seated) return { state: 'not-available' as const, reason: 'not-seated' as const }
+            return options.resolveAgentEntitlement
+              ? await options.resolveAgentEntitlement({
+                  workspaceId,
+                  userId: verifiedClaim.authSubjectId,
+                  agentTypeId,
+                  operation,
+                })
+              : { state: 'allowed' as const }
+          },
+        }
+      : {}),
     runtimeModeAdapter: hostRuntimeModeAdapter,
     runtimeHost,
     telemetry,
     metering: options.metering,
     harnessFactory: options.harnessFactory,
-    effectAdmission: options.effectAdmission ?? {
-      async admit({ key }) {
-        return {
-          type: 'accepted',
-          admissionReceipt: `core-trusted-local:${key.requestId}`,
-        }
-      },
-    },
+    effectAdmission: coreEffectAdmission,
+    ...(channelStorage ? { eventStore: channelStorage.events } : {}),
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       return scopeAuthority.resolveEnvironment(authorizedScope)
     },
-    async resolveAuthorizedAgentRuntimeScope({ authorizedScope }) {
-      return scopeAuthority.resolveAgentRuntime(authorizedScope)
+    async resolveAuthorizedAgentRuntimeScope({
+      authorizedScope,
+      verifiedClaim,
+      agentTypeId,
+      environment,
+    }) {
+      const runtime = scopeAuthority.resolveAgentRuntime(authorizedScope)
+      if (!options.getAgentExtraTools && !options.getAgentPi) return runtime
+      const context = {
+        agentTypeId,
+        workspaceId: environment.runtimeWorkspaceId ?? verifiedClaim.workspaceScopeId,
+        workspaceRoot: environment.workspaceRoot,
+        runtimeMode: runtimeModeAdapter.id,
+        workspaceFsCapability: runtimeModeAdapter.workspaceFsCapability,
+        authSubject: verifiedClaim.authSubjectId,
+      }
+      const [agentTools, agentPi] = await Promise.all([
+        options.getAgentExtraTools?.(context) ?? [],
+        options.getAgentPi?.(context),
+      ])
+      const addressedPi = normalizeAgentPiCapabilityOptions(agentPi, runtimeModeAdapter.id)
+      const addressedResourceFence = addressedPi
+        ? await createPiResourceDigestFence(async () => createPiResourceDigestInput({
+            piCwd: environment.workspaceRoot,
+            // Addressed options are the explicit resources below; do not scan
+            // ambient workspace skills/context while building this supplemental fence.
+            noSkills: true,
+            noContextFiles: true,
+            resourceSets: [addressedPi],
+            authorizedRoots: resolvePiResourceAuthorizedRoots(environment.workspaceRoot),
+          }))
+        : undefined
+      const composition = composeAddressedAgentRuntimeScope({
+        runtime,
+        agentTypeId,
+        agentTools,
+        addressedPi,
+        addressedPiResourceInputDigest: addressedResourceFence?.resourceInputDigest,
+      })
+      return {
+        ...runtime,
+        ...composition,
+        revalidateResourceInputs: addressedResourceFence
+          ? async () => {
+              await runtime.revalidateResourceInputs?.()
+              await addressedResourceFence.revalidateResourceInputs()
+            }
+          : runtime.revalidateResourceInputs,
+      }
     },
+  }).catch((error: unknown) => {
+    channelStorage?.close()
+    throw error
   })
 
   let hostMounted = false
+  let whatsAppMount: MountedCoreWhatsAppChannel | undefined
   try {
+    if (options.whatsAppChannel && channelStorage) {
+      whatsAppMount = await mountCoreWhatsAppChannel({
+        app,
+        gateway: agentHost.gateway,
+        storage: channelStorage,
+        resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
+          workspaceId: binding.workspaceId,
+          userId: binding.authSubjectId,
+        }),
+        options: options.whatsAppChannel,
+      })
+      app.addHook('preClose', async () => whatsAppMount?.close())
+    }
+
+    await reconcileWorkspaceDefaultAgentTypes({
+      workspaceStore,
+      appId: config.appId,
+      applicationDefaultAgentTypeId,
+      log: app.log,
+    })
+
+    const canEnrollAgent = options.canEnrollAgent
+    if (canEnrollAgent) {
+      app.get('/api/v1/workspaces/:workspaceId/agent-seats', async (request, reply) => {
+        const userId = request.user?.id
+        if (!userId) return reply.code(401).send({ error: 'authentication required' })
+        const { workspaceId } = request.params as { workspaceId: string }
+        const scoped = await authorizeRequestScopedWorkspace(request, workspaceId)
+        if (!scoped) {
+          await getActiveAppWorkspace(workspaceId)
+          if (!await workspaceStore.isMember(workspaceId, userId)) {
+            return reply.code(404).send({ error: 'workspace not found' })
+          }
+        }
+        const visible: Array<{ agentTypeId: string; createdAt: string }> = []
+        for (const seat of await workspaceStore.listAgentSeats(workspaceId)) {
+          if (!agentTypeIds.includes(seat.agentTypeId)) continue
+          let decision: AgentAccessDecision
+          try {
+            decision = options.resolveAgentEntitlement
+              ? await options.resolveAgentEntitlement({
+                  workspaceId,
+                  userId,
+                  agentTypeId: seat.agentTypeId,
+                  operation: 'catalog',
+                })
+              : { state: 'allowed', seatId: seat.seatId }
+          } catch {
+            return reply.code(503).send({ error: 'agent access policy is unavailable' })
+          }
+          if (decision.state === 'policy-unavailable') {
+            return reply.code(503).send({ error: 'agent access policy is unavailable' })
+          }
+          if (decision.state === 'allowed') {
+            visible.push({ agentTypeId: seat.agentTypeId, createdAt: seat.createdAt })
+          }
+        }
+        return reply.code(200).send({ seats: visible })
+      })
+
+      app.post('/api/v1/workspaces/:workspaceId/agent-seats/:agentTypeId', async (request, reply) => {
+        const userId = request.user?.id
+        if (!userId) return reply.code(401).send({ error: 'authentication required' })
+        const { workspaceId, agentTypeId } = request.params as {
+          workspaceId: string
+          agentTypeId: string
+        }
+        const scoped = await authorizeRequestScopedWorkspace(request, workspaceId, 'editor')
+        if (!scoped) {
+          await getActiveAppWorkspace(workspaceId)
+          const role = await workspaceStore.getMemberRole(workspaceId, userId)
+          if (!role) return reply.code(404).send({ error: 'workspace not found' })
+          if (role === 'viewer') return reply.code(403).send({ error: 'workspace editor role required' })
+        }
+        if (!agentTypeIds.includes(agentTypeId)) {
+          return reply.code(404).send({ error: 'agent type is not available' })
+        }
+        let eligible: boolean
+        try {
+          eligible = await canEnrollAgent({ workspaceId, userId, agentTypeId })
+        } catch {
+          return reply.code(503).send({ error: 'agent enrollment policy is unavailable' })
+        }
+        if (!eligible) return reply.code(404).send({ error: 'agent type is not available' })
+        const seat = await workspaceStore.addAgentSeat(
+          workspaceId,
+          agentTypeId,
+          'user-add',
+          userId,
+        )
+        return reply.code(200).send({
+          seat: { agentTypeId: seat.agentTypeId, createdAt: seat.createdAt },
+        })
+      })
+    }
+
     app.get('/api/v1/workspace/meta', async (request, reply) => {
       try {
         const workspaceId = await resolveWorkspaceId(request)
-        const [workspace, workspaceRootForRequest] = await Promise.all([
-          workspaceStore.get(workspaceId),
-          resolveRoot(workspaceId, request),
-        ])
+        // Validate the active application Workspace before root resolution so a
+        // retained membership on a soft-deleted row cannot recreate its root.
+        const workspace = await getActiveAppWorkspace(workspaceId)
+        const workspaceRootForRequest = await resolveRoot(workspaceId, request)
+        const defaultEligibleAgentTypeIds = options.workspaceAgentAccessMode === 'enforce'
+          ? (await workspaceStore.listAgentSeats(workspaceId))
+              .map((seat) => seat.agentTypeId)
+              .filter((agentTypeId) => agentTypeIds.includes(agentTypeId))
+          : agentTypeIds
         return {
           workspaceId,
           workspaceRoot: workspaceRootForRequest,
-          projectName: workspace?.name ?? 'Workspace',
-          // Decision 28: prefer the workspace's persisted default seat when it
-          // names a validated fleet member; fail closed to the boot option,
-          // then the legacy default, with a stable diagnostic code.
+          projectName: workspace.name,
+          // Decision 28: a configured persisted default is authoritative.
+          // Unknown values fail stably and are never reinterpreted as a boot
+          // or fleet default.
           defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
-            persistedDefaultAgentTypeId: workspace?.defaultAgentTypeId,
-            bootDefaultAgentTypeId: options.defaultAgentTypeId,
-            availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
+            persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
+            applicationDefaultAgentTypeId,
+            regularAgentTypeIds: defaultEligibleAgentTypeIds,
             onUnknownPersistedSeat: (diagnostic) => {
               request.log.warn(
                 { workspaceId, ...diagnostic },
-                'workspace default agent seat is not in the validated fleet; falling back',
+                'workspace default Agent is not in the validated fleet; meta resolution denied',
               )
             },
           }),
@@ -1617,6 +2066,18 @@ export async function createCoreWorkspaceAgentServer(
         ) {
           throw error
         }
+        if (
+          error instanceof DefaultAgentTypeError
+          && error.code === ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT
+        ) {
+          throw new HttpError({
+            status: 409,
+            code: error.code,
+            message: error.message,
+            requestId: request.id,
+          })
+        }
+        if (error instanceof HttpError) throw error
         const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
           ? (error as { statusCode: number }).statusCode
           : 500
@@ -1625,6 +2086,137 @@ export async function createCoreWorkspaceAgentServer(
       }
     })
 
+    // gh-1402: the recovery pair for the fail-closed default (gh-1386).
+    // Deliberately does NOT reuse `resolveWorkspaceDefaultAgentTypeId`: this
+    // read must stay readable while the workspace is broken, which is exactly
+    // when resolution throws. It reports the state instead of enforcing it.
+    const readWorkspaceDefaultAgentState = async (
+      request: FastifyRequest,
+    ): Promise<WorkspaceDefaultAgentState> => {
+      const workspaceId = await resolveWorkspaceId(request)
+      const workspace = await getActiveAppWorkspace(workspaceId)
+      const persistedDefaultAgentTypeId = workspace.defaultAgentTypeId ?? null
+      const unavailable = persistedDefaultAgentTypeId !== null
+        && !agentTypeIds.includes(persistedDefaultAgentTypeId)
+      return {
+        workspaceId,
+        status: unavailable ? 'unavailable' : 'ok',
+        persistedDefaultAgentTypeId,
+        availableAgents,
+      }
+    }
+
+    app.get(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => await readWorkspaceDefaultAgentState(request))
+
+    app.put(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => {
+      // Repinning is a human recovery action. An agent-host request scope is an
+      // automated caller by construction, and Decision 28 reserves every
+      // automated path for the NULL-only backfill.
+      if (request.requestScope) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          message: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          requestId: request.id,
+        })
+      }
+      const workspaceId = await resolveWorkspaceId(request)
+      await getActiveAppWorkspace(workspaceId)
+      // Membership alone is not enough: this changes a workspace-wide setting,
+      // so it takes the same editor floor as every other workspace mutation.
+      const userId = request.user?.id
+      if (!userId) {
+        throw new HttpError({
+          status: 401,
+          code: ERROR_CODES.UNAUTHORIZED,
+          message: 'authentication required',
+          requestId: request.id,
+        })
+      }
+      const role = await workspaceStore.getMemberRole(workspaceId, userId)
+      if (!role) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.NOT_MEMBER,
+          message: 'Not a member of this workspace',
+          requestId: request.id,
+        })
+      }
+      if (role === 'viewer') {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'Requires editor role or higher',
+          requestId: request.id,
+        })
+      }
+      const body = request.body as { defaultAgentTypeId?: unknown; expectedDefaultAgentTypeId?: unknown } | null | undefined
+      let candidate: string
+      let expected: string
+      try {
+        candidate = parseRequiredDefaultAgentTypeId(body?.defaultAgentTypeId)
+        expected = parseRequiredDefaultAgentTypeId(body?.expectedDefaultAgentTypeId)
+      } catch (error) {
+        throw new HttpError({
+          status: 400,
+          code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+          message: error instanceof Error ? error.message : 'Invalid default agent type ID',
+          requestId: request.id,
+        })
+      }
+      // Recovery may never write another unavailable seat: the accepted set is
+      // the same validated fleet resolution checks against.
+      if (!agentTypeIds.includes(candidate)) {
+        throw new HttpError({
+          status: 409,
+          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          message: 'Requested Agent is not an available regular fleet member',
+          requestId: request.id,
+        })
+      }
+      // Recovery-only: the seat being replaced must itself be outside the
+      // fleet. This endpoint therefore cannot be repurposed to repin a healthy
+      // workspace, and a stale tab presenting an old seat loses the CAS below.
+      const conflict = async (): Promise<never> => {
+        throw new HttpError({
+          status: 409,
+          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          message: 'Workspace default Agent changed since it was read',
+          requestId: request.id,
+        })
+      }
+      if (agentTypeIds.includes(expected)) await conflict()
+      const updated = await workspaceStore.setDefaultAgentTypeId(workspaceId, expected, candidate)
+      if (!updated) {
+        // Either the workspace vanished or another recovery already won.
+        const current = await workspaceStore.get(workspaceId)
+        if (!current) {
+          throw new HttpError({
+            status: 404,
+            code: ERROR_CODES.NOT_FOUND,
+            message: 'Workspace not found',
+            requestId: request.id,
+          })
+        }
+        await conflict()
+      }
+      request.log.info(
+        { workspaceId, defaultAgentTypeId: candidate, expectedDefaultAgentTypeId: expected },
+        'workspace default Agent repinned by explicit user choice',
+      )
+      return {
+        workspaceId,
+        status: 'ok',
+        persistedDefaultAgentTypeId: candidate,
+        availableAgents,
+      } satisfies WorkspaceDefaultAgentState
+    })
+
+    if (channelStorage) {
+      // Fastify runs onClose hooks in reverse registration order. Register the
+      // root storage hook before Agent Host so Host shutdown completes first.
+      app.addHook('onClose', async () => channelStorage.close())
+    }
     await registerCoreAgentHostEnvironmentRoutes(app, {
       agentHost,
       authorizeAgentRequest: (request) => authorizeAgentRequest(request),
@@ -1667,6 +2259,9 @@ export async function createCoreWorkspaceAgentServer(
       getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
       preserveStateKeys: pluginCollection.preservedUiStateKeys,
     })
+    if (options.runtimeProjection) {
+      await app.register(runtimeProjectionRoutes, options.runtimeProjection)
+    }
 
     await coreBridge.registerHttpRoutes(app)
 
@@ -1678,8 +2273,12 @@ export async function createCoreWorkspaceAgentServer(
       await registerFrontendFallback(app, appRoot, telemetry, options.frontendRootHandler)
     }
   } catch (error) {
-    if (hostMounted) await app.close().catch(() => undefined)
-    else await agentHost.host.close().catch(() => undefined)
+    await whatsAppMount?.close().catch(() => undefined)
+    if (!hostMounted) await agentHost.host.close().catch(() => undefined)
+    // When mounted, app.close runs Agent Host's hooks before the root storage
+    // hook. On partial mounting, close the Host explicitly before storage.
+    await app.close().catch(() => undefined)
+    channelStorage?.close()
     throw error
   }
 

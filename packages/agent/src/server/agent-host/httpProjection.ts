@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { PassThrough } from 'node:stream'
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import {
   AgentGatewayError,
@@ -10,9 +10,9 @@ import {
   type AgentSessionRef,
   type IdempotentAgentControl,
   type IdempotentAgentSend,
+  type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../shared/index'
-import type { PiChatSessionService } from '../../core/piChatSessionService'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHostDirectProjectionOptions, AgentHostHandle } from './types'
 import type { AgentSessionActivityIndex, AgentSessionActivityUpdate } from './sessionInventory'
@@ -20,7 +20,9 @@ import {
   createAgentHostRuntimeCapabilityRoutes,
   type AgentHostRuntimeCapabilityProjection,
 } from './runtimeCapabilityProjection'
+import { statusForGatewayError } from './gatewayHttpStatus'
 import { projectStableServiceError } from './stableServiceError'
+import type { AgentHarnessBackend } from './harnessBackend/types'
 
 const ADDRESSED_HEARTBEAT_INTERVAL_MS = 25_000
 const MAX_BATCH_SESSION_SUMMARY_SCAN_PAGES = 10
@@ -32,14 +34,15 @@ interface ProjectionInput {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
   readonly options: ProjectionOptions
-  readonly resolveAddressedPiChatService: (
+  readonly resolveHarnessBackend: (
     request: FastifyRequest,
     agentTypeId: string,
     sessionId: string,
-  ) => Promise<{ readonly scope: import('../../shared/index').AuthorizedAgentScope; readonly service: PiChatSessionService }>
+  ) => Promise<{ readonly scope: import('../../shared/index').AuthorizedAgentScope; readonly backend: AgentHarnessBackend }>
   readonly runtimeCapabilities?: AgentHostRuntimeCapabilityProjection
   readonly activity: AgentSessionActivityIndex
   readonly resolveActivityWorkspaceScope: (request: FastifyRequest) => Promise<string>
+  readonly registerAdditionalRoutes?: (app: FastifyInstance) => Promise<void>
 }
 
 const mountedHostsByServer = new WeakMap<object, WeakSet<object>>()
@@ -88,6 +91,7 @@ const ListSessionsQuerySchema = z.object({
     (value) => typeof value === 'string' && value.length > 0 ? Number(value) : value,
     z.number().int().min(1).max(100).optional(),
   ),
+  archived: z.enum(['active', 'archived', 'all']).optional(),
 }).strict()
 const ActivityEventsQuerySchema = z.object({ workspaceId: NonEmptyString.max(256).optional() }).strict()
 const EventsQuerySchema = z.object({
@@ -104,6 +108,10 @@ const CreateSessionBodySchema = z.preprocess((value) => value === undefined ? {}
 const RenameSessionBodySchema = z.object({
   requestId: RequestIdSchema,
   title: NonEmptyString.max(200),
+}).strict()
+const ArchiveSessionBodySchema = z.object({
+  requestId: RequestIdSchema,
+  archived: z.boolean(),
 }).strict()
 const DeleteSessionQuerySchema = z.object({ requestId: RequestIdSchema.optional() }).strict()
 const ChatModelSelectionSchema = z.object({
@@ -135,6 +143,10 @@ const FollowUpBodySchema = z.object({
 }).strict()
 const ControlBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
+}).strict())
+const InterruptBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
+  requestId: RequestIdSchema.optional(),
+  queueAction: z.enum(['hold', 'resume']).optional(),
 }).strict())
 const QueueClearBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
@@ -171,26 +183,6 @@ function parseWithSchema<T>(
   if (parsed.success) return parsed.data
   sendValidationError(reply, scope, parsed.error.issues[0])
   return undefined
-}
-
-function statusForGatewayError(code: string): number {
-  if (code === AgentGatewayErrorCode.AGENT_SCOPE_DENIED) return 403
-  if (code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND || code === AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN) return 404
-  if (
-    code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
-    || code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
-    || code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
-    || code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
-    || code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-    || code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
-    || code.includes('CURSOR')
-    || code.includes('REPLAY')
-  ) return 409
-  if (
-    code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED
-    || code === AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE
-  ) return 503
-  return 400
 }
 
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
@@ -234,8 +226,18 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(ActivityEventsQuerySchema, request.query, reply, 'query')
     if (!query) return
     let workspaceScopeId: string
+    let scope: Awaited<ReturnType<ProjectionOptions['authorizeAgentRequest']>>
+    let snapshot: AgentSessionActivityUpdate[]
     try {
-      workspaceScopeId = await input.resolveActivityWorkspaceScope(request)
+      ;[workspaceScopeId, scope] = await Promise.all([
+        input.resolveActivityWorkspaceScope(request),
+        input.options.authorizeAgentRequest(request),
+      ])
+      const visibleAgentTypeIds = new Set(
+        (await input.gateway.listAgents({ scope })).map((agent) => agent.agentTypeId),
+      )
+      snapshot = input.activity.snapshot(workspaceScopeId)
+        .filter((update) => visibleAgentTypeIds.has(update.ref.agentTypeId))
     } catch (error) {
       return sendError(reply, error)
     }
@@ -249,10 +251,21 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
       if (reply.raw.destroyed || reply.raw.writableEnded) return
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
+    let eventTail = Promise.resolve()
     const unsubscribe = input.activity.subscribe(workspaceScopeId, (update: AgentSessionActivityUpdate) => {
-      write('activity', update)
+      eventTail = eventTail.then(async () => {
+        await input.gateway.authorizeAgentAccess?.({
+          scope,
+          agentTypeId: update.ref.agentTypeId,
+          operation: 'stream.event',
+        })
+        write('activity', update)
+      }).catch(() => {
+        cleanup()
+        if (!reply.raw.writableEnded) reply.raw.end()
+      })
     })
-    write('snapshot', { sessions: input.activity.snapshot(workspaceScopeId) })
+    write('snapshot', { sessions: snapshot })
     const heartbeat = setInterval(() => {
       if (!reply.raw.writableEnded) reply.raw.write(': heartbeat\n\n')
     }, ADDRESSED_HEARTBEAT_INTERVAL_MS)
@@ -279,6 +292,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         agentTypeId: params.agentTypeId,
         cursor: query.cursor,
         limit: query.limit,
+        ...(query.archived ? { archived: query.archived } : {}),
       })
     } catch (error) {
       return sendError(reply, error)
@@ -358,26 +372,20 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
     try {
-      // The service comes from the exact pin-checked existing-session binding;
-      // never re-resolve a candidate/current binding after authorization.
-      const { scope, service } = await input.resolveAddressedPiChatService(
+      // The backend comes from the authorized existing-session binding;
+      // never re-resolve another binding after authorization.
+      const { scope, backend } = await input.resolveHarnessBackend(
         request,
         params.agentTypeId,
         params.sessionId,
       )
-      if (!service.readAttachment) {
-        throw new AgentGatewayError(
-          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
-          'attachment not found',
-        )
-      }
-      const attachment = await service.readAttachment({
-        workspaceId: scope.workspaceScopeId,
-        storageScope: scope.workspaceScopeId,
-        authSubject: scope.authSubjectId,
-        sessionAuthority: 'workspace-scope',
+      const attachment = await backend.readAttachment({
+        workspaceScopeId: scope.workspaceScopeId,
+        ref: { agentTypeId: params.agentTypeId, sessionId: params.sessionId },
+      }, {
+        authSubjectId: scope.authSubjectId,
         requestId: request.id,
-      }, params.sessionId, params.messageId, params.index)
+      }, params.messageId, params.index)
       if (!attachment.mediaType.startsWith('image/')) {
         throw new AgentGatewayError(
           AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
@@ -493,6 +501,23 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     }
   })
 
+  app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/archive', async (request, reply) => {
+    const params = parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
+    if (!params) return
+    const body = parseWithSchema(ArchiveSessionBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      return await input.gateway.setSessionArchived({
+        scope: await input.options.authorizeAgentRequest(request),
+        ref: params,
+        requestId: body.requestId,
+        archived: body.archived,
+      })
+    } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
   app.delete('/api/v1/agents/:agentTypeId/sessions/:sessionId', async (request, reply) => {
     const params = parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
     if (!params) return
@@ -541,10 +566,13 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
   app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/interrupt', async (request, reply) => {
     const params = parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
     if (!params) return
-    const body = parseWithSchema(ControlBodySchema, request.body, reply, 'body')
+    const body = parseWithSchema(InterruptBodySchema, request.body, reply, 'body')
     if (!body) return
     try {
-      const control: IdempotentAgentControl = { requestId: body.requestId ?? randomUUID() }
+      const control: IdempotentInterruptControl = {
+        requestId: body.requestId ?? randomUUID(),
+        ...(body.queueAction !== undefined ? { queueAction: body.queueAction } : {}),
+      }
       return reply.code(202).send(await withConnection(input, request, params, (connection) => connection.interrupt(control)))
     } catch (error) {
       return sendError(reply, error)
@@ -606,5 +634,6 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
     if (input.runtimeCapabilities) {
       await app.register(createAgentHostRuntimeCapabilityRoutes(input.runtimeCapabilities))
     }
+    await input.registerAdditionalRoutes?.(app)
   }
 }

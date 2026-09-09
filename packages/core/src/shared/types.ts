@@ -29,6 +29,23 @@ export type Workspace = {
   readonly defaultAgentTypeId?: string | null
 }
 
+export type WorkspaceAgentSeatSource =
+  | 'signup-intent'
+  | 'generic-default'
+  | 'user-add'
+  | 'migration-default'
+  | 'migration-session'
+  | 'operator'
+
+export type WorkspaceAgentSeat = {
+  seatId: string
+  workspaceId: string
+  agentTypeId: string
+  source: WorkspaceAgentSeatSource
+  enrolledByUserId: string | null
+  createdAt: string
+}
+
 export type WorkspaceMember = {
   workspaceId: string
   userId: string
@@ -157,16 +174,17 @@ export interface CoreConfig {
   /**
    * Boot-time host default Agent seat. Stamped onto workspaces at
    * initialization (Decision 28) and used as the resolution fallback when a
-   * workspace has no persisted `defaultAgentTypeId`.
+   * workspace has no persisted `defaultAgentTypeId` during rolling migration.
+   * Generic hosts use the regular platform `default` Agent; composed fleet
+   * servers normalize this field to their validated application default.
    */
-  defaultAgentTypeId?: string
+  defaultAgentTypeId: string
 
   /**
-   * Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.
-   * Trusted host configuration (env/server option) validated against the
-   * fleet at boot; consumed only when initializing a newly created default
-   * Workspace at signup. The hostname has no continuing routing, membership,
-   * selection, or authorization effect and is never persisted.
+   * Exact trusted signup hostname -> additional specialist Agent Seat.
+   * The historical option name is retained for compatibility. Configuration
+   * is fleet-validated at boot and consumed only when initializing a new
+   * default Workspace; the application Default Agent remains primary.
    */
   signupAgentDefaults?: Readonly<Record<string, string>>
 
@@ -193,6 +211,10 @@ export interface CoreConfig {
   auth: {
     secret: string
     url: string
+    /** Public origin of the SPA front-end used to build user-facing email links
+     * (invite accept, password reset). Falls back to `url` when the front is
+     * served from the same origin as the API (the default in production). */
+    frontUrl?: string
     github?: { clientId: string; clientSecret: string }
     google?: { clientId: string; clientSecret: string }
     mail?: { from: string; transportUrl: string }
@@ -252,7 +274,7 @@ export type CoreCapabilities = {
 export type CapabilitiesResponse = {
   core: CoreCapabilities
   agent?: {
-    runtimeMode: 'direct' | 'local' | 'vercel-sandbox'
+    runtimeMode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
     tools: string[]
     modelProviders: string[]
   }

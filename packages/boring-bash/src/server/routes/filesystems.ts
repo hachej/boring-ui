@@ -35,6 +35,7 @@ const PRIMARY_FILESYSTEM: FilesystemCatalogEntry = {
     list: true,
     search: true,
     write: true,
+    upload: true,
     delete: true,
     move: true,
     mkdir: true,
@@ -53,6 +54,10 @@ function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCa
     list: typeof operations.list === 'function' && typeof operations.stat === 'function',
     search: typeof operations.find === 'function',
     write: mutable && typeof operations.write === 'function',
+    upload: mutable
+      && binding.filesystem === USER_FILESYSTEM_ID
+      && typeof operations.createBinary === 'function'
+      && typeof operations.writeBinary === 'function',
     delete: mutable && typeof operations.delete === 'function',
     move: mutable && typeof operations.move === 'function',
     mkdir: mutable && typeof operations.mkdir === 'function',
@@ -61,10 +66,15 @@ function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCa
 
 function catalogEntry(binding: RuntimeFilesystemBinding): FilesystemCatalogEntry | undefined {
   if (!validFilesystem(binding.filesystem) || binding.filesystem === USER_FILESYSTEM_ID) return undefined
+  if (binding.catalog?.visible === false) return undefined
+  const label = binding.catalog?.label ?? binding.filesystem
+  const rootDir = binding.catalog?.rootDir ?? '/'
+  if (!isValidCatalogString(label, CATALOG_STRING_MAX_LENGTH)) return undefined
+  if (!isValidCatalogString(rootDir, CATALOG_STRING_MAX_LENGTH)) return undefined
   return {
     filesystem: binding.filesystem,
-    label: binding.filesystem,
-    rootDir: '/',
+    label,
+    rootDir,
     access: binding.access === 'readwrite' ? 'readwrite' : 'readonly',
     capabilities: capabilitiesFor(binding),
   }
@@ -76,12 +86,17 @@ export function filesystemsRoutes(
   done: (err?: Error) => void,
 ): void {
   app.get('/api/v1/filesystems', async (request, reply) => {
+    reply.header('Cache-Control', 'private, no-store')
     try {
       const bindings = opts.getFilesystemBindings
         ? await opts.getFilesystemBindings(request) ?? []
         : opts.filesystemBindings ?? []
       const seen = new Set<string>([USER_FILESYSTEM_ID])
-      const filesystems: FilesystemCatalogEntry[] = [{ ...PRIMARY_FILESYSTEM }]
+      const primaryBinding = bindings.find((binding) => binding.filesystem === USER_FILESYSTEM_ID)
+      const filesystems: FilesystemCatalogEntry[] = [{
+        ...PRIMARY_FILESYSTEM,
+        ...(primaryBinding ? { capabilities: capabilitiesFor(primaryBinding) } : {}),
+      }]
       for (const binding of bindings) {
         if (seen.has(binding.filesystem)) continue
         const entry = catalogEntry(binding)

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Plus, Search, X } from "lucide-react"
+import { ChevronRight, MessageSquare, Plus, Search, X } from "lucide-react"
 import { Skeleton } from "@hachej/boring-ui-kit"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { FleetNewChatAction, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
@@ -24,6 +24,8 @@ export interface AppLeftPaneSession {
   hasAssistantReply?: boolean
   ephemeral?: boolean
   status?: "idle" | "running" | "aborting" | "error"
+  /** Visibility only: the chat moves to the Archived section, nothing is lost. */
+  archived?: boolean
 }
 
 export interface AppLeftPaneAgent {
@@ -63,6 +65,50 @@ export interface AppLeftPaneAction {
   trailing?: ReactNode
   emphasis?: boolean
   active?: boolean
+}
+
+export interface AppLeftNavigationEntry extends AppLeftPaneAction {
+  key: string
+  kind: "primary" | "chats"
+  collapsedTrailing?: ReactNode
+  expandedTrailing?: ReactNode
+}
+
+export function createAppLeftNavigationEntries({
+  actions,
+  onOpenChats,
+  onOpenCommandPalette,
+}: {
+  actions: readonly AppLeftPaneAction[]
+  onOpenChats: () => void
+  onOpenCommandPalette: () => void
+}): AppLeftNavigationEntry[] {
+  return [
+    {
+      key: "search",
+      id: "search",
+      kind: "primary",
+      icon: <Search className="h-4 w-4" strokeWidth={1.75} />,
+      label: "Search",
+      onClick: onOpenCommandPalette,
+      expandedTrailing: <KbdHint keys="⌘K" />,
+    },
+    ...actions.map((action) => ({
+      ...action,
+      key: `action:${action.id}`,
+      kind: "primary" as const,
+      collapsedTrailing: action.trailing,
+      expandedTrailing: action.trailing,
+    })),
+    {
+      key: "chats",
+      id: "chats",
+      kind: "chats",
+      icon: <MessageSquare className="size-4" strokeWidth={1.75} />,
+      label: "Chats",
+      onClick: onOpenChats,
+    },
+  ]
 }
 
 export interface AppLeftPaneProps {
@@ -118,7 +164,7 @@ export interface AppLeftPaneProps {
   onCreateSession: (agentTypeId?: string) => void
   onCreateSplitSession?: (agentTypeId?: string) => void
   onCreatePopoverSession?: (agentTypeId?: string) => void
-  onOpenCommandPalette: () => void
+  navigationEntries: readonly AppLeftNavigationEntry[]
   onSwitchSession: (id: string, agentTypeId?: string) => void
   onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
   /** Opens an existing chat in the detached quick-chat overlay. */
@@ -126,8 +172,20 @@ export interface AppLeftPaneProps {
   onToggleSessionPinned: (id: string, agentTypeId?: string) => void
   onDeleteSession?: (id: string, agentTypeId?: string) => unknown
   onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
-  /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
-  actions?: readonly AppLeftPaneAction[]
+  /** Archive / unarchive a chat. Visibility only — never a delete. */
+  onSetSessionArchived?: (id: string, archived: boolean, agentTypeId?: string) => void | Promise<unknown>
+  /** Paginated archived-only inventory, independent from active chat pages. */
+  archivedLoaded?: boolean
+  archivedLoading?: boolean
+  hasMoreArchived?: boolean
+  onLoadArchived?: () => void | Promise<unknown>
+  /**
+   * Identity of the archived inventory behind `onLoadArchived` — the source /
+   * controller cohort that owns those rows. The one-shot background probe is
+   * scoped to it: a new cohort is a new inventory and gets its own single
+   * probe (#1453).
+   */
+  archivedInventoryKey?: string
   /**
    * single-project: workspace shown below the app-title logo, no Workspaces
    * section — just the session list. multi-project: the Workspaces/projects
@@ -139,11 +197,12 @@ export interface AppLeftPaneProps {
 type SessionRowState = AppSessionRowState
 
 export function AppLeftRail({
-  actions = [],
+  navigationEntries,
   footerSlot,
   onCreateSession,
-  onOpenCommandPalette,
-}: Pick<AppLeftPaneProps, "actions" | "onCreateSession" | "onOpenCommandPalette"> & { footerSlot?: ReactNode }) {
+}: Pick<AppLeftPaneProps, "navigationEntries" | "onCreateSession"> & {
+  footerSlot?: ReactNode
+}) {
   return (
     <aside
       data-boring-workspace-part="app-left-rail"
@@ -151,19 +210,15 @@ export function AppLeftRail({
       aria-label="Collapsed app navigation"
     >
       <nav className="boring-scrollbar-discreet flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden" aria-label="Workspace shortcuts">
-        <RailAction
-          icon={<Search className="h-4 w-4" strokeWidth={1.75} />}
-          label="Search"
-          onClick={onOpenCommandPalette}
-        />
-        {actions.map((action) => (
+        {navigationEntries.map((entry) => (
           <RailAction
-            key={action.id}
-            icon={action.icon}
-            label={action.label}
-            onClick={action.onClick}
-            active={action.active}
-            trailing={action.trailing}
+            key={entry.key}
+            entryKey={entry.key}
+            icon={entry.icon}
+            label={entry.label}
+            onClick={entry.onClick}
+            active={entry.active}
+            trailing={entry.collapsedTrailing}
           />
         ))}
       </nav>
@@ -219,16 +274,23 @@ export function AppLeftPane({
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
-  onOpenCommandPalette,
+  navigationEntries,
   onSwitchSession,
   onOpenSessionAsPane,
   onOpenSessionDetached,
   onToggleSessionPinned,
   onDeleteSession,
   onRenameSession,
-  actions = [],
+  onSetSessionArchived,
+  archivedLoaded = false,
+  archivedLoading = false,
+  hasMoreArchived = false,
+  onLoadArchived,
+  archivedInventoryKey,
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
+  const primaryNavigationEntries = navigationEntries.filter((entry) => entry.kind === "primary")
+  const chatsNavigationEntry = navigationEntries.find((entry) => entry.kind === "chats")
   const normalizedActiveSessionId = activeSessionRef
     ? workspaceSessionKey(activeSessionRef.sessionId, activeSessionRef.agentTypeId)
     : activeSessionId ? workspaceSessionKey(activeSessionId) : activeSessionId
@@ -247,13 +309,18 @@ export function AppLeftPane({
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds(sessions)
-  // Any addressed fleet gets cards, including a fleet of one: "one card per
-  // Agent" is what exposes per-Agent settings and scoped chat creation. Hosts
-  // that want the plain single-Agent shell omit `agents` entirely.
-  const agentTreeEnabled = agents.length > 0
+  // Fleet row idiom (accent dot, compact rows, owner labels): any addressed
+  // fleet gets it, including a fleet of one, so chat cards look identical in
+  // both cardinalities. Hosts wanting the plain shell omit `agents` entirely.
+  const agentRowsEnabled = agents.length > 0
+  // Fleet CHROME — per-Agent sections and the New chat Agent picker — only
+  // earns its keep once there is more than one Agent to choose between. With a
+  // single Agent (the default seat) the pane is a flat "Chats" list, owner
+  // spec; the fleet hub (many seats) keeps the full tree.
+  const fleetChromeEnabled = agents.length > 1
   // Ratified layout: each Agent's chats nest under its card in single-project
   // mode; multi-project keeps chats inside the project tree instead.
-  const nestedAgentChats = agentTreeEnabled && layoutMode !== "multi-project"
+  const nestedAgentChats = fleetChromeEnabled && layoutMode !== "multi-project"
   const [agentFilter, setAgentFilter] = useState("")
   // The filter input hides behind its icon until asked for (owner spec); it
   // stays open while it holds a query so active filtering is never invisible.
@@ -312,21 +379,82 @@ export function AppLeftPane({
     }
     return badges
   }, [blockers])
+  // Archiving is a visibility state, not a deletion: an archived chat leaves
+  // every list above and reappears, whole, in the Archived section below. It
+  // is deliberately resolved once, here, so the pinned/recent/per-Agent lists
+  // and the Agent counts all agree on what is currently on show.
+  const archivedSessions = useMemo(
+    () => sessions.filter((session) => session.archived === true),
+    [sessions],
+  )
+  const listedSessions = useMemo(
+    () => (archivedSessions.length > 0 ? sessions.filter((session) => session.archived !== true) : sessions),
+    [archivedSessions.length, sessions],
+  )
   const pinnedSessions = useMemo(
     () => normalizedPinnedSessionIds
-      .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
+      .map((id) => listedSessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is AppLeftPaneSession => Boolean(session)),
-    [normalizedPinnedSessionIds, sessions],
+    [normalizedPinnedSessionIds, listedSessions],
   )
   const regularSessions = useMemo(
-    () => sessions.filter((session) => !pinnedSet.has(workspaceSessionKeyFor(session))),
-    [pinnedSet, sessions],
+    () => listedSessions.filter((session) => !pinnedSet.has(workspaceSessionKeyFor(session))),
+    [pinnedSet, listedSessions],
   )
+  const [archivedExpanded, setArchivedExpanded] = useState(false)
+  // Whether the Archived disclosure itself should render depends on whether
+  // any archived chat actually exists, and `sessions` only carries archived
+  // rows once the archived pager has been loaded at least once (#1429). A
+  // silent, one-shot background load — independent of whether the user ever
+  // expands the section — resolves that count so the control can stay
+  // hidden for anyone who has never archived a chat, instead of always
+  // rendering (and failing the 44px coarse-pointer touch-target gate) before
+  // its own emptiness is known.
+  //
+  // Attempt-once-ever, not "retry while unloaded": a rejected `loadArchived`
+  // leaves `archivedLoaded` false and `archivedLoading` false (the request
+  // records an error and resets), which re-satisfies this effect's own
+  // trigger condition. `loadArchived`'s identity ALSO changes with
+  // `archivedLoading`, so the effect re-fires. Without a latch that survives
+  // the failure, a persistent API error turns this "probe" into an unbounded
+  // sequential fetch loop. The ref is set synchronously before the call (not
+  // in a success/failure branch), so it latches regardless of outcome and
+  // never rearms — a stuck failure just means the control stays hidden until
+  // the user archives a chat directly (which populates `sessions` without
+  // going through this probe at all).
+  //
+  // Once-ever is the wrong scope, though: the latch lives for the pane's
+  // lifetime while the inventory it stands for belongs to a source /
+  // controller cohort that can go away and come back (an addressed Agent's
+  // controller drops, or the session source changes, and a replacement
+  // publishes with a fresh, unloaded archived pager). A lifetime latch would
+  // leave that replacement inventory unprobed forever — the same
+  // never-shows-the-Archived-section outcome, one flap later. So the latch is
+  // keyed on the cohort: exactly one probe per inventory, and the ref is
+  // cleared the moment the capability is withdrawn, because what comes back
+  // is a different inventory. A REJECTED probe is not a withdrawal — the
+  // handler is still there, the key is unchanged, and the latch holds — so
+  // this keeps the retry storm closed (#1453).
+  const archivedProbeCohort = archivedInventoryKey ?? "default"
+  const archivedProbedCohortRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!onLoadArchived) {
+      archivedProbedCohortRef.current = undefined
+      return
+    }
+    if (archivedProbedCohortRef.current === archivedProbeCohort) return
+    if (archivedLoaded || archivedLoading) return
+    // Set before the call, never in a then/catch: StrictMode replays this
+    // effect immediately, and the second pass must see the latch already
+    // closed for this cohort.
+    archivedProbedCohortRef.current = archivedProbeCohort
+    void onLoadArchived()
+  }, [onLoadArchived, archivedProbeCohort, archivedLoaded, archivedLoading])
   // One pass, three numbers. These used to be a memoized count plus two full
   // `sessions` scans re-run per Agent per render one line below it.
   const agentStats = useMemo(() => {
     const stats = new Map(agents.map((agent) => [agent.agentTypeId, { sessions: 0, working: 0, attention: 0 }]))
-    for (const session of sessions) {
+    for (const session of listedSessions) {
       if (!session.agentTypeId) continue
       const entry = stats.get(session.agentTypeId)
       if (!entry) continue
@@ -336,7 +464,7 @@ export function AppLeftPane({
       if (sessionBadges.has(key)) entry.attention += 1
     }
     return stats
-  }, [agents, sessionBadges, sessions, workingSessionIds])
+  }, [agents, sessionBadges, listedSessions, workingSessionIds])
   const agentLabelById = useMemo(
     () => new Map(agents.map((agent) => [agent.agentTypeId, shortAgentLabel(agent.label)])),
     [agents],
@@ -363,12 +491,13 @@ export function AppLeftPane({
       return {
         ...project,
         sessions: [...lensed],
+        loadingSessions: project.loadingSessions ?? (project.id === activeProjectId && sessionsLoading),
         // The count stays the true owned total; the lens narrows the rows, not
         // the workspace's real size.
         sessionCount: project.sessionCount ?? (project.id === activeProjectId ? regularSessions.length : injected.length),
       }
     })
-  }, [activeProjectId, chatsAgentLens, layoutMode, projects, regularSessions])
+  }, [activeProjectId, chatsAgentLens, layoutMode, projects, regularSessions, sessionsLoading])
   // Expansion is owned here (lifted from the tree) so pinned-project rows in the
   // Pinned section can expand their project in the tree on click.
   const [expandedProjectIds, setExpandedProjectIds] = useState<ReadonlySet<string>>(() => {
@@ -419,10 +548,10 @@ export function AppLeftPane({
         canPin={isActiveProjectSession}
         working={working}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
-        activeDot={agentTreeEnabled}
+        activeDot={agentRowsEnabled}
         // The accent dot marks the active chat (spike idiom) and any working one.
         activeDotActive={working || state === "active"}
-        compact={agentTreeEnabled && (nested || !pinned)}
+        compact={agentRowsEnabled && (nested || !pinned)}
         ownerLabel={showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
@@ -443,6 +572,9 @@ export function AppLeftPane({
         onRename={isActiveProjectSession && onRenameSession
           ? (id, title) => onRenameSession(id, title, session.agentTypeId)
           : undefined}
+        onToggleArchived={isActiveProjectSession && onSetSessionArchived
+          ? (id, archived) => onSetSessionArchived(id, archived, session.agentTypeId)
+          : undefined}
         onDelete={isActiveProjectSession && onDeleteSession
           ? session.agentTypeId
             ? () => onDeleteSession(session.id, session.agentTypeId)
@@ -460,7 +592,7 @@ export function AppLeftPane({
     // Pinning is a shortcut, not a move: the Agent's nested list keeps every
     // chat it owns (pinned ones carry the pin glyph), matching the count.
     const agentSessions = nestedAgentChats && expanded
-      ? sessions.filter((session) => session.agentTypeId === agent.agentTypeId)
+      ? listedSessions.filter((session) => session.agentTypeId === agent.agentTypeId)
       : []
     const card = (
       <AppLeftPaneAgentCard
@@ -504,12 +636,7 @@ export function AppLeftPane({
             {agentSessions.length > 0
               ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), activeProjectId ?? undefined, false, true))
               : (agent.sessionsStatus ?? "loading") === "loading"
-                ? (
-                  <div data-boring-workspace-part="app-left-chats-loading-surface" className="space-y-1 px-1 py-1" aria-label="Loading chats">
-                    <Skeleton className="h-6 w-full rounded-md" />
-                    <Skeleton className="h-6 w-3/4 rounded-md" />
-                  </div>
-                )
+                ? renderChatsLoading()
                 : (
                   <div className="flex min-h-[26px] items-center gap-1.5 pl-6 pr-1.5 text-[12px] text-muted-foreground/80">
                     <span>No chats yet.</span>
@@ -531,6 +658,74 @@ export function AppLeftPane({
       </div>
     )
   })
+
+  // The way back from Archive. It uses the "Pinned chats" heading verbatim —
+  // same size, weight, tracking, tone and right-aligned count — with the label
+  // promoted to a disclosure, because archived chats are the one group that
+  // should stay folded away until asked for. Nothing renders when nothing is
+  // archived, so the pane is unchanged for anyone who never archives (#1429:
+  // this used to also render whenever `onLoadArchived` merely existed, which
+  // is unconditionally true once a session API is wired up — the control
+  // showed on every screen, at zero archived chats, on every render).
+  const renderArchivedSection = () => archivedSessions.length > 0 ? (
+    <section data-boring-workspace-part="app-left-pane-archived" className="space-y-1" aria-label="Archived chats">
+      <button
+        type="button"
+        onClick={() => setArchivedExpanded((current) => {
+          const expanding = !current
+          if (expanding && !archivedLoaded && !archivedLoading) void onLoadArchived?.()
+          return expanding
+        })}
+        aria-expanded={archivedExpanded}
+        className="app-left-pane-archived-toggle flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <ChevronRight
+          className={cn("size-3 shrink-0 text-muted-foreground/70 transition-transform motion-reduce:transition-none", archivedExpanded && "rotate-90")}
+          strokeWidth={2}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 truncate">Archived</span>
+        <span className="ml-auto shrink-0 font-normal tabular-nums tracking-normal text-muted-foreground">{archivedSessions.length}</span>
+      </button>
+      {archivedExpanded ? (
+        <div className="space-y-0.5">
+          {archivedSessions.map((session) => renderSession(session, false))}
+          {archivedLoading && archivedSessions.length === 0 ? (
+            <div role="status" className="px-2 py-1 text-[11px] text-muted-foreground">Loading archived chats…</div>
+          ) : null}
+          {archivedLoaded && !archivedLoading && archivedSessions.length === 0 ? (
+            <div className="px-2 py-1 text-[11px] text-muted-foreground">No archived chats.</div>
+          ) : null}
+          {hasMoreArchived ? (
+            <button
+              type="button"
+              disabled={archivedLoading}
+              onClick={() => void onLoadArchived?.()}
+              className="rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              {archivedLoading ? "Loading…" : "Load more archived chats"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  ) : null
+
+  const renderChatsLoading = () => (
+    <div
+      data-boring-workspace-part="app-left-chats-loading-surface"
+      className="space-y-1 px-1 py-1"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Loading chats"
+    >
+      <div className="space-y-1" aria-hidden="true">
+        <Skeleton className="h-6 w-full rounded-md" />
+        <Skeleton className="h-6 w-3/4 rounded-md" />
+      </div>
+    </div>
+  )
 
   const renderAgentsSection = () => (
     <section data-boring-workspace-part="app-left-pane-agents" aria-label="Agents" className="space-y-1 border-t border-border/50 pt-3">
@@ -660,7 +855,7 @@ export function AppLeftPane({
         agentTypeId: session.agentTypeId,
         title: session.title,
         updatedAt: session.updatedAt,
-      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id, agentTreeEnabled)}
+      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id, agentRowsEnabled)}
     />
   )
 
@@ -685,32 +880,33 @@ export function AppLeftPane({
       <section className="boring-scrollbar-discreet min-h-0 max-h-[45%] shrink overflow-y-auto px-2 py-2.5" aria-labelledby="app-left-workspace-heading">
         <h2 id="app-left-workspace-heading" className="sr-only">Workspace</h2>
         <nav aria-label="Workspace actions">
-          <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
-          {actions.map((action) => (
+          {primaryNavigationEntries.map((entry) => (
             <PrimaryAction
-              key={action.id}
-              icon={action.icon}
-              label={action.label}
-              onClick={action.onClick}
-              trailing={action.trailing}
-              emphasis={action.emphasis}
-              active={action.active}
+              key={entry.key}
+              entryKey={entry.key}
+              icon={entry.icon}
+              label={entry.label}
+              onClick={entry.onClick}
+              trailing={entry.expandedTrailing}
+              emphasis={entry.emphasis}
+              active={entry.active}
             />
           ))}
         </nav>
       </section>
 
       <section
+        data-boring-app-left-nav-key={chatsNavigationEntry?.key}
         className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3"
-        aria-labelledby={agentTreeEnabled ? undefined : "app-left-chats-heading"}
-        aria-label={agentTreeEnabled ? "Agent navigation" : undefined}
+        aria-labelledby={fleetChromeEnabled ? undefined : "app-left-chats-heading"}
+        aria-label={fleetChromeEnabled ? "Agent navigation" : undefined}
       >
-        {!agentTreeEnabled ? (
+        {!fleetChromeEnabled ? (
           <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
-            Chats
+            {chatsNavigationEntry?.label}
           </h2>
         ) : null}
-        {!agentTreeEnabled ? (
+        {!fleetChromeEnabled ? (
           <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
             <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
           </div>
@@ -720,16 +916,18 @@ export function AppLeftPane({
           className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 pb-2 [mask-image:linear-gradient(to_bottom,transparent_0,black_8px,black_calc(100%_-_8px),transparent_100%)] motion-reduce:[mask-image:none]"
         >
           {/* Multi-project (PR2): projects remain inside the Chats region. */}
-          {layoutMode === "multi-project" ? (
+          {layoutMode === "multi-project" ? sessionsLoading && !fleetChromeEnabled ? (
+            renderChatsLoading()
+          ) : (
             <div className="space-y-3 py-1">
-              {agentTreeEnabled ? renderFleetNewChat() : null}
+              {fleetChromeEnabled ? renderFleetNewChat() : null}
               {pinnedSessions.length > 0 || pinnedProjects.length > 0 ? (
                 <SessionSubSection title="Pinned">
                   {pinnedSessions.map((session) => renderSession(session, true))}
                   {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
                 </SessionSubSection>
               ) : null}
-              {agentTreeEnabled ? renderAgentsSection() : null}
+              {fleetChromeEnabled ? renderAgentsSection() : null}
               <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
                 <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">{workspaceSectionTitle}</span>
@@ -748,39 +946,45 @@ export function AppLeftPane({
                 </div>
                 {renderProjectTree(unpinnedProjectItems)}
               </section>
+              {renderArchivedSection()}
             </div>
           ) : (
-            <div className={agentTreeEnabled ? "space-y-3 py-1" : "space-y-4 py-1"}>
-              {agentTreeEnabled ? renderFleetNewChat() : null}
-              {pinnedSessions.length > 0 ? (
-                agentTreeEnabled ? (
-                  <section className="mb-3 px-0" aria-label="Pinned chats">
-                    <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
-                      <span>Pinned chats</span>
-                      <span className="font-normal tabular-nums text-muted-foreground">{pinnedSessions.length}</span>
-                    </div>
-                    <div className="space-y-0.5">{pinnedSessions.map((session) => renderSession(session, true))}</div>
-                  </section>
-                ) : (
-                  <SessionSubSection title="Pinned">
-                    {pinnedSessions.map((session) => renderSession(session, true))}
-                  </SessionSubSection>
-                )
-              ) : null}
-              {/* Nested layout: each Agent's chats live under its card. */}
-              {agentTreeEnabled ? (
-                renderAgentsSection()
-              ) : (
-                <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
-                  {regularSessions.map((session) => renderSession(session, false))}
-                </SessionSubSection>
+            <div className={fleetChromeEnabled ? "space-y-3 py-1" : "space-y-4 py-1"}>
+              {fleetChromeEnabled ? renderFleetNewChat() : null}
+              {sessionsLoading && !fleetChromeEnabled ? renderChatsLoading() : (
+                <>
+                  {pinnedSessions.length > 0 ? (
+                    fleetChromeEnabled ? (
+                      <section className="mb-3 px-0" aria-label="Pinned chats">
+                        <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+                          <span>Pinned chats</span>
+                          <span className="font-normal tabular-nums text-muted-foreground">{pinnedSessions.length}</span>
+                        </div>
+                        <div className="space-y-0.5">{pinnedSessions.map((session) => renderSession(session, true))}</div>
+                      </section>
+                    ) : (
+                      <SessionSubSection title="Pinned">
+                        {pinnedSessions.map((session) => renderSession(session, true))}
+                      </SessionSubSection>
+                    )
+                  ) : null}
+                  {/* Nested layout: each Agent's chats live under its card. */}
+                  {fleetChromeEnabled ? (
+                    renderAgentsSection()
+                  ) : (
+                    <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty="No chats yet.">
+                      {regularSessions.map((session) => renderSession(session, false))}
+                    </SessionSubSection>
+                  )}
+                  {renderArchivedSection()}
+                </>
               )}
             </div>
           )}
         </div>
       </section>
 
-      {bottomSlot ? <footer data-boring-workspace-part="app-left-footer" className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}
+      {bottomSlot ? <footer data-boring-workspace-part="app-left-footer" className="shrink-0 border-t border-border/40 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]">{bottomSlot}</footer> : null}
     </aside>
   )
 }

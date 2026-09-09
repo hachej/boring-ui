@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, type ReactNode } from "react"
-import type { FileTreeRootConfig } from "./FileTreeView"
+import type { FileTreeRootConfig } from "./FileTreePane"
 
 const FileTreeRootsContext = createContext<readonly FileTreeRootConfig[] | undefined>(undefined)
 

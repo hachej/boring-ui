@@ -6,7 +6,7 @@
 > Core-owned behavior composition, authored tool catalogs, and combined host
 > graph.
 
-The active replacement is [`../plan.md`](../plan.md), with durable ownership in
+The active replacement is [`../plan.md`](../../../plans/agent-runtime/fleet-and-environments/plan.md), with durable ownership in
 [Decision 28](../../../DECISIONS.md#28-application-agent-fleets-workspace-orchestration-and-shared-execution-environments)
 and implementation detail in
 [`../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
@@ -32,5 +32,5 @@ persist workspaceTypeId (complete)
 
 The Step 1A backend supports a static default plus allowed agent types and proves
 two types share one Workspace + Sandbox. Initial human ingress still uses only
-the default. See [`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) for all
+the default. See [`../ROADMAP-ALIGNMENT.md`](../../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md) for all
 later work packages.

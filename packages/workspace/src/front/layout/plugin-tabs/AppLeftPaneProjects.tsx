@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Skeleton,
 } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { AppSessionRow } from "./AppLeftPaneSessionRow"
@@ -283,7 +284,12 @@ function ProjectRow({
       {expanded ? (
         <div className="space-y-0.5 pl-6">
           {project.loadingSessions && sessions.length === 0 ? (
-            <div className="px-1 py-1.5 text-xs text-muted-foreground">Loading chats…</div>
+            <div className="space-y-1 px-1 py-1.5" role="status" aria-live="polite" aria-label={`Loading chats in ${name}`}>
+              <div className="space-y-1" aria-hidden="true">
+                <Skeleton className="h-6 w-full rounded-md" />
+                <Skeleton className="h-6 w-3/4 rounded-md" />
+              </div>
+            </div>
           ) : sessions.length === 0 ? (
             <div className="px-1 py-1.5 text-xs text-muted-foreground">No chats yet.</div>
           ) : (

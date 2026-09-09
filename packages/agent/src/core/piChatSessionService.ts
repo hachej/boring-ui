@@ -1,18 +1,20 @@
 import type {
+  AgentPromptPayload,
   ChatModelSelection,
   CommandReceipt,
   FollowUpPayload,
   FollowUpReceipt,
   InterruptPayload,
   PiChatEvent,
+  PiChatAttachmentResult,
   PiChatSnapshot,
-  PromptPayload,
   PromptReceipt,
   QueueClearPayload,
   QueueClearReceipt,
   StopPayload,
   StopReceipt,
 } from '../shared/chat'
+export type { AgentPromptPayload, PiChatAttachmentResult } from '../shared/chat'
 import type { SessionListOptions, SessionSummary } from '../shared/session'
 
 export interface PiSessionRequestContext {
@@ -23,18 +25,14 @@ export interface PiSessionRequestContext {
   authEmailVerified?: boolean
   /** Addressed Gateway binds sessions to the verified workspace/storage scope. */
   sessionAuthority?: 'workspace-scope'
-  /** Server-only Host pin persisted by the session store during creation. */
-  runtimeScopeIdentity?: string
   requestId: string
 }
 
 export interface PiSessionCreateInit {
   title?: string
   modelDefault?: ChatModelSelection
+  originChannel?: import('../shared/channel').OriginChannel
 }
-
-/** Server-only prompt admission selector; browser schemas never accept requireIdle. */
-export type AgentPromptPayload = PromptPayload & { readonly requireIdle?: true }
 
 export type PiChatReplayRangeError =
   | { type: 'replay_gap'; latestSeq: number; minReplaySeq: number }
@@ -51,12 +49,6 @@ export type PiChatEventStreamResult = PiChatEventStreamSubscription | PiChatRepl
 
 export type PiChatEventSubscriber = (event: PiChatEvent) => void
 
-export interface PiChatAttachmentResult {
-  data: Uint8Array
-  mediaType: string
-  filename?: string
-}
-
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
@@ -72,6 +64,11 @@ export interface PiChatSessionService {
 }
 
 export interface AgentCoreSessionService extends PiChatSessionService {
+  /** Trusted host-only durable-tail resolver; never exposed as an HTTP route. */
+  resolveSessionStreamPath?(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+  ): Promise<string>
   /** Trusted host-only validation/binding seam; never exposed as an HTTP route. */
   ensurePiSessionBound?(
     ctx: PiSessionRequestContext,
@@ -117,7 +114,7 @@ export function isObservedSynchronousServiceError(error: unknown): boolean {
     && observedSynchronousServiceErrors.has(error as object)
 }
 
-type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'ensurePiSessionBound' | 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'resolveSessionStreamPath' | 'ensurePiSessionBound' | 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
@@ -134,6 +131,9 @@ export function withAgentEffectAdmission(
   admit: AgentEffectAdmission,
 ): AgentCoreSessionService {
   return {
+    ...(service.resolveSessionStreamPath
+      ? { resolveSessionStreamPath: (ctx, sessionId) => service.resolveSessionStreamPath!(ctx, sessionId) }
+      : {}),
     ...(service.ensurePiSessionBound
       ? { ensurePiSessionBound: (ctx, sessionId) => service.ensurePiSessionBound!(ctx, sessionId) }
       : {}),

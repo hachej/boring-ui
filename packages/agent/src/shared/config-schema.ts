@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export const RuntimeModeSchema = z.enum(["direct", "local", "vercel-sandbox"])
+export const RuntimeModeSchema = z.enum(["direct", "local", "blaxel", "vercel-sandbox"])
 export type RuntimeModeId = z.infer<typeof RuntimeModeSchema>
 
 export const ConfigSchema = z.object({
@@ -52,6 +52,15 @@ export const EnvSchema = z.object({
   VERCEL_TEAM_ID: z.string().optional(),
   VERCEL_PROJECT_ID: z.string().optional(),
   BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  BL_WORKSPACE: z.string().optional(),
+  BL_API_KEY: z.string().optional(),
+  BORING_BLAXEL_IMAGE: z.string().optional(),
+  BORING_BLAXEL_MEMORY_MB: z.coerce.number().int().positive().optional(),
+  BORING_BLAXEL_REGION: z.string().optional(),
+  BORING_BLAXEL_VOLUME_SIZE_MB: z.coerce.number().int().positive().optional(),
+  BORING_BLAXEL_TTL: z.string().optional(),
+  BORING_BLAXEL_IDLE_TTL: z.string().optional(),
+  BORING_BLAXEL_TERMINATED_RETENTION: z.string().optional(),
 })
 
 export type AgentEnv = z.infer<typeof EnvSchema>

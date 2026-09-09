@@ -1,0 +1,311 @@
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { createFactoryPlayground } from './app'
+import { startFactoryHost } from './factoryHost'
+import {
+  loadNativeFactoryFleet,
+  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+  createFactoryDelegatePlugin,
+  createFactorySandboxPlugin,
+  FACTORY_WORKER_AGENT_TYPE_ID,
+  deriveFactoryWorkspaceScopeId,
+  type FactoryEpicEntry,
+  type FactoryEpicRegistry,
+  type FactorySessionBindings,
+} from '@hachej/boring-factory/server'
+import { simulateFactoryFeature } from './simulateFeature'
+
+const EPIC_KEY = 'live-farewell'
+const WORKSPACE_SCOPE_ID = deriveFactoryWorkspaceScopeId(EPIC_KEY)
+const EPIC_ENTRY: FactoryEpicEntry = {
+  epicKey: EPIC_KEY, featureName: 'Farewell API', worktree: process.cwd(), branch: 'epic/live-farewell',
+  repositoryRoot: process.cwd(), createdAt: '2026-09-05T00:00:00.000Z', status: 'active',
+}
+const EPIC_REGISTRY: FactoryEpicRegistry = {
+  load: async () => [EPIC_ENTRY], list: async () => [EPIC_ENTRY], get: async (key) => key === EPIC_KEY ? EPIC_ENTRY : undefined,
+  register: async () => EPIC_ENTRY, setOrchestratorSession: async () => EPIC_ENTRY, markClosed: async () => ({ ...EPIC_ENTRY, status: 'closed' }),
+}
+const SESSION_BINDINGS: FactorySessionBindings = {
+  load: async () => ({}), get: async () => undefined, bind: async () => {}, unbind: async () => {},
+  inherit: async () => EPIC_KEY,
+  reconcile: async () => ({ droppedSessionIds: [], restoredOrchestratorSessionIds: [] }),
+}
+const DELEGATE_OPTIONS = { stateRoot: resolve(tmpdir(), 'factory-composition-delegate'), workspaceScopeId: WORKSPACE_SCOPE_ID, registry: EPIC_REGISTRY, sessionBindings: SESSION_BINDINGS }
+
+const appRoot = resolve(import.meta.dirname, '../..')
+const repositoryRoot = resolve(appRoot, '../..')
+const temporaryRoots: string[] = []
+const brAvailable = spawnSync('br', ['--version'], { stdio: 'ignore' }).status === 0
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true })))
+})
+
+describe('native Factory composition', () => {
+  it('loads canonical repo profiles and grants supervision and sandbox to different seats', async () => {
+    const fleet = await loadNativeFactoryFleet(repositoryRoot, {
+      orchestrator: 'openai-codex:gpt-5.6-sol',
+      worker: 'anthropic:claude-sonnet-4-6',
+      reviewer: 'openai-codex:gpt-5.4',
+    })
+    expect(fleet.map((agent) => agent.agentTypeId)).toEqual([
+      FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+      FACTORY_WORKER_AGENT_TYPE_ID,
+      FACTORY_REVIEWER_AGENT_TYPE_ID,
+    ])
+    const orchestrator = fleet[0]!
+    const worker = fleet[1]!
+    const reviewer = fleet[2]!
+    expect(orchestrator.plugins?.map((plugin) => plugin.name)).toEqual(['factory-supervision', 'factory-demo', 'boring-automation', 'factory-delegate'])
+    expect(orchestrator.model?.preferred).toBe('openai-codex:gpt-5.6-sol')
+    expect(worker.plugins?.map((plugin) => plugin.name)).toEqual(['sandbox', 'factory-delegate'])
+    expect(worker.model?.preferred).toBe('anthropic:claude-sonnet-4-6')
+    expect(reviewer.plugins ?? []).toEqual([])
+    expect(reviewer.model?.preferred).toBe('openai-codex:gpt-5.4')
+    expect(reviewer.definition.instructions).toContain('boring-skill:start name=fresh-eyes')
+    expect(reviewer.definition.instructions).toContain('Your epic is given in the host context of your first message')
+    expect(reviewer.definition.instructions).toContain('Review only Beads labelled `epic:<key>` for the epic in host context')
+    expect(orchestrator.definition.instructions).toContain('boring-skill:start name=plan')
+    expect(worker.definition.instructions).toContain('boring-skill:start name=exec')
+    expect(worker.definition.instructions).not.toContain('boring-skill:start name=plan')
+    expect(orchestrator.definition.instructions).toContain('epic:<key>')
+    expect(worker.definition.instructions).toContain('epic:<key>')
+    expect(worker.definition.instructions).toContain('br ready --label epic:<key> --unassigned')
+
+    // owner-gate is no longer part of the Worker's canonical skill set; only the Orchestrator keeps it.
+    expect(worker.definition.instructions).not.toContain('boring-skill:start name=owner-gate')
+    expect(orchestrator.definition.instructions).toContain('boring-skill:start name=owner-gate')
+
+    // show-me is attached to the Orchestrator seat only (owner ruling: mandatory at both gates).
+    expect(orchestrator.definition.instructions).toContain('boring-skill:start name=show-me')
+    expect(worker.definition.instructions).not.toContain('boring-skill:start name=show-me')
+    expect(orchestrator.definition.instructions).toContain('The `show-me` skill above is mandatory, not optional, at both gates')
+
+    // Recovery rule (epic-binding appendix, orchestrator).
+    expect(orchestrator.definition.instructions).toContain('Recovery: run `factory_status` on every supervision tick.')
+    expect(orchestrator.definition.instructions).toContain('call the host\'s `recover_stale_claims` tool')
+    expect(orchestrator.definition.instructions).toContain('never release a busy claim')
+
+    // Uncommitted-changes handoff rule (epic-binding appendix, worker).
+    expect(worker.definition.instructions).toContain('If the shared worktree already holds uncommitted changes for your Bead from a previous')
+    expect(worker.definition.instructions).toContain('never revert them wholesale.')
+
+    // factory-precedence appendix: now only binds host tool names to steps the canonical
+    // exec/plan/owner-gate skill text already describes (that text is reconciled in the
+    // .agents/skills sources, not duplicated here).
+    expect(worker.definition.instructions).toContain("The `exec` skill above is this seat's full loop")
+    expect(worker.definition.instructions).toContain('The host tool that runs your adversarial review is `fresh_review`')
+    expect(orchestrator.definition.instructions).toContain("The `plan` and `owner-gate` skills above are this seat's full loop")
+    expect(orchestrator.definition.instructions).toContain('`dispatch_worker`')
+    expect(orchestrator.definition.instructions).toContain('`factory_status`')
+    expect(orchestrator.definition.instructions).toContain('`demo_sandbox`')
+    expect(orchestrator.definition.instructions).toContain('Gate 2 requires a demo URL when `demo_sandbox` can provide one.')
+    expect(orchestrator.definition.instructions).toContain('write the exact error under `Demo:`')
+    expect(orchestrator.definition.instructions).toContain('an owner or host waiver relayed in a prompt is authoritative (AGENTS.md hard rule 1).')
+    expect(reviewer.definition.instructions).not.toContain('factory-precedence')
+
+    expect(orchestrator.definition.instructions).toContain('feature name, worktree, and branch for every tool call')
+
+    const root = await mkdtemp(resolve(tmpdir(), 'factory-sandbox-composition-'))
+    temporaryRoots.push(root)
+    const sandbox = await createFactorySandboxPlugin({ stateRoot: root, env: {}, workspaceScopeId: 'factory-hub', registry: EPIC_REGISTRY, sessionBindings: SESSION_BINDINGS })
+    expect(sandbox.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
+      .toEqual(['sandbox', 'sandbox_bash'])
+    expect(() => sandbox.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }))
+      .toThrow('sandbox host grant denied')
+    expect(() => sandbox.agentToolFactory?.({ agentTypeId: 'ordinary-agent' }))
+      .toThrow('sandbox host grant denied')
+  })
+
+  it('boots the native app with supervise/factory_status only on the Orchestrator and sandbox only on the Worker', async () => {
+    const root = await mkdtemp(resolve(tmpdir(), 'factory-native-app-'))
+    temporaryRoots.push(root)
+    const app = await createFactoryPlayground({
+      appRoot,
+      repositoryRoot,
+      workspaceRoot: repositoryRoot,
+      logger: false,
+      env: {
+        BORING_AGENT_SESSION_ROOT: resolve(root, 'sessions'),
+        BORING_FACTORY_STATE_ROOT: resolve(root, 'state'),
+      },
+    })
+    try {
+      const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta' })
+      expect(meta.statusCode).toBe(200)
+      const metaBody = meta.json<{ workspaceId: string; epics: unknown[] }>()
+      expect(metaBody.workspaceId).toBe('factory-hub')
+      expect(metaBody.epics).toEqual([])
+
+      const header = { 'x-boring-workspace-id': metaBody.workspaceId }
+      const createSession = async (agentTypeId: string) => {
+        const response = await app.inject({
+          method: 'POST',
+          url: `/api/v1/agents/${agentTypeId}/sessions`,
+          headers: header,
+          payload: { requestId: `create-${agentTypeId}-${crypto.randomUUID()}` },
+        })
+        expect(response.statusCode, response.body).toBe(201)
+        return response.json<{ sessionId: string }>().sessionId
+      }
+      const workerSessionId = await createSession(FACTORY_WORKER_AGENT_TYPE_ID)
+      const orchestratorSessionId = await createSession(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID)
+      await createSession(FACTORY_REVIEWER_AGENT_TYPE_ID)
+      const commandsFor = async (agentTypeId: string, sessionId: string) => {
+        const response = await app.inject({
+          method: 'GET',
+          url: `/api/v1/agents/${agentTypeId}/commands?sessionId=${sessionId}`,
+          headers: header,
+        })
+        expect(response.statusCode).toBe(200)
+        return response.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)
+      }
+      expect(await commandsFor(FACTORY_WORKER_AGENT_TYPE_ID, workerSessionId)).toEqual([])
+      expect(await commandsFor(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, orchestratorSessionId)).toEqual([])
+
+      const workerTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_WORKER_AGENT_TYPE_ID}/tools`, headers: header })
+      const orchestratorTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/tools`, headers: header })
+      const reviewerTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_REVIEWER_AGENT_TYPE_ID}/tools`, headers: header })
+      const names = (response: typeof workerTools) => response.json<{ tools: Array<{ name: string }> }>().tools.map(({ name }) => name)
+      expect(workerTools.statusCode).toBe(200)
+      expect(orchestratorTools.statusCode).toBe(200)
+      expect(reviewerTools.statusCode).toBe(200)
+      expect(names(workerTools)).toContain('ask_user')
+      expect(names(orchestratorTools)).toContain('ask_user')
+      expect(names(reviewerTools)).toContain('ask_user')
+      expect(names(workerTools)).toEqual(expect.arrayContaining(['sandbox', 'sandbox_bash']))
+      expect(names(workerTools)).not.toContain('boring_automation')
+      expect(names(workerTools)).not.toContain('supervise')
+      expect(names(workerTools)).not.toContain('factory_status')
+      expect(names(orchestratorTools)).toContain('boring_automation')
+      expect(names(orchestratorTools)).not.toContain('sandbox')
+      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'recover_stale_claims', 'dispatch_worker', 'demo_sandbox']))
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
+  it('starts a direct headless hub without binding an epic at boot', async () => {
+    const root = await mkdtemp(resolve(tmpdir(), 'factory-headless-host-'))
+    temporaryRoots.push(root)
+    const stateRoot = resolve(root, 'state')
+    const workspaceRoot = resolve(root, 'workspace')
+    await mkdir(workspaceRoot, { recursive: true })
+    await writeFile(resolve(workspaceRoot, 'package.json'), JSON.stringify({ name: 'factory-headless-test', private: true }))
+
+    const registration = {
+      workspaceRoot,
+      stateRoot,
+      provider: 'local-simulation',
+      apiPort: 5640,
+      uiPort: 5641,
+      models: {
+        orchestrator: 'openai-codex:gpt-5.6-sol',
+        worker: 'anthropic:claude-sonnet-4-6',
+        reviewer: 'openai-codex:gpt-5.4',
+      },
+    } as const
+
+    const started = await startFactoryHost({
+      appRoot,
+      repositoryRoot,
+      registration,
+      logger: false,
+      listen: false,
+    })
+    try {
+      const response = await started.app.inject({ method: 'GET', url: '/api/v1/workspace/meta' })
+      expect(response.statusCode).toBe(200)
+      const meta = response.json() as { workspaceRoot: string; epics: unknown[]; workspaceId: string }
+      expect(meta.workspaceRoot).toBe(registration.workspaceRoot)
+      expect(meta.epics).toEqual([])
+      expect(meta.workspaceId).toBe('factory-hub')
+    } finally {
+      started.host.close()
+      await started.app.close()
+    }
+
+    await expect(startFactoryHost({
+      appRoot,
+      repositoryRoot,
+      registration: { ...registration, stateRoot: resolve(root, 'legacy-state') },
+      env: { BORING_FACTORY_EPIC_KEY: 'Not-A-Slug', BORING_FACTORY_FEATURE_NAME: 'Legacy Intake' },
+      logger: false,
+      listen: false,
+    })).rejects.toThrow('epicKey must be a lowercase slug')
+  })
+
+  it.runIf(brAvailable)('executes and cleans a two-Worker feature simulation through real sandbox tools', async () => {
+    const root = await mkdtemp(resolve(tmpdir(), 'factory-feature-simulation-'))
+    temporaryRoots.push(root)
+    const events: string[] = []
+    const receipt = await simulateFactoryFeature({
+      seedRoot: resolve(appRoot, 'src/fixtures/demo-repo'),
+      leaseRoot: resolve(root, 'leases'),
+      outputPath: resolve(root, 'receipt.json'),
+      delayMs: 0,
+      onEvent: (event) => { events.push(event.stage) },
+    })
+
+    expect(receipt.loopCommand).toBe('/loop')
+    expect(receipt.sharedEpicWorktree).toBe(true)
+    expect(receipt.workers).toHaveLength(2)
+    expect(new Set(receipt.workers.map((worker) => worker.sandbox)).size).toBe(2)
+    expect(receipt.workers.every((worker) => worker.hostValidation === 'clean' && worker.released)).toBe(true)
+    expect(receipt.workers.every((worker) => /^[a-f0-9]{40}$/.test(worker.sha))).toBe(true)
+    expect(receipt.workers.every((worker) => worker.sandboxSourceSha === worker.sha)).toBe(true)
+    expect(receipt.integratedFeatureSha).toBe(receipt.workers.at(-1)?.sha)
+    expect(receipt.integratedTestExitCode).toBe(0)
+    expect(receipt.cleanupDebt).toBe(0)
+    expect(receipt.merged).toBe(false)
+    expect(events).toEqual(expect.arrayContaining(['intake', 'plan-gate', 'loop', 'claim', 'commit', 'sandbox', 'validation', 'settled', 'integration', 'complete']))
+    await expect(readdir(resolve(root, 'leases'))).resolves.toEqual([])
+  }, 30_000)
+})
+
+describe('factory delegate plugin', () => {
+  it('grants dispatch_worker+factory_status+recovery to the orchestrator and fresh_review to the worker, and nothing to any other seat', () => {
+    const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
+    expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }).map((tool) => tool.name))
+      .toEqual(['dispatch_worker', 'factory_status', 'recover_stale_claims'])
+    expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
+      .toEqual(['fresh_review'])
+    expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_REVIEWER_AGENT_TYPE_ID })).toEqual([])
+    expect(plugin.agentToolFactory?.({ agentTypeId: 'ordinary-agent' })).toEqual([])
+  })
+
+  it('returns an isError result instead of throwing when the host has not bound a running app', async () => {
+    const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
+    const tools = plugin.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }) ?? []
+    const dispatchTool = tools.find((tool) => tool.name === 'dispatch_worker')
+    const statusTool = tools.find((tool) => tool.name === 'factory_status')
+    expect(dispatchTool).toBeDefined()
+    expect(statusTool).toBeDefined()
+
+    const result = await dispatchTool!.execute(
+      { brief: 'This brief is definitely long enough to pass validation.' },
+      { abortSignal: new AbortController().signal, toolCallId: 'call-1' },
+    )
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: 'HOST_NOT_BOUND' })
+
+    const statusResult = await statusTool!.execute({}, { abortSignal: new AbortController().signal, toolCallId: 'call-1b' })
+    expect(statusResult.isError).toBe(true)
+    expect(statusResult.details).toMatchObject({ code: 'HOST_NOT_BOUND' })
+  })
+
+  it('rejects a brief that is too short before touching the host', async () => {
+    const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
+    const [tool] = plugin.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }) ?? []
+    const result = await tool!.execute(
+      { brief: 'too short' },
+      { abortSignal: new AbortController().signal, toolCallId: 'call-2' },
+    )
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: 'INVALID_INPUT' })
+  })
+})

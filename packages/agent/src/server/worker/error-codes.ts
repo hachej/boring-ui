@@ -6,6 +6,7 @@ export const WORKER_ERROR_CODES = {
   VALIDATION_ERROR: 'validation_error',
   INVALID_WORKSPACE_ID: 'invalid_workspace_id',
   NOT_IMPLEMENTED: 'not_implemented',
+  ALREADY_EXISTS: 'REMOTE_WORKER_ALREADY_EXISTS',
   EXEC_CONCURRENCY_LIMIT: 'exec_concurrency_limit',
   UNSUPPORTED_WORKSPACE_OP: 'unsupported_workspace_op',
 } as const

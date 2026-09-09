@@ -1,10 +1,10 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
-import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
-import { sessionStreamPath, type AgentEvent } from '../../shared/events'
+import { chatErrorFromUnknown, type BoringChatMessage, type BoringChatPart, type ChatError, type ChatModelSelection, type FollowUpPayload, type FollowUpReceipt, type InterruptPayload, type PiChatEvent, type PiChatSnapshot, type PromptPayload, type PromptReceipt, type QueuedUserMessage, type QueueClearPayload, type QueueClearReceipt, type StopPayload, type StopReceipt } from '../../shared/chat'
+import { sessionStreamPath, type AgentEvent, type SessionStreamIdentity } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
-import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore } from '../events/eventStreamStore'
+import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore, type OwnedSessionStream } from '../events/eventStreamStore'
 import type {
   PiChatEventStreamResult,
   PiChatEventSubscriber,
@@ -30,17 +30,22 @@ type PiNativeHarness = AgentHarness & {
 const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
 const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp'])
 
+function sameModelSelection(left: ChatModelSelection | undefined, right: ChatModelSelection): boolean {
+  return left?.provider === right.provider && left.id === right.id
+}
+
+
 /** Pi session stores additionally expose the raw persisted message entries so
  * the cold-load path can run them through the same buildPiChatHistory mapping
  * as the live event path. */
 type PiSessionStoreLike = SessionStore & {
-  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[]; currentModel?: ChatModelSelection }>
   loadAttachment?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string, messageId: string, index: number) => Promise<{ data: Uint8Array; mediaType: string; filename?: string }>
 }
 
 interface LiveSessionChannel {
   sessionKey: string
-  streamPath: string
+  sessionStream?: OwnedSessionStream
   buffer: PiChatReplayBuffer
   adapter: PiAgentSessionAdapter
   unsubscribe: () => void
@@ -51,6 +56,7 @@ interface LiveSessionChannel {
   rejectClosed: (error: unknown) => void
   activeTurnId?: string
   messageTurnIds: Map<string, string>
+  advertisedModel?: ChatModelSelection
 }
 
 interface SyntheticPromptFailure {
@@ -58,7 +64,42 @@ interface SyntheticPromptFailure {
   error: ChatError
 }
 
+function mapSyntheticChatError(channel: LiveSessionChannel, error: ChatError): PiChatEvent {
+  return channel.mapper.mapSynthetic({
+    type: 'error',
+    turnId: channel.activeTurnId,
+    retryable: error.retryable,
+    error,
+  })
+}
+
+interface InterruptedQueueEntry {
+  followUp: QueuedUserMessage
+  serverText: string
+}
+
+interface QueueRestoreFailure {
+  entry: InterruptedQueueEntry
+  error: unknown
+}
+
+interface QueueRestoreResult {
+  failures: QueueRestoreFailure[]
+}
+
+type SendNowDisposition = 'active' | 'cancel-and-restore' | 'cancel-and-discard'
+
+interface SendNowTransaction {
+  disposition: SendNowDisposition
+  completion: Promise<void>
+  complete: () => void
+  fail: (error: unknown) => void
+  settlement?: Promise<void>
+}
+
 export interface HarnessPiChatServiceOptions {
+  /** Required attribute on durable owner rows; it is deliberately not part of the stream key. */
+  agentTypeId: string
   harness: AgentHarness
   sessionStore: SessionStore
   workdir: string
@@ -92,6 +133,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workdir: string
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
+  private readonly agentTypeId: string
   private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
   private readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
   private readonly channels = new Map<string, LiveSessionChannel>()
@@ -101,6 +143,9 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly sessionGenerations = new Map<string, number>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
+  private readonly queueResumeAdmissions = new Set<string>()
+  private readonly queueRecoveryRuns = new Map<string, Promise<void>>()
+  private readonly sendNowTransactions = new Map<string, SendNowTransaction>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
   private readonly liveAttachments = new Map<string, {
@@ -113,6 +158,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private disposePromise?: Promise<void>
 
   constructor(options: HarnessPiChatServiceOptions) {
+    this.agentTypeId = options.agentTypeId
     this.harness = options.harness as PiNativeHarness
     this.sessionStore = options.sessionStore
     this.workdir = options.workdir
@@ -188,6 +234,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.channelCreations.clear()
     this.sessionGenerations.clear()
     this.activePromptRuns.clear()
+    this.queueResumeAdmissions.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
     this.liveAttachments.clear()
@@ -202,13 +249,29 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
   }
 
+  async resolveSessionStreamPath(ctx: PiSessionRequestContext, sessionId: string): Promise<string> {
+    return this.lifecycle.run(async () => {
+      if (!this.eventStore) {
+        throw Object.assign(new Error('Durable event stream is unavailable.'), {
+          code: ErrorCode.enum.DURABLE_STREAM_UNAVAILABLE,
+        })
+      }
+      try {
+        await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      } catch (error) {
+        throw normalizeSessionAccessError(error, sessionId)
+      }
+      return sessionStreamPath(this.sessionIdentity(ctx, sessionId))
+    })
+  }
+
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     return this.lifecycle.run(() => this.deleteSessionBeforeDispose(ctx, sessionId))
   }
 
   private async deleteSessionBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     const sessionCtx = toSessionCtx(ctx)
-    const sessionKey = sessionCacheKey(sessionId, sessionCtx)
+    const sessionKey = sessionCacheKey(this.sessionIdentity(ctx, sessionId), sessionCtx)
     try {
       await this.sessionStore.load(sessionCtx, sessionId)
     } catch (error) {
@@ -271,6 +334,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
 
     const adapter = await this.getAdapter(ctx, sessionId, '')
+    // State hydration is the normal first request for a newly opened chat.
+    // Finish the channel's cold setup here so the first prompt only has to
+    // reserve and enqueue work; otherwise /prompt races this lazy setup and
+    // can spend the entire client request budget booting Pi/plugins.
+    await this.ensureChannel(ctx, sessionId, adapter)
     if (this.canRefreshFromPersistedState(sessionKey, adapter)) {
       const persisted = await this.readPersistedState(ctx, sessionId)
       if (
@@ -365,22 +433,28 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async readPersistedState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot | null> {
     if (!this.sessionStore.loadEntries) return null
+    let persisted: Awaited<ReturnType<NonNullable<PiSessionStoreLike['loadEntries']>>>
     try {
-      const { id, messages } = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
-      return {
-        protocolVersion: 1,
-        sessionId: id,
-        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionKey(ctx, id))),
-        status: 'idle',
-        messages: buildPiChatHistory(messages, {
-          sessionId: id,
-          attachmentUrl: this.attachmentUrlFor(id),
-        }),
-        queue: { followUps: [] },
-        followUpMode: 'one-at-a-time',
-      }
+      persisted = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
     } catch {
       return null
+    }
+    const { id, messages, currentModel } = persisted
+    const seq = this.eventStore
+      ? await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionIdentity(ctx, id)))
+      : 0
+    return {
+      protocolVersion: 1,
+      sessionId: id,
+      seq,
+      status: 'idle',
+      currentModel,
+      messages: buildPiChatHistory(messages, {
+        sessionId: id,
+        attachmentUrl: this.attachmentUrlFor(id),
+      }),
+      queue: { followUps: [] },
+      followUpMode: 'one-at-a-time',
     }
   }
 
@@ -402,6 +476,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reservation is the dedup authority and must settle before model execution.
@@ -425,6 +500,13 @@ export class HarnessPiChatService implements PiChatSessionService {
       }
     }
     if (outcome === 'cancelled') throw promptCancelledError()
+    const currentModel = adapter.currentModel?.()
+    if (currentModel && !sameModelSelection(channel.advertisedModel, currentModel)) {
+      channel.advertisedModel = currentModel
+      this.publishChannelEvents(sessionId, channel, [
+        channel.mapper.mapSynthetic({ type: 'model-changed', currentModel }),
+      ])
+    }
     this.messageMetadata.recordPrompt(sessionKey, payload)
     const receiptCursor = nextPromptReceiptCursor(channel)
     try {
@@ -450,6 +532,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async followUpBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reserve before enqueueing so duplicates cannot take a second hold.
@@ -499,6 +582,9 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async clearQueueBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    const sendNow = this.sendNowTransactions.get(sessionKey)
+    if (sendNow && !hasFollowUpSelector(payload)) transitionSendNow(sendNow, 'cancel-and-discard')
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     if (hasFollowUpSelector(payload)) {
       const before = adapter.readSnapshot().followUpMessages.length
@@ -517,28 +603,121 @@ export class HarnessPiChatService implements PiChatSessionService {
     return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
   }
 
-  async interrupt(ctx: PiSessionRequestContext, sessionId: string, _payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
-    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId))
+  async interrupt(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
+    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId, payload))
   }
 
-  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<{ accepted: true; cursor: number }> {
+  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    const activeSendNow = this.sendNowTransactions.get(sessionKey)
+    if (payload.queueAction === 'hold' && activeSendNow) {
+      transitionSendNow(activeSendNow, 'cancel-and-restore')
+      const activeAdapter = await this.getAdapter(ctx, sessionId, '')
+      this.metering?.markActiveStopped(sessionKey)
+      activeAdapter.abortRetry?.()
+      await activeAdapter.abort()
+      await activeSendNow.completion
+      await this.awaitQueueRecovery(sessionKey)
+      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
+    }
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const snapshot = adapter.readSnapshot()
     const wasActive = snapshot.isStreaming || snapshot.isRetrying
-    const nextFollowUp = wasActive ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter) : undefined
-    const activeRun = this.activePromptRuns.get(sessionKey)
-    adapter.abortRetry?.()
-    if (wasActive) await adapter.abort()
-    await this.drainPublishQueue(this.channels.get(sessionKey))
-    await activeRun?.catch(() => {})
-    // Release prompt reservations stranded before agent-start.
-    this.metering?.releasePending(sessionKey)
-    if (nextFollowUp) {
-      this.lifecycle.assertOpen()
-      await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+    const isResume = payload.queueAction === 'resume'
+    // A stale or double resume must never abort the replacement turn started by
+    // an earlier resume. The first request may intentionally interrupt an active
+    // turn (the queue toolbar's "Send now" action); subsequent requests are held
+    // out by queueResumeAdmissions until that replacement turn settles.
+    if (isResume && (snapshot.followUpMessages.length === 0 || this.queueResumeAdmissions.has(sessionKey) || (!wasActive && this.activePromptRuns.has(sessionKey)))) {
+      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
     }
-    return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
+    if (isResume) this.queueResumeAdmissions.add(sessionKey)
+    const sendNowTransaction = isResume ? createSendNowTransaction() : undefined
+    if (sendNowTransaction) this.sendNowTransactions.set(sessionKey, sendNowTransaction)
+    try {
+      const shouldPromoteFollowUp = isResume || (wasActive && payload.queueAction !== 'hold')
+      const queuedFollowUps = shouldPromoteFollowUp
+        ? this.followUpsForInterrupt(sessionId, sessionKey, adapter)
+        : []
+      const nextFollowUp = queuedFollowUps[0]
+      const resumedFollowUps = isResume
+        ? queuedFollowUps.map((followUp) => ({
+            followUp,
+            serverText: this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)?.serverText ?? followUp.displayText,
+          }))
+        : []
+      const activeRun = this.activePromptRuns.get(sessionKey)
+      let resumeQueueCleared = false
+      try {
+        // Pi may automatically drain its native follow-up queue as the aborted
+        // run settles. Snapshot and clear before aborting so Send-now cannot
+        // emit entries individually and then repost the combined queue.
+        if (isResume && queuedFollowUps.length > 0) {
+          this.clearAllFollowUps(adapter, sessionId, sessionKey)
+          resumeQueueCleared = true
+        }
+        // Hold and active Send-now are both voluntary cancellation paths. Mark
+        // the old run before abort so a no-usage terminal event releases rather
+        // than fallback-charges its reservation.
+        if (payload.queueAction === 'hold' || (isResume && wasActive)) {
+          this.metering?.markActiveStopped(sessionKey)
+        }
+        adapter.abortRetry?.()
+        if (wasActive) await adapter.abort()
+        await this.drainPublishQueue(this.channels.get(sessionKey))
+        await activeRun?.catch(() => {})
+        // Release prompt reservations stranded before agent-start.
+        this.metering?.releasePending(sessionKey)
+      } catch (error) {
+        let reportedError = error
+        if (resumeQueueCleared && sendNowTransaction?.disposition !== 'cancel-and-discard') {
+          const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, resumedFollowUps)
+          this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+          if (restore.failures.length > 0) {
+            reportedError = new AggregateError(
+              [error, ...restore.failures.map((failure) => failure.error)],
+              'Send-now failed and the held queue could not be fully restored.',
+            )
+          }
+        }
+        sendNowTransaction?.fail(reportedError)
+        throw reportedError
+      }
+      if (nextFollowUp) {
+        this.lifecycle.assertOpen()
+        if (isResume && sendNowTransaction?.disposition === 'active') {
+          await this.autoPostInterruptedQueue(sessionId, sessionKey, adapter, resumedFollowUps, sendNowTransaction)
+        } else if (isResume && sendNowTransaction?.disposition === 'cancel-and-restore') {
+          const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, resumedFollowUps)
+          this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+          if (restore.failures.length > 0) {
+            const error = new AggregateError(
+              restore.failures.map((failure) => failure.error),
+              'Send-now was cancelled but the held queue could not be fully restored.',
+            )
+            sendNowTransaction.fail(error)
+            throw error
+          }
+        } else if (!isResume) {
+          await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+        }
+      }
+      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
+    } finally {
+      if (sendNowTransaction && !sendNowTransaction.settlement) {
+        if (this.sendNowTransactions.get(sessionKey) === sendNowTransaction) this.sendNowTransactions.delete(sessionKey)
+        sendNowTransaction.complete()
+      }
+      if (isResume) {
+        const resumedRun = this.activePromptRuns.get(sessionKey)
+        if (resumedRun) {
+          void resumedRun.finally(() => this.queueResumeAdmissions.delete(sessionKey)).catch(() => {})
+        } else {
+          this.queueResumeAdmissions.delete(sessionKey)
+        }
+      }
+    }
   }
 
   async stop(ctx: PiSessionRequestContext, sessionId: string, _payload: StopPayload): Promise<StopReceipt> {
@@ -547,8 +726,11 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async stopBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<StopReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    const sendNow = this.sendNowTransactions.get(sessionKey)
+    if (sendNow) transitionSendNow(sendNow, 'cancel-and-discard')
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, '')
-    const clearedQueue = this.clearAllFollowUps(adapter, sessionId, sessionKey)
+    const clearedBeforeAbort = this.clearAllFollowUps(adapter, sessionId, sessionKey)
     // The active run settles/releases via the native aborted agent-end; queued
     // and not-yet-started prompt reservations are released here so they don't
     // hold the user's balance until TTL. Mark the active run user-stopped BEFORE
@@ -559,8 +741,18 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.metering?.releaseQueued(sessionKey)
     this.metering?.releasePending(sessionKey)
     await adapter.abort()
+    await sendNow?.completion
+    await this.awaitQueueRecovery(sessionKey)
+    const clearedAfterAbort = sendNow
+      ? this.clearAllFollowUps(adapter, sessionId, sessionKey)
+      : []
     await this.drainPublishQueue(this.channels.get(sessionKey))
-    return { accepted: true, stopped: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, clearedQueue: buildPiChatQueuedFollowUps(sessionId, clearedQueue) }
+    return {
+      accepted: true,
+      stopped: true,
+      cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0,
+      clearedQueue: buildPiChatQueuedFollowUps(sessionId, [...clearedBeforeAbort, ...clearedAfterAbort]),
+    }
   }
 
   private clearAllFollowUps(adapter: PiAgentSessionAdapter, sessionId: string, sessionKey: string): string[] {
@@ -571,12 +763,153 @@ export class HarnessPiChatService implements PiChatSessionService {
     return removedFollowUps(before, after)
   }
 
-  private nextFollowUpForInterrupt(sessionId: string, sessionKey: string, adapter: PiAgentSessionAdapter): QueuedUserMessage | undefined {
-    const followUps = this.messageMetadata.enrichQueuedFollowUps(
+  private followUpsForInterrupt(sessionId: string, sessionKey: string, adapter: PiAgentSessionAdapter): QueuedUserMessage[] {
+    return this.messageMetadata.enrichQueuedFollowUps(
       sessionKey,
       buildPiChatQueuedFollowUps(sessionId, adapter.readSnapshot().followUpMessages),
     )
-    return followUps[0]
+  }
+
+  private async autoPostInterruptedQueue(
+    sessionId: string,
+    sessionKey: string,
+    adapter: PiAgentSessionAdapter,
+    queued: InterruptedQueueEntry[],
+    transaction: SendNowTransaction,
+  ): Promise<void> {
+    const first = queued[0]
+    if (!first) return
+
+    const channel = this.channels.get(sessionKey)
+    const serverText = queued.map((item) => item.serverText).join('\n\n')
+    const combinedFollowUp = {
+      ...first.followUp,
+      displayText: queued.map((item) => item.followUp.displayText).join('\n\n'),
+    }
+    this.messageMetadata.recordConsumingFollowUp(sessionKey, combinedFollowUp, serverText)
+    this.metering?.promoteQueuedToPrompt(sessionKey, first.followUp)
+
+    let promptRun: Promise<void>
+    try {
+      promptRun = this.runAndDrainPublishQueue(channel, adapter.prompt(serverText))
+    } catch (error) {
+      this.metering?.restorePromotedFollowUp(sessionId, first.followUp, sessionKey)
+      const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, queued, combinedFollowUp)
+      this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+      throw restore.failures.length > 0
+        ? new AggregateError([error, ...restore.failures.map((failure) => failure.error)], 'Send-now failed and the held queue could not be fully restored.')
+        : error
+    }
+
+    const settlement = promptRun.then(() => {
+      this.releaseCombinedQueueRemainder(sessionKey, queued)
+    }).catch(async (error) => {
+      const unconsumed = this.messageMetadata.hasConsumingFollowUp(sessionKey, combinedFollowUp)
+      if (unconsumed && transaction.disposition !== 'cancel-and-discard') {
+        this.metering?.restorePromotedFollowUp(sessionId, first.followUp, sessionKey)
+        const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, queued, combinedFollowUp)
+        this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+        const reportedError = restore.failures.length > 0
+          ? new AggregateError([error, ...restore.failures.map((failure) => failure.error)], 'Send-now failed and the held queue could not be fully restored.')
+          : error
+        this.publishAutoPostedFollowUpRunError(sessionKey, sessionId, channel, reportedError)
+        return
+      }
+      if (unconsumed) {
+        this.messageMetadata.removeConsumingFollowUp(sessionKey, combinedFollowUp)
+        this.metering?.failPromotedFollowUp(sessionId, first.followUp, sessionKey)
+      }
+      this.releaseCombinedQueueRemainder(sessionKey, queued)
+      this.publishAutoPostedFollowUpRunError(sessionKey, sessionId, channel, error)
+    })
+    const trackedSettlement = this.trackActiveRun(sessionKey, settlement)
+    transaction.settlement = trackedSettlement
+    void trackedSettlement.finally(() => {
+      if (this.sendNowTransactions.get(sessionKey) === transaction) this.sendNowTransactions.delete(sessionKey)
+      transaction.complete()
+    }).catch(() => {})
+
+    // Acknowledge once synchronously emitted replacement events are durable;
+    // the tracked settlement (including recovery) remains fenced and stoppable.
+    await Promise.race([
+      this.drainPublishQueue(channel),
+      this.lifecycle.closingPromise,
+    ])
+    if (!this.messageMetadata.hasConsumingFollowUp(sessionKey, combinedFollowUp)) {
+      this.releaseCombinedQueueRemainder(sessionKey, queued)
+    }
+  }
+
+  private releaseCombinedQueueRemainder(sessionKey: string, queued: InterruptedQueueEntry[]): void {
+    for (const item of queued.slice(1)) {
+      this.metering?.releaseQueued(sessionKey, followUpSelector(item.followUp))
+    }
+  }
+
+  private async awaitQueueRecovery(sessionKey: string): Promise<void> {
+    await this.queueRecoveryRuns.get(sessionKey)
+  }
+
+  private restoreInterruptedQueue(
+    sessionId: string,
+    sessionKey: string,
+    adapter: PiAgentSessionAdapter,
+    queued: InterruptedQueueEntry[],
+    consumingFollowUp?: QueuedUserMessage,
+  ): Promise<QueueRestoreResult> {
+    const run = this.restoreInterruptedQueueOnce(sessionId, sessionKey, adapter, queued, consumingFollowUp)
+    const gate = run.then(() => {}, () => {})
+    this.queueRecoveryRuns.set(sessionKey, gate)
+    void gate.finally(() => {
+      if (this.queueRecoveryRuns.get(sessionKey) === gate) this.queueRecoveryRuns.delete(sessionKey)
+    })
+    return run
+  }
+
+  private async restoreInterruptedQueueOnce(
+    sessionId: string,
+    sessionKey: string,
+    adapter: PiAgentSessionAdapter,
+    queued: InterruptedQueueEntry[],
+    consumingFollowUp?: QueuedUserMessage,
+  ): Promise<QueueRestoreResult> {
+    const originalSelectors = new Set(queued.map((item) => queueEntryIdentity(item.followUp)))
+    const intervening = this.followUpsForInterrupt(sessionId, sessionKey, adapter)
+      .filter((followUp) => !originalSelectors.has(queueEntryIdentity(followUp)))
+      .map((followUp) => ({
+        followUp,
+        serverText: this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)?.serverText ?? followUp.displayText,
+      }))
+    if (intervening.length > 0) this.clearAllFollowUps(adapter, sessionId, sessionKey)
+    if (consumingFollowUp) this.messageMetadata.removeConsumingFollowUp(sessionKey, consumingFollowUp)
+
+    const failures: QueueRestoreFailure[] = []
+    for (const entry of [...queued, ...intervening]) {
+      try {
+        await adapter.followUp(entry.serverText, {
+          displayText: entry.followUp.displayText,
+          clientNonce: entry.followUp.clientNonce,
+          clientSeq: entry.followUp.clientSeq,
+        })
+        if (entry.followUp.clientNonce && entry.followUp.clientSeq !== undefined) {
+          this.messageMetadata.recordFollowUp(sessionKey, {
+            message: entry.serverText,
+            displayMessage: entry.followUp.displayText,
+            clientNonce: entry.followUp.clientNonce,
+            clientSeq: entry.followUp.clientSeq,
+          })
+        }
+      } catch (error) {
+        failures.push({ entry, error })
+      }
+    }
+    return { failures }
+  }
+
+  private releaseFailedQueueRestorations(sessionKey: string, failures: QueueRestoreFailure[]): void {
+    for (const failure of failures) {
+      this.metering?.releaseQueued(sessionKey, followUpSelector(failure.entry.followUp))
+    }
   }
 
   private async autoPostInterruptedFollowUp(
@@ -709,19 +1042,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     error: unknown,
   ): void {
     if (!channel) return
-    const followUpError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message
-        ? error.message
-        : 'Queued follow-up failed before the agent run started.',
-      retryable: false,
-    }
-    const errorEvent = channel.mapper.mapSynthetic({
-      type: 'error',
-      turnId: channel.activeTurnId,
-      retryable: false,
-      error: followUpError,
-    })
+    const followUpError = chatErrorFromUnknown(
+      error,
+      'Queued follow-up failed before the agent run started.',
+    )
+    const errorEvent = mapSyntheticChatError(channel, followUpError)
     this.publishChannelEvents(sessionId, channel, [errorEvent], () => {
       this.activeSyntheticPromptErrors.set(sessionKey, followUpError)
       channel.activeTurnId = undefined
@@ -745,12 +1070,15 @@ export class HarnessPiChatService implements PiChatSessionService {
       return
     }
 
+    const eventStore = this.eventStore
     const next = channel.publishQueue.then(async () => {
       const publishedEvents: PiChatEvent[] = []
       for (const event of events) {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
-        await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq), streamPath: channel.streamPath })
+        const stream = channel.sessionStream
+        if (!stream) throw new Error('Durable event store channel is missing its owned session stream.')
+        await eventStore.appendAgentEvent(stream, enriched, { idempotencyKey: String(enriched.seq) })
         this.publishChannelEventSync(sessionId, channel, enriched)
       }
       afterPublish?.(publishedEvents)
@@ -798,17 +1126,11 @@ export class HarnessPiChatService implements PiChatSessionService {
       files: promptPayloadFileParts(payload, messageId),
       createdAt,
     })
-    const promptError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message ? error.message : 'Prompt failed before the agent run completed.',
-      retryable: false,
-    }
-    const errorEvent = channel.mapper.mapSynthetic({
-      type: 'error',
-      turnId: channel.activeTurnId,
-      retryable: false,
-      error: promptError,
-    })
+    const promptError = chatErrorFromUnknown(
+      error,
+      'Prompt failed before the agent run completed.',
+    )
+    const errorEvent = mapSyntheticChatError(channel, promptError)
     this.publishChannelEvents(sessionId, channel, [messageEvent, errorEvent], () => {
       const failures = this.syntheticPromptFailures.get(sessionKey) ?? []
       failures.push({ message, error: promptError })
@@ -874,28 +1196,31 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async getChannel(ctx: PiSessionRequestContext, sessionId: string): Promise<LiveSessionChannel> {
-    const sessionKey = this.sessionKey(ctx, sessionId)
+    const identity = this.sessionIdentity(ctx, sessionId)
+    const sessionKey = sessionCacheKey(identity, toSessionCtx(ctx))
     // Pin the incarnation before authorization: the entire cold open belongs
     // to the session generation that existed when the caller arrived.
     const generation = this.generationOf(sessionKey)
     await this.assertCanAccessSession(ctx, sessionId)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, generation, () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
+    return this.createChannelOnce(identity, sessionKey, ctx.authSubject, generation, () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
   }
 
   private async ensureChannel(ctx: PiSessionRequestContext, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
-    const sessionKey = this.sessionKey(ctx, sessionId)
+    const identity = this.sessionIdentity(ctx, sessionId)
+    const sessionKey = sessionCacheKey(identity, toSessionCtx(ctx))
     const generation = this.generationOf(sessionKey)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, generation, async () => adapter)
+    return this.createChannelOnce(identity, sessionKey, ctx.authSubject, generation, async () => adapter)
   }
 
   /** Coalesce concurrent cold callers so only one adapter subscription wins. */
   private async createChannelOnce(
+    identity: SessionStreamIdentity,
     sessionKey: string,
-    sessionId: string,
+    authSubjectId: string | undefined,
     generation: number,
     resolveAdapter: () => Promise<PiAgentSessionAdapter>,
   ): Promise<LiveSessionChannel> {
@@ -907,7 +1232,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       const adapter = await resolveAdapter()
       await this.lifecycle.assertAdapterOwned(adapter)
       await this.assertSessionIncarnation(sessionKey, generation, adapter)
-      return this.buildChannel(sessionKey, sessionId, adapter, generation)
+      return this.buildChannel(identity, sessionKey, authSubjectId, adapter, generation)
     })()
     this.channelCreations.set(sessionKey, creation)
     try {
@@ -934,18 +1259,25 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async buildChannel(
+    identity: SessionStreamIdentity,
     sessionKey: string,
-    sessionId: string,
+    authSubjectId: string | undefined,
     adapter: PiAgentSessionAdapter,
     generation: number,
   ): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    const streamPath = sessionStreamPath(sessionKey)
-    let buffer: PiChatReplayBuffer
+    const { sessionId } = identity
+    let sessionStream: OwnedSessionStream | undefined
+    let buffer = new PiChatReplayBuffer()
     try {
-      await this.eventStore?.createStream(streamPath)
-      buffer = await this.hydrateDurableReplayBuffer(streamPath)
+      if (this.eventStore) {
+        sessionStream = await this.eventStore.createSessionStream(identity, {
+          agentTypeId: this.agentTypeId,
+          ...(authSubjectId ? { authSubjectId } : {}),
+        })
+        buffer = await this.hydrateDurableReplayBuffer(sessionStream.path)
+      }
     } catch (error) {
       if (this.lifecycle.isClosing) await this.lifecycle.rejectLateAdapter(adapter, error)
       throw error
@@ -962,7 +1294,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     closed.promise.catch(() => {})
     const channel: LiveSessionChannel = {
       sessionKey,
-      streamPath,
+      ...(sessionStream ? { sessionStream } : {}),
       buffer,
       adapter,
       unsubscribe: () => {},
@@ -972,6 +1304,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       resolveClosed: () => closed.resolve(),
       rejectClosed: closed.reject,
       messageTurnIds: new Map(),
+      advertisedModel: adapter.currentModel?.(),
     }
     const unsubscribe = adapter.subscribe((event) => {
       const mappedEvents = mapper.map(event)
@@ -1093,7 +1426,15 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private sessionKey(ctx: PiSessionRequestContext, sessionId: string): string {
-    return sessionCacheKey(sessionId, toSessionCtx(ctx))
+    const identity = this.sessionIdentity(ctx, sessionId)
+    return sessionCacheKey(identity, toSessionCtx(ctx))
+  }
+
+  private sessionIdentity(ctx: PiSessionRequestContext, sessionId: string): SessionStreamIdentity {
+    return {
+      workspaceScopeId: toSessionCtx(ctx).workspaceId ?? '',
+      sessionId,
+    }
   }
 
 }
@@ -1265,6 +1606,30 @@ function detectPromptImageMimeType(bytes: Uint8Array): string | null {
   return null
 }
 
+function createSendNowTransaction(): SendNowTransaction {
+  let complete!: () => void
+  let fail!: (error: unknown) => void
+  const completion = new Promise<void>((resolve, reject) => {
+    complete = resolve
+    fail = reject
+  })
+  void completion.catch(() => {})
+  return { disposition: 'active', completion, complete, fail }
+}
+
+function transitionSendNow(transaction: SendNowTransaction, next: Exclude<SendNowDisposition, 'active'>): void {
+  if (transaction.disposition === 'cancel-and-discard') return
+  if (next === 'cancel-and-discard' || transaction.disposition === 'active') {
+    transaction.disposition = next
+  }
+}
+
+function queueEntryIdentity(followUp: QueuedUserMessage): string {
+  if (followUp.clientNonce) return `nonce:${followUp.clientNonce}`
+  if (followUp.clientSeq !== undefined) return `seq:${followUp.clientSeq}`
+  return `legacy:${followUp.id}:${followUp.displayText}`
+}
+
 function removedFollowUps(before: readonly string[], after: readonly string[]): string[] {
   const afterCounts = new Map<string, number>()
   for (const text of after) afterCounts.set(text, (afterCounts.get(text) ?? 0) + 1)
@@ -1288,11 +1653,7 @@ function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
   if (ctx.sessionAuthority !== 'workspace-scope') {
     return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
   }
-  const sessionCtx: SessionCtx = { workspaceId: ctx.storageScope ?? ctx.workspaceId }
-  if (ctx.runtimeScopeIdentity) {
-    Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
-  }
-  return sessionCtx
+  return { workspaceId: ctx.storageScope ?? ctx.workspaceId }
 }
 
 function liveAttachmentKey(sessionId: string, messageId: string, index: number): string {
@@ -1310,6 +1671,6 @@ function attachmentBytes(data: string | undefined): Uint8Array | undefined {
   }
 }
 
-function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
+function sessionCacheKey(identity: SessionStreamIdentity, ctx: SessionCtx): string {
+  return JSON.stringify([identity.sessionId, identity.workspaceScopeId, ctx.userId ?? ''])
 }

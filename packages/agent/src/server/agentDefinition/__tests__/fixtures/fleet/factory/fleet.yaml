@@ -1,9 +1,21 @@
+models:
+  tiers:
+    T3:
+      - provider: anthropic
+        id: claude-sonnet-4-6
+        envVar: ANTHROPIC_API_KEY
+      - provider: google
+        id: gemini-3-pro-preview
+        envVar: GEMINI_API_KEY
+
 seats:
   - seat: alpha
     agentTypeId: fixture-alpha
     skills:
       - name: greet
         digest: sha256:830555b295458756d3c94bce4cc763d7e666e47b59a9718015de3d237818d116
+      - name: skills/local
+        digest: sha256:97e420f7713ef2c4be618078f12936196c39790accea4c03e174ee981e9e2b37
   - seat: broken
     agentTypeId: fixture-broken
     skills:

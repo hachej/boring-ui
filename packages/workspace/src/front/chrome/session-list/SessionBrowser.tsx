@@ -437,7 +437,8 @@ function SessionRow({
   onDelete?: (id: string, agentTypeId?: string) => void
 }) {
   const time = formatRelativeAge(toDate(session.updatedAt)) ?? ""
-  const hasSessionStatus = Boolean(attentionBadge || working || time)
+  const failed = session.status === "error"
+  const hasSessionStatus = Boolean(attentionBadge || working || failed || time)
   return (
     <li
       role="listitem"
@@ -502,6 +503,21 @@ function SessionRow({
           >
             <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
             working
+          </span>
+        ) : failed ? (
+          <span
+            data-boring-workspace-part="session-badge"
+            data-boring-badge="failed"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none",
+              sessionBadgeToneClassName("danger"),
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn("h-1.5 w-1.5 shrink-0 rounded-full", sessionBadgeDotClassName("danger"))}
+            />
+            failed
           </span>
         ) : time ? (
           <span

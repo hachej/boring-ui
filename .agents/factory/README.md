@@ -2,9 +2,19 @@
 
 This file binds the factory together: which stage runs which skill, under which
 procedure, with which tools, and what gate lets work move on. It adds no new
-process — Boring Loop v2 (`docs/procedures/boring-loop.md`) and the procedures under
-`docs/procedures/` remain authoritative. When this file and a procedure
-disagree, the procedure wins and this file is fixed.
+process — Risk-Based Delivery (`docs/procedures/boring-loop.md`) and the
+procedures under `docs/procedures/` remain authoritative. When this file and a
+procedure disagree, the procedure wins and this file is fixed.
+
+**Owner amendment, 2026-09-07:** human-review boundaries and the >500 package
+production-line trigger are defined in `boring-loop.md`. Every code PR needs an
+independent cross-package abstraction PASS; plugin UI needs before/after
+Playwright video but does not wait for owner viewing on the automatic path.
+This document describes the adopted stage policy, not deployed enforcement.
+The legacy `policy.yaml` predicate and host/skill gates still need migration;
+preserve their stricter restrictions and every pending owner decision until the
+rollout in `boring-loop.md` is implemented and verified. Never infer approval or
+bypass existing gates from this amendment.
 
 Why the factory exists and which decisions are ratified: `docs/factory/VISION.md`.
 Build order: `docs/factory/TODO.md`.
@@ -25,28 +35,45 @@ Build order: `docs/factory/TODO.md`.
 
 One line per stage. The gate column is what must be true before work leaves it.
 
+**Seat column vs. the booted roster.** The booted fleet
+(`.agents/factory/fleet.yaml`) is three seats — `triage`, `orchestrator`,
+`worker` — owner-ratified 2026-08-10 (gh-1187 S0). The stage names below are
+still the pre-migration five: `concierge` and `steward` stages are held by
+`orchestrator`, and `reviewer` is not a seat at all — review is a rule, run as
+fresh-context subagents the worker spawns at gate time. This table is rewritten
+per activity in gh-1187 S8, once the workspace path has done each job for real;
+until then nothing is retired.
+
 | Stage | Seat | Skill | Procedure | In → Out | Gate |
 | --- | --- | --- | --- | --- | --- |
 | intake | — | `feedback` | boring-loop | raw report → canonical GH issue | deduplicated, redacted |
 | refine | concierge | `ask-boring` routing | boring-loop | idea/issue → agreed epic scope | owner says go (conversational) |
 | triage | triage | `triage` | boring-loop | GH issue → category, state, first blocker, route | exactly one state, one next action |
-| plan | steward | `plan` | `issue-plans.md` | epic → bead graph + proof path | **human gate 1**: plan-approval intention |
+| plan | steward | `plan` | `issue-plans.md` | epic → bead graph + proof path | clear intent/proof; **human gate 1** when a protected-boundary plan decision is needed (retain current host gates during rollout) |
 | dispatch | worker (pull) + beadle (supervisor) | — | `worktree-agent.md` | ready beads → claimed bead + worker session | pull-based: worker runs `br ready`, leases one bead, stamps its session id on the bead at claim; Beadle only spawns workers while ready > active (cap and lease rules in policy.yaml) — it never picks beads |
 | exec | worker | `exec` | `worktree-agent.md`, `proof-of-work.md` | one bead → commits + proof + handoff | focused proof green; handoff written |
-| review | reviewer | `fresh-eyes`, code review | `owner-review-card.md` | exact SHA → dispositions | no blocker/major open at that SHA |
-| merge | owner, or automatic for class A | — | `rolling-small-fixes.md` (bug lane) | reviewed PR → main | **human gate 2**: trust ladder in policy.yaml |
+| review | reviewer | `fresh-eyes`, code review | `coding-invariants.md`, `proof-of-work.md` | exact SHA → dispositions | no blocker/major open; explicit independent abstraction PASS for code; current UI-video/scenario proof when applicable |
+| merge | owner, or automatic when eligible and enforced | — | `boring-loop.md`; `rolling-small-fixes.md` (bug lane exception) | reviewed PR → main | current-main integration proof; **human gate 2** for protected boundaries, otherwise enforced automatic admission; retain current gates during rollout |
 
-Human attention exists at exactly two gates (plan approval, merge approval) and
-always as an inbox Human Intention via `ask_user` — never as out-of-band chat.
-Escalations from any stage use the same surface.
+Owner attention is reserved for protected-boundary decisions at plan/merge time
+and genuine exhausted recovery paths, through an inbox Human Intention via
+`ask_user` (GitHub comment fallback). Routine work receives a proof/merge receipt,
+not a new approval request once automatic admission is enabled. Plan approval is
+not merge approval. Escalations from any stage use the same decision surface.
 
 ## Lanes
 
-**Epic lane** — one epic = one GH issue = one `.worktrees/` worktree = one PR.
-Commit/branch mechanics are owned by
-`docs/procedures/worktree-agent.md`. Factory specifics: the Beadle
-rebases the epic branch on `main` at the thresholds in policy.yaml; conflicts
-become blocking beads, never side quests inside a feature bead.
+**Epic lane** — one epic = one GH issue = one shared `.worktrees/` worktree =
+one PR. Every issue/Bead/Inbox/PR/commit/session title in the epic follows
+`docs/procedures/naming-conventions.md`. Workers pull beads, edit that shared worktree, stage only intended
+changes, and commit frequently to the epic branch; beads need not predeclare
+file scope. Conflicts are handled in place without reverting peer work. Remote
+sandboxes test or serve exact committed SHAs and never become editing
+workspaces. Start without Agent Mail or file reservations; add them only if
+observed collisions justify the machinery. Commit/branch mechanics are owned
+by `docs/procedures/worktree-agent.md`. The Beadle rebases the epic branch on
+`main` at the thresholds in policy.yaml; unresolved conflicts become blocking
+beads, never side quests inside a feature bead.
 
 **Bugfix lane** — the standing rolling branch, governed by
 `docs/procedures/rolling-small-fixes.md` including its admission bar,
@@ -58,7 +85,8 @@ owner review (cherry-pick when the batch is mixed). Never auto-merge while
 ## Dynamics
 
 The rules for when work does not flow. Owner attention is the scarcest
-resource: it is spent at the two gates and at genuine dead ends, nowhere else.
+resource: it is spent on protected-boundary decisions and genuine dead ends,
+not ordinary failed checks or routine implementation iterations.
 
 **Claim order** — workers claim by bead priority (set by the Steward at plan
 time), then age. `bugfix_reserved_slots` in policy.yaml may reserve a worker
@@ -76,13 +104,15 @@ slot for the bugfix lane.
 
 **Learning loop (retro pass)** — every bead handoff/closure carries a one-line
 `friction` note (empty allowed). At epic close the Steward reads them and emits
-corrective beads: spec-template fix, AGENTS.md line, or skill edit. Corrective
-beads are docs/skills work — class A — so the factory improves itself without
-owner attention.
+corrective beads: spec-template fix, AGENTS.md line, or skill edit. Classify each
+by `boring-loop.md`; docs/skills location is not an exemption. Changes to safety,
+authority, approval requirements or the automation's own rules require owner
+review, not self-approved promotion.
 
-**Out of scope for now** (revisit after the graduation run): post-merge/release
-automation (releases stay a manual owner action; nothing watches main), token
-budgets and per-bead spend caps (the worker cap bounds total concurrency).
+**Implementation gaps** (not enabled by the docs amendment): broader automatic
+admission and host post-merge supervision. Existing main CI remains required;
+release/publish permissions remain separate from merge. Token budgets and
+per-bead spend caps are unchanged (the worker cap bounds total concurrency).
 
 ## Session rules
 
