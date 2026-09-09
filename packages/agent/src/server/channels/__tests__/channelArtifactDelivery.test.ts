@@ -112,10 +112,32 @@ describe('ChannelArtifactDeliveryService', () => {
     }
   })
 
+  test('retries transient provider failures without re-reading or re-rendering the snapshot', async () => {
+    const source = mutableWorkspace('<html>stable</html>')
+    const render = vi.fn(async () => pdf('stable'))
+    const sendDocument = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('throttled'), { retryable: true }))
+      .mockResolvedValue(undefined)
+    const service = new ChannelArtifactDeliveryService(
+      new InMemoryShareEntryStore(),
+      { resolveWorkspace: async () => source.workspace },
+      { render },
+      { sendDocument, sendArtifactLink: async () => undefined },
+      { authenticatedOrigin: 'https://app.example.test', retryDelayMs: 1 },
+    )
+
+    await service.publish({ binding, artifactPath: 'quote.html' })
+
+    expect(sendDocument).toHaveBeenCalledTimes(2)
+    expect(source.workspace.readFile).toHaveBeenCalledOnce()
+    expect(render).toHaveBeenCalledOnce()
+  })
+
   test('renders through a headless Chromium lifecycle', async () => {
     const close = vi.fn(async () => undefined)
     const page = {
       route: vi.fn(async () => undefined),
+      routeWebSocket: vi.fn(async () => undefined),
       setContent: vi.fn(async () => undefined),
       pdf: vi.fn(async () => pdf('chromium')),
     }
@@ -125,6 +147,7 @@ describe('ChannelArtifactDeliveryService', () => {
     await expect(renderer.render('<html>quote</html>')).resolves.toEqual(pdf('chromium'))
     expect(launch).toHaveBeenCalledWith({ headless: true })
     expect(page.route).toHaveBeenCalledWith('**/*', expect.any(Function))
+    expect(page.routeWebSocket).toHaveBeenCalledWith('**/*', expect.any(Function))
     expect(page.setContent).toHaveBeenCalledWith('<html>quote</html>', { waitUntil: 'load' })
     expect(page.pdf).toHaveBeenCalledWith({ format: 'A4', printBackground: true })
     expect(close).toHaveBeenCalledOnce()

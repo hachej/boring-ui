@@ -15,6 +15,7 @@ export interface HeadlessChromiumLauncher {
   launch(options: { headless: true }): Promise<{
     newPage(): Promise<{
       route(pattern: '**/*', handler: (route: { abort(): Promise<void> }) => Promise<void>): Promise<void>
+      routeWebSocket(pattern: '**/*', handler: (socket: { close(): void }) => void): Promise<void>
       setContent(html: string, options: { waitUntil: 'load' }): Promise<void>
       pdf(options: { format: 'A4'; printBackground: true }): Promise<Uint8Array>
     }>
@@ -30,6 +31,7 @@ export function createHeadlessChromiumPdfRenderer(launcher: HeadlessChromiumLaun
       try {
         const page = await browser.newPage()
         await page.route('**/*', async (route) => route.abort())
+        await page.routeWebSocket('**/*', (socket) => socket.close())
         await page.setContent(html, { waitUntil: 'load' })
         return Uint8Array.from(await page.pdf({ format: 'A4', printBackground: true }))
       } finally {
@@ -57,6 +59,8 @@ export interface ChannelArtifactDeliveryRuntime {
 export interface ChannelArtifactDeliveryOptions {
   readonly authenticatedOrigin: string
   readonly producerPrincipalRef?: string
+  readonly maxSendAttempts?: number
+  readonly retryDelayMs?: number
 }
 
 export interface PublishedChannelArtifact {
@@ -83,9 +87,13 @@ export class ChannelArtifactDeliveryService {
   ) {
     this.origin = authenticatedOrigin(options.authenticatedOrigin)
     this.producerPrincipalRef = options.producerPrincipalRef ?? 'channel-artifact-delivery'
+    this.maxSendAttempts = options.maxSendAttempts ?? 3
+    this.retryDelayMs = options.retryDelayMs ?? 25
   }
 
   private readonly producerPrincipalRef: string
+  private readonly maxSendAttempts: number
+  private readonly retryDelayMs: number
 
   async publish(input: { readonly binding: ChannelBinding; readonly artifactPath: string }): Promise<PublishedChannelArtifact> {
     const { binding } = input
@@ -107,15 +115,27 @@ export class ChannelArtifactDeliveryService {
     const url = new URL(`/a/${encodeURIComponent(entry.id)}`, this.origin).toString()
     const filename = 'artifact.pdf' as const
 
-    await this.sender.sendDocument({
+    await this.sendWithRetry(() => this.sender.sendDocument({
       conversationKey: binding.conversationKey,
       bytes: pdf,
       filename,
       mimeType: 'application/pdf',
-    })
-    await this.sender.sendArtifactLink({ conversationKey: binding.conversationKey, url })
+    }))
+    await this.sendWithRetry(() => this.sender.sendArtifactLink({ conversationKey: binding.conversationKey, url }))
 
     return { shareId: entry.id, url, filename, pdfByteSize: pdf.byteLength }
+  }
+
+  private async sendWithRetry(send: () => Promise<void>): Promise<void> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await send()
+        return
+      } catch (error) {
+        if ((error as { retryable?: unknown })?.retryable !== true || attempt >= this.maxSendAttempts) throw error
+        await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs))
+      }
+    }
   }
 }
 
