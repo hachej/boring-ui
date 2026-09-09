@@ -83,7 +83,7 @@
       "@perspective-dev/viewer-d3fc": "4.4.1",
       "better-auth": "1.6.27",
       "@earendil-works/pi-agent-core": "0.84.3",
-      "@earendil-works/pi-ai": "0.84.3",
+      "@earendil-works/pi-ai": "0.84.4",
       "@earendil-works/pi-client": "0.84.3",
       "@earendil-works/pi-protocol": "0.84.3",
       "@earendil-works/pi-tui": "0.84.3"
