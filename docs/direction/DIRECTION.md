@@ -181,9 +181,9 @@ real duplication is two replay sources. Rewrite the bead before working it.
 
 | Folder | Status |
 |---|---|
-| `docs/issues/909/` | Frozen record of what shipped + follow-up beads. Binding for the Gateway contract (§6) |
-| `docs/issues/391/` | Decision-28 detail for Waves 2+. Binding once its wave opens |
-| `docs/issues/805/` | A1 shipped; remainder absorbed into 391's F-graph. Reference only |
+| AgentGateway planning area | Historical; `packages/agent/docs/AGENT_GATEWAY_V0.md` binds the Gateway contract |
+| Fleet/environment planning area | Decision-28 detail for Waves 2+; follow #1409's merged canonical moved path |
+| A1 planning area | A1 shipped; remainder absorbed into Decision 28's F-graph. Reference only |
 | `docs/issues/808/`, `820/`, `806/`, `900/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
 
 Lane tracking issues (each with a draft seed PR): #1009 streaming, #1010 BYOK,
@@ -224,8 +224,8 @@ Decision 30 (presentation-only landings).
   (#1141); readiness/observability surface in review (#1142).
 - **Wave 3 opened early, per its own triggers firing.** BYOK: KmsBackend vault
   + local-KEK backend merged (#1132); durable credential persistence in review
-  (#1145); plans r3 ratified (#1137). External MCP: user-registered typed MCP
-  source with SSRF-safe validation (#1130), per-agent MCP grants via capability
+  (#1145); plans r3 ratified (#1137). Outbound MCP Connectors: user-registered
+  typed MCP source with SSRF-safe validation (#1130), per-agent MCP grants via capability
   projection (#1131) merged; connect-time SSRF enforcement in review (#1135).
 - **Landing lane revived within D28** (presentation-only, zero authority
   effects, per the #1153 memo): config-driven bounded hostname landings
@@ -543,6 +543,134 @@ The audit's decision filter (buyer / work-unit / feedback / reuse /
 irreversibility / complexity tests) is adopted as reviewer guidance for
 future capability proposals — a filter, not a gate. No premise, bead, or
 queue item changes; P1-A dispatch is unaffected.
+## Amendment 2026-08-26 — one coherent inbound + outbound MCP program
+
+The owner activates one coordinated **planning program**, carried by one PR,
+while preserving two distinct product planes:
+
+1. **Inbound MCP Access (#806):** an external MCP client authorizes one human
+   and one workspace, discovers available Agents and their exact resident native
+   tools, invokes qualified tools, runs Agents, and receives live same-workspace
+   artifacts. Its canonical plan is
+   [`../issues/806/external-workspace-mcp-plan.md`](../issues/806/external-workspace-mcp-plan.md).
+2. **Outbound MCP Connectors (#900/#1011):** a Boring Agent discovers and uses
+   external provider capabilities. The current sellable Composio plan is
+   [`../issues/900/plan.md`](../issues/900/plan.md); generic registration remains
+   #1011.
+
+The planes share **only** canonical kernel seams: host authority,
+Workspace/Seat projection, native-tool identity, C5 approval, C6 accepted-work,
+C2 first-class child execution, revocation, artifact/usage facts, and
+sandbox/runtime bindings. They do **not** share transport direction, OAuth
+grants, provider registration, secret custody, commercial credits/pricing, or
+product UI. Inbound bearer/grant material never becomes an outbound provider
+credential; outbound operator/provider secrets never enter inbound tokens,
+URLs, tool arguments, artifacts, or audit payloads.
+
+Cross-plane ruling: inbound Access may expose the exact resident Connector
+`AgentTool`, but it never materializes provider-catalog children, bypasses
+Connector/provider approval, creates a second runtime/store/ledger, or flattens
+C2 parent/child identity. Effectful full-catalog Connector execution remains
+blocked until C2's complete canonical predecessor closure and the Connector's
+C5×C6/C2 conformance—including artifact and usage attribution to the real
+child—is green. Generic Boring emits facts; the app owns credits, pricing, and
+checkout.
+
+This amendment supersedes prior uses of ambiguous “External MCP”: #806 is
+**inbound MCP Access**; #900/#1011 are **outbound MCP Connectors**. Landing this
+combined planning PR makes both linked plans the coherent planning authority.
+It does not waive either plan's blockers, make deferred Beads dispatchable, or
+authorize implementation before their named frozen-DAG and owner gates.
+
+### Relationship to the merged premises-first program (#1409)
+
+PR #1409 is merged and remains the ratified sequencing instrument; this
+consistency pass originally reviewed its owner-authored head
+`7732c191698fed3d940565a1c874075baa2a7a19`. DIRECTION remains the sole dispatch
+queue: this MCP amendment adds planning records only. Landing #1415 places
+neither #806 nor #900/#1011 in Wave A or Wave B; a later explicit owner
+amendment must place an exact MCP slice in the post-premises queue before
+dispatch. A plan, Bead, tracker, or
+implementation brief cannot substitute for that placement. The old Wave-3
+“External MCP complete/paused” statement describes the earlier generic source,
+registration, and read-only Connector work, not the new inbound #806 edge or
+full-catalog #900 execution plan.
+
+Applicable MCP effect/run slices consume #1409's exact
+`[durable-streams]` rollout child `wt-391-forward-9p50.2` (after Level-D child
+`.1`) and `[seat-audit-attribution]` projection child
+`wt-391-forward-shell-ngfs.14.2` (after host-catalog child `.14.1`) rather than
+creating parallel stores or display-only provenance. These rows exist at
+#1409's exact reviewed head; MCP dependencies must target the completion
+children, not their non-dispatchable program epics.
+
+Neither MCP plan selects the unresolved Thread storage representation, creates
+an A2A/MCP loopback, widens the frozen seven-method `AgentGateway`, or adds a
+second `createAgentHost()` construction funnel. #1409's canonical
+`docs/vision/` and non-scheduling `docs/roadmap/` layers remain above these
+issue details; this amendment neither duplicates nor contradicts them. Exact
+synthetic merge analysis reports content conflicts in `.beads/issues.jsonl`,
+this file, and the #806/#807 tombstones; merge resolution must preserve both
+dated amendments, both tombstones, all #1409 Beads, the eight gh900 Beads, and
+#1409's path migrations. The resolved tree must contain
+`docs/plans/agent-runtime/gateway/plan.md` and
+`docs/plans/agent-runtime/fleet-and-environments/plan.md`; retaining their old
+issue-folder locations as canonical is a failed merge.
+
+---
+
+## Amendment 2026-09-07 — first post-premises MCP wave
+
+The owner-approved combined MCP plan is now placed behind the premises-first
+program without merging its two product planes. **Inbound MCP Access (#806)**
+remains the external-client edge into one authorized human and workspace;
+**outbound MCP Connectors (#900/#1011)** remain Agent-initiated access to
+external providers. The separation, shared-seams-only rule, secret boundaries,
+and all protected authority and policy boundaries in the preceding amendment
+continue to bind. #1409 remains the premises and sequencing authority above
+this wave; this placement neither shortens its active premise work nor changes
+any frozen architecture dependency.
+
+### Post-premises MCP wave — exact first placements
+
+Only these two bounded entries are placed. Placement permits the Orchestrator
+to undefer a matching Definition-of-Ready tracker after all gates named below
+are represented; it is not an implementation claim, proof waiver, merge, or
+permission to revive PR #1309 or create substitute kernel trackers.
+
+1. **Inbound MCP Access #806 Slice 0 — removal-only cleanup.** Run the exact
+   reference, symbol, path, configuration, and deployment audit, then remove
+   only the dark app-specific `/mcp/managed-agent` tracer integration authorized
+   by the accepted #806 plan. This slice deletes no generic Agent MCP/share
+   module, runtime, data, credential, session, run, artifact, or authority seam
+   and adds no feature seam. It is explicitly independent of the frozen `P-1`
+   feature-implementation barrier. It remains gated by the landed and accepted
+   combined plan and pointer migration, this exact DIRECTION placement, its
+   separately approved implementation tracker/brief, and the plan's exact audit
+   and deletion boundary. #806 feature Slices 1–8 are **not placed** here and
+   retain `P-1` plus every slice-specific predecessor and protected owner gate.
+2. **Outbound MCP Connectors #900.1 — discovery only, serially
+   `900.1a → 900.1b → 900.1c`.** `900.1a` first establishes shared private
+   Composio protocol custody for curated and catalog Session consumers; it
+   remains blocked on provider-supported create reconciliation (or the accepted
+   finite-TTL operator proof) against the approved host control-plane durable
+   store with versioned opaque secret handles. The approved shared transport
+   hardening does not merge curated and catalog product semantics. `900.1b`
+   follows only after `900.1a` and adds the host-authoritative, bounded fair
+   search tracer. `900.1c` follows only after `900.1b` and adds exact describe
+   plus sanitized live discovery qualification. All three remain search/
+   describe discovery: execution is blocked, account authority is not inferred,
+   and no provider child is materialized or dispatched.
+
+The Architecture Steward remains the sole owner of exact C2 frozen-DAG
+predecessor and conformance tracking. This wave creates no local replacement.
+Outbound `900.2+`, account migration/relink execution, approval, accepted work,
+provider dispatch, and UI are **not placed**; they retain the approved explicit-
+relink policy, C2's complete canonical predecessor closure, A7/A8, C5/C6/C7,
+#1409's exact `[durable-streams]` and `[seat-audit-attribution]` completion
+children, their serial #900 predecessors, and every other plan-named gate.
+Inbound MCP Access never bypasses those Connector gates when it exposes a
+resident Connector-facing `AgentTool`.
 
 ## Amendment 2026-09-05 — Workspace Evolution
 
