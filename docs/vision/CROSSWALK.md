@@ -59,6 +59,8 @@ nothing to build).
 | 5 | Builder = distinct class; authority boundary not tool omission; typed brief preferred | §13(e); review additions | bead | `nc-6`, `nc-x` |
 | 5 | Multi-author transcript; orchestrator Seat; audit-grade seatId | §9b; §8(c)(2) | fixture | beads `shell-ngfs.14.1/.14.2` |
 | 5 | Delegation host-mediated | V2 spec L3; §7 | partial | MCP delegate exists; kernel noun absent |
+| 5 | Agents spawn agents: Seat-bound, budgeted, narrowing-only grants, admitted Run, child or peer | proposed 2026-09-09 addendum (RUNTIME-SDK.md) | bead | `wt-391-forward-nc-sdk-spawn-fm8h` |
+| 3/5 | Package split: agent = runtime SDK (no React), chat and views their own packages | ratified L1/L4/L6 layering; extraction trigger proposed 2026-09-09 | bead | `wt-391-forward-nc-sdk-chat-6773`, `wt-391-forward-nc-sdk-runtime-33l8` |
 | 5 | Promote on evidence; no live self-rewriting; candidate without objective | VISION inv 10, 11; 2026-08-27 amendment | ruled | — |
 | 6 | One gateway/funnel; host mints scope; actor∩installation∩job∩policy | D29; D33; §13(d) | partial | gateway built; product path `nc-3`, `nc-x` |
 | 6 | ExecutionContext six questions; effect-classed capabilities; fail closed; intersection | PORT-HANDBOOK Supporting types, Capability | bead | `nc-x` |

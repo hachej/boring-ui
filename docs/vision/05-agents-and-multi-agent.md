@@ -40,6 +40,18 @@ authority boundary enforced by the host, not the absence of a tool. A typed
 brief with provenance and confirmation is the preferred request shape; it is
 not a ruled requirement.
 
+## Agents create agents
+
+Spawning is a runtime capability, not an orchestration layer bolted on top.
+An agent may start another agent that holds a Seat in the same workspace,
+with a task, a slice of its own working set, a budget and a subset of its own
+grants — never a superset. A `child` spawn reports back to its caller; a
+`peer` spawn joins the same job as a named participant. Every spawn is an
+admitted Run with a request key, so a crash replays to the settled outcome,
+and delivery stays host-mediated: this is composition inside one job, not
+agent-to-agent messaging. Depth and fan-out are capped by the host and a
+breach is refused, never silently truncated.
+
 ## Teams
 
 A job's transcript is multi-author: one composer, several named agents

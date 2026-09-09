@@ -37,6 +37,7 @@ and owned compute do not have to precede it.
 | [Coverage and sources](COVERAGE_AND_SOURCES.md) | Pinned evidence and inspection limits of the reassessment. |
 | [360 gap map](360-GAP-MAP.md) | What the whole spec requires that the first bead cut missed; prior designs to reuse; owner decisions and defaults. |
 | [Seneca experience](SENECA-EXPERIENCE.md) | The UX target (bots, chat with cards and canvas, bot page, rooms, no trace) mapped to our nouns and beads; the Thread question. |
+| [Runtime SDK and package split](RUNTIME-SDK.md) | `packages/agent` as the runtime SDK (spawn as a first-class primitive), chat and views as their own packages; the delta and the proposed ruling. |
 | [Credentials and egress](CREDENTIALS-AND-EGRESS.md) | Surrogate tokens, egress proxy, three deciders, grant types — adopted from Muse; proposed D33 addendum. |
 | [Plan and show-me](../../issues/1562/plan.md) | Epic plan, bead graph, proof commands, gate-1 artifact. |
 
