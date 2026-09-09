@@ -33,6 +33,7 @@ describe('factory automation seed host composition', () => {
       'orchestrator-tick', 'worker-slot-1', 'worker-slot-2', 'worker-slot-3', 'triage',
     ])
     expect(new Set(createFactoryAutomationSeeds(3).map(({ promptRef }) => promptRef)).size).toBe(5)
+    expect(createFactoryAutomationSeeds(3).every(({ modelManagedByHost }) => modelManagedByHost)).toBe(true)
     const provider = createFactoryAutomationSeedProvider({
       policyRoot: await workspace('beadle:\n  worker_cap: 5\nmodels:\n  seats:\n    worker: T3\n    orchestrator: T1\n    triage: T3\n'),
       env: { ANTHROPIC_API_KEY: 'test', GEMINI_API_KEY: 'test' },

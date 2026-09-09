@@ -113,7 +113,12 @@ export class FileAutomationStore implements AutomationStore {
     await this.mutate(async (state) => {
       const existing = state.automations[input.key]
       if (existing) {
-        seeded = existing
+        if (input.modelManagedByHost && existing.model !== input.model) {
+          seeded = { ...existing, model: input.model, updatedAt: this.nowIso() }
+          state.automations[input.key] = clone(seeded)
+        } else {
+          seeded = existing
+        }
         return
       }
       if (input.promptBody !== undefined) {

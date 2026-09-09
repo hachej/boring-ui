@@ -19,6 +19,8 @@ export interface AutomationSeed {
   cron: string | null
   timezone: string
   model: string
+  /** Reconcile this field on every seed pass when the composing host owns model policy. */
+  modelManagedByHost?: boolean
   agentTypeId: string
   runDurationCapMs?: number | null
   promptRef: string

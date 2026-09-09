@@ -192,6 +192,38 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(recorded.queries[0]!.text).not.toContain("INSERT INTO")
   })
 
+  it("reconciles only the model for a host-managed active seed", async () => {
+    const existing = {
+      id: "seed-id", title: "operator title", enabled: false, cron: null, timezone: "Europe/Zurich",
+      model: "retired:model", agent_type_id: "operator-agent", run_duration_cap_ms: null,
+      prompt_ref: ".agents/automation/worker-slot.md",
+      created_at: "2026-07-19T08:00:00.000Z", updated_at: "2026-07-19T08:00:00.000Z",
+    }
+    const queries: RecordedQuery[] = []
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?")
+      queries.push({ text, values })
+      return Promise.resolve(text.includes("UPDATE boring_automation_automations")
+        ? [{ ...existing, model: "host:authorized", updated_at: "2026-07-19T09:00:00.000Z" }]
+        : [existing])
+    }) as unknown as postgres.Sql
+    const workspace = { root: "/workspace", runtimeContext: {} } as unknown as Workspace
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
+
+    await expect(store.ensureSeededAutomation({
+      key: "worker-slot-1", title: "manifest title", enabled: true, cron: null, timezone: "UTC",
+      model: "host:authorized", modelManagedByHost: true, agentTypeId: "boring-worker",
+      promptRef: ".agents/automation/worker-slot.md",
+    })).resolves.toMatchObject({
+      title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "host:authorized",
+    })
+
+    expect(queries).toHaveLength(2)
+    expect(queries[1]!.text).toContain("SET model = ?")
+    expect(queries[1]!.values).toContain("host:authorized")
+    expect(queries[1]!.text).not.toContain("title =")
+  })
+
   it("locks the seeded automation row before checking for occupying runs", async () => {
     const queries: RecordedQuery[] = []
     const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {

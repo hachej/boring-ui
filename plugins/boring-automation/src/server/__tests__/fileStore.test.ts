@@ -380,5 +380,21 @@ describe("standing factory automation seeding", () => {
     })
   })
 
+  it("reconciles only the model for a host-managed active seed", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    await seedStandingAutomations(store, { seedProvider: async () => [triageSeed] })
+    await store.updateAutomation("triage", { title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "retired:model" })
+
+    await seedStandingAutomations(store, {
+      seedProvider: async () => [{ ...triageSeed, model: "host:authorized", modelManagedByHost: true }],
+    })
+
+    await expect(store.getAutomation("triage")).resolves.toMatchObject({
+      title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "host:authorized",
+    })
+  })
+
 
 })

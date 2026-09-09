@@ -15,6 +15,7 @@ export interface FactoryAutomationSeed {
   readonly cron: string | null
   readonly timezone: 'UTC'
   readonly model: string
+  readonly modelManagedByHost: true
   readonly agentTypeId: 'boring-worker' | 'boring-orchestrator' | 'boring-triage'
   readonly promptRef: `.agents/automation/${string}.md`
   readonly promptBody: string
@@ -68,7 +69,7 @@ export function createFactoryAutomationSeeds(
     Object.freeze({
       key: 'orchestrator-tick', title: 'orchestrator-tick', enabled: true as const,
       cron: '*/10 * * * *', timezone: 'UTC' as const, model: orchestratorModel,
-      agentTypeId: 'boring-orchestrator' as const,
+      modelManagedByHost: true as const, agentTypeId: 'boring-orchestrator' as const,
       promptRef: '.agents/automation/orchestrator-tick.md' as const,
       promptBody: options.orchestratorPrompt ?? '',
     }),
@@ -80,6 +81,7 @@ export function createFactoryAutomationSeeds(
       cron: null,
       timezone: 'UTC' as const,
       model: triageModel,
+      modelManagedByHost: true as const,
       agentTypeId: 'boring-triage' as const,
       promptRef: '.agents/automation/triage.md' as const,
       promptBody: options.triagePrompt ?? '',
@@ -148,6 +150,7 @@ function workerSeed(index: number, model: string, promptBody: string): FactoryAu
     cron: null,
     timezone: 'UTC',
     model,
+    modelManagedByHost: true,
     agentTypeId: 'boring-worker',
     promptRef: `.agents/automation/${key}.md`,
     promptBody,

@@ -90,7 +90,18 @@ export class PostgresAutomationStore implements AutomationStore {
     const workspace = this.requireWorkspace()
     const id = deterministicSeedId(this.actor, input.key)
     const existing = await this.getAutomation(id)
-    if (existing) return existing
+    if (existing) {
+      if (!input.modelManagedByHost || existing.model === input.model) return existing
+      const updatedAt = this.clock().toISOString()
+      const rows = await this.sql<AutomationRow[]>`
+        UPDATE boring_automation_automations
+        SET model = ${input.model}, updated_at = ${updatedAt}
+        WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId}
+          AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
+        RETURNING id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at
+      `
+      return rows[0] ? toAutomation(rows[0]) : null
+    }
     if (input.promptBody !== undefined) {
       await workspace.writeFile(input.promptRef, input.promptBody)
     } else {

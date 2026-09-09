@@ -299,9 +299,12 @@ describe("Postgres standing automation seeding", () => {
       await expect(store.getPrompt(first!.id)).resolves.toBe("worker prompt")
       await expect(store.listAutomations()).resolves.toHaveLength(1)
 
-      const edited = await store.updateAutomation(first!.id, { title: "operator title", enabled: false })
+      const edited = await store.updateAutomation(first!.id, { title: "operator title", enabled: false, model: "retired:model" })
       await expect(store.ensureSeededAutomation(seed)).resolves.toMatchObject({
-        title: "operator title", enabled: false, updatedAt: edited.updatedAt,
+        title: "operator title", enabled: false, model: "retired:model", updatedAt: edited.updatedAt,
+      })
+      await expect(store.ensureSeededAutomation({ ...seed, model: "host:authorized", modelManagedByHost: true })).resolves.toMatchObject({
+        title: "operator title", enabled: false, model: "host:authorized",
       })
 
       await store.deleteAutomation(first!.id)
