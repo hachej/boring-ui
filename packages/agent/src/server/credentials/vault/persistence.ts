@@ -97,6 +97,16 @@ export interface CommitCredentialVersionInputV1 {
   readonly supersededFieldsTombstone?: CredentialFieldTombstoneV1
 }
 
+export interface CommitCredentialVersionInputV2 extends CommitCredentialVersionInputV1 {
+  /** Applied in the same durable transaction as the record/version CAS. */
+  readonly metadataUpdate: Readonly<{
+    state: CredentialLifecycleStateV1
+    displayLabel?: string
+    credentialType?: string
+    maskedLastFourSuffix?: string | null
+  }>
+}
+
 export interface WorkspaceCredentialLockOptionsV1 {
   /** Cancels only while waiting to acquire the lock; a running mutation is never interrupted. */
   readonly signal?: AbortSignal
@@ -186,4 +196,17 @@ export interface CredentialVaultPersistenceV1 {
   getFieldTombstone(
     key: CredentialFieldKeyV1,
   ): Promise<CredentialFieldTombstoneV1 | undefined>
+}
+
+/** Persistence capability required by the V2 recoverable vault protocol. */
+export interface CredentialVaultPersistenceV2 extends CredentialVaultPersistenceV1 {
+  readonly contractVersion: 'boring.credential-vault-persistence.v2'
+  /** Preserves the V2 capability on the transaction-scoped adapter. */
+  withWorkspaceLock<T>(
+    workspaceId: string,
+    mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>,
+    options?: WorkspaceCredentialLockOptionsV1,
+  ): Promise<T>
+  /** Atomically CASes record, fields, tombstones, and authenticated metadata. */
+  commitCredentialVersionV2(input: CommitCredentialVersionInputV2): Promise<void>
 }

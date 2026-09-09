@@ -25,14 +25,23 @@ afterEach(() => {
 })
 
 function emptySql() {
-  const sql = Object.assign(
-    () => Promise.resolve([]),
-    {
-      unsafe: vi.fn(async () => []),
-      end: vi.fn(async () => {}),
-    },
-  )
-  return sql
+  const query = (strings: TemplateStringsArray) => {
+    const statement = strings.join(' ')
+    if (statement.includes('pg_try_advisory_lock')) return Promise.resolve([{ locked: true }])
+    if (statement.includes('pg_advisory_unlock')) return Promise.resolve([{ unlocked: true }])
+    return Promise.resolve([])
+  }
+  const reserved = Object.assign(query, {
+    unsafe: vi.fn(async (statement: string) =>
+      statement.includes('pg_backend_pid') ? [{ pid: 1 }] : []),
+    release: vi.fn(),
+  })
+  return Object.assign(query, {
+    unsafe: vi.fn(async () => []),
+    reserve: vi.fn(async () => reserved),
+    options: { max: 2 },
+    end: vi.fn(async () => {}),
+  })
 }
 
 async function configureLocalKek(): Promise<void> {
