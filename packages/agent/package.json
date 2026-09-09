@@ -109,7 +109,7 @@
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
     "fastify": "^5.12.1",
-    "lucide-react": "^1.39.0",
+    "lucide-react": "^1.32.0",
     "motion": "^13.1.1",
     "nanoid": "^6.0.0",
     "postgres": "^3.4.9",
@@ -122,14 +122,15 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@vercel/sandbox": "3.0.0",
     "@antithesishq/bombadil": "0.7.2",
+    "@earendil-works/pi-ai": "0.84.4",
     "@opentelemetry/api": "^1.9.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.20.0",
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "@vercel/sandbox": "3.0.0",
     "@vitejs/plugin-react": "^4.7.0",
     "ajv": "^8.20.0",
     "esbuild": "^0.28.2",
@@ -140,7 +141,6 @@
     "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vite": "^8.2.2",
-    "@earendil-works/pi-ai": "0.84.4",
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
