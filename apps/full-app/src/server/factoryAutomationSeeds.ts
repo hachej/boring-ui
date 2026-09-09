@@ -115,7 +115,13 @@ async function resolveSeatModel(root: string, seat: 'worker' | 'orchestrator' | 
     const fleet = parse(fleetRaw) as { models?: { tiers?: Record<string, Array<{ provider?: string; id?: string; envVar?: string }>> } }
     const tier = policy.models?.seats?.[seat]
     const candidates = tier ? fleet.models?.tiers?.[tier] ?? [] : []
-    const available = candidates.find((candidate) => candidate.provider && candidate.id && (!candidate.envVar || env[candidate.envVar]))
+    // Standing automations dispatch with api-key-only funding; Codex is OAuth-only.
+    const available = candidates.find((candidate) => (
+      candidate.provider
+      && candidate.provider !== "openai-codex"
+      && candidate.id
+      && (!candidate.envVar || env[candidate.envVar])
+    ))
     if (available?.provider && available.id) return `${available.provider}:${available.id}`
     throw new Error(`${seat} model tier has no available candidates`)
   } catch (error) {

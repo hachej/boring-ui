@@ -26,7 +26,7 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 | --- | --- | --- |
 | L0 Chassis | AgentHost fleet spec, identity/authority split, plugin system, sandboxed tool admission | exists (#1075) |
 | L1 Work graph | Beads via plain `br` CLI; GH issues = human intake, 1 epic = 1 GH issue | br live; UI read-only provider in #1075 |
-| L2 Seats | orchestrator / worker in `.agents/factory/fleet.yaml`; triage is a worker automation slot | two-seat production loader live; historical persona material remains authored |
+| L2 Seats | orchestrator / worker / triage in `.agents/factory/fleet.yaml`; triage has its own scheduled automation | three-seat production loader live; historical persona material remains authored |
 | L3 Loops | /triage /plan /exec skills + Beadle supervisor automation (workers pull) | skills exist; Beadle missing |
 | L4 Human plane | Concierge front door, inbox intentions, (later) Swarm Console | intentions exist; edges landing (session↔task, artifact handover) |
 | L5 Comms | thread=bead convention only; Agent Mail/Buzz deferred | convention adoptable now |

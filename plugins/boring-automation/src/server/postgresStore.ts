@@ -118,19 +118,18 @@ export class PostgresAutomationStore implements AutomationStore {
         INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at)
         VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId}, ${input.runDurationCapMs ?? null}, ${input.promptRef}, ${now}, ${now})
         ON CONFLICT (id) DO UPDATE SET
-          title = EXCLUDED.title,
-          enabled = EXCLUDED.enabled,
-          cron = EXCLUDED.cron,
-          timezone = EXCLUDED.timezone,
-          model = EXCLUDED.model,
-          agent_type_id = EXCLUDED.agent_type_id,
-          run_duration_cap_ms = EXCLUDED.run_duration_cap_ms,
-          prompt_ref = EXCLUDED.prompt_ref,
+          title = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.title ELSE boring_automation_automations.title END,
+          enabled = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.enabled ELSE boring_automation_automations.enabled END,
+          cron = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.cron ELSE boring_automation_automations.cron END,
+          timezone = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.timezone ELSE boring_automation_automations.timezone END,
+          model = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.model ELSE boring_automation_automations.model END,
+          agent_type_id = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.agent_type_id ELSE boring_automation_automations.agent_type_id END,
+          run_duration_cap_ms = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.run_duration_cap_ms ELSE boring_automation_automations.run_duration_cap_ms END,
+          prompt_ref = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.prompt_ref ELSE boring_automation_automations.prompt_ref END,
           deleted_at = NULL,
-          updated_at = EXCLUDED.updated_at
+          updated_at = CASE WHEN boring_automation_automations.deleted_at IS NOT NULL THEN EXCLUDED.updated_at ELSE boring_automation_automations.updated_at END
         WHERE boring_automation_automations.workspace_id = EXCLUDED.workspace_id
           AND boring_automation_automations.owner_user_id = EXCLUDED.owner_user_id
-          AND boring_automation_automations.deleted_at IS NOT NULL
         RETURNING id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at
       )
       SELECT * FROM upserted

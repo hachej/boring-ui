@@ -44,6 +44,20 @@ describe('factory automation seed host composition', () => {
     expect(seeds[1]).toMatchObject({ model: 'anthropic:claude-sonnet', promptBody: 'worker prompt' })
   })
 
+  it('skips OAuth-only Codex when selecting an api-key-funded standing model', async () => {
+    const root = await workspace()
+    await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'models:\n  tiers:\n    T1:\n      - provider: openai-codex\n        id: gpt-5.6-sol\n        envVar: CODEX_SOL_ENABLED\n      - provider: anthropic\n        id: claude-fable\n        envVar: ANTHROPIC_API_KEY\n    T3:\n      - provider: anthropic\n        id: claude-sonnet\n        envVar: ANTHROPIC_API_KEY\n')
+    const provider = createFactoryAutomationSeedProvider({
+      policyRoot: root,
+      env: { CODEX_SOL_ENABLED: '1', ANTHROPIC_API_KEY: 'test' },
+    })
+
+    const seeds = await provider(context())
+
+    expect(seeds.find(({ key }) => key === 'orchestrator-tick')?.model).toBe('anthropic:claude-fable')
+    expect(seeds.find(({ key }) => key === 'worker-slot-1')?.model).toBe('anthropic:claude-sonnet')
+  })
+
   it.each([
     ['missing', undefined],
     ['invalid', 'beadle:\n  worker_cap: nope\nmodels:\n  seats:\n    worker: T3\n    orchestrator: T1\n    triage: T3\n'],
