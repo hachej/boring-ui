@@ -275,7 +275,10 @@ function createDelegateTool(
   admitSessionMutation: <T>(operation: () => Promise<T>) => Promise<T>,
 ): AgentTool {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const workspaceHeader = { 'x-boring-workspace-id': options.workspaceScopeId }
+  const workspaceHeader = {
+    'x-boring-workspace-id': options.workspaceScopeId,
+    'x-boring-invocation-mode': 'unattended',
+  }
 
   return {
     name: toolName,

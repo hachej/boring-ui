@@ -24,6 +24,7 @@ import { canonicalDigest } from './canonical'
 import { SessionInventoryPager } from './sessionInventoryPagination'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
+import { rejectRetryablePreflightFailure } from './retryablePreflightFailure'
 import type {
   AgentHarnessBackend,
   HarnessAgentScope,
@@ -65,6 +66,14 @@ type ReceiptObject = Readonly<Record<string, JsonValue>>
 
 function gatewayError(dto: AgentGatewayErrorDTO): AgentGatewayError {
   return new AgentGatewayError(dto.code, dto.message, dto.details)
+}
+
+function isRetryableGatewayError(error: AgentGatewayError): boolean {
+  const details = error.details
+  return typeof details === 'object'
+    && details !== null
+    && !Array.isArray(details)
+    && (details as Readonly<Record<string, JsonValue>>).retryable === true
 }
 
 function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
@@ -204,6 +213,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = this.runtime.findPublishedCurrentBinding(
       ref.agentTypeId,
       claim.workspaceScopeId,
+      claim.authSubjectId,
       resolved.physicalBindingIdentity ?? resolved.identity,
       resolved.identity,
       resolved.environment.provisioningFingerprint,
@@ -326,7 +336,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
           : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),
         ...(!agent.definition.version
           ? {}
-          : { definition: { version: agent.definition.version, digest: canonicalDigest(agent.definition as unknown as JsonValue) } }),
+          : {
+              definition: {
+                version: agent.definition.version,
+                ...(agent.definition.digest === undefined ? {} : { digest: agent.definition.digest }),
+              },
+            }),
       }))
   }
 
@@ -915,25 +930,23 @@ export class EmbeddedAgentGateway implements AgentGateway {
             throw gatewayError(retryableGuardError)
           }
           await reauthorizeOrReject()
-          await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
           if (preflight) {
             try {
               await preflight()
               this.runtime.assertOpen()
             } catch (error) {
               if (error instanceof AgentGatewayError) {
-                await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+                if (isRetryableGatewayError(error)) {
+                  await this.runtime.ledger.markAdmissionRetryable(key)
+                } else {
+                  await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+                }
                 throw error
               }
-              const unknown = new AgentGatewayError(
-                AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
-                'effect outcome could not be safely replayed',
-              )
-              await this.runtime.ledger.beginEffect(key).catch(() => {})
-              await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
-              throw unknown
+              await rejectRetryablePreflightFailure(this.runtime.ledger, key)
             }
           }
+          await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
           await this.runtime.ledger.beginEffect(key)
           let actionResult: Promise<unknown>
           try {

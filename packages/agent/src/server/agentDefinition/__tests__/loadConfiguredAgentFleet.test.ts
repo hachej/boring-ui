@@ -9,7 +9,7 @@ import { ErrorCode } from '../../../shared/error-codes'
 
 const FIXTURE_ROOT = resolve(import.meta.dirname, 'fixtures', 'fleet')
 const PERSONAS_DIR = resolve(FIXTURE_ROOT, 'personas')
-const FLEET_CONFIG_PATH = resolve(FIXTURE_ROOT, 'factory', 'fleet.yaml')
+const FLEET_CONFIG_PATH = resolve(FIXTURE_ROOT, 'factory', 'fleet-valid.yaml')
 const POLICY_PATH = resolve(FIXTURE_ROOT, 'factory', 'policy.yaml')
 const SKILLS_ROOT = resolve(FIXTURE_ROOT, 'skills')
 
@@ -99,15 +99,18 @@ async function validAlphaOptions() {
 }
 
 describe('loadConfiguredAgentFleet', () => {
-  test('fails the whole configured fleet when any seated Agent is invalid', async () => {
-    await expect(loadConfiguredAgentFleet({
+  test('excludes invalid seated packages while valid siblings still boot', async () => {
+    const result = await loadConfiguredAgentFleet({
       ...options(),
+      fleetConfigPath: resolve(FIXTURE_ROOT, 'factory', 'fleet.yaml'),
       env: { ANTHROPIC_API_KEY: 'test-key' },
-    })).rejects.toMatchObject({
-      name: 'FleetConfigError',
-      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
-      field: 'seats',
     })
+
+    expect(result.agents.map((agent) => agent.agentTypeId)).toEqual(['fixture-alpha'])
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ seat: 'broken', agentTypeId: 'fixture-broken' }),
+      expect.objectContaining({ seat: 'mismatched', agentTypeId: 'fixture-mismatched-expected' }),
+    ]))
   })
 
   test('composes a fully valid configured seat', async () => {
@@ -124,6 +127,7 @@ describe('loadConfiguredAgentFleet', () => {
     expect(alpha.model).toEqual({ preferred: 'anthropic:claude-sonnet-4-6' })
     expect(alpha.definition.digest).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(alpha.knowledge?.rootDir).toBe(resolve(PERSONAS_DIR, 'alpha', 'knowledge'))
+    expect(alpha.definition.version).toBe('1.0.0')
     expect(result.diagnostics).toEqual([])
   })
 
@@ -295,9 +299,70 @@ describe('loadConfiguredAgentFleet', () => {
     }))
   })
 
-  test('fails startup when packages conflict for a seated definitionId', async () => {
+  test('rejects a configured seat whose declared skill digest is stale', async () => {
+    const root = await temporaryFleetRoot()
+    const fleetConfigPath = join(root, 'fleet.yaml')
+    await writeFile(fleetConfigPath, [
+      'models:',
+      '  tiers:',
+      '    T3:',
+      '      - provider: openai',
+      '        id: gpt-5.6-sol',
+      '        envVar: OPENAI_API_KEY',
+      'seats:',
+      '  - seat: alpha',
+      '    agentTypeId: fixture-alpha',
+      '    skills:',
+      '      - name: greet',
+      `        digest: sha256:${'0'.repeat(64)}`,
+      '      - name: skills/local',
+      '        digest: sha256:97e420f7713ef2c4be618078f12936196c39790accea4c03e174ee981e9e2b37',
+      '',
+    ].join('\n'))
+
+    const result = await loadConfiguredAgentFleet({ ...options(), fleetConfigPath, env: {} })
+    expect(result.agents).toEqual([])
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'alpha',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
+    }))
+  })
+
+  test('rejects invalid preflight for a configured seat but permits invalid unseated discovery exclusion', async () => {
+    const invalidAlpha = {
+      ...descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-alpha', ['greet', 'skills/local']),
+      preflight: { ok: false, errors: [{ code: PREFLIGHT_INVALID_PLUGIN_METADATA, message: 'invalid schema' }] },
+    }
+    const invalidConfigured = await loadConfiguredAgentFleet({
+      ...await validAlphaOptions(),
+      discoveredPackages: [invalidAlpha],
+      env: {},
+    })
+    expect(invalidConfigured.agents).toEqual([])
+    expect(invalidConfigured.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'alpha',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+    }))
+
+    const invalidUnseated = {
+      ...descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-unseated-invalid', []),
+      preflight: { ok: false, errors: [{ code: PREFLIGHT_INVALID_PLUGIN_METADATA, message: 'invalid schema' }] },
+    }
+    const result = await loadConfiguredAgentFleet({
+      ...await validAlphaOptions(),
+      discoveredPackages: [...DISCOVERED_PACKAGES, invalidUnseated],
+      env: {},
+    })
+    expect(result.agents.map((agent) => agent.agentTypeId)).toEqual(['fixture-alpha'])
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      agentTypeId: 'fixture-unseated-invalid',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+    }))
+  })
+
+  test('excludes both conflicting packages without taking down the fleet', async () => {
     const alpha = descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-alpha', ['greet', 'skills/local'])
-    await expect(loadConfiguredAgentFleet({
+    const result = await loadConfiguredAgentFleet({
       ...await validAlphaOptions(),
       discoveredPackages: [alpha, {
         ...alpha,
@@ -305,6 +370,9 @@ describe('loadConfiguredAgentFleet', () => {
         preflight: { ok: false, errors: [{ code: PREFLIGHT_INVALID_PLUGIN_METADATA, message: 'fixture preflight failure' }] },
       }],
       env: {},
-    })).rejects.toMatchObject({ name: 'FleetConfigError', field: 'seats' })
+    })
+    expect(result.agents).toEqual([])
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.code === ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT))
+      .toHaveLength(2)
   })
 })

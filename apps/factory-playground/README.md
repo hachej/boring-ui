@@ -27,6 +27,15 @@ pnpm --filter factory-playground dev
 
 Open <http://localhost:5220>. Use **Epics** to register work, open an epic's Orchestrator, and watch all addressed Worker sessions and owner gates in the shared sessions list and Inbox.
 
+For remote or multi-tab use, serve the browser-facing origin over **HTTPS with HTTP/2**;
+see [the streaming proxy setup](ops/README.md). The raw HTTP port is not a
+reliable multi-tab entry point: each tab holds filesystem, UI-command,
+activity, and session streams, exhausting the browser's shared six-connection
+HTTP/1.1 pool. A second tab can stall at “Preparing workspace…” even when
+individual API probes are fast. Reloading or reprioritizing the host does
+not resolve that transport limit.
+
+
 A deterministic tracer-bullet simulation is available without model or cloud credentials. It requires the real `br` CLI on `PATH`; the simulation test skips rather than substituting a fake graph when `br` is unavailable:
 
 ```bash
@@ -84,6 +93,10 @@ node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --branch fix/1
    Orchestrator`, and starts it with the shared kickoff prompt unless
    `--start false` is supplied. If kickoff is not accepted, intake keeps the
    bound session usable, reports the failure, and the launcher tells you to retry it.
+
+The printed raw HTTP URL is single-tab only; configure the HTTP/2 proxy
+(see [ops/README.md](ops/README.md)) for remote multi-tab use.
+
 
 ```bash
 node scripts/factory-epic.mjs list

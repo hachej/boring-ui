@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
@@ -11,11 +12,17 @@ import {
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
+import { resolveWorkspaceCredentialVaultCompositionFromEnvV1 } from '../credentials/startupComposition'
+import { createOpenAiCodexOAuthBrokerV1 } from '../credentials/openAiCodexOAuthBroker'
+import { actorCredentialProviderIdV1 } from '../credentials/vaultCredentialStore'
+import { createApiKeyValidatorV1 } from '../credentials/apiKeyValidation'
+import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/startupComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { createAgentHostRoutes } from './httpProjection'
+import { credentialsRoutes } from '../http/routes/credentials'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { resolveRequestLedgerPath } from './requestLedgerPath'
 import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
@@ -31,6 +38,7 @@ import {
   AgentSessionActivityIndex,
   AgentSessionInventory,
 } from './sessionInventory'
+import type { AgentInvocationFundingPolicyV1 } from '../../shared/workspaceAgentDispatcher'
 import type {
   AgentHostAgentSpec,
   AgentHostHandle,
@@ -51,10 +59,17 @@ const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const SAFE_HOST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000
 
+/** Maps trusted HTTP invocation metadata to the credential authority carried by the runtime binding. */
+export function invocationFundingPolicyFromHeaderV1(value: unknown): AgentInvocationFundingPolicyV1 {
+  return value === 'unattended' ? 'api-key-only' : 'personal-subscription'
+}
+
 export interface RuntimeBinding {
   readonly key: string
   readonly agentTypeId: string
   readonly workspaceScopeId: string
+  readonly authSubjectId: string
+  readonly fundingPolicy: AgentInvocationFundingPolicyV1
   readonly generation: number
   readonly scope: ResolvedAgentRuntimeScope
   readonly environmentLease: EnvironmentLease
@@ -130,13 +145,16 @@ export interface AgentHostRuntime {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     resolvedRuntimeScope?: ResolvedAgentRuntimeScope,
+    fundingPolicy?: AgentInvocationFundingPolicyV1,
   ): Promise<RuntimeBinding>
   findPublishedCurrentBinding(
     agentTypeId: string,
     workspaceScopeId: string,
+    authSubjectId: string,
     physicalBindingIdentity: string,
     bindingIdentity?: string,
     provisioningFingerprint?: string,
+    fundingPolicy?: AgentInvocationFundingPolicyV1,
   ): RuntimeBinding | undefined
   startDrain(): void
   drainRuntime(): Promise<void>
@@ -285,6 +303,8 @@ function resolveHostLedgerPath(options: CreateAgentHostOptions): string | undefi
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
+  invocationFundingPolicy: AsyncLocalStorage<AgentInvocationFundingPolicyV1>,
+  credentialComposition?: WorkspaceCredentialVaultCompositionV1,
 ): AgentHostRuntime {
   const compiledById = new Map(compiledAgents.map((agent) => [agent.agentTypeId, agent]))
   const environments = new EnvironmentLeaseManager(options.runtimeModeAdapter)
@@ -481,8 +501,13 @@ function createRuntime(
       return resolved
     },
     resolveAgentRuntimeScope,
-    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope) {
+    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope, requestedFundingPolicy) {
       runtime.assertOpen()
+      // Direct authenticated Gateway/HTTP use is interactive. Dispatcher callers
+      // execute inside an explicit authority-issued policy context below.
+      const fundingPolicy = credentialComposition
+        ? requestedFundingPolicy ?? invocationFundingPolicy.getStore() ?? 'personal-subscription'
+        : 'api-key-only'
       await assertAgentAccess(agentTypeId, scope, claim, 'runtime.bind')
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
@@ -497,12 +522,20 @@ function createRuntime(
       const key = JSON.stringify([
         agentTypeId,
         claim.workspaceScopeId,
+        claim.authSubjectId,
+        fundingPolicy,
         resolved.identity,
         resolved.environment.provisioningFingerprint,
         resolved.physicalBindingIdentity ?? resolved.identity,
       ])
       const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
-      const currentKey = JSON.stringify([agentTypeId, claim.workspaceScopeId, physicalBindingIdentity])
+      const currentKey = JSON.stringify([
+        agentTypeId,
+        claim.workspaceScopeId,
+        claim.authSubjectId,
+        fundingPolicy,
+        physicalBindingIdentity,
+      ])
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
@@ -537,8 +570,11 @@ function createRuntime(
             const composition = await buildAgentComposition({
               agent,
               workspaceScopeId: claim.workspaceScopeId,
+              actorUserId: claim.authSubjectId,
+              fundingPolicy,
               runtimeScope: resolved,
               runtimeBundle,
+              credentialComposition,
               environmentProvisioning: environmentLease.provisioning,
               options,
               observeSessionEvent: (sessionId, event) => {
@@ -553,6 +589,8 @@ function createRuntime(
               key,
               agentTypeId,
               workspaceScopeId: claim.workspaceScopeId,
+              authSubjectId: claim.authSubjectId,
+              fundingPolicy,
               generation,
               scope: resolved,
               environmentLease,
@@ -605,19 +643,28 @@ function createRuntime(
     findPublishedCurrentBinding(
       agentTypeId,
       workspaceScopeId,
+      authSubjectId,
       physicalBindingIdentity,
       bindingIdentity,
       provisioningFingerprint,
+      requestedFundingPolicy,
     ) {
+      const fundingPolicy = credentialComposition
+        ? requestedFundingPolicy ?? invocationFundingPolicy.getStore() ?? 'personal-subscription'
+        : 'api-key-only'
       const exact = publishedCurrentBindings.get(JSON.stringify([
         agentTypeId,
         workspaceScopeId,
+        authSubjectId,
+        fundingPolicy,
         physicalBindingIdentity,
       ]))
       if (exact) return exact
       const matches = [...publishedCurrentBindings.values()].filter((binding) =>
         binding.agentTypeId === agentTypeId
         && binding.workspaceScopeId === workspaceScopeId
+        && binding.authSubjectId === authSubjectId
+        && binding.fundingPolicy === fundingPolicy
         && (!bindingIdentity || binding.scope.identity === bindingIdentity)
         && (!provisioningFingerprint
           || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
@@ -794,7 +841,37 @@ export async function createAgentHost(
     )
   }
   if (durableLedgerPath) await mkdir(dirname(durableLedgerPath), { recursive: true })
-  const runtime = createRuntime(options, compiledAgents)
+  // [1082 slice B] BYOK vault composition resolves ONCE per host, here at
+  // startup: misconfigured env fails host creation with a stable
+  // CREDENTIAL_* error, and every runtime binding shares this one vault
+  // composition (a per-binding vault would silently fork credential state).
+  const credentialComposition = await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    env: options.credentials?.env ?? process.env,
+    persistence: options.credentials?.vaultPersistence,
+    authorityVerifier: options.credentials?.authorityVerifier,
+  })
+  if (credentialComposition && options.credentials?.onLifecycleReady) {
+    options.credentials.onLifecycleReady(Object.freeze({
+      cryptoShredWorkspace: (workspaceId: string) =>
+        credentialComposition.vaultBackend.cryptoShredWorkspace(workspaceId),
+    }))
+  }
+  const oauthBroker = credentialComposition
+    ? createOpenAiCodexOAuthBrokerV1({
+        credentialStoreForActor: async (workspaceId, userId) => {
+          const observed = await credentialComposition.vaultBackend.getCredentialMetadata(
+            workspaceId,
+            actorCredentialProviderIdV1(userId, 'openai-codex'),
+          )
+          return credentialComposition.createPiCredentialStore(workspaceId, userId, {
+            allowSubscriptionOAuth: true,
+            revokedOAuthReplacementVersion: observed?.credentialVersion,
+          })
+        },
+      })
+    : undefined
+  const invocationFundingPolicy = new AsyncLocalStorage<AgentInvocationFundingPolicyV1>()
+  const runtime = createRuntime(options, compiledAgents, invocationFundingPolicy, credentialComposition)
   if (
     runtime.ledger.durability !== 'durable-transactional'
     && options.inMemoryRequestLedgerMode === undefined
@@ -826,6 +903,9 @@ export async function createAgentHost(
         agents: compiledAgents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
           label: agent.definition.label,
+          ...(agent.definition.version === undefined
+            ? {}
+            : { definitionVersion: agent.definition.version }),
           ...(agent.definition.digest === undefined
             ? {}
             : { definitionDigest: agent.definition.digest }),
@@ -978,7 +1058,15 @@ export async function createAgentHost(
   const runWithWorkspaceAgent = (
     input: import('./types').AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
-  ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
+  ) => {
+    if (input.fundingPolicy !== 'api-key-only') {
+      throw new TypeError('workspace dispatcher invocations must use api-key-only funding')
+    }
+    return invocationFundingPolicy.run(
+      input.fundingPolicy,
+      () => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run }),
+    )
+  }
 
   const resolveHarnessBackendForRequest = async (
     authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,
@@ -1002,7 +1090,7 @@ export async function createAgentHost(
     runWithWorkspaceAgent,
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
       assertStrongLedger()
-      return createAgentHostRoutes({
+      const routes = createAgentHostRoutes({
         host,
         gateway,
         options: projectionOptions,
@@ -1015,7 +1103,30 @@ export async function createAgentHost(
         resolveHarnessBackend(request, agentTypeId, sessionId) {
           return resolveHarnessBackendForRequest(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
+        ...(
+          credentialComposition && options.credentials?.authorizeOwnerRequest
+            ? {
+                async registerAdditionalRoutes(app) {
+                  await app.register(credentialsRoutes, {
+                    providerRegistry: credentialComposition.providerRegistry,
+                    vaultBackend: credentialComposition.vaultBackend,
+                    apiKeyValidator: createApiKeyValidatorV1(),
+                    oauthBroker,
+                    authorizeRequest: options.credentials!.authorizeOwnerRequest!,
+                  })
+                },
+              }
+            : {}
+        ),
       })
+      return async (app: import('fastify').FastifyInstance) => {
+        app.addHook('onRequest', async (request) => {
+          invocationFundingPolicy.enterWith(
+            invocationFundingPolicyFromHeaderV1(request.headers['x-boring-invocation-mode']),
+          )
+        })
+        await app.register(routes)
+      }
     },
   })
   return created
