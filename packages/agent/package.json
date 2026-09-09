@@ -110,7 +110,7 @@
     "diff": "^9.0.0",
     "fastify": "^5.12.1",
     "lucide-react": "^1.31.0",
-    "motion": "^13.1.1",
+    "motion": "^13.1.0",
     "nanoid": "^6.0.0",
     "postgres": "^3.4.9",
     "proper-lockfile": "^4.1.2",
