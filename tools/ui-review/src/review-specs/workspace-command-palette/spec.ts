@@ -16,7 +16,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v8",
+  specRevision: "workspace-command-palette-v9",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -155,13 +155,16 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       // the frame. At compact the dialog is deliberately small and top-anchored,
       // so opening it legitimately moves the full-page pHash by only a few bits
       // — a strict >4 would reject every genuinely painted mobile state.
-      const paintedDialogDistance = (state: UiReviewExplorationState): number | null => {
-        const closed = ordered.filter((candidate) => {
+      const precedingClosedState = (state: UiReviewExplorationState): UiReviewExplorationState | undefined => (
+        ordered.filter((candidate) => {
           const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
           return (candidate.ordinal > 2 || candidate.action === "Wait")
             && candidate.ordinal < state.ordinal
             && palette?.dialogVisible === false
         }).at(-1)
+      )
+      const paintedDialogDistance = (state: UiReviewExplorationState): number | null => {
+        const closed = precedingClosedState(state)
         return closed !== undefined
           && state.screenshotDigest !== closed.screenshotDigest
           && typeof state.screenshotPHash === "string"
@@ -172,15 +175,32 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const hasGenuinelyPaintedDialog = (state: UiReviewExplorationState): boolean => (
         (paintedDialogDistance(state) ?? -1) >= (state.viewport.name === "mobile" ? 1 : 5)
       )
+      // A whole-viewport pHash can move more for background hydration than for
+      // the palette itself. Prefer the first Wait whose distinct dialog frame
+      // is corroborated by a later dialog frame with the same visual shape;
+      // this rejects a one-frame hydration spike without weakening replay's
+      // independent screenshot-distance gate.
+      const earliestCorroboratedWait = waits.find((state) => {
+        const closed = precedingClosedState(state)
+        if (closed === undefined || state.screenshotDigest === closed.screenshotDigest) return false
+        return dialogStates.some((candidate) => (
+          candidate.ordinal > state.ordinal
+          && typeof state.screenshotPHash === "string"
+          && typeof candidate.screenshotPHash === "string"
+          && hexadecimalHammingDistance(state.screenshotPHash, candidate.screenshotPHash) <= 8
+        ))
+      })
       const earliestStrongWait = waits.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
       const earliestStrongAction = replayableDialogActions.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
       const isCompact = ordered[0]?.viewport.name === "mobile"
       return isCompact
         ? earliestStrongAction
+          ?? earliestCorroboratedWait
           ?? earliestStrongWait
           ?? waits.find(hasGenuinelyPaintedDialog)
           ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
-        : earliestStrongWait
+        : earliestCorroboratedWait
+          ?? earliestStrongWait
           ?? waits.find(hasGenuinelyPaintedDialog)
           ?? earliestStrongAction
           ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)

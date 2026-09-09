@@ -55,7 +55,7 @@ describe("UI review spec registry", () => {
 
   it("pins the command-palette replay viewport/shell boot contract", () => {
     const commandPalette = uiReviewSpecs.get("workspace-command-palette")
-    expect(commandPalette.specRevision).toBe("workspace-command-palette-v8")
+    expect(commandPalette.specRevision).toBe("workspace-command-palette-v9")
     expect(COMMAND_PALETTE_COMPACT_MAX_WIDTH).toBe(639)
     expect(COMMAND_PALETTE_SHELL_SELECTOR).toBe(
       '[data-boring-workspace-part="plugin-tabs-shell"][data-mobile-shell]',
@@ -106,6 +106,14 @@ describe("UI review spec registry", () => {
       { ordinal: 15, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "settled", screenshotBytes: 120, screenshotPHash: "0000003c3c000000", normalizedState: { palette: { rootLayoutAligned: true, dialogVisible: true, mode: "Chats" } } },
     ] as unknown as UiReviewExplorationState[]
     expect(select(desktopHydratingActionPath)).toBe(desktopHydratingActionPath[2])
+
+    const desktopCorroboratedWaitPath = [
+      { ordinal: 2, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000003c3c000000", normalizedState: { palette: { rootLayoutAligned: true, dialogVisible: false, mode: "none" } } },
+      { ordinal: 3, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "hydrating", screenshotBytes: 120, screenshotPHash: "213f213f3f3f3f21", normalizedState: { palette: { rootLayoutAligned: true, dialogVisible: true, mode: "Chats" } } },
+      { ordinal: 4, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "settled-a", screenshotBytes: 120, screenshotPHash: "0000003c3c000000", normalizedState: { palette: { rootLayoutAligned: true, dialogVisible: true, mode: "Chats" } } },
+      { ordinal: 8, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "settled-b", screenshotBytes: 121, screenshotPHash: "0000003c3c000001", normalizedState: { palette: { rootLayoutAligned: true, dialogVisible: true, mode: "Commands" } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(desktopCorroboratedWaitPath)).toBe(desktopCorroboratedWaitPath[2])
 
     const shortestPaintedPath = [
       { ordinal: 5, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "fefefefefefefefe", normalizedState: { palette: { rootLayoutAligned: true, dialogVisible: false, mode: "none" } } },
