@@ -28,7 +28,7 @@
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@hachej/boring-factory": "workspace:*",
-    "@vercel/sandbox": "3.0.0",
+    "@vercel/sandbox": "3.2.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -40,8 +40,8 @@
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.6",
-    "typescript": "^6.0.3",
-    "vite": "^8.2.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
 }

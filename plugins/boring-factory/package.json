@@ -43,13 +43,13 @@
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@playwright/test": "^1.62.1",
-    "@vercel/sandbox": "3.0.0",
-    "mermaid": "11.16.1"
+    "@vercel/sandbox": "3.2.1",
+    "mermaid": "11.17.2"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vitest": "^4.1.11",
     "@hachej/boring-sandbox-plugin": "workspace:*"
   },
