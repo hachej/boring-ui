@@ -95,6 +95,13 @@ export interface CommitCredentialVersionInputV1 {
   readonly record: StoredCredentialRecordV1
   readonly fields: ReadonlyMap<string, CredentialEnvelopeV1>
   readonly supersededFieldsTombstone?: CredentialFieldTombstoneV1
+  /** Applied in the same durable transaction as the record/version CAS. */
+  readonly metadataUpdate?: Readonly<{
+    state: CredentialLifecycleStateV1
+    displayLabel?: string
+    credentialType?: string
+    maskedLastFourSuffix?: string | null
+  }>
 }
 
 export interface WorkspaceCredentialLockOptionsV1 {

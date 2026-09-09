@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,
 } from '../../../shared/credentials'
 import type {
+  CredentialEnvelopeV1,
   CredentialFieldId,
   ProviderId,
   ResolvedCredentialMaterialV1,
@@ -179,6 +180,52 @@ function createVaultCredentialStoreBackendInternalV1(
     return { workspaceId, dekGeneration, requestId: randomUUID() }
   }
 
+  function credentialStateDigest(
+    record: StoredCredentialRecordV1 | undefined,
+    state: CredentialLifecycleStateV1 | undefined,
+    credentialType: string | undefined,
+    fields: ReadonlyMap<string, CredentialEnvelopeV1>,
+  ): string {
+    const encodedFields = [...fields.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([fieldId, envelope]) => ({
+        fieldId,
+        envelopeVersion: envelope.envelopeVersion,
+        ciphertext: Buffer.from(envelope.ciphertext).toString('base64'),
+        nonce: Buffer.from(envelope.nonce).toString('base64'),
+        authTag: Buffer.from(envelope.authTag).toString('base64'),
+        aadContext: Buffer.from(envelope.aadContext).toString('base64'),
+      }))
+    return createHash('sha256').update(JSON.stringify({
+      record: record ?? null,
+      state: state ?? null,
+      credentialType: credentialType ?? null,
+      fields: encodedFields,
+    })).digest('hex')
+  }
+
+  async function durableCredentialStateDigest(
+    workspaceId: string,
+    providerId: ProviderId,
+  ): Promise<string> {
+    const record = await persistence.getCredentialRecord(workspaceId, providerId)
+    const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+    if (!!record !== !!metadata || (record && metadata?.credentialVersion !== record.credentialVersion)) {
+      unreadable('Credential mutation recovery state is incomplete')
+    }
+    const fields = record
+      ? await persistence.listFields(workspaceId, providerId, record.credentialVersion)
+      : new Map<string, CredentialEnvelopeV1>()
+    return credentialStateDigest(record, metadata?.state, metadata?.credentialType, fields)
+  }
+
+  async function recoverPendingCredentialMutation(workspaceId: string): Promise<void> {
+    const pending = await versionAnchor.readPendingMutation(workspaceId)
+    if (!pending) return
+    const digest = await durableCredentialStateDigest(workspaceId, pending.providerId)
+    await versionAnchor.recoverPendingMutation(workspaceId, digest)
+  }
+
   async function requireCurrentVersion(
     workspaceId: string,
     providerId: ProviderId,
@@ -255,11 +302,12 @@ function createVaultCredentialStoreBackendInternalV1(
         return this.withWorkspaceLock(workspaceId, (locked) =>
           locked.read(workspaceId, providerId, allowedFieldIds), lockOptions)
       }
-      await requireNotShredded(workspaceId)
-      // The version anchor is authenticated with the same KEK. Check backend
-      // readiness first so an unavailable key source keeps its retryable,
-      // operator-actionable code instead of being misclassified as corruption.
+      // Recovery runs under the same DB workspace lock as normal mutations.
+      // The authenticated external intent decides whether the exact pre-commit
+      // or exact committed DB state is valid; no DB-ahead heuristic is used.
       await requireReady()
+      await recoverPendingCredentialMutation(workspaceId)
+      await requireNotShredded(workspaceId)
       const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
       await requireCurrentMetadata(workspaceId, providerId, metadata)
       if (metadata?.state === 'disabled') {
@@ -369,8 +417,9 @@ function createVaultCredentialStoreBackendInternalV1(
           'Credential field set must not be empty',
         )
       }
-      await requireNotShredded(input.workspaceId)
       await requireReady()
+      await recoverPendingCredentialMutation(input.workspaceId)
+      await requireNotShredded(input.workspaceId)
       const { workspaceId, providerId } = input
       return versionAnchor.withMutation(
         workspaceId,
@@ -444,35 +493,54 @@ function createVaultCredentialStoreBackendInternalV1(
             dekGeneration,
             materialKind: 'field-set',
           })
-          await persistence.commitCredentialVersion({
-            workspaceId,
-            providerId,
-            expectedCredentialVersion,
+          const existingMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+          const existingFields = existing
+            ? await persistence.listFields(workspaceId, providerId, existing.credentialVersion)
+            : new Map<string, CredentialEnvelopeV1>()
+          const credentialType = input.metadata?.credentialType
+            ?? existingMetadata?.credentialType
+            ?? 'field-set.v1'
+          const expectedStateDigest = credentialStateDigest(
+            existing,
+            existingMetadata?.state,
+            existingMetadata?.credentialType,
+            existingFields,
+          )
+          const nextStateDigest = credentialStateDigest(
             record,
-            fields: encryptedFields,
-            supersededFieldsTombstone: existing ? {
-              deletedAt: new Date().toISOString(),
-              reason: 'superseded-version',
-            } : undefined,
-          })
-          if (input.metadata) {
-            await persistence.updateCredentialMetadata(workspaceId, providerId, {
-              state: 'active',
-              displayLabel: input.metadata.displayLabel,
-              credentialType: input.metadata.credentialType,
-              maskedLastFourSuffix: input.metadata.maskedLastFourSuffix,
-            })
-          }
-          const storedMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
-          if (!storedMetadata) unreadable('Credential metadata is missing after write')
+            'active',
+            credentialType,
+            encryptedFields,
+          )
           return {
+            expectedStateDigest,
+            nextStateDigest,
             nextCredentialVersion: credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
             nextCredentialFieldIds: [...encryptedFields.keys()],
             nextCredentialLifecycleState: 'active',
-            nextCredentialType: storedMetadata.credentialType,
+            nextCredentialType: credentialType,
             nextDekGeneration: record.dekGeneration,
-            result: record,
+            commit: async () => {
+              await persistence.commitCredentialVersion({
+                workspaceId,
+                providerId,
+                expectedCredentialVersion,
+                record,
+                fields: encryptedFields,
+                supersededFieldsTombstone: existing ? {
+                  deletedAt: new Date().toISOString(),
+                  reason: 'superseded-version',
+                } : undefined,
+                metadataUpdate: {
+                  state: 'active',
+                  displayLabel: input.metadata?.displayLabel,
+                  credentialType,
+                  maskedLastFourSuffix: input.metadata?.maskedLastFourSuffix,
+                },
+              })
+              return record
+            },
           }
         },
       )
@@ -488,8 +556,9 @@ function createVaultCredentialStoreBackendInternalV1(
         return this.withWorkspaceLock(workspaceId, (locked) =>
           locked.writeAbsentCredential(workspaceId, providerId), lockOptions)
       }
-      await requireNotShredded(workspaceId)
       await requireReady()
+      await recoverPendingCredentialMutation(workspaceId)
+      await requireNotShredded(workspaceId)
       const written = await versionAnchor.withMutation(
         workspaceId,
         providerId,
@@ -519,39 +588,63 @@ function createVaultCredentialStoreBackendInternalV1(
             dekGeneration: existing?.dekGeneration ?? anchorState?.dekGeneration ?? 1,
             materialKind: 'none',
           })
-          await persistence.commitCredentialVersion({
-            workspaceId,
-            providerId,
-            expectedCredentialVersion,
-            record,
-            fields: new Map(),
-            supersededFieldsTombstone: existing ? {
-              deletedAt: new Date().toISOString(),
-              reason: 'credential-tombstone',
-            } : undefined,
-          })
-          const storedMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
-          if (!storedMetadata) unreadable('Credential metadata is missing after delete')
+          const existingMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+          const existingFields = existing
+            ? await persistence.listFields(workspaceId, providerId, existing.credentialVersion)
+            : new Map<string, CredentialEnvelopeV1>()
+          const credentialType = existingMetadata?.credentialType ?? 'field-set.v1'
           return {
+            expectedStateDigest: credentialStateDigest(
+              existing,
+              existingMetadata?.state,
+              existingMetadata?.credentialType,
+              existingFields,
+            ),
+            nextStateDigest: credentialStateDigest(
+              record,
+              'intentionally_absent',
+              credentialType,
+              new Map(),
+            ),
             nextCredentialVersion: record.credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
             nextCredentialFieldIds: [],
             nextCredentialLifecycleState: 'intentionally_absent',
-            nextCredentialType: storedMetadata.credentialType,
+            nextCredentialType: credentialType,
             nextDekGeneration: record.dekGeneration,
-            result: record,
+            commit: async () => {
+              await persistence.commitCredentialVersion({
+                workspaceId,
+                providerId,
+                expectedCredentialVersion,
+                record,
+                fields: new Map(),
+                supersededFieldsTombstone: existing ? {
+                  deletedAt: new Date().toISOString(),
+                  reason: 'credential-tombstone',
+                } : undefined,
+                metadataUpdate: {
+                  state: 'intentionally_absent',
+                  credentialType,
+                  maskedLastFourSuffix: null,
+                },
+              })
+              return record
+            },
           }
         },
       )
-      await persistence.updateCredentialMetadata(workspaceId, providerId, {
-        state: 'intentionally_absent',
-        maskedLastFourSuffix: null,
-      })
       return written
     },
 
     async getCredentialMetadata(workspaceId: string, providerId: ProviderId) {
       assertWorkspaceId(workspaceId)
+      if (lockedWorkspaceId !== workspaceId) {
+        return this.withWorkspaceLock(workspaceId, (locked) =>
+          locked.getCredentialMetadata(workspaceId, providerId))
+      }
+      await requireReady()
+      await recoverPendingCredentialMutation(workspaceId)
       await requireNotShredded(workspaceId)
       const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
       await requireCurrentMetadata(workspaceId, providerId, metadata)
@@ -560,6 +653,14 @@ function createVaultCredentialStoreBackendInternalV1(
 
     async listCredentialMetadata(workspaceId: string) {
       assertWorkspaceId(workspaceId)
+      if (lockedWorkspaceId !== workspaceId) {
+        return this.withWorkspaceLock(workspaceId, (locked) =>
+          locked.listCredentialMetadata(workspaceId))
+      }
+      if (await persistence.hasWorkspaceCredentialArtifacts(workspaceId)) {
+        await requireReady()
+        await recoverPendingCredentialMutation(workspaceId)
+      }
       return versionAnchor.withReadLock(workspaceId, async (readLocked) => {
         const listed = await persistence.listCredentialMetadata(workspaceId)
         const hasArtifacts = listed.length > 0
@@ -601,6 +702,7 @@ function createVaultCredentialStoreBackendInternalV1(
         return this.withWorkspaceLock(workspaceId, (locked) =>
           locked.setCredentialLifecycleState(workspaceId, providerId, state))
       }
+      await recoverPendingCredentialMutation(workspaceId)
       await requireNotShredded(workspaceId)
       return versionAnchor.withLifecycleMutation(
         workspaceId,

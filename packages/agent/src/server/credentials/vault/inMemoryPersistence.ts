@@ -255,6 +255,13 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
         tombstones.delete(key)
       }
       await persistence.putCredentialRecord(input.workspaceId, input.providerId, input.record)
+      if (input.metadataUpdate) {
+        await persistence.updateCredentialMetadata(
+          input.workspaceId,
+          input.providerId,
+          input.metadataUpdate,
+        )
+      }
       if (input.expectedCredentialVersion > 0 && input.supersededFieldsTombstone) {
         await persistence.tombstoneCredentialVersionFields(
           input.workspaceId,

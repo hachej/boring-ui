@@ -581,6 +581,9 @@ implements CredentialVaultPersistenceV1 {
       }, envelope)
     }
     await this.putCredentialRecord(input.workspaceId, input.providerId, input.record)
+    if (input.metadataUpdate) {
+      await this.updateCredentialMetadata(input.workspaceId, input.providerId, input.metadataUpdate)
+    }
     if (input.expectedCredentialVersion > 0 && input.supersededFieldsTombstone) {
       await this.tombstoneCredentialVersionFields(
         input.workspaceId,
