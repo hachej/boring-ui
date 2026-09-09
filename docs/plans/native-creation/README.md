@@ -36,6 +36,8 @@ and owned compute do not have to precede it.
 | [Amendment record](DOCUMENT_AMENDMENTS.md) | Where each ruling landed in the canonical docs, and the crosswalk to M/E work. |
 | [Coverage and sources](COVERAGE_AND_SOURCES.md) | Pinned evidence and inspection limits of the reassessment. |
 | [360 gap map](360-GAP-MAP.md) | What the whole spec requires that the first bead cut missed; prior designs to reuse; owner decisions and defaults. |
+| [Seneca experience](SENECA-EXPERIENCE.md) | The UX target (bots, chat with cards and canvas, bot page, rooms, no trace) mapped to our nouns and beads; the Thread question. |
+| [Credentials and egress](CREDENTIALS-AND-EGRESS.md) | Surrogate tokens, egress proxy, three deciders, grant types — adopted from Muse; proposed D33 addendum. |
 | [Plan and show-me](../../issues/1562/plan.md) | Epic plan, bead graph, proof commands, gate-1 artifact. |
 
 This is a repository-ready synthesis of the September 7 reassessment, not a
