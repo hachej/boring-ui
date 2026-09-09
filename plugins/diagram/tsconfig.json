@@ -10,6 +10,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
     "noEmit": true,
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
     "paths": {
