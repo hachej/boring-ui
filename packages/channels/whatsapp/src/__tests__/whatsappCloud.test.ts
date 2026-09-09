@@ -178,6 +178,17 @@ describe('WhatsApp Cloud outbound', () => {
     expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject(fixture.outbound.template)
   })
 
+  test('classifies network failures as retryable for text and document upload', async () => {
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: vi.fn(async () => { throw new TypeError('connection reset') }) })
+    await expect(adapter.send({
+      conversationKey: '1',
+      message: { messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { body: 'hello', preview_url: false } },
+    })).rejects.toEqual(expect.objectContaining<Partial<WhatsAppCloudApiError>>({ status: 0, retryable: true }))
+    await expect(adapter.sendDocument({
+      conversationKey: '1', bytes: new TextEncoder().encode('%PDF-ok'), filename: 'artifact.pdf', mimeType: 'application/pdf',
+    })).rejects.toEqual(expect.objectContaining<Partial<WhatsAppCloudApiError>>({ status: 0, retryable: true }))
+  })
+
   test('classifies throttling as retryable and auth failures as permanent', async () => {
     const throttled = new WhatsAppCloudAdapter({ withCredentials, fetch: vi.fn(async () => new Response('', { status: 429 })) })
     await expect(throttled.sendWindowTemplate({ conversationKey: '1' })).rejects.toEqual(expect.objectContaining<Partial<WhatsAppCloudApiError>>({ status: 429, retryable: true }))

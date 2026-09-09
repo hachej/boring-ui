@@ -190,11 +190,16 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
     form.set('messaging_product', 'whatsapp')
     form.set('type', mimeType)
     form.set('file', new Blob([Uint8Array.from(bytes)], { type: mimeType }), filename)
-    const response = await this.request(endpoint, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${credentials.accessToken}` },
-      body: form,
-    })
+    let response: Response
+    try {
+      response = await this.request(endpoint, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${credentials.accessToken}` },
+        body: form,
+      })
+    } catch {
+      throw new WhatsAppCloudApiError(0, true)
+    }
     if (!response.ok) throw await this.apiError(response)
     const payload: unknown = await response.json().catch(() => undefined)
     if (!isRecord(payload) || typeof payload.id !== 'string' || !payload.id) {
@@ -204,14 +209,20 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
   }
 
   private async sendPayload(message: WhatsAppCloudMessage, credentials: WhatsAppCloudCredentials): Promise<void> {
-    const response = await this.request(this.graphEndpoint(credentials, 'messages'), {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${credentials.accessToken}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(message),
-    })
+    const endpoint = this.graphEndpoint(credentials, 'messages')
+    let response: Response
+    try {
+      response = await this.request(endpoint, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${credentials.accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(message),
+      })
+    } catch {
+      throw new WhatsAppCloudApiError(0, true)
+    }
     if (!response.ok) throw await this.apiError(response)
   }
 
