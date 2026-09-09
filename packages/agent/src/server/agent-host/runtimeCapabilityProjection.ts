@@ -104,6 +104,8 @@ export interface AgentHostRuntimeCapabilityBinding {
  */
 export interface AgentHostAgentDescription {
   readonly agentTypeId: string
+  /** Exact package declaration and computed identity for configured Agents. */
+  readonly definition?: { readonly version: string; readonly digest: string }
   /** Preferred model id from the agent definition, when pinned. */
   readonly model: string | null
   /**
@@ -348,6 +350,9 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       }
       return {
         agentTypeId,
+        ...(spec.definition.version && spec.definition.digest
+          ? { definition: { version: spec.definition.version, digest: spec.definition.digest } }
+          : {}),
         model: spec.model?.preferred ?? null,
         instructionFiles,
         mcpServers,

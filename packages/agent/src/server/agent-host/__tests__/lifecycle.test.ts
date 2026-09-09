@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { AgentCoreHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
@@ -78,6 +78,23 @@ async function expectBounded(operation: () => Promise<void>): Promise<void> {
 }
 
 describe('Agent Host lifecycle', () => {
+  it('preserves a catalog definition version when no digest is supplied', async () => {
+    const fixture = await options({
+      agents: [{
+        agentTypeId: 'alpha',
+        definition: { instructions: 'alpha', label: 'Alpha', version: '1.2.3' },
+      }],
+    })
+    const created = await createAgentHost(fixture.value)
+
+    await expect(created.gateway.listAgents({ scope })).resolves.toEqual([{
+      agentTypeId: 'alpha',
+      label: 'Alpha',
+      definition: { version: '1.2.3' },
+    }])
+    await created.host.close()
+  })
+
   it('closes active unbounded subscriptions and disposes bindings, Environment, and adapter once', async () => {
     const fixture = await options()
     const created = await createAgentHost(fixture.value)
@@ -351,6 +368,80 @@ describe('Agent Host lifecycle', () => {
     await expect(created.gateway.listAgents({ scope })).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
     })
+  })
+
+  it('isolates a retryable runtime load failure without removing the Agent or its sibling', async () => {
+    let alphaLoads = 0
+    const fixture = await options({
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
+      harnessFactory: async (input) => {
+        if (input.systemPromptAppend === 'alpha' && alphaLoads++ === 0) {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'transient Agent application load failure',
+            { retryable: true },
+          )
+        }
+        return await createScriptedPiHarness(input)
+      },
+      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
+        identity: `runtime:${agentTypeId}`,
+        physicalBindingIdentity: `runtime:${agentTypeId}`,
+        resourceInputDigest: `runtime:${agentTypeId}`,
+        sessionNamespace: agentTypeId,
+      }),
+    })
+    const created = await createAgentHost(fixture.value)
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'alpha-load-fails',
+    })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      details: { retryable: true },
+    })
+    expect((await created.gateway.listAgents({ scope })).map((agent) => agent.agentTypeId)).toEqual(['alpha', 'beta'])
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'beta',
+      requestId: 'beta-still-live',
+    })).resolves.toMatchObject({ agentTypeId: 'beta' })
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'alpha-load-fails',
+    })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+
+    await created.host.close()
+  })
+
+  it('reclaims the same request key after a plain Error runtime preflight failure', async () => {
+    let loads = 0
+    const fixture = await options({
+      harnessFactory: async (input) => {
+        if (loads++ === 0) throw new Error('transient plain runtime load failure')
+        return await createScriptedPiHarness(input)
+      },
+    })
+    const created = await createAgentHost(fixture.value)
+    const input = {
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'plain-error-same-key',
+    }
+
+    await expect(created.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      details: { retryable: true },
+    })
+    await expect(created.gateway.createSession(input)).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    expect(loads).toBe(2)
+
+    await created.host.close()
   })
 
   it('keeps gateway.close facade-local and idempotent', async () => {
