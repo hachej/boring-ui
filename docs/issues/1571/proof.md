@@ -3,14 +3,14 @@
 ## Scope and revision
 
 - Bead / PR: `factory-plugin-z4hs.1` / <https://github.com/hachej/boring-ui/pull/1571>
-- Current-main integration base: `c248adba89e5514d0c60bf436ae8c8bcf707609b`
-- Verified implementation candidate: `dea5caf9530e49582734a5924a4f950a8198b251`
+- Current-main integration base: `bc53da0a863d94d7b839f7b9975cc5eef941dea9`
+- Verified implementation candidate: `5bc4b2876f71641975a907a099778eb4ae482f78`
 - Change: retain Nodemailer `9.1.1` in `packages/core/package.json` and its lockfile resolution; merge current `origin/main` without rewriting history.
 - UI evidence: N/A — no UI production code changes relative to current main.
 
 ## Automated verification
 
-All local commands ran in disposable sandbox `86f5c6c9-e111-434a-b0a8-4a6c2c0cad21`, whose `git rev-parse HEAD` was `dea5caf9530e49582734a5924a4f950a8198b251`.
+All local commands ran in disposable sandbox `c5fec16f-0954-4707-a348-f88945b3bb50`, whose `git rev-parse HEAD` was `5bc4b2876f71641975a907a099778eb4ae482f78`.
 
 - `pnpm install --frozen-lockfile` — PASS; lockfile resolved Nodemailer `9.1.1`.
 - request-ledger Vitest file, serial, repeated 20 times — PASS 20/20. The earlier CI SQLite `database is locked` failure did not reproduce; no unrelated ledger patch was made.
@@ -41,7 +41,7 @@ Automatic-eligible routine dependency maintenance under `docs/procedures/boring-
 
 ## Integration and rollback
 
-The branch merged `origin/main` at `c248adba89e5514d0c60bf436ae8c8bcf707609b` into the candidate without force-push. Before admission, refresh `origin/main`; if it moved, revalidate the new combination. Rollback is a normal revert of the dependency bump/delivery commits; no data or migration rollback is required.
+The branch merged `origin/main` at `bc53da0a863d94d7b839f7b9975cc5eef941dea9` into the candidate without force-push. Before admission, refresh `origin/main`; if it moved, revalidate the new combination. Rollback is a normal revert of the dependency bump/delivery commits; no data or migration rollback is required.
 
 ## Review and final receipts
 
