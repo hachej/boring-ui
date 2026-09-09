@@ -162,11 +162,11 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.5",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.0.0",
     "fast-check": "^4.9.0",
     "jsdom": "^30.0.1",
@@ -178,7 +178,7 @@
     "tsup": "^8.0.0",
     "typescript": "^6.0.3",
     "vite": "^8.2.1",
-    "vite-plugin-dts": "^5.0.3",
+    "vite-plugin-dts": "^5.1.0",
     "vitest": "^4.1.11"
   }
 }

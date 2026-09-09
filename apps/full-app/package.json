@@ -41,11 +41,11 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.0.0",
     "postgres": "^3.4.9",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.6",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vite": "^8.2.1",
     "yaml": "^2.9.0"
