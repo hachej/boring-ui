@@ -47,6 +47,18 @@ export type {
   ChannelMessageAck,
 } from './channelIntentionService'
 export {
+  ChannelArtifactDeliveryService,
+  createHeadlessChromiumPdfRenderer,
+} from './channelArtifactDeliveryService'
+export type {
+  ChannelArtifactDeliveryOptions,
+  ChannelArtifactDeliveryRuntime,
+  ChannelArtifactDocumentSender,
+  ChannelHtmlToPdfRenderer,
+  HeadlessChromiumLauncher,
+  PublishedChannelArtifact,
+} from './channelArtifactDeliveryService'
+export {
   CHANNEL_OUTBOUND_PARKED,
   CHANNEL_TURN_STALLED,
   DEFAULT_CHANNEL_STALL_TIMEOUT_MS,
@@ -57,6 +69,7 @@ export {
 } from './channelOutboundService'
 export type {
   ChannelOutboundAdapter,
+  ChannelOutboundArtifactPublisher,
   ChannelOutboundRuntime,
   ChannelOutboundServiceOptions,
   ChannelOutboundTurn,

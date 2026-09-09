@@ -1875,6 +1875,7 @@ export async function createCoreWorkspaceAgentServer(
         app,
         gateway: agentHost.gateway,
         storage: channelStorage,
+        shareEntryStore: options.shareEntryStore,
         resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
           workspaceId: binding.workspaceId,
           userId: binding.authSubjectId,

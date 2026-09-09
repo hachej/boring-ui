@@ -28,8 +28,12 @@ export interface WhatsAppCloudMessage {
   readonly messaging_product: 'whatsapp'
   readonly recipient_type: 'individual'
   readonly to?: string
-  readonly type: 'text' | 'template'
+  readonly type: 'text' | 'template' | 'document'
   readonly text?: { readonly body: string; readonly preview_url: false }
+  readonly document?: {
+    readonly id: string
+    readonly filename: string
+  }
   readonly template?: {
     readonly name: string
     readonly language: { readonly code: string }
@@ -120,6 +124,48 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
       this.sendPayload({ ...input.message, to: input.conversationKey }, credentials))
   }
 
+  async sendDocument(input: {
+    readonly conversationKey: string
+    readonly bytes: Uint8Array
+    readonly filename: string
+    readonly mimeType: 'application/pdf'
+  }): Promise<void> {
+    if (input.filename !== 'artifact.pdf' || input.bytes.byteLength === 0) {
+      throw new WhatsAppCloudApiError(0, false)
+    }
+    await this.options.withCredentials(async (credentials) => {
+      const mediaId = await this.uploadDocument(input.bytes, input.filename, input.mimeType, credentials)
+      await this.sendPayload({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.conversationKey,
+        type: 'document',
+        document: { id: mediaId, filename: input.filename },
+      }, credentials)
+    })
+  }
+
+  async sendArtifactLink(input: { readonly conversationKey: string; readonly url: string }): Promise<void> {
+    let parsed: URL
+    try {
+      parsed = new URL(input.url)
+    } catch {
+      throw new WhatsAppCloudApiError(0, false)
+    }
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new WhatsAppCloudApiError(0, false)
+    }
+    await this.send({
+      conversationKey: input.conversationKey,
+      message: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        type: 'text',
+        text: { body: `View artifact: ${parsed.toString()}`, preview_url: false },
+      },
+    })
+  }
+
   async sendWindowTemplate(input: { readonly conversationKey: string }): Promise<void> {
     await this.options.withCredentials((credentials) => this.sendPayload({
       messaging_product: 'whatsapp',
@@ -133,39 +179,66 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
     }, credentials))
   }
 
+  private async uploadDocument(
+    bytes: Uint8Array,
+    filename: string,
+    mimeType: 'application/pdf',
+    credentials: WhatsAppCloudCredentials,
+  ): Promise<string> {
+    const endpoint = this.graphEndpoint(credentials, 'media')
+    const form = new FormData()
+    form.set('messaging_product', 'whatsapp')
+    form.set('type', mimeType)
+    form.set('file', new Blob([Uint8Array.from(bytes)], { type: mimeType }), filename)
+    const response = await this.request(endpoint, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${credentials.accessToken}` },
+      body: form,
+    })
+    if (!response.ok) throw await this.apiError(response)
+    const payload: unknown = await response.json().catch(() => undefined)
+    if (!isRecord(payload) || typeof payload.id !== 'string' || !payload.id) {
+      throw new WhatsAppCloudApiError(response.status, false)
+    }
+    return payload.id
+  }
+
   private async sendPayload(message: WhatsAppCloudMessage, credentials: WhatsAppCloudCredentials): Promise<void> {
+    const response = await this.request(this.graphEndpoint(credentials, 'messages'), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${credentials.accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    })
+    if (!response.ok) throw await this.apiError(response)
+  }
+
+  private graphEndpoint(credentials: WhatsAppCloudCredentials, resource: 'media' | 'messages'): string {
     const apiVersion = credentials.apiVersion ?? 'v25.0'
     if (!/^v\d+\.\d+$/.test(apiVersion) || !/^\d+$/.test(credentials.phoneNumberId)) {
       throw new WhatsAppCloudApiError(0, false)
     }
-    const response = await this.request(
-      `${this.origin}/${apiVersion}/${credentials.phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${credentials.accessToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(message),
-      },
-    )
-    if (!response.ok) {
-      let providerTransient = false
-      let providerCode: number | undefined
-      try {
-        const payload: unknown = await response.json()
-        if (isRecord(payload) && isRecord(payload.error)) {
-          providerTransient = payload.error.is_transient === true
-          providerCode = typeof payload.error.code === 'number' ? payload.error.code : undefined
-        }
-      } catch {
-        // A non-JSON failure still has reliable HTTP retry semantics.
+    return `${this.origin}/${apiVersion}/${credentials.phoneNumberId}/${resource}`
+  }
+
+  private async apiError(response: Response): Promise<WhatsAppCloudApiError> {
+    let providerTransient = false
+    let providerCode: number | undefined
+    try {
+      const payload: unknown = await response.json()
+      if (isRecord(payload) && isRecord(payload.error)) {
+        providerTransient = payload.error.is_transient === true
+        providerCode = typeof payload.error.code === 'number' ? payload.error.code : undefined
       }
-      const transientCodes = new Set([1, 2, 4, 17, 32, 613, 80007])
-      const retryable = providerTransient || (providerCode !== undefined && transientCodes.has(providerCode))
-        || response.status === 408 || response.status === 429 || response.status >= 500
-      throw new WhatsAppCloudApiError(response.status, retryable)
+    } catch {
+      // A non-JSON failure still has reliable HTTP retry semantics.
     }
+    const transientCodes = new Set([1, 2, 4, 17, 32, 613, 80007])
+    const retryable = providerTransient || (providerCode !== undefined && transientCodes.has(providerCode))
+      || response.status === 408 || response.status === 429 || response.status >= 500
+    return new WhatsAppCloudApiError(response.status, retryable)
   }
 }
 

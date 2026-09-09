@@ -1,12 +1,15 @@
 import type { FastifyInstance } from 'fastify'
 import {
+  ChannelArtifactDeliveryService,
   createAgentHostChannelRuntime,
   type AgentHostChannelRuntime,
   type AgentHostChannelStorage,
   type AuthorizedAgentScope,
+  type ChannelArtifactDeliveryRuntime,
+  type ChannelHtmlToPdfRenderer,
   type ProvisionChannelBindingInput,
 } from '@hachej/boring-agent/server'
-import type { AgentGateway } from '@hachej/boring-agent/shared'
+import type { AgentGateway, ShareEntryStore } from '@hachej/boring-agent/shared'
 import {
   createWhatsAppCloudEdge,
   WHATSAPP_CHANNEL_ID,
@@ -25,6 +28,12 @@ export interface CoreWhatsAppChannelOptions {
   readonly provisionedBindings?: readonly Omit<ProvisionChannelBindingInput, 'channel' | 'agentTypeId'>[]
   readonly webhookPath?: string
   readonly bodyLimit?: number
+  /** Host-owned authenticated workspace/PDF authority; omitted means HTML file parts fail closed. */
+  readonly artifactDelivery?: {
+    readonly authenticatedOrigin: string
+    readonly runtime: ChannelArtifactDeliveryRuntime
+    readonly renderer: ChannelHtmlToPdfRenderer
+  }
 }
 
 export interface MountedCoreWhatsAppChannel {
@@ -51,6 +60,8 @@ export async function mountCoreWhatsAppChannel(input: {
   readonly app: FastifyInstance
   readonly gateway: AgentGateway
   readonly storage: AgentHostChannelStorage
+  /** Must be the same store mounted by the authenticated `/a/:id` route. */
+  readonly shareEntryStore?: ShareEntryStore
   readonly resolveAuthorizedScope: (binding: {
     readonly workspaceId: string
     readonly authSubjectId: string
@@ -109,11 +120,24 @@ export async function mountCoreWhatsAppChannel(input: {
     inbound: { accept: (message, agentTypeId) => runtime.acceptInbound(message, agentTypeId) },
     ...(input.options.bodyLimit === undefined ? {} : { bodyLimit: input.options.bodyLimit }),
   })
+  const artifactPublisher = input.options.artifactDelivery && input.shareEntryStore
+    ? new ChannelArtifactDeliveryService(
+        input.shareEntryStore,
+        input.options.artifactDelivery.runtime,
+        input.options.artifactDelivery.renderer,
+        adapterEdge.adapter,
+        { authenticatedOrigin: input.options.artifactDelivery.authenticatedOrigin },
+      )
+    : undefined
+  if (input.options.artifactDelivery && !artifactPublisher) {
+    throw new Error('WhatsApp artifact delivery requires the authenticated share-entry store')
+  }
   const runtime = createAgentHostChannelRuntime<WhatsAppCloudMessage>({
     gateway: input.gateway,
     storage: input.storage,
     resolveAuthorizedScope: input.resolveAuthorizedScope,
     outboundAdapters: new Map([[WHATSAPP_CHANNEL_ID, adapterEdge.adapter]]),
+    ...(artifactPublisher ? { outbound: { artifactPublisher } } : {}),
   })
   const webhookPath = input.options.webhookPath ?? CORE_WHATSAPP_WEBHOOK_PATH
   const bodyLimit = input.options.bodyLimit ?? WHATSAPP_WEBHOOK_BODY_LIMIT

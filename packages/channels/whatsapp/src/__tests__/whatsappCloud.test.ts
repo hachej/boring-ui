@@ -118,6 +118,58 @@ describe('WhatsApp Cloud outbound', () => {
     expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject(fixture.outbound.text)
   })
 
+  test('uploads PDF bytes privately and sends a WhatsApp document beside the authenticated link', async () => {
+    const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+      String(input).endsWith('/media') ? Response.json({ id: 'media-opaque-1' }) : new Response('{}', { status: 200 }))
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
+    const bytes = new TextEncoder().encode('%PDF-snapshot-v1')
+
+    await adapter.sendDocument({
+      conversationKey: fixture.outbound.conversationKey,
+      bytes,
+      filename: 'artifact.pdf',
+      mimeType: 'application/pdf',
+    })
+    await adapter.sendArtifactLink({
+      conversationKey: fixture.outbound.conversationKey,
+      url: 'https://app.example.test/a/opaque-share-id',
+    })
+
+    expect(request).toHaveBeenCalledTimes(3)
+    const upload = request.mock.calls[0]!
+    expect(String(upload[0])).toBe('https://graph.facebook.com/v25.0/123456789/media')
+    expect(upload[1]?.headers).toEqual({ authorization: 'Bearer secret-access-token' })
+    expect(upload[1]?.body).toBeInstanceOf(FormData)
+    const form = upload[1]!.body as FormData
+    expect(form.get('messaging_product')).toBe('whatsapp')
+    expect(form.get('type')).toBe('application/pdf')
+    const file = form.get('file') as File
+    expect(file.name).toBe('artifact.pdf')
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes)
+
+    const document = JSON.parse(String(request.mock.calls[1]![1]!.body))
+    expect(document).toMatchObject({
+      to: fixture.outbound.conversationKey,
+      type: 'document',
+      document: { id: 'media-opaque-1', filename: 'artifact.pdf' },
+    })
+    expect(JSON.stringify(document)).not.toContain('secret-access-token')
+    expect(JSON.parse(String(request.mock.calls[2]![1]!.body))).toMatchObject({
+      type: 'text',
+      text: { body: 'View artifact: https://app.example.test/a/opaque-share-id', preview_url: false },
+    })
+  })
+
+  test('rejects secret-bearing artifact links and path-bearing document filenames before Graph calls', async () => {
+    const request = vi.fn(async () => new Response('{}', { status: 200 }))
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
+    await expect(adapter.sendArtifactLink({ conversationKey: '1', url: 'https://app.example.test/a/id?token=secret' }))
+      .rejects.toMatchObject({ retryable: false })
+    await expect(adapter.sendDocument({ conversationKey: '1', bytes: new Uint8Array([1]), filename: '../quote.pdf', mimeType: 'application/pdf' }))
+      .rejects.toMatchObject({ retryable: false })
+    expect(request).not.toHaveBeenCalled()
+  })
+
   test('sends the approved fallback template outside the service window', async () => {
     const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{}', { status: 200 }))
     const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
