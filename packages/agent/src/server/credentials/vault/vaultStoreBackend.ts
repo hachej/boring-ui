@@ -194,8 +194,10 @@ function createVaultCredentialStoreBackendInternalV1(
 
   function credentialStateDigest(
     record: StoredCredentialRecordV1 | undefined,
-    state: CredentialLifecycleStateV1 | undefined,
-    credentialType: string | undefined,
+    metadata: Pick<
+      StoredCredentialMetadataV1,
+      'state' | 'credentialType' | 'displayLabel' | 'maskedLastFourSuffix'
+    > | undefined,
     fields: ReadonlyMap<string, CredentialEnvelopeV1>,
   ): string {
     const encodedFields = [...fields.entries()]
@@ -216,12 +218,19 @@ function createVaultCredentialStoreBackendInternalV1(
           materialKind: record.materialKind,
         }
       : null
-    return createHash('sha256').update(JSON.stringify({
-      record: canonicalRecord,
-      state: state ?? null,
-      credentialType: credentialType ?? null,
-      fields: encodedFields,
-    })).digest('hex')
+    // A versioned, fixed-shape JSON tuple makes field boundaries and absent
+    // values unambiguous while authenticating every atomically committed datum.
+    return createHash('sha256').update(JSON.stringify([
+      'credential-recovery-state.v2',
+      canonicalRecord,
+      {
+        state: metadata?.state ?? null,
+        credentialType: metadata?.credentialType ?? null,
+        displayLabel: metadata?.displayLabel ?? null,
+        maskedLastFourSuffix: metadata?.maskedLastFourSuffix ?? null,
+      },
+      encodedFields,
+    ])).digest('hex')
   }
 
   async function durableCredentialStateDigest(
@@ -237,7 +246,7 @@ function createVaultCredentialStoreBackendInternalV1(
     const fields = record
       ? await store.listFields(workspaceId, providerId, record.credentialVersion)
       : new Map<string, CredentialEnvelopeV1>()
-    return credentialStateDigest(record, metadata?.state, metadata?.credentialType, fields)
+    return credentialStateDigest(record, metadata, fields)
   }
 
   async function verifiedCurrentMutationState(
@@ -553,16 +562,24 @@ function createVaultCredentialStoreBackendInternalV1(
           const credentialType = input.metadata?.credentialType
             ?? existingMetadata?.credentialType
             ?? 'field-set.v1'
+          const displayLabel = input.metadata?.displayLabel
+            ?? existingMetadata?.displayLabel
+            ?? providerId
+          const maskedLastFourSuffix = input.metadata?.maskedLastFourSuffix
+            ?? existingMetadata?.maskedLastFourSuffix
           const expectedStateDigest = credentialStateDigest(
             existing,
-            existingMetadata?.state,
-            existingMetadata?.credentialType,
+            existingMetadata,
             existingFields,
           )
           const nextStateDigest = credentialStateDigest(
             record,
-            'active',
-            credentialType,
+            {
+              state: 'active',
+              credentialType,
+              displayLabel,
+              maskedLastFourSuffix,
+            },
             encryptedFields,
           )
           return {
@@ -587,9 +604,9 @@ function createVaultCredentialStoreBackendInternalV1(
                 } : undefined,
                 metadataUpdate: {
                   state: 'active',
-                  displayLabel: input.metadata?.displayLabel,
+                  displayLabel,
                   credentialType,
-                  maskedLastFourSuffix: input.metadata?.maskedLastFourSuffix,
+                  maskedLastFourSuffix,
                 },
               })
               return record
@@ -640,14 +657,17 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             expectedStateDigest: credentialStateDigest(
               existing,
-              existingMetadata?.state,
-              existingMetadata?.credentialType,
+              existingMetadata,
               existingFields,
             ),
             nextStateDigest: credentialStateDigest(
               record,
-              'intentionally_absent',
-              credentialType,
+              {
+                state: 'intentionally_absent',
+                credentialType,
+                displayLabel: existingMetadata?.displayLabel ?? providerId,
+                maskedLastFourSuffix: null,
+              },
               new Map(),
             ),
             nextCredentialVersion: record.credentialVersion,
@@ -765,14 +785,12 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             expectedStateDigest: credentialStateDigest(
               record,
-              metadata.state,
-              metadata.credentialType,
+              metadata,
               fields,
             ),
             nextStateDigest: credentialStateDigest(
               record,
-              state,
-              metadata.credentialType,
+              { ...metadata, state },
               fields,
             ),
             nextCredentialVersion: record.credentialVersion,

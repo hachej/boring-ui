@@ -96,6 +96,45 @@ function context(workspaceId: string, dekGeneration = 1) {
   return { workspaceId, dekGeneration, requestId: 'req-1' }
 }
 
+async function createDbToAnchorBoundaryFixture(workspaceId: string) {
+  const anchorFilePath = join(
+    await mkdtemp(join(tmpdir(), 'boring-anchor-recovery-')),
+    'anchor',
+  )
+  const stableLoadKek = async () => new Uint8Array(KEK_A)
+  await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek: stableLoadKek })
+  const persistence = createInMemoryCredentialVaultPersistenceV1()
+  let failFinalAnchor = true
+  const boundaryLoadKek = async () => {
+    const serialized = await readFile(anchorFilePath, 'utf8')
+    if (failFinalAnchor && serialized.includes('pendingCredentialMutation')) {
+      throw new Error('simulated anchor EIO after DB commit')
+    }
+    return new Uint8Array(KEK_A)
+  }
+  const createBackend = (
+    store: CredentialVaultPersistenceV2,
+    loadKek: () => Promise<Uint8Array>,
+  ) => createVaultCredentialStoreBackendV1({
+    persistence: store,
+    versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
+    kmsBackend: kekProvider(KEK_A),
+  })
+  return {
+    anchorFilePath,
+    persistence,
+    failingBackend: createBackend(persistence, boundaryLoadKek),
+    stableBackend: () => {
+      failFinalAnchor = false
+      return createBackend(persistence, stableLoadKek)
+    },
+    enableFinalAnchorFailure: () => {
+      failFinalAnchor = true
+    },
+    workspaceId,
+  }
+}
+
 function vaultStore(
   kek: Buffer = KEK_A,
   persistence: CredentialVaultPersistenceV2 =
@@ -583,47 +622,46 @@ describe('local-KEK credential version anchor', () => {
     expect(error).not.toBeInstanceOf(TypeError)
   })
 
-  test('recovers only exact authenticated before/after states across the DB-to-anchor boundary', async () => {
-    const createBoundaryFixture = async (workspaceId: string) => {
-      const anchorFilePath = join(
-        await mkdtemp(join(tmpdir(), 'boring-anchor-recovery-')),
-        'anchor',
+  test.each([
+    ['displayLabel', { displayLabel: 'tampered-label' }],
+    ['maskedLastFourSuffix', { maskedLastFourSuffix: '9999' }],
+  ] as const)(
+    'rejects exact-after recovery when committed %s is tampered',
+    async (metadataField, tamperedUpdate) => {
+      const boundary = await createDbToAnchorBoundaryFixture(`ws-tampered-${metadataField}`)
+      await expectCredentialError(
+        () => boundary.failingBackend.writeCredentialFields({
+          workspaceId: boundary.workspaceId,
+          providerId: PROVIDER_A,
+          fields: new Map([[FIELD_API_KEY, new TextEncoder().encode(SECRET_VALUE)]]),
+          metadata: {
+            displayLabel: 'Original label',
+            credentialType: 'api-key.v1',
+            maskedLastFourSuffix: '1234',
+          },
+        }),
+        CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
       )
-      const stableLoadKek = async () => new Uint8Array(KEK_A)
-      await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek: stableLoadKek })
-      const persistence = createInMemoryCredentialVaultPersistenceV1()
-      let failFinalAnchor = true
-      const boundaryLoadKek = async () => {
-        const serialized = await readFile(anchorFilePath, 'utf8')
-        if (failFinalAnchor && serialized.includes('pendingCredentialMutation')) {
-          throw new Error('simulated anchor EIO after DB commit')
-        }
-        return new Uint8Array(KEK_A)
-      }
-      const createBackend = (
-        store: CredentialVaultPersistenceV2,
-        loadKek: () => Promise<Uint8Array>,
-      ) => createVaultCredentialStoreBackendV1({
-        persistence: store,
-        versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
-        kmsBackend: kekProvider(KEK_A),
-      })
-      return {
-        anchorFilePath,
-        persistence,
-        failingBackend: createBackend(persistence, boundaryLoadKek),
-        stableBackend: () => {
-          failFinalAnchor = false
-          return createBackend(persistence, stableLoadKek)
-        },
-        enableFinalAnchorFailure: () => {
-          failFinalAnchor = true
-        },
-        workspaceId,
-      }
-    }
+      expect(await readFile(boundary.anchorFilePath, 'utf8')).toContain('pendingCredentialMutation')
+      await boundary.persistence.updateCredentialMetadata(
+        boundary.workspaceId,
+        PROVIDER_A,
+        { state: 'active', ...tamperedUpdate },
+      )
+      await expectCredentialError(
+        () => boundary.stableBackend().read(
+          boundary.workspaceId,
+          PROVIDER_A,
+          [FIELD_API_KEY],
+        ),
+        CREDENTIAL_ERROR_CODES.UNREADABLE,
+      )
+      expect(await readFile(boundary.anchorFilePath, 'utf8')).toContain('pendingCredentialMutation')
+    },
+  )
 
-    const committed = await createBoundaryFixture('ws-committed')
+  test('recovers only exact authenticated before/after states across the DB-to-anchor boundary', async () => {
+    const committed = await createDbToAnchorBoundaryFixture('ws-committed')
     await expectCredentialError(
       () => committed.failingBackend.writeCredentialFields({
         workspaceId: committed.workspaceId,
@@ -660,7 +698,7 @@ describe('local-KEK credential version anchor', () => {
       CREDENTIAL_ERROR_CODES.UNREADABLE,
     )
 
-    const lifecycle = await createBoundaryFixture('ws-lifecycle')
+    const lifecycle = await createDbToAnchorBoundaryFixture('ws-lifecycle')
     const lifecycleStable = lifecycle.stableBackend()
     await lifecycleStable.writeAbsentCredential(lifecycle.workspaceId, PROVIDER_A)
     lifecycle.enableFinalAnchorFailure()
@@ -677,7 +715,7 @@ describe('local-KEK credential version anchor', () => {
       PROVIDER_A,
     ))?.state).toBe('disabled')
 
-    const forgedAhead = await createBoundaryFixture('ws-forged-ahead')
+    const forgedAhead = await createDbToAnchorBoundaryFixture('ws-forged-ahead')
     await expectCredentialError(
       () => forgedAhead.failingBackend.writeAbsentCredential(
         forgedAhead.workspaceId,
@@ -699,7 +737,7 @@ describe('local-KEK credential version anchor', () => {
       CREDENTIAL_ERROR_CODES.UNREADABLE,
     )
 
-    const beforeCommit = await createBoundaryFixture('ws-before-commit')
+    const beforeCommit = await createDbToAnchorBoundaryFixture('ws-before-commit')
     let rejectingPersistence!: CredentialVaultPersistenceV2
     rejectingPersistence = Object.freeze({
       ...beforeCommit.persistence,
