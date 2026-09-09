@@ -14,7 +14,9 @@
     "label": "Disposable sandbox",
     "server": "dist/server/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     "./server": {
       "types": "./dist/server/index.d.ts",
@@ -44,10 +46,10 @@
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@types/node": "^22.20.0",
-    "@vercel/sandbox": "3.0.0",
+    "@vercel/sandbox": "3.2.1",
     "fastify": "^5.12.1",
-    "tsx": "^4.23.13",
     "tsup": "^8.4.0",
+    "tsx": "^4.23.13",
     "typescript": "~6.0.3",
     "vitest": "^4.1.11"
   }
