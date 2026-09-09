@@ -594,7 +594,10 @@ describe('local-KEK credential version anchor', () => {
     let rejectingPersistence!: CredentialVaultPersistenceV1
     rejectingPersistence = Object.freeze({
       ...beforeCommit.persistence,
-      async withWorkspaceLock(_workspaceId, mutate) {
+      async withWorkspaceLock<T>(
+        _workspaceId: string,
+        mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+      ): Promise<T> {
         return mutate(rejectingPersistence)
       },
       async commitCredentialVersion() {
