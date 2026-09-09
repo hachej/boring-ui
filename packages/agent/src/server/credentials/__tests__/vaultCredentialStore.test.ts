@@ -159,9 +159,16 @@ describe('vault-backed Pi CredentialStore', () => {
     )
 
     for (const replayedMetadata of [undefined, activeMetadata]) {
-      const replayedPersistence = {
+      const replayedPersistence: CredentialVaultPersistenceV1 = {
         ...persistence,
         async getCredentialMetadata() { return replayedMetadata },
+        async withWorkspaceLock(workspaceId, mutate, options) {
+          return persistence.withWorkspaceLock(
+            workspaceId,
+            () => mutate(replayedPersistence),
+            options,
+          )
+        },
       }
       const replayedStore = createVaultCredentialStoreV1({
         workspaceId: 'workspace-a',
