@@ -13,8 +13,8 @@
 -├── streamdown 2.6.0                       # excluded during budget isolation
 -├── lucide-react 1.39.0                    # excluded during budget isolation
 -└── Mermaid 11.17.2 direct bump            # excluded by CLI resource budget
-+    └── 11.17.2 remains only as an Excalidraw transitive lock edge
-+        while root/direct Mermaid stays at 11.16.1
++    └── streamdown 2.5.0 still resolves Mermaid 11.17.2 transitively
++        while Excalidraw and root/direct Mermaid resolve 11.16.1
 ```
 
 ## Build flow
