@@ -16,7 +16,6 @@ import type {
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
   CredentialLifecycleStateV1,
-  CredentialVaultPersistenceV1,
   CredentialVaultPersistenceV2,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
@@ -234,7 +233,7 @@ implements CredentialVaultPersistenceV2 {
 
   async withWorkspaceLock<T>(
     workspaceId: string,
-    mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+    mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>,
     lockOptions: WorkspaceCredentialLockOptionsV1 = {},
   ): Promise<T> {
     if (this.lockedWorkspaceId === workspaceId) return mutate(this)
@@ -526,7 +525,7 @@ implements CredentialVaultPersistenceV2 {
     if ('begin' in this.sql) {
       if (!this.lockedWorkspaceId) {
         return this.withWorkspaceLock(input.workspaceId, async (locked) => {
-          await (locked as CredentialVaultPersistenceV2).commitCredentialVersionV2(input)
+          await locked.commitCredentialVersionV2(input)
         })
       }
       await this.sql.begin(async (transaction) => {

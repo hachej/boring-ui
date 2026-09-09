@@ -548,7 +548,7 @@ describe('Postgres credential rollback protection', () => {
           if (property === 'withWorkspaceLock') {
             return async <T>(lockedWorkspaceId: string, mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>) =>
               current.withWorkspaceLock(lockedWorkspaceId, async (locked) =>
-                mutate(wrapPersistence(locked as CredentialVaultPersistenceV2)))
+                mutate(wrapPersistence(locked)))
           }
           const value = current[property as keyof CredentialVaultPersistenceV2]
           if (typeof value !== 'function') return value

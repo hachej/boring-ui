@@ -12,7 +12,6 @@ import type {
   CommitCredentialVersionInputV2,
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
-  CredentialVaultPersistenceV1,
   CredentialVaultPersistenceV2,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
@@ -108,7 +107,7 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
     contractVersion: 'boring.credential-vault-persistence.v2',
     async withWorkspaceLock<T>(
       workspaceId: string,
-      mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+      mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>,
     ): Promise<T> {
       const previous = workspaceQueues.get(workspaceId) ?? Promise.resolve()
       let release!: () => void

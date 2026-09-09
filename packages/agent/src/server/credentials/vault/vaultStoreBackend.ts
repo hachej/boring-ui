@@ -349,7 +349,7 @@ function createVaultCredentialStoreBackendInternalV1(
         mutate(createVaultCredentialStoreBackendInternalV1({
           kmsBackend,
           versionAnchor,
-          persistence: lockedPersistence as CredentialVaultPersistenceV2,
+          persistence: lockedPersistence,
         }, workspaceId)), lockOptions)
     },
 

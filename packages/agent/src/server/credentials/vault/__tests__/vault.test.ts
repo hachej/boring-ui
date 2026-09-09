@@ -322,7 +322,7 @@ describe('local-KEK configuration resolution', () => {
 })
 
 describe('local-KEK credential version anchor', () => {
-  test('keeps V1 result-bearing while V2 statically and dynamically requires deferred commit', () => {
+  test('keeps V1 result-bearing while V2 statically and dynamically requires deferred commit', async () => {
     expectTypeOf<CredentialVersionMutationResultV1<string>>().toEqualTypeOf<{
       readonly nextCredentialVersion: number
       readonly nextCredentialMaterialKind: 'field-set' | 'none'
@@ -386,6 +386,21 @@ describe('local-KEK credential version anchor', () => {
       persistence: legacyPersistence as CredentialVaultPersistenceV2,
       versionAnchor: recoverable,
     })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
+
+    const badScopedPersistence: CredentialVaultPersistenceV2 = {
+      ...recoverablePersistence,
+      async withWorkspaceLock(_workspaceId, mutate) {
+        return mutate(legacyPersistence as CredentialVaultPersistenceV2)
+      },
+    }
+    const badScopedBackend = createVaultCredentialStoreBackendV1({
+      ...commonOptions,
+      persistence: badScopedPersistence,
+      versionAnchor: recoverable,
+    })
+    await expect(badScopedBackend.listCredentialMetadata('ws-a')).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+    })
   })
   test('serializes provider-list inspections with anchor mutations', async () => {
     const anchor = createInMemoryCredentialVersionAnchorV1()
@@ -690,7 +705,7 @@ describe('local-KEK credential version anchor', () => {
       ...beforeCommit.persistence,
       async withWorkspaceLock<T>(
         _workspaceId: string,
-        mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+        mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>,
       ): Promise<T> {
         return mutate(rejectingPersistence)
       },

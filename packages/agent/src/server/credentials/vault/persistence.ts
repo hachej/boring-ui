@@ -201,6 +201,12 @@ export interface CredentialVaultPersistenceV1 {
 /** Persistence capability required by the V2 recoverable vault protocol. */
 export interface CredentialVaultPersistenceV2 extends CredentialVaultPersistenceV1 {
   readonly contractVersion: 'boring.credential-vault-persistence.v2'
+  /** Preserves the V2 capability on the transaction-scoped adapter. */
+  withWorkspaceLock<T>(
+    workspaceId: string,
+    mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>,
+    options?: WorkspaceCredentialLockOptionsV1,
+  ): Promise<T>
   /** Atomically CASes record, fields, tombstones, and authenticated metadata. */
   commitCredentialVersionV2(input: CommitCredentialVersionInputV2): Promise<void>
 }
