@@ -105,7 +105,7 @@
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
-    "ai": "^7.0.90",
+    "ai": "^7.0.68",
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
     "fastify": "^5.12.1",
