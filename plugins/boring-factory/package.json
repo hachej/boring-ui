@@ -44,7 +44,7 @@
     "@hachej/boring-workspace": "workspace:*",
     "@playwright/test": "^1.62.1",
     "@vercel/sandbox": "3.2.1",
-    "mermaid": "11.17.2"
+    "mermaid": "11.16.1"
   },
   "devDependencies": {
     "@hachej/boring-sandbox-plugin": "workspace:*",
