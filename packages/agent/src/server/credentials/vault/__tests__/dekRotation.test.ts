@@ -11,7 +11,7 @@ import {
   createVaultCredentialStoreBackendV1,
   decryptCredentialFieldV1,
 } from '..'
-import type { CredentialVaultPersistenceV1 } from '../persistence'
+import type { CredentialVaultPersistenceV2 } from '../persistence'
 
 const workspaceId = 'rotation-workspace'
 const providerA = 'provider-a' as ProviderId
@@ -20,7 +20,7 @@ const providerC = 'provider-c' as ProviderId
 const apiKey = 'api-key' as CredentialFieldId
 const token = 'token' as CredentialFieldId
 
-function harness(persistence: CredentialVaultPersistenceV1) {
+function harness(persistence: CredentialVaultPersistenceV2) {
   const kmsBackend = createLocalKekWorkspaceKekProviderV1({
     keyRef: 'rotation-test-kek',
     keyVersion: 1,
@@ -70,7 +70,7 @@ describe('workspace DEK lifecycle', () => {
     )
 
     let commits = 0
-    const interrupted: CredentialVaultPersistenceV1 = {
+    const interrupted: CredentialVaultPersistenceV2 = {
       ...durable,
       async withWorkspaceLock(_workspaceId, mutate) {
         return mutate(interrupted)
@@ -163,7 +163,7 @@ describe('workspace DEK lifecycle', () => {
       fields: new Map([[apiKey, text('rotated-secret')]]),
     })
     await current.backend.rotateWorkspaceDek(workspaceId, 'authentic-operation')
-    const forgedReceiptPersistence: CredentialVaultPersistenceV1 = {
+    const forgedReceiptPersistence: CredentialVaultPersistenceV2 = {
       ...durable,
       async withWorkspaceLock(_workspaceId, mutate) {
         return mutate(forgedReceiptPersistence)
@@ -212,9 +212,9 @@ describe('workspace DEK lifecycle', () => {
     const live = createInMemoryCredentialVaultPersistenceV1()
     const snapshot = createInMemoryCredentialVaultPersistenceV1()
     let selected = live
-    const switchable = new Proxy({} as CredentialVaultPersistenceV1, {
+    const switchable = new Proxy({} as CredentialVaultPersistenceV2, {
       get(_target, property) {
-        const value = selected[property as keyof CredentialVaultPersistenceV1]
+        const value = selected[property as keyof CredentialVaultPersistenceV2]
         return typeof value === 'function' ? value.bind(selected) : value
       },
     })

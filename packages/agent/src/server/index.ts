@@ -386,11 +386,13 @@ export type {
   HostSideCredentialResolverOptionsV1,
   InMemoryCredentialBackendEntryV1,
   CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   LocalCredentialVersionAnchorOptionsV1,
   StoredCredentialRecordV1,
   OpenAiCodexOAuthBrokerV1,
   VaultCredentialStoreBackendV1,
   VaultCredentialStoreOptionsV1,
   WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionAnchorV2,
   WorkspaceCredentialVersionStateV1,
 } from './credentials'
