@@ -139,6 +139,7 @@ function createVaultCredentialStoreBackendInternalV1(
     || !options.versionAnchor
     || typeof options.versionAnchor.readPendingMutation !== 'function'
     || typeof options.versionAnchor.recoverPendingMutation !== 'function'
+    || typeof options.versionAnchor.withRecoverableMutation !== 'function'
   ) {
     notConfigured('Credential vault backend is misconfigured')
   }
@@ -272,13 +273,13 @@ function createVaultCredentialStoreBackendInternalV1(
     allowUnprovisioned = false,
     store: CredentialVaultPersistenceV1 = persistence,
   ): Promise<void> {
-    const pending = await versionAnchor.readPendingMutation!(
+    const pending = await versionAnchor.readPendingMutation(
       workspaceId,
       allowUnprovisioned ? { allowUnprovisioned: true } : undefined,
     )
     if (!pending) return
     const digest = await durableCredentialStateDigest(workspaceId, pending.providerId, store)
-    await versionAnchor.recoverPendingMutation!(workspaceId, digest)
+    await versionAnchor.recoverPendingMutation(workspaceId, digest)
   }
 
   async function requireCurrentVersion(
@@ -476,7 +477,7 @@ function createVaultCredentialStoreBackendInternalV1(
       await recoverPendingCredentialMutation(input.workspaceId)
       await requireNotShredded(input.workspaceId)
       const { workspaceId, providerId } = input
-      return versionAnchor.withMutation(
+      return versionAnchor.withRecoverableMutation(
         workspaceId,
         providerId,
         async (anchorState) => {
@@ -605,7 +606,7 @@ function createVaultCredentialStoreBackendInternalV1(
       await requireReady()
       await recoverPendingCredentialMutation(workspaceId)
       await requireNotShredded(workspaceId)
-      const written = await versionAnchor.withMutation(
+      const written = await versionAnchor.withRecoverableMutation(
         workspaceId,
         providerId,
         async (anchorState) => {
@@ -738,7 +739,7 @@ function createVaultCredentialStoreBackendInternalV1(
       }
       await recoverPendingCredentialMutation(workspaceId)
       await requireNotShredded(workspaceId)
-      return versionAnchor.withMutation(
+      return versionAnchor.withRecoverableMutation(
         workspaceId,
         providerId,
         async (anchorState) => {

@@ -54,18 +54,25 @@ export interface CredentialVersionMutationStateV1 {
   readonly nextDekGeneration: number
 }
 
+export interface CredentialVersionMutationResultV1<T> {
+  readonly nextCredentialVersion: number
+  readonly nextCredentialMaterialKind: CredentialMaterialKindV1
+  readonly nextCredentialFieldIds: readonly string[]
+  readonly nextCredentialLifecycleState: CredentialLifecycleStateV1
+  readonly nextCredentialType: string
+  readonly nextDekGeneration: number
+  readonly result: T
+}
+
 /**
- * Backward-compatible V1 mutation result. Built-in durable anchors additionally
- * accept the recoverable prepare/commit variant without breaking custom V1 callers.
+ * V2 write-ahead mutation contract. The anchor seals both authenticated digests
+ * before invoking `commit`, then finalizes only after `commit` succeeds.
  */
-export type CredentialVersionMutationResultV1<T> = CredentialVersionMutationStateV1 & (
-  | { readonly result: T }
-  | {
-      readonly expectedStateDigest: string
-      readonly nextStateDigest: string
-      readonly commit: () => Promise<T>
-    }
-)
+export type CredentialVersionMutationResultV2<T> = CredentialVersionMutationStateV1 & {
+  readonly expectedStateDigest: string
+  readonly nextStateDigest: string
+  readonly commit: () => Promise<T>
+}
 
 export interface DekGenerationMutationResultV1<T> {
   readonly nextDekGeneration: number
@@ -100,28 +107,17 @@ export interface WorkspaceCredentialVersionAnchorV1 {
     workspaceId: string,
     options?: CredentialVersionAnchorReadOptionsV1,
   ): Promise<WorkspaceCredentialVersionStateV1 | undefined>
-  /** Returns the authenticated recovery intent, if a prior mutation was interrupted. */
-  readPendingMutation?(
-    workspaceId: string,
-    options?: CredentialVersionAnchorReadOptionsV1,
-  ): Promise<PendingCredentialVersionMutationV1 | undefined>
-  /**
-   * Resolves an authenticated pending intent from a digest of the durable DB state.
-   * Only the exact committed state advances automatically. The exact pre-commit
-   * state remains fail-stopped because a DB replay after commit is indistinguishable.
-   */
-  recoverPendingMutation?(workspaceId: string, durableStateDigest: string): Promise<void>
   /** Serializes a persistence inspection with anchor mutations. */
   withReadLock<T>(
     workspaceId: string,
     inspect: (readLocked: CredentialVersionAnchorReaderV1) => Promise<T>,
   ): Promise<T>
   /**
-   * Holds the external workspace mutation lock through a write-ahead,
-   * KEK-authenticated intent, the supplied DB CAS, and anchor finalization.
-   * This is a recoverable protocol, not cross-store atomicity: interruption
-   * leaves a signed intent. Recovery advances only its exact committed DB
-   * digest; the pre-commit digest and every other state remain fail-closed.
+   * Holds the external workspace mutation lock through the supplied DB CAS.
+   * If the DB commit succeeds but advancing this external anchor fails, the
+   * mismatch deliberately fail-stops; accepting DB-ahead state would turn an
+   * attacker replay into an automatic rollback. S1 prefers security over
+   * availability here and does not claim cross-store crash atomicity.
    */
   withMutation<T>(
     workspaceId: string,
@@ -165,6 +161,18 @@ export interface WorkspaceCredentialVersionAnchorV2 extends WorkspaceCredentialV
     options?: CredentialVersionAnchorReadOptionsV1,
   ): Promise<PendingCredentialVersionMutationV1 | undefined>
   recoverPendingMutation(workspaceId: string, durableStateDigest: string): Promise<void>
+  /**
+   * Holds the external workspace mutation lock through a write-ahead,
+   * KEK-authenticated intent, the supplied DB CAS, and anchor finalization.
+   * This is recoverable deferred commit, not cross-store atomicity.
+   */
+  withRecoverableMutation<T>(
+    workspaceId: string,
+    providerId: ProviderId,
+    mutate: (
+      current: WorkspaceCredentialVersionStateV1 | undefined,
+    ) => Promise<CredentialVersionMutationResultV2<T>>,
+  ): Promise<T>
 }
 
 type MutableAnchorStateV1 = {
@@ -418,19 +426,6 @@ function cloneState(state: MutableAnchorStateV1): MutableAnchorStateV1 {
   return JSON.parse(canonicalState(state)) as MutableAnchorStateV1
 }
 
-function isRecoverableMutation<T>(
-  mutation: CredentialVersionMutationResultV1<T>,
-): mutation is CredentialVersionMutationStateV1 & {
-  readonly expectedStateDigest: string
-  readonly nextStateDigest: string
-  readonly commit: () => Promise<T>
-} {
-  return 'commit' in mutation
-    && typeof mutation.commit === 'function'
-    && 'expectedStateDigest' in mutation
-    && 'nextStateDigest' in mutation
-}
-
 function isLifecycleOnlyMutation(
   current: WorkspaceCredentialVersionStateV1 | undefined,
   providerId: ProviderId,
@@ -578,52 +573,58 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
       await operation
       return result
     },
-    async withMutation<T>(
-      workspaceId: string,
-      providerId: ProviderId,
-      mutate: (
-        current: WorkspaceCredentialVersionStateV1 | undefined,
-      ) => Promise<CredentialVersionMutationResultV1<T>>,
-    ): Promise<T> {
+    async withMutation<T>(workspaceId, providerId, mutate): Promise<T> {
       let result!: T
       const operation = queue.then(async () => {
         if (state.workspaces[workspaceId]?.pendingCredentialMutation) {
           unreadable('Credential mutation recovery is required')
         }
-        const currentState = copyWorkspaceState(state, workspaceId)
-        if ((currentState?.cryptoShredGeneration ?? 0) > 0) {
+        const current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) > 0) {
           unreadable('Workspace credential material was crypto-shredded')
         }
-        const mutation = await mutate(currentState)
-        const currentVersion = currentState?.credentialVersions[providerId] ?? 0
-        if (!isRecoverableMutation(mutation)) {
-          if (mutation.nextCredentialVersion !== currentVersion + 1) {
-            unreadable('Credential version anchor rejected a stale update')
-          }
-          const currentDekGeneration = currentState?.dekGeneration ?? 1
-          if (mutation.nextDekGeneration !== currentDekGeneration) {
-            unreadable('Credential version anchor rejected a stale DEK generation')
-          }
-          const legacy = pendingMutation(providerId, {
-            ...mutation,
-            expectedStateDigest: '0'.repeat(64),
-            nextStateDigest: '1'.repeat(64),
-          })
-          state = stateWithFinalizedMutation(
-            stateWithPendingMutation(state, workspaceId, legacy),
-            workspaceId,
-            legacy,
-          )
-          result = mutation.result
-          return
-        }
-        if (
-          mutation.nextCredentialVersion !== currentVersion + 1
-          && !isLifecycleOnlyMutation(currentState, providerId, mutation)
-        ) {
+        const mutation = await mutate(current)
+        const currentVersion = current?.credentialVersions[providerId] ?? 0
+        if (mutation.nextCredentialVersion !== currentVersion + 1) {
           unreadable('Credential version anchor rejected a stale update')
         }
-        const currentDekGeneration = currentState?.dekGeneration ?? 1
+        const currentDekGeneration = current?.dekGeneration ?? 1
+        if (mutation.nextDekGeneration !== currentDekGeneration) {
+          unreadable('Credential version anchor rejected a stale DEK generation')
+        }
+        const legacy = pendingMutation(providerId, {
+          ...mutation,
+          expectedStateDigest: '0'.repeat(64),
+          nextStateDigest: '1'.repeat(64),
+        })
+        state = stateWithFinalizedMutation(
+          stateWithPendingMutation(state, workspaceId, legacy),
+          workspaceId,
+          legacy,
+        )
+        result = mutation.result
+      })
+      queue = operation.catch(() => undefined)
+      await operation
+      return result
+    },
+    async withRecoverableMutation<T>(workspaceId, providerId, mutate): Promise<T> {
+      let result!: T
+      const operation = queue.then(async () => {
+        if (state.workspaces[workspaceId]?.pendingCredentialMutation) {
+          unreadable('Credential mutation recovery is required')
+        }
+        const current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
+        const mutation = await mutate(current)
+        const currentVersion = current?.credentialVersions[providerId] ?? 0
+        if (
+          mutation.nextCredentialVersion !== currentVersion + 1
+          && !isLifecycleOnlyMutation(current, providerId, mutation)
+        ) unreadable('Credential version anchor rejected a stale update')
+        const currentDekGeneration = current?.dekGeneration ?? 1
         if (mutation.nextDekGeneration !== currentDekGeneration) {
           unreadable('Credential version anchor rejected a stale DEK generation')
         }
@@ -954,13 +955,7 @@ export function createLocalFileCredentialVersionAnchorV1(
         await lock.release()
       }
     },
-    async withMutation<T>(
-      workspaceId: string,
-      providerId: ProviderId,
-      mutate: (
-        current: WorkspaceCredentialVersionStateV1 | undefined,
-      ) => Promise<CredentialVersionMutationResultV1<T>>,
-    ): Promise<T> {
+    async withMutation<T>(workspaceId, providerId, mutate): Promise<T> {
       const lockPath = `${options.anchorFilePath}.lock`
       const lock = await acquireMutationLock(lockPath)
       try {
@@ -974,32 +969,46 @@ export function createLocalFileCredentialVersionAnchorV1(
         }
         const mutation = await mutate(current)
         const currentVersion = current?.credentialVersions[providerId] ?? 0
-        if (!isRecoverableMutation(mutation)) {
-          if (mutation.nextCredentialVersion !== currentVersion + 1) {
-            unreadable('Credential version anchor rejected a stale update')
-          }
-          const currentDekGeneration = current?.dekGeneration ?? 1
-          if (mutation.nextDekGeneration !== currentDekGeneration) {
-            unreadable('Credential version anchor rejected a stale DEK generation')
-          }
-          const legacy = pendingMutation(providerId, {
-            ...mutation,
-            expectedStateDigest: '0'.repeat(64),
-            nextStateDigest: '1'.repeat(64),
-          })
-          await replaceSealedState(stateWithFinalizedMutation(
-            stateWithPendingMutation(state, workspaceId, legacy),
-            workspaceId,
-            legacy,
-          ), options)
-          return mutation.result
+        if (mutation.nextCredentialVersion !== currentVersion + 1) {
+          unreadable('Credential version anchor rejected a stale update')
         }
+        const currentDekGeneration = current?.dekGeneration ?? 1
+        if (mutation.nextDekGeneration !== currentDekGeneration) {
+          unreadable('Credential version anchor rejected a stale DEK generation')
+        }
+        const legacy = pendingMutation(providerId, {
+          ...mutation,
+          expectedStateDigest: '0'.repeat(64),
+          nextStateDigest: '1'.repeat(64),
+        })
+        await replaceSealedState(stateWithFinalizedMutation(
+          stateWithPendingMutation(state, workspaceId, legacy),
+          workspaceId,
+          legacy,
+        ), options)
+        return mutation.result
+      } finally {
+        await lock.release()
+      }
+    },
+    async withRecoverableMutation<T>(workspaceId, providerId, mutate): Promise<T> {
+      const lockPath = `${options.anchorFilePath}.lock`
+      const lock = await acquireMutationLock(lockPath)
+      try {
+        const state = await readSealedState(options)
+        if (state.workspaces[workspaceId]?.pendingCredentialMutation) {
+          unreadable('Credential mutation recovery is required')
+        }
+        const current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
+        const mutation = await mutate(current)
+        const currentVersion = current?.credentialVersions[providerId] ?? 0
         if (
           mutation.nextCredentialVersion !== currentVersion + 1
           && !isLifecycleOnlyMutation(current, providerId, mutation)
-        ) {
-          unreadable('Credential version anchor rejected a stale update')
-        }
+        ) unreadable('Credential version anchor rejected a stale update')
         const currentDekGeneration = current?.dekGeneration ?? 1
         if (mutation.nextDekGeneration !== currentDekGeneration) {
           unreadable('Credential version anchor rejected a stale DEK generation')
@@ -1008,13 +1017,13 @@ export function createLocalFileCredentialVersionAnchorV1(
           unreadable('Credential mutation recovery digest is malformed')
         }
         const pending = pendingMutation(providerId, mutation)
-        await replaceSealedState(stateWithPendingMutation(state, workspaceId, pending), options)
+        const pendingState = stateWithPendingMutation(state, workspaceId, pending)
+        await replaceSealedState(pendingState, options)
         const result = await mutation.commit()
-        await replaceSealedState(stateWithFinalizedMutation(
-          stateWithPendingMutation(state, workspaceId, pending),
-          workspaceId,
-          pending,
-        ), options)
+        await replaceSealedState(
+          stateWithFinalizedMutation(pendingState, workspaceId, pending),
+          options,
+        )
         return result
       } finally {
         await lock.release()

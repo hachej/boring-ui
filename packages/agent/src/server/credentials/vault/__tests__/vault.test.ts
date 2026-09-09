@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, expectTypeOf, test } from 'vitest'
 import {
   createInMemoryCredentialVaultPersistenceV1,
   createInMemoryCredentialVersionAnchorV1,
@@ -16,8 +16,13 @@ import {
   resolveLocalKekProviderConfigV1,
 } from '..'
 import type {
+  CredentialVersionMutationResultV1,
+  CredentialVersionMutationStateV1,
   CredentialVaultPersistenceV1,
   VaultCredentialStoreBackendV1,
+  VaultCredentialStoreOptionsV1,
+  WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionAnchorV2,
 } from '..'
 import { createFakeAuthorityVerifierV1 } from '../../testing'
 import {
@@ -326,6 +331,32 @@ describe('local-KEK configuration resolution', () => {
 })
 
 describe('local-KEK credential version anchor', () => {
+  test('keeps V1 result-bearing while V2 statically and dynamically requires deferred commit', () => {
+    expectTypeOf<CredentialVersionMutationResultV1<string>>().toEqualTypeOf<
+      CredentialVersionMutationStateV1 & { readonly result: string }
+    >()
+    expectTypeOf<WorkspaceCredentialVersionAnchorV1>()
+      .not.toMatchTypeOf<WorkspaceCredentialVersionAnchorV2>()
+
+    const recoverable = createInMemoryCredentialVersionAnchorV1()
+    const { withRecoverableMutation: _recoverableMutation, ...legacyOnly } = recoverable
+    expectTypeOf(legacyOnly).toMatchTypeOf<WorkspaceCredentialVersionAnchorV1>()
+    const acceptVaultOptions = (_options: VaultCredentialStoreOptionsV1) => undefined
+    if (false) {
+      // @ts-expect-error A nominal V1 anchor cannot satisfy the V2 vault seam.
+      acceptVaultOptions({ versionAnchor: legacyOnly })
+    }
+
+    expect(() => createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'test-key',
+        keyVersion: 1,
+        loadKek: async () => new Uint8Array(32).fill(1),
+      }),
+      versionAnchor: legacyOnly as WorkspaceCredentialVersionAnchorV2,
+    })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
+  })
   test('serializes provider-list inspections with anchor mutations', async () => {
     const anchor = createInMemoryCredentialVersionAnchorV1()
     let release!: () => void

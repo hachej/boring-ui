@@ -58,6 +58,8 @@ export type {
   CredentialVersionAnchorReadOptionsV1,
   CredentialVersionAnchorReaderV1,
   CredentialVersionMutationResultV1,
+  CredentialVersionMutationResultV2,
+  CredentialVersionMutationStateV1,
   DekGenerationMutationResultV1,
   LocalCredentialVersionAnchorOptionsV1,
   WorkspaceCredentialVersionAnchorV1,
