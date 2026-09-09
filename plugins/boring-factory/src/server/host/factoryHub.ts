@@ -26,6 +26,14 @@ const execFileAsync = promisify(execFile)
 const FACTORY_WORKSPACE_SCOPE_ID = 'factory-hub'
 const EPIC_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+/** Host-authored Factory traffic must never acquire personal subscription OAuth. */
+function unattendedAgentHeaders(workspaceScopeId = FACTORY_WORKSPACE_SCOPE_ID): Record<string, string> {
+  return {
+    'x-boring-workspace-id': workspaceScopeId,
+    'x-boring-invocation-mode': 'unattended',
+  }
+}
+
 export interface CreateFactoryHostOptions {
   readonly repositoryRoot: string
   readonly workspaceRoot: string
@@ -178,7 +186,7 @@ async function createOrchestratorSession(app: FastifyInstance, entry: FactoryEpi
   const response = await app.inject({
     method: 'POST',
     url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions`,
-    headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID },
+    headers: unattendedAgentHeaders(),
     payload: { requestId: randomUUID(), title: `[${entry.featureName}] Orchestrator` },
   })
   if (response.statusCode !== 201) throw new Error(`failed to create Orchestrator session: HTTP ${response.statusCode}`)
@@ -192,7 +200,7 @@ async function promptOrchestrator(app: FastifyInstance, entry: FactoryEpicEntry,
   const response = await app.inject({
     method: 'POST',
     url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${sessionId}/prompt`,
-    headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID },
+    headers: unattendedAgentHeaders(),
     payload: {
       requestId: randomUUID(),
       clientNonce: randomUUID(),
@@ -356,7 +364,7 @@ export async function readOrchestratorStatuses(app: FastifyInstance, entries: re
       const response = await app.inject({
         method: 'POST',
         url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/summaries`,
-        headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID },
+        headers: unattendedAgentHeaders(),
         payload: { sessionIds: batch },
       })
       if (response.statusCode === 200) for (const summary of response.json<{ summaries?: Array<{ ref?: { sessionId?: string }; status?: string }> }>().summaries ?? []) {
@@ -370,7 +378,7 @@ export async function readOrchestratorStatuses(app: FastifyInstance, entries: re
   // keep the exact previous behaviour: one state read each.
   await Promise.all(sessionIds.filter((id) => !statuses.has(id)).map(async (id) => {
     try {
-      const response = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${id}/state`, headers: { 'x-boring-workspace-id': FACTORY_WORKSPACE_SCOPE_ID } })
+      const response = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${id}/state`, headers: unattendedAgentHeaders() })
       const status = response.statusCode === 200 ? response.json<{ state?: { status?: string } }>().state?.status : undefined
       if (typeof status === 'string') statuses.set(id, status)
     } catch {
@@ -604,9 +612,9 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
             if ((boundEpic && boundEpic !== key) || registryOwner) {
               throw new FactorySessionBindingError(sessionId, boundEpic ?? registryOwner!.epicKey)
             }
-            let stateResponse = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${sessionId}/state`, headers: { 'x-boring-workspace-id': workspaceScopeId } })
+            let stateResponse = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${sessionId}/state`, headers: unattendedAgentHeaders(workspaceScopeId) })
             if (stateResponse.statusCode === 404 && await importLegacyOrchestratorSession(stateRoot, env.BORING_AGENT_SESSION_ROOT, key, sessionId, transcriptPath)) {
-              stateResponse = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${sessionId}/state`, headers: { 'x-boring-workspace-id': workspaceScopeId } })
+              stateResponse = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${sessionId}/state`, headers: unattendedAgentHeaders(workspaceScopeId) })
             }
             if (stateResponse.statusCode !== 200) return reply.code(404).send({ code: 'SESSION_NOT_FOUND', message: `Orchestrator session ${sessionId} was not found` })
             const pendingGate = await prepareLegacyPendingGateImport(entry.worktree, sessionId, askUserStore)

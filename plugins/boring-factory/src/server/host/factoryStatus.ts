@@ -287,7 +287,10 @@ export function createFactoryStatusTools(
   staleIdleMs: number,
   admitSessionMutation: <T>(operation: () => Promise<T>) => Promise<T>,
 ): AgentTool[] {
-  const workspaceHeader = { 'x-boring-workspace-id': options.workspaceScopeId }
+  const workspaceHeader = {
+    'x-boring-workspace-id': options.workspaceScopeId,
+    'x-boring-invocation-mode': 'unattended',
+  }
   const run = options.runBr ?? defaultRunBr
   const statusTool: AgentTool = {
     name: 'factory_status',

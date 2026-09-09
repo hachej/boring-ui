@@ -74,6 +74,7 @@ interface FakeAppOptions {
   readonly workerSessionPageCount?: number
   readonly crashAfterSessionCreation?: boolean
   readonly sessionCreationStatusCode?: number
+  readonly summaryStatusCode?: number
   readonly summaryStatus?: string
   readonly summaryTurnCount?: number
   readonly finalStateStatus?: string
@@ -85,13 +86,13 @@ function fakeApp(
   childSessionIds: readonly string[] = ['child-1'],
   options: FakeAppOptions = {},
 ) {
-  const calls: Array<{ method: string; url: string; payload?: unknown }> = []
+  const calls: Array<{ method: string; url: string; payload?: unknown; headers?: Record<string, string> }> = []
   let created = 0
   let sessionListCalls = 0
   return {
     calls,
     app: {
-      async inject(request: { method: string; url: string; payload?: unknown }) {
+      async inject(request: { method: string; url: string; payload?: unknown; headers?: Record<string, string> }) {
         calls.push(request)
         if (request.method === 'GET' && request.url.includes('/boring-worker/sessions') && !request.url.endsWith('/state')) {
           const snapshot = options.workerSessionSnapshots?.[Math.min(sessionListCalls, options.workerSessionSnapshots.length - 1)] ?? workerSessions
@@ -112,8 +113,8 @@ function fakeApp(
         if (request.method === 'POST' && request.url.endsWith('/sessions/summaries')) {
           const sessionIds = (request.payload as { sessionIds: string[] }).sessionIds
           return {
-            statusCode: 200,
-            body: '',
+            statusCode: options.summaryStatusCode ?? 200,
+            body: options.summaryStatusCode && options.summaryStatusCode !== 200 ? 'summary unavailable' : '',
             json: <T>() => ({ summaries: sessionIds.map((sessionId) => ({
               ref: { sessionId },
               status: options.summaryStatus ?? 'idle',
@@ -185,6 +186,32 @@ describe('Factory host limits', () => {
     expect(calls.filter((call) => call.method === 'GET' && call.url.endsWith('/state'))).toHaveLength(1)
   })
 
+  it.each([
+    { seat: 'boring-orchestrator', toolName: 'dispatch_worker', targetAgentTypeId: 'boring-worker', parentSessionId: 'orch' },
+    { seat: 'boring-worker', toolName: 'fresh_review', targetAgentTypeId: 'boring-reviewer', parentSessionId: 'worker' },
+  ])('marks every delegated $toolName Agent Host request unattended so personal OAuth remains ineligible', async ({ seat, toolName, targetAgentTypeId, parentSessionId }) => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const { app, calls } = fakeApp([], [`${targetAgentTypeId}-child`], { summaryStatusCode: 503 })
+    const handle = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr, timeoutMs: 1_000 })
+    handle.bind(app as never)
+
+    const result = await toolNamed(handle, seat, toolName).execute(
+      { beadId: 'br-1', brief: `Exercise ${toolName} for Bead br-1 at abcdef1.` }, context(parentSessionId),
+    )
+
+    expect(result).toMatchObject({ isError: false, details: { status: 'completed', answer: 'done' } })
+    const delegatedCalls = calls.filter((call) => call.url.startsWith(`/api/v1/agents/${targetAgentTypeId}/sessions`))
+    expect(delegatedCalls.filter((call) => call.method === 'POST' && call.url === `/api/v1/agents/${targetAgentTypeId}/sessions`)).toHaveLength(1)
+    expect(delegatedCalls.filter((call) => call.method === 'POST' && call.url.endsWith('/prompt'))).toHaveLength(1)
+    expect(delegatedCalls.filter((call) => call.method === 'POST' && call.url.endsWith('/sessions/summaries'))).toHaveLength(1)
+    // The unavailable summary forces one fallback state read plus the authoritative final read.
+    expect(delegatedCalls.filter((call) => call.method === 'GET' && call.url.endsWith('/state'))).toHaveLength(2)
+    expect(delegatedCalls.every((call) => call.headers?.['x-boring-workspace-id'] === 'factory-hub')).toBe(true)
+    expect(delegatedCalls.every((call) => call.headers?.['x-boring-invocation-mode'] === 'unattended')).toBe(true)
+  })
+
   it('requires authoritative final state before reporting summary completion', async () => {
     const stateRoot = await makeStateRoot()
     const { registry, sessionBindings } = dependencies()
@@ -210,7 +237,7 @@ describe('Factory host limits', () => {
       { id: 'br-under', status: 'in_progress', assignee: 'under' },
       { id: 'br-over', status: 'in_progress', assignee: 'over' },
     ])
-    const { app } = fakeApp([
+    const { app, calls: agentCalls } = fakeApp([
       { sessionId: 'busy', status: 'running', updatedAt: now - 20 * 60_000 },
       { sessionId: 'under', status: 'idle', updatedAt: now - 9 * 60_000 },
       { sessionId: 'over', status: 'idle', updatedAt: now - 11 * 60_000 },
@@ -228,6 +255,7 @@ describe('Factory host limits', () => {
       expect.objectContaining({ id: 'br-over', sessionLiveness: 'idle', idleForMs: 11 * 60_000, stale: true, recoveryCommand: 'recover_stale_claims' }),
     ]))
     expect(result.details).toMatchObject({ staleClaims: { count: 2, beadIds: ['br-missing', 'br-over'], recoveryCommand: 'recover_stale_claims' } })
+    expect(agentCalls.every((call) => call.headers?.['x-boring-invocation-mode'] === 'unattended')).toBe(true)
   })
 
   it('resolves an assignee session independently of a missing epic binding', async () => {
@@ -302,7 +330,7 @@ describe('Factory host limits', () => {
       { id: 'br-under', status: 'in_progress', assignee: 'under' },
       { id: 'br-over', status: 'in_progress', assignee: 'over' },
     ])
-    const { app } = fakeApp([
+    const { app, calls: agentCalls } = fakeApp([
       { sessionId: 'busy', status: 'running', updatedAt: now - 20 * 60_000 },
       { sessionId: 'under', status: 'idle', updatedAt: now - 9 * 60_000 },
       { sessionId: 'over', status: 'idle', updatedAt: now - 11 * 60_000 },
@@ -318,6 +346,7 @@ describe('Factory host limits', () => {
     const updates = calls.filter((args) => args[0] === 'update')
     expect(updates.map((args) => args[1])).toEqual(['br-missing', 'br-over'])
     expect(updates.every((args) => args.includes('--assignee') && args.includes('') && args.includes('open'))).toBe(true)
+    expect(agentCalls.every((call) => call.headers?.['x-boring-invocation-mode'] === 'unattended')).toBe(true)
   })
 
   it('revalidates a stale claim and skips it when its Worker becomes busy', async () => {

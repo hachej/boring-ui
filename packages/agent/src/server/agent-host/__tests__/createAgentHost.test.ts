@@ -19,6 +19,11 @@ import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
+import { CREDENTIAL_ERROR_CODES } from '../../../shared/credentials'
+import {
+  createLocalKekFileSourceV1,
+  initializeLocalFileCredentialVersionAnchorV1,
+} from '../../credentials/vault'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
 const require = createRequire(import.meta.url)
@@ -29,6 +34,23 @@ async function root() {
   const value = await mkdtemp(join(tmpdir(), 'agent-host-'))
   roots.push(value)
   return value
+}
+
+async function credentialEnv(): Promise<Record<string, string>> {
+  const directory = await root()
+  const keyFilePath = join(directory, 'kek')
+  const anchorFilePath = join(directory, 'anchor')
+  await writeFile(keyFilePath, Buffer.alloc(32, 0x2a).toString('hex'))
+  await initializeLocalFileCredentialVersionAnchorV1({
+    anchorFilePath,
+    loadKek: createLocalKekFileSourceV1(keyFilePath),
+  })
+  return {
+    BORING_CREDENTIAL_KMS_BACKEND: 'local-kek',
+    BORING_CREDENTIAL_LOCAL_KEK_FILE: keyFilePath,
+    BORING_CREDENTIAL_LOCAL_KEK_ANCHOR_FILE: anchorFilePath,
+    BORING_CREDENTIAL_PERSISTENCE: 'memory',
+  }
 }
 
 const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
@@ -65,6 +87,61 @@ function options(sessionRoot: string) {
 }
 
 describe('createAgentHost', () => {
+  it('fails at host startup (not first binding) when the credential vault env is misconfigured', async () => {
+    // [1082 slice B hardening F1b/F2] the vault composition is resolved once
+    // per host, at createAgentHost time; a typo'd KMS backend selection must
+    // reject host creation with a stable CREDENTIAL_* code instead of being
+    // deferred to (or silently forked across) runtime bindings.
+    await expect(createAgentHost({
+      ...options(await root()),
+      credentials: { env: { BORING_CREDENTIAL_KMS_BACKEND: 'aws-kms' } },
+    })).rejects.toMatchObject({
+      name: 'CredentialResolutionError',
+      code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+    })
+  })
+
+  it('publishes only the narrow credential lifecycle seam for Core deletion composition', async () => {
+    const onLifecycleReady = vi.fn()
+    const created = await createAgentHost({
+      ...options(await root()),
+      credentials: { env: await credentialEnv(), onLifecycleReady },
+    })
+
+    expect(onLifecycleReady).toHaveBeenCalledOnce()
+    const lifecycle = onLifecycleReady.mock.calls[0]![0]
+    expect(Object.keys(lifecycle)).toEqual(['cryptoShredWorkspace'])
+    await expect(lifecycle.cryptoShredWorkspace('workspace-a')).resolves.toBeUndefined()
+    await expect(lifecycle.cryptoShredWorkspace('workspace-a')).resolves.toBeUndefined()
+    await created.host.close()
+  })
+
+  it('maps unattended HTTP requests to a policy-isolated runtime binding', async () => {
+    const workspaceRoot = await root()
+    const harnessFactory = vi.fn<AgentHarnessFactory>(async (input) => createScriptedPiHarness(input))
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      harnessFactory,
+      credentials: { env: await credentialEnv() },
+    })
+    const app = Fastify()
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    await app.ready()
+
+    const createSession = (requestId: string, unattended = false) => app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      headers: unattended ? { 'x-boring-invocation-mode': 'unattended' } : {},
+      payload: { requestId },
+    })
+    expect((await createSession('interactive-session')).statusCode).toBe(201)
+    expect((await createSession('factory-session', true)).statusCode).toBe(201)
+    expect((await createSession('factory-session-two', true)).statusCode).toBe(201)
+    expect(harnessFactory).toHaveBeenCalledTimes(2)
+
+    await app.close()
+  })
+
   it('requires durable transactional ledger ownership for the direct projection unless test/dev in-memory mode is explicit', async () => {
     await expect(createAgentHost({
       ...options(await root()),
@@ -584,11 +661,20 @@ describe('createAgentHost', () => {
     })).toThrow(expect.objectContaining({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED }))
 
     let retained: import('../types').LeaseBoundWorkspaceAgent | undefined
+    expect(() => created.runWithWorkspaceAgent({
+      authorizedScope: scope,
+      agentTypeId: 'alpha',
+      context: { workspaceId: 'workspace-a', userId: 'subject-a' },
+      requestId: 'dispatcher-invalid-funding',
+      fundingPolicy: 'personal-subscription',
+    } as never, async () => undefined)).toThrow('must use api-key-only funding')
+
     await created.runWithWorkspaceAgent({
       authorizedScope: scope,
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'dispatcher-1',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       expect(Object.keys(binding).sort()).toEqual([
@@ -902,6 +988,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'fire-and-forget',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       const watcher = binding.workspace.watch?.()
@@ -969,6 +1056,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'never-settling-operation',
+      fundingPolicy: 'api-key-only',
     }, async (binding) => {
       retained = binding
       await binding.workspace.writeFile('never.txt', 'never')
@@ -1002,6 +1090,7 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
       context: { workspaceId: 'workspace-a', userId: 'subject-a' },
       requestId: 'stuck-callback',
+      fundingPolicy: 'api-key-only',
     }, async () => {
       markStarted()
       await new Promise<never>(() => {})
