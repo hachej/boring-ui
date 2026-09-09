@@ -217,14 +217,15 @@ function createVaultCredentialStoreBackendInternalV1(
   async function durableCredentialStateDigest(
     workspaceId: string,
     providerId: ProviderId,
+    store: CredentialVaultPersistenceV1 = persistence,
   ): Promise<string> {
-    const record = await persistence.getCredentialRecord(workspaceId, providerId)
-    const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+    const record = await store.getCredentialRecord(workspaceId, providerId)
+    const metadata = await store.getCredentialMetadata(workspaceId, providerId)
     if (!!record !== !!metadata || (record && metadata?.credentialVersion !== record.credentialVersion)) {
       unreadable('Credential mutation recovery state is incomplete')
     }
     const fields = record
-      ? await persistence.listFields(workspaceId, providerId, record.credentialVersion)
+      ? await store.listFields(workspaceId, providerId, record.credentialVersion)
       : new Map<string, CredentialEnvelopeV1>()
     return credentialStateDigest(record, metadata?.state, metadata?.credentialType, fields)
   }
@@ -232,13 +233,14 @@ function createVaultCredentialStoreBackendInternalV1(
   async function recoverPendingCredentialMutation(
     workspaceId: string,
     allowUnprovisioned = false,
+    store: CredentialVaultPersistenceV1 = persistence,
   ): Promise<void> {
     const pending = await versionAnchor.readPendingMutation!(
       workspaceId,
       allowUnprovisioned ? { allowUnprovisioned: true } : undefined,
     )
     if (!pending) return
-    const digest = await durableCredentialStateDigest(workspaceId, pending.providerId)
+    const digest = await durableCredentialStateDigest(workspaceId, pending.providerId, store)
     await versionAnchor.recoverPendingMutation!(workspaceId, digest)
   }
 
@@ -778,6 +780,7 @@ function createVaultCredentialStoreBackendInternalV1(
         )
       }
       await persistence.withWorkspaceLock(workspaceId, async (locked) => {
+        await recoverPendingCredentialMutation(workspaceId, false, locked)
         await requireNotShredded(workspaceId, locked)
         const wrapped = await requireWrappedDek(workspaceId, dekGeneration, locked)
         const rewrapped = await rewrapDataKey(
@@ -800,6 +803,7 @@ function createVaultCredentialStoreBackendInternalV1(
       await requireReady()
 
       return persistence.withWorkspaceLock(workspaceId, async (locked) => {
+        await recoverPendingCredentialMutation(workspaceId, false, locked)
         if (await locked.isWorkspaceCryptoShredded(workspaceId)) {
           unreadable('Workspace credential material was crypto-shredded')
         }
@@ -1101,6 +1105,7 @@ function createVaultCredentialStoreBackendInternalV1(
     async cryptoShredWorkspace(workspaceId: string): Promise<void> {
       assertWorkspaceId(workspaceId)
       await persistence.withWorkspaceLock(workspaceId, async (locked) => {
+        await recoverPendingCredentialMutation(workspaceId, false, locked)
         await versionAnchor.withCryptoShredMutation(workspaceId, async () => {
           await locked.cryptoShredWorkspace(workspaceId, new Date().toISOString())
           return { result: undefined }

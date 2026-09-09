@@ -641,6 +641,17 @@ describe('local-KEK credential version anchor', () => {
       CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
     )
     await expectCredentialError(
+      () => beforeCommit.stableBackend().rotateWorkspaceDek(
+        beforeCommit.workspaceId,
+        'must-not-bypass-pending',
+      ),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    await expectCredentialError(
+      () => beforeCommit.stableBackend().cryptoShredWorkspace(beforeCommit.workspaceId),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    await expectCredentialError(
       () => beforeCommit.stableBackend().writeAbsentCredential(
         beforeCommit.workspaceId,
         PROVIDER_A,
