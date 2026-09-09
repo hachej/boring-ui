@@ -194,10 +194,12 @@ function createVaultCredentialStoreBackendInternalV1(
 
   function credentialStateDigest(
     record: StoredCredentialRecordV1 | undefined,
-    metadata: Pick<
-      StoredCredentialMetadataV1,
-      'state' | 'credentialType' | 'displayLabel' | 'maskedLastFourSuffix'
-    > | undefined,
+    metadata: Readonly<{
+      state: CredentialLifecycleStateV1
+      credentialType: string
+      displayLabel: string
+      maskedLastFourSuffix?: string | null
+    }> | undefined,
     fields: ReadonlyMap<string, CredentialEnvelopeV1>,
   ): string {
     const encodedFields = [...fields.entries()]
