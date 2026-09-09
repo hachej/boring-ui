@@ -8,12 +8,13 @@
  ├── motion 13.1.0 → 13.1.1               # retained
  ├── @vercel/sandbox 3.0.0 → 3.2.1         # retained
  ├── @earendil-works/pi-ai 0.84.3 → 0.84.4 # retained
+ ├── Vite 8.2.1 → 8.2.2                    # retained; exact-head budgets pass
 -├── TypeScript 7.0.2                       # blocked by tsup/dts incompatibility
 -├── streamdown 2.6.0                       # excluded during budget isolation
--├── Mermaid 11.17.2                        # excluded by CLI resource budget
 -├── lucide-react 1.39.0                    # excluded during budget isolation
--└── Vite 8.2.2                             # excluded during budget isolation
-+└── established versions retained for the blocked upgrades
+-└── Mermaid 11.17.2 direct bump            # excluded by CLI resource budget
++    └── 11.17.2 remains only as an Excalidraw transitive lock edge
++        while root/direct Mermaid stays at 11.16.1
 ```
 
 ## Build flow
@@ -27,7 +28,7 @@ sequenceDiagram
     Lock->>Build: frozen, reviewed dependency graph
     Build->>Split: React, dockview, AI, Zod, icons, motion, streamdown
     Split->>Gate: entry + startup + pre-chat closures
-    Gate-->>Build: PASS at 4f88ca4b
+    Gate-->>Build: PASS at implementation SHA 4f88ca4b
 ```
 
 ## Review seam
@@ -44,4 +45,4 @@ sequenceDiagram
 +    vendor-streamdown
 ```
 
-The production changes are dependency metadata plus one CLI build-only chunking rule. No runtime API, package export, authority, UI behavior, or design-system contract changes. GitHub Actions run 34372690024 passed lint, typecheck, changed unit tests, invariants, all three resource/bundle budgets, E2E, UI Review, and reference/remote-worker smoke.
+The production changes are dependency metadata plus one CLI build-only chunking rule. No runtime API, package export, authority, UI behavior, or design-system contract changes. GitHub Actions run 34372690024 passed lint, typecheck, changed unit tests, invariants, all three resource/bundle budgets, E2E, UI Review, and reference/remote-worker smoke at implementation SHA 4f88ca4b. Final metadata-only admission commits are separately bound in the PR Handover and presentation.
