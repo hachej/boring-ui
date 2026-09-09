@@ -130,7 +130,7 @@
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
-    "@vercel/sandbox": "3.2.1",
+    "@vercel/sandbox": "3.0.0",
     "@vitejs/plugin-react": "^4.7.0",
     "ajv": "^8.20.0",
     "esbuild": "^0.28.2",
