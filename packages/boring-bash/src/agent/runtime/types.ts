@@ -3,7 +3,6 @@ import type {
   Sandbox,
   Workspace,
 } from '@hachej/boring-agent/shared'
-import type { BwrapArgsOptions } from './buildBwrapArgs'
 import type { WorkspacePythonEnvOptions } from './workspacePythonEnv'
 
 export type RuntimeBashStrategy =
@@ -58,14 +57,36 @@ export interface RuntimeFilesystemBindingOperations {
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
+export interface RuntimeFilesystemCatalogPresentation {
+  readonly visible?: boolean
+  readonly label?: string
+  readonly rootDir?: '.' | `/${string}`
+}
+
 export interface RuntimeFilesystemBinding {
   readonly filesystem: string
   readonly access: 'readonly' | 'readwrite'
   readonly operations: RuntimeFilesystemBindingOperations
+  /**
+   * User-facing catalog projection for file pickers. This never changes the
+   * internal filesystem id used by tools/routes.
+   */
+  readonly catalog?: RuntimeFilesystemCatalogPresentation
+  /** When present, only these addressed Agents receive this user-visible binding. */
+  readonly agentTypeIds?: readonly string[]
 }
 
 export interface RuntimeHostOperations {
-  buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[]
+  /**
+   * Injected bwrap args builder, owned by
+   * `@hachej/boring-sandbox/providers/bwrap#buildBwrapArgs`. Declares only the
+   * option slice boring-bash supplies, so there is no mirrored interface to keep
+   * in sync; hosts narrow this member with the canonical `BwrapArgsOptions`.
+   */
+  buildBwrapArgs(
+    workspaceRoot: string,
+    options?: { readonly readonlyPaths?: readonly string[] },
+  ): string[]
   withWorkspacePythonEnv(input: WorkspacePythonEnvOptions): Record<string, string | undefined>
 }
 

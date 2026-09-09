@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { ConfigValidationError } from '@hachej/boring-core/shared'
+import { parseRequiredDefaultAgentTypeId } from '@hachej/boring-core/server'
 import type { GovernanceService } from './governanceService.js'
 import type { GovernanceUserPolicy } from './policyTypes.js'
 
@@ -115,10 +116,17 @@ export async function reconcileCompanyContextWorkspace(app: FastifyInstance, ser
       return
     }
 
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(app.config.defaultAgentTypeId)
     workspace = await governanceApp.workspaceStore.create(owner.id, COMPANY_CONTEXT_WORKSPACE_NAME, app.config.appId, {
       id: workspaceId,
       isDefault: false,
       managedBy: COMPANY_CONTEXT_WORKSPACE_MANAGED_BY,
+      // Decision 28: NULL is reserved for pre-migration rows. This hook runs
+      // after Core's one-shot NULL backfill, so omitting the default here would
+      // mint a brand-new invalid row that nothing will ever reconcile.
+      // `config.defaultAgentTypeId` is the same validated application default
+      // the backfill used.
+      defaultAgentTypeId,
     })
     assertCompanyContextWorkspace(workspace, workspaceId)
     app.log.info({ workspaceId, ownerId: owner.id }, 'governance.company_context.created')

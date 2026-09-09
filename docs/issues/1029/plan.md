@@ -170,8 +170,7 @@ Proof includes atomic created/existing claims across competing callers, same-dig
 
 Breaking API/wire changes do not authorize transcript movement or rewriting.
 
-- `{ agentTypeId: "default", legacyDefault: true }` is a load-bearing storage contract, not removable compatibility scaffolding.
-- Every migrated default Agent retains that spec.
+- **Superseded by the owner on 2026-08-26 (#1386):** the pseudo-Agent discriminator is removed. `agentTypeId: "default"` remains a normal configured Agent, while its load-bearing historical transcript placement is preserved strictly at the storage boundary.
 - Explicit `sessionDir`, `sessionRoot/sessionNamespace`, native Pi default directory encoding, and `BORING_AGENT_SESSION_ROOT` behavior remain byte-identical.
 - The compatibility-named storage fields may be renamed only if semantics and resolved absolute paths remain identical.
 - Core host-volume inference `/data/workspaces` → sibling `/data/pi-sessions` remains unchanged.

@@ -9,6 +9,7 @@ import {
   buildPromptPolicyPayload,
   createPiComposerPolicyController,
   InitialDraftAutoSubmitGuard,
+  PiComposerSubmissionCoordinator,
   readPiComposerSettings,
   scopedComposerStorageKey,
   selectComposerHistoryFromCanonicalUsers,
@@ -273,6 +274,128 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(warnings).toEqual(['Preparing workspace…'])
   })
 
+  it('accepts a handled pre-submit result without invoking the agent', async () => {
+    const session = new FakeComposerSession('idle')
+    const onCommandResult = vi.fn()
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      onBeforeSubmit: vi.fn(async () => ({
+        handled: true as const,
+        message: 'Context stored.',
+      })),
+      onCommandResult,
+    })
+
+    await expect(policy.submit({ text: 'large context' })).resolves.toEqual({
+      type: 'handled',
+      message: 'Context stored.',
+      preserveDraft: false,
+    })
+    expect(session.prompts).toEqual([])
+    expect(session.followUps).toEqual([])
+    expect(onCommandResult).not.toHaveBeenCalled()
+  })
+
+  it('replaces model-facing and display text after asynchronous pre-submit work', async () => {
+    const session = new FakeComposerSession('idle')
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      createClientNonce: nonceFactory(),
+      onBeforeSubmit: vi.fn(async () => ({
+        replacement: {
+          text: '[stored-context artifact=ctx-123]',
+          displayText: 'Clinical context stored',
+        },
+      })),
+    })
+
+    await expect(policy.submit({ text: 'the large raw context' })).resolves.toMatchObject({
+      type: 'prompt',
+      preserveDraft: false,
+    })
+    expect(session.prompts).toEqual([expect.objectContaining({
+      message: '[stored-context artifact=ctx-123]',
+      displayMessage: 'Clinical context stored',
+    })])
+  })
+
+  it('treats replacement text as final model payload rather than local command syntax', async () => {
+    const reset = vi.fn()
+    const registry = createCommandRegistry(builtinCommands)
+    registry.register({ name: 'review', description: 'Review', kind: 'skill', handler: vi.fn() })
+    const session = new FakeComposerSession('idle')
+    const replacements = ['/reset', '/review source.ts']
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ resetSession: reset }),
+      createClientNonce: nonceFactory(),
+      onBeforeSubmit: vi.fn(async () => ({ replacement: { text: replacements.shift()! } })),
+    })
+
+    await policy.submit({ text: 'first raw input' })
+    await policy.submit({ text: 'second raw input' })
+
+    expect(reset).not.toHaveBeenCalled()
+    expect(session.prompts.map((prompt) => prompt.message)).toEqual(['/reset', '/review source.ts'])
+  })
+
+  it('rejects an asynchronous pre-submit result after the active session changes', async () => {
+    const session = new FakeComposerSession('idle')
+    let active = true
+    const onWarning = vi.fn()
+    let finish!: (value: { handled: true; message: string }) => void
+    const beforeSubmit = new Promise<{ handled: true; message: string }>((resolve) => { finish = resolve })
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      isActiveSession: () => active,
+      onBeforeSubmit: async () => await beforeSubmit,
+      onWarning,
+    })
+
+    const pending = policy.submit({ text: 'large context' })
+    active = false
+    finish({ handled: true, message: 'Context stored.' })
+
+    await expect(pending).resolves.toEqual({
+      type: 'stale',
+      reason: 'inactive-session',
+      preserveDraft: false,
+    })
+    expect(session.prompts).toEqual([])
+    expect(onWarning).not.toHaveBeenCalled()
+  })
+
+  it('converts a rejected pre-submit hook to stale after the active session changes', async () => {
+    const session = new FakeComposerSession('idle')
+    let active = true
+    let fail!: (error: Error) => void
+    const beforeSubmit = new Promise<never>((_resolve, reject) => { fail = reject })
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      isActiveSession: () => active,
+      onBeforeSubmit: async () => await beforeSubmit,
+    })
+
+    const pending = policy.submit({ text: 'large context' })
+    active = false
+    fail(new Error('upload failed'))
+
+    await expect(pending).resolves.toEqual({
+      type: 'stale',
+      reason: 'inactive-session',
+      preserveDraft: false,
+    })
+  })
+
   it('runs local slash commands when idle and blocks executable slash while streaming', async () => {
     const reset = vi.fn()
     const idlePolicy = createPiComposerPolicyController({
@@ -312,6 +435,73 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(control).toHaveBeenCalledTimes(1)
   })
 
+  it('serializes asynchronous final prompt transforms in submission order', async () => {
+    const session = new FakeComposerSession('idle')
+    const releases: Array<() => void> = []
+    const transformed: string[] = []
+    const coordinator = new PiComposerSubmissionCoordinator()
+    const transform = async (text: string) => {
+      transformed.push(text)
+      await new Promise<void>((resolve) => releases.push(resolve))
+      return { replacement: { text: `stored:${text}` } }
+    }
+    const createPolicy = () => createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      createClientNonce: nonceFactory(),
+      submissionCoordinator: coordinator,
+      submissionIdentity: 'workspace-a/session-1',
+      onTransformPrompt: transform,
+    })
+
+    const first = createPolicy().submit({ text: 'first' })
+    const second = createPolicy().submit({ text: 'second' })
+    await vi.waitFor(() => expect(transformed).toEqual(['first']))
+    releases.shift()?.()
+    await expect(first).resolves.toMatchObject({ type: 'prompt' })
+    await vi.waitFor(() => expect(transformed).toEqual(['first', 'second']))
+    releases.shift()?.()
+    await expect(second).resolves.toMatchObject({ type: 'prompt' })
+    expect(session.prompts.map((prompt) => prompt.message)).toEqual(['stored:first', 'stored:second'])
+  })
+
+  it('treats a true host pre-submit result as allow and still transforms final text', async () => {
+    const session = new FakeComposerSession('idle')
+    const transform = vi.fn(async () => ({ replacement: { text: 'stored prompt' } }))
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      onBeforeSubmit: () => true,
+      onTransformPrompt: transform,
+    })
+
+    await expect(policy.submit({ text: 'x'.repeat(20) })).resolves.toMatchObject({ type: 'prompt' })
+    expect(transform).toHaveBeenCalledWith('x'.repeat(20), expect.objectContaining({ source: 'composer' }))
+    expect(session.prompts[0]?.message).toBe('stored prompt')
+  })
+
+  it('expands skill slash commands before transforming oversized model-bound text', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    registry.register({ name: 'review', description: 'Review diff', kind: 'skill', handler: vi.fn() })
+    const transform = vi.fn(async () => ({ replacement: { text: 'stored skill prompt', displayText: 'Large skill input saved' } }))
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ listCommands: () => registry.list() }),
+      onTransformPrompt: transform,
+    })
+
+    await expect(policy.submit({ text: `/review ${'x'.repeat(20)}` })).resolves.toMatchObject({ type: 'prompt' })
+    expect(transform).toHaveBeenCalledWith(`skill: review\n\n${'x'.repeat(20)}`, expect.any(Object))
+    expect(session.prompts[0]).toMatchObject({
+      message: 'stored skill prompt',
+      displayMessage: 'Large skill input saved',
+    })
+  })
+
   it('expands skill slash commands to Pi text so streaming follow-up queueing is explicit and safe', async () => {
     const session = new FakeComposerSession('streaming')
     const registry = createCommandRegistry(builtinCommands)
@@ -335,6 +525,64 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(session.followUps).toEqual([{ message: 'skill: review\n\nsrc/app.ts', clientNonce: 'nonce-1', clientSeq: 1 }])
     expect(beforeSubmit).toHaveBeenCalledTimes(1)
     expect(skillCommandText('review', 'src/app.ts')).toBe('skill: review\n\nsrc/app.ts')
+  })
+
+  it('sends a local command result the agent must see into the transcript with full prompt bookkeeping', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    const onCommandResult = vi.fn()
+    const run = vi.fn(async () => 'Extensions reloaded.')
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ pluginUpdate: { run } }),
+      createClientNonce: nonceFactory(),
+      onCommandResult,
+    })
+
+    // The admitted model-facing run returns its real receipt so callers can do
+    // prompt bookkeeping (clientNonce/cursor), exactly like a plain prompt.
+    await expect(policy.submit({ text: '/reload' })).resolves.toEqual({
+      type: 'prompt',
+      clientNonce: 'nonce-1',
+      cursor: expect.any(Number),
+      preserveDraft: false,
+    })
+    // The browser notice still fires as a side effect, and the same outcome
+    // reaches the model.
+    expect(onCommandResult).toHaveBeenCalledWith('Extensions reloaded.')
+    expect(session.prompts).toHaveLength(1)
+    expect(session.prompts[0]?.message).toBe('/reload result:\nExtensions reloaded.')
+  })
+
+  it('makes a failed reload the message the agent receives', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ pluginUpdate: { run: vi.fn(async () => 'Extension update failed: worker unreachable') } }),
+      createClientNonce: nonceFactory(),
+    })
+
+    await policy.submit({ text: '/reload' })
+    expect(session.prompts[0]?.message).toBe('/reload result:\nExtension update failed: worker unreachable')
+  })
+
+  it('leaves commands without a model-facing result out of the transcript', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    registry.register({ name: 'note', description: 'UI only', handler: () => 'noted' })
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ listCommands: () => registry.list() }),
+      createClientNonce: nonceFactory(),
+    })
+
+    await expect(policy.submit({ text: '/note' })).resolves.toMatchObject({ type: 'command', result: 'noted' })
+    expect(session.prompts).toHaveLength(0)
+    expect(session.followUps).toHaveLength(0)
   })
 
   it('blocks busy attachments before attachment enrichment work starts', async () => {

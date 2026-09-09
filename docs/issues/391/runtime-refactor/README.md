@@ -1,7 +1,7 @@
 # #391 runtime-refactor archive and reference pack
 
 > **Status: historical/reference; non-dispatchable.** The active authority is
-> [`../plan.md`](../plan.md) under
+> [`../plan.md`](../../../plans/agent-runtime/fleet-and-environments/plan.md) under
 > [Decision 28](../../../DECISIONS.md#28-application-agent-fleets-workspace-orchestration-and-shared-execution-environments).
 > No file below this directory may override that plan. Decision 26's typed-
 > Workspace topology and old R1–R6 graph are historical.
@@ -11,16 +11,16 @@ redirect stubs, and the retired AgentHost/D1 path. PR #794 removed obsolete
 AgentHost assets. Decision 28 does not cancel useful child-issue research, but
 all retained work packages require an explicit adoption into a current plan and
 Bead recut before dispatch.
-See [`../OWNERSHIP.md`](../OWNERSHIP.md) and
-[`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md).
+See [`../OWNERSHIP.md`](../../../plans/agent-runtime/alignment/OWNERSHIP.md) and
+[`../ROADMAP-ALIGNMENT.md`](../../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md).
 
 ## Current references
 
-1. [`../plan.md`](../plan.md) — sole implementation and ordering authority.
+1. [`../plan.md`](../../../plans/agent-runtime/fleet-and-environments/plan.md) — sole implementation and ordering authority.
 2. [`INDEX.md`](INDEX.md) — concise Decision 28 status and non-normative graph mirror.
 3. [`VISION.md`](VISION.md) — strategic horizons.
-4. [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md) — UI/MCP/local delegation/external A2A/contractor modes.
-5. [`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) — every prebuilt work package.
+4. [`../AGENT-CONSUMPTION-MODES.md`](../../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md) — UI/MCP/local delegation/external A2A/contractor modes.
+5. [`../ROADMAP-ALIGNMENT.md`](../../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md) — every prebuilt work package.
 
 `PR-PLAN.md`, `OWNER-REVIEW.md`, `FORWARD-PLAN.md`, former TODOs, and historical
 reviews preserve earlier Decision 25 or AgentHost planning. They are explicitly

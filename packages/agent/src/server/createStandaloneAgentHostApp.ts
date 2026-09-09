@@ -1,5 +1,4 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
-import { join } from 'node:path'
 import type { PiSessionRequestContext } from '../core/piChatSessionService'
 import type { AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../shared/index'
 import { ErrorCode } from '../shared/error-codes'
@@ -7,7 +6,10 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import type { AgentTool } from '../shared/tool'
 import { createAgentHost } from './agent-host/createAgentHost'
+import type { AgentHostCredentialOptionsV1 } from './agent-host/types'
+import { DEFAULT_AGENT_FLEET } from './agentDefinition/resolveDefaultAgentFleet'
 import { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
+import { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { getEnv } from './config/env'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -54,6 +56,7 @@ export interface CreateStandaloneAgentHostAppOptions {
   sessionNamespace?: string
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  credentials?: AgentHostCredentialOptionsV1
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
     sessionId?: string
@@ -76,6 +79,12 @@ export interface CreateStandaloneAgentHostAppOptions {
   }) => Promise<void>
   sessionDir?: string
   sessionRoot?: string
+  /**
+   * Durable request ledger file. Host application state, not workspace content:
+   * point it at host-owned storage. Defaults per
+   * {@link resolveRequestLedgerPath}.
+   */
+  requestLedgerPath?: string
   externalPlugins?: boolean
   beforeReload?: () => void | {
     readonly diagnostics?: ReadonlyArray<{ source: string; message: string; pluginId?: string }>
@@ -194,16 +203,22 @@ export async function createStandaloneAgentHostApp(
 
   try {
     created = await createAgentHost({
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: DEFAULT_AGENT_FLEET,
       fleetCompiler: { async compile({ agents }) { return agents } },
       hostId: 'standalone-agent-host',
       scopeVerifier: authority.verifier,
       runtimeModeAdapter: modeAdapter,
       runtimeHost,
       sessionRoot: options.sessionRoot,
-      requestLedgerPath: join(workspaceRoot, '.boring', 'agent-request-ledger.sqlite'),
+      requestLedgerPath: resolveRequestLedgerPath({
+        requestLedgerPath: options.requestLedgerPath,
+        sessionRoot: options.sessionRoot,
+        acceptSessionRootEnv: true,
+        legacy: { layout: 'workspace-boring-dir', workspaceRoot },
+      }),
       telemetry: options.telemetry,
       metering: options.metering,
+      credentials: options.credentials,
       harnessFactory: options.harnessFactory,
       async resolveAuthorizedEnvironmentScope() {
         return resolveEnvironment()
@@ -356,6 +371,7 @@ export async function createStandaloneAgentHostApp(
         agentTypeId: 'default',
         context: { workspaceId: sessionId, userId: 'standalone' },
         requestId: 'standalone-initialize',
+        fundingPolicy: 'api-key-only',
       }, async () => undefined)
     }
     return app

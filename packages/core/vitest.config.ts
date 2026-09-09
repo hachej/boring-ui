@@ -1,27 +1,30 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
+import { sandboxSourceAlias } from '../../scripts/vite-sandbox-alias.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '..', '..')
 
 export default defineConfig({
   resolve: {
+    // Package tests run directly from a clean checkout, before workspace
+    // dependencies have produced dist/. Keep every imported workspace seam on
+    // source and force a single React instance across those source packages.
     alias: [
+      { find: /^@hachej\/boring-agent\/front$/, replacement: resolve(repositoryRoot, 'packages/agent/src/front/index.ts') },
       { find: /^@hachej\/boring-agent\/server$/, replacement: resolve(repositoryRoot, 'packages/agent/src/server/index.ts') },
       { find: /^@hachej\/boring-agent\/server\/agent-host\/testing\/compositionRouteProof$/, replacement: resolve(repositoryRoot, 'packages/agent/src/server/agent-host/testing/compositionRouteProof.ts') },
       { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repositoryRoot, 'packages/agent/src/shared/index.ts') },
       { find: /^@hachej\/boring-bash\/server$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/server/index.ts') },
       { find: /^@hachej\/boring-bash\/agent$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/agent/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/shared$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/shared/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/direct$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/direct/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/bwrap$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/bwrap/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/node-workspace$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/node-workspace/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/vercel-sandbox$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/vercel-sandbox/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/blaxel$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/blaxel/index.ts') },
+      sandboxSourceAlias,
+      { find: /^@hachej\/boring-bash\/shared$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/shared/index.ts') },
       { find: /^@hachej\/boring-workspace\/app\/server$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/app/server/index.ts') },
       { find: /^@hachej\/boring-workspace\/app\/front$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/app/front/index.ts') },
       { find: /^@hachej\/boring-workspace\/server$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/server/index.ts') },
       { find: /^@hachej\/boring-workspace$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/index.ts') },
+      { find: /^@hachej\/boring-ui-kit$/, replacement: resolve(repositoryRoot, 'packages/ui/src/index.ts') },
     ],
+    dedupe: ['react', 'react-dom'],
   },
   test: {
     globals: true,

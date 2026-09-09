@@ -1,5 +1,6 @@
 import fastifyWebsocket from "@fastify/websocket"
 import type { FastifyReply, FastifyRequest } from "fastify"
+import { isAbsolute } from "node:path"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { LIVE_TRANSCRIPT_BASE_PATH } from "../shared"
@@ -9,6 +10,7 @@ import { LiveTranscriptManager, type LiveTranscriptManagerOptions } from "./mana
 import { KyutaiComposerManager } from "./kyutaiComposer"
 import { transcribeShortDictation } from "./dictation"
 import { ComputeLifecycleClient, ComputeLifecycleCoordinator, validateLifecycleUrl } from "./computeLifecycle"
+import { TranscriptRefiner } from "./refine"
 
 export interface LiveTranscriptServerPluginOptions {
   dispatcherResolver: WorkspaceAgentDispatcherResolver
@@ -25,11 +27,19 @@ export interface LiveTranscriptServerPluginOptions {
   /** Optional authenticated loopback service that leases on-demand transcription compute. */
   lifecycleUrl?: string
   lifecycleBearerToken?: string
+  /** Optional authenticated loopback GPU batch service that refines a completed transcript offline. */
+  refineUrl?: string
+  refineBearerToken?: string
+  /** Test hook for the refine service HTTP client. */
+  refineFetch?: typeof fetch
   setupTimeoutMs?: number
   drainTimeoutMs?: number
   maxDurationMs?: number
   maxTranscriptBytes?: number
   maxUpstreamMessages?: number
+  /** Trusted absolute local directory where `/live` audio is saved as AAC/M4A. */
+  audioRecordingDirectory?: string
+  audioRecordingFfmpegPath?: string
   reviewIntervalMs?: number
   reviewRetryMs?: number
   createUpstreamForTest?: LiveTranscriptManagerOptions["createUpstreamForTest"]
@@ -39,10 +49,23 @@ export interface LiveTranscriptServerPluginOptions {
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
   validateLocalAuthority(options.authority, options.upstreamUrl, options.upstreamProvider)
   if (options.diarizerUrl) validateLocalAuthority(options.authority, options.diarizerUrl, "sortformer")
+  if (options.audioRecordingDirectory && !isAbsolute(options.audioRecordingDirectory)) throw new LiveTranscriptError("live_transcript_local_only", "Audio recording directory must be absolute.", 500)
   if (options.lifecycleUrl && (!options.lifecycleBearerToken || options.lifecycleBearerToken.length < 32)) throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle bearer token must contain at least 32 characters.", 500)
-  const lifecycle = new ComputeLifecycleCoordinator(options.lifecycleUrl
+  if (options.refineUrl && (!options.refineBearerToken || options.refineBearerToken.length < 32)) throw new LiveTranscriptError("live_transcript_local_only", "Refine bearer token must contain at least 32 characters.", 500)
+  const lifecycleClient = options.lifecycleUrl
     ? new ComputeLifecycleClient(validateLifecycleUrl(options.lifecycleUrl), options.lifecycleBearerToken!)
-    : undefined)
+    : undefined
+  const lifecycle = new ComputeLifecycleCoordinator(lifecycleClient)
+  // The offline refine pass reuses the same GPU lifecycle service (when configured) to lease
+  // compute, independently of the coordinator's single-active-capture bookkeeping above.
+  const refiner = options.refineUrl
+    ? new TranscriptRefiner({
+        refineUrl: validateLifecycleUrl(options.refineUrl),
+        bearerToken: options.refineBearerToken!,
+        lifecycle: lifecycleClient,
+        fetch: options.refineFetch,
+      })
+    : undefined
   const manager = new LiveTranscriptManager({
     dispatcherResolver: options.dispatcherResolver,
     agentTypeId: options.agentTypeId,
@@ -57,8 +80,12 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     maxDurationMs: options.maxDurationMs,
     maxTranscriptBytes: options.maxTranscriptBytes,
     maxUpstreamMessages: options.maxUpstreamMessages,
+    audioRecordingDirectory: options.audioRecordingDirectory,
+    audioRecordingFfmpegPath: options.audioRecordingFfmpegPath,
     reviewIntervalMs: options.reviewIntervalMs,
     reviewRetryMs: options.reviewRetryMs,
+    refiner,
+    onRefineError: (error) => console.error("[live-transcription] offline refine failed after session terminate:", error),
     createUpstreamForTest: options.createUpstreamForTest,
   })
   const composerManager = options.upstreamProvider === "kyutai"
@@ -167,6 +194,22 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
         composerManager.handleSocket((request.params as { id: string }).id, socket)
       })
 
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/transcribe-file`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        const body = strictRecord(request.body, ["path", "title", "overwrite"])
+        if (
+          typeof body.path !== "string"
+          || (body.title !== undefined && typeof body.title !== "string")
+          || (body.overwrite !== undefined && typeof body.overwrite !== "boolean")
+        ) {
+          throw new LiveTranscriptError("live_transcript_attachment_invalid", "File transcription request was invalid.", 400)
+        }
+        return await manager.transcribeFile(request, {
+          path: body.path,
+          title: body.title as string | undefined,
+          overwrite: body.overwrite as boolean | undefined,
+        })
+      }))
+
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/status`, async (request, reply) => withControl(request, reply, options.authority, async () => {
         const body = request.body === undefined ? {} : strictRecord(request.body, ["liveSessionId"])
         if (body.liveSessionId !== undefined && typeof body.liveSessionId !== "string") {
@@ -268,5 +311,6 @@ export { parseWhisperLiveKitSnapshot, WhisperLiveKitConnection } from "./whisper
 export { LiveTranscriptError } from "./errors"
 export { LiveReviewBroker } from "./reviewBroker"
 export { transcribeShortDictation } from "./dictation"
+export { TranscriptRefiner } from "./refine"
 export { isLoopbackHost, validateLocalAuthority } from "./authority"
 export type { LiveTranscriptAuthority } from "./authority"

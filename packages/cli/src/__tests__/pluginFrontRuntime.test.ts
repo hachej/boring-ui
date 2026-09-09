@@ -42,6 +42,79 @@ async function writeRuntimePlugin(root: string, files: Record<string, string>): 
 }
 
 describe("pluginFrontRuntime", () => {
+  test("served workspace shims support real plugin named imports with host identity", async () => {
+    const rootSingleton = {
+      WorkspaceAttentionProvider: function WorkspaceAttentionProvider() {},
+      WorkspacePluginClientRequestError: class WorkspacePluginClientRequestError extends Error {},
+      useWorkspaceShellCapabilities: () => ({ openArtifact: () => undefined }),
+    }
+    const pluginSingleton = {
+      useAppLeftOverlayChrome: () => ({ headerInsetStart: true, headerInsetEnd: false }),
+      useWorkspaceShellCapabilities: rootSingleton.useWorkspaceShellCapabilities,
+    }
+    const runtimeGlobal = globalThis as typeof globalThis & { __BORING_RUNTIME_SINGLETONS__?: Record<string, unknown> }
+    const previous = runtimeGlobal.__BORING_RUNTIME_SINGLETONS__
+    runtimeGlobal.__BORING_RUNTIME_SINGLETONS__ = {
+      "@hachej/boring-workspace": rootSingleton,
+      "@hachej/boring-workspace/plugin": pluginSingleton,
+    }
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    const pluginRoot = await makeTempDir("plugin-front-runtime-singleton-exports-")
+    const runtimePlugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.ts": [
+        'import { WorkspaceAttentionProvider, WorkspacePluginClientRequestError, useWorkspaceShellCapabilities } from "@hachej/boring-workspace"',
+        'import { useAppLeftOverlayChrome } from "@hachej/boring-workspace/plugin"',
+        "export { WorkspaceAttentionProvider, WorkspacePluginClientRequestError, useWorkspaceShellCapabilities, useAppLeftOverlayChrome }",
+      ].join("\n"),
+    })
+    const entryUrl = host.trackPlugin({
+      workspaceId: "workspace-a",
+      plugin: runtimePlugin,
+      revision: 1,
+      frontEntrySubpath: "front/index.ts",
+    })
+
+    try {
+      const entryResponse = await app.inject({ method: "GET", url: entryUrl })
+      expect(entryResponse.statusCode).toBe(200)
+      const rootResponse = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/singleton/%40hachej%2Fboring-workspace`,
+      })
+      const pluginResponse = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/singleton/%40hachej%2Fboring-workspace%2Fplugin`,
+      })
+      expect(rootResponse.statusCode).toBe(200)
+      expect(pluginResponse.statusCode).toBe(200)
+
+      const rootShimUrl = `data:text/javascript;base64,${Buffer.from(rootResponse.body).toString("base64")}`
+      const pluginShimUrl = `data:text/javascript;base64,${Buffer.from(pluginResponse.body).toString("base64")}`
+      const probeCode = [
+        `import { WorkspaceAttentionProvider, WorkspacePluginClientRequestError, useWorkspaceShellCapabilities } from ${JSON.stringify(rootShimUrl)};`,
+        `import { useAppLeftOverlayChrome, useWorkspaceShellCapabilities as pluginUseWorkspaceShellCapabilities } from ${JSON.stringify(pluginShimUrl)};`,
+        "export default { WorkspaceAttentionProvider, WorkspacePluginClientRequestError, useWorkspaceShellCapabilities, useAppLeftOverlayChrome, pluginUseWorkspaceShellCapabilities };",
+      ].join("\n")
+      const probe = await import(`data:text/javascript;base64,${Buffer.from(probeCode).toString("base64")}`)
+
+      expect(probe.default).toEqual({
+        ...rootSingleton,
+        ...pluginSingleton,
+        pluginUseWorkspaceShellCapabilities: pluginSingleton.useWorkspaceShellCapabilities,
+      })
+      expect(probe.default.WorkspaceAttentionProvider).toBe(rootSingleton.WorkspaceAttentionProvider)
+      expect(probe.default.WorkspacePluginClientRequestError).toBe(rootSingleton.WorkspacePluginClientRequestError)
+      expect(probe.default.useWorkspaceShellCapabilities).toBe(rootSingleton.useWorkspaceShellCapabilities)
+      expect(probe.default.pluginUseWorkspaceShellCapabilities).toBe(pluginSingleton.useWorkspaceShellCapabilities)
+      expect(probe.default.useAppLeftOverlayChrome).toBe(pluginSingleton.useAppLeftOverlayChrome)
+    } finally {
+      await app.close()
+      runtimeGlobal.__BORING_RUNTIME_SINGLETONS__ = previous
+    }
+  })
+
   // QUARANTINED: this full-runtime-graph Vite transform genuinely HANGS in CI —
   // it stalls past even the 600s timeout from #126, so a timeout bump can't fix it.
   // Skipped to keep CI deterministic; needs a real fix for the underlying hang

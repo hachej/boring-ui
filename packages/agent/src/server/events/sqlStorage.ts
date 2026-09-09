@@ -78,6 +78,25 @@ export function runTransaction<T>(db: DatabaseSync, fn: () => T, mode: SqlTransa
   }
 }
 
+const WAL_SWITCH_ATTEMPTS = 40
+const WAL_SWITCH_BACKOFF_MS = 25
+
+function setWalJournalModeWithRetry(db: import('node:sqlite').DatabaseSync): void {
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      db.exec('PRAGMA journal_mode=WAL;')
+      return
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (attempt >= WAL_SWITCH_ATTEMPTS || !/database is locked|SQLITE_BUSY/i.test(message)) {
+        throw error
+      }
+      Atomics.wait(pause, 0, 0, WAL_SWITCH_BACKOFF_MS)
+    }
+  }
+}
+
 export function openDatabase(path: string): OpenDatabaseResult {
   if (path !== ':memory:') {
     mkdirSync(dirname(path), { recursive: true })
@@ -91,7 +110,11 @@ export function openDatabase(path: string): OpenDatabaseResult {
     // waiting; EventStreamStore retries transient writer contention
     // asynchronously instead of allowing one call to block for seconds.
     // Set the timeout before journal_mode so initialization is bounded too.
-    db.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS}; PRAGMA journal_mode=WAL;`)
+    db.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS};`)
+    // Switching a brand-new file to WAL needs an exclusive lock that the busy
+    // handler does not cover; two compositions opening the same fresh store at
+    // once must both succeed, so retry the mode switch on SQLITE_BUSY.
+    setWalJournalModeWithRetry(db)
   }
 
   return {

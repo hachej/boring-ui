@@ -1,18 +1,11 @@
 import { defineConfig } from "tsup"
 
-export default defineConfig({
-  entry: {
-    "front/index": "src/front/index.tsx",
-    "server/index": "src/server/index.ts",
-    "shared/index": "src/shared/index.ts",
-  },
-  format: ["esm"],
+const sharedOptions = {
+  format: ["esm"] as const,
   dts: true,
-  splitting: false,
-  clean: true,
   outDir: "dist",
   target: "es2022",
-  platform: "neutral",
+  platform: "neutral" as const,
   external: [
     /^@hachej\/boring-/,
     "react",
@@ -20,4 +13,15 @@ export default defineConfig({
     "react/jsx-runtime",
     /^node:/,
   ],
+}
+
+export default defineConfig({
+  ...sharedOptions,
+  entry: {
+    "front/index": "src/front/index.tsx",
+    "server/index": "src/server/index.ts",
+    "shared/index": "src/shared/index.ts",
+  },
+  splitting: false,
+  clean: true,
 })

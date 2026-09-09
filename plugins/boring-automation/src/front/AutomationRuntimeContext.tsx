@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
-import type { PluginProviderProps } from "@hachej/boring-workspace"
+import type { PluginProviderProps } from "@hachej/boring-workspace/plugin"
 import { createAutomationClient, type AutomationClient } from "./client"
 
 type AutomationRuntime = { client: AutomationClient; agentTypeId: string; apiBaseUrl: string; authHeaders?: Record<string, string> }

@@ -42,6 +42,29 @@ describe('uploadFile', () => {
     expect(result).toEqual({ url: 'assets/uploads/notes-unique.txt', path: 'assets/uploads/notes-unique.txt' })
   })
 
+  it('forwards host authentication headers while preserving upload headers', async () => {
+    Object.defineProperty(globalThis, 'FileReader', { configurable: true, value: TestFileReader })
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ path: 'assets/uploads/notes.txt' }), { status: 200 }))
+
+    await uploadFile(file(), {
+      workspaceRequestId: 'ws-1',
+      requestHeaders: {
+        Authorization: 'Bearer test-token',
+        'x-custom-scope': 'clinic',
+        'content-type': 'text/plain',
+        'X-Boring-Workspace-Id': 'stale-workspace',
+      },
+      fetch: fetch as typeof globalThis.fetch,
+    })
+
+    const request = fetch.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit]
+    const headers = new Headers(request[1].headers)
+    expect(headers.get('authorization')).toBe('Bearer test-token')
+    expect(headers.get('x-custom-scope')).toBe('clinic')
+    expect(headers.get('content-type')).toBe('application/json')
+    expect(headers.get('x-boring-workspace-id')).toBe('ws-1')
+  })
+
   it('returns a raw workspace URL when requested', async () => {
     Object.defineProperty(globalThis, 'FileReader', { configurable: true, value: TestFileReader })
     const fetch = vi.fn(async () => new Response(JSON.stringify({ path: 'assets/uploads/notes.txt' }), { status: 200 }))

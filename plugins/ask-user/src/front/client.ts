@@ -2,6 +2,7 @@ import { HumanArtifactListSchema } from "@hachej/boring-workspace"
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
+import type { AskUserAnsweredSummary, AskUserPendingSummary } from "../shared/bridge"
 import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion } from "../shared/types"
 import { validateQuestionValues, type QuestionFormValues, type QuestionValidationResult } from "./primitives"
 
@@ -16,19 +17,25 @@ type BridgeResponse<T> =
   | { ok: true; output: T }
   | { ok: false; error?: { code?: string; message?: string } }
 
-export type PendingQuestionHint = { questionId: string; sessionId: string; toolCallId?: string; status?: AskUserQuestion["status"] }
+export type PendingQuestionHint = { questionId: string; sessionId: string; toolCallId?: string; status?: AskUserQuestion["status"]; blocking?: false }
 
 export function readPendingQuestionHintsFromState(state: Record<string, unknown> | null | undefined): PendingQuestionHint[] {
   const slot = state?.[ASK_USER_UI_STATE_SLOTS.PENDING]
   if (!slot || typeof slot !== "object") return []
   const hints = new Map<string, PendingQuestionHint>()
-  const rawSlot = slot as { hint?: unknown; question?: unknown; hintsBySession?: unknown }
+  const rawSlot = slot as { hint?: unknown; question?: unknown; hintsBySession?: unknown; hintsByQuestion?: unknown }
   const current = readHint(rawSlot.hint) ?? readHint(rawSlot.question)
-  if (current) hints.set(current.sessionId, current)
+  if (current) hints.set(current.questionId, current)
   if (rawSlot.hintsBySession && typeof rawSlot.hintsBySession === "object" && !Array.isArray(rawSlot.hintsBySession)) {
     for (const [sessionId, candidate] of Object.entries(rawSlot.hintsBySession as Record<string, unknown>)) {
       const hint = readHint(candidate)
-      if (hint && hint.sessionId === sessionId) hints.set(sessionId, hint)
+      if (hint && hint.sessionId === sessionId) hints.set(hint.questionId, hint)
+    }
+  }
+  if (rawSlot.hintsByQuestion && typeof rawSlot.hintsByQuestion === "object" && !Array.isArray(rawSlot.hintsByQuestion)) {
+    for (const [questionId, candidate] of Object.entries(rawSlot.hintsByQuestion as Record<string, unknown>)) {
+      const hint = readHint(candidate)
+      if (hint && hint.questionId === questionId) hints.set(questionId, hint)
     }
   }
   return [...hints.values()]
@@ -38,9 +45,18 @@ export function readPendingQuestionHintFromState(state: Record<string, unknown> 
   return readPendingQuestionHintsFromState(state)[0] ?? null
 }
 
+export function readPendingQuestionReceipt(output: unknown): { questionId: string; status: "pending"; blocking: false } | null {
+  if (!output || typeof output !== "object") return null
+  const details = (output as { details?: unknown }).details
+  if (!details || typeof details !== "object") return null
+  const raw = details as { questionId?: unknown; status?: unknown; blocking?: unknown }
+  if (typeof raw.questionId !== "string" || raw.questionId.length === 0 || raw.status !== "pending" || raw.blocking !== false) return null
+  return { questionId: raw.questionId, status: "pending", blocking: false }
+}
+
 function readHint(value: unknown): PendingQuestionHint | null {
   if (!value || typeof value !== "object") return null
-  const raw = value as { questionId?: unknown; sessionId?: unknown; toolCallId?: unknown; status?: unknown }
+  const raw = value as { questionId?: unknown; sessionId?: unknown; toolCallId?: unknown; status?: unknown; blocking?: unknown }
   if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return null
   const status = normalizeQuestionStatus(raw.status)
   return {
@@ -48,6 +64,7 @@ function readHint(value: unknown): PendingQuestionHint | null {
     sessionId: raw.sessionId,
     ...(typeof raw.toolCallId === "string" ? { toolCallId: raw.toolCallId } : {}),
     ...(status === "abandoned" && raw.status === undefined ? {} : { status }),
+    ...(raw.blocking === false ? { blocking: false as const } : {}),
   }
 }
 
@@ -57,6 +74,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
     input: Record<string, unknown>,
     sessionId?: string,
     idempotencyKey?: string,
+    signal?: AbortSignal,
   ): Promise<T> {
     const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/workspace-bridge/call`, {
       method: "POST",
@@ -70,6 +88,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
         ...(sessionId ? { "x-boring-session-id": sessionId } : {}),
       },
       body: JSON.stringify({ op, input, ...(idempotencyKey ? { idempotencyKey } : {}) }),
+      signal,
     })
     const payload = await response.json().catch(() => ({})) as BridgeResponse<T>
     if (!response.ok) {
@@ -91,13 +110,41 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   }
 
   return {
-    async pending(sessionId: string): Promise<AskUserQuestion | null> {
+    async pending(sessionId: string, signal?: AbortSignal, questionId?: string): Promise<AskUserQuestion | null> {
       const output = await callBridge<{ pending: AskUserQuestion | null }>(
         ASK_USER_BRIDGE_OPS.pending,
-        { sessionId },
+        { sessionId, ...(questionId ? { questionId } : {}) },
         sessionId,
+        undefined,
+        signal,
       )
       return normalizeQuestion(output.pending)
+    },
+    /** Every pending question in the workspace, across agent sessions. Backs the
+     * Inbox, which is one owner queue rather than a per-chat view. */
+    async pendingAll(signal?: AbortSignal): Promise<AskUserPendingSummary[]> {
+      const output = await callBridge<{ pending?: unknown }>(
+        ASK_USER_BRIDGE_OPS.pendingAll,
+        {},
+        undefined,
+        undefined,
+        signal,
+      )
+      return normalizePendingSummaries(output.pending)
+    },
+    /** One page of the owner's answered history, newest first, across sessions. */
+    async answeredAll(options: { limit?: number; cursor?: string } = {}, signal?: AbortSignal): Promise<{ answered: AskUserAnsweredSummary[]; nextCursor?: string }> {
+      const output = await callBridge<{ answered?: unknown; nextCursor?: unknown }>(
+        ASK_USER_BRIDGE_OPS.answeredAll,
+        { ...(options.limit ? { limit: options.limit } : {}), ...(options.cursor ? { cursor: options.cursor } : {}) },
+        undefined,
+        undefined,
+        signal,
+      )
+      return {
+        answered: normalizeAnsweredSummaries(output.answered),
+        ...(typeof output.nextCursor === "string" ? { nextCursor: output.nextCursor } : {}),
+      }
     },
     async cancel(question: AskUserQuestion) {
       ensureAnswerToken(question)
@@ -141,6 +188,55 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   }
 }
 
+export function normalizePendingSummaries(value: unknown): AskUserPendingSummary[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const question = normalizeQuestion(entry)
+    if (!question || question.status !== "ready") return []
+    const summary: AskUserPendingSummary = {
+      questionId: question.questionId,
+      sessionId: question.sessionId,
+      ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
+      status: question.status,
+      blocking: question.blocking !== false,
+      ...(question.agentTypeId ? { agentTypeId: question.agentTypeId } : {}),
+      ...(question.title ? { title: question.title } : {}),
+      ...(question.context ? { context: question.context } : {}),
+      artifacts: question.artifacts,
+      createdAt: question.createdAt,
+      updatedAt: question.updatedAt,
+    }
+    return [summary]
+  })
+}
+
+export function normalizeAnsweredSummaries(value: unknown): AskUserAnsweredSummary[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return []
+    const raw = entry as Record<string, unknown>
+    if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return []
+    const status = raw.status === "answered" || raw.status === "cancelled" || raw.status === "abandoned" ? raw.status : "answered"
+    const answeredAt = typeof raw.answeredAt === "string" ? raw.answeredAt : new Date(0).toISOString()
+    const summary: AskUserAnsweredSummary = {
+      questionId: raw.questionId,
+      sessionId: raw.sessionId,
+      ...(typeof raw.agentTypeId === "string" ? { agentTypeId: raw.agentTypeId } : {}),
+      ...(typeof raw.sessionTitle === "string" ? { sessionTitle: raw.sessionTitle } : {}),
+      title: typeof raw.title === "string" ? raw.title : "Question",
+      ...(typeof raw.contextFirstLine === "string" ? { contextFirstLine: raw.contextFirstLine } : {}),
+      askedAt: typeof raw.askedAt === "string" ? raw.askedAt : answeredAt,
+      answeredAt,
+      ...(typeof raw.decision === "string" ? { decision: raw.decision } : {}),
+      values: raw.values && typeof raw.values === "object" && !Array.isArray(raw.values) ? raw.values as AskUserAnsweredSummary["values"] : {},
+      status,
+      blocking: raw.blocking !== false,
+      ...(raw.deliveryStatus === "undelivered" || raw.deliveryStatus === "delivered" ? { deliveryStatus: raw.deliveryStatus } : {}),
+    }
+    return [summary]
+  })
+}
+
 export function normalizeQuestion(value: unknown): AskUserQuestion | null {
   if (!value || typeof value !== "object") return null
   const raw = value as Record<string, unknown>
@@ -152,6 +248,14 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     sessionId: raw.sessionId,
     toolCallId: typeof raw.toolCallId === "string" ? raw.toolCallId : undefined,
     ownerPrincipalId: typeof raw.ownerPrincipalId === "string" ? raw.ownerPrincipalId : "anonymous",
+    blocking: raw.blocking !== false,
+    agentTypeId: typeof raw.agentTypeId === "string" ? raw.agentTypeId : undefined,
+    workspaceId: typeof raw.workspaceId === "string" ? raw.workspaceId : undefined,
+    askingUserId: typeof raw.askingUserId === "string" ? raw.askingUserId : undefined,
+    delivery: raw.delivery && typeof raw.delivery === "object"
+      && ((raw.delivery as { status?: unknown }).status === "undelivered" || (raw.delivery as { status?: unknown }).status === "delivered")
+      ? raw.delivery as AskUserQuestion["delivery"]
+      : undefined,
     status: normalizeQuestionStatus(raw.status),
     title: typeof raw.title === "string" ? raw.title : undefined,
     context: typeof raw.context === "string" ? raw.context : undefined,

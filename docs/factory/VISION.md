@@ -11,8 +11,10 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 
 - Work graph (Beads) is the only authority on work state.
 - Durable named seats above ephemeral sessions; identity lives in the seat.
-- Human attention is concentrated at plan-time and merge gates, always via
-  inbox Human Intentions — never out-of-band chat.
+- Human attention is reserved for the protected boundaries in
+  [risk-based delivery](../procedures/boring-loop.md), at plan-time when a
+  decision is needed and before merge for the actual protected diff. Use inbox
+  Human Intentions; routine eligible changes do not wait for owner review.
 - "Crons watch, models act": mechanical transitions are automations, thinking
   is seats.
 - Rework escalation law: plan space 1x, bead space 5x, code space 25x — spend
@@ -45,20 +47,31 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    ready > active (up to the cap), breaks stale leases, flags proof-less
    closures, sweeps epic-branch drift. It never chooses which bead. Tick
    cadence and worker cap live in policy.yaml.
-4. **Trust ladder**: class A = path-allowlist AND reviewer-pass AND size-cap.
-   Ladder/config/workflow/fleet-policy files are permanently class B (no agent
-   can widen its own permissions). Config: `.agents/factory/policy.yaml`,
-   workspace-editable, git-audited.
+4. **Trust ladder (amended by owner, 2026-09-07)**: eligibility and protected
+   boundaries now follow [boring-loop](../procedures/boring-loop.md), including
+   the >500 changed package production-line trigger. Plugins/peripheral work,
+   including plugin UI with before/after video, may use automatic delivery only
+   after independent proof and the mandatory cross-package abstraction gate.
+   No agent can widen its own authority; policy/CI/gate changes need the owner.
+   The older path-allowlist/300-line predicate in `.agents/factory/policy.yaml`
+   has not yet been migrated; this amendment does not flip a runtime switch.
 5. **Sessions**: 1 bead = 1 durable session. Handoff ritual fires *before*
    compaction (notes onto the bead + commit WIP); post-compaction re-prime =
    read AGENTS.md + bead + own notes. Beadle stale-lease is the safety net.
-6. **Intake (refine)**: raw ideas → Concierge conversation → Steward
-   materializes beads → one plan-approval intention → autonomous until merge
-   gates. Triage automation routes external intake into the same funnel.
-7. **Branching**: one worktree per epic (in `.worktrees/`); commit/branch
-   mechanics owned by `docs/procedures/worktree-agent.md`. Beadle
-   auto-rebases epic branches on main (thresholds in policy.yaml); conflicts
-   become blocking beads. 1 epic = 1 GH issue = 1 worktree = 1 PR.
+6. **Intake (refine; amended 2026-09-07)**: raw ideas → agreed objective →
+   ready plan/Beads. Obtain owner plan decisions only for protected boundaries
+   or unresolved intent; preserve existing pending/host-required gates during
+   rollout. Plan approval never authorizes an unseen implementation. Triage
+   automation routes external intake into the same funnel.
+7. **Branching** (amended 2026-09-02): one shared worktree per epic (in
+   `.worktrees/`); commit/branch mechanics owned by
+   `docs/procedures/worktree-agent.md`. Beads need not declare file scope.
+   Workers edit the shared worktree, commit frequently to its epic branch, and
+   resolve visible conflicts in place without overwriting peer work. Dedicated
+   remote sandboxes test or serve exact committed SHAs; they are not editing
+   authorities. Beadle auto-rebases epic branches on main (thresholds in
+   policy.yaml); unresolved conflicts become blocking beads. 1 epic = 1 GH
+   issue = 1 shared worktree = 1 PR.
 8. **Bugfix lane**: one standing rolling worktree (`fix/rolling`). 1 fix =
    1 bead = 1 inbox intention, reviewed individually (surface by surface).
    Fixes accumulate; owner review flushes approved fixes to main (cherry-pick
@@ -70,10 +83,12 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    is exhausted. Seats need Anthropic runtimes; Sol runs via codex as
    ephemeral adversarial passes only, track cap per the T1 row in
    `docs/procedures/MODEL-CARD.md`.
-10. **Comms**: thread=bead everywhere — commit messages, session titles,
-    intention subjects, artifact names. Agent Mail only if >5 concurrent
-    workers collide in practice, and then as a provider behind the Agent
-    Communications adapter, never a peer control plane. Buzz pilot deferred.
+10. **Comms** (reaffirmed 2026-09-02): thread=bead everywhere — commit
+    messages, session titles, intention subjects, artifact names. Start shared-
+    worktree execution without Agent Mail, file reservations, or a second
+    coordination plane; conflicts are visible and resolved in the workspace.
+    Add Agent Mail only if observed collisions justify it, and then behind the
+    Agent Communications adapter. Buzz pilot deferred.
 
 ## Factory runs on boring-ui primitives
 
@@ -92,8 +107,10 @@ Beads adapter contract and extension points: `.agents/factory/tools.md`.
 
 ## Dynamics decisions (grill session 2026-08-05, round 2)
 
-11. **Learning loop**: friction notes on every bead; Steward retro pass at
-    epic close emits corrective beads (class A — merge without owner).
+11. **Learning loop (amended 2026-09-07)**: friction notes on every bead;
+    Steward retro pass at epic close emits corrective beads. Classify each by
+    boring-loop; being docs/skills work is not automatic permission to change
+    safety rules, review requirements or authority.
 12. **Failure paths**: bounce upstream with capped rounds — round caps are
     `bounce.worker_attempts_per_bead` and `bounce.review_rounds_max` in
     policy.yaml; owner attention only at gates and genuine dead ends. Detail:
@@ -115,9 +132,10 @@ Beads adapter contract and extension points: `.agents/factory/tools.md`.
 
 ## Deliberate deviations from the inspirations
 
-- No repo-wide single-branch (flywheel): single-branch applies *inside* an
-  epic worktree; owner gate at the epic boundary. Review capacity is 1-2h/day,
-  not 13 rotating accounts.
+- No repo-wide shared editing branch (flywheel): keep epic worktree ownership
+  and integrate small verified changes frequently. Under the 2026-09-07
+  amendment, owner attention follows protected boundaries, not every routine
+  PR; existing epic/rolling topology and pending decisions are preserved.
 - No 38-seat roster (Yegge): a seat exists only where a standing
   responsibility must accumulate context across sessions. 5 seats now;
   production-ops seats (Sheriff/Gargoyle) only when production traffic exists.
@@ -134,7 +152,9 @@ fixes) before building the factory plugin or Swarm Console. Graduate when:
 
 1. ≥8/10 flowed refine→plan→exec→review→flush with zero out-of-band
    coordination (all human touch via inbox intentions).
-2. Every merge traceable bead→session→PR→intention via thread=bead alone.
+2. Every merge traceable bead→session→PR→proof and review, plus an owner
+   intention for the human route or an enforced policy admission for the
+   automatic route (2026-09-07 amendment; broader automatic route not yet enabled).
 3. Stale-lease/handoff recovery fired at least once and worked.
 4. Owner hands-on time trended down issue-over-issue.
 

@@ -172,6 +172,92 @@ describe("useKeyboardShortcuts", () => {
   })
 })
 
+describe("useKeyboardShortcuts shouldHandle (#1391 regression)", () => {
+  // Simulates Radix's DismissableLayer: a document-level, capture-phase
+  // keydown listener that is registered *after* this hook's own listener
+  // (mirroring an on-demand dropdown that opens after the app shell has
+  // already mounted its global shortcuts), and that only dismisses when
+  // the event has not already been marked defaultPrevented by an earlier
+  // capture-phase listener on the same node. This is the actual event
+  // wiring that broke in production: a naive jsdom keydown against the
+  // dropdown alone never exercises this race, since there's no competing
+  // listener to lose to.
+  function mountFakeDismissableLayer(onDismiss: () => void) {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      if (!event.defaultPrevented) onDismiss()
+    }
+    document.addEventListener("keydown", handleKeyDown, { capture: true })
+    return () => document.removeEventListener("keydown", handleKeyDown, { capture: true })
+  }
+
+  it("without a guard, an unconditional Escape shortcut blocks a later-registered dismissable layer from closing", () => {
+    // This reproduces the pre-fix bug: ChatLayout's Escape binding had no
+    // shouldHandle guard, so it always preventDefault()'d first.
+    const focusChat = vi.fn()
+    renderHook(() =>
+      useKeyboardShortcuts({ shortcuts: [{ key: "Escape", allowInEditable: true, handler: focusChat }] }),
+    )
+    const onDismiss = vi.fn()
+    const unmountLayer = mountFakeDismissableLayer(onDismiss)
+
+    fireKey("Escape")
+
+    expect(focusChat).toHaveBeenCalledOnce()
+    expect(onDismiss).not.toHaveBeenCalled() // the bug: the "overlay" never closes
+
+    unmountLayer()
+  })
+
+  it("with shouldHandle guarding an open overlay, Escape reaches the dismissable layer instead", () => {
+    const focusChat = vi.fn()
+    let overlayOpen = true
+    renderHook(() =>
+      useKeyboardShortcuts({
+        shortcuts: [{
+          key: "Escape",
+          allowInEditable: true,
+          shouldHandle: () => !overlayOpen,
+          handler: focusChat,
+        }],
+      }),
+    )
+    const onDismiss = vi.fn()
+    const unmountLayer = mountFakeDismissableLayer(onDismiss)
+
+    fireKey("Escape")
+
+    expect(focusChat).not.toHaveBeenCalled()
+    expect(onDismiss).toHaveBeenCalledOnce() // the fix: the overlay closes itself
+
+    unmountLayer()
+  })
+
+  it("shouldHandle true still lets the shortcut fire and preventDefault as before", () => {
+    const focusChat = vi.fn()
+    const overlayOpen = false
+    renderHook(() =>
+      useKeyboardShortcuts({
+        shortcuts: [{
+          key: "Escape",
+          allowInEditable: true,
+          shouldHandle: () => !overlayOpen,
+          handler: focusChat,
+        }],
+      }),
+    )
+    const onDismiss = vi.fn()
+    const unmountLayer = mountFakeDismissableLayer(onDismiss)
+
+    fireKey("Escape")
+
+    expect(focusChat).toHaveBeenCalledOnce()
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    unmountLayer()
+  })
+})
+
 describe("formatShortcut", () => {
   it("formats mod+key", () => {
     const result = formatShortcut({ key: "b", mod: true })

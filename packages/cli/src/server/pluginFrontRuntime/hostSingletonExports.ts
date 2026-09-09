@@ -1,0 +1,85 @@
+import type { HostVirtualSingletonModule } from "./hostModules.js"
+import {
+  WORKSPACE_EVENTS_SINGLETON_EXPORTS,
+  WORKSPACE_PLUGIN_SINGLETON_EXPORTS,
+  WORKSPACE_ROOT_SINGLETON_EXPORTS,
+} from "./workspaceSingletonExports.generated.js"
+
+/**
+ * Named exports re-published by each generated singleton shim module.
+ *
+ * React's public surface is pinned to the host React version. Workspace's
+ * public surfaces are generated from the package build outputs and checked
+ * before the CLI build; see scripts/generate-host-singleton-exports.mjs.
+ */
+
+export const RUNTIME_SINGLETON_EXPORTS: Partial<Record<HostVirtualSingletonModule, readonly string[]>> = {
+  react: [
+    "Activity",
+    "Children",
+    "Component",
+    "Fragment",
+    "Profiler",
+    "PureComponent",
+    "StrictMode",
+    "Suspense",
+    "__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE",
+    "__COMPILER_RUNTIME",
+    "act",
+    "cache",
+    "cacheSignal",
+    "captureOwnerStack",
+    "cloneElement",
+    "createContext",
+    "createElement",
+    "createRef",
+    "forwardRef",
+    "isValidElement",
+    "lazy",
+    "memo",
+    "startTransition",
+    "unstable_useCacheRefresh",
+    "use",
+    "useActionState",
+    "useCallback",
+    "useContext",
+    "useDebugValue",
+    "useDeferredValue",
+    "useEffect",
+    "useEffectEvent",
+    "useId",
+    "useImperativeHandle",
+    "useInsertionEffect",
+    "useLayoutEffect",
+    "useMemo",
+    "useOptimistic",
+    "useReducer",
+    "useRef",
+    "useState",
+    "useSyncExternalStore",
+    "useTransition",
+    "version",
+  ],
+  "react-dom": [
+    "__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE",
+    "createPortal",
+    "flushSync",
+    "preconnect",
+    "prefetchDNS",
+    "preinit",
+    "preinitModule",
+    "preload",
+    "preloadModule",
+    "requestFormReset",
+    "unstable_batchedUpdates",
+    "useFormState",
+    "useFormStatus",
+    "version",
+  ],
+  "react-dom/client": ["createRoot", "hydrateRoot", "version"],
+  "react/jsx-runtime": ["Fragment", "jsx", "jsxs"],
+  "react/jsx-dev-runtime": ["Fragment", "jsxDEV"],
+  "@hachej/boring-workspace": WORKSPACE_ROOT_SINGLETON_EXPORTS,
+  "@hachej/boring-workspace/plugin": WORKSPACE_PLUGIN_SINGLETON_EXPORTS,
+  "@hachej/boring-workspace/events": WORKSPACE_EVENTS_SINGLETON_EXPORTS,
+}

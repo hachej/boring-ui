@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ERROR_CODES } from '../../shared/errors.js'
 import {
-  LEGACY_DEFAULT_AGENT_TYPE_ID,
+  DefaultAgentTypeError,
   isAgentTypeId,
+  parseRequiredDefaultAgentTypeId,
   parseTrustedDefaultAgentTypeId,
+  resolveApplicationDefaultAgentTypeId,
   resolveWorkspaceDefaultAgentTypeId,
 } from '../defaultAgentType.js'
 
@@ -29,64 +31,133 @@ describe('parseTrustedDefaultAgentTypeId', () => {
   })
 })
 
+describe('parseRequiredDefaultAgentTypeId', () => {
+  it('rejects omitted and NULL production identities with a stable code', () => {
+    for (const value of [undefined, null]) {
+      expect(() => parseRequiredDefaultAgentTypeId(value)).toThrowError(expect.objectContaining({
+        code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+      }))
+    }
+  })
+})
+
 describe('resolveWorkspaceDefaultAgentTypeId', () => {
-  const fleet = ['default', 'boring-v2', 'reviewer']
+  const fleet = ['boring-v2', 'reviewer']
 
   it('prefers the persisted seat when it names a validated fleet member', () => {
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: 'reviewer',
-      bootDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      applicationDefaultAgentTypeId: 'boring-v2',
+      regularAgentTypeIds: fleet,
     })).toBe('reviewer')
   })
 
-  it('falls back to the boot option when nothing is persisted', () => {
+  it('uses the validated application default when nothing is persisted', () => {
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: null,
-      bootDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      applicationDefaultAgentTypeId: 'boring-v2',
+      regularAgentTypeIds: fleet,
     })).toBe('boring-v2')
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: undefined,
-      bootDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      applicationDefaultAgentTypeId: 'boring-v2',
+      regularAgentTypeIds: fleet,
     })).toBe('boring-v2')
   })
 
-  it('falls back to the first fleet seat, then the legacy default', () => {
+  it('does not re-resolve the already-validated application default', () => {
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: null,
-      bootDefaultAgentTypeId: undefined,
-      availableAgentTypeIds: fleet,
-    })).toBe('default')
-    expect(resolveWorkspaceDefaultAgentTypeId({
-      persistedDefaultAgentTypeId: null,
-      bootDefaultAgentTypeId: undefined,
-      availableAgentTypeIds: [],
-    })).toBe(LEGACY_DEFAULT_AGENT_TYPE_ID)
+      applicationDefaultAgentTypeId: 'boring-v2',
+      regularAgentTypeIds: fleet,
+    })).toBe('boring-v2')
   })
 
-  it('fails closed to the fallback with a stable diagnostic when the persisted seat is unknown', () => {
+  it('fails stably without fallback when the persisted seat is unknown', () => {
     const onUnknownPersistedSeat = vi.fn()
-    expect(resolveWorkspaceDefaultAgentTypeId({
+    expect(() => resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: 'retired-seat',
-      bootDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      applicationDefaultAgentTypeId: 'boring-v2',
+      regularAgentTypeIds: fleet,
       onUnknownPersistedSeat,
-    })).toBe('boring-v2')
-    expect(onUnknownPersistedSeat).toHaveBeenCalledTimes(1)
+    })).toThrowError(expect.objectContaining({
+      code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+      name: 'DefaultAgentTypeError',
+    }))
     expect(onUnknownPersistedSeat).toHaveBeenCalledWith({
       code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
       persistedDefaultAgentTypeId: 'retired-seat',
-      fallbackAgentTypeId: 'boring-v2',
     })
   })
 
-  it('never throws on an unknown persisted seat even without a diagnostic sink', () => {
-    expect(resolveWorkspaceDefaultAgentTypeId({
-      persistedDefaultAgentTypeId: 'retired-seat',
-      bootDefaultAgentTypeId: undefined,
-      availableAgentTypeIds: [],
-    })).toBe(LEGACY_DEFAULT_AGENT_TYPE_ID)
+})
+
+describe('application default Agent', () => {
+  it('selects only the configured fleet member and rejects an empty application fleet', () => {
+    expect(resolveApplicationDefaultAgentTypeId({
+      configuredDefaultAgentTypeId: 'reviewer',
+      regularAgentTypeIds: ['general', 'reviewer'],
+    })).toBe('reviewer')
+    expect(() => resolveApplicationDefaultAgentTypeId({
+      configuredDefaultAgentTypeId: 'retired-seat',
+      regularAgentTypeIds: ['general'],
+    })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
+    expect(() => resolveApplicationDefaultAgentTypeId({
+      configuredDefaultAgentTypeId: 'default',
+      regularAgentTypeIds: [],
+    })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
+  })
+
+  it('validates canonical fleet identity grammar and uniqueness before resolution', () => {
+    for (const regularAgentTypeIds of [
+      ['Default'],
+      ['seat_name'],
+      [`a${'0'.repeat(63)}`],
+      ['default', 'default'],
+    ]) {
+      expect(() => resolveApplicationDefaultAgentTypeId({
+        configuredDefaultAgentTypeId: 'default',
+        regularAgentTypeIds,
+      })).toThrowError(expect.objectContaining({
+        name: 'DefaultAgentTypeError',
+        code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+      }))
+    }
+  })
+
+  it('distinguishes a malformed configured identity from a valid unavailable seat', () => {
+    expect(() => resolveApplicationDefaultAgentTypeId({
+      configuredDefaultAgentTypeId: 'Bad_Seat',
+      regularAgentTypeIds: ['default'],
+    })).toThrowError(expect.objectContaining({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID }))
+    expect(() => resolveApplicationDefaultAgentTypeId({
+      configuredDefaultAgentTypeId: 'retired-seat',
+      regularAgentTypeIds: ['default'],
+    })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
+  })
+
+  it('keeps validation and resolution failures transport-neutral', () => {
+    const actions = [
+      () => parseTrustedDefaultAgentTypeId('Default'),
+      () => resolveApplicationDefaultAgentTypeId({
+        configuredDefaultAgentTypeId: 'retired-seat',
+        regularAgentTypeIds: ['default'],
+      }),
+      () => resolveWorkspaceDefaultAgentTypeId({
+        persistedDefaultAgentTypeId: 'retired-seat',
+        applicationDefaultAgentTypeId: 'general',
+        regularAgentTypeIds: ['general'],
+      }),
+    ]
+
+    for (const action of actions) {
+      expect(action).toThrowError(DefaultAgentTypeError)
+      try {
+        action()
+      } catch (error) {
+        expect(error).not.toHaveProperty('status')
+        expect(error).not.toHaveProperty('statusCode')
+      }
+    }
   })
 })

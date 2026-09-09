@@ -5,6 +5,7 @@ import type {
   SandboxHandleRecord,
   SandboxHandleStore,
 } from '@hachej/boring-agent/shared'
+import { extractHttpStatus } from './httpError'
 
 type VercelSandboxStatus =
   | 'aborted'
@@ -19,6 +20,7 @@ export interface ResolveSandboxCreateParams {
   name?: string
   persistent?: boolean
   snapshotExpiration?: number
+  timeoutMs?: number
   source?:
     | { type: 'snapshot'; snapshotId: string }
     | { type: 'tarball'; url: string }
@@ -107,17 +109,8 @@ function isSandboxExpired(sandbox: VercelSandbox): boolean {
   return status !== null && EXPIRED_STATUSES.has(status)
 }
 
-function extractHttpStatus(error: unknown): number | null {
-  const directStatus = (error as { status?: unknown } | null)?.status
-  if (typeof directStatus === 'number') {
-    return directStatus
-  }
-
-  const response = (error as { response?: { status?: unknown } } | null)?.response
-  return typeof response?.status === 'number' ? response.status : null
-}
-
 function shouldRecreateFromSnapshot(error: unknown): boolean {
+  if (error instanceof SandboxHandleUnavailableError) return false
   const status = extractHttpStatus(error)
   const apiCode = (error as { json?: { error?: { code?: unknown } } } | null)?.json?.error?.code
   return status === 404 || status === 410 || apiCode === 'snapshot_not_found'
@@ -329,6 +322,8 @@ async function createFresh(
 }
 
 export interface ResolveSandboxHandleOptions {
+  /** Host-resolved immutable base used only when creating a fresh handle. */
+  sourceSnapshotId?: string
   tarballUrl?: string
   maxIdleMs?: number
   now?: () => number
@@ -349,6 +344,7 @@ export async function resolveSandboxHandle(
   const expiredSandboxPolicy = opts?.expiredSandboxPolicy ?? 'recreate'
 
   const inProcess = sandboxesByWorkspaceId.get(workspaceKey)
+  const inFlightResolution = inFlightResolutionsByWorkspaceId.get(workspaceKey)
   if (inProcess && !isSandboxExpired(inProcess)) {
     return inProcess
   }
@@ -356,7 +352,6 @@ export async function resolveSandboxHandle(
     sandboxesByWorkspaceId.delete(workspaceKey)
   }
 
-  const inFlightResolution = inFlightResolutionsByWorkspaceId.get(workspaceKey)
   if (inFlightResolution) {
     return await inFlightResolution
   }
@@ -509,7 +504,7 @@ export async function resolveSandboxHandle(
 
     return await createFresh(
       workspaceKey,
-      persisted?.snapshotId,
+      persisted?.snapshotId ?? opts?.sourceSnapshotId,
       opts?.tarballUrl,
       persisted,
       store,

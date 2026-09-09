@@ -1,4 +1,15 @@
 export {
+  API_KEY_VALIDATION_TIMEOUT_MS_V1,
+  createApiKeyValidatorV1,
+  piApiKeyProbeTransportV1,
+} from './apiKeyValidation'
+export type {
+  ApiKeyProbeInputV1,
+  ApiKeyProbeTransportV1,
+  ApiKeyValidationFailureV1,
+  ApiKeyValidatorV1,
+} from './apiKeyValidation'
+export {
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
 } from './hostResolver'
@@ -8,6 +19,20 @@ export type {
   InMemoryCredentialBackendEntryV1,
 } from './hostResolver'
 export { withResolvedCredential } from './withResolvedCredential'
+export {
+  PI_OAUTH_CREDENTIAL_FIELD_ID_V1,
+  actorCredentialProviderIdV1,
+  createVaultCredentialStoreV1,
+} from './vaultCredentialStore'
+export type { VaultCredentialStoreOptionsV1 } from './vaultCredentialStore'
+export { createOpenAiCodexOAuthBrokerV1 } from './openAiCodexOAuthBroker'
+export type {
+  OAuthFlowSnapshotV1,
+  OpenAiCodexOAuthBrokerOptionsV1,
+  OpenAiCodexOAuthBrokerV1,
+  SafeOAuthEventV1,
+  SafeOAuthPromptV1,
+} from './openAiCodexOAuthBroker'
 export {
   CREDENTIAL_ALLOW_MEMORY_ENV_KEY_V1,
   CREDENTIAL_PERSISTENCE_ENV_KEY_V1,

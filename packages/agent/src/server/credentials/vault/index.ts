@@ -10,6 +10,7 @@ export {
   PostgresCredentialVaultPersistenceV1,
   createPostgresCredentialVaultPersistenceV1,
 } from './postgresPersistence'
+export type { PostgresCredentialVaultPersistenceOptionsV1 } from './postgresPersistence'
 export { runCredentialVaultPostgresMigrationsV1 } from './postgresMigrations'
 export {
   LOCAL_KEK_BACKEND_ENV_KEY_V1,
@@ -33,12 +34,19 @@ export type {
 } from './kmsBackend'
 export type {
   CommitCredentialVersionInputV1,
+  CommitDekRotationRecordInputV1,
   CredentialFieldDeletionReasonV1,
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
+  CredentialLifecycleStateV1,
   CredentialMaterialKindV1,
   CredentialVaultPersistenceV1,
+  StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
+  WorkspaceCredentialLockOptionsV1,
+  WorkspaceCredentialRecordV1,
+  WorkspaceDekRotationReceiptV1,
+  WorkspaceDekRotationStateV1,
 } from './persistence'
 export {
   createInMemoryCredentialVersionAnchorV1,
@@ -46,7 +54,11 @@ export {
   initializeLocalFileCredentialVersionAnchorV1,
 } from './versionAnchor'
 export type {
+  CredentialLifecycleMutationResultV1,
+  CredentialVersionAnchorReadOptionsV1,
+  CredentialVersionAnchorReaderV1,
   CredentialVersionMutationResultV1,
+  DekGenerationMutationResultV1,
   LocalCredentialVersionAnchorOptionsV1,
   WorkspaceCredentialVersionAnchorV1,
   WorkspaceCredentialVersionStateV1,

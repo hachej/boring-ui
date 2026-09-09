@@ -155,6 +155,20 @@ describe('buildPiChatSnapshot', () => {
     expect(snapshot.messages).toHaveLength(1)
   })
 
+  it('normalizes a persisted context overflow instead of restoring raw provider JSON', () => {
+    const rawError = '{"type":"error","error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model."}}'
+    const snapshot = buildPiChatSnapshot(
+      createAdapter({ state: { errorMessage: rawError } }),
+      { seq: 10 },
+    )
+
+    expect(snapshot.error).toMatchObject({
+      code: ErrorCode.enum.MODEL_CONTEXT_WINDOW_EXCEEDED,
+      message: expect.not.stringContaining('context_length_exceeded'),
+      retryable: true,
+    })
+  })
+
   it('allows explicit status and error supplied by PiSessionService to win', () => {
     const snapshot = buildPiChatSnapshot(
       createAdapter({ isStreaming: true, state: { errorMessage: 'ignored' } }),

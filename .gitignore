@@ -193,3 +193,5 @@ packages/workspace/src/plugins/eval-*/
 
 # Local live-transcript artifacts (meeting content must never be committed)
 /live-transcripts/
+runs-evidence*/
+sol-*.log

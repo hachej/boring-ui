@@ -41,6 +41,18 @@ export function runVaultCredentialStoreConformanceV1(
       return { backend, persistence }
     }
 
+    test('rejects an empty field set without persisting a credential', async () => {
+      const workspaceId = `ws-${randomUUID()}`
+      const { backend, persistence } = await harness()
+
+      await expect(backend.writeCredentialFields({
+        workspaceId,
+        providerId,
+        fields: new Map(),
+      })).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH })
+      expect(await persistence.getCredentialRecord(workspaceId, providerId)).toBeUndefined()
+    })
+
     test('round-trips ciphertext and rewraps its workspace DEK', async () => {
       const workspaceId = `ws-${randomUUID()}`
       const secret = new TextEncoder().encode('conformance-secret')
@@ -61,6 +73,27 @@ export function runVaultCredentialStoreConformanceV1(
       const resolved = await backend.read(workspaceId, providerId, [fieldId])
       if (resolved.kind !== 'field-set') throw new Error('expected field-set')
       expect(resolved.fields.get(fieldId)).toEqual(secret)
+    })
+
+    test('rotates live envelopes and permanently crypto-shreds the workspace', async () => {
+      const workspaceId = `ws-${randomUUID()}`
+      const { backend, persistence } = await harness()
+      const original = await backend.writeCredentialFields({
+        workspaceId,
+        providerId,
+        fields: new Map([[fieldId, new TextEncoder().encode('rotate-me')]]),
+      })
+
+      await expect(backend.rotateWorkspaceDek(workspaceId, 'rotation-1')).resolves.toBe(2)
+      expect(await persistence.getWrappedDek(workspaceId, original.dekGeneration))
+        .toBeUndefined()
+      const resolved = await backend.read(workspaceId, providerId, [fieldId])
+      if (resolved.kind !== 'field-set') throw new Error('expected field-set')
+      expect(new TextDecoder().decode(resolved.fields.get(fieldId))).toBe('rotate-me')
+
+      await backend.cryptoShredWorkspace(workspaceId)
+      await expect(backend.read(workspaceId, providerId, [fieldId]))
+        .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
     })
 
     test('rejects the same persisted material under a different KEK', async () => {

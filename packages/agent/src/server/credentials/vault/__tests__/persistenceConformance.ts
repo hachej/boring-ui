@@ -47,6 +47,34 @@ export function runCredentialVaultPersistenceConformanceV1(
   createPersistence: () => Promise<CredentialVaultPersistenceV1>,
 ): void {
   describe(`CredentialVaultPersistenceV1 conformance: ${label}`, () => {
+    test('serializes workspace lifecycle mutations', async () => {
+      const persistence = await createPersistence()
+      const workspaceId = `ws-${randomUUID()}`
+      let release!: () => void
+      let enteredSecond = false
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const first = persistence.withWorkspaceLock(workspaceId, async () => {
+        await gate
+      })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      const second = persistence.withWorkspaceLock(workspaceId, async () => {
+        enteredSecond = true
+      })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(enteredSecond).toBe(false)
+      release()
+      await Promise.all([first, second])
+      expect(enteredSecond).toBe(true)
+    })
+
+    test('detects any remaining workspace credential artifact', async () => {
+      const persistence = await createPersistence()
+      const workspaceId = `ws-${randomUUID()}`
+      expect(await persistence.hasWorkspaceCredentialArtifacts(workspaceId)).toBe(false)
+      await persistence.putWrappedDek(workspaceId, 1, wrappedDek(2))
+      expect(await persistence.hasWorkspaceCredentialArtifacts(workspaceId)).toBe(true)
+    })
+
     test('round-trips records, field envelopes, and wrapped DEKs', async () => {
       const persistence = await createPersistence()
       const workspaceId = `ws-${randomUUID()}`

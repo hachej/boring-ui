@@ -30,7 +30,6 @@ const skippedDirs = new Set([
   "node_modules",
   "out",
 ]);
-const negativeFixturesOnly = process.argv.includes("--negative-fixtures-only");
 const pass = (message) => console.log(`[alignment invariant] PASS ${message}`);
 const fail = (message) => {
   console.error(`[alignment invariant] FAIL ${message}`);
@@ -161,6 +160,9 @@ function moduleReferences(sourceFile) {
       && node.moduleReference.expression) {
       const specifier = literalText(node.moduleReference.expression);
       if (specifier) add(node, specifier, "import equals", node.isTypeOnly);
+    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      const specifier = literalText(node.argument.literal);
+      if (specifier) add(node, specifier, "import type", true);
     } else if (ts.isCallExpression(node)) {
       const expression = unwrapTransparentExpression(node.expression);
       const dynamicImport = expression?.kind === ts.SyntaxKind.ImportKeyword;
@@ -270,7 +272,14 @@ function findCreateAgentHostCalls(sourceFile) {
 function findConsumerInternalReferences(sourceFile) {
   const references = [];
   const isConsumerInternalName = (name) =>
-    name === "HarnessPiChatService" || name === "PiSessionStore";
+    name === "HarnessPiChatService"
+    || name === "PiSessionStore"
+    || name === "AgentHarnessBackend";
+  for (const reference of moduleReferences(sourceFile)) {
+    if (/(^|\/)harnessBackend(?:\/|$)/.test(reference.specifier)) {
+      references.push({ line: reference.line, name: "harnessBackend/" });
+    }
+  }
   const visit = (node) => {
     if (ts.isIdentifier(node) && isConsumerInternalName(node.text)) {
       references.push({ line: lineFor(sourceFile, node), name: node.text });
@@ -341,10 +350,14 @@ function assertNegativeFixtures() {
 
   const consumerFixture = parseSource(
     "fixture.ts",
-    "import type { HarnessPiChatService, PiSessionStore } from './internal'",
+    [
+      "import type { HarnessPiChatService, PiSessionStore } from './internal'",
+      "import type { AgentHarnessBackend as Backend } from '@hachej/boring-agent/server/agent-host/harnessBackend/types'",
+      "type BackendModule = typeof import('@hachej/boring-agent/server/agent-host/harnessBackend/types')",
+    ].join("\n"),
   );
-  if (findConsumerInternalReferences(consumerFixture).length === 2) {
-    pass("fixture rejects consumer references even when they are type-only");
+  if (findConsumerInternalReferences(consumerFixture).length === 5) {
+    pass("fixture rejects concrete, import-type, and harnessBackend references even when they are type-only");
   } else {
     fail("consumer internal-reference fixture mismatch");
   }
@@ -353,7 +366,6 @@ function assertNegativeFixtures() {
 function main() {
   console.log(`[alignment invariant] repo=${repoRoot}`);
   assertNegativeFixtures();
-  if (negativeFixturesOnly) return;
 
   const allProductionFiles = walk(repoRoot)
     .filter((file) => !isTestPath(file) && !isNonProductionSourcePath(file));
@@ -409,7 +421,7 @@ function main() {
     fail(`consumer references ${violation.name} in ${toRepoPath(violation.file)}:${violation.line}`);
   }
   if (consumerViolations.length === 0) {
-    pass(`consumers hold no HarnessPiChatService/PiSessionStore references (${consumerFiles.length} file(s))`);
+    pass(`consumers hold no HarnessPiChatService/PiSessionStore/AgentHarnessBackend/harnessBackend references (${consumerFiles.length} file(s))`);
   }
 
   const errors = [];

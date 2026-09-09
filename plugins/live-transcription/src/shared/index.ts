@@ -13,6 +13,15 @@ export const KYUTAI_PCM_SAMPLE_RATE = 24_000
 export const KYUTAI_PCM_FRAME_SAMPLES = 2_400
 export const KYUTAI_PCM_FRAME_BYTES = KYUTAI_PCM_FRAME_SAMPLES * 2
 export const LIVE_SOCKET_HIGH_WATER_BYTES = 64 * 1024
+/**
+ * Browser frames allowed in flight before an ACK is required. One frame per
+ * round trip (the previous behaviour) capped throughput at 100 ms / RTT and
+ * failed any doctor whose RTT to the host exceeded 100 ms; eight frames
+ * tolerate an 800 ms round trip while still bounding unacknowledged audio.
+ */
+export const LIVE_FRAMES_IN_FLIGHT = 8
+/** Frames the server queues behind a slow upstream send before declaring backpressure (~3 s). */
+export const LIVE_SERVER_PENDING_FRAMES = 32
 export const LIVE_NONCE_BYTES = 32
 export const SHORT_DICTATION_MAX_BYTES = 8 * 1024 * 1024
 
@@ -39,6 +48,7 @@ export type LiveTranscriptState = "setup" | "active" | "stopping" | "complete" |
 export interface LiveTranscriptStartResponse {
   liveSessionId: string
   transcriptPath: string
+  audioPath?: string
   socketNonce: string
   reviewIntervalMs: number
   state: "setup"
@@ -48,6 +58,7 @@ export interface LiveTranscriptStatusResponse {
   active: boolean
   liveSessionId?: string
   transcriptPath?: string
+  audioPath?: string
   originatingSessionId?: string
   state?: LiveTranscriptState
   outcome?: LiveTranscriptErrorCode
@@ -57,6 +68,7 @@ export interface LiveTranscriptStatusResponse {
 export interface LiveTranscriptTerminalResponse {
   liveSessionId: string
   transcriptPath: string
+  audioPath?: string
   state: "complete" | "interrupted"
   outcome?: LiveTranscriptErrorCode
   projectionRevision: number

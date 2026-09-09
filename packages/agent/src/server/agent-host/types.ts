@@ -3,6 +3,7 @@ import type {
   AgentGateway,
   AgentGatewayErrorDTO,
   AgentScopeVerifier,
+  ResolveAgentAccess,
   AgentSessionRef,
   AgentTool,
   AuthorizedAgentScope,
@@ -16,6 +17,7 @@ import type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeModeAdapter,
+  RuntimeTrustedServiceLeaseV1,
 } from '../runtime/mode'
 import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
@@ -29,7 +31,10 @@ import type {
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
-import type { WorkspaceCredentialAuthorityVerifierV1 } from '../../shared/credentials'
+import type {
+  VerifiedWorkspaceCredentialAuthorityV1,
+  WorkspaceCredentialAuthorityVerifierV1,
+} from '../../shared/credentials'
 import type { CredentialVaultPersistenceV1 } from '../credentials/vault'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
@@ -37,6 +42,7 @@ export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispat
 export type AgentGatewayEffect =
   | 'session.create'
   | 'session.rename'
+  | 'session.archive'
   | 'session.delete'
   | 'session.prompt'
   | 'session.followup'
@@ -78,7 +84,11 @@ export interface AgentRequestLedgerRecordBase {
 }
 
 export type AgentRequestLedgerRecord =
-  | (AgentRequestLedgerRecordBase & { readonly state: 'pending-admission' })
+  | (AgentRequestLedgerRecordBase & {
+      readonly state: 'pending-admission'
+      /** The last owner stopped before ledger admission acceptance or effect dispatch. */
+      readonly retryable?: true
+    })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'admission-accepted'
       readonly admissionReceipt: string
@@ -100,8 +110,10 @@ export type AgentRequestLedgerRecord =
 export interface AgentRequestLedger {
   /** Direct production projections require transactional durable ownership. */
   readonly durability: 'durable-transactional' | 'in-memory'
-  /** Atomic compare-and-create across every process sharing the durable store. */
+  /** Atomically create or reclaim explicitly retryable admission across all store users. */
   prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult>
+  /** Release only a pending claim whose owner has stopped before any effect. */
+  markAdmissionRetryable(key: AgentRequestKey): Promise<void>
   /** All transitions are compare-and-swap against the exact allowed prior state. */
   acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
   beginEffect(key: AgentRequestKey): Promise<void>
@@ -113,7 +125,7 @@ export interface AgentRequestLedger {
 }
 
 export interface AgentRequestLedgerPrepareResult {
-  readonly ownership: 'created' | 'existing'
+  readonly ownership: 'created' | 'reclaimed' | 'existing'
   readonly record: AgentRequestLedgerRecord
 }
 
@@ -157,7 +169,25 @@ export interface AgentInstructionFileRef {
   readonly role: 'persona'
 }
 
-export interface ConfiguredAgentHostAgentSpec {
+/**
+ * An authored instruction file as the fleet composer knows it: a canonical
+ * HOST absolute path, not yet addressed against any workspace.
+ *
+ * The two shapes are deliberately distinct. A multi-workspace host (the CLI
+ * hub, core) serves a DIFFERENT root per request, so composition cannot know
+ * which root a ref should be relative to; only the request can. The spec
+ * therefore carries sources, and `describe` publishes the subset that is
+ * reachable through the root actually being served (gh-1189).
+ */
+export interface AgentInstructionSource {
+  /** Canonical absolute path on the host filesystem. */
+  readonly absolutePath: string
+  readonly role: 'persona'
+}
+
+export const DEFAULT_AGENT_TYPE_ID = 'default'
+
+export interface AgentHostAgentSpec {
   readonly agentTypeId: string
   readonly definition: {
     readonly instructions: string
@@ -178,8 +208,12 @@ export interface ConfiguredAgentHostAgentSpec {
     /** Host path of the package's `knowledge/` folder. */
     readonly rootDir: string
   }
-  /** Authored instruction sources behind `definition.instructions`. */
-  readonly instructionFiles?: readonly AgentInstructionFileRef[]
+  /**
+   * Authored instruction sources behind `definition.instructions`, as host
+   * absolute paths. Addressed against a served workspace root per request by
+   * `describe`, never at composition time.
+   */
+  readonly instructionSources?: readonly AgentInstructionSource[]
   readonly plugins?: readonly {
     /** Canonical app-preflighted plugin ID. */
     readonly name: string
@@ -190,16 +224,13 @@ export interface ConfiguredAgentHostAgentSpec {
     /** RESERVED / NOT ENFORCED. Per-turn token-limit enforcement is future work. */
     readonly maxTokensPerTurn?: number
   }
+  /** Trusted host-owned provisioning grants; absent means no inherited resources. */
+  readonly provisioning?: {
+    readonly inheritSkillPaths?: boolean
+  }
 }
 
-export interface LegacyDefaultAgentHostSpec {
-  readonly agentTypeId: 'default'
-  readonly legacyDefault: true
-}
-
-export type AgentHostAgentSpec =
-  | ConfiguredAgentHostAgentSpec
-  | LegacyDefaultAgentHostSpec
+export type ConfiguredAgentHostAgentSpec = AgentHostAgentSpec
 
 /**
  * Server-only compiler output. App-specific validated handles may be attached,
@@ -248,6 +279,12 @@ export interface ResolvedAgentRuntimeScope {
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
+  /** Joined trusted-plugin cleanup invoked after backend session deletion succeeds. */
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
   readonly includeFilesystemTools?: boolean
   readonly includeUploadTools?: boolean
   readonly sessionDir?: string
@@ -302,6 +339,18 @@ export interface AgentHostEnvironmentScope extends ResolvedEnvironmentScope {
   }) => Promise<readonly RuntimeFilesystemBinding[] | undefined>
 }
 
+export interface AgentHostSessionEnvironmentLease {
+  readonly environmentGenerationId: string
+  readonly bindingGeneration: number
+  readonly signal: AbortSignal
+  acquireTrustedService(input: {
+    readonly leaseId: string
+    readonly idleTtlMs: number
+    readonly absoluteTtlMs: number
+  }): Promise<RuntimeTrustedServiceLeaseV1>
+  release(): void
+}
+
 export interface AgentHostEnvironmentLease {
   readonly workspace: Workspace
   readonly gitWorkspace: Workspace
@@ -331,6 +380,8 @@ export interface AgentHostDescription {
   readonly agents: readonly {
     readonly agentTypeId: string
     readonly label: string
+    /** Exact package-declared version, when this is a configured Agent. */
+    readonly definitionVersion?: string
     /** Computed definition identity digest (instructions + knowledge bytes), when the spec carries one. */
     readonly definitionDigest?: string
   }[]
@@ -349,6 +400,8 @@ export interface CreateAgentHostOptions {
   readonly fleetCompiler: AgentFleetCompiler
   readonly hostId?: string
   readonly scopeVerifier: AgentScopeVerifier
+  /** Optional product-owned Seat/entitlement policy; omission preserves legacy fleet-wide access. */
+  readonly resolveAgentAccess?: ResolveAgentAccess
   readonly runtimeModeAdapter: RuntimeModeAdapter
   readonly runtimeHost?: AgentRuntimeHostOperations
   readonly sessionRoot?: string
@@ -373,8 +426,15 @@ export interface CreateAgentHostOptions {
   readonly requestLedger?: AgentRequestLedger
   /** Durable effect ledger path, independent of transcript/session storage. */
   readonly requestLedgerPath?: string
+  /** App-host-owned durable event store, shared with channel outbound tails. */
+  readonly eventStore?: import('../events/eventStreamStore').EventStreamStore
   /** Explicit test/dev opt-in for an in-memory ledger. */
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
+  /**
+   * Built-in SQLite terminal-payload retention. Values below 24 hours are
+   * raised to 24 hours; omitted retention keeps terminal payloads indefinitely.
+   * Injected ledgers retain ownership of their own storage policy.
+   */
   readonly requestRetentionMs?: number
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number
@@ -391,6 +451,11 @@ export interface CreateAgentHostOptions {
   readonly credentials?: AgentHostCredentialOptionsV1
 }
 
+export interface WorkspaceCredentialLifecycleV1 {
+  /** Irreversibly fences and destroys credential key access for one workspace. */
+  cryptoShredWorkspace(workspaceId: string): Promise<void>
+}
+
 export interface AgentHostCredentialOptionsV1 {
   /** Env-shaped record override; defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>
@@ -398,6 +463,12 @@ export interface AgentHostCredentialOptionsV1 {
   readonly vaultPersistence?: CredentialVaultPersistenceV1
   /** Core-owned authority verifier; pre-binds the credential resolver. */
   readonly authorityVerifier?: WorkspaceCredentialAuthorityVerifierV1
+  /** Host authentication adapter for owner-only credential HTTP routes. */
+  readonly authorizeOwnerRequest?: (
+    request: FastifyRequest,
+  ) => VerifiedWorkspaceCredentialAuthorityV1 | Promise<VerifiedWorkspaceCredentialAuthorityV1>
+  /** Core deletion composition receives only the narrow irreversible lifecycle seam. */
+  readonly onLifecycleReady?: (lifecycle: WorkspaceCredentialLifecycleV1) => void
 }
 
 export interface CreatedAgentHost {
@@ -408,6 +479,12 @@ export interface CreatedAgentHost {
     readonly authorizedScope: AuthorizedAgentScope
     readonly intent: AuthorizedEnvironmentIntent
   }): Promise<AgentHostEnvironmentLease>
+  /** Trusted composition-only acquisition of the addressed session's exact Environment generation. */
+  acquireSessionEnvironment(input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease>
   runWithWorkspaceAgent(
     input: AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,

@@ -360,6 +360,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     })
   }
 
+  const pluginIdByRoot = new Map(plugins.map((plugin) => [resolve(plugin.rootDir), plugin.id]))
   const agentPackages = [...rawPackages].flatMap(([rootDir, raw]) => {
     const projected = agentPackageManifest(raw)
     if (!projected) return []
@@ -372,6 +373,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     ]
     return [{
       rootDir,
+      pluginId: pluginIdByRoot.get(resolve(rootDir)) ?? manifest.boring.agent.definitionId,
       manifest,
       preflight: { ok: packageErrors.length === 0, errors: packageErrors },
     }]

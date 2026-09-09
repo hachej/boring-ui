@@ -45,7 +45,7 @@ All API failures must use the response envelope:
 | `AGENT_FLEET_MODEL_POLICY_UNCOMPILED` | Agent fleet configuration declares a model policy that the app fleet compiler did not resolve | 500 | configure app fleet compiler | error | stable (trusted API) |
 | `AGENT_FLEET_SEAT_PERSONA_INVALID` | `loadConfiguredAgentFleet` excluded a fleet.yaml seat because its persona package failed to materialize or compose | 500 | fix persona package/spec | error | stable (trusted API) |
 | `AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH` | `loadConfiguredAgentFleet` excluded a fleet.yaml seat because a pinned skill's canonical content was unavailable or its digest drifted | 500 | run `pnpm write:skill-digests` or fix the skill file | error | stable (trusted API) |
-| `AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE` | `loadConfiguredAgentFleet` composed a fleet.yaml seat but withheld the link to its persona `instructions.md`. Usually because the host serves a workspace root that does not contain the personas tree (multi-workspace hosts resolve a root per request and pass `workspaceRoot: null`); rarely because the seat name is not a safe path segment | 500 | expected on multi-workspace hosts — the seat runs normally, only the Agent-details instruction link is withheld. On a single-root host, check that `workspaceRoot` is the root the `user` filesystem serves and contains `personasDir`. If the message names the seat, rename it to `[A-Za-z0-9][A-Za-z0-9._-]*` | warn | stable (trusted API) |
+| `AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE` | `GET /api/v1/agents/:agentTypeId/describe` withheld the link to a seat's persona `instructions.md` for THIS request. Usually because the workspace root serving the request does not contain the personas tree (the fleet is composed from a repository root while the request is served from somewhere else); also when the persona canonically resolves outside that root through a symlink, when the source no longer exists, or when the seat name is not a safe path segment. NOT an HTTP error: the describe call still returns 200 — the code is only logged as a warning while that link is omitted from the response | 200 (log-only) | expected whenever a request is served from a workspace the personas are outside of — the seat runs normally, only the Agent-details instruction link is withheld. Serve the request from a workspace that contains the personas tree to get the link. If the message names an unsafe composed path, rename the seat directory to `[A-Za-z0-9][A-Za-z0-9._-]*` | warn | stable (trusted API) |
 | `AGENT_FLEET_CONFIG_FILE_INVALID` | `loadConfiguredAgentFleet`'s fleet.yaml could not be read, parsed, or validated (whole-fleet failure, not per-seat) | 500 | fix `.agents/factory/fleet.yaml` | error | stable (trusted API) |
 | `AGENT_DEFINITION_ID_CONFLICT` | Multiple discovered plugin packages claim the same agent definition id, so every claimant is excluded | 500 | remove or rename conflicting definitions | error | stable (trusted API) |
 | `AGENT_DEFINITION_UNSEATED` | A discovered agent package is not named by the fleet roster and remains inert | 200 | seat it in class-B fleet config if activation is intended | info | stable (trusted API) |
@@ -98,6 +98,7 @@ All API failures must use the response envelope:
 | `ABORTED` | Request cancelled via `AbortSignal` | 499 | retry | warn | stable (public API) |
 | `PAYMENT_REQUIRED` | Billing/metering sink rejected the run (e.g. credits exhausted) | 402 | user-fix | warn | stable (public API) |
 | `MODEL_BUDGET_EXCEEDED` | Governance model budget for this user/model is exhausted | 402 | user-fix | warn | stable (public API) |
+| `MODEL_CONTEXT_WINDOW_EXCEEDED` | Provider rejects a model request because its conversation context is too large | 413 | compact/retry or start a smaller chat | warn | stable (public API) |
 | `METERING_UNSUPPORTED_COMMAND` | Slash-command execution is disabled because metering cannot yet reserve/settle that path | 409 | user-fix | warn | stable (public API) |
 | `SESSION_NOT_FOUND` | Session id does not exist | 404 | user-fix | warn | stable (public API) |
 | `SESSION_LOCKED` | Session currently locked by concurrent writer | 409 | retry | warn | stable (public API) |
@@ -146,6 +147,15 @@ All API failures must use the response envelope:
 | `RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID` | A readonly primary-workspace path is not a normalized workspace-relative path | 400 | user-fix | warn | stable (public API) |
 | `EVENT_STORE_OPEN_FAILED` | `BORING_CHAT_DURABLE_STREAM=1` but the SQLite event-stream store could not be opened: either no host-resolvable root exists (no `sessionRoot` and no host storage root — this deliberately never falls back to an in-sandbox/guest path) or `openDatabase` failed at the resolved path (bad path/permissions); reported via telemetry alongside `DURABLE_STREAM_UNAVAILABLE` | n/a (boot-time diagnostic, not an HTTP response) | report-bug | error | stable (public API) |
 | `DURABLE_STREAM_UNAVAILABLE` | `BORING_CHAT_DURABLE_STREAM=1` but the durable event-stream store could not be opened; boot fails loudly with the underlying cause instead of silently falling back to in-memory streaming (flag off = in-memory, unchanged) | n/a (boot-time failure, not an HTTP response) | user-fix | error | stable (public API) |
+| `CHANNEL_DURABLE_STREAM_REQUIRED` | `BORING_AGENT_CHANNELS=1` was set without durable chat streaming; boot fails rather than accepting channel traffic that cannot resume | n/a (boot-time failure) | user-fix | error | stable (public API) |
+| `CHANNEL_INBOUND_ACCEPTED` | The provider message was durably deduplicated/enqueued and asynchronous channel processing may begin | 200 | none | info | stable (public API) |
+| `CHANNEL_UNKNOWN_BINDING` | Channel inbound did not match an active provisioned binding; no session or identity was created | 200 | user-fix | warn | stable (public API) |
+| `CHANNEL_INBOUND_PARKED` | Channel inbound exhausted bounded delivery retries and was parked so later messages are not wedged | n/a (worker diagnostic) | retry | warn | stable (public API) |
+| `CHANNEL_OUTBOUND_PARKED` | A completed channel turn exhausted bounded send retries and was parked so later turns are not wedged | n/a (worker diagnostic) | retry | warn | stable (public API) |
+| `CHANNEL_TURN_STALLED` | A channel turn did not reach a terminal event before its configured deadline; a notice was sent and the observed range was parked | n/a (worker diagnostic) | retry | warn | stable (public API) |
+| `CHANNEL_BINDING_BUSY` | Provisioning could not replace a binding while its current generation held a live outbound-delivery lease | n/a (admin operation) | retry | warn | stable (public API) |
+| `CHANNEL_BINDING_REVOKED` | A channel binding was revoked while queued work was being resolved | n/a (worker diagnostic) | user-fix | warn | stable (public API) |
+| `SESSION_CREATE_TIMEOUT` | The owner-token channel session reservation did not reach ready state within bounded reservation cycles | n/a (worker diagnostic) | retry | warn | stable (public API) |
 | `ERR_NOT_IMPLEMENTED_UNTIL_T1` | Headless core method exists but the durable T1 implementation has not landed yet | 501 | retry-after-upgrade | warn | stable (public API) |
 | `INTERNAL_ERROR` | Catch-all internal failure | 500 | report-bug | error | internal (may change) |
 | `AR1_SHARE_NOT_FOUND` | `GET /a/:id` deep link: no such Lane W share entry, or the entry belongs to a workspace the requester is not authorized/scoped to (identical response either way — no existence oracle) | 404 | user-fix | warn | stable (public API) |
@@ -176,6 +186,11 @@ credential value, a workspace DEK, or KEK material.
 | `CREDENTIAL_LEASE_EXPIRED` | A resolved credential lease was used after disposal or expiry | 410 | resolve a fresh lease | warn | stable (trusted API) |
 | `CREDENTIAL_OAUTH_STATE_INVALID` | A one-use OAuth state transaction was unknown, replayed, or expired | 400 | restart the connect flow | warn | stable (trusted API) |
 | `CREDENTIAL_OAUTH_REFRESH_FAILED` | Upstream refused a refresh-token exchange | 401 | re-auth | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_UNAUTHORIZED` | Provider rejected a pending API key before persistence | 401 | correct the key and retry | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_RATE_LIMITED` | Provider rate-limited pending API-key validation | 429 | retry later | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_UNAVAILABLE` | Provider validation transport was unavailable | 503 | retry later | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_TIMEOUT` | Provider validation exceeded the bounded timeout | 504 | retry later | warn | stable (trusted API) |
+| `CREDENTIAL_VALIDATION_UNSUPPORTED` | Provider lacks a trusted API-key validation probe | 400 | use a supported provider/auth method | warn | stable (trusted API) |
 
 ## Readiness error details
 

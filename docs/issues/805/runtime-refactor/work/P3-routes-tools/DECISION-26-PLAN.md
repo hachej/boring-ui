@@ -30,12 +30,12 @@ The governing sources are:
 
 - [Decision 26](../../../../../DECISIONS.md), including its small-step and
   evidence-before-extraction rules;
-- [the active #391 roadmap](../../../../391/plan.md) and
-  [roadmap alignment](../../../../391/ROADMAP-ALIGNMENT.md);
-- [agent consumption modes](../../../../391/AGENT-CONSUMPTION-MODES.md);
-- [agent-cloud vision](../../../../391/AGENT-CLOUD-VISION.md), used as a
+- [the active #391 roadmap](../../../../../plans/agent-runtime/fleet-and-environments/plan.md) and
+  [roadmap alignment](../../../../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md);
+- [agent consumption modes](../../../../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md);
+- [agent-cloud vision](../../../../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md), used as a
   non-binding control-plane/data-plane constraint; and
-- [coding invariants](../../../../../kanzen/procedures/coding-invariants.md),
+- [coding invariants](../../../../../procedures/coding-invariants.md),
   especially invariant 5 (Workspace + Sandbox are one runtime-mode pair) and
   invariant 9 (Pi file/shell tools execute through factories plus Operations
   adapters).

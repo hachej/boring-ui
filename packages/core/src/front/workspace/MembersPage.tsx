@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -24,12 +25,16 @@ import {
   LoadingState,
   Notice,
 } from '@hachej/boring-ui-kit'
-import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
+import {
+  useCurrentWorkspace,
+  useWorkspaceRole,
+  WORKSPACES_QUERY_KEY,
+} from '../WorkspaceAuthProvider.js'
 import { useSession } from '../auth/AuthProvider.js'
 import { useWorkspaceMembers } from '../hooks/useWorkspaceMembers.js'
 import type { EnrichedMember } from '../hooks/useWorkspaceMembers.js'
 import { apiFetch, getHttpErrorDetail } from '../utils.js'
-import type { MemberRole } from '../../shared/types.js'
+import type { MemberRole, Workspace } from '../../shared/types.js'
 
 const ROLE_OPTIONS: MemberRole[] = ['owner', 'editor', 'viewer']
 
@@ -38,6 +43,7 @@ export function MembersPage() {
   const myRole = useWorkspaceRole()
   const session = useSession()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const workspaceId = workspace?.id ?? ''
   const currentUserId = session.data?.user?.id ?? ''
@@ -84,10 +90,31 @@ export function MembersPage() {
         `/api/v1/workspaces/${encodedWorkspaceId}/members/${encodeURIComponent(userId)}`,
         { method: 'DELETE' },
       )
+      return { userId }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId] })
+    onSuccess: ({ userId }) => {
       setConfirmTarget(null)
+      if (userId === currentUserId) {
+        // We just removed ourselves. WorkspaceAuthProvider stays mounted
+        // across this navigation and resolves "/" synchronously from
+        // whatever is already in the query cache — an invalidate-only
+        // update races that resolution: the still-cached workspaces list
+        // (with this workspace as isDefault/first, plus its still-cached
+        // detail) can redirect straight back into the workspace we just
+        // left, before the invalidated refetch lands. Filter this
+        // workspace out of the cached list atomically, in this same
+        // callback, so "/" never observes a list that still contains it.
+        // (invalidateQueries afterward still reconciles with the server
+        // in the background, e.g. if another workspace was also removed
+        // concurrently.)
+        queryClient.setQueryData<Workspace[]>(WORKSPACES_QUERY_KEY, (existing) =>
+          existing ? existing.filter((w) => w.id !== workspaceId) : existing,
+        )
+        queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY })
+        navigate('/', { replace: true })
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ['members', workspaceId] })
     },
     onError: (err: unknown) => {
       const detail = getHttpErrorDetail(err)

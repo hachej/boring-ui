@@ -31,7 +31,10 @@ surface per agent), Environment leases, per-agent model policy
 core, CLI, playground, delegation) composing through it, enforced by CI
 invariants. Also shipped: A1 authored-agent groundwork, boring-bash/sandbox
 extraction, BYOK credential-injection contract, D1 tenant provisioning.
-Authority for what exists: `docs/issues/909/plan.md` §6 (frozen).
+Authority for what exists: `packages/agent/docs/AGENT_GATEWAY_V0.md` (the
+binding contract, colocated with its types, per D29). The gateway plan's §6
+(`docs/plans/agent-runtime/gateway/plan.md`) is historical — its own header
+says it drifted and defers to the package contract.
 
 ## Wave 1 — NOW: the multi-agent console (beads .27 → .31)
 
@@ -61,7 +64,7 @@ slice absorbed by .27), `.28` (re-land native sessions + rename menu, after
   — the store and its consumer are both written, and no production caller
   passes `eventStore`. Resolve the agent-keying question (§Lane reality)
   BEFORE any durable schema is written.
-- **F-graph execution begins** (Decision 28 detail: `docs/issues/391/plan.md`):
+- **F-graph execution begins** (Decision 28 detail: `docs/plans/agent-runtime/fleet-and-environments/plan.md`):
   F0b inventory → F1/F2 Environment contracts + boring-bash service → onward.
   F0a paperwork (the rebased #904 with its three shipped-reality amendments)
   is ratified during Wave 1; F1+ execution does NOT start before the Wave 1
@@ -166,6 +169,9 @@ ingress is hardcoded off in every released host.
 `sessions/<sessionId>` — `agentTypeId` is in the URL but in neither. Not a
 live defect (ids are minted unique; cross-agent addressing is rejected), but
 durable rows would bake the omission in.
+*A1 errata (2026-08-30): the `userId` slot is already empty on every addressed
+route, and the durable stream path is now
+`sessions/<enc(workspaceScopeId)>/<enc(sessionId)>`.*
 
 **Bookkeeping correction:** bead `0jpy.15` ("duplicate AgentLiveEventBuffer")
 has a false premise — there is one such class with no external consumers. The
@@ -175,9 +181,9 @@ real duplication is two replay sources. Rewrite the bead before working it.
 
 | Folder | Status |
 |---|---|
-| `docs/issues/909/` | Frozen record of what shipped + follow-up beads. Binding for the Gateway contract (§6) |
-| `docs/issues/391/` | Decision-28 detail for Waves 2+. Binding once its wave opens |
-| `docs/issues/805/` | A1 shipped; remainder absorbed into 391's F-graph. Reference only |
+| AgentGateway planning area | Historical; `packages/agent/docs/AGENT_GATEWAY_V0.md` binds the Gateway contract |
+| Fleet/environment planning area | Decision-28 detail for Waves 2+; follow #1409's merged canonical moved path |
+| A1 planning area | A1 shipped; remainder absorbed into Decision 28's F-graph. Reference only |
 | `docs/issues/808/`, `820/`, `806/`, `900/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
 
 Lane tracking issues (each with a draft seed PR): #1009 streaming, #1010 BYOK,
@@ -218,8 +224,8 @@ Decision 30 (presentation-only landings).
   (#1141); readiness/observability surface in review (#1142).
 - **Wave 3 opened early, per its own triggers firing.** BYOK: KmsBackend vault
   + local-KEK backend merged (#1132); durable credential persistence in review
-  (#1145); plans r3 ratified (#1137). External MCP: user-registered typed MCP
-  source with SSRF-safe validation (#1130), per-agent MCP grants via capability
+  (#1145); plans r3 ratified (#1137). Outbound MCP Connectors: user-registered
+  typed MCP source with SSRF-safe validation (#1130), per-agent MCP grants via capability
   projection (#1131) merged; connect-time SSRF enforcement in review (#1135).
 - **Landing lane revived within D28** (presentation-only, zero authority
   effects, per the #1153 memo): config-driven bounded hostname landings
@@ -290,3 +296,596 @@ Sequencing consequences (ratified):
   continue; it never preempts landing, BYOK, or #1107.
 - **#1127 channels: deprioritized.**
 - **UI polish loop: standing low-effort background work** — keeps running.
+
+---
+
+## Amendment 2026-08-26 — the premises re-sequencing
+
+Everything above stands as written and is not rewritten. This section records
+what has landed since 2026-08-08 and **supersedes the wave sequencing** with a
+premises-first ordering. This file remains the **sole sequencing authority**:
+orchestrators dispatch from the waves named here, and where an issue plan, a
+bead priority, or a plan folder disagrees with this section, this section wins
+until the owner amends it.
+
+Companion analysis:
+[`state/2026-08-26.md`](state/2026-08-26.md) — full snapshot, verified against
+`origin/main` at `98619e9b8`. Canonical plan pack:
+[#1409](https://github.com/hachej/boring-ui/pull/1409)
+(`docs/plans/multiagent-shell/`, chapter 1 `premises.md` owns the program).
+Rulings ledger: [#1399](https://github.com/hachej/boring-ui/issues/1399).
+Ratifications: [#1401](https://github.com/hachej/boring-ui/pull/1401) (MERGED)
+and [#1416](https://github.com/hachej/boring-ui/pull/1416) (CLOSED, absorbed into
+#1409 — #1409 was the ratification instrument and is **MERGED 2026-08-27**
+(`eb574cfe7`), so `RECONCILIATION.md` §8 is ratified; §9 landed after it via
+the second-grill repair PR).
+
+### Naming convention (applies from here down)
+
+Roadmap items carry **descriptive names**, not letter-number codes. Each name
+below shows its old code **once**, in parentheses, so existing beads and plan
+docs stay traceable; after that the name is the only handle. Bead IDs are
+unchanged — they are tracker handles, not prose.
+
+### Reconciling the old wave numbering — honest supersession
+
+The four waves above were correct for their moment and are **not renumbered**.
+Their disposition today:
+
+| Old wave | Disposition |
+|---|---|
+| Wave 1 — multi-agent console | **Complete and closed.** Its 08-08 residue merged: #1147, #1156, #1165. |
+| Wave 2 — streaming durability | **Complete at conformance Level B** (#1128, #1141, #1142). It **reopens at Level D** as [durable-streams] below — a new obligation, not a reopened defect. |
+| Wave 3 — BYOK / MCP / authored catalog | **Complete except BYOK.** MCP closed (#1135) and correctly paused. Authored catalog delivered (#1202 merged 08-11); epic #1107 closed as a duplicate surface, work lives in the `xp3s` beads. BYOK persistence (#1145) remains open since 08-07 and is now carried in the commercial wave's platform half. |
+| Wave 4 — v2 era | **Still frozen for implementation.** Its architecture is now documented and merged (#1220 / #1081, sovereign sandbox service). Documentation is not a gate opening. |
+| Landing lane (off-wave) | **Superseded 2026-08-10 by owner ruling** (Option B): per-agent landing pages are an app concern. #1154 closed; #1156/#1165 stayed platform-side and merged. |
+| Wave 1.5 (08-08 amendment) | **Partly overtaken.** Its landing half moved app-side per the ruling above; the "one named vertical agent end to end" objective moves to the commercial wave, tenant-repo side. |
+
+**Nothing above is retracted.** The multi-agent console remains the product
+thrust and the vertical-agent semantic standard (ratified 2026-08-08) is
+unchanged. What changes is the *order of what is built next*.
+
+### The two waves that run now, side by side
+
+Neither gates the other. That independence is the point of the
+premises-never-pricing split (ratified 2026-08-08): a commercial decision must
+never reorder the kernel, and kernel sequencing must never be justified by an
+unnamed offer.
+
+#### Wave A — Premises (platform, NOW)
+
+Kernel capabilities land and are **proven** before the surface built on them.
+Two rulings set the tone, both from the owner interview of 2026-08-26:
+**the engine does not ship on conformance Level B**, and **the thread storage
+model is not decided**. Full program:
+`docs/plans/multiagent-shell/premises.md` in #1409.
+
+> **Owner amendments 2026-08-27 (consolidated) — spikes ran, execution
+> split.** Two short spikes ran the same day, before [durable-streams]
+> commits any implementation schema: the **pi-0.84.3 core-adoption spike**
+> (`wt-391-forward-9n6w` — the pi framework shipped its v4 durable core and
+> deleted the line our pin sits on; the spike proves the migration path
+> under the D29 gateway and sizes what our ~1,700-line bespoke stream
+> surface keeps vs delegates) and the **storage-model competitor research**
+> (`wt-391-forward-shell-ngfs.13.1`). Both completed: the core spike's
+> verdict is **do not wire pi 0.84.3** (published harness = scaffold, not a
+> durable substrate; report in the shell pack's `research/`), and the P2
+> competitor research is done. **Starts now:** P1-A, the substrate-neutral
+> layer — the private harness backend seam under D29
+> (`AgentHarnessBackend`), gateway request/effect ledger, effect admission,
+> activity recovery, resume protocol — plus the paused-human and headless
+> conformance journeys. **P1-B (event-stream backend): the pi wait is
+> REMOVED** (owner ruling, second grill 2026-08-27 — RECONCILIATION §9c).
+> P1-B builds Boring's own event backend behind the `AgentHarnessBackend`
+> seam, after P1-A establishes the seam; no calendar check-in, no
+> wait-for-release. The `pi-v2-alignment.md` criteria survive only as the
+> bar a future pi release must beat (including migration cost) to replace
+> that backend. P1-C (Level-D completion, default-on, D29 evidence) runs
+> after P1-B. Gating precision: the headless journey runs parallel and never
+> gates substrate-free chrome, but it is required evidence for P1
+> completion — and therefore indirectly gates every Job Thread or
+> Thread-view slice that consumes P1.
+
+1. **[durable-streams]** (epic `wt-391-forward-9p50`, formerly P1) — **the
+   keystone.** Both spikes have reported; P1-A is dispatchable NOW. Structure
+   per the amendment box above and `premises.md` P1: **P1-A** = five beads
+   (A1 identity/migration, A2 harness seam, A3 request/effect/attention
+   durability, A4 activity/resume, A5 headless + paused-human proofs — A5
+   after A2–A4); **P1-B** = the Boring event backend behind the seam (pi wait
+   removed, §9c); **P1-C** = Level-D completion + `BORING_CHAT_DURABLE_STREAM`
+   default-on + the dated Decision 29 re-evaluation addendum (owner merge =
+   ratification). This is D29's own named trigger arriving
+   (`DECISIONS.md:472`/`:476`), not new scope. The old "two one-session
+   slices" estimate is withdrawn. All P0; downstream engine work depends on
+   P1-C.
+2. **[thread-storage-spike]** (epic `wt-391-forward-shell-ngfs.13`, formerly
+   P2) — **rescoped 2026-08-27.** Child `.13.1` (competitor study) is **DONE**
+   (`research/thread-storage-competitor-study.md`). The value-root half is
+   **ruled, not spiked** (RECONCILIATION §9a: Thread = job root, 0..n
+   Sessions). Child `.13.2` shrinks to the storage-**shape** spike only —
+   first-class Thread stream vs projection over Session records — and starts
+   after durable-streams P1-A establishes the Level D shape. It decides what
+   the owner gate may choose for engine storage and #1355 references.
+3. **[seat-audit-attribution]** (epic `wt-391-forward-shell-ngfs.14`, formerly
+   P3 / seat storage C7) — child `.14.1` lands host catalog/envelope identity;
+   child `.14.2` projects immutable `seatId` through messages, trajectories,
+   artifacts and usage. Sequencing, not new ontology: already ratified as
+   required (`docs/plans/long-term/ratified/RECONCILIATION.md:153`).
+   Display-only participant chips are **rejected**. Two one-session slices with
+   genuine implementation uncertainty.
+4. **[saved-views-kernel]** (formerly P4) — the first ratified View slice, the
+   contract as a set. **Unsized; needs its own planning pass before estimation.**
+   Does not block a view library over files and built-in views.
+5. **[merge-queue]** (formerly P5) — a standing obligation, not a bead: this
+   list gets a pass **before any premise bead is dispatched**. Current path
+   items: #1382 (and the eval suite stacked behind it) — the sole remaining
+   item as of 2026-08-31 (#1343 closed superseded; #1376, #1386 merged);
+   kernel-adjacent but off-path: #1145, #1166, #1288. #1409 is MERGED and
+   #1416 is closed-absorbed into it — neither is a queue item. Also decide
+   the two orphaned weekend branches (`weekend/k7-agent-packages`,
+   `weekend/factory-check`).
+6. **[gate-re-ruling]** (formerly P6) — re-rule both owner gates after
+   [thread-storage-spike] reports, dropping what it answered. Minutes of owner
+   time; cannot happen early.
+
+**Runnable in parallel, substrate-free by construction** — a property that can
+be checked, not an exemption granted: **[shell-layout]** (formerly L1),
+**[shell-location]** (formerly L1.5), and **[shell-navigation]** (formerly L2a,
+nav chrome with counts **absent** as a valid state). Everything else in the
+shell waits.
+
+**Re-gated behind the premises.** The engine slices (formerly S1–S6) wait on
+[durable-streams] and consume [thread-storage-spike]'s findings; the interim
+Level-B receipt machinery is `descoped-pending-P1`. The thread-rendering shell
+slice **[thread-view]** (formerly L4) waits on all three of
+[durable-streams], [thread-storage-spike] and [seat-audit-attribution]. Saved
+views in the view library wait on [saved-views-kernel]. Relay-vs-blackboard is
+decided **after** [durable-streams], with both candidates live.
+
+**Done-bar, unchanged in spirit from Wave 1:** a premise is done when it is
+*proven*, not when it compiles. Note against that bar that the visual-review
+harness is broken on clean main ([#1390](https://github.com/hachej/boring-ui/issues/1390))
+— repair it before the shell slices need reviewer-agent proof.
+
+#### Wave B — Commercial (tenant repos, in parallel)
+
+**Sequencing for this wave lives in the Seneca tenant app repo's roadmap
+(`hachej/boring-ui-constellation`), not here.** Pricing topology, packaging,
+vertical-agent go-to-market order, landing-page content and outreach motions are
+deliberately absent from this file. The 2026-08-10 landing ruling is the
+precedent: per-agent landing pages are an app concern, and #1154 was closed on
+exactly that boundary.
+
+What stays platform-side, and is therefore dispatchable from here:
+
+- **BYOK durable credential persistence (#1145)** — open since 08-07 and the
+  oldest item in the queue. It is the credential substrate any per-client offer
+  needs; it is not on the premise path and must not preempt [durable-streams].
+- **Usage facts (#819)** — unchanged from 08-08: the platform emits facts only
+  when a usage-priced offer pulls it; apps own billing. Still not a blocker.
+- **Provenance-labeled provider rows** in the model picker — the neutral
+  substrate, no pricing semantics.
+
+**The boundary test, for future proposals:** if a change encodes what something
+costs, who is billed, or how an offer is packaged, it belongs in the tenant
+repo. If it encodes *what a workspace can be told about credentials, usage, or
+attribution*, it belongs here.
+
+### Lane priorities (amended 2026-08-26)
+
+Carried unchanged from 2026-08-08 unless noted: #1123 executable environments
+ACTIVE at LOW priority; #1127 channels deprioritized; UI polish a standing
+low-effort background loop. **New:** nothing in the shell or engine is
+dispatchable except the three substrate-free chrome slices until the premises
+they depend on have landed.
+
+### Decision log (owner, 2026-08-26)
+
+| Decision | Ruling |
+|---|---|
+| Sequencing | **Premises before surface.** Kernel capabilities land and are proven before the product surface built on them. Supersedes the wave ordering above without retracting it. |
+| Keystone | **[durable-streams] first.** Highest-leverage node; its two children are P0 and downstream engine work depends on the rollout child. |
+| Engine substrate | **The engine does not ship on conformance Level B.** Interim receipt machinery `descoped-pending-P1`; relay-vs-blackboard decided after the substrate is real, both candidates live. |
+| Thread storage model | **NOT decided.** Routed to [thread-storage-spike]; the plan-level noun recommendation is withdrawn. Nothing in the ratified product surface presumes its outcome. |
+| Attribution | **Audit-grade from day one.** Display-only participant chips rejected; `seatId` in the seat catalogue pulled forward. |
+| Thread noun | **Settled** — a Thread may span multiple Seats, projected as one timeline; one Thread per job (#1401, MERGED 2026-08-26). "Channel" stays reserved for transport/ingress. |
+| Thread ↔ Objective | **Optional one-way link.** An Objective is not mandatory for a job. |
+| Saved views | **Wait for [saved-views-kernel].** A first view library is files + built-in views only; no lookalike descriptor minted in the product layer meanwhile. |
+| Nav extensibility | **Plugins CAN add top-level entries.** The closed-IA recommendation was ruled against; crowding risk noted and accepted. |
+| Deep links | **The shell owns the serializable location; the host owns URL translation.** |
+| Specification | **The design canvas and `weekend/saas-hybrid-spike` are ratified specification artifacts** — what implementation is checked against, not proposals awaiting a slot (unlike #1409 at the time; since merged 2026-08-27). Their chat column and thread transcript are explicitly visual fixtures; that is not an implementation claim. |
+| Commercial split | **Reaffirmed and extended.** Premises never pricing: commercial sequencing lives in the tenant repo; the platform ships credential, attribution and usage-fact substrate only. Precedent: the 2026-08-10 landing ruling. |
+| Merge discipline | **Zero autonomous merges holds** (verified: all 31 merges in the 08-22→08-26 window were owner-performed). **Review ladders did not happen** — nine weekend PRs produced zero formal review submissions. Restore the review gate before the premise burn, and never close a PR without a recorded reason (#1380 and #1381 were closed silently). |
+
+---
+
+## Amendment 2026-08-27 (evening) — second-grill rulings + drift repair
+
+A full-repo second-opinion review of the merged #1409 found the strategy
+sound but the repository representing several versions of it as
+simultaneously executable. The owner grilled through every open branch the
+same day. Rulings (ontology halves recorded in
+`docs/plans/long-term/ratified/RECONCILIATION.md` §9; this section is the
+sequencing record):
+
+| Decision | Ruling |
+|---|---|
+| Thread/Session | **R-c amended (§9a).** Thread = durable job root, one per job; Session = one runtime conversation; 1 Thread : 0..n Sessions (headless = zero). Channel stays transport. The P2 value-root question is ruled, not spiked — a spike over pre-excluded candidates is ceremony. |
+| Thread storage | **Only the shape is still open** — first-class Thread stream vs projection over Sessions. `.13.1` research DONE; `.13.2` rescoped to shape-only, after P1-A. |
+| Transcript authorship | **Multi-author (§9b).** One composer, several named agents visibly authoring posts with chips and join/handoff/left markers. "One voice / workers hidden" retired; formula = one job, one composer, explicit specialists. The orchestrator holds its own Seat. |
+| Pi gate | **Removed (§9c).** No 2026-09-10 ritual, no wait-for-release. P1-B builds the Boring event backend behind the `AgentHarnessBackend` seam; pi adoptable later only past the behavior + migration-cost bar. |
+| P1-A granularity | **Five beads**, A1–A5, individually reviewable (the single `9p50.1` bead under-represented the state machine). |
+| Relay engine plan | **Demoted to historical candidate** (`multiagent-shell/research/candidates/`). Its S1–S6 embedded superseded assumptions (display-only participant ids, satisfied-Q1 claims, relay-first shape). A new engine plan is written after the shape spike + gate re-rule, from §9's rulings. |
+| Doc governance | **Prose repair + tiny lint.** `scripts/check-strategy-docs.sh` fails CI on known drift markers (merged PRs described as pending, withdrawn estimates in executable sections, missing candidate banners). No YAML state machine. |
+| Shell claims | **Left as-is by explicit owner choice** — the "design is settled" framing stands; multi-agent interaction, View-side chat, and mobile remain evidence-gated in fact but are not re-worded. |
+
+Dispatch consequence: **P1-A beads (A1–A5) and P1-B are the active premise
+lane**; P1-B after A2. `.13.2` (shape spike) after P1-A. Everything else in
+the 2026-08-26 amendment stands as written.
+
+---
+
+## Amendment 2026-08-27 (night) — strategic-audit fold
+
+An external Seneca × Boring strategic audit (business/GTM level) was reviewed
+against post-#1433 main. Most of its recommendations were already ratified
+position (Work-as-root §9a, one-family-three-jobs, headless-inside-a-product,
+Seneca-as-consumer, review-loop freeze, channels/marketplace deferral). Three
+genuinely open items were ruled:
+
+| Decision | Ruling |
+|---|---|
+| Thread staffing | **Two first-class modes (§10a).** Default = one bounded agent, grown on measured evidence; alternative = a predefined fleet declared by the agent/vertical package. The future engine plan optimizes the single-agent path first. |
+| Horizon ladder | **Split.** Of the audit's Horizon 0–5 ladder, only Horizon 0 (the internal factory as first consumer) and Horizon 2 (a second consumer proving the substrate) are platform framing — both already implicit here. Horizons 1/3/4/5 (first paid product, packages/distribution, developer cloud, recursive improvement) are commercial sequencing and live in the Seneca tenant repo's roadmap, per the premises-never-pricing split. Nothing new is dispatchable from the ladder. |
+| Agent presence | **Vocabulary recorded (§10b):** `hidden · ambient · drawer · page · roster`; `ambient` default for vertical SaaS, Meridian = `roster` flagship. Naming only. |
+
+The audit's decision filter (buyer / work-unit / feedback / reuse /
+irreversibility / complexity tests) is adopted as reviewer guidance for
+future capability proposals — a filter, not a gate. No premise, bead, or
+queue item changes; P1-A dispatch is unaffected.
+## Amendment 2026-08-26 — one coherent inbound + outbound MCP program
+
+The owner activates one coordinated **planning program**, carried by one PR,
+while preserving two distinct product planes:
+
+1. **Inbound MCP Access (#806):** an external MCP client authorizes one human
+   and one workspace, discovers available Agents and their exact resident native
+   tools, invokes qualified tools, runs Agents, and receives live same-workspace
+   artifacts. Its canonical plan is
+   [`../issues/806/external-workspace-mcp-plan.md`](../issues/806/external-workspace-mcp-plan.md).
+2. **Outbound MCP Connectors (#900/#1011):** a Boring Agent discovers and uses
+   external provider capabilities. The current sellable Composio plan is
+   [`../issues/900/plan.md`](../issues/900/plan.md); generic registration remains
+   #1011.
+
+The planes share **only** canonical kernel seams: host authority,
+Workspace/Seat projection, native-tool identity, C5 approval, C6 accepted-work,
+C2 first-class child execution, revocation, artifact/usage facts, and
+sandbox/runtime bindings. They do **not** share transport direction, OAuth
+grants, provider registration, secret custody, commercial credits/pricing, or
+product UI. Inbound bearer/grant material never becomes an outbound provider
+credential; outbound operator/provider secrets never enter inbound tokens,
+URLs, tool arguments, artifacts, or audit payloads.
+
+Cross-plane ruling: inbound Access may expose the exact resident Connector
+`AgentTool`, but it never materializes provider-catalog children, bypasses
+Connector/provider approval, creates a second runtime/store/ledger, or flattens
+C2 parent/child identity. Effectful full-catalog Connector execution remains
+blocked until C2's complete canonical predecessor closure and the Connector's
+C5×C6/C2 conformance—including artifact and usage attribution to the real
+child—is green. Generic Boring emits facts; the app owns credits, pricing, and
+checkout.
+
+This amendment supersedes prior uses of ambiguous “External MCP”: #806 is
+**inbound MCP Access**; #900/#1011 are **outbound MCP Connectors**. Landing this
+combined planning PR makes both linked plans the coherent planning authority.
+It does not waive either plan's blockers, make deferred Beads dispatchable, or
+authorize implementation before their named frozen-DAG and owner gates.
+
+### Relationship to the merged premises-first program (#1409)
+
+PR #1409 is merged and remains the ratified sequencing instrument; this
+consistency pass originally reviewed its owner-authored head
+`7732c191698fed3d940565a1c874075baa2a7a19`. DIRECTION remains the sole dispatch
+queue: this MCP amendment adds planning records only. Landing #1415 places
+neither #806 nor #900/#1011 in Wave A or Wave B; a later explicit owner
+amendment must place an exact MCP slice in the post-premises queue before
+dispatch. A plan, Bead, tracker, or
+implementation brief cannot substitute for that placement. The old Wave-3
+“External MCP complete/paused” statement describes the earlier generic source,
+registration, and read-only Connector work, not the new inbound #806 edge or
+full-catalog #900 execution plan.
+
+Applicable MCP effect/run slices consume #1409's exact
+`[durable-streams]` rollout child `wt-391-forward-9p50.2` (after Level-D child
+`.1`) and `[seat-audit-attribution]` projection child
+`wt-391-forward-shell-ngfs.14.2` (after host-catalog child `.14.1`) rather than
+creating parallel stores or display-only provenance. These rows exist at
+#1409's exact reviewed head; MCP dependencies must target the completion
+children, not their non-dispatchable program epics.
+
+Neither MCP plan selects the unresolved Thread storage representation, creates
+an A2A/MCP loopback, widens the frozen seven-method `AgentGateway`, or adds a
+second `createAgentHost()` construction funnel. #1409's canonical
+`docs/vision/` and non-scheduling `docs/roadmap/` layers remain above these
+issue details; this amendment neither duplicates nor contradicts them. Exact
+synthetic merge analysis reports content conflicts in `.beads/issues.jsonl`,
+this file, and the #806/#807 tombstones; merge resolution must preserve both
+dated amendments, both tombstones, all #1409 Beads, the eight gh900 Beads, and
+#1409's path migrations. The resolved tree must contain
+`docs/plans/agent-runtime/gateway/plan.md` and
+`docs/plans/agent-runtime/fleet-and-environments/plan.md`; retaining their old
+issue-folder locations as canonical is a failed merge.
+
+---
+
+## Amendment 2026-09-07 — first post-premises MCP wave
+
+The owner-approved combined MCP plan is now placed behind the premises-first
+program without merging its two product planes. **Inbound MCP Access (#806)**
+remains the external-client edge into one authorized human and workspace;
+**outbound MCP Connectors (#900/#1011)** remain Agent-initiated access to
+external providers. The separation, shared-seams-only rule, secret boundaries,
+and all protected authority and policy boundaries in the preceding amendment
+continue to bind. #1409 remains the premises and sequencing authority above
+this wave; this placement neither shortens its active premise work nor changes
+any frozen architecture dependency.
+
+### Post-premises MCP wave — exact first placements
+
+Only these two bounded entries are placed. Placement permits the Orchestrator
+to undefer a matching Definition-of-Ready tracker after all gates named below
+are represented; it is not an implementation claim, proof waiver, merge, or
+permission to revive PR #1309 or create substitute kernel trackers.
+
+1. **Inbound MCP Access #806 Slice 0 — removal-only cleanup.** Run the exact
+   reference, symbol, path, configuration, and deployment audit, then remove
+   only the dark app-specific `/mcp/managed-agent` tracer integration authorized
+   by the accepted #806 plan. This slice deletes no generic Agent MCP/share
+   module, runtime, data, credential, session, run, artifact, or authority seam
+   and adds no feature seam. It is explicitly independent of the frozen `P-1`
+   feature-implementation barrier. It remains gated by the landed and accepted
+   combined plan and pointer migration, this exact DIRECTION placement, its
+   separately approved implementation tracker/brief, and the plan's exact audit
+   and deletion boundary. #806 feature Slices 1–8 are **not placed** here and
+   retain `P-1` plus every slice-specific predecessor and protected owner gate.
+2. **Outbound MCP Connectors #900.1 — discovery only, serially
+   `900.1a → 900.1b → 900.1c`.** `900.1a` first establishes shared private
+   Composio protocol custody for curated and catalog Session consumers; it
+   remains blocked on provider-supported create reconciliation (or the accepted
+   finite-TTL operator proof) against the approved host control-plane durable
+   store with versioned opaque secret handles. The approved shared transport
+   hardening does not merge curated and catalog product semantics. `900.1b`
+   follows only after `900.1a` and adds the host-authoritative, bounded fair
+   search tracer. `900.1c` follows only after `900.1b` and adds exact describe
+   plus sanitized live discovery qualification. All three remain search/
+   describe discovery: execution is blocked, account authority is not inferred,
+   and no provider child is materialized or dispatched.
+
+The Architecture Steward remains the sole owner of exact C2 frozen-DAG
+predecessor and conformance tracking. This wave creates no local replacement.
+Outbound `900.2+`, account migration/relink execution, approval, accepted work,
+provider dispatch, and UI are **not placed**; they retain the approved explicit-
+relink policy, C2's complete canonical predecessor closure, A7/A8, C5/C6/C7,
+#1409's exact `[durable-streams]` and `[seat-audit-attribution]` completion
+children, their serial #900 predecessors, and every other plan-named gate.
+Inbound MCP Access never bypasses those Connector gates when it exposes a
+resident Connector-facing `AgentTool`.
+
+## Amendment 2026-09-05 — Workspace Evolution
+
+> **Historical record — do not dispatch from this section.** The 2026-09-06
+> amendment superseded its consumer selection, and the 2026-09-07 native-creation
+> amendment is now the sole current dispatch authority. The owner-ratified
+> premise gates, priority, and lifecycle substance below remain historical
+> context except where a later amendment explicitly re-rules them.
+
+**Owner-requested; effective on owner merge. Specified, not implemented by
+this PR.** Add Workspace Evolution as a named platform-consumer program:
+direct user requests produce private software revisions that can be previewed,
+activated, reconciled with upstream improvements, and selectively reused.
+Clinic is the first workflow proof: a French Documents médicaux dashboard with
+ambient work and optional chat. Seneca is the authenticated host for the
+personal-scope proof. Pricing, offer design, and vertical GTM remain tenant-side.
+
+The binding scope is [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+The [execution plan](../plans/native-creation/LIFECYCLE.md) owns milestone
+acceptance, seam ownership, rollout, and proof. At adoption, this amendment
+alone owned dispatch; it no longer does, and the M0–M8 capability crosswalk
+was not another queue.
+
+| Slice | Dispatch and release dependency |
+|---|---|
+| E0 — request and preview preparation | May run after owner merge alongside premises: capture the dashboard request/catalog; reuse a registered rendering unit in two contract fixtures with normalized synthetic references and a fixture-only adapter/extraction if needed. Clinic's live consultation document path is currently session-keyed; this proves no live migration. No production activation, new Job Thread, or lookalike saved View contract. |
+| E1a — durable activation subproof | After E0 and [durable-streams] P1-C proves consumed accepted-work/recovery; paused-human proofs apply when a paused Run is resumed. Require host-owned durable activation/current authorization and any Job Thread premises consumed by this release workflow. Saved semantic compositions also wait for [saved-views-kernel]. May land before E1b; no live Clinic ambient claim. |
+| E1b — live Clinic subproof | After E1a, trusted Clinic domain identity/operation adapter and migration proof, [thread-storage-spike], and [seat-audit-attribution]. The bounded background Job Thread must deliver recoverable status/results/decisions outside chat. These Thread/attribution dependencies are mandatory. E1 is complete only when E1a and E1b pass. |
+| E2 — personal scope | After E1 and authenticated membership/scoped-store read, preview, write, and revocation evidence. Require [seat-audit-attribution] for Seat-authored provenance where consumed. Do not substitute a browser key or shared local actor for identity. |
+| E3 — behavior revision | After E1/E2, exact behavior/run attribution and relevant protected evaluation gates. A presentation preference does not authorize changing shared expert or domain policy. |
+| E4 — isolated private module | After E1/E2 and the C4 untrusted tier is admitted/proven for both build and serving; no hosted generated-code preview or install before that gate. |
+| E5 — upgrade and reconciliation | After E1/E2 for configuration. Extend after E3/E4 for their artifact classes. Prove an ordinary upstream upgrade and a real conflict before broadening that class's automatic updates. |
+| E6 — approved reuse and broader autonomy | Starts after E5; completion requires a useful approved contribution adopted by a second private workspace. Broader autonomy additionally needs retained-use and maintenance evidence for that change class. Publishing and customer adoption remain separate authorizations; a public marketplace is not a prerequisite. |
+
+**Priority and explicit supersession.** The merge-queue preflight and
+[durable-streams] keystone priority stand. E0 is an explicit addition to the
+earlier list of runnable preparation/chrome work; it does not relabel E1 as
+substrate-free. Later E-slices are conditional consumers of their named
+premises, not a blanket reopening of the non-chrome shell/engine freeze.
+Wave 4's new-repo implementation gate and the interface-first port doctrine
+remain unchanged. Use existing published package/app seams; the new-repo
+M-labels describe capability relationships only.
+
+Thread-storage shape and the relevant attribution joins apply when an E-slice
+consumes Job Threads, including headless work; E1b necessarily consumes them.
+They do not gate a standalone configuration preview that consumes none of
+them. Saved Views still wait for the complete ratified View
+contract. Early product-specific props may select existing components; they
+may not create a replacement ViewDescriptor under an overlay name.
+
+**Historical next-work instruction at adoption — do not dispatch:** E0 was to
+run against the Clinic document-dashboard request, including a second supported
+mount, no-chat navigation, and French review/status copy. It was to record
+missing domain operations and session-identity migration needs and prepare E1
+against the then-current premise evidence. Those fixture proofs did not wait
+for a full Meridian shell or multi-agent engine. No capability was closed by
+this plan PR, and no calendar estimate substituted for a gate.
+
+The done-bar is a direct request kept through real use and a supported
+upgrade, followed by approved reuse in another private workspace. Track all
+attempts, including failed builds and repair work; generated-code volume is
+not progress by itself.
+
+## Amendment 2026-09-06 — Cross-domain Workspace Evolution
+
+> The 2026-09-07 native-creation amendment below supersedes this section's
+> first consumer, timing and execution home. Its cross-domain model and later
+> consumer evidence remain context; do not dispatch from this section.
+
+**Owner-requested; no runtime capability is closed.**
+The owner requested a general software vision that covers Clinic,
+Charlotte Ledoux/Seneca and ESG portfolio-impact analysis. Binding semantics:
+[RECONCILIATION §12](../plans/long-term/ratified/RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
+Readable model and evidence: [software model](../vision/software-model.md).
+
+**Explicit scope change:** the 2026-09-05 E0/E1 consumer selection is no longer
+Clinic-only, and Seneca is more than an identity proof host. Select one useful
+bounded live consumer for the first release loop; record its workflow, domain
+owner, source/operation contracts and missing prerequisites before E1
+implementation. This is implementation scoping, not permission to change
+tenant GTM or dispatch a second heavy platform build.
+
+| Slice | Current dispatch and done-bar |
+|---|---|
+| E0 — cross-domain preparation | After owner merge, alongside premises: map the owner-described Clinic request and a source-backed proposed Charlotte/Seneca fixture request. Record requester and provenance; confirm proposed requests with the intended requester before calling them actual customer requests. Reuse one registered resource/evidence unit across two supported mounts and both synthetic domain fixtures. Record ESG as an unverified analytical stress case. No live migration, production activation, new Job Thread or substitute saved-View schema. |
+| E1a — durable configuration | After E0 and P1-C accepted-work/recovery. One selected consumer earns request → candidate → private preview → durable keep/undo. Retain current authorization and every consumed Thread/View/pause premise from the September 5 row. |
+| E1b — selected live domain work | After E1a, the selected consumer's domain identity/operation and any required migration proof, plus mandatory [thread-storage-spike] and [seat-audit-attribution]. One bounded Job Thread exposes status/results/decisions outside chat. Clinic selection additionally requires its trusted Session-keyed record migration. E1 needs E1a and E1b. |
+| E2/E5 — ownership and maintenance | Existing gates stand. Earn personal/shared isolation and a real configuration upgrade/conflict. Before declaring a shared capability cross-domain, repeat it in a second structurally different live consumer with its own domain acceptance. Synthetic ESG fixtures do not count. |
+| E3/E4/E6 — broaden the earned class | Existing order stands: E3 for behavior promises; E4 for novel confined code; E5 configuration before E6, with E3/E4 extending upgrade evidence for their classes. Approved minimal export, maintainer review and independent adoption remain required. |
+
+**Next work on adoption:** Factory returns one request/contract map for Clinic
+and one source-backed proposed fixture request/contract map for Charlotte/Seneca,
+each with requester/provenance and confirmation status, one bounded
+two-domain/two-mount fixture demo,
+the ESG assumptions it could not verify, and the proposed first live workflow
+with its prerequisite issues. A supported private change does not wait for
+three client rollouts. A domain-specific success does not close a universal
+platform claim. Rule of Three and any kernel promotion still need their
+existing evidence, beyond this consumer-readiness bar.
+
+Premise priority, merge-queue preflight, interface-first port doctrine,
+new-repo freeze and tenant-owned commercial ordering are unchanged. Reuse
+Seneca's existing exact-package publication/activation seams where applicable;
+they do not substitute for scoped Experience activation, personal overlays,
+or general upgrade reconciliation.
+
+## Amendment 2026-09-07 — native creation is the first complete product journey
+
+**Owner ruling, ratified via #1561** (ontology/authority halves in
+`RECONCILIATION.md` §13 and `DECISIONS.md` D33; this section is the sequencing
+record). The owner's Seneca vision — an expert creates, installs for a separate
+consumer, adapts and maintains software inside the product without founder
+source edits — was reassessed against the ratified plan
+([`plans/native-creation/`](../plans/native-creation/README.md)) and grilled
+the same day. Rulings:
+
+| Decision | Ruling |
+|---|---|
+| Product journey | **First complete journey** = private product → immutable release → install for a separate consumer → retained change → reconciliation. Supersedes K9 / M8 "only after two verticals" timing. Public marketplace stays deferred. |
+| Layers | **Host / product runtime / sandbox** (§13b). One runtime per installed product; sandbox is a disposable lease, never the product host. |
+| Runtime modes | **Policy, not code** (§13c): `embedded` (single-tenant curator only, **default off**) · `local` (bwrap/runsc) · `remote` (microVM). Separate-consumer installs on a shared host need `local`/`remote`. Today's in-process `runtimeBackend/` hot-loading is `embedded` and is gated first. |
+| Installation path | One trusted host-owned path: release manifest → installation → CAS activation receipt → undo as activation (§13d, D33 narrows D25/D28/D29/D30 and ARCH-PLAN D-b/P0.6). |
+| Builder agents | Distinct agent class with its own tool catalog; may edit renderer/operation code inside candidates; never activates (§13e). |
+| Execution home | **This repository.** R-a demoted to an evidence-triggered later port; `boring-v2` does not exist (§13f). |
+| First consumer | **Seneca mathematics tutor product**, installed for a second learner; then a nontechnical curator (§13g). |
+| Platform/tenant | Release/installation/activation/runtime modes = platform substrate; offers and pricing stay tenant-side. Re-rules the 2026-08-27 (night) Horizon 3 line (§13h). |
+| PR #1548 | **Folded** into `plans/native-creation/LIFECYCLE.md`; §11/§12 stand as the lifecycle "how"; closes superseded on merge (§13i). |
+
+### The program beside Wave A, not instead of it
+
+Wave A (premises) is unchanged and keeps its priority. Native creation is the
+**named consumer** those premises were waiting for: its "job continuity"
+acceptance stage *is* [durable-streams] Level D, its job root is the ratified
+Thread, and its builder attribution is [seat-audit-attribution]. Nothing here
+reopens the shell/engine freeze. The merge-queue preflight standing obligation
+applies before any premise bead as before; native-creation beads are not
+premise beads and dispatch on their own gates below.
+
+### Premises pulled forward as this journey's consumers (owner, 2026-09-07 evening)
+
+Stepping back from the first bead cut, the owner named three building blocks
+the spine had left to Wave A and ruled them **dispatchable now as consumers
+of this journey**, without reordering Wave A:
+
+| Building block | Ruling |
+|---|---|
+| **Thread identity** | The identity half of §9a — a Thread record with session bindings — is dispatchable now (`nc-t`). The **timeline storage shape** (`.13.2`, stream vs projection) stays spiked after P1-A; `nc-t` decides nothing about it. **Binding rule:** no product record, key or operation may reference a session id; bind to workspace, installation and thread only. |
+| **Views** | The first ratified View slice (P4 [saved-views-kernel], "unsized") gets its planning pass *and* first consumer here (`nc-v`): the contract as a set, resolving the two kinds the first product needs. Agents see descriptors and refs, never renderers. It is premises.md's pressure-test (4). |
+| **Library, not standalone workspaces** | An installed product lives in Library and opens as a Thread in Work with the product's canvas (`nc-l`), consuming the substrate-free [shell-layout] chrome slice. No workspace per product; no global chat column. |
+
+### Second re-cut — 360 sweep (owner, 2026-09-07 night)
+
+Six parallel sweeps of the whole spec against the first cut
+([`360-GAP-MAP.md`](../plans/native-creation/360-GAP-MAP.md)) found the graph
+was a kernel-only slice. Six beads were added (data, tutor agent package,
+evidence, authority substrate, reconciliation, model credentials), premise
+edges were made machine-checkable, prior designs are cited in each bead, and
+the lane 2 kernel-port beads (`rc-lane2-kernel-port-l55c.*`) are **deferred**
+per §13f. Owner defaults recorded (each reversible by a later ruling):
+
+| Question | Default |
+|---|---|
+| What is "a separate consumer"? | A workspace member holding a **personal-scope installation**. No second workspace, no new grant type. |
+| Tutor persona path for the first proof | May ride the restart-based agent-package install; the release pins its definition digest; hot activation through the product path is the follow-up (#1107 slice 3). |
+| `local` mode isolation floor | bwrap/runsc accepted for the first proof; hardware microVM (`remote`) before any shared-tenant Seneca deployment. |
+| Identity id space | durable-streams A1 owns session ids; `nc-t` owns thread ids; the binding table is the only place both appear. |
+| Release path to Seneca | Seneca pulls a release by digest from this repo's stores; not in the epic's scope. |
+| Lane 2 / lane 3 | Lane 2 K-beads deferred. Lane 3 P0 owner beads (`rc-lane3-steering-0j8o.1/.2`) stay open; they do not gate this epic. |
+
+### Bead map — epic #1562, label `epic:native-creation`
+
+Spine first: identity records and the authority substrate, then data and the
+agent, then creation, then placement; isolation gates a second consumer on a
+shared host; reconciliation and credentials gate the acceptance.
+
+| Order | Slice | Bead | Priority | Dispatch gate |
+|---|---|---|---|---|
+| 1 | Release manifest record + stores (pins agent definition digests, stateCompat) | `wt-391-forward-nc-1-release-manifest-6xyh` | P0 | **now** |
+| 2 | Thread identity record + session bindings | `wt-391-forward-nc-t-thread-identity-iohz` | P0 | **now** |
+| 3 | Shared ExecutionContext / Authority + effect-classed Capability | `wt-391-forward-nc-x-execution-context-capability-tsqh` | P1 | **now** |
+| ∥ | Ground truth: gate the embedded runtime default-off | `wt-391-forward-nc-0-embedded-runtime-gate-y6ke` | P1 | **now**, parallel |
+| 4 | Installation record + CAS activation receipts (personal-scope install = the separate consumer) | `wt-391-forward-nc-2-installation-activation-z4pa` | P0 | after 1, 2 |
+| 5 | Learner data store + schema versioning + catalog adapter | `wt-391-forward-nc-d-learner-data-store-axqb` | P0 | after 1, 2 |
+| 6 | Tutor agent package (persona, skills, knowledge) pinned by digest | `wt-391-forward-nc-a-tutor-agent-package-767r` | P1 | after 1 |
+| 7 | Evaluation/Outcome record bound to releaseDigest | `wt-391-forward-nc-e-evaluation-record-akcu` | P1 | after 1 |
+| 8 | `product-builder` seat: typed brief → candidate + evidence, never activates | `wt-391-forward-nc-6-builder-agent-seat-7bqx` | P1 | after 1, 4, 6, 7 |
+| 9 | `product.v1.*` bridge operations through defineCapability | `wt-391-forward-nc-3-product-bridge-ops-vqa3` | P1 | after 2, 3, 4 |
+| 10 | First ratified View slice (record, dashboard) | `wt-391-forward-nc-v-first-view-slice-oaal` | P1 | after 9; UI surface |
+| 11 | Library entry + Thread canvas in Work (consumes shell L3b) | `wt-391-forward-nc-l-library-entry-job-canvas-uw98` | P1 | after 2, 9, 10, `shell-ngfs.6`; UI surface |
+| 12 | `ProductRuntimeHost` seam + embedded adapter + conformance | `wt-391-forward-nc-4a-product-runtime-seam-mlrv` | P2 | after ∥, 3, 9 |
+| 13 | Model credentials: scoped, request-bound issuance; usage per installation | `wt-391-forward-nc-c-model-credentials-rzh1` | P1 | after 3 |
+| 14 | Reconciliation: compatibility, precise conflict, quarantine, undo | `wt-391-forward-nc-r-reconciliation-he4u` | P1 | after 4, 9, 12 |
+| 15 | `local` sandbox runtime adapter | `wt-391-forward-nc-4b-local-sandbox-runtime-r37r` | P2 | after 12 |
+| 16 | Isolated generated View renderer (iframe; resurrects #1499) | `wt-391-forward-nc-5-isolated-front-component-qm7x` | P2 | after 9, 10; UI surface |
+| 17 | First journey acceptance (receipt generated from evidence + usage records) | `wt-391-forward-nc-7-first-journey-acceptance-sdnl` | P1 | after 5, 8, 11, 13, 14, 15, 16, `9p50.2`, `shell-ngfs.14.1` — **the only bead that can close the epic** |
+
+Every bead carries WHAT, WHY, file scope, proof path, acceptance, a
+fits-one-session judgment (bead-ready.md) and, where the 360 sweep found one,
+a PRIOR WORK note naming the design or PR to reuse. Plan and show-me
+artifacts: [`docs/issues/1562/`](../issues/1562/plan.md).
+
+**Dispatch consequence:** four beads are dispatchable tonight in parallel with
+disjoint file scope — release manifest, Thread identity, authority substrate,
+embedded gate. Installation and learner data follow the first two. The worker
+cap of three and the single UI-surface worker rule apply (`nc-v`, `nc-l`,
+`nc-5` never run together). Zero autonomous merges holds.
+
+**Done-bar:** nc-7 first requires the deterministic fixture to pass with zero
+founder source edits after the fixture request, survive destruction of the
+builder sandbox and one upstream fixture update, and commit its supporting
+receipt under `docs/issues/1562/`. That fixture is supporting evidence only.
+Before nc-7 or the epic can close, the Seneca curator must create the live
+mathematics tutor, a second authorized learner must install and use it through
+real domain identity and operations, and a bounded Job Thread must retain a
+result or decision after chat and browser closure; commit the redacted live
+receipt under `docs/issues/1562/`. A configuration-only or fixture-only success
+earns its own credit and does not close the epic. Founder interventions per
+accepted retained adaptation is the standing metric.

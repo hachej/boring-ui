@@ -1,4 +1,5 @@
-import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { ModelRuntime } from '@mariozechner/pi-coding-agent'
+import { InMemoryCredentialStore, type CredentialStore } from '@earendil-works/pi-ai'
 import {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,
@@ -27,6 +28,7 @@ import {
 } from './vault'
 import type { CredentialVaultPersistenceV1 } from './vault'
 import type { VaultCredentialStoreBackendV1 } from './vault'
+import { createVaultCredentialStoreV1 } from './vaultCredentialStore'
 
 /**
  * [1082 slice B] Startup credential registry + resolver composition.
@@ -38,7 +40,7 @@ import type { VaultCredentialStoreBackendV1 } from './vault'
  * from the vault instead of only instance env.
  *
  * The LLM provider registry is DERIVED from pi's own provider surface
- * (`ModelRegistry` provider set + `AuthStorage.getOAuthProviders()`), never a
+ * (`ModelRuntime` provider/model snapshots), never a
  * hand-maintained list: adding a provider pi supports requires no edit here.
  *
  * Fail-closed rules:
@@ -132,20 +134,28 @@ function toHttpsOrigin(rawBaseUrl: unknown): `https://${string}` | undefined {
 }
 
 /**
- * Derives the LLM provider catalog from pi's provider surface. Pure and
- * disk-free: pi's in-memory `AuthStorage`/`ModelRegistry` constructors only.
+ * Derives the LLM provider catalog from pi's provider surface. Disk-free and
+ * network-free: `ModelRuntime` uses an in-memory credential store and its
+ * built-in provider/model snapshot.
  */
-export function derivePiLlmProviderCatalogV1(): {
+export async function derivePiLlmProviderCatalogV1(): Promise<{
   readonly providers: readonly PiDerivedLlmProviderV1[]
   readonly skippedProviderIds: readonly string[]
-} {
-  const authStorage = AuthStorage.inMemory({})
-  const modelRegistry = ModelRegistry.inMemory(authStorage)
+}> {
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  })
+  const piProviders = modelRuntime.getProviders()
+  const apiKeyProviderIds = new Set<string>(
+    piProviders.filter((provider) => provider.auth.apiKey !== undefined).map((provider) => provider.id),
+  )
   const oauthProviderIds = new Set<string>(
-    authStorage.getOAuthProviders().map((provider) => provider.id),
+    piProviders.filter((provider) => provider.auth.oauth !== undefined).map((provider) => provider.id),
   )
   const originsByProvider = new Map<string, Set<`https://${string}`>>()
-  for (const model of modelRegistry.getAll()) {
+  for (const model of modelRuntime.getModels()) {
     if (typeof model.provider !== 'string' || model.provider.length === 0) continue
     let origins = originsByProvider.get(model.provider)
     if (!origins) {
@@ -158,6 +168,7 @@ export function derivePiLlmProviderCatalogV1(): {
 
   const providerIds = [...new Set([
     ...originsByProvider.keys(),
+    ...apiKeyProviderIds,
     ...oauthProviderIds,
   ])].sort()
 
@@ -175,14 +186,13 @@ export function derivePiLlmProviderCatalogV1(): {
     providers.push(Object.freeze({
       providerId: rawProviderId as ProviderId,
       displayName: sanitizeDisplayName(
-        modelRegistry.getProviderDisplayName(rawProviderId),
+        modelRuntime.getProvider(rawProviderId)?.name,
         rawProviderId,
       ),
-      authKinds: Object.freeze(
-        oauthProviderIds.has(rawProviderId)
-          ? (['api-key', 'oauth'] as const)
-          : (['api-key'] as const),
-      ) as readonly PiLlmAuthKindV1[],
+      authKinds: Object.freeze([
+        ...(apiKeyProviderIds.has(rawProviderId) ? (['api-key'] as const) : []),
+        ...(oauthProviderIds.has(rawProviderId) ? (['oauth'] as const) : []),
+      ]) as readonly PiLlmAuthKindV1[],
       egressOrigins: Object.freeze(
         [...(originsByProvider.get(rawProviderId) ?? [])].sort(),
       ),
@@ -196,22 +206,25 @@ export function derivePiLlmProviderCatalogV1(): {
 }
 
 function toProviderDefinition(provider: PiDerivedLlmProviderV1): ProviderDefinitionV1 {
+  const supportsApiKey = provider.authKinds.includes('api-key')
   return {
     contractVersion: 'boring.provider.v1',
     id: provider.providerId,
     displayName: provider.displayName,
     category: 'llm',
-    credential: {
-      type: 'api-key',
-      fields: [{
-        id: LLM_API_KEY_FIELD_ID_V1,
-        label: 'API key',
-        required: true,
-        sensitivity: 'secret',
-        minBytes: 1,
-        maxBytes: MAX_API_KEY_BYTES_V1,
-      }],
-    },
+    credential: supportsApiKey
+      ? {
+          type: 'api-key',
+          fields: [{
+            id: LLM_API_KEY_FIELD_ID_V1,
+            label: 'API key',
+            required: true,
+            sensitivity: 'secret',
+            minBytes: 1,
+            maxBytes: MAX_API_KEY_BYTES_V1,
+          }],
+        }
+      : { type: 'none' },
     consumerBindingIds: [provider.bindingId],
     sandboxEgressOrigins: provider.egressOrigins,
   }
@@ -228,7 +241,9 @@ function toConsumerBinding(provider: PiDerivedLlmProviderV1): CredentialConsumer
       trust: 'trusted',
     },
     purpose: 'Resolve the workspace LLM credential for pi model calls',
-    allowedFieldIds: [LLM_API_KEY_FIELD_ID_V1],
+    allowedFieldIds: provider.authKinds.includes('api-key')
+      ? [LLM_API_KEY_FIELD_ID_V1]
+      : [],
     delivery: 'host-only',
   }
 }
@@ -237,8 +252,8 @@ function toConsumerBinding(provider: PiDerivedLlmProviderV1): CredentialConsumer
  * Builds the frozen 16f.1 registries from the pi-derived catalog. Registry
  * construction re-validates every definition/binding (schema fail-closed).
  */
-export function createPiDerivedLlmProviderRegistryV1(): PiDerivedLlmProviderRegistryV1 {
-  const { providers, skippedProviderIds } = derivePiLlmProviderCatalogV1()
+export async function createPiDerivedLlmProviderRegistryV1(): Promise<PiDerivedLlmProviderRegistryV1> {
+  const { providers, skippedProviderIds } = await derivePiLlmProviderCatalogV1()
   const providerRegistry = createProviderRegistryV1(providers.map(toProviderDefinition))
   const bindingRegistry = createCredentialConsumerBindingRegistryV1(
     providers.map(toConsumerBinding),
@@ -273,6 +288,15 @@ export interface WorkspaceCredentialRuntimeViewV1 {
   readonly skippedProviderIds: readonly string[]
   /** Present when an authority verifier was supplied at composition time. */
   readonly resolver?: WorkspaceCredentialResolverV1
+  /** Actor-bound Pi credential store; workspace identity is fixed at construction. */
+  createPiCredentialStore(
+    workspaceId: string,
+    userId: string | undefined,
+    options: {
+      readonly allowSubscriptionOAuth: boolean
+      readonly revokedOAuthReplacementVersion?: number
+    },
+  ): CredentialStore
 }
 
 export interface WorkspaceCredentialVaultCompositionV1 extends WorkspaceCredentialRuntimeViewV1 {
@@ -297,9 +321,9 @@ function notConfigured(message: string): never {
  * or invalid configuration throws a stable `CREDENTIAL_*` error instead of
  * silently running without the vault.
  */
-export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
+export async function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
   options: WorkspaceCredentialVaultCompositionOptionsV1,
-): WorkspaceCredentialVaultCompositionV1 | undefined {
+): Promise<WorkspaceCredentialVaultCompositionV1 | undefined> {
   const selectedBackend = options.env[LOCAL_KEK_BACKEND_ENV_KEY_V1]?.trim()
   if (!selectedBackend) return undefined
   if (selectedBackend !== LOCAL_KEK_PROVIDER_ID_V1) {
@@ -342,7 +366,7 @@ export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
     versionAnchor,
   })
   const { providerRegistry, bindingRegistry, catalog, skippedProviderIds } =
-    createPiDerivedLlmProviderRegistryV1()
+    await createPiDerivedLlmProviderRegistryV1()
 
   const createResolver = (
     authorityVerifier: WorkspaceCredentialAuthorityVerifierV1,
@@ -356,12 +380,28 @@ export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
   const resolver = options.authorityVerifier
     ? createResolver(options.authorityVerifier)
     : undefined
+  const createPiCredentialStore = (
+    workspaceId: string,
+    userId: string | undefined,
+    storeOptions: {
+      readonly allowSubscriptionOAuth: boolean
+      readonly revokedOAuthReplacementVersion?: number
+    },
+  ): CredentialStore => createVaultCredentialStoreV1({
+    workspaceId,
+    userId,
+    vaultBackend,
+    allowSubscriptionOAuth: storeOptions.allowSubscriptionOAuth,
+    revokedOAuthReplacementVersion: storeOptions.revokedOAuthReplacementVersion,
+    allowedOAuthProviderIds: ['openai-codex'],
+  })
   const runtimeView: WorkspaceCredentialRuntimeViewV1 = Object.freeze({
     providerRegistry,
     bindingRegistry,
     catalog,
     skippedProviderIds,
     resolver,
+    createPiCredentialStore,
   })
 
   return Object.freeze({
@@ -373,5 +413,6 @@ export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
     resolver,
     runtimeView,
     createResolver,
+    createPiCredentialStore,
   })
 }

@@ -15,6 +15,7 @@ import {
 type MutableSandbox = VercelSandbox & {
   setStatus(next: 'running' | 'stopped' | 'failed' | 'aborted'): void
   stop(opts?: { signal?: AbortSignal; blocking?: boolean }): Promise<unknown>
+  delete(opts?: { signal?: AbortSignal }): Promise<void>
 }
 
 function createSandboxHandle(
@@ -26,6 +27,7 @@ function createSandboxHandle(
 ): MutableSandbox {
   let status = opts.status ?? 'running'
   const stop = vi.fn(async () => ({}))
+  const deleteSandbox = vi.fn(async () => {})
 
   const sandbox = {
     sandboxId,
@@ -33,6 +35,7 @@ function createSandboxHandle(
     persistent: true,
     sourceSnapshotId: opts.sourceSnapshotId,
     stop,
+    delete: deleteSandbox,
     get status() {
       return status
     },
@@ -612,9 +615,10 @@ test('non-retryable get errors are propagated', async () => {
   expect(client.create).not.toHaveBeenCalled()
 })
 
-test('store.put failure does not poison in-process cache', async () => {
+test('store.put failure does not poison in-process cache or delete persistent runtime', async () => {
+  const first = createSandboxHandle('sb-first-attempt')
   const emitted = [
-    createSandboxHandle('sb-first-attempt'),
+    first,
     createSandboxHandle('sb-second-attempt'),
   ]
   let putAttempts = 0
@@ -643,6 +647,7 @@ test('store.put failure does not poison in-process cache', async () => {
   await expect(
     resolveSandboxHandle('workspace-put-failure', store, client),
   ).rejects.toThrow('put failed')
+  expect(first.delete).not.toHaveBeenCalled()
   const resolved = await resolveSandboxHandle('workspace-put-failure', store, client)
 
   expect((resolved as any).sandboxId).toBe('sb-second-attempt')

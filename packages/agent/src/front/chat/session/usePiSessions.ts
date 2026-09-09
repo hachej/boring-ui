@@ -20,6 +20,14 @@ const DEFAULT_RETRY_BASE_MS = 250
 const DEFAULT_RETRY_MAX_MS = 2_000
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
+type SessionArchiveState = 'active' | 'archived'
+
+interface SessionFilterPager {
+  sessions: SessionSummary[]
+  nextCursor?: string
+  loaded: boolean
+}
+
 export interface PiSessionCreateInit {
   title?: string
   /** Boot-only intent to resume this exact tab-owned empty session. */
@@ -74,10 +82,18 @@ export interface UsePiSessionsResult {
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
+  /** Archived inventory is paged independently from the active list. */
+  archivedLoaded: boolean
+  archivedLoading: boolean
+  hasMoreArchived: boolean
   error: Error | undefined
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   rename: (id: string, title: string) => Promise<SessionSummary>
+  /** Explicit archive capability; never aliases delete. */
+  setArchived: (id: string, archived: boolean) => Promise<SessionSummary>
+  /** Loads the first or next archived-only page. */
+  loadArchived: () => Promise<void>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
   loadMore: () => Promise<void>
@@ -147,17 +163,31 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const [loading, setLoading] = useState(enabled)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
+  const [archivedLoaded, setArchivedLoaded] = useState(false)
+  const [archivedLoading, setArchivedLoading] = useState(false)
+  const [hasMoreArchived, setHasMoreArchived] = useState(false)
   const [error, setError] = useState<Error | undefined>(undefined)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
   const retryTimerRef = useRef<RetryDelayHandle | undefined>(undefined)
   const sessionsRef = useRef<SessionSummary[]>([])
+  const filterPagersRef = useRef<Record<SessionArchiveState, SessionFilterPager>>({
+    active: { sessions: [], loaded: false },
+    archived: { sessions: [], loaded: false },
+  })
+  // Successful archive mutations fence every older list response, including a
+  // refresh that started before the POST and completed after it.
+  const archiveMutationVersionRef = useRef(0)
   const activeSessionIdRef = useRef<string | undefined>(activeSessionId)
-  const hasMoreRef = useRef(hasMore)
   const canonicalLoadedCountRef = useRef(0)
   const nextCursorRef = useRef<string | undefined>(undefined)
-  const loadMoreRequestSeqRef = useRef(0)
-  const loadMoreInFlightRef = useRef(false)
+  const archivedCursorRef = useRef<string | undefined>(undefined)
+  const archivedLoadedRef = useRef(false)
+  const archiveRequestSeqRef = useRef(0)
+  const archiveInFlightRef = useRef(false)
+  // Refresh and load-more share one owner so an old cursor cannot publish
+  // across a refreshed prefix.
+  const activeRequestOwnerRef = useRef<object | undefined>(undefined)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
   const pendingDeletedRef = useRef<Set<string>>(new Set())
   const pendingCreatedScopeRef = useRef(requestScopeKey)
@@ -195,16 +225,12 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     activeSessionIdRef.current = activeSessionId
   }, [activeSessionId])
 
-  useEffect(() => {
-    hasMoreRef.current = hasMore
-  }, [hasMore])
-
   const activeSessionKnown = Boolean(activeSessionId && sessions.some((session) => session.id === activeSessionId))
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
-  const sessionsListUrl = useCallback((cursor?: string) => {
-    const query = new URLSearchParams({ limit: String(SESSION_PAGE_SIZE) })
+  const sessionsListUrl = useCallback((cursor?: string, archived: SessionArchiveState = 'active') => {
+    const query = new URLSearchParams({ limit: String(SESSION_PAGE_SIZE), archived })
     if (cursor) query.set('cursor', cursor)
     return sessionsUrl(`?${query.toString()}`)
   }, [sessionsUrl])
@@ -230,6 +256,29 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     pendingDeletedRef.current.clear()
   }, [requestScopeKey])
 
+  const publishFilterPagers = useCallback((): SessionSummary[] => {
+    const deleted = pendingDeletedRef.current
+    const merged = mergeSessions(
+      Array.from(pendingCreatedRef.current.values()),
+      filterPagersRef.current.active.sessions,
+      filterPagersRef.current.archived.sessions,
+    ).filter((session) => !deleted.has(session.id))
+    sessionsRef.current = merged
+    setSessions(merged)
+    return merged
+  }, [])
+
+  const resetArchivePager = useCallback(() => {
+    filterPagersRef.current.archived = { sessions: [], loaded: false }
+    archivedCursorRef.current = undefined
+    archivedLoadedRef.current = false
+    archiveRequestSeqRef.current += 1
+    archiveInFlightRef.current = false
+    setArchivedLoaded(false)
+    setArchivedLoading(false)
+    setHasMoreArchived(false)
+  }, [])
+
   const preferredSessionId = useCallback((): string | undefined => {
     const persisted = options.initialActiveSessionId ?? readActiveSessionId({
       storageScope: activeSessionStorageScope,
@@ -240,7 +289,11 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     return undefined
   }, [activeSessionStorageScope, dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
 
-  const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean; nextCursor?: string } = {}) => {
+  const applySessions = useCallback((data: SessionSummary[], applyOptions: {
+    background?: boolean
+    nextCursor?: string
+    archivedPage?: SessionPage
+  } = {}) => {
     ensurePendingScope()
     const replacingScope = loadedDataSourceRef.current !== dataSourceKey
     const requestedActiveId = preferredSessionId()
@@ -257,15 +310,23 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       }
     }
     const canonicalCount = canonicalPageCount(filteredData)
-    const pageMayHaveMore = applyOptions.nextCursor !== undefined
-    const wasExhaustedBeyondFirstPage = applyOptions.background
-      && !hasMoreRef.current
-      && canonicalLoadedCountRef.current >= canonicalCount
-    const requestedActiveReturned = Boolean(requestedActiveId && filteredData.some((session) => session.id === requestedActiveId))
-    const current = applyOptions.background && pageMayHaveMore
-      ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
-      : []
-    const merged = mergeSessions(Array.from(pendingCreated.values()), filteredData, current.filter((session) => !deletedIds.has(session.id)))
+    filterPagersRef.current.active = {
+      sessions: mergeSessions(filteredData),
+      nextCursor: applyOptions.nextCursor,
+      loaded: true,
+    }
+    if (applyOptions.archivedPage) {
+      const archived = applyOptions.archivedPage.sessions.filter((session) => !deletedIds.has(session.id))
+      filterPagersRef.current.archived = {
+        sessions: archived,
+        nextCursor: applyOptions.archivedPage.nextCursor,
+        loaded: true,
+      }
+      archivedCursorRef.current = applyOptions.archivedPage.nextCursor
+      archivedLoadedRef.current = true
+      setArchivedLoaded(true)
+      setHasMoreArchived(applyOptions.archivedPage.nextCursor !== undefined)
+    }
     const rememberedEmptyId = readBootResumeSessionId({
       bootResumeSource,
       storage: options.bootResumeStorage,
@@ -273,15 +334,16 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     if (rememberedEmptyId && filteredData.some((session) => session.id === rememberedEmptyId)) {
       persistBootResume(undefined)
     }
-    const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
+    const nextHasMore = applyOptions.nextCursor !== undefined
     canonicalLoadedCountRef.current = applyOptions.background
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
       : canonicalCount
 
+    if (replacingScope && !applyOptions.archivedPage) resetArchivePager()
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
-    setSessions(merged)
+    const merged = publishFilterPagers()
     nextCursorRef.current = applyOptions.nextCursor
     setHasMore(nextHasMore)
     setActiveSessionId((previous) => {
@@ -292,23 +354,32 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       persistActive(next)
       return next
     })
-  }, [bootResumeSource, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, storageScope])
+  }, [bootResumeSource, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, publishFilterPagers, resetArchivePager, storageScope])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const scope = requestScopeKey
     if (mountedRef.current && !sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    const requestOwner = {}
+    activeRequestOwnerRef.current = requestOwner
     const version = ++refreshVersionRef.current
-    const isCurrent = () => sourceIsCurrent(scope) && version === refreshVersionRef.current
+    const mutationVersion = archiveMutationVersionRef.current
+    const isCurrent = () => (
+      sourceIsCurrent(scope)
+      && version === refreshVersionRef.current
+      && activeRequestOwnerRef.current === requestOwner
+    )
     clearRetryTimer(retryTimerRef)
     const background = refreshOptions.background === true
+    let archivedRequestSeq: number | undefined
 
     if (!enabled) {
-      loadMoreRequestSeqRef.current += 1
-      loadMoreInFlightRef.current = false
       canonicalLoadedCountRef.current = 0
       loadedDataSourceRef.current = dataSourceKey
       dataStorageScopeRef.current = storageScope
       setDataStorageScope(storageScope)
+      filterPagersRef.current.active = { sessions: [], loaded: true }
+      resetArchivePager()
+      sessionsRef.current = []
       setSessions([])
       setActiveSessionId(undefined)
       setError(undefined)
@@ -316,18 +387,23 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       setLoadingMore(false)
       setHasMore(false)
       persistActive(undefined)
+      if (activeRequestOwnerRef.current === requestOwner) activeRequestOwnerRef.current = undefined
       return
     }
 
-    loadMoreRequestSeqRef.current += 1
-    loadMoreInFlightRef.current = false
     setLoadingMore(false)
     if (!background) setLoading(true)
     try {
       let page: SessionPage | undefined
       for (let attempt = 0; ; attempt += 1) {
         try {
-          page = await fetchSessionList(fetchImpl, sessionsListUrl(), requestHeaders())
+          page = await fetchSessionPrefix({
+            fetchImpl,
+            firstUrl: sessionsListUrl(),
+            nextUrl: (cursor) => sessionsListUrl(cursor),
+            headers: requestHeaders(),
+            minimumRows: filterPagersRef.current.active.sessions.length,
+          })
           break
         } catch (err) {
           const transient = err instanceof SessionsPreparingError || isNetworkFetchError(err)
@@ -339,17 +415,49 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
         }
       }
       if (!isCurrent() || !page) return
-      applySessions(page.sessions, { background, nextCursor: page.nextCursor })
+      let archivedPage: SessionPage | undefined
+      if (filterPagersRef.current.archived.loaded) {
+        archivedRequestSeq = ++archiveRequestSeqRef.current
+        archiveInFlightRef.current = true
+        setArchivedLoading(true)
+        archivedPage = await fetchSessionPrefix({
+          fetchImpl,
+          firstUrl: sessionsListUrl(undefined, 'archived'),
+          nextUrl: (cursor) => sessionsListUrl(cursor, 'archived'),
+          headers: requestHeaders(),
+          minimumRows: filterPagersRef.current.archived.sessions.length,
+        })
+      }
+      if (
+        !isCurrent()
+        || (archivedRequestSeq !== undefined && archivedRequestSeq !== archiveRequestSeqRef.current)
+      ) return
+      // A successful local archive POST owns the newer state. Never let a list
+      // response that began before it move the row back across filter pages.
+      if (mutationVersion !== archiveMutationVersionRef.current) {
+        setLoading(false)
+        return
+      }
+      applySessions(page.sessions, { background, nextCursor: page.nextCursor, archivedPage })
       setError(undefined)
       setLoading(false)
     } catch (err) {
-      if (!isCurrent()) return
+      if (
+        !isCurrent()
+        || (archivedRequestSeq !== undefined && archivedRequestSeq !== archiveRequestSeqRef.current)
+      ) return
       const error = err instanceof Error ? err : new Error(String(err))
       if (!background) setError(error)
       setLoading(false)
       if (refreshOptions.throwOnError) throw error
+    } finally {
+      if (activeRequestOwnerRef.current === requestOwner) activeRequestOwnerRef.current = undefined
+      if (archivedRequestSeq !== undefined && archivedRequestSeq === archiveRequestSeqRef.current) {
+        archiveInFlightRef.current = false
+        if (sourceIsCurrent(scope)) setArchivedLoading(false)
+      }
     }
-  }, [applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, requestScopeKey, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, sourceIsCurrent])
+  }, [applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, requestScopeKey, resetArchivePager, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, sourceIsCurrent])
 
   useEffect(() => {
     mountedRef.current = true
@@ -362,21 +470,31 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   }, [refresh, options.refreshKey])
 
   const loadMore = useCallback(async (): Promise<void> => {
-    if (!enabled || loading || loadingMore || loadMoreInFlightRef.current || !hasMore) return
-    const requestSeq = ++loadMoreRequestSeqRef.current
-    loadMoreInFlightRef.current = true
+    if (!enabled || loading || loadingMore || activeRequestOwnerRef.current !== undefined || !hasMore) return
+    const requestOwner = {}
+    activeRequestOwnerRef.current = requestOwner
     const version = refreshVersionRef.current
+    const mutationVersion = archiveMutationVersionRef.current
     const scope = requestScopeKey
     setLoadingMore(true)
     try {
       const page = await fetchSessionList(fetchImpl, sessionsListUrl(nextCursorRef.current), requestHeaders())
       const data = page.sessions.filter((session) => !pendingDeletedRef.current.has(session.id))
-      if (requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || !sourceIsCurrent(scope)) return
-      const merged = mergeSessions(sessionsRef.current.filter((session) => !pendingDeletedRef.current.has(session.id)), data)
+      if (
+        activeRequestOwnerRef.current !== requestOwner
+        || version !== refreshVersionRef.current
+        || mutationVersion !== archiveMutationVersionRef.current
+        || !sourceIsCurrent(scope)
+      ) return
+      filterPagersRef.current.active = {
+        sessions: mergeSessions(filterPagersRef.current.active.sessions, data),
+        nextCursor: page.nextCursor,
+        loaded: true,
+      }
+      const merged = publishFilterPagers()
       const nextHasMore = page.nextCursor !== undefined
       canonicalLoadedCountRef.current += data.length
       nextCursorRef.current = page.nextCursor
-      setSessions(merged)
       setHasMore(nextHasMore)
       setError(undefined)
       setActiveSessionId((previous) => {
@@ -386,16 +504,57 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
         return next
       })
     } catch (err) {
-      if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && sourceIsCurrent(scope)) {
+      if (activeRequestOwnerRef.current === requestOwner && version === refreshVersionRef.current && sourceIsCurrent(scope)) {
         setError(err instanceof Error ? err : new Error(String(err)))
       }
     } finally {
-      if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
-      if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && sourceIsCurrent(scope)) {
-        setLoadingMore(false)
+      if (activeRequestOwnerRef.current === requestOwner) {
+        activeRequestOwnerRef.current = undefined
+        if (version === refreshVersionRef.current && sourceIsCurrent(scope)) setLoadingMore(false)
       }
     }
-  }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl, sourceIsCurrent])
+  }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, publishFilterPagers, requestHeaders, requestScopeKey, sessionsListUrl, sourceIsCurrent])
+
+  const loadArchived = useCallback(async (): Promise<void> => {
+    if (!enabled || archivedLoading || archiveInFlightRef.current) return
+    if (archivedLoadedRef.current && !hasMoreArchived) return
+    const requestSeq = ++archiveRequestSeqRef.current
+    const mutationVersion = archiveMutationVersionRef.current
+    const scope = requestScopeKey
+    archiveInFlightRef.current = true
+    setArchivedLoading(true)
+    try {
+      const page = await fetchSessionList(
+        fetchImpl,
+        sessionsListUrl(archivedCursorRef.current, 'archived'),
+        requestHeaders(),
+      )
+      if (
+        requestSeq !== archiveRequestSeqRef.current
+        || mutationVersion !== archiveMutationVersionRef.current
+        || !sourceIsCurrent(scope)
+      ) return
+      const archived = page.sessions.filter((session) => !pendingDeletedRef.current.has(session.id))
+      filterPagersRef.current.archived = {
+        sessions: mergeSessions(filterPagersRef.current.archived.sessions, archived),
+        nextCursor: page.nextCursor,
+        loaded: true,
+      }
+      archivedCursorRef.current = page.nextCursor
+      archivedLoadedRef.current = true
+      publishFilterPagers()
+      setArchivedLoaded(true)
+      setHasMoreArchived(page.nextCursor !== undefined)
+      setError(undefined)
+    } catch (err) {
+      if (requestSeq === archiveRequestSeqRef.current && sourceIsCurrent(scope)) {
+        setError(err instanceof Error ? err : new Error(String(err)))
+      }
+    } finally {
+      if (requestSeq === archiveRequestSeqRef.current) archiveInFlightRef.current = false
+      if (requestSeq === archiveRequestSeqRef.current && sourceIsCurrent(scope)) setArchivedLoading(false)
+    }
+  }, [archivedLoading, enabled, fetchImpl, hasMoreArchived, publishFilterPagers, requestHeaders, requestScopeKey, sessionsListUrl, sourceIsCurrent])
 
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
@@ -440,12 +599,12 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     rememberConfirmedEmptySession(session.id)
     pendingCreatedRef.current.set(session.id, session)
     setDataStorageScope(storageScope)
-    setSessions((previous) => mergeSessions([session], previous))
+    publishFilterPagers()
     setActiveSessionId(session.id)
     persistActive(session.id)
     void refresh()
     return session
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, rememberConfirmedEmptySession, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent, storageScope])
+  }, [enabled, ensurePendingScope, fetchImpl, persistActive, publishFilterPagers, refresh, rememberConfirmedEmptySession, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent, storageScope])
 
   const switchSession = useCallback((id: string) => {
     if (!sourceIsCurrent(requestScopeKey)) return
@@ -469,9 +628,35 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
     ensurePendingScope()
     if (pendingCreatedRef.current.has(id)) pendingCreatedRef.current.set(id, renamed)
-    setSessions((current) => current.map((session) => session.id === id ? renamed : session))
+    for (const pager of Object.values(filterPagersRef.current)) {
+      pager.sessions = pager.sessions.map((session) => session.id === id ? renamed : session)
+    }
+    publishFilterPagers()
     return renamed
-  }, [enabled, ensurePendingScope, fetchImpl, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
+  }, [enabled, ensurePendingScope, fetchImpl, publishFilterPagers, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
+
+  const setArchived = useCallback(async (id: string, archived: boolean): Promise<SessionSummary> => {
+    const scope = requestScopeKey
+    if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    if (!enabled) throw new Error('Pi sessions are disabled')
+    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}/archive`), {
+      method: 'POST',
+      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId: createRequestId('archive'), archived }),
+    })
+    if (!response.ok) throw new Error(`Failed to ${archived ? 'archive' : 'unarchive'} session: ${response.status}`)
+    const updated = toAddressedSessionSummary(await response.json())
+    if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    archiveMutationVersionRef.current += 1
+    pendingCreatedRef.current.delete(id)
+    for (const pager of Object.values(filterPagersRef.current)) {
+      pager.sessions = pager.sessions.filter((session) => session.id !== id)
+    }
+    const target = archived ? filterPagersRef.current.archived : filterPagersRef.current.active
+    target.sessions = sortSessionSummaries([...target.sessions, updated])
+    publishFilterPagers()
+    return updated
+  }, [enabled, fetchImpl, publishFilterPagers, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
 
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     const scope = requestScopeKey
@@ -485,8 +670,11 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     const deletedSessionWasActive = activeSessionIdRef.current === id
     pendingCreatedRef.current.delete(id)
     pendingDeletedRef.current.add(id)
+    for (const pager of Object.values(filterPagersRef.current)) {
+      pager.sessions = pager.sessions.filter((session) => session.id !== id)
+    }
     setDataStorageScope(storageScope)
-    setSessions((previous) => previous.filter((session) => session.id !== id))
+    publishFilterPagers()
     setActiveSessionId((previous) => {
       if (previous !== id) return previous
       const next = sessionsRef.current.find((session) => session.id !== id)?.id
@@ -505,7 +693,11 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       if (sourceIsCurrent(scope)) {
         pendingDeletedRef.current.delete(id)
         if (deletedSession) {
-          setSessions((previous) => mergeSessions([deletedSession], previous))
+          const target = deletedSession.archived === true
+            ? filterPagersRef.current.archived
+            : filterPagersRef.current.active
+          target.sessions = sortSessionSummaries([...target.sessions, deletedSession])
+          publishFilterPagers()
           if (deletedSessionWasActive) {
             setActiveSessionId(id)
             persistActive(id)
@@ -517,15 +709,16 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       throw error
     }
     if (sourceIsCurrent(scope)) void refresh()
-  }, [bootResumeSource, enabled, ensurePendingScope, fetchImpl, options.bootResumeStorage, persistActive, persistBootResume, refresh, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent, storageScope])
+  }, [bootResumeSource, enabled, ensurePendingScope, fetchImpl, options.bootResumeStorage, persistActive, persistBootResume, publishFilterPagers, refresh, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent, storageScope])
 
   const reset = useCallback(() => {
     if (!sourceIsCurrent(requestScopeKey)) return
     pendingCreatedRef.current.clear()
     pendingDeletedRef.current.clear()
-    loadMoreRequestSeqRef.current += 1
-    loadMoreInFlightRef.current = false
-    canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
+    activeRequestOwnerRef.current = undefined
+    resetArchivePager()
+    publishFilterPagers()
+    canonicalLoadedCountRef.current = canonicalPageCount(filterPagersRef.current.active.sessions)
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
@@ -533,7 +726,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
-  }, [dataSourceKey, persistActive, requestScopeKey, sourceIsCurrent, storageScope])
+  }, [dataSourceKey, persistActive, publishFilterPagers, requestScopeKey, resetArchivePager, sourceIsCurrent, storageScope])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
   const activeSession = enabled ? sessions.find((session) => session.id === visibleActiveSessionId) : undefined
@@ -549,10 +742,15 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     loading: enabled ? loading : false,
     loadingMore,
     hasMore: enabled ? hasMore : false,
+    archivedLoaded,
+    archivedLoading,
+    hasMoreArchived: enabled ? hasMoreArchived : false,
     error,
     refresh,
     create,
     rename,
+    setArchived,
+    loadArchived,
     switch: switchSession,
     delete: deleteSession,
     loadMore,
@@ -584,6 +782,26 @@ async function fetchSessionList(
   }
 }
 
+async function fetchSessionPrefix(input: {
+  fetchImpl: typeof globalThis.fetch
+  firstUrl: string
+  nextUrl: (cursor: string) => string
+  headers: Record<string, string>
+  minimumRows: number
+}): Promise<SessionPage> {
+  const sessions: SessionSummary[] = []
+  let page = await fetchSessionList(input.fetchImpl, input.firstUrl, input.headers)
+  sessions.push(...page.sessions)
+  while (page.nextCursor && sessions.length < input.minimumRows) {
+    page = await fetchSessionList(input.fetchImpl, input.nextUrl(page.nextCursor), input.headers)
+    sessions.push(...page.sessions)
+  }
+  return {
+    sessions: mergeSessions(sessions),
+    ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+  }
+}
+
 function toAddressedSessionSummary(value: unknown): SessionSummary {
   if (typeof value !== 'object' || value === null) throw new Error('invalid addressed session summary')
   const record = value as Record<string, unknown>
@@ -608,6 +826,7 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
     ...(typeof record.nativeSessionId === 'string' ? { nativeSessionId: record.nativeSessionId } : {}),
     ...(typeof record.hasAssistantReply === 'boolean' ? { hasAssistantReply: record.hasAssistantReply } : {}),
     ...(addressedStatus ? { status: addressedStatus } : {}),
+    ...(record.archived === true ? { archived: true } : {}),
   }
 }
 
@@ -668,6 +887,14 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
       largeStateWarningMessages: options.debug.largeStateWarningMessages,
       onWarning: remoteSessionOptionObjectIdentity(options.debug.onWarning),
     } : undefined,
+  })
+}
+
+function sortSessionSummaries(sessions: SessionSummary[]): SessionSummary[] {
+  return sessions.sort((left, right) => {
+    const time = Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+    if (time !== 0) return time
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
   })
 }
 

@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { createFolderModeApp, createWorkspacesModeApp, installBoundedCloseSignalHandlers } from "../server/cli.js"
+import { createFolderModeApp, createWorkspacesModeApp, installBoundedCloseSignalHandlers, readLiveTranscriptServiceEnvironment } from "../server/cli.js"
+import { forwardLiveTranscriptServiceOptions } from "../server/modeApps.js"
 
 const tempDirs: string[] = []
 const originalFlag = process.env.BORING_LIVE_TRANSCRIPTS_ENABLED
@@ -15,6 +16,21 @@ afterEach(async () => {
 })
 
 describe("CLI live transcript composition", () => {
+  test("forwards stock CLI refine and recording configuration to the plugin seam", () => {
+    const env = {
+      BORING_LIVE_TRANSCRIPTS_REFINE_URL: "http://127.0.0.1:18884/v1",
+      BORING_LIVE_TRANSCRIPTS_REFINE_BEARER_TOKEN: "r".repeat(40),
+      BORING_LIVE_TRANSCRIPTS_RECORDING_DIRECTORY: "/workspace/live-transcripts",
+      BORING_LIVE_TRANSCRIPTS_FFMPEG_PATH: "/usr/bin/ffmpeg",
+    }
+    expect(forwardLiveTranscriptServiceOptions(readLiveTranscriptServiceEnvironment(env))).toEqual({
+      refineUrl: env.BORING_LIVE_TRANSCRIPTS_REFINE_URL,
+      refineBearerToken: env.BORING_LIVE_TRANSCRIPTS_REFINE_BEARER_TOKEN,
+      audioRecordingDirectory: env.BORING_LIVE_TRANSCRIPTS_RECORDING_DIRECTORY,
+      audioRecordingFfmpegPath: env.BORING_LIVE_TRANSCRIPTS_FFMPEG_PATH,
+    })
+  })
+
   test("folder mode advertises readiness and mounts exact-origin routes only when explicitly enabled", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-live-folder-"))
     tempDirs.push(workspaceRoot)

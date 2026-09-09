@@ -1,16 +1,30 @@
 import { randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
+import {
+  AgentGatewayError,
+  AgentGatewayErrorCode,
+  type AgentAccessDecision,
+  type AgentAccessOperation,
+  type AgentSessionRef,
+  type AuthorizedAgentScope,
+  type VerifiedAgentScopeClaim,
+} from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { resolveWorkspaceCredentialVaultCompositionFromEnvV1 } from '../credentials/startupComposition'
+import { createOpenAiCodexOAuthBrokerV1 } from '../credentials/openAiCodexOAuthBroker'
+import { actorCredentialProviderIdV1 } from '../credentials/vaultCredentialStore'
+import { createApiKeyValidatorV1 } from '../credentials/apiKeyValidation'
 import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/startupComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { createAgentHostRoutes } from './httpProjection'
+import { credentialsRoutes } from '../http/routes/credentials'
 import { InMemoryAgentRequestLedger } from './requestLedger'
+import { resolveRequestLedgerPath } from './requestLedgerPath'
 import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
 import {
   createAgentHostRuntimeCapabilityProjection,
@@ -24,6 +38,7 @@ import {
   AgentSessionActivityIndex,
   AgentSessionInventory,
 } from './sessionInventory'
+import type { AgentInvocationFundingPolicyV1 } from '../../shared/workspaceAgentDispatcher'
 import type {
   AgentHostAgentSpec,
   AgentHostHandle,
@@ -33,6 +48,7 @@ import type {
   CreateAgentHostOptions,
   AgentHostDirectProjectionOptions,
   AgentHostEnvironmentLease,
+  AgentHostSessionEnvironmentLease,
   AgentHostEnvironmentScope,
   AuthorizedEnvironmentIntent,
   LeaseBoundWorkspaceAgent,
@@ -43,10 +59,17 @@ const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const SAFE_HOST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000
 
+/** Maps trusted HTTP invocation metadata to the credential authority carried by the runtime binding. */
+export function invocationFundingPolicyFromHeaderV1(value: unknown): AgentInvocationFundingPolicyV1 {
+  return value === 'unattended' ? 'api-key-only' : 'personal-subscription'
+}
+
 export interface RuntimeBinding {
   readonly key: string
   readonly agentTypeId: string
   readonly workspaceScopeId: string
+  readonly authSubjectId: string
+  readonly fundingPolicy: AgentInvocationFundingPolicyV1
   readonly generation: number
   readonly scope: ResolvedAgentRuntimeScope
   readonly environmentLease: EnvironmentLease
@@ -65,10 +88,30 @@ export interface AgentHostRuntime {
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
+    options?: import('../../shared/session').SessionListOptions,
   ): Promise<readonly import('../../shared/session').SessionSummary[]>
+  setSessionArchived?(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    sessionId: string,
+    archived: boolean,
+  ): Promise<import('../../shared/session').SessionSummary>
   isDraining(): boolean
   assertOpen(): void
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
+  resolveAgentAccess?(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<AgentAccessDecision>
+  assertAgentAccess?(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<void>
   resolveEnvironmentScope(
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
@@ -102,13 +145,16 @@ export interface AgentHostRuntime {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     resolvedRuntimeScope?: ResolvedAgentRuntimeScope,
+    fundingPolicy?: AgentInvocationFundingPolicyV1,
   ): Promise<RuntimeBinding>
   findPublishedCurrentBinding(
     agentTypeId: string,
     workspaceScopeId: string,
+    authSubjectId: string,
     physicalBindingIdentity: string,
     bindingIdentity?: string,
     provisioningFingerprint?: string,
+    fundingPolicy?: AgentInvocationFundingPolicyV1,
   ): RuntimeBinding | undefined
   startDrain(): void
   drainRuntime(): Promise<void>
@@ -221,9 +267,43 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
   if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
 }
 
+function assertPublishedBindingMatchesResolvedScope(
+  binding: RuntimeBinding,
+  resolved: ResolvedAgentRuntimeScope,
+): void {
+  const currentPhysicalBindingIdentity = binding.scope.physicalBindingIdentity ?? binding.scope.identity
+  const candidatePhysicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
+  if (
+    binding.scope.identity !== resolved.identity
+    || binding.scope.environment.provisioningFingerprint !== resolved.environment.provisioningFingerprint
+    || currentPhysicalBindingIdentity !== candidatePhysicalBindingIdentity
+  ) {
+    throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+      'Agent runtime identity changed; process restart is required',
+    )
+  }
+}
+
+/**
+ * Durable ledger file this host will open, or `undefined` when it was given
+ * neither an explicit path nor a session root.
+ *
+ * `createAgentHost` is the innermost host. It delegates explicit-path and
+ * session-root normalization to the canonical resolver, but has no in-workspace
+ * fallback — a host with nothing host-owned to write to fails closed.
+ */
+function resolveHostLedgerPath(options: CreateAgentHostOptions): string | undefined {
+  return resolveRequestLedgerPath({
+    requestLedgerPath: options.requestLedgerPath,
+    sessionRoot: options.sessionRoot,
+  })
+}
+
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
+  invocationFundingPolicy: AsyncLocalStorage<AgentInvocationFundingPolicyV1>,
   credentialComposition?: WorkspaceCredentialVaultCompositionV1,
 ): AgentHostRuntime {
   const compiledById = new Map(compiledAgents.map((agent) => [agent.agentTypeId, agent]))
@@ -236,6 +316,7 @@ function createRuntime(
     requestId: string,
     sessionId?: string,
   ): Promise<ResolvedAgentRuntimeScope> => {
+    await assertAgentAccess(agentTypeId, scope, claim, 'runtime.bind')
     if (options.resolveAuthorizedEnvironmentScope && options.resolveAuthorizedAgentRuntimeScope) {
       const environment = await options.resolveAuthorizedEnvironmentScope({
         authorizedScope: scope,
@@ -259,6 +340,54 @@ function createRuntime(
       return Object.freeze({ ...resolved, environment })
     }
     throw new TypeError('createAgentHost requires direct Environment and Agent runtime scope resolvers')
+  }
+  const resolveAgentAccess = async (
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<AgentAccessDecision> => {
+    if (!compiledById.has(agentTypeId)) return { state: 'not-available', reason: 'not-deployed' }
+    if (!options.resolveAgentAccess) return { state: 'allowed' }
+    try {
+      return await options.resolveAgentAccess({
+        authorizedScope: scope,
+        verifiedClaim: claim,
+        agentTypeId,
+        operation,
+      })
+    } catch {
+      return { state: 'policy-unavailable' }
+    }
+  }
+  const assertAgentAccess = async (
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: AgentAccessOperation,
+  ): Promise<void> => {
+    const decision = await resolveAgentAccess(agentTypeId, scope, claim, operation)
+    if (decision.state === 'allowed') return
+    if (decision.state === 'not-available') {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+    }
+    if (decision.state === 'entitlement-denied') {
+      throw new AgentGatewayError(
+        decision.denial === 'subscription-required'
+          ? AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED
+          : AgentGatewayErrorCode.AGENT_ACCESS_FORBIDDEN,
+        decision.denial === 'subscription-required'
+          ? 'agent subscription is required'
+          : 'agent access is forbidden',
+      )
+    }
+    throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE,
+      'agent access policy is unavailable',
+      decision.retryAfterSeconds === undefined
+        ? undefined
+        : { retryAfterSeconds: decision.retryAfterSeconds },
+    )
   }
   const inventory = new AgentSessionInventory(
     options.sessionRoot,
@@ -287,12 +416,11 @@ function createRuntime(
   let draining = false
   let drainPromise: Promise<void> | undefined
   let closePromise: Promise<void> | undefined
+  const durableLedgerPath = resolveHostLedgerPath(options)
   const ledger: import('./types').AgentRequestLedger = options.requestLedger
-    ?? (options.inMemoryRequestLedgerMode
+    ?? (options.inMemoryRequestLedgerMode || !durableLedgerPath
       ? new InMemoryAgentRequestLedger()
-      : options.requestLedgerPath || options.sessionRoot
-        ? new SqliteAgentRequestLedger(options.requestLedgerPath ?? join(options.sessionRoot!, '.agent-request-ledger.sqlite'))
-        : new InMemoryAgentRequestLedger())
+      : new SqliteAgentRequestLedger(durableLedgerPath, { retentionMs: options.requestRetentionMs }))
 
   const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
     let disposal = bindingDisposals.get(binding)
@@ -322,9 +450,13 @@ function createRuntime(
     },
     activity,
     shutdownGraceMs: graceMs,
-    listSessionSummaries(agentTypeId, scope, claim) {
+    listSessionSummaries(agentTypeId, scope, claim, options) {
       runtime.assertOpen()
-      return inventory.list(agentTypeId, scope, claim)
+      return inventory.list(agentTypeId, scope, claim, options)
+    },
+    setSessionArchived(agentTypeId, scope, claim, sessionId, archived) {
+      runtime.assertOpen()
+      return inventory.setArchived(agentTypeId, scope, claim, sessionId, archived)
     },
     isDraining: () => draining,
     assertOpen() {
@@ -338,6 +470,8 @@ function createRuntime(
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'agent scope is not authorized')
       }
     },
+    resolveAgentAccess,
+    assertAgentAccess,
     async resolveEnvironmentScope(scope, claim, intent) {
       runtime.assertOpen()
       if (!options.resolveAuthorizedEnvironmentScope) {
@@ -361,13 +495,20 @@ function createRuntime(
     },
     async resolveSessionRuntime(agentTypeId, scope, claim, sessionId) {
       runtime.assertOpen()
+      await assertAgentAccess(agentTypeId, scope, claim, 'session.read')
       const resolved = await inventory.resolveSessionRuntime(agentTypeId, scope, claim, sessionId)
       if (resolved) validateResolvedRuntimeScope(resolved)
       return resolved
     },
     resolveAgentRuntimeScope,
-    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope) {
+    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope, requestedFundingPolicy) {
       runtime.assertOpen()
+      // Direct authenticated Gateway/HTTP use is interactive. Dispatcher callers
+      // execute inside an explicit authority-issued policy context below.
+      const fundingPolicy = credentialComposition
+        ? requestedFundingPolicy ?? invocationFundingPolicy.getStore() ?? 'personal-subscription'
+        : 'api-key-only'
+      await assertAgentAccess(agentTypeId, scope, claim, 'runtime.bind')
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       const resolved = resolvedRuntimeScope ?? await runtime.resolveAgentRuntimeScope(
@@ -381,20 +522,35 @@ function createRuntime(
       const key = JSON.stringify([
         agentTypeId,
         claim.workspaceScopeId,
+        claim.authSubjectId,
+        fundingPolicy,
         resolved.identity,
         resolved.environment.provisioningFingerprint,
         resolved.physicalBindingIdentity ?? resolved.identity,
       ])
       const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
-      const currentKey = JSON.stringify([agentTypeId, claim.workspaceScopeId, physicalBindingIdentity])
+      const currentKey = JSON.stringify([
+        agentTypeId,
+        claim.workspaceScopeId,
+        claim.authSubjectId,
+        fundingPolicy,
+        physicalBindingIdentity,
+      ])
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
-        if (current) return current
+        if (current) {
+          assertPublishedBindingMatchesResolvedScope(current, resolved)
+          return current
+        }
         const reservedKey = currentBindingReservations.get(currentKey)
         if (reservedKey && reservedKey !== key) {
           const reserved = bindings.get(reservedKey)
-          if (reserved) return await reserved
+          if (reserved) {
+            const binding = await reserved
+            assertPublishedBindingMatchesResolvedScope(binding, resolved)
+            return binding
+          }
         } else if (!reservedKey) {
           currentBindingReservations.set(currentKey, key)
         }
@@ -414,6 +570,8 @@ function createRuntime(
             const composition = await buildAgentComposition({
               agent,
               workspaceScopeId: claim.workspaceScopeId,
+              actorUserId: claim.authSubjectId,
+              fundingPolicy,
               runtimeScope: resolved,
               runtimeBundle,
               credentialComposition,
@@ -431,6 +589,8 @@ function createRuntime(
               key,
               agentTypeId,
               workspaceScopeId: claim.workspaceScopeId,
+              authSubjectId: claim.authSubjectId,
+              fundingPolicy,
               generation,
               scope: resolved,
               environmentLease,
@@ -483,19 +643,28 @@ function createRuntime(
     findPublishedCurrentBinding(
       agentTypeId,
       workspaceScopeId,
+      authSubjectId,
       physicalBindingIdentity,
       bindingIdentity,
       provisioningFingerprint,
+      requestedFundingPolicy,
     ) {
+      const fundingPolicy = credentialComposition
+        ? requestedFundingPolicy ?? invocationFundingPolicy.getStore() ?? 'personal-subscription'
+        : 'api-key-only'
       const exact = publishedCurrentBindings.get(JSON.stringify([
         agentTypeId,
         workspaceScopeId,
+        authSubjectId,
+        fundingPolicy,
         physicalBindingIdentity,
       ]))
       if (exact) return exact
       const matches = [...publishedCurrentBindings.values()].filter((binding) =>
         binding.agentTypeId === agentTypeId
         && binding.workspaceScopeId === workspaceScopeId
+        && binding.authSubjectId === authSubjectId
+        && binding.fundingPolicy === fundingPolicy
         && (!bindingIdentity || binding.scope.identity === bindingIdentity)
         && (!provisioningFingerprint
           || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
@@ -583,8 +752,8 @@ function createRuntime(
       const tail = previous.then(() => current)
       bindingOperationTails.set(bindingKey, tail)
       await previous
-      runtime.assertOpen()
       try {
+        runtime.assertOpen()
         return await operation()
       } finally {
         release()
@@ -665,8 +834,7 @@ export async function createAgentHost(
   }
   const compiledAgents = await compileFleet(options)
   const hostId = await resolveHostId(options)
-  const durableLedgerPath = options.requestLedgerPath
-    ?? (options.sessionRoot ? join(options.sessionRoot, '.agent-request-ledger.sqlite') : undefined)
+  const durableLedgerPath = resolveHostLedgerPath(options)
   if (!options.requestLedger && !options.inMemoryRequestLedgerMode && !durableLedgerPath) {
     throw new TypeError(
       'createAgentHost requires requestLedgerPath or sessionRoot for its durable transactional ledger',
@@ -677,12 +845,33 @@ export async function createAgentHost(
   // startup: misconfigured env fails host creation with a stable
   // CREDENTIAL_* error, and every runtime binding shares this one vault
   // composition (a per-binding vault would silently fork credential state).
-  const credentialComposition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+  const credentialComposition = await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
     env: options.credentials?.env ?? process.env,
     persistence: options.credentials?.vaultPersistence,
     authorityVerifier: options.credentials?.authorityVerifier,
   })
-  const runtime = createRuntime(options, compiledAgents, credentialComposition)
+  if (credentialComposition && options.credentials?.onLifecycleReady) {
+    options.credentials.onLifecycleReady(Object.freeze({
+      cryptoShredWorkspace: (workspaceId: string) =>
+        credentialComposition.vaultBackend.cryptoShredWorkspace(workspaceId),
+    }))
+  }
+  const oauthBroker = credentialComposition
+    ? createOpenAiCodexOAuthBrokerV1({
+        credentialStoreForActor: async (workspaceId, userId) => {
+          const observed = await credentialComposition.vaultBackend.getCredentialMetadata(
+            workspaceId,
+            actorCredentialProviderIdV1(userId, 'openai-codex'),
+          )
+          return credentialComposition.createPiCredentialStore(workspaceId, userId, {
+            allowSubscriptionOAuth: true,
+            revokedOAuthReplacementVersion: observed?.credentialVersion,
+          })
+        },
+      })
+    : undefined
+  const invocationFundingPolicy = new AsyncLocalStorage<AgentInvocationFundingPolicyV1>()
+  const runtime = createRuntime(options, compiledAgents, invocationFundingPolicy, credentialComposition)
   if (
     runtime.ledger.durability !== 'durable-transactional'
     && options.inMemoryRequestLedgerMode === undefined
@@ -713,8 +902,11 @@ export async function createAgentHost(
         hostId,
         agents: compiledAgents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
-          label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
-          ...('legacyDefault' in agent || agent.definition.digest === undefined
+          label: agent.definition.label,
+          ...(agent.definition.version === undefined
+            ? {}
+            : { definitionVersion: agent.definition.version }),
+          ...(agent.definition.digest === undefined
             ? {}
             : { definitionDigest: agent.definition.digest }),
         })),
@@ -807,12 +999,76 @@ export async function createAgentHost(
     }
   }
 
+  const acquireSessionEnvironment = async (input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease> => {
+    if (!input.requestId.trim()) throw new TypeError('requestId is required')
+    const { binding } = await gateway.resolveHostSessionBinding(input.authorizedScope, input.ref)
+    const providerLease = binding.environmentLease.retain()
+    const abort = new AbortController()
+    let active = true
+    let unregister = runtime.registerSubscription(() => release())
+    const onGenerationAbort = () => release()
+    providerLease.signal.addEventListener('abort', onGenerationAbort, { once: true })
+    function release() {
+      if (!active) return
+      active = false
+      abort.abort()
+      providerLease.signal.removeEventListener('abort', onGenerationAbort)
+      unregister()
+      unregister = () => {}
+      providerLease.release()
+    }
+    return Object.freeze({
+      environmentGenerationId: providerLease.generationId,
+      bindingGeneration: binding.generation,
+      signal: abort.signal,
+      async acquireTrustedService({ leaseId, idleTtlMs, absoluteTtlMs }: {
+        readonly leaseId: string
+        readonly idleTtlMs: number
+        readonly absoluteTtlMs: number
+      }) {
+        if (!active || abort.signal.aborted) throw bindingDisposedError()
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(leaseId)) throw new TypeError('leaseId is invalid')
+        if (!Number.isInteger(idleTtlMs) || idleTtlMs < 1_000 || idleTtlMs > 15 * 60_000) {
+          throw new TypeError('idleTtlMs must be between 1000 and 900000')
+        }
+        if (!Number.isInteger(absoluteTtlMs) || absoluteTtlMs < idleTtlMs || absoluteTtlMs > 60 * 60_000) {
+          throw new TypeError('absoluteTtlMs must be between idleTtlMs and 3600000')
+        }
+        const mechanism = providerLease.bundle.trustedServiceV1
+        if (!mechanism
+          || mechanism.qualification.serviceRef !== 'trusted-service-v1'
+          || mechanism.qualification.isolation !== 'dedicated-uid-private-channel'
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.protocolDigest)
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.imageDigest)) {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'qualified trusted-service-v1 is unavailable for this Environment generation',
+          )
+        }
+        return await mechanism.acquire({ leaseId, idleTtlMs, absoluteTtlMs, signal: abort.signal })
+      },
+      release,
+    })
+  }
+
   const runWithWorkspaceAgent = (
     input: import('./types').AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
-  ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
+  ) => {
+    if (input.fundingPolicy !== 'api-key-only') {
+      throw new TypeError('workspace dispatcher invocations must use api-key-only funding')
+    }
+    return invocationFundingPolicy.run(
+      input.fundingPolicy,
+      () => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run }),
+    )
+  }
 
-  const resolveProjectionPiChatService = async (
+  const resolveHarnessBackendForRequest = async (
     authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,
     request: import('fastify').FastifyRequest,
     agentTypeId: string,
@@ -822,7 +1078,7 @@ export async function createAgentHost(
     const binding = (await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })).binding
     return {
       scope,
-      service: binding.composition.service,
+      backend: binding.composition.backend,
     }
   }
 
@@ -830,10 +1086,11 @@ export async function createAgentHost(
     host,
     gateway,
     acquireEnvironment: acquireAppEnvironment,
+    acquireSessionEnvironment,
     runWithWorkspaceAgent,
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
       assertStrongLedger()
-      return createAgentHostRoutes({
+      const routes = createAgentHostRoutes({
         host,
         gateway,
         options: projectionOptions,
@@ -843,10 +1100,33 @@ export async function createAgentHost(
           const scope = await projectionOptions.authorizeAgentRequest(request)
           return (await runtime.verify(scope)).workspaceScopeId
         },
-        resolveAddressedPiChatService(request, agentTypeId, sessionId) {
-          return resolveProjectionPiChatService(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
+        resolveHarnessBackend(request, agentTypeId, sessionId) {
+          return resolveHarnessBackendForRequest(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
+        ...(
+          credentialComposition && options.credentials?.authorizeOwnerRequest
+            ? {
+                async registerAdditionalRoutes(app) {
+                  await app.register(credentialsRoutes, {
+                    providerRegistry: credentialComposition.providerRegistry,
+                    vaultBackend: credentialComposition.vaultBackend,
+                    apiKeyValidator: createApiKeyValidatorV1(),
+                    oauthBroker,
+                    authorizeRequest: options.credentials!.authorizeOwnerRequest!,
+                  })
+                },
+              }
+            : {}
+        ),
       })
+      return async (app: import('fastify').FastifyInstance) => {
+        app.addHook('onRequest', async (request) => {
+          invocationFundingPolicy.enterWith(
+            invocationFundingPolicyFromHeaderV1(request.headers['x-boring-invocation-mode']),
+          )
+        })
+        await app.register(routes)
+      }
     },
   })
   return created

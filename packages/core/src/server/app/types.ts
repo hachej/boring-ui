@@ -4,6 +4,8 @@ import type {
   CapabilitiesResponse,
   User,
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceMember,
   WorkspaceInvite,
   WorkspaceRuntime,
@@ -39,25 +41,82 @@ export interface UserStore {
 }
 
 export interface WorkspaceStoreCreateOptions {
+  /** Required real application-fleet Agent; stores validate but never select it. */
+  readonly defaultAgentTypeId: string
   readonly workspaceTypeId?: string
+  /** Defaults to generic-default and is inserted atomically with the workspace. */
+  readonly initialAgentSeatSource?: WorkspaceAgentSeatSource
+  /** One optional specialist Seat inserted in the same workspace transaction. */
+  readonly additionalAgentSeat?: {
+    readonly agentTypeId: string
+    readonly source: WorkspaceAgentSeatSource
+  }
+  readonly enrolledByUserId?: string
   isDefault?: boolean
   id?: string
   managedBy?: string
-  /**
-   * Persisted default Agent seat (Decision 28). Applied only at workspace
-   * initialization; an existing workspace's value is never rewritten.
-   */
-  readonly defaultAgentTypeId?: string
 }
 
 export interface WorkspaceStore {
-  create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
+  listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]>
+  hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean>
+  addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat>
+  /** Count rolling-migration rows that still lack a persisted default Agent. */
+  countNullDefaultAgentTypeIds(appId: string): Promise<number>
+  /** Idempotent compare-and-set backfill: only rows still NULL may change. */
+  compareAndSetNullDefaultAgentTypeId(appId: string, defaultAgentTypeId: string): Promise<number>
+  /**
+   * Explicit user-driven repin of one workspace's default Agent (gh-1402).
+   * This is the ONLY write that may overwrite a non-NULL persisted value, so
+   * it must never be reached from an automated/reconciliation path — the
+   * NULL-only compare-and-set above stays the automated one.
+   *
+   * Compare-and-set on `expectedDefaultAgentTypeId`: `null` means the row is
+   * gone or someone else already repinned it, so a stale tab can never
+   * overwrite a newer successful recovery.
+   */
+  setDefaultAgentTypeId(
+    id: string,
+    expectedDefaultAgentTypeId: string,
+    defaultAgentTypeId: string,
+  ): Promise<Workspace | null>
   get(id: string): Promise<Workspace | null>
   getIncludingDeleted(id: string): Promise<Workspace | null>
   restore(id: string): Promise<Workspace | null>
   update(id: string, updates: Partial<Pick<Workspace, 'name'>>): Promise<Workspace | null>
   delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }>
+  /**
+   * #1463: atomically soft-deletes `id` and, only if that leaves `actingUserId`
+   * with zero active workspaces in the deleted workspace's app, creates a
+   * replacement default (workspace + owner member + initial Agent seat) in the
+   * SAME database transaction. Any failure — including a unique-constraint
+   * collision on the replacement insert — rolls back the whole operation, so
+   * the original workspace is never left deleted without its replacement:
+   * the account can never end up committed at zero active workspaces.
+   * Provisioning (filesystem/sandbox) is NOT part of this transaction and
+   * must be driven by the caller against the returned `recreated` workspace.
+   */
+  deleteAndRecreateDefaultIfEmpty(
+    id: string,
+    actingUserId: string,
+    recreate: {
+      name: string
+      defaultAgentTypeId: string
+      initialAgentSeatSource?: WorkspaceAgentSeatSource
+      enrolledByUserId?: string
+    },
+  ): Promise<{
+    removed: boolean
+    code?: typeof ERROR_CODES.NOT_FOUND
+    recreated: Workspace | null
+  }>
   getWorkspacesWhereSoleOwner(userId: string): Promise<Workspace[]>
   isMember(workspaceId: string, userId: string): Promise<boolean>
   getMemberRole(workspaceId: string, userId: string): Promise<MemberRole | null>
@@ -122,6 +181,8 @@ export interface CreateCoreAppOptions {
   userStore?: UserStore
   workspaceStore?: WorkspaceStore
   provisioner?: WorkspaceProvisioner
+  /** Irreversible credential cleanup invoked before workspace destruction/deletion. */
+  shredWorkspaceCredentials?: (workspaceId: string) => Promise<void>
   manageShutdown?: boolean
   requestScopeResolver?: CoreRequestScopeResolver
 }
@@ -131,6 +192,7 @@ declare module 'fastify' {
     config: CoreConfig
     workspaceStore: WorkspaceStore
     provisioner: WorkspaceProvisioner | null
+    shredWorkspaceCredentials: ((workspaceId: string) => Promise<void>) | null
     addRedactionPaths(paths: string[]): void
     registerCapabilitiesContributor(
       name: string,

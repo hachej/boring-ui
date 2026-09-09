@@ -33,16 +33,18 @@ Only the app-owned verifier returns identity facts, as
 `VerifiedAgentScopeClaim`. `AgentSessionRef` deliberately carries **no
 `hostId`** — session refs are `{ agentTypeId, sessionId }` and nothing else.
 
-## The 7 methods (+ close)
+## The 8 methods (+ close, plus optional authorization hook)
 
 ```ts
 interface AgentGateway {
+  authorizeAgentAccess?(input: { scope; agentTypeId; operation }): Promise<void>
   listAgents(input: ListAgentsInput): Promise<readonly AgentSummary[]>
   listSessions(input: AuthorizedAgentSessionQuery): Promise<AgentSessionPage>
   createSession(input: CreateAgentSessionInput): Promise<AgentSessionRef>
   connectSession(input: ConnectAgentSessionInput): Promise<AgentSessionConnection>
   readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
   renameSession(input: RenameAgentSessionInput): Promise<AgentSessionSummary>
+  setSessionArchived(input: SetAgentSessionArchivedInput): Promise<AgentSessionSummary>
   deleteSession(input: DeleteAgentSessionInput): Promise<void>
   close(): Promise<void>
 }
@@ -61,6 +63,7 @@ interface CreateAgentSessionInput    { scope; agentTypeId; requestId; title? }
 interface ConnectAgentSessionInput   { scope; ref; cursor? }
 interface ReadAgentSessionStateInput { scope; ref }
 interface RenameAgentSessionInput    { scope; ref; requestId; title }
+interface SetAgentSessionArchivedInput { scope; ref; requestId; archived }
 interface DeleteAgentSessionInput    { scope; ref; requestId }
 ```
 
@@ -72,7 +75,9 @@ Note `listAgents` takes `ListAgentsInput`, not a bare `AuthorizedAgentScope`.
 
 ### Output DTOs
 
-`AgentSummary` (`agentTypeId`, `label`, `description?`, `definition?{version,digest}`),
+`AgentSummary` (`agentTypeId`, `label`, `description?`, `definition?{version,digest?}`),
+where `version` is the exact package declaration and `digest`, when available,
+is the computed compiled-definition identity (not a re-hash of the response DTO),
 `AgentSessionSummary` (`ref`, `title`, `status`, `createdAt`, `updatedAt`),
 `AgentSessionPage` (`sessions`, `nextCursor?`), and the receipts
 (`CommandReceipt`, `AgentSendReceipt`, `QueueClearReceipt`, `StopReceipt`) are
@@ -97,10 +102,12 @@ shorthand. Prompts add `displayContent?`, `model?`, `thinkingLevel?`,
 
 ## Error codes
 
-Fourteen, exhaustive, order-stable, exported as both a const map and
+Seventeen, exhaustive, order-stable, exported as both a const map and
 `AGENT_GATEWAY_ERROR_CODES`:
 
 `AGENT_TYPE_UNKNOWN` · `AGENT_SESSION_NOT_FOUND` · `AGENT_SCOPE_DENIED` ·
+`AGENT_ENTITLEMENT_REQUIRED` · `AGENT_ACCESS_FORBIDDEN` ·
+`AGENT_ACCESS_POLICY_UNAVAILABLE` ·
 `AGENT_SESSION_REPLAY_GAP` · `AGENT_SESSION_CURSOR_AHEAD` ·
 `AGENT_SESSION_CURSOR_EXPIRED` · `AGENT_SESSION_CURSOR_INVALID` ·
 `AGENT_REQUEST_CONFLICT` · `AGENT_REQUEST_IN_PROGRESS` ·
@@ -152,3 +159,54 @@ rejected. Future internal/external host tiers belong to #905, not here.
 
 `scripts/check-alignment-invariants.mjs` enforces that nothing outside an
 allowlist calls it.
+
+## Private backend seam
+
+The session-runtime path below `EmbeddedAgentGateway` is the server-only
+`AgentHarnessBackend`. It is private to the `createAgentHost()` construction
+funnel: consumers still inject only `harnessFactory`, and there is no public
+backend factory or second session path.
+
+`AgentPromptPayload` is exposed from the shared chat barrel as a type only. Its
+“server-only” contract means browser schemas never accept the `requireIdle`
+selector.
+
+`PiSessionHarnessBackend` is the sole production implementation today. It
+adapts the unchanged `HarnessPiChatService` and owns the mapping from the
+workspace-scoped backend address and attribution context into the legacy Pi
+request context. The backend carries no credentials, membership authority, or
+model catalog. Reload and slash-command host effects continue to use the
+composition harness directly; they are host capabilities, not session-runtime
+operations.
+
+The Gateway request ledger is the only idempotency authority. A backend method
+may be invoked again after a crash only through a ledger-admitted request; the
+backend itself promises no deduplication. A runtime load failure before the
+effect begins records a retryable state, so the same request key and payload can
+atomically reclaim admission after recovery; completed, rejected, in-flight, and
+outcome-unknown records retain their normal replay behavior. P1-B substitutes the adapter-private
+replay source below `HarnessPiChatService`, not this interface. Later operations
+may extend the interface only in their named slices (`resumePausedToolCall` in
+A3b and `markTurnInterrupted` in A4); neither is part of the current seam.
+
+An explicit retryable admission result, or a returned prompt-state guard denial,
+releases its pending claim before any effect. The ledger persists
+`pending-admission` with `retryable: true`; `prepare` must atomically consume
+that marker before returning `ownership: 'reclaimed'`. The original key and
+payload digest stay binding, and overlapping requests still receive
+`AGENT_REQUEST_IN_PROGRESS`. This applies to both ordinary and strict-idle
+prompt guards, with their existing idle/error admission policies.
+
+Custom `AgentRequestLedger` implementations must implement
+`markAdmissionRetryable` and atomic reclaim, and refuse `acceptAdmission` until
+the released claim has been reclaimed. A thrown admission/guard error does not
+release ownership. Reopening a durable ledger permits only an explicitly marked
+retry; unmarked pending, admission-accepted, in-flight and outcome-unknown rows
+are never automatically re-executed. This is not general crash reconciliation.
+
+CI pins the boundary in three directions: Agent Host production code cannot
+import a Pi runtime, only `harnessBackend/**` can reference the concrete Pi chat
+service, and Workspace/Core/CLI/playground consumers cannot name the private
+backend interface or module path. Retire the legacy `PiChatSessionService` when
+the legacy `core/createAgent` path is removed; it is intentionally not widened
+or migrated here.

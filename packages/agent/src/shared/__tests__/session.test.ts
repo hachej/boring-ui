@@ -6,6 +6,7 @@ import type {
   SessionStore,
   SessionSummary,
   SessionListOptions,
+  SessionCreateInit,
 } from '../session'
 
 test('SessionStore contract', () => {
@@ -14,16 +15,21 @@ test('SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('load')
   expectTypeOf<SessionStore>().toHaveProperty('delete')
   expectTypeOf<SessionStore>().toHaveProperty('rename')
+  expectTypeOf<SessionStore>().toHaveProperty('setArchived')
 
   expectTypeOf<SessionStore['list']>().parameters.toEqualTypeOf<[ctx: SessionCtx, options?: SessionListOptions]>()
   expectTypeOf<SessionStore['list']>().returns.toEqualTypeOf<Promise<SessionSummary[]>>()
   expectTypeOf<SessionStore['create']>().parameters.toEqualTypeOf<
-    [ctx: SessionCtx, init?: { title?: string }]
+    [ctx: SessionCtx, init?: SessionCreateInit]
   >()
   expectTypeOf<SessionStore['load']>().parameters.toEqualTypeOf<
     [ctx: SessionCtx, sessionId: string]
   >()
   expectTypeOf<SessionStore['load']>().returns.toEqualTypeOf<Promise<SessionDetail>>()
+  expectTypeOf<NonNullable<SessionStore['setArchived']>>().parameters.toEqualTypeOf<
+    [ctx: SessionCtx, sessionId: string, archived: boolean]
+  >()
+  expectTypeOf<NonNullable<SessionStore['setArchived']>>().returns.toEqualTypeOf<Promise<SessionSummary>>()
   expectTypeOf<SessionStore['delete']>().returns.toEqualTypeOf<Promise<void>>()
 })
 
@@ -43,6 +49,8 @@ test('Session shapes', () => {
     nativeSessionId?: string
     hasAssistantReply?: boolean
     status?: 'idle' | 'running' | 'aborting' | 'error'
+    archived?: boolean
+    originChannel?: import('../channel').OriginChannel
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()

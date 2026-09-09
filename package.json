@@ -1,15 +1,16 @@
 {
   "private": true,
   "name": "boring-ui-v2",
-  "version": "0.1.103",
+  "version": "0.1.109",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
-    "dev": "pnpm -r run dev",
+    "dev": "pnpm run build:app-deps && pnpm -r --parallel --filter './apps/*' run dev:app",
     "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run typecheck",
-    "lint": "pnpm check:agenthost-cutover-matrix && pnpm test:agenthost-compositions && pnpm check:generated-artifacts && pnpm check:agent-resources && pnpm test:present-pr-context && pnpm audit:imports",
+    "lint": "pnpm test:changed-workspaces && pnpm check:pi-legacy-apis && pnpm check:agenthost-cutover-matrix && pnpm test:agenthost-compositions && pnpm check:generated-artifacts && pnpm check:agent-resources && pnpm test:present-pr-context && pnpm audit:imports",
+    "check:pi-legacy-apis": "node scripts/check-pi-legacy-apis.mjs",
     "check:agenthost-cutover-matrix": "node scripts/check-agenthost-cutover-matrix.mjs",
-    "test:agenthost-compositions": "node scripts/run-agenthost-composition-proofs.mjs",
+    "test:agenthost-compositions": "pnpm --filter @hachej/channel-whatsapp build && node scripts/run-agenthost-composition-proofs.mjs",
     "test:present-pr-context": "node --test scripts/lib/present-pr-context.test.mjs scripts/lib/present-pr-files.test.mjs scripts/lib/present-pr-html.test.mjs scripts/lib/present-pr-links.test.mjs scripts/lib/present-pr-theme.test.mjs",
     "test:present-pr-mermaid": "node --test scripts/lib/render-mermaid.test.mjs",
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants && pnpm lint:alignment-invariants && pnpm check:skill-digests",
@@ -31,8 +32,10 @@
     "write:skill-digests": "node scripts/refresh-skill-digests.mjs --write",
     "check:dependency-age": "node scripts/check-dependency-age.mjs",
     "check:bundle-size": "pnpm --filter @hachej/boring-workspace run check:bundle-size",
+    "check:cli-bundle-size": "node packages/cli/scripts/check-front-bundle-size.mjs",
     "check:core-bundle-size": "pnpm --filter @hachej/boring-core run check:bundle-size",
     "ci:bundle-size": "pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm check:bundle-size",
+    "ci:cli-bundle-size": "pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-ui-cli build:front && pnpm check:cli-bundle-size",
     "ci:core-bundle-size": "pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm check:core-bundle-size",
     "test": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run test",
     "test:changed": "node scripts/test-changed-workspaces.mjs",
@@ -50,11 +53,14 @@
     "release:patch": "bash scripts/cut-release.sh patch",
     "release:minor": "bash scripts/cut-release.sh minor",
     "release:major": "bash scripts/cut-release.sh major",
-    "build:packages": "pnpm -r --filter './packages/*' --filter './plugins/*' --workspace-concurrency=4 run build",
+    "build:packages": "pnpm -r --filter './packages/*' --filter './packages/channels/*' --filter './plugins/*' --workspace-concurrency=4 run build",
+    "dev:packages": "pnpm -r --parallel --filter './packages/*' run dev",
+    "build:app-deps": "pnpm -r --workspace-concurrency=1 --filter '{./apps/*}...' --filter '!{./apps/*}' run build",
     "typecheck:changed": "node scripts/typecheck-changed-workspaces.mjs",
     "review:workspace-ui": "node scripts/review-workspace-playground-ui.mjs",
     "signoff:local": "bash scripts/signoff-local.sh",
-    "signoff:full": "bash scripts/signoff-full.sh"
+    "signoff:full": "bash scripts/signoff-full.sh",
+    "test:changed-workspaces": "node --test scripts/lib/changed-workspaces.test.mjs"
   },
   "packageManager": "pnpm@10.33.2",
   "engines": {
@@ -70,12 +76,17 @@
       "esbuild"
     ],
     "overrides": {
-      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
+      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.3",
       "@perspective-dev/client": "4.5.2",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",
-      "better-auth": "1.6.27"
+      "better-auth": "1.6.27",
+      "@earendil-works/pi-agent-core": "0.84.3",
+      "@earendil-works/pi-ai": "0.84.3",
+      "@earendil-works/pi-client": "0.84.3",
+      "@earendil-works/pi-protocol": "0.84.3",
+      "@earendil-works/pi-tui": "0.84.3"
     }
   }
 }

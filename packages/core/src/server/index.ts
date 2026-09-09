@@ -13,8 +13,9 @@ export type {
 
 export {
   AGENT_TYPE_ID_PATTERN,
-  LEGACY_DEFAULT_AGENT_TYPE_ID,
+  DefaultAgentTypeError,
   isAgentTypeId,
+  parseRequiredDefaultAgentTypeId,
   parseTrustedDefaultAgentTypeId,
   resolveWorkspaceDefaultAgentTypeId,
 } from './defaultAgentType.js'
@@ -82,7 +83,7 @@ export type {
 export { registerWorkspaceRoutes, registerMemberRoutes, registerSettingsRoutes, registerInviteRoutes } from './routes/index.js'
 
 export { createIdempotencyMiddleware, createDrizzleIdempotencyStore } from './middleware/index.js'
-export type { IdempotencyKeyStore, IdempotencyEntry } from './middleware/index.js'
+export type { IdempotencyKeyStore, IdempotencyEntry, IdempotencyClaim } from './middleware/index.js'
 
 export type { WorkspaceProvisioner, ProvisionContext, ProvisionResult } from './provisioner/index.js'
 export { createFsProvisioner } from './provisioner/index.js'

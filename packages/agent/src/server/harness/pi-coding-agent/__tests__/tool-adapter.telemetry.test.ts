@@ -115,15 +115,19 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
     create: () => ({ getSessionFile: () => null }),
     open: () => ({ getSessionFile: () => null }),
   },
-  AuthStorage: { create: () => ({}) },
-  ModelRegistry: { create: () => ({ find: vi.fn(), getAvailable: () => [], registerProvider: vi.fn() }) },
+  ModelRuntime: { create: async () => ({ getModel: vi.fn(), getAvailableSnapshot: () => [], registerProvider: vi.fn(), refresh: vi.fn(async () => ({})) }) },
   DefaultResourceLoader: class {
     private readonly commandName = `cmd-${++loaderSeq}`
     async reload() {}
     getSkills() { return { diagnostics: [] } }
     getExtensions() { return { runtime: { getCommands: () => [{ name: this.commandName, source: 'extension' }] }, errors: [] } }
   },
-  SettingsManager: { create: () => ({ getDefaultProvider: () => undefined, getDefaultModel: () => undefined }) },
+  SettingsManager: {
+    create: () => ({
+      getDefaultProvider: () => undefined,
+      getDefaultModel: () => undefined,
+    }),
+  },
   getAgentDir: () => '/tmp/mock-agent-dir',
   loadSkills: () => ({ skills: [], diagnostics: [] }),
   }
