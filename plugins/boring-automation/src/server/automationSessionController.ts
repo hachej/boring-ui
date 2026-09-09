@@ -18,7 +18,7 @@ export function createAutomationSessionController(
     operation: (binding: Parameters<Parameters<WorkspaceAgentDispatcherResolver["runWithWorkspaceAgent"]>[1]>[0]) => Promise<T>,
   ): Promise<T> => {
     let outcome: { value: T } | undefined
-    await resolver.runWithWorkspaceAgent({ agentTypeId, context, requestId }, async (binding) => {
+    await resolver.runWithWorkspaceAgent({ agentTypeId, context, requestId, fundingPolicy: "api-key-only" }, async (binding) => {
       outcome = { value: await operation(binding) }
     })
     if (!outcome) {

@@ -24,7 +24,7 @@ function operations(): AutomationOperations {
     cancel: vi.fn(async (ref) => ({ ...ref, cancelled: true as const })),
     get: vi.fn(async () => ({ automation: summary, prompt: { text: "prompt", characterCount: 6, truncated: false } })),
     create: vi.fn(async () => summary),
-    update: vi.fn(async () => summary),
+    update: vi.fn(async () => ({ ...summary, promptRef: "prompts/automation-1.md" })),
     pause: vi.fn(async () => ({ ...summary, enabled: false })),
     resume: vi.fn(async () => summary),
     delete: vi.fn(async () => ({ automationId: summary.id, title: summary.title })),

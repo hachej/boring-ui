@@ -97,7 +97,7 @@ export interface AutomationOperations {
   >
   get(automationId: string): Promise<AutomationWithPrompt>
   create(input: AutomationCreate): Promise<AutomationSummary>
-  update(automationId: string, input: AutomationUpdateInput): Promise<AutomationSummary>
+  update(automationId: string, input: AutomationUpdateInput): Promise<Automation>
   pause(automationId: string): Promise<AutomationSummary>
   resume(automationId: string): Promise<AutomationSummary>
   delete(automationId: string): Promise<{ automationId: string; title: string }>
@@ -248,7 +248,7 @@ export function createAutomationOperations({
       const automation = Object.keys(metadata).length > 0
         ? await store.updateAutomation(automationId, metadata)
         : await requireAutomation(store, automationId)
-      return automationSummary(automation)
+      return automation
     },
     async pause(automationId) {
       await requireAutomation(store, automationId)
@@ -301,7 +301,7 @@ async function requireAutomation(store: AutomationStore, automationId: string): 
   return automation
 }
 
-function automationSummary(automation: Automation): AutomationSummary {
+export function automationSummary(automation: Automation): AutomationSummary {
   return {
     id: automation.id,
     title: automation.title,

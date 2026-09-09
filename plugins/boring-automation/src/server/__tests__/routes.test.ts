@@ -153,7 +153,12 @@ describe("automationRoutes", () => {
       payload: { enabled: false },
     })
     expect(patched.statusCode).toBe(200)
-    expect(patched.json().automation.enabled).toBe(false)
+    expect(patched.json().automation).toEqual({
+      ...automation,
+      enabled: false,
+      updatedAt: expect.any(String),
+    })
+    expect(patched.json().automation.promptRef).toBe(automation.promptRef)
 
     // HTTP/UI compatibility deliberately keeps legacy unqualified model values
     // editable even though the new agent tool requires provider:model-id syntax.

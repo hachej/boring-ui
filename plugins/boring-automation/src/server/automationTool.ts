@@ -8,7 +8,7 @@ import {
   type BoringAutomationErrorCode,
 } from "../shared"
 import { parseAutomationModel } from "./dispatchRunExecutor"
-import type { AutomationOperations, AutomationUpdateInput } from "./operations"
+import { automationSummary, type AutomationOperations, type AutomationUpdateInput } from "./operations"
 import { AutomationStoreError } from "./store"
 
 export const BORING_AUTOMATION_TOOL_NAME = "boring_automation"
@@ -130,7 +130,7 @@ async function executeOperation(operations: AutomationOperations, input: Automat
       const { operation: _operation, automationId, prompt, ...metadata } = input
       const patch = Object.keys(metadata).length > 0 ? AutomationPatchSchema.parse(metadata) : {}
       const update: AutomationUpdateInput = { ...patch, ...(prompt !== undefined ? { prompt } : {}) }
-      const automation = await operations.update(automationId, update)
+      const automation = automationSummary(await operations.update(automationId, update))
       return { ok: true as const, operation: input.operation, automation }
     }
     case "pause": {
