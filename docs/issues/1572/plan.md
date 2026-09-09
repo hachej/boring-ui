@@ -10,11 +10,11 @@ track: fast
 
 ## Problem
 
-PR #1572 upgrades nine production dependencies and is currently red across lint, typecheck, unit, invariants, budgets, E2E, UI review, and Runtime Refactor P8. The branch must be brought current with `origin/main`, repaired without weakening proof or budgets, and delivered on the existing Dependabot branch. Earlier attempts were tracked under the `pr-review-batch` epic; that batch is reference-only and must not be modified.
+PR #1572 began with nine production dependency bumps and is now conflict-prone against current `origin/main`. Exact-head CI at `851868da0` reports Runtime Refactor P8 plus summary failure; E2E/UI Review failed during external Playwright browser provisioning with an apt hash mismatch. The branch must be brought current, each retained bump bisected, and any bump that breaks a required check dropped. Earlier attempts were tracked by canonical batch Bead `factory-plugin-0hfc` under `pr-review-batch`; that batch is reference-only and must not be modified.
 
 ## Solution
 
-First merge current `origin/main` into the PR branch and diagnose every failed job from its logs. Adapt callers and tests to supported dependency APIs, retaining all upgrades unless one package is demonstrably blocked; in that case remove only that package from the group and document why. Then run exact-head verification, independent standards/thermo/abstraction review, produce durable proof and the `present-pr` artifact, push the same branch, and classify the final diff for automatic `factory: MERGE-READY <sha>` versus one protected merge gate.
+First merge current `origin/main` into the PR branch and diagnose every failed job from its logs. Bisect retained bumps and remove every package bump that causes a required check failure; do not modify product source to accommodate a dependency, and remove prior source accommodations that exist only for a bump. Then run exact-head verification, independent standards/thermo/abstraction review, produce durable proof and the `present-pr` artifact, push the same branch, and classify the final diff for automatic `factory: MERGE-READY <sha>` versus one protected merge gate.
 
 ## Decisions
 
@@ -41,7 +41,7 @@ First merge current `origin/main` into the PR branch and diagnose every failed j
 
 - Existing PR is conflict-free with current `origin/main` and pushed to `dependabot/npm_and_yarn/production-dependencies-bf6c2aab7f`.
 - Every current review comment and failed CI job is dispositioned with exact evidence.
-- Compatible code/tests are repaired; only a genuinely blocked individual bump may be dropped with a PR note.
+- No product source is modified to accommodate a dependency; every bump that breaks a required check is dropped and named with evidence.
 - Relevant lint, typecheck, unit, invariants, budgets, E2E/UI checks pass at exact head as applicable.
 - Independent exact-SHA review reports standards/spec PASS, thermo PASS, and explicit package-abstraction PASS, with all findings resolved (maximum four review rounds).
 - Durable proof and `present-pr` artifact exist; final risk classification is recorded.
@@ -58,15 +58,15 @@ First merge current `origin/main` into the PR branch and diagnose every failed j
 ## Slices
 
 ### Slice: Repair and synchronize the dependency group
-**Bead:** materialized in Beads graph
-**Delivers:** failed-job diagnosis, current-main merge, compatible source/test/lockfile repairs, targeted and invariant/budget proof, same-branch push, exact-SHA independent review, and complete handoff.
+**Bead:** `factory-plugin-rvrw.1`
+**Delivers:** failed-job diagnosis, current-main merge, per-bump bisect, removal of every check-breaking bump and any prior product-source accommodation, targeted invariant/budget proof, same-branch push, and complete handoff.
 **Blocked by:** None
-**File scope:** `package.json`, `pnpm-lock.yaml`, package/app manifests, and only source/tests directly required by the nine upgraded dependencies; branch merge may incorporate upstream files.
+**File scope:** `package.json`, `pnpm-lock.yaml`, package/app manifests, `packages/cli/vite.config.ts` only to remove prior accommodation, and merge-conflict files from `origin/main`; no new product-source accommodations.
 **Proof:** GitHub failed logs plus affected lint/typecheck/unit/invariant/budget commands at committed SHA.
 **Review budget:** one implementation session and up to four independent review rounds.
 
 ### Slice: Validate and prepare final admission
-**Bead:** materialized in Beads graph
+**Bead:** `factory-plugin-rvrw.2`
 **Delivers:** verify prior handoff and all PR comments, repair any exact-head residuals, full applicable CI/current-main integration proof, final fresh review with explicit abstraction PASS, risk-size classification, present-pr/show-me evidence, PR update, and the authorized terminal action.
 **Blocked by:** Repair and synchronize the dependency group
 **File scope:** residual files identified by exact-head CI/review, `docs/issues/1572/`, `.handoff/pr-1572-presentation.html`, and PR comments/body; no unrelated files.

@@ -1,4 +1,4 @@
-# [Production Deps Group] Plan, visually
+# [Production Deps Group Retry] Plan, visually
 
 PR #1572 stays on its existing Dependabot branch. This plan repairs the grouped upgrades, proves the exact integration candidate, and routes the final diff by the owner-approved risk rules.
 
@@ -8,7 +8,7 @@ PR #1572 stays on its existing Dependabot branch. This plan repairs the grouped 
 PR #1572
 ├── package.json + pnpm-lock.yaml       # nine grouped production upgrades
 ├── apps/* + plugins/* manifests        # resolved dependency versions
-├── packages/*                          # real callers/contracts repaired only as needed
+├── packages/cli/vite.config.ts         # remove prior bump-only source accommodation
 ├── tests + CI/budget commands          # exact-head behavior and resource proof
 └── docs/issues/1572 + .handoff/        # review, show-me, present-pr evidence
 ```
@@ -23,8 +23,9 @@ sequenceDiagram
     participant W2 as Admission Worker
     participant PR as Existing PR #1572
     W1->>PR: read every failed job and comment
-    W1->>W1: merge current origin/main and repair compatible callers/tests
+    W1->>W1: merge current main; bisect every retained bump
     W1->>CI: targeted checks, invariants, budgets
+    CI-->>W1: drop every bump that breaks a required check
     W1->>R: exact-SHA standards + thermo + abstraction review
     W1->>PR: push same branch and hand off
     W2->>CI: current-main integration and exact-head full checks
@@ -43,9 +44,10 @@ sequenceDiagram
  dependabot grouped version/lockfile update
 +  inspect every failed GitHub job and prior Factory verdict
 +  merge current origin/main without force-push
-+  adapt only affected public callers and regression tests
-+  preserve budgets; never weaken assertions
-+  if genuinely blocked, drop only the single blocked package with rationale
++  never modify product source to accommodate a dependency
++  remove prior bump-only product-source accommodations
++  preserve budgets and assertions
++  drop every bump that breaks any required check; name each with evidence
 +  exact-SHA standards/spec + thermo + explicit abstraction PASS
 +  exact-head CI and current-main integration proof
 +  present-pr artifact and deterministic risk classification
@@ -57,7 +59,7 @@ sequenceDiagram
 | Risk | Likelihood | Impact | Mitigation |
 |---|---:|---:|---|
 | Multiple upgrades obscure the root cause | Medium | High | Read each job log; isolate failures by API/caller and retain per-package rationale. |
-| Compatibility fix crosses a public/package boundary | Low | High | Inspect contracts and real callers; explicit independent abstraction PASS; protected route if contract changes. |
+| Prior workaround changed product source | High | High | Remove bump-only source accommodations; retain only dependency metadata that passes unchanged product checks. |
 | Bundle/resource regression | Medium | High | Run existing budget checks; do not raise limits without an owner decision. |
 | Stale branch-green result | Medium | High | Merge current main, then validate and review the exact final SHA/integration candidate. |
 | UI behavior changes indirectly | Low | Medium | If source repair changes UI behavior, add revision-bound Playwright before/after video and assertions. |
@@ -69,5 +71,7 @@ sequenceDiagram
 3. Independent standards/spec, thermo, and explicit package-abstraction PASS at exact final SHA (≤4 rounds).
 4. Exact-head CI plus current-main integration evidence.
 5. Durable `.handoff/pr-1572-presentation.html`, proof comment, and final risk-size classification.
+
+Beads: `factory-plugin-rvrw.1` (bisect/drop) → `factory-plugin-rvrw.2` (verify/admit), under epic `factory-plugin-rvrw`.
 
 Plan review: no host-provided independent plan-review mechanism is available in this Orchestrator session; the owner decides at Gate 1 under the explicit host requirement.
