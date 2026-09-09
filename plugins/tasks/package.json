@@ -53,7 +53,7 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.32.0"
+    "lucide-react": "^1.31.0"
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
