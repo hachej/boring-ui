@@ -79,7 +79,11 @@ export interface AgentRequestLedgerRecordBase {
 }
 
 export type AgentRequestLedgerRecord =
-  | (AgentRequestLedgerRecordBase & { readonly state: 'pending-admission' })
+  | (AgentRequestLedgerRecordBase & {
+      readonly state: 'pending-admission'
+      /** The last owner stopped before ledger admission acceptance or effect dispatch. */
+      readonly retryable?: true
+    })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'admission-accepted'
       readonly admissionReceipt: string
@@ -101,8 +105,10 @@ export type AgentRequestLedgerRecord =
 export interface AgentRequestLedger {
   /** Direct production projections require transactional durable ownership. */
   readonly durability: 'durable-transactional' | 'in-memory'
-  /** Atomic compare-and-create across every process sharing the durable store. */
+  /** Atomically create or reclaim explicitly retryable admission across all store users. */
   prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult>
+  /** Release only a pending claim whose owner has stopped before any effect. */
+  markAdmissionRetryable(key: AgentRequestKey): Promise<void>
   /** All transitions are compare-and-swap against the exact allowed prior state. */
   acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
   beginEffect(key: AgentRequestKey): Promise<void>
@@ -114,7 +120,7 @@ export interface AgentRequestLedger {
 }
 
 export interface AgentRequestLedgerPrepareResult {
-  readonly ownership: 'created' | 'existing'
+  readonly ownership: 'created' | 'reclaimed' | 'existing'
   readonly record: AgentRequestLedgerRecord
 }
 
@@ -417,6 +423,11 @@ export interface CreateAgentHostOptions {
   readonly eventStore?: import('../events/eventStreamStore').EventStreamStore
   /** Explicit test/dev opt-in for an in-memory ledger. */
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
+  /**
+   * Built-in SQLite terminal-payload retention. Values below 24 hours are
+   * raised to 24 hours; omitted retention keeps terminal payloads indefinitely.
+   * Injected ledgers retain ownership of their own storage policy.
+   */
   readonly requestRetentionMs?: number
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number

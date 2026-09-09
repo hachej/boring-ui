@@ -49,6 +49,11 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
       if (current.digest !== digest) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with a different payload')
       }
+      if (current.state === 'pending-admission' && current.retryable) {
+        const record: AgentRequestLedgerRecord = { key, digest, state: 'pending-admission', updatedAt: this.tick() }
+        this.write(key, record)
+        return { ownership: 'reclaimed', record }
+      }
       return { ownership: 'existing', record: current }
     }
     const record: AgentRequestLedgerRecord = {
@@ -61,8 +66,15 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
     return { ownership: 'created', record }
   }
 
+  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
+    const current = this.requireState(key, 'pending-admission')
+    if (current.retryable) throw new Error('admission is already retryable')
+    this.write(key, { ...current, retryable: true, updatedAt: this.tick() })
+  }
+
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
     const current = this.requireState(key, 'pending-admission')
+    if (current.retryable) throw new Error('admission must be claimed before accepting')
     this.write(key, { ...current, state: 'admission-accepted', admissionReceipt, updatedAt: this.tick() })
   }
 
@@ -316,8 +328,8 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     const ledger = new InMemoryAgentRequestLedger()
     const key = requestKey()
     await ledger.prepare(key, 'digest-a')
-    // A retryable admission result performs no ledger transition.
-    expect(await ledger.read(key)).toMatchObject({ state: 'pending-admission' })
+    await ledger.markAdmissionRetryable(key)
+    expect(await ledger.read(key)).toMatchObject({ state: 'pending-admission', retryable: true })
     expect(await new InMemoryAgentRequestLedger().read(key)).toBeUndefined()
   })
 })
@@ -743,7 +755,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       if (pendingDigest !== digest) {
         throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with different payload')
       }
-      throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS, 'request is already in progress')
+      this.pendingRequests.delete(key)
     }
     const failure = this.requestFailures.get(key)
     if (failure !== undefined) {
