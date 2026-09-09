@@ -134,6 +134,8 @@ function createVaultCredentialStoreBackendInternalV1(
     || options.kmsBackend.contractVersion !== 'boring.workspace-kek-provider.v1'
     || !options.persistence
     || !options.versionAnchor
+    || typeof options.versionAnchor.readPendingMutation !== 'function'
+    || typeof options.versionAnchor.recoverPendingMutation !== 'function'
   ) {
     notConfigured('Credential vault backend is misconfigured')
   }
@@ -227,11 +229,17 @@ function createVaultCredentialStoreBackendInternalV1(
     return credentialStateDigest(record, metadata?.state, metadata?.credentialType, fields)
   }
 
-  async function recoverPendingCredentialMutation(workspaceId: string): Promise<void> {
-    const pending = await versionAnchor.readPendingMutation(workspaceId)
+  async function recoverPendingCredentialMutation(
+    workspaceId: string,
+    allowUnprovisioned = false,
+  ): Promise<void> {
+    const pending = await versionAnchor.readPendingMutation!(
+      workspaceId,
+      allowUnprovisioned ? { allowUnprovisioned: true } : undefined,
+    )
     if (!pending) return
     const digest = await durableCredentialStateDigest(workspaceId, pending.providerId)
-    await versionAnchor.recoverPendingMutation(workspaceId, digest)
+    await versionAnchor.recoverPendingMutation!(workspaceId, digest)
   }
 
   async function requireCurrentVersion(
@@ -665,10 +673,7 @@ function createVaultCredentialStoreBackendInternalV1(
         return this.withWorkspaceLock(workspaceId, (locked) =>
           locked.listCredentialMetadata(workspaceId))
       }
-      if (await persistence.hasWorkspaceCredentialArtifacts(workspaceId)) {
-        await requireReady()
-        await recoverPendingCredentialMutation(workspaceId)
-      }
+      await recoverPendingCredentialMutation(workspaceId, true)
       return versionAnchor.withReadLock(workspaceId, async (readLocked) => {
         const listed = await persistence.listCredentialMetadata(workspaceId)
         const hasArtifacts = listed.length > 0
@@ -712,7 +717,7 @@ function createVaultCredentialStoreBackendInternalV1(
       }
       await recoverPendingCredentialMutation(workspaceId)
       await requireNotShredded(workspaceId)
-      return versionAnchor.withLifecycleMutation(
+      return versionAnchor.withMutation(
         workspaceId,
         providerId,
         async (anchorState) => {
@@ -724,8 +729,36 @@ function createVaultCredentialStoreBackendInternalV1(
             || anchorState?.credentialVersions[providerId] !== record.credentialVersion
             || anchorState.credentialLifecycleStates[providerId] !== metadata.state
           ) unreadable('Credential lifecycle state failed rollback verification')
-          const result = await persistence.updateCredentialMetadata(workspaceId, providerId, { state })
-          return { nextCredentialLifecycleState: state, result }
+          const fields = await persistence.listFields(
+            workspaceId,
+            providerId,
+            record.credentialVersion,
+          )
+          return {
+            expectedStateDigest: credentialStateDigest(
+              record,
+              metadata.state,
+              metadata.credentialType,
+              fields,
+            ),
+            nextStateDigest: credentialStateDigest(
+              record,
+              state,
+              metadata.credentialType,
+              fields,
+            ),
+            nextCredentialVersion: record.credentialVersion,
+            nextCredentialMaterialKind: record.materialKind,
+            nextCredentialFieldIds: [...fields.keys()],
+            nextCredentialLifecycleState: state,
+            nextCredentialType: metadata.credentialType,
+            nextDekGeneration: record.dekGeneration,
+            commit: () => persistence.updateCredentialMetadata(
+              workspaceId,
+              providerId,
+              { state },
+            ),
+          }
         },
       )
     },

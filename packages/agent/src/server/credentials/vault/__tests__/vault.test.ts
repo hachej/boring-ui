@@ -338,7 +338,7 @@ describe('local-KEK credential version anchor', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mutation = anchor.withMutation('ws-a', PROVIDER_A, async () => {
       mutationEntered = true
-      return anchorMutation({
+      return {
         nextCredentialVersion: 1,
         nextCredentialMaterialKind: 'none',
         nextCredentialFieldIds: [],
@@ -346,7 +346,7 @@ describe('local-KEK credential version anchor', () => {
         nextCredentialType: 'api-key',
         nextDekGeneration: 1,
         result: undefined,
-      })
+      }
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mutationEntered).toBe(false)
@@ -540,6 +540,9 @@ describe('local-KEK credential version anchor', () => {
           failFinalAnchor = false
           return createBackend(persistence, stableLoadKek)
         },
+        enableFinalAnchorFailure: () => {
+          failFinalAnchor = true
+        },
         workspaceId,
       }
     }
@@ -567,6 +570,23 @@ describe('local-KEK credential version anchor', () => {
     expect(await readFile(committed.anchorFilePath, 'utf8')).not.toContain(
       'pendingCredentialMutation',
     )
+
+    const lifecycle = await createBoundaryFixture('ws-lifecycle')
+    const lifecycleStable = lifecycle.stableBackend()
+    await lifecycleStable.writeAbsentCredential(lifecycle.workspaceId, PROVIDER_A)
+    lifecycle.enableFinalAnchorFailure()
+    await expectCredentialError(
+      () => lifecycle.failingBackend.setCredentialLifecycleState(
+        lifecycle.workspaceId,
+        PROVIDER_A,
+        'disabled',
+      ),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    expect((await lifecycle.stableBackend().getCredentialMetadata(
+      lifecycle.workspaceId,
+      PROVIDER_A,
+    ))?.state).toBe('disabled')
 
     const forgedAhead = await createBoundaryFixture('ws-forged-ahead')
     await expectCredentialError(
@@ -616,6 +636,10 @@ describe('local-KEK credential version anchor', () => {
       beforeCommit.workspaceId,
       PROVIDER_A,
     )).rejects.toThrow('simulated DB commit failure')
+    await expectCredentialError(
+      () => beforeCommit.stableBackend().listCredentialMetadata(beforeCommit.workspaceId),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
     await expectCredentialError(
       () => beforeCommit.stableBackend().writeAbsentCredential(
         beforeCommit.workspaceId,
