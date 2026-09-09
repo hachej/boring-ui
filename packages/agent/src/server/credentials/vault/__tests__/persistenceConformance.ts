@@ -148,6 +148,7 @@ export function runCredentialVaultPersistenceConformanceV1(
         dekGeneration: 1,
         materialKind: 'field-set' as const,
       }
+      await persistence.putWrappedDek(workspaceId, 1, wrappedDek(8))
       await persistence.commitCredentialVersionV2({
         workspaceId,
         providerId,
