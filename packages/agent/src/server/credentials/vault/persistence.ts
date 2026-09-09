@@ -95,8 +95,11 @@ export interface CommitCredentialVersionInputV1 {
   readonly record: StoredCredentialRecordV1
   readonly fields: ReadonlyMap<string, CredentialEnvelopeV1>
   readonly supersededFieldsTombstone?: CredentialFieldTombstoneV1
+}
+
+export interface CommitCredentialVersionInputV2 extends CommitCredentialVersionInputV1 {
   /** Applied in the same durable transaction as the record/version CAS. */
-  readonly metadataUpdate?: Readonly<{
+  readonly metadataUpdate: Readonly<{
     state: CredentialLifecycleStateV1
     displayLabel?: string
     credentialType?: string
@@ -193,4 +196,11 @@ export interface CredentialVaultPersistenceV1 {
   getFieldTombstone(
     key: CredentialFieldKeyV1,
   ): Promise<CredentialFieldTombstoneV1 | undefined>
+}
+
+/** Persistence capability required by the V2 recoverable vault protocol. */
+export interface CredentialVaultPersistenceV2 extends CredentialVaultPersistenceV1 {
+  readonly contractVersion: 'boring.credential-vault-persistence.v2'
+  /** Atomically CASes record, fields, tombstones, and authenticated metadata. */
+  commitCredentialVersionV2(input: CommitCredentialVersionInputV2): Promise<void>
 }

@@ -20,6 +20,7 @@ import {
 import type {
   CredentialLifecycleStateV1,
   CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
   WorkspaceCredentialLockOptionsV1,
@@ -45,7 +46,7 @@ import type {
 
 export interface VaultCredentialStoreOptionsV1 {
   readonly kmsBackend: WorkspaceKekProviderV1
-  readonly persistence: CredentialVaultPersistenceV1
+  readonly persistence: CredentialVaultPersistenceV2
   readonly versionAnchor: WorkspaceCredentialVersionAnchorV2
 }
 
@@ -136,6 +137,8 @@ function createVaultCredentialStoreBackendInternalV1(
     !options?.kmsBackend
     || options.kmsBackend.contractVersion !== 'boring.workspace-kek-provider.v1'
     || !options.persistence
+    || options.persistence.contractVersion !== 'boring.credential-vault-persistence.v2'
+    || typeof options.persistence.commitCredentialVersionV2 !== 'function'
     || !options.versionAnchor
     || options.versionAnchor.contractVersion !== 'boring.workspace-credential-version-anchor.v2'
     || typeof options.versionAnchor.readPendingMutation !== 'function'
@@ -346,7 +349,7 @@ function createVaultCredentialStoreBackendInternalV1(
         mutate(createVaultCredentialStoreBackendInternalV1({
           kmsBackend,
           versionAnchor,
-          persistence: lockedPersistence,
+          persistence: lockedPersistence as CredentialVaultPersistenceV2,
         }, workspaceId)), lockOptions)
     },
 
@@ -572,7 +575,7 @@ function createVaultCredentialStoreBackendInternalV1(
             nextCredentialType: credentialType,
             nextDekGeneration: record.dekGeneration,
             commit: async () => {
-              await persistence.commitCredentialVersion({
+              await persistence.commitCredentialVersionV2({
                 workspaceId,
                 providerId,
                 expectedCredentialVersion,
@@ -654,7 +657,7 @@ function createVaultCredentialStoreBackendInternalV1(
             nextCredentialType: credentialType,
             nextDekGeneration: record.dekGeneration,
             commit: async () => {
-              await persistence.commitCredentialVersion({
+              await persistence.commitCredentialVersionV2({
                 workspaceId,
                 providerId,
                 expectedCredentialVersion,

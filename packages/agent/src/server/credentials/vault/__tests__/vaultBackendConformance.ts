@@ -11,7 +11,7 @@ import {
   createLocalKekWorkspaceKekProviderV1,
   createVaultCredentialStoreBackendV1,
 } from '..'
-import type { CredentialVaultPersistenceV1 } from '../persistence'
+import type { CredentialVaultPersistenceV2 } from '../persistence'
 
 const providerId = 'conformance-provider' as ProviderId
 const fieldId = 'api-key' as CredentialFieldId
@@ -28,7 +28,7 @@ function kmsBackend(kek: Uint8Array): WorkspaceKekProviderV1 {
 
 export function runVaultCredentialStoreConformanceV1(
   label: string,
-  createPersistence: () => Promise<CredentialVaultPersistenceV1>,
+  createPersistence: () => Promise<CredentialVaultPersistenceV2>,
 ): void {
   describe(`vault credential store conformance: ${label}`, () => {
     async function harness(kek = kekA) {

@@ -34,6 +34,7 @@ export type {
 } from './kmsBackend'
 export type {
   CommitCredentialVersionInputV1,
+  CommitCredentialVersionInputV2,
   CommitDekRotationRecordInputV1,
   CredentialFieldDeletionReasonV1,
   CredentialFieldKeyV1,
@@ -41,6 +42,7 @@ export type {
   CredentialLifecycleStateV1,
   CredentialMaterialKindV1,
   CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
   WorkspaceCredentialLockOptionsV1,

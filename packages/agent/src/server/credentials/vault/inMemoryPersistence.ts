@@ -9,9 +9,11 @@ import type {
 } from '../../../shared/credentials'
 import type {
   CommitCredentialVersionInputV1,
+  CommitCredentialVersionInputV2,
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
   CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
   WorkspaceDekRotationStateV1,
@@ -91,7 +93,7 @@ function fieldKey(key: CredentialFieldKeyV1): string {
   ])
 }
 
-export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPersistenceV1 {
+export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPersistenceV2 {
   const records = new Map<string, StoredCredentialRecordV1>()
   const metadata = new Map<string, StoredCredentialMetadataV1>()
   const wrappedDeks = new Map<string, WrappedWorkspaceDekV1>()
@@ -102,7 +104,8 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
   const shreddedWorkspaces = new Set<string>()
   const workspaceQueues = new Map<string, Promise<void>>()
 
-  const persistence: CredentialVaultPersistenceV1 = {
+  const persistence: CredentialVaultPersistenceV2 = {
+    contractVersion: 'boring.credential-vault-persistence.v2',
     async withWorkspaceLock<T>(
       workspaceId: string,
       mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
@@ -196,8 +199,16 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
         updatedAt: now,
       }))
     },
-    async commitCredentialVersion(
-      input: CommitCredentialVersionInputV1,
+    async commitCredentialVersion(input: CommitCredentialVersionInputV1): Promise<void> {
+      return persistence.commitCredentialVersionV2({
+        ...input,
+        metadataUpdate: {
+          state: input.record.materialKind === 'none' ? 'intentionally_absent' : 'active',
+        },
+      })
+    },
+    async commitCredentialVersionV2(
+      input: CommitCredentialVersionInputV2,
     ): Promise<void> {
       if (shreddedWorkspaces.has(input.workspaceId)) {
         throw new CredentialResolutionError(

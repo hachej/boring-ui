@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { OAuthCredential } from '@earendil-works/pi-ai'
 import { CREDENTIAL_ERROR_CODES } from '../../../shared/credentials'
 import type { ProviderId } from '../../../shared/credentials'
-import type { CredentialVaultPersistenceV1 } from '../vault'
+import type { CredentialVaultPersistenceV2 } from '../vault'
 import {
   createInMemoryCredentialVaultPersistenceV1,
   createInMemoryCredentialVersionAnchorV1,
@@ -125,7 +125,7 @@ describe('vault-backed Pi CredentialStore', () => {
       'workspace-a',
       actorCredentialProviderIdV1('user-a', 'openai-codex'),
     )
-    const typeTamperedPersistence: CredentialVaultPersistenceV1 = {
+    const typeTamperedPersistence: CredentialVaultPersistenceV2 = {
       ...persistence,
       async getCredentialMetadata() {
         return activeMetadata && { ...activeMetadata, credentialType: 'tampered-type' }
@@ -159,7 +159,7 @@ describe('vault-backed Pi CredentialStore', () => {
     )
 
     for (const replayedMetadata of [undefined, activeMetadata]) {
-      const replayedPersistence: CredentialVaultPersistenceV1 = {
+      const replayedPersistence: CredentialVaultPersistenceV2 = {
         ...persistence,
         async getCredentialMetadata() { return replayedMetadata },
         async withWorkspaceLock(workspaceId, mutate, options) {

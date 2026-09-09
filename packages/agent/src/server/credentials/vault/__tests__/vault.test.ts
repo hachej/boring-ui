@@ -18,6 +18,7 @@ import {
 import type {
   CredentialVersionMutationResultV1,
   CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   VaultCredentialStoreBackendV1,
   VaultCredentialStoreOptionsV1,
   WorkspaceCredentialVersionAnchorV1,
@@ -97,11 +98,11 @@ function context(workspaceId: string, dekGeneration = 1) {
 
 function vaultStore(
   kek: Buffer = KEK_A,
-  persistence: CredentialVaultPersistenceV1 =
+  persistence: CredentialVaultPersistenceV2 =
     createInMemoryCredentialVaultPersistenceV1(),
 ): Readonly<{
   backend: VaultCredentialStoreBackendV1
-  persistence: CredentialVaultPersistenceV1
+  persistence: CredentialVaultPersistenceV2
 }> {
   let versionAnchor = anchors.get(persistence)
   if (!versionAnchor) {
@@ -353,8 +354,21 @@ describe('local-KEK credential version anchor', () => {
       acceptVaultOptions({ versionAnchor: legacyAlias })
     }
 
+    const recoverablePersistence = createInMemoryCredentialVaultPersistenceV1()
+    const {
+      contractVersion: _persistenceVersion,
+      commitCredentialVersionV2: _atomicMetadataCommit,
+      ...legacyPersistence
+    } = recoverablePersistence
+    expectTypeOf(legacyPersistence).toMatchTypeOf<CredentialVaultPersistenceV1>()
+    const acceptPersistence = (_persistence: CredentialVaultPersistenceV2) => undefined
+    if (false) {
+      // @ts-expect-error A V1 persistence adapter cannot satisfy the V2 vault seam.
+      acceptPersistence(legacyPersistence)
+    }
+
     const commonOptions = {
-      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      persistence: recoverablePersistence,
       kmsBackend: createLocalKekWorkspaceKekProviderV1({
         keyRef: 'test-key',
         keyVersion: 1,
@@ -367,6 +381,11 @@ describe('local-KEK credential version anchor', () => {
         versionAnchor: invalidAnchor as WorkspaceCredentialVersionAnchorV2,
       })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
     }
+    expect(() => createVaultCredentialStoreBackendV1({
+      ...commonOptions,
+      persistence: legacyPersistence as CredentialVaultPersistenceV2,
+      versionAnchor: recoverable,
+    })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
   })
   test('serializes provider-list inspections with anchor mutations', async () => {
     const anchor = createInMemoryCredentialVersionAnchorV1()
@@ -567,7 +586,7 @@ describe('local-KEK credential version anchor', () => {
         return new Uint8Array(KEK_A)
       }
       const createBackend = (
-        store: CredentialVaultPersistenceV1,
+        store: CredentialVaultPersistenceV2,
         loadKek: () => Promise<Uint8Array>,
       ) => createVaultCredentialStoreBackendV1({
         persistence: store,
@@ -666,7 +685,7 @@ describe('local-KEK credential version anchor', () => {
     )
 
     const beforeCommit = await createBoundaryFixture('ws-before-commit')
-    let rejectingPersistence!: CredentialVaultPersistenceV1
+    let rejectingPersistence!: CredentialVaultPersistenceV2
     rejectingPersistence = Object.freeze({
       ...beforeCommit.persistence,
       async withWorkspaceLock<T>(
@@ -675,7 +694,7 @@ describe('local-KEK credential version anchor', () => {
       ): Promise<T> {
         return mutate(rejectingPersistence)
       },
-      async commitCredentialVersion() {
+      async commitCredentialVersionV2() {
         throw new Error('simulated DB commit failure')
       },
     })
@@ -856,7 +875,7 @@ describe('vault credential store backend', () => {
     })
     await writer.writeAbsentCredential('ws-a', PROVIDER_A)
 
-    const metadataMissingPersistence: CredentialVaultPersistenceV1 = {
+    const metadataMissingPersistence: CredentialVaultPersistenceV2 = {
       ...persistence,
       async withWorkspaceLock(_workspaceId, mutate) {
         return mutate(metadataMissingPersistence)
@@ -975,7 +994,7 @@ describe('vault credential store backend', () => {
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve })
     let signalReadEntered!: () => void
     const readEntered = new Promise<void>((resolve) => { signalReadEntered = resolve })
-    const persistence: CredentialVaultPersistenceV1 = {
+    const persistence: CredentialVaultPersistenceV2 = {
       ...basePersistence,
       async withWorkspaceLock(workspaceId, mutate) {
         return basePersistence.withWorkspaceLock(workspaceId, () => mutate(persistence))

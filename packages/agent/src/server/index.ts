@@ -386,6 +386,7 @@ export type {
   HostSideCredentialResolverOptionsV1,
   InMemoryCredentialBackendEntryV1,
   CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   LocalCredentialVersionAnchorOptionsV1,
   StoredCredentialRecordV1,
   OpenAiCodexOAuthBrokerV1,
