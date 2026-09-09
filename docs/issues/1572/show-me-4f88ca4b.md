@@ -1,0 +1,47 @@
+# [Production Deps Group] What changed, visually
+
+## Package resolution
+
+```diff
+ production dependency group
+ ├── ai 7.0.68 → 7.0.90                    # retained
+ ├── motion 13.1.0 → 13.1.1               # retained
+ ├── @vercel/sandbox 3.0.0 → 3.2.1         # retained
+ ├── @earendil-works/pi-ai 0.84.3 → 0.84.4 # retained
+-├── TypeScript 7.0.2                       # blocked by tsup/dts incompatibility
+-├── streamdown 2.6.0                       # excluded during budget isolation
+-├── Mermaid 11.17.2                        # excluded by CLI resource budget
+-├── lucide-react 1.39.0                    # excluded during budget isolation
+-└── Vite 8.2.2                             # excluded during budget isolation
++└── established versions retained for the blocked upgrades
+```
+
+## Build flow
+
+```mermaid
+sequenceDiagram
+    participant Lock as pnpm lockfile
+    participant Build as CLI Vite build
+    participant Split as Stable vendor chunks
+    participant Gate as Resource budgets
+    Lock->>Build: frozen, reviewed dependency graph
+    Build->>Split: React, dockview, AI, Zod, icons, motion, streamdown
+    Split->>Gate: entry + startup + pre-chat closures
+    Gate-->>Build: PASS at 4f88ca4b
+```
+
+## Review seam
+
+```diff
+ packages/cli/vite.config.ts
+   manualChunks(id)
+     vendor-react
+     vendor-dockview
++    vendor-ai
++    vendor-zod
++    vendor-lucide
++    vendor-motion
++    vendor-streamdown
+```
+
+The production changes are dependency metadata plus one CLI build-only chunking rule. No runtime API, package export, authority, UI behavior, or design-system contract changes. GitHub Actions run 34372690024 passed lint, typecheck, changed unit tests, invariants, all three resource/bundle budgets, E2E, UI Review, and reference/remote-worker smoke.
