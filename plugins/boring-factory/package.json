@@ -43,19 +43,19 @@
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@playwright/test": "^1.62.1",
-    "@vercel/sandbox": "3.2.1",
+    "@vercel/sandbox": "3.0.0",
     "mermaid": "11.16.1"
   },
   "devDependencies": {
-    "@hachej/boring-sandbox-plugin": "workspace:*",
     "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "@hachej/boring-sandbox-plugin": "workspace:*"
   },
   "peerDependencies": {
-    "@hachej/boring-sandbox-plugin": "workspace:*",
-    "fastify": "*"
+    "fastify": "*",
+    "@hachej/boring-sandbox-plugin": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-sandbox-plugin": {

@@ -23,12 +23,12 @@
     "@hachej/boring-automation": "workspace:*",
     "@hachej/boring-bash": "workspace:*",
     "@hachej/boring-core": "workspace:*",
-    "@hachej/boring-factory": "workspace:*",
     "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-sandbox-plugin": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "@vercel/sandbox": "3.2.1",
+    "@hachej/boring-factory": "workspace:*",
+    "@vercel/sandbox": "3.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -41,7 +41,7 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
     "typescript": "^6.0.3",
-    "vite": "^8.2.2",
+    "vite": "^8.2.1",
     "vitest": "^4.1.11"
   }
 }
