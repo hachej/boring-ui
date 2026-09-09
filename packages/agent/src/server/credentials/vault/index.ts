@@ -61,6 +61,7 @@ export type {
   DekGenerationMutationResultV1,
   LocalCredentialVersionAnchorOptionsV1,
   WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionAnchorV2,
   WorkspaceCredentialVersionStateV1,
 } from './versionAnchor'
 export { createVaultCredentialStoreBackendV1 } from './vaultStoreBackend'

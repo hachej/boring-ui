@@ -158,6 +158,15 @@ export interface WorkspaceCredentialVersionAnchorV1 {
   ): Promise<T>
 }
 
+/** Recovery-capable authority required by the durable vault backend. */
+export interface WorkspaceCredentialVersionAnchorV2 extends WorkspaceCredentialVersionAnchorV1 {
+  readPendingMutation(
+    workspaceId: string,
+    options?: CredentialVersionAnchorReadOptionsV1,
+  ): Promise<PendingCredentialVersionMutationV1 | undefined>
+  recoverPendingMutation(workspaceId: string, durableStateDigest: string): Promise<void>
+}
+
 type MutableAnchorStateV1 = {
   format: typeof ANCHOR_FORMAT_V2
   workspaces: Record<string, {
@@ -537,10 +546,10 @@ function recoverPendingState(
 }
 
 /** Test/development anchor. Production local-KEK composition uses the sealed file adapter. */
-export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVersionAnchorV1 {
+export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVersionAnchorV2 {
   let state = emptyState()
   let queue = Promise.resolve()
-  const anchor: WorkspaceCredentialVersionAnchorV1 = {
+  const anchor: WorkspaceCredentialVersionAnchorV2 = {
     async read(workspaceId: string) {
       await queue
       return copyWorkspaceState(state, workspaceId)
@@ -899,8 +908,8 @@ export async function initializeLocalFileCredentialVersionAnchorV1(
  */
 export function createLocalFileCredentialVersionAnchorV1(
   options: LocalCredentialVersionAnchorOptionsV1,
-): WorkspaceCredentialVersionAnchorV1 {
-  const anchor: WorkspaceCredentialVersionAnchorV1 = {
+): WorkspaceCredentialVersionAnchorV2 {
+  const anchor: WorkspaceCredentialVersionAnchorV2 = {
     async read(workspaceId: string, readOptions?: CredentialVersionAnchorReadOptionsV1) {
       const state = readOptions
         ? await readSealedState(options, readOptions)

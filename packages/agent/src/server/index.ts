@@ -392,5 +392,6 @@ export type {
   VaultCredentialStoreBackendV1,
   VaultCredentialStoreOptionsV1,
   WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionAnchorV2,
   WorkspaceCredentialVersionStateV1,
 } from './credentials'

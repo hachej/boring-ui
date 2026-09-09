@@ -570,6 +570,19 @@ describe('local-KEK credential version anchor', () => {
     expect(await readFile(committed.anchorFilePath, 'utf8')).not.toContain(
       'pendingCredentialMutation',
     )
+    await committed.persistence.updateCredentialMetadata(
+      committed.workspaceId,
+      PROVIDER_A,
+      { state: 'disabled', credentialType: 'attacker-controlled' },
+    )
+    await expectCredentialError(
+      () => committed.stableBackend().writeCredentialFields({
+        workspaceId: committed.workspaceId,
+        providerId: PROVIDER_A,
+        fields: new Map([[FIELD_API_KEY, new TextEncoder().encode('replacement')]]),
+      }),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
 
     const lifecycle = await createBoundaryFixture('ws-lifecycle')
     const lifecycleStable = lifecycle.stableBackend()

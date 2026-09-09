@@ -24,7 +24,10 @@ import type {
   StoredCredentialRecordV1,
   WorkspaceCredentialLockOptionsV1,
 } from './persistence'
-import type { WorkspaceCredentialVersionAnchorV1 } from './versionAnchor'
+import type {
+  WorkspaceCredentialVersionAnchorV2,
+  WorkspaceCredentialVersionStateV1,
+} from './versionAnchor'
 
 /**
  * Composes a `WorkspaceKekProviderV1` (KmsBackend) with AAD-bound AES-256-GCM
@@ -43,7 +46,7 @@ import type { WorkspaceCredentialVersionAnchorV1 } from './versionAnchor'
 export interface VaultCredentialStoreOptionsV1 {
   readonly kmsBackend: WorkspaceKekProviderV1
   readonly persistence: CredentialVaultPersistenceV1
-  readonly versionAnchor: WorkspaceCredentialVersionAnchorV1
+  readonly versionAnchor: WorkspaceCredentialVersionAnchorV2
 }
 
 export interface WriteCredentialFieldsInputV1 {
@@ -228,6 +231,40 @@ function createVaultCredentialStoreBackendInternalV1(
       ? await store.listFields(workspaceId, providerId, record.credentialVersion)
       : new Map<string, CredentialEnvelopeV1>()
     return credentialStateDigest(record, metadata?.state, metadata?.credentialType, fields)
+  }
+
+  async function verifiedCurrentMutationState(
+    workspaceId: string,
+    providerId: ProviderId,
+    anchorState: WorkspaceCredentialVersionStateV1 | undefined,
+  ): Promise<Readonly<{
+    record: StoredCredentialRecordV1 | undefined
+    metadata: StoredCredentialMetadataV1 | undefined
+    fields: ReadonlyMap<string, CredentialEnvelopeV1>
+  }>> {
+    const record = await persistence.getCredentialRecord(workspaceId, providerId)
+    const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+    const fields = record
+      ? await persistence.listFields(workspaceId, providerId, record.credentialVersion)
+      : new Map<string, CredentialEnvelopeV1>()
+    const anchoredFieldIds = [...(anchorState?.credentialFieldIds[providerId] ?? [])].sort()
+    const durableFieldIds = [...fields.keys()].sort()
+    if (
+      (!!record !== !!metadata)
+      || (!record && (
+        anchorState?.credentialVersions[providerId] !== undefined
+        || metadata !== undefined
+      ))
+      || (record && (
+        anchorState?.credentialVersions[providerId] !== record.credentialVersion
+        || anchorState.credentialMaterialKinds[providerId] !== record.materialKind
+        || anchorState.credentialLifecycleStates[providerId] !== metadata?.state
+        || anchorState.credentialTypes[providerId] !== metadata?.credentialType
+        || anchorState.dekGeneration !== record.dekGeneration
+        || JSON.stringify(anchoredFieldIds) !== JSON.stringify(durableFieldIds)
+      ))
+    ) unreadable('Credential current state failed rollback verification')
+    return { record, metadata, fields }
   }
 
   async function recoverPendingCredentialMutation(
@@ -443,16 +480,11 @@ function createVaultCredentialStoreBackendInternalV1(
         workspaceId,
         providerId,
         async (anchorState) => {
-          const existing = await persistence.getCredentialRecord(workspaceId, providerId)
-          const anchoredVersion = anchorState?.credentialVersions[providerId]
-          const anchoredMaterialKind = anchorState?.credentialMaterialKinds[providerId]
-          if (
-            (existing && (
-              anchoredVersion !== existing.credentialVersion
-              || anchoredMaterialKind !== existing.materialKind
-            ))
-            || (!existing && anchoredVersion !== undefined)
-          ) unreadable('Credential current state failed rollback verification')
+          const {
+            record: existing,
+            metadata: existingMetadata,
+            fields: existingFields,
+          } = await verifiedCurrentMutationState(workspaceId, providerId, anchorState)
           const expectedCredentialVersion = existing?.credentialVersion ?? 0
           const credentialVersion = expectedCredentialVersion + 1
           const credentialId =
@@ -511,10 +543,6 @@ function createVaultCredentialStoreBackendInternalV1(
             dekGeneration,
             materialKind: 'field-set',
           })
-          const existingMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
-          const existingFields = existing
-            ? await persistence.listFields(workspaceId, providerId, existing.credentialVersion)
-            : new Map<string, CredentialEnvelopeV1>()
           const credentialType = input.metadata?.credentialType
             ?? existingMetadata?.credentialType
             ?? 'field-set.v1'
@@ -581,16 +609,11 @@ function createVaultCredentialStoreBackendInternalV1(
         workspaceId,
         providerId,
         async (anchorState) => {
-          const existing = await persistence.getCredentialRecord(workspaceId, providerId)
-          const anchoredVersion = anchorState?.credentialVersions[providerId]
-          const anchoredMaterialKind = anchorState?.credentialMaterialKinds[providerId]
-          if (
-            (existing && (
-              anchoredVersion !== existing.credentialVersion
-              || anchoredMaterialKind !== existing.materialKind
-            ))
-            || (!existing && anchoredVersion !== undefined)
-          ) unreadable('Credential current state failed rollback verification')
+          const {
+            record: existing,
+            metadata: existingMetadata,
+            fields: existingFields,
+          } = await verifiedCurrentMutationState(workspaceId, providerId, anchorState)
           const expectedCredentialVersion = existing?.credentialVersion ?? 0
           const rotation = await persistence.getDekRotationState(workspaceId)
           if (rotation) {
@@ -606,10 +629,6 @@ function createVaultCredentialStoreBackendInternalV1(
             dekGeneration: existing?.dekGeneration ?? anchorState?.dekGeneration ?? 1,
             materialKind: 'none',
           })
-          const existingMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
-          const existingFields = existing
-            ? await persistence.listFields(workspaceId, providerId, existing.credentialVersion)
-            : new Map<string, CredentialEnvelopeV1>()
           const credentialType = existingMetadata?.credentialType ?? 'field-set.v1'
           return {
             expectedStateDigest: credentialStateDigest(
