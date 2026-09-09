@@ -19,18 +19,18 @@
     "eval:woreplace": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/woreplace-skill.yaml"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.2-r.2",
     "@hachej/boring-agent": "workspace:*",
-    "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-bash": "workspace:*",
-    "@hachej/boring-data-catalog": "workspace:*",
-    "@hachej/boring-data-explorer": "workspace:*",
-    "@hachej/boring-deck": "workspace:*",
-    "@hachej/boring-diagram": "workspace:*",
-    "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@hachej/boring-deck": "workspace:*",
+    "@hachej/boring-ask-user": "workspace:*",
+    "@hachej/boring-tasks": "workspace:*",
+    "@hachej/boring-diagram": "workspace:*",
+    "@duckdb/node-api": "1.5.2-r.2",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "@hachej/boring-data-explorer": "workspace:*",
+    "@hachej/boring-data-catalog": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -41,7 +41,7 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
     "typescript": "^6.0.3",
-    "vite": "^8.2.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "vite": "^8.2.2"
   }
 }

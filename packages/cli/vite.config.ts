@@ -53,6 +53,13 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes("/react-dom/") || id.includes("/react/")) return "vendor-react"
           if (id.includes("dockview")) return "vendor-dockview"
+          // Keep dependency updates from folding large, stable libraries into
+          // the HTML entry while preserving the same static startup closure.
+          if (id.includes("/node_modules/ai/") || id.includes("/node_modules/@ai-sdk/")) return "vendor-ai"
+          if (id.includes("/node_modules/zod/")) return "vendor-zod"
+          if (id.includes("/node_modules/lucide-react/")) return "vendor-lucide"
+          if (id.includes("/node_modules/motion/")) return "vendor-motion"
+          if (id.includes("/node_modules/streamdown/")) return "vendor-streamdown"
         },
       },
     },
