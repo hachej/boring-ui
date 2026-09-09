@@ -1,4 +1,6 @@
 import type postgres from "postgres"
+import { AUTOMATION_RUN_OCCUPYING_STATUSES_SQL, AUTOMATION_RUN_STATUSES_SQL } from "../shared/runStatus"
+import { MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
 
 /** Deployment-owned hosted schema registration for the automation plugin. */
 export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<void> {
@@ -13,6 +15,8 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
       timezone text NOT NULL,
       model text NOT NULL,
       agent_type_id text,
+      run_duration_cap_ms integer,
+      prompt_ref text,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL
     )
@@ -20,9 +24,30 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
   await sql.unsafe(`
     ALTER TABLE boring_automation_automations
       ADD COLUMN IF NOT EXISTS agent_type_id text,
+      ADD COLUMN IF NOT EXISTS run_duration_cap_ms integer,
+      ADD COLUMN IF NOT EXISTS prompt_ref text,
       ADD COLUMN IF NOT EXISTS deleted_at timestamptz,
       DROP COLUMN IF EXISTS prompt,
       DROP COLUMN IF EXISTS prompt_file_ready
+  `)
+  await sql.unsafe(`
+    DO $$ BEGIN
+      ALTER TABLE boring_automation_automations
+        ADD CONSTRAINT boring_automation_run_duration_cap_range_check
+        CHECK (run_duration_cap_ms IS NULL OR run_duration_cap_ms BETWEEN 1 AND ${MAX_AUTOMATION_DURATION_MS});
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END $$
+  `)
+  await sql.unsafe(`
+    UPDATE boring_automation_automations
+    SET prompt_ref = COALESCE(prompt_ref, '.agents/automation/' || id::text || '.md')
+    WHERE prompt_ref IS NULL
+  `)
+  await sql.unsafe(`
+    ALTER TABLE boring_automation_automations
+      ALTER COLUMN cron DROP NOT NULL,
+      ALTER COLUMN prompt_ref SET NOT NULL
   `)
   await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_automations_owner_idx`)
   await sql.unsafe(`
@@ -76,18 +101,40 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
   await sql.unsafe(`
     ALTER TABLE boring_automation_runs
       ADD CONSTRAINT boring_automation_runs_status_check
-      CHECK (status IN ('queued', 'dispatching', 'running', 'succeeded', 'failed', 'cancelled', 'outcome-unknown'))
+      CHECK (status IN (${AUTOMATION_RUN_STATUSES_SQL}))
   `)
   await sql.unsafe(`
     CREATE INDEX IF NOT EXISTS boring_automation_runs_automation_idx
       ON boring_automation_runs (automation_id, created_at DESC)
   `)
-  await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_runs_active_once_idx`)
-  await sql.unsafe(`
-    CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
-      ON boring_automation_runs (automation_id)
-      WHERE status IN ('queued', 'dispatching', 'running')
-  `)
+  await sql.begin(async (transaction) => {
+    await transaction.unsafe(`LOCK TABLE boring_automation_runs IN SHARE ROW EXCLUSIVE MODE`)
+    await transaction.unsafe(`
+      WITH ranked_occupants AS (
+        SELECT id,
+          ROW_NUMBER() OVER (
+            PARTITION BY automation_id
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+          ) AS occupancy_rank
+        FROM boring_automation_runs
+        WHERE status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES_SQL})
+      )
+      UPDATE boring_automation_runs AS runs
+      SET status = 'failed',
+          completed_at = COALESCE(runs.completed_at, NOW()),
+          error = 'Migration reconciled duplicate potentially-live run; a newer run retained the automation slot',
+          updated_at = NOW()
+      FROM ranked_occupants
+      WHERE runs.id = ranked_occupants.id
+        AND ranked_occupants.occupancy_rank > 1
+    `)
+    await transaction.unsafe(`DROP INDEX IF EXISTS boring_automation_runs_active_once_idx`)
+    await transaction.unsafe(`
+      CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
+        ON boring_automation_runs (automation_id)
+        WHERE status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES_SQL})
+    `)
+  })
   await sql.unsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS boring_automation_runs_invocation_once_idx
       ON boring_automation_runs (automation_id, invocation_id)

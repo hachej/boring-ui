@@ -1,6 +1,7 @@
 import type postgres from "postgres"
+import { AutomationRunStatusSchema } from "../shared/schema"
 import type { AutomationRunChangedEvent } from "../shared/types"
-import type { VerifiedAutomationActor } from "./manualRunExecutor"
+import type { VerifiedAutomationActor } from "./dispatchRunExecutor"
 
 const AUTOMATION_RUN_EVENT_CHANNEL = "boring_automation_run_changed"
 
@@ -91,20 +92,10 @@ export function parseAutomationRunChangedEvent(payload: string): AutomationRunCh
       || typeof value.automationId !== "string"
       || typeof value.runId !== "string"
       || typeof value.updatedAt !== "string"
-      || !isRunStatus(value.status)
+      || !AutomationRunStatusSchema.safeParse(value.status).success
     ) return null
     return value as AutomationRunChangedEvent
   } catch {
     return null
   }
-}
-
-function isRunStatus(value: unknown): value is AutomationRunChangedEvent["status"] {
-  return value === "queued"
-    || value === "dispatching"
-    || value === "running"
-    || value === "succeeded"
-    || value === "failed"
-    || value === "cancelled"
-    || value === "outcome-unknown"
 }

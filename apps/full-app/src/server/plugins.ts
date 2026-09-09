@@ -1,4 +1,8 @@
-import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/server'
+import { createRequire } from 'node:module'
+import { dirname } from 'node:path'
+import { createFactoryAutomationSeedProvider } from './factoryAutomationSeeds.js'
+import type { Automation } from '@hachej/boring-automation/server'
+import type { CoreWorkspaceAgentServerPlugin, CoreWorkspacePluginEntry } from '@hachej/boring-core/app/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import { ErrorCode, type Sha256Digest } from '@hachej/boring-agent/shared'
 import { createGovernance } from '@hachej/boring-governance/server'
@@ -21,16 +25,15 @@ class FullAppPluginCompositionError extends Error {
   }
 }
 
-const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
-  packageName: '@hachej/boring-automation',
-  descriptor: Object.freeze({
-    id: 'boring-automation',
-    version: '0.1.87',
-    contentDigest: 'sha256:5fcd1c7d39c96709d8bff594b8b05a8f57560a820104d5d79242545f31ca23d2',
-  } satisfies StableContributionDescriptor),
-}])
+// Automation is composed explicitly below because its host-owned seed provider
+// cannot be represented by a package-name default without double registration.
+const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION: readonly {
+  packageName: string
+  descriptor: StableContributionDescriptor
+}[] = Object.freeze([])
 
 const FULL_APP_DEFAULT_PLUGIN_PACKAGES = Object.freeze(FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION.map((entry) => entry.packageName))
+const require = createRequire(import.meta.url)
 export const FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS = Object.freeze(FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION.map((entry) => entry.descriptor))
 
 export const FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR = Object.freeze({
@@ -86,6 +89,36 @@ export const serverPlugins: CoreWorkspaceAgentServerPlugin[] = [
 ]
 Object.freeze(serverPlugins)
 
+export function resolveFullAppFactoryPolicyRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): string {
+  return env.BORING_FACTORY_POLICY_ROOT?.trim() || cwd
+}
+
+export function isFullAppFactoryAutomation(automation: Automation): boolean {
+  return automation.promptRef === '.agents/automation/orchestrator-tick.md'
+    || automation.promptRef === '.agents/automation/triage.md'
+    || /^\.agents\/automation\/worker-slot-[1-9][0-9]*\.md$/.test(automation.promptRef)
+}
+
+export function createFullAppAutomationPluginEntry(
+  policyRoot: string = resolveFullAppFactoryPolicyRoot(),
+): CoreWorkspacePluginEntry {
+  return {
+    dir: dirname(require.resolve('@hachej/boring-automation/package.json')),
+    hotReload: false,
+    trust: 'internal',
+    options: {
+      seedProvider: createFactoryAutomationSeedProvider({
+        policyRoot,
+        warn: (message) => console.warn(message),
+      }),
+      canUpdateAutomationModel: (automation: Automation) => !isFullAppFactoryAutomation(automation),
+    },
+  }
+}
+
 export async function createFullAppHostPluginComposition(config: CoreConfig) {
   // Blaxel/current hosted modes have no qualified dedicated-identity private
   // channel. App-level enablement therefore fails at boot rather than composing
@@ -101,9 +134,11 @@ export async function createFullAppHostPluginComposition(config: CoreConfig) {
     ...createBoringMcpContributions(),
     issueContribution(governance.serverPlugin, FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR),
   ])
+  const automationPlugin = createFullAppAutomationPluginEntry()
   return Object.freeze({
     governance,
     ...composition,
+    plugins: Object.freeze([...composition.plugins, automationPlugin]),
     defaultPluginPackages: FULL_APP_DEFAULT_PLUGIN_PACKAGES,
     defaultPluginPackageDescriptors: FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS,
   })

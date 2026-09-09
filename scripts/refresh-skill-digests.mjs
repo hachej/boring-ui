@@ -111,7 +111,12 @@ async function main() {
   const doc = parseDocument(source)
   const { pins, seats } = collectPins(doc)
   const personaSkills = await declaredPersonaSkills()
-  const expectedSkills = new Set([...personaSkills.values()].flatMap((persona) => persona.skills))
+  // Persona packages may remain installed as dormant definitions after a seat
+  // is retired. Only rostered seats contribute digest-pin obligations.
+  const rosteredAgentTypeIds = new Set(seats.map((seat) => seat.agentTypeId))
+  const expectedSkills = new Set([...personaSkills.entries()]
+    .filter(([definitionId]) => rosteredAgentTypeIds.has(definitionId))
+    .flatMap(([, persona]) => persona.skills))
 
   // Per SEAT, never aggregated per agentTypeId: the runtime loader compares each
   // seat's pin set against its package pi.skills independently, so two seats of

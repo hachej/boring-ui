@@ -1,3 +1,4 @@
+import type { AgentSessionRef } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES, type BoringAutomationErrorCode } from "../shared/error-codes"
 import type {
   Automation,
@@ -7,6 +8,25 @@ import type {
   AutomationRunBegin,
   AutomationRunLifecyclePatch,
 } from "../shared/types"
+
+/** Maximum time an accepted dispatch may reserve a slot without a terminal outcome. */
+export const AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS = 5 * 60_000
+
+export interface AutomationSeed {
+  key: string
+  title: string
+  enabled: boolean
+  cron: string | null
+  timezone: string
+  model: string
+  /** Reconcile this field on every seed pass when the composing host owns model policy. */
+  modelManagedByHost?: boolean
+  agentTypeId: string
+  runDurationCapMs?: number | null
+  promptRef: string
+  /** Trusted host-provided prompt body used when the workspace does not carry the source asset. */
+  promptBody?: string
+}
 
 export type {
   Automation,
@@ -22,6 +42,16 @@ export interface AutomationStore {
   listAutomations(): Promise<Automation[]>
   getAutomation(id: string): Promise<Automation | null>
   createAutomation(input: AutomationCreate): Promise<Automation>
+  /** Reads the optional workspace-owned automation seed manifest. */
+  readSeedManifest(): Promise<string | null>
+  /** Idempotently provisions metadata for a checked-in prompt; returns null when the prompt is absent. */
+  ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null>
+  /** Lists immutable seed keys under one host-owned prefix without candidate fan-out. */
+  listExistingSeedKeys?(prefix: string): Promise<readonly string[]>
+  /** @deprecated Compatibility for injected test/legacy stores; providers use prefix listing. */
+  findExistingSeedKeys?(keys: readonly string[]): Promise<readonly string[]>
+  /** Atomically removes metadata for an immutable seed key only when no run occupies it. */
+  removeSeededAutomationIfIdle(key: string): Promise<boolean>
   updateAutomation(id: string, patch: AutomationPatch): Promise<Automation>
   deleteAutomation(id: string): Promise<void>
 
@@ -33,8 +63,23 @@ export interface AutomationStore {
   beginRun(input: AutomationRunBegin): Promise<AutomationRun>
   claimRunForDispatch(runId: string): Promise<AutomationRun | null>
   heartbeatRun(runId: string): Promise<boolean>
+  /** Preserve host acceptance after lease reconciliation; accepted ambiguity remains occupying. */
+  preserveAcceptedDispatch(
+    runId: string,
+    receipt: NonNullable<AutomationRun["dispatchReceipt"]>,
+    completedAt: string,
+    error: string,
+  ): Promise<AutomationRun | null>
   updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
   listRuns(automationId: string, limit?: number): Promise<AutomationRun[]>
+  /** Direct actor-scoped lookup for one automation-owned run. */
+  getRun(automationId: string, runId: string): Promise<AutomationRun | null>
+  /** Globally newest runs for fleet inspection, bounded at storage. */
+  listRecentRuns(limit: number): Promise<AutomationRun[]>
+  /** Exact durable Agent-address lookup for session controls. */
+  findRunBySessionRef(ref: AgentSessionRef): Promise<AutomationRun | null>
+  /** Atomically settles the matching occupying run after an explicit confirmed session stop. */
+  settleCancelledSession?(ref: AgentSessionRef, completedAt: string): Promise<AutomationRun | null>
 }
 
 export class AutomationStoreError extends Error {

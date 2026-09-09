@@ -15,11 +15,13 @@ import { HostedAutomationScheduler } from "./hostedScheduler"
 import { PostgresAutomationStore } from "./postgresStore"
 import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { createBoringAutomationTool } from "./automationTool"
-import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
+import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRunExecutor"
 import { resolveAutomationOperationsForActor, type AutomationStoreMode } from "./operations"
+import { createAutomationSessionController } from "./automationSessionController"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
-import type { AutomationStore } from "./store"
+import type { Automation, AutomationStore } from "./store"
+import { seedStandingAutomations, type AutomationSeedProvider } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
   agentTypeId: string
@@ -42,14 +44,19 @@ export interface BoringAutomationServerPluginOptions {
   eventBusOwner?: "plugin" | "caller"
   /** Defaults to true when hosted due execution is composed. Disable when an external scheduler owns wake-ups. */
   hostedSchedulerEnabled?: boolean
+  /** Optional dynamic host seed source; the generic plugin does not interpret host policy. */
+  seedProvider?: AutomationSeedProvider
+  seedWarning?: (message: string) => void
+  /** Host-owned authority gate for agent-requested model/provider changes. */
+  canUpdateAutomationModel?: (automation: Automation) => boolean
 }
 
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions): WorkspaceServerPlugin {
   const store = options.store ?? createDefaultStore(options.workspaceRoot)
   const eventBus = options.eventBus ?? new InMemoryAutomationRunEventBus()
   const eventBusOwner = options.eventBusOwner ?? (options.eventBus ? "caller" : "plugin")
-  const manualRunExecutor = options.dispatcherResolver && options.actorResolver
-      ? new ManualRunExecutor({
+  const dispatchRunExecutor = options.dispatcherResolver && options.actorResolver
+      ? new DispatchRunExecutor({
         agentTypeId: options.agentTypeId,
         availableAgentTypeIds: options.availableAgentTypeIds,
         store,
@@ -59,8 +66,8 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
         eventPublisher: eventBus,
       })
     : undefined
-  const dueRunService = manualRunExecutor && !options.storeForRequest
-    ? new DueRunService({ store, executor: manualRunExecutor })
+  const dueRunService = dispatchRunExecutor && !options.storeForRequest
+    ? new DueRunService({ store, executor: dispatchRunExecutor })
     : undefined
   const hostedDueCoordinator = options.hostedDueRunService
     ? new HostedDueCoordinator(options.hostedDueRunService)
@@ -71,8 +78,13 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
       mode: options.storeMode ?? "local",
       resolveStore: async (actor) => options.storeForActor ? options.storeForActor(actor) : store,
+      defaultAgentTypeId: options.agentTypeId,
+      canUpdateAutomationModel: options.canUpdateAutomationModel,
+      sessionController: options.dispatcherResolver
+        ? createAutomationSessionController(options.dispatcherResolver, actorContext)
+        : undefined,
       resolveExecutor: options.dispatcherResolver
-        ? async (actor, actorStore) => new ManualRunExecutor({
+        ? async (actor, actorStore) => new DispatchRunExecutor({
             agentTypeId: options.agentTypeId,
             availableAgentTypeIds: options.availableAgentTypeIds,
             store: actorStore,
@@ -91,11 +103,26 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
         if (!actor) throw new Error("automation actor resolver is unavailable")
         return await options.storeForRequest!(request, actor)
       } : undefined,
-      manualRunExecutor,
+      dispatchRunExecutor,
       dueRunService,
       hostedDueRunService: hostedDueCoordinator,
       hostedTriggerToken: options.hostedTriggerToken,
       actorResolver: options.actorResolver,
+      operationsForRequest: async (request) => {
+        const actor = options.actorResolver
+          ? await options.actorResolver(request)
+          : { workspaceId: "local", userId: "local" }
+        const resolved = await resolveAutomationOperationsForActor({
+          mode: options.storeMode ?? "local",
+          localUserId: actor.userId,
+          resolveStore: async () => options.storeForRequest
+            ? await options.storeForRequest(request, actor)
+            : store,
+          defaultAgentTypeId: options.agentTypeId,
+          canUpdateAutomationModel: options.canUpdateAutomationModel,
+        }, actor)
+        return resolved.operations
+      },
       eventBus,
     })
     app.addHook("preClose", async () => {
@@ -108,13 +135,16 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       if (eventBusOwner === "plugin") await eventBus.close()
     })
 
-    if (hostedDueCoordinator && hostedSchedulerEnabled) {
-      scheduler = new HostedAutomationScheduler({
-        runDue: async () => await hostedDueCoordinator.runDue(),
-        logger: app.log,
-      })
-      app.addHook("onReady", async () => scheduler?.start())
-    }
+    app.addHook("onReady", async () => {
+      if (!options.storeForRequest) await seedStandingAutomations(store, seedOptions(options, (message) => app.log.warn(message)))
+      if (hostedDueCoordinator && hostedSchedulerEnabled) {
+        scheduler = new HostedAutomationScheduler({
+          runDue: async () => await hostedDueCoordinator.runDue(),
+          logger: app.log,
+        })
+        scheduler.start()
+      }
+    })
   }
   return defineServerPlugin({
     id: BORING_AUTOMATION_PLUGIN_ID,
@@ -122,6 +152,17 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     agentTools,
     routes,
   })
+}
+
+
+function seedOptions(
+  options: Pick<BoringAutomationServerPluginOptions, "seedProvider" | "seedWarning">,
+  fallbackWarning: (message: string) => void = () => undefined,
+) {
+  return {
+    ...(options.seedProvider ? { seedProvider: options.seedProvider } : {}),
+    warn: options.seedWarning ?? fallbackWarning,
+  }
 }
 
 function createDefaultStore(workspaceRoot: string | undefined): AutomationStore {
@@ -164,8 +205,16 @@ export default function defaultBoringAutomationServerPlugin(
       storeMode: "hosted",
       eventBus,
       eventBusOwner,
-      storeForRequest: async (request, actor) => await createHostedStore(sql, actor, dispatcherResolver, agentTypeId, request),
-      storeForActor: async (actor) => await createHostedStore(sql, actor, dispatcherResolver, agentTypeId),
+      storeForRequest: async (request, actor) => {
+        const actorStore = await createHostedStore(sql, actor, dispatcherResolver, agentTypeId, request)
+        await seedStandingAutomations(actorStore, seedOptions(resolvedOptions))
+        return actorStore
+      },
+      storeForActor: async (actor) => {
+        const actorStore = await createHostedStore(sql, actor, dispatcherResolver, agentTypeId)
+        await seedStandingAutomations(actorStore, seedOptions(resolvedOptions))
+        return actorStore
+      },
       dispatcherResolver,
       actorResolver: resolvedOptions.actorResolver ?? trusted.actorResolver,
       actorVerifier: resolvedOptions.actorVerifier ?? trusted.actorVerifier,
@@ -188,12 +237,14 @@ export default function defaultBoringAutomationServerPlugin(
   })
 }
 
+export * from "./automationSessionController"
 export * from "./automationTool"
 export * from "./dueRunService"
 export * from "./fileStore"
 export * from "./hostedDueRunService"
-export * from "./manualRunExecutor"
+export * from "./dispatchRunExecutor"
 export * from "./migrations"
+export * from "./standingAutomations"
 export * from "./operations"
 export * from "./postgresStore"
 export * from "./routes"

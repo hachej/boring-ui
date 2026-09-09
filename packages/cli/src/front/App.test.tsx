@@ -211,7 +211,7 @@ describe("CliWorkspaceShell", () => {
     ] as never)
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
     expect(workspaceAgentFrontSpy.mock.calls.every(([props]) => Array.isArray(props.plugins) && props.plugins.length === 5)).toBe(true)
-    expect(frontMounts).toBe(1)
+    await waitFor(() => expect(frontMounts).toBe(1))
     expect(frontUnmounts).toBe(0)
 
     fireEvent.focus(window)

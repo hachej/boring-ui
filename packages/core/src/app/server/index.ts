@@ -2,6 +2,8 @@ export {
   createCoreWorkspaceAgentServer,
   type CoreWorkspaceAgentServer,
   type CoreWorkspaceAgentServerPlugin,
+  type CoreWorkspacePluginEntry,
+  type CoreWorkspaceDirPluginEntry,
   type CoreFrontendRootHandler,
   type CreateCoreWorkspaceAgentServerOptions,
 } from './createCoreWorkspaceAgentServer.js'

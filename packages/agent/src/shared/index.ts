@@ -32,6 +32,7 @@ export {
   AgentNotImplementedError,
 } from './events'
 export type {
+  AgentSendIfIdleReceipt,
   LeaseBoundWorkspaceAgent,
   WorkspaceAgentDirectRunCallback,
   WorkspaceAgentDirectRunInput,

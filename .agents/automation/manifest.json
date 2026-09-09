@@ -1,0 +1,14 @@
+{
+  "automations": [
+    {
+      "key": "orchestrator-tick",
+      "title": "orchestrator-tick",
+      "enabled": true,
+      "cron": "*/10 * * * *",
+      "timezone": "UTC",
+      "model": "openai-codex:gpt-5.6-sol",
+      "agentTypeId": "boring-orchestrator",
+      "promptRef": ".agents/automation/orchestrator-tick.md"
+    }
+  ]
+}

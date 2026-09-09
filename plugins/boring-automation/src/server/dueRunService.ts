@@ -2,7 +2,7 @@ import type { FastifyRequest } from "fastify"
 import { BORING_AUTOMATION_ERROR_CODES, evaluateAutomationSchedule, type AutomationScheduleDecision } from "../shared"
 import type { AutomationRun } from "../shared/types"
 import { AutomationStoreError, type AutomationStore } from "./store"
-import type { ManualRunExecutor } from "./manualRunExecutor"
+import type { DispatchRunExecutor } from "./dispatchRunExecutor"
 
 export type DueRunSummary = Pick<AutomationRun,
   | "id"
@@ -32,7 +32,7 @@ export interface DueRunResult {
 
 export interface DueRunServiceOptions {
   store: AutomationStore
-  executor: Pick<ManualRunExecutor, "run">
+  executor: Pick<DispatchRunExecutor, "start">
   clock?: () => Date
 }
 
@@ -64,7 +64,7 @@ export class DueRunService {
 
     for (const decision of evaluated.due) {
       try {
-        const run = await this.options.executor.run({
+        const run = await this.options.executor.start({
           automationId: decision.automationId,
           request,
           trigger: "scheduled",

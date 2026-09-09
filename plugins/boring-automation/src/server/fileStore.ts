@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { dirname, join, normalize, relative } from "node:path"
 import type {
   Automation,
   AutomationCreate,
@@ -10,8 +10,10 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
-import type { AutomationStore } from "./store"
-import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
+import { clampAutomationPersistedDurationMs, MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
+import { isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
+import type { AutomationSeed, AutomationStore } from "./store"
+import { AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
 type StoredAutomationState = {
   automations: Record<string, Automation>
@@ -34,6 +36,7 @@ const SAFE_PROMPT_ID = /^[a-zA-Z0-9_-]+$/
 const DEFAULT_PROMPT = ""
 
 export class FileAutomationStore implements AutomationStore {
+  private readonly workspaceRoot: string
   private readonly rootDir: string
   private state: StoredAutomationState | null = null
   private loadInFlight: Promise<StoredAutomationState> | null = null
@@ -48,6 +51,7 @@ export class FileAutomationStore implements AutomationStore {
     workspaceRoot: string,
     options: FileAutomationStoreOptions = {},
   ) {
+    this.workspaceRoot = workspaceRoot
     this.rootDir = join(workspaceRoot, ".pi", "automation")
     this.promptDir = join(workspaceRoot, ".agents", "automation")
     this.writer = options.writer ?? writeAtomic
@@ -73,11 +77,12 @@ export class FileAutomationStore implements AutomationStore {
       id,
       title: input.title,
       enabled: input.enabled ?? true,
-      cron: input.cron,
+      cron: input.cron ?? null,
       timezone: input.timezone,
       model: input.model,
       ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
+      ...(input.runDurationCapMs === undefined ? {} : { runDurationCapMs: input.runDurationCapMs }),
       promptRef: automationPromptPath(id),
       createdAt: now,
       updatedAt: now,
@@ -90,6 +95,88 @@ export class FileAutomationStore implements AutomationStore {
     })
 
     return clone(automation)
+  }
+
+  async readSeedManifest(): Promise<string | null> {
+    try {
+      return await readFile(join(this.workspaceRoot, ".agents", "automation", "manifest.json"), "utf8")
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return null
+      throw error
+    }
+  }
+
+  async ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null> {
+    const promptPath = this.workspacePath(input.promptRef)
+    let seeded: Automation | undefined
+    let missingPrompt = false
+    await this.mutate(async (state) => {
+      const existing = state.automations[input.key]
+      if (existing) {
+        if (input.modelManagedByHost && existing.model !== input.model) {
+          seeded = { ...existing, model: input.model, updatedAt: this.nowIso() }
+          state.automations[input.key] = clone(seeded)
+        } else {
+          seeded = existing
+        }
+        return
+      }
+      if (input.promptBody !== undefined) {
+        await this.writer(promptPath, input.promptBody)
+      } else {
+        try {
+          await readFile(promptPath, "utf8")
+        } catch (error) {
+          if ((error as { code?: string }).code === "ENOENT") {
+            missingPrompt = true
+            return
+          }
+          throw error
+        }
+      }
+      const now = this.nowIso()
+      seeded = {
+        id: input.key,
+        title: input.title,
+        enabled: input.enabled,
+        cron: input.cron,
+        timezone: input.timezone,
+        model: input.model,
+        agentTypeId: input.agentTypeId,
+        ...(input.runDurationCapMs === undefined ? {} : { runDurationCapMs: input.runDurationCapMs }),
+        promptRef: input.promptRef,
+        createdAt: now,
+        updatedAt: now,
+      }
+      state.automations[input.key] = clone(seeded)
+    })
+    if (missingPrompt) return null
+    return clone(requireValue(seeded))
+  }
+
+  async listExistingSeedKeys(prefix: string): Promise<readonly string[]> {
+    const state = await this.load()
+    return Object.keys(state.automations).filter((key) => key.startsWith(prefix) && state.automations[key]?.id === key)
+  }
+
+  async findExistingSeedKeys(keys: readonly string[]): Promise<readonly string[]> {
+    const state = await this.load()
+    return keys.filter((key) => state.automations[key]?.id === key)
+  }
+
+  async removeSeededAutomationIfIdle(key: string): Promise<boolean> {
+    let removed = false
+    await this.mutate((state) => {
+      const automation = state.automations[key]
+      if (!automation || automation.id !== key) return
+      const occupied = Object.values(state.runs).some((run) => (
+        run.automationId === key && isAutomationRunOccupying(run.status)
+      ))
+      if (occupied) return
+      delete state.automations[key]
+      removed = true
+    })
+    return removed
   }
 
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {
@@ -123,7 +210,7 @@ export class FileAutomationStore implements AutomationStore {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)
     try {
-      return await readFile(this.promptPath(automationId), "utf8")
+      return await readFile(this.workspacePath(automation.promptRef), "utf8")
     } catch (error) {
       // Existing automation + missing markdown file is treated as an empty prompt.
       // Saving the prompt recreates the canonical file.
@@ -135,7 +222,7 @@ export class FileAutomationStore implements AutomationStore {
   async updatePrompt(automationId: string, body: string): Promise<void> {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)
-    await this.writePromptFile(automationId, body)
+    await this.writer(this.workspacePath(automation.promptRef), body)
     await this.mutate((state) => {
       const current = state.automations[automationId]
       if (!current) throw automationNotFound(automationId)
@@ -153,10 +240,10 @@ export class FileAutomationStore implements AutomationStore {
 
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
     const now = input.createdAt ?? this.nowIso()
+    await this.reconcileOrphanedRuns(input.automationId)
     let run: AutomationRun | undefined
     await this.mutate((state) => {
       if (!state.automations[input.automationId]) throw automationNotFound(input.automationId)
-      reconcileOrphanedRuns(state, input.automationId, this.activeRunIds, now)
       const existingInvocation = input.invocationId
         ? Object.values(state.runs).find((candidate) => candidate.automationId === input.automationId && candidate.invocationId === input.invocationId)
         : undefined
@@ -174,7 +261,7 @@ export class FileAutomationStore implements AutomationStore {
       }
       const active = Object.values(state.runs).find((candidate) => (
         candidate.automationId === input.automationId
-        && (candidate.status === "queued" || candidate.status === "dispatching" || candidate.status === "running")
+        && isAutomationRunOccupying(candidate.status)
       ))
       if (active) throw runAlreadyActive(input.automationId)
       const id = randomUUID()
@@ -231,6 +318,41 @@ export class FileAutomationStore implements AutomationStore {
     return renewed
   }
 
+  async preserveAcceptedDispatch(
+    runId: string,
+    receipt: NonNullable<AutomationRun["dispatchReceipt"]>,
+    completedAt: string,
+    error: string,
+  ): Promise<AutomationRun | null> {
+    let preserved: AutomationRun | undefined
+    await this.mutate((state) => {
+      const run = state.runs[runId]
+      if (!run) return
+      if (run.dispatchReceipt) {
+        preserved = run
+        return
+      }
+      const competingRun = Object.values(state.runs).some((candidate) => (
+        candidate.id !== runId
+        && candidate.automationId === run.automationId
+        && isAutomationRunOccupying(candidate.status)
+      ))
+      if (competingRun) return
+      preserved = applyRunPatch(run, {
+        status: "outcome-unknown",
+        sessionId: receipt.ref.sessionId,
+        dispatchReceipt: receipt,
+        completedAt,
+        error,
+      }, this.nowIso())
+      state.runs[runId] = preserved
+    })
+    // Accepted ambiguity reserves the durable slot, but no executor heartbeat owns it.
+    // Bounded reconciliation below must therefore be able to reclaim it.
+    if (preserved?.status === "outcome-unknown") this.activeRunIds.delete(runId)
+    return preserved ? clone(preserved) : null
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     let updated: AutomationRun | undefined
     await this.mutate((state) => {
@@ -240,8 +362,17 @@ export class FileAutomationStore implements AutomationStore {
       updated = applyRunPatch(run, patch, this.nowIso())
       state.runs[runId] = updated
     })
-    if (updated && isTerminalRunStatus(updated.status)) this.activeRunIds.delete(runId)
+    if (updated && (!isAutomationRunOccupying(updated.status) || updated.status === "outcome-unknown")) {
+      this.activeRunIds.delete(runId)
+    }
     return clone(requireValue(updated))
+  }
+
+  async getRun(automationId: string, runId: string): Promise<AutomationRun | null> {
+    const automation = await this.getAutomation(automationId)
+    if (!automation) throw automationNotFound(automationId)
+    const run = (await this.load()).runs[runId]
+    return run?.automationId === automationId ? clone(run) : null
   }
 
   async listRuns(automationId: string, limit?: number): Promise<AutomationRun[]> {
@@ -254,6 +385,47 @@ export class FileAutomationStore implements AutomationStore {
     return runs.slice(0, limit ?? runs.length).map(clone)
   }
 
+  async listRecentRuns(limit: number): Promise<AutomationRun[]> {
+    const state = await this.load()
+    return Object.values(state.runs)
+      .filter((run) => state.automations[run.automationId] !== undefined)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+      .slice(0, limit)
+      .map(clone)
+  }
+
+  async settleCancelledSession(ref: { agentTypeId: string; sessionId: string }, completedAt: string): Promise<AutomationRun | null> {
+    let settled: AutomationRun | undefined
+    await this.mutate((state) => {
+      const run = Object.values(state.runs)
+        .filter((candidate) => candidate.dispatchReceipt?.ref.agentTypeId === ref.agentTypeId
+          && candidate.dispatchReceipt.ref.sessionId === ref.sessionId
+          && isAutomationRunOccupying(candidate.status))
+        .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))[0]
+      if (!run) return
+      settled = applyRunPatch(run, {
+        status: "cancelled",
+        completedAt,
+        error: "Automation session was explicitly cancelled",
+      }, this.nowIso())
+      state.runs[run.id] = settled
+      this.activeRunIds.delete(run.id)
+    })
+    return settled ? clone(settled) : null
+  }
+
+  async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }): Promise<AutomationRun | null> {
+    const state = await this.load()
+    const run = Object.values(state.runs)
+      .filter((candidate) => (
+        candidate.dispatchReceipt?.ref.agentTypeId === ref.agentTypeId
+        && candidate.dispatchReceipt.ref.sessionId === ref.sessionId
+        && state.automations[candidate.automationId] !== undefined
+      ))
+      .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))[0]
+    return run ? clone(run) : null
+  }
+
   private statePath(): string {
     return join(this.rootDir, "store.json")
   }
@@ -261,6 +433,15 @@ export class FileAutomationStore implements AutomationStore {
   private promptPath(automationId: string): string {
     if (!SAFE_PROMPT_ID.test(automationId)) throw automationNotFound(automationId)
     return join(this.promptDir, `${automationId}.md`)
+  }
+
+  private workspacePath(promptRef: string): string {
+    const normalized = normalize(promptRef)
+    const rel = relative(".", normalized)
+    if (rel.startsWith("..") || !rel.startsWith(`${normalize(".agents/automation")}/`)) {
+      throw new Error("automation prompt reference must stay within .agents/automation")
+    }
+    return join(this.workspaceRoot, rel)
   }
 
   private async writePromptFile(automationId: string, body: string): Promise<void> {
@@ -290,7 +471,9 @@ export class FileAutomationStore implements AutomationStore {
           const raw = await readFile(this.statePath(), "utf8")
           const parsed = JSON.parse(raw) as Partial<StoredAutomationState>
           this.state = {
-            automations: parsed.automations && typeof parsed.automations === "object" ? parsed.automations : {},
+            automations: parsed.automations && typeof parsed.automations === "object"
+              ? parsed.automations as Record<string, Automation>
+              : {},
             runs: parsed.runs && typeof parsed.runs === "object"
               ? Object.fromEntries(Object.entries(parsed.runs).map(([id, value]) => {
                   const run = value as AutomationRun
@@ -303,6 +486,7 @@ export class FileAutomationStore implements AutomationStore {
                 }))
               : {},
           }
+          for (const automation of Object.values(this.state.automations)) assertPersistedDurationCap(automation)
         } catch (error) {
           if ((error as { code?: string }).code !== "ENOENT") throw error
           this.state = clone(EMPTY_STATE)
@@ -319,24 +503,34 @@ export class FileAutomationStore implements AutomationStore {
 function reconcileOrphanedRuns(
   state: StoredAutomationState,
   automationId: string,
-  activeRunIds: ReadonlySet<string>,
+  activeRunIds: Set<string>,
   completedAt: string,
 ): void {
+  const nowMs = new Date(completedAt).getTime()
   for (const run of Object.values(state.runs)) {
-    if (run.automationId !== automationId || isTerminalRunStatus(run.status) || activeRunIds.has(run.id)) continue
-    const ambiguousDispatch = run.status === "dispatching" && run.dispatchReceipt === null
-    run.status = ambiguousDispatch ? "outcome-unknown" : "failed"
+    if (run.automationId !== automationId || !isAutomationRunOccupying(run.status)) continue
+    if (activeRunIds.has(run.id)) continue
+    if (run.status === "outcome-unknown"
+      && nowMs - new Date(run.updatedAt).getTime() < AUTOMATION_OUTCOME_UNKNOWN_RECLAIM_AFTER_MS) continue
+    const reconciled = reconcileAbandonedRun(
+      run.status,
+      run.status === "outcome-unknown" ? "lease-expired" : "host-restart",
+    )
+    run.status = reconciled.status
     run.completedAt = completedAt
-    run.durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
-    run.error = ambiguousDispatch
-      ? "Automation dispatch outcome is unknown after host restart; it was not retried"
-      : "Automation host restarted before the run completed"
+    run.durationMs = clampAutomationPersistedDurationMs(new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
+    run.error = reconciled.error
     run.updatedAt = completedAt
+    activeRunIds.delete(run.id)
   }
 }
 
-function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "cancelled" || status === "outcome-unknown"
+function assertPersistedDurationCap(automation: Automation): void {
+  const cap = automation.runDurationCapMs
+  if (cap == null) return
+  if (!Number.isSafeInteger(cap) || cap < 1 || cap > MAX_AUTOMATION_DURATION_MS) {
+    throw new Error(`automation ${automation.id} has an invalid persisted run duration cap`)
+  }
 }
 
 function applyRunPatch(run: AutomationRun, patch: AutomationRunLifecyclePatch, updatedAt: string): AutomationRun {

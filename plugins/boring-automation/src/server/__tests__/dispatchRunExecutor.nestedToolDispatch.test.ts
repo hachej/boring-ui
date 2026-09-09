@@ -1,13 +1,13 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { createAgent, type AgentCoreSessionService, type PiChatEventSubscriber, type PiSessionCreateInit, type PiSessionRequestContext } from "@hachej/boring-agent/core"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import "../../../../../packages/agent/src/server/http/middleware"
 import type { Agent, AgentEvent, AgentTool, SessionCtx, SessionDetail, SessionStore, SessionSummary, WorkspaceAgentDispatcher, WorkspaceAgentDispatcherDispatchInput } from "@hachej/boring-agent/shared"
 import type { FollowUpPayload, PiChatEvent, PromptPayload } from "@hachej/boring-agent/shared"
 import { createBoringAutomationTool } from "../automationTool"
-import { ManualRunExecutor, type VerifiedAutomationActor } from "../manualRunExecutor"
+import { DispatchRunExecutor, type VerifiedAutomationActor } from "../dispatchRunExecutor"
 import { createAutomationOperations } from "../operations"
-import type { AutomationStore } from "../store"
+import type { AutomationSeed, AutomationStore } from "../store"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared"
 
 const ACTOR: VerifiedAutomationActor = { workspaceId: "workspace-a", userId: "user-a" }
@@ -19,7 +19,7 @@ const SESSION_CTX: SessionCtx = { workspaceId: ACTOR.workspaceId, userId: ACTOR.
  * -> resolver/bound dispatcher -> Agent.send without a sessionId -> fresh child.
  */
 describe("boring_automation nested dispatch", () => {
-  it("completes a fresh automation child session before the parent tool turn is released", async () => {
+  it("releases the parent tool after durable admission while the child run continues host-owned", async () => {
     const sessions = new NestedSessionStore()
     sessions.seed("parent-session", SESSION_CTX)
     const service = new NestedSessionService(sessions)
@@ -42,16 +42,21 @@ describe("boring_automation nested dispatch", () => {
             for await (const event of dispatched.events) await onEvent(event)
             return { ref: dispatched.ref, receipt: dispatched.receipt }
           },
+          async listSessions() { return { sessions: [] } },
+          async sendIfIdle() { throw new Error("sendIfIdle is not used by nested dispatch") },
           async interrupt(sessionId) { return await dispatcher.interrupt(sessionId) },
           async stop(sessionId) { return await dispatcher.stop(sessionId) },
         })
+      },
+      async authorizeSession(ctx, ref) {
+        await sessions.load(ctx, ref.sessionId)
       },
       async resolve(ctx) {
         return createLegacyNestedDispatcher(agent, ctx)
       },
     }
     const automationStore = new NestedAutomationStore()
-    const executor = new ManualRunExecutor({
+    const executor = new DispatchRunExecutor({
       agentTypeId: "default",
       store: automationStore,
       dispatcherResolver: resolver,
@@ -74,13 +79,18 @@ describe("boring_automation nested dispatch", () => {
     expect(toolResult.details).toMatchObject({
       ok: true,
       operation: "run",
-      run: { status: "succeeded", sessionId: "session-1" },
+      run: { status: "dispatching", sessionId: null, trigger: "manual" },
     })
+
+    // The parent tool is released after durable admission, while the host-owned
+    // child continues and completes without holding the parent turn.
+    expect(service.parentReleased).toBe(false)
+    await vi.waitFor(async () => expect((await automationStore.listRuns())[0]).toMatchObject({
+      status: "succeeded",
+      sessionId: "session-1",
+    }))
     expect(sessions.createContexts).toEqual([SESSION_CTX])
     expect(service.promptedSessionIds).toEqual(["parent-session", "session-1"])
-
-    // The child tool result exists while the parent prompt is still deliberately held.
-    expect(service.parentReleased).toBe(false)
     service.releaseParent()
     await expect(parentEventsPromise).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -293,6 +303,10 @@ class NestedAutomationStore implements AutomationStore {
   async listAutomations() { return [this.automation] }
   async getAutomation(id: string) { return id === this.automation.id ? this.automation : null }
   async createAutomation(_input: AutomationCreate) { return this.automation }
+  async readSeedManifest() { return null }
+  async ensureSeededAutomation(_input: AutomationSeed) { return null }
+  async findExistingSeedKeys(_keys: readonly string[]) { return [] }
+  async removeSeededAutomationIfIdle(_key: string) { return true }
   async updateAutomation(_id: string, _patch: AutomationPatch) { return this.automation }
   async deleteAutomation(_id: string) {}
   async getPrompt() { return "automation prompt" }
@@ -326,12 +340,22 @@ class NestedAutomationStore implements AutomationStore {
     return await this.updateRunLifecycle(this.run.id, { status: "dispatching" })
   }
   async heartbeatRun(_runId: string) { return true }
+  async preserveAcceptedDispatch(_runId: string, receipt: NonNullable<AutomationRun["dispatchReceipt"]>, completedAt: string, error: string) {
+    if (!this.run) return null
+    this.run = { ...this.run, status: "outcome-unknown", sessionId: receipt.ref.sessionId, dispatchReceipt: receipt, completedAt, error }
+    return this.run
+  }
   async updateRunLifecycle(_runId: string, patch: AutomationRunLifecyclePatch) {
     if (!this.run) throw new Error("run missing")
     this.run = { ...this.run, ...patch, updatedAt: patch.completedAt ?? this.run.updatedAt }
     return this.run
   }
+  async getRun(automationId: string, runId: string) {
+    return this.run?.automationId === automationId && this.run.id === runId ? this.run : null
+  }
   async listRuns() { return this.run ? [this.run] : [] }
+  async listRecentRuns(limit: number) { return this.run && limit > 0 ? [this.run] : [] }
+  async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }) { return this.run?.sessionId === ref.sessionId ? this.run : null }
 }
 
 function summary(id: string): SessionSummary {

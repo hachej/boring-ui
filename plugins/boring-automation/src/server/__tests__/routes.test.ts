@@ -5,18 +5,29 @@ import Fastify from "fastify"
 import { describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ROUTE_PREFIX } from "../../shared"
 import { FileAutomationStore } from "../fileStore"
+import { createAutomationOperations } from "../operations"
 import { automationRoutes } from "../routes"
 import { InMemoryAutomationRunEventBus } from "../runEventBus"
 
 function appWithStore(
   store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`),
-  manualRunExecutor?: Parameters<typeof automationRoutes>[1]["manualRunExecutor"],
+  dispatchRunExecutor?: Parameters<typeof automationRoutes>[1]["dispatchRunExecutor"],
   dueRunService?: Parameters<typeof automationRoutes>[1]["dueRunService"],
   hostedDueRunService?: Parameters<typeof automationRoutes>[1]["hostedDueRunService"],
   hostedTriggerToken?: string,
 ) {
   const app = Fastify()
-  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor, dueRunService, hostedDueRunService, hostedTriggerToken }))
+  app.register(async (instance) => automationRoutes(instance, {
+    store,
+    dispatchRunExecutor,
+    dueRunService,
+    hostedDueRunService,
+    hostedTriggerToken,
+    operationsForRequest: () => createAutomationOperations({
+      store,
+      actor: { workspaceId: "test-workspace", userId: "test-user" },
+    }),
+  }))
   return app
 }
 
@@ -38,6 +49,10 @@ describe("automationRoutes", () => {
       store,
       actorResolver: () => ({ workspaceId: "workspace-a", userId: "user-a" }),
       eventBus: bus,
+      operationsForRequest: () => createAutomationOperations({
+        store,
+        actor: { workspaceId: "workspace-a", userId: "user-a" },
+      }),
     })
     const address = await app.listen({ host: "127.0.0.1", port: 0 })
     const controller = new AbortController()
@@ -76,14 +91,19 @@ describe("automationRoutes", () => {
     const actor = new Promise<{ workspaceId: string; userId: string }>((resolve) => { resolveActor = resolve })
     const unsubscribed = vi.fn()
     const subscribe = vi.fn(async () => unsubscribed)
+    const store = new FileAutomationStore(`${tmpdir()}/boring-automation-events-delayed`)
     const app = Fastify()
     await automationRoutes(app, {
-      store: new FileAutomationStore(`${tmpdir()}/boring-automation-events-delayed`),
+      store,
       actorResolver: () => {
         markActorResolutionStarted()
         return actor
       },
       eventBus: { publish: vi.fn(), subscribe, close: vi.fn() },
+      operationsForRequest: () => createAutomationOperations({
+        store,
+        actor: { workspaceId: "workspace-a", userId: "user-a" },
+      }),
     })
     const address = await app.listen({ host: "127.0.0.1", port: 0 })
     const controller = new AbortController()
@@ -133,7 +153,12 @@ describe("automationRoutes", () => {
       payload: { enabled: false },
     })
     expect(patched.statusCode).toBe(200)
-    expect(patched.json().automation.enabled).toBe(false)
+    expect(patched.json().automation).toEqual({
+      ...automation,
+      enabled: false,
+      updatedAt: expect.any(String),
+    })
+    expect(patched.json().automation.promptRef).toBe(automation.promptRef)
 
     // HTTP/UI compatibility deliberately keeps legacy unqualified model values
     // editable even though the new agent tool requires provider:model-id syntax.
@@ -153,6 +178,44 @@ describe("automationRoutes", () => {
     expect(deleted.statusCode).toBe(204)
     const missingAfterDelete = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}` })
     expect(missingAfterDelete.statusCode).toBe(404)
+
+    await app.close()
+    await temp.cleanup()
+  })
+
+  it("routes mixed model and metadata patches through host authority without partial writes", async () => {
+    const temp = await TempStore.create()
+    const automation = await temp.store.createAutomation({
+      title: "Protected automation",
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "host:approved-model",
+    })
+    const updateAutomation = vi.spyOn(temp.store, "updateAutomation")
+    const operations = createAutomationOperations({
+      store: temp.store,
+      actor: { workspaceId: "workspace-a", userId: "user-a" },
+      canUpdateAutomationModel: () => false,
+    })
+    const app = Fastify()
+    await automationRoutes(app, {
+      store: temp.store,
+      operationsForRequest: () => operations,
+    })
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}`,
+      payload: { model: "caller:forbidden-model", title: "Partially mutated" },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({ code: "BORING_AUTOMATION_INVALID_MODEL" })
+    expect(updateAutomation).not.toHaveBeenCalled()
+    await expect(temp.store.getAutomation(automation.id)).resolves.toMatchObject({
+      model: "host:approved-model",
+      title: "Protected automation",
+    })
 
     await app.close()
     await temp.cleanup()
@@ -309,6 +372,14 @@ describe("automationRoutes", () => {
   it("maps validation and domain error codes to HTTP status", async () => {
     const temp = await TempStore.create()
     const app = appWithStore(temp.store)
+
+    const dispatchOnly = await app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`,
+      payload: { title: "Dispatch only", timezone: "UTC", model: "model-a" },
+    })
+    expect(dispatchOnly.statusCode).toBe(201)
+    expect(dispatchOnly.json()).toMatchObject({ ok: true, automation: { title: "Dispatch only", cron: null } })
 
     const invalid = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`, payload: { title: "" } })
     expect(invalid.statusCode).toBe(400)

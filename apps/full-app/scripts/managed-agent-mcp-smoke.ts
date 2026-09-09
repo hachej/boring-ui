@@ -226,6 +226,13 @@ function fakeResolver(options: {
             receipt: { accepted: true, cursor: 0, disposition: 'prompt', clientNonce: dispatchInput.requestId },
           }
         },
+        async listSessions() { return { sessions: [] } },
+        async sendIfIdle(_sessionId, _message, requestId) {
+          return {
+            status: 'accepted',
+            receipt: { accepted: true, cursor: 0, disposition: 'prompt', clientNonce: requestId },
+          }
+        },
         interrupt: (sessionId) => dispatcher.interrupt(sessionId),
         stop: (sessionId) => dispatcher.stop(sessionId),
       })
