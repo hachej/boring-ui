@@ -17,7 +17,6 @@ import {
 } from '..'
 import type {
   CredentialVersionMutationResultV1,
-  CredentialVersionMutationStateV1,
   CredentialVaultPersistenceV1,
   VaultCredentialStoreBackendV1,
   VaultCredentialStoreOptionsV1,
@@ -60,9 +59,6 @@ const SECRET_VALUE = 'sk-test-super-secret-value-0123456789'
 const KEK_A = Buffer.alloc(32, 0xa1)
 const KEK_B = Buffer.alloc(32, 0xb2)
 const anchors = new WeakMap<object, ReturnType<typeof createInMemoryCredentialVersionAnchorV1>>()
-const BEFORE_DIGEST = '0'.repeat(64)
-const AFTER_DIGEST = '1'.repeat(64)
-
 function anchorMutation<T>(mutation: Readonly<{
   nextCredentialVersion: number
   nextCredentialMaterialKind: 'field-set' | 'none'
@@ -72,13 +68,7 @@ function anchorMutation<T>(mutation: Readonly<{
   nextDekGeneration: number
   result: T
 }>) {
-  const { result, ...plan } = mutation
-  return {
-    ...plan,
-    expectedStateDigest: BEFORE_DIGEST,
-    nextStateDigest: AFTER_DIGEST,
-    commit: async () => result,
-  }
+  return mutation
 }
 
 runCredentialVaultPersistenceConformanceV1(
@@ -332,9 +322,15 @@ describe('local-KEK configuration resolution', () => {
 
 describe('local-KEK credential version anchor', () => {
   test('keeps V1 result-bearing while V2 statically and dynamically requires deferred commit', () => {
-    expectTypeOf<CredentialVersionMutationResultV1<string>>().toEqualTypeOf<
-      CredentialVersionMutationStateV1 & { readonly result: string }
-    >()
+    expectTypeOf<CredentialVersionMutationResultV1<string>>().toEqualTypeOf<{
+      readonly nextCredentialVersion: number
+      readonly nextCredentialMaterialKind: 'field-set' | 'none'
+      readonly nextCredentialFieldIds: readonly string[]
+      readonly nextCredentialLifecycleState: import('../../../../shared/credentials').CredentialLifecycleStateV1
+      readonly nextCredentialType: string
+      readonly nextDekGeneration: number
+      readonly result: string
+    }>()
     expectTypeOf<WorkspaceCredentialVersionAnchorV1>()
       .not.toMatchTypeOf<WorkspaceCredentialVersionAnchorV2>()
 

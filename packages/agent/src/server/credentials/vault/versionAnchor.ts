@@ -573,7 +573,13 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
       await operation
       return result
     },
-    async withMutation<T>(workspaceId, providerId, mutate): Promise<T> {
+    async withMutation<T>(
+      workspaceId: string,
+      providerId: ProviderId,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<CredentialVersionMutationResultV1<T>>,
+    ): Promise<T> {
       let result!: T
       const operation = queue.then(async () => {
         if (state.workspaces[workspaceId]?.pendingCredentialMutation) {
@@ -608,7 +614,13 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
       await operation
       return result
     },
-    async withRecoverableMutation<T>(workspaceId, providerId, mutate): Promise<T> {
+    async withRecoverableMutation<T>(
+      workspaceId: string,
+      providerId: ProviderId,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<CredentialVersionMutationResultV2<T>>,
+    ): Promise<T> {
       let result!: T
       const operation = queue.then(async () => {
         if (state.workspaces[workspaceId]?.pendingCredentialMutation) {
@@ -955,7 +967,13 @@ export function createLocalFileCredentialVersionAnchorV1(
         await lock.release()
       }
     },
-    async withMutation<T>(workspaceId, providerId, mutate): Promise<T> {
+    async withMutation<T>(
+      workspaceId: string,
+      providerId: ProviderId,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<CredentialVersionMutationResultV1<T>>,
+    ): Promise<T> {
       const lockPath = `${options.anchorFilePath}.lock`
       const lock = await acquireMutationLock(lockPath)
       try {
@@ -991,7 +1009,13 @@ export function createLocalFileCredentialVersionAnchorV1(
         await lock.release()
       }
     },
-    async withRecoverableMutation<T>(workspaceId, providerId, mutate): Promise<T> {
+    async withRecoverableMutation<T>(
+      workspaceId: string,
+      providerId: ProviderId,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<CredentialVersionMutationResultV2<T>>,
+    ): Promise<T> {
       const lockPath = `${options.anchorFilePath}.lock`
       const lock = await acquireMutationLock(lockPath)
       try {
