@@ -38,7 +38,7 @@ The removed vendor rules were introduced only to make upgraded dependencies fit 
 
 | Package | Isolated evidence | Disposition |
 |---|---|---|
-| TypeScript 7.0.2 | `8b954d023`; tsup 8.5.1 / rollup-plugin-dts crashed reading `useCaseSensitiveFileNames` | dropped |
+| TypeScript 7.0.2 | `c9c344125`; tsup 8.5.1 / rollup-plugin-dts crashed reading `useCaseSensitiveFileNames` | dropped |
 | Mermaid 11.17.2 | `db571dc05`; CLI entry measured 1,243,498 B and preload 1,244,604 B against 1,000,000 B limits | dropped |
 | streamdown 2.6.0 | `83e538637`; budget-isolation commit removed the bump | dropped |
 | lucide-react 1.39.0 | `5d0392cac`; budget-isolation commit removed all workspace ranges | dropped |
