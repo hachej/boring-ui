@@ -17,9 +17,11 @@ type ScenarioActionControl = {
 }
 export type ScenarioAction = ActionTemplate
 
-export function scenarioActionAccessibleName(action: ScenarioAction | null | undefined): string | undefined {
+export function scenarioActionAccessibleName(action: unknown): string | undefined {
   if (typeof action !== "object" || action === null || !("Click" in action)) return undefined
-  const fingerprint = action.Click.fingerprint as Fingerprint & { accessible_name?: string }
+  const click = (action as { Click?: unknown }).Click
+  if (typeof click !== "object" || click === null || !("fingerprint" in click)) return undefined
+  const fingerprint = click.fingerprint as Fingerprint & { accessible_name?: string }
   return fingerprint.accessibleName ?? fingerprint.accessible_name
 }
 
