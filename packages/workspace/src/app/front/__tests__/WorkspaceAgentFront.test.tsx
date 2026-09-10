@@ -1367,7 +1367,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     const appNav = screen.getByLabelText("App navigation")
-    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "New chat" })).not.toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: "Agent" })).not.toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
@@ -1390,7 +1390,7 @@ describe("WorkspaceAgentFront", () => {
     const appNav = screen.getByLabelText("App navigation")
     expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
     expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
-    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "New chat" })).not.toBeInTheDocument()
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
     expect(within(appNav).getByText("Focused session")).toBeInTheDocument()
   })
@@ -1439,6 +1439,7 @@ describe("WorkspaceAgentFront", () => {
           { id: "project-a", name: "Project Alpha" },
           { id: "project-b", name: "Project Beta", sessions: [{ id: "b1", title: "Beta kickoff" }] },
         ]}
+        onCreateSession={vi.fn()}
         onCreateAppLeftProject={vi.fn()}
       />,
     )
@@ -1749,6 +1750,7 @@ describe("WorkspaceAgentFront", () => {
           sessions={[{ id: "s1", title: "First session" }]}
           activeSessionId="s1"
           plugins={[plugin]}
+          onCreateSession={vi.fn()}
           persistenceEnabled={false}
         />,
       )
