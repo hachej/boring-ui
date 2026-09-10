@@ -8,6 +8,14 @@
 > workspace.** That is what makes a product a team instead of a chatbot.
 > Nothing here is ratified; §"Proposed ruling" carries the text for the owner.
 
+The later [OpenComputer interface review](OPENCOMPUTER-INTERFACE-REFERENCE.md)
+provides a concrete reference for keeping this SDK small: immutable agent
+behavior revisions, pinned durable Sessions, ordered events, scoped browser
+steering, admitted sources, limits and credential-free repository effects. It
+is inspiration for the interface and conformance behavior, not a choice of
+hosted provider or a reason to replace the existing gateway, records,
+filesystems, sandbox providers or metering mechanisms.
+
 ## Why the runtime is the product
 
 An installed product is not one bot. The tutor needs a grader; the builder

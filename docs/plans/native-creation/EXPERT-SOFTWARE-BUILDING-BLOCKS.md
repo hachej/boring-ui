@@ -87,11 +87,16 @@ A2A loopback.
 
 ## A real computer, without ambient authority
 
-OpenComputer is useful inspiration for the remote execution contract: deploy an
-agent definition; allocate a real Linux computer for substantial work; manage
-streaming, versions and durable Sessions; hibernate when idle; and keep provider
-credentials outside the runtime. We add separations its public product copy
-does not establish:
+[OpenComputer is an interface reference](OPENCOMPUTER-INTERFACE-REFERENCE.md),
+not a decision to adopt its hosted control plane or replace Boring's runtime.
+It demonstrates coherent public shapes for agent definitions, durable and
+steerable Sessions, ordered events, source checkout, computer leases,
+checkpoints, browser tokens, previews and credential-free external operations.
+Use those solved shapes to retain, sharpen or fill Boring's existing premises
+and mechanisms—never to create a parallel stack.
+
+Boring continues to own authority, canonical records, placement and the
+additional separation:
 
 ```text
 remote-agent Session  ≠  computer lease  ≠  installed product runtime
@@ -99,7 +104,9 @@ remote-agent Session  ≠  computer lease  ≠  installed product runtime
 
 The computer may be disposable or hibernating. Thread state, artifacts and
 evidence survive it. Accepted software runs in the durable product runtime for
-its Installation, never in the builder computer. Capabilities are narrowed by
+its Installation, never in the builder computer. The host can place execution
+locally, on sovereign remote infrastructure or through an optional provider;
+the interface is not coupled to OpenComputer. Capabilities are narrowed by
 agent declaration ∩ Workspace grant ∩ job restriction ∩ current host policy.
 Full network egress is not a universal default.
 
