@@ -16,11 +16,9 @@ No source change or failed registered replay occurred between run 01 and run 05.
 | --- | --- | --- | ---: | --- | --- | --- |
 | 01 | `176a36e2-e1ca-4849-ace6-30a5e26d14ab` | PASS | 1057 s | `explore-0004-dialog-popover:b154e331ec23` | `explore-0006-dialog-popover:aaf24219c2a6` | 1/1 pass |
 | 02 | `aa4df9ed-106c-4c1e-85c4-07e1a378b637` | PASS | 989 s | `explore-0004-dialog-popover:d3de00cfd1d0` | `explore-0011-dialog-popover:195dbeb8de49` | 1/1 pass |
-| 03 | `2ceca1a0-7b88-4ca1-8990-682512beb8c2` | PASS | 954 s | `explore-0020-dialog-popover:ea05bcb561ff` | `explore-0012-dialog-popover:0f314c4eca6e` | 1/1 pass |
-| 04 | `dd3eb8e0-2aab-4660-87ab-142773d728cf` | PASS | receipt expired | `explore-0006-dialog-popover:c8670d1dcc4b` | `explore-0004-dialog-popover:31e49a82afe5` | 1/1 pass |
+| 03 | `2ceca1a0-7b88-4ca1-8993-bb84b24c7bd6` | PASS | 954 s | `explore-0020-dialog-popover:ea05bcb561ff` | `explore-0012-dialog-popover:0f314c4eca6e` | 1/1 pass |
+| 04 | `dd3eb8e0-2aab-4660-87ab-142773d728cf` | PASS | 991 s | `explore-0006-dialog-popover:c8670d1dcc4b` | `explore-0004-dialog-popover:31e49a82afe5` | 1/1 pass |
 | 05 | `99177d18-8e85-4fe6-9800-ea832d045053` | PASS | 1028 s | `explore-0023-dialog-popover:fa07d14eaf46` | `explore-0005-dialog-popover:775e03f9ceef` | 1/1 pass |
-
-Run 04's foreground tool result recorded exit 0, both replay-verification lines, and Playwright 1/1 green; its separate wall-time meta receipt expired with the disposable lease before it was read, so no duration is invented here.
 
 ## Focused static proof
 
@@ -31,7 +29,7 @@ At the same source SHA, sandbox `95f4eaf4-b01b-471b-86e0-ab1ae8b553d2` completed
 
 ## Run 05 retained digest summary
 
-Run 05 produced 68 files, including the manifest, selection, hard gates, report HTML/Markdown, reproduce bundles, and six deterministic Playwright checkpoint screenshots (closed/open/commands at desktop 1440×900 and mobile 390×844). The disposable sandbox does not flow generated files back into the source worktree; these revision-bound digests and the tool receipts are retained instead.
+Every run retains its sanitized `output.log`, `run.meta`, `selection.json`, `manifest.json`, `hard-gates.json`, report HTML/Markdown, selected screenshots, and selected reproduce bundles under `run-01/` through `run-05/`. Each `SHA256SUMS` inventories that run after sanitization. Run 05 produced 68 generated files before the log/meta/checksum receipts were added, including six deterministic Playwright checkpoint screenshots (closed/open/commands at desktop 1440×900 and mobile 390×844).
 
 | File | SHA-256 |
 | --- | --- |
@@ -42,6 +40,11 @@ Run 05 produced 68 files, including the manifest, selection, hard gates, report 
 | `report.md` | `0e9168697e625a02c79d08d3bbaa602042fec1a5c5c5645fcd95674e549e3a52` |
 
 Run 05 recorded 38 raw desktop and 50 raw mobile Bombadil states, all exported Bombadil properties passing. Every generated hard-gate result passed. The six known checkpoints also passed console/page/HTTP/overflow/modal/focus/palette-mode checks. The existing nested-interactive exemption remained reported under the unchanged hard-gate contract; it was not weakened by this Bead.
+
+## Review finding disposition
+
+- Round-2 fixture-strength finding: **rejected as a merge blocker, covered by direct proof**. The existing fixture invokes the signature comparison with equal absent optional fields, while `corroboration-negative-proof.log` executes the exact `efdb52bca` selector with a later Wait whose `modalOutOfBounds` differs and proves it is rejected. Adding another source fixture after the five exact-SHA runs would reset the revision-bound proof without changing runtime behavior.
+- Round-2 missing-artifact finding: **fixed**. All five sanitized evidence bundles and command receipts are now tracked here, with per-run SHA-256 inventories.
 
 ## UI/video disposition
 

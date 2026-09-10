@@ -1,0 +1,30 @@
+
+> @hachej/boring-ui-review-tools@0.0.1 test <sandbox-root>/tools/ui-review
+> vitest run
+
+
+ RUN  v4.1.11 <sandbox-root>/tools/ui-review
+
+<sandbox-root>/tools/ui-review/src/core/tempRoot.ts:50
+  if (!basename(path).startsWith(UI_REVIEW_TEMP_PREFIX)) throw new Error(`UI_REVIEW_TEMP_ROOT_UNOWNED:${path}`)
+                                                               ^
+
+Error: UI_REVIEW_TEMP_ROOT_UNOWNED:/var/tmp/not-a-ui-review-root.MdDdAk
+    at assertRemovableUiReviewTempRoot (<sandbox-root>/tools/ui-review/src/core/tempRoot.ts:50:64)
+    at adoptOrCreateRunRoot (<sandbox-root>/tools/ui-review/src/core/tempRoot.ts:82:16)
+    at uiReviewTempRoot (<sandbox-root>/tools/ui-review/src/core/tempRoot.ts:69:22)
+    at <anonymous> (<sandbox-root>/tools/ui-review/src/__tests__/temp-root-child.ts:13:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.22.1
+
+ Test Files  13 passed (13)
+      Tests  101 passed (101)
+   Start at  22:21:39
+   Duration  6.98s (transform 7.86s, setup 0ms, import 20.94s, tests 8.95s, environment 5ms)
+
+close timed out after 10000ms
+Tests closed successfully but something prevents Vite server from exiting
+You can try to identify the cause by enabling "hanging-process" reporter. See https://vitest.dev/guide/reporters.html#hanging-process-reporter

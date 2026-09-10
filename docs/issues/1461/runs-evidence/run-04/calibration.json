@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "workspace-command-palette",
+  "candidateRevision": "efdb52bcae90beb89f114794acf5d6f53282ffe0",
+  "candidateTreeHash": "a0764a12e5b818721f361c98c85c689f895b88ed11103e164b91dec518fe5648",
+  "score": {
+    "candidate": {
+      "overall": 8,
+      "dimensions": {
+        "hierarchy": 8,
+        "spacingAlignment": 8,
+        "typographyColor": 8,
+        "consistency": 8,
+        "interactionStates": 8,
+        "responsiveAccessibility": 8
+      }
+    }
+  },
+  "confidence": 1,
+  "promptHash": "414e7065528e1667d8256f5e085f6e97b796c416245ec974dd6376627220865d",
+  "rubricHash": "f3d176733eb814330ea99bcef5507c89ed8de4dae800c289135da9266897448e",
+  "manifestHash": "06fc6a83ccc387e266a2f36507f7f4d5eda2435ed2bd4e494a0060a8f93abdf1",
+  "screenshotDigests": [
+    "114ea2cad92a7500d34260ca541bfb1afca3ada7e95c45904b3af5fab06527c6",
+    "2fedd13eb785fd50ae5e43d72b9bfcf3b2542708fdd88cc8a282a7471ae23f55",
+    "31e49a82afe5f421655473496e2e40e8f2e228af6255ee3199f690d41c7d8f77",
+    "40ad1d044db83abf825a4b8fd3983212fd248f2fdf9ef54e185cabb0c8a4e1ea",
+    "414cc474961c9b36ea68fa9cd148e79304081564721f561a183830431fe30705",
+    "4ae66bda75357bb77d75cf87eb60c9064610c046480ba9521c9e543d4124094a",
+    "77bec1202efffe07661f10e3515467085fed2866e58032a253ca5e0a0cd3afea",
+    "81743123500c4b124e73eec33ec614d11a1c59b80168bdea944f15524d2fae69",
+    "88ba94e53056f46b63bb70b1667b0f008f848688294886bbb4ab562d56fd388a",
+    "928293f41bc9a7bc6a79fd27cd651dcda20aa9701c6c9ac6212c614a59e01502",
+    "a7496a86a72996fdf2c4215d0c36937f98a94afbff2ddb4fba0bda07b2d1f8fd",
+    "c528a1f35afeb13f954f01debaef7e4dc5f5938fd753dd285cae4bf65802fd42",
+    "c8670d1dcc4b3159a9926b7d9e49244ac227368533cf28335ceba7c0c5887e27",
+    "cde4e23bae94f5aaabcc81674e6e8a919203e2570800de8dcfd3cf31d785f473",
+    "e2ee7624e3524578c30e1c5b027b37359c119944ad890b5af46e727e03c8bb4c",
+    "e52b5a2d81171ef8127e03d5978613391905b6f8f269057b25a6081be8e4a38a",
+    "eefd7db68112dfd5b180451c51858edade8c777b1b1091d0da3c132c6fb2feef",
+    "fb27bd0651825ccf2ad53297107a502d6a6b3b0a6d88f586f6dc595d13ebbd87",
+    "ff067ed270b1af92e6779361ead2d9d70b74fadf98cd3d01c2d3ca090fd25ba3",
+    "ffcb818f52441994792403928ca4fd6a9cfed3da25f5cf1777fba22ba1a848b8"
+  ],
+  "resolvedModel": "fixture",
+  "ownerDisposition": "pending"
+}

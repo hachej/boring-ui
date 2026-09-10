@@ -1,0 +1,3 @@
+
+> @hachej/boring-ui-review-tools@0.0.1 typecheck <sandbox-root>/tools/ui-review
+> tsc --noEmit

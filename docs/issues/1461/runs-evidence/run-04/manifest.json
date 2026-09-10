@@ -1,0 +1,895 @@
+{
+  "schemaVersion": 1,
+  "runId": "cpr-04",
+  "scenarioId": "workspace-command-palette",
+  "rubricVersion": "impeccable-v1",
+  "resolvedModel": "fixture",
+  "candidateRevision": "efdb52bcae90beb89f114794acf5d6f53282ffe0",
+  "candidateTreeHash": "a0764a12e5b818721f361c98c85c689f895b88ed11103e164b91dec518fe5648",
+  "states": [
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0001-layout:ffcb818f5244",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0001-layout",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0001-layout-ffcb818f5244.jpeg",
+      "screenshotDigest": "ffcb818f52441994792403928ca4fd6a9cfed3da25f5cf1777fba22ba1a848b8",
+      "screenshotBytes": 7978,
+      "screenshotPHash": "ffffffffffffffff",
+      "source": "bombadil",
+      "ordinal": 1,
+      "action": null,
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "open-command-palette"
+          ],
+          "dialogVisible": false,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "none",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 0
+        }
+      },
+      "normalizedStateSignature": "2f3179eeb3479c9b025720cc5c4c85bbc29600bd4f068640063fa8418eb96648",
+      "categories": [
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0001-layout%3Affcb818f5244"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0004-dialog-popover:eefd7db68112",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0004-dialog-popover",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0004-dialog-popover-eefd7db68112.jpeg",
+      "screenshotDigest": "eefd7db68112dfd5b180451c51858edade8c777b1b1091d0da3c132c6fb2feef",
+      "screenshotBytes": 13558,
+      "screenshotPHash": "213f213f3f3f3f21",
+      "source": "bombadil",
+      "ordinal": 4,
+      "action": {
+        "Click": {
+          "fingerprint": {
+            "accessible_name": "Search⌘K",
+            "tag": "button",
+            "input_type": "button",
+            "text_content": "Search⌘K"
+          },
+          "point": {
+            "x": 137.5,
+            "y": 82
+          }
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": true,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Chats",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "c13a042cfa91e283198d0ea64bf955f70df1a204efd47d21b068ef09bfe4138a",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0004-dialog-popover%3Aeefd7db68112"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0002-layout:40ad1d044db8",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0002-layout",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0002-layout-40ad1d044db8.jpeg",
+      "screenshotDigest": "40ad1d044db83abf825a4b8fd3983212fd248f2fdf9ef54e185cabb0c8a4e1ea",
+      "screenshotBytes": 13574,
+      "screenshotPHash": "213f213f3f3f3f21",
+      "source": "bombadil",
+      "ordinal": 2,
+      "action": "Wait",
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "open-command-palette"
+          ],
+          "dialogVisible": false,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "none",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 0
+        }
+      },
+      "normalizedStateSignature": "2f3179eeb3479c9b025720cc5c4c85bbc29600bd4f068640063fa8418eb96648",
+      "categories": [
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0002-layout%3A40ad1d044db8"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0006-dialog-popover:c8670d1dcc4b",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0006-dialog-popover",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0006-dialog-popover-c8670d1dcc4b.jpeg",
+      "screenshotDigest": "c8670d1dcc4b3159a9926b7d9e49244ac227368533cf28335ceba7c0c5887e27",
+      "screenshotBytes": 17762,
+      "screenshotPHash": "0000003c3c000000",
+      "source": "bombadil",
+      "ordinal": 6,
+      "action": "Wait",
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": true,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Commands",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "73a81e8aa6a4daccc0ea9d93716f5e2412ca80dcff35b0a2a89bb7b980aa1d04",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0006-dialog-popover%3Ac8670d1dcc4b"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0008-dialog-popover:114ea2cad92a",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0008-dialog-popover",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0008-dialog-popover-114ea2cad92a.jpeg",
+      "screenshotDigest": "114ea2cad92a7500d34260ca541bfb1afca3ada7e95c45904b3af5fab06527c6",
+      "screenshotBytes": 17533,
+      "screenshotPHash": "0000003c3c000000",
+      "source": "bombadil",
+      "ordinal": 8,
+      "action": {
+        "TypeText": {
+          "text": "no-matching-fixture-command",
+          "delay_millis": 0
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": true,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Commands",
+          "query": "no-matching-fixture-command",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "18661fcb9154b01725f0fc9ec9a4e48a6c4f8d31a0cdac1e426b2d4b81074b36",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0008-dialog-popover%3A114ea2cad92a"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0010-dialog-popover:4ae66bda7535",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0010-dialog-popover",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0010-dialog-popover-4ae66bda7535.jpeg",
+      "screenshotDigest": "4ae66bda75357bb77d75cf87eb60c9064610c046480ba9521c9e543d4124094a",
+      "screenshotBytes": 18933,
+      "screenshotPHash": "0000003c3c000000",
+      "source": "bombadil",
+      "ordinal": 10,
+      "action": {
+        "TypeText": {
+          "text": "no-matching-fixture-command",
+          "delay_millis": 0
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": true,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Commands",
+          "query": "no-matching-fixture-commandno-matching-fixture-command",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "13974c2f8a4bc62d08e24fc754b2ebc1f25bf8108ea3a64c53dcbecaf6cebb6c",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0010-dialog-popover%3A4ae66bda7535"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0011-dialog-popover:77bec1202eff",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0011-dialog-popover",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0011-dialog-popover-77bec1202eff.jpeg",
+      "screenshotDigest": "77bec1202efffe07661f10e3515467085fed2866e58032a253ca5e0a0cd3afea",
+      "screenshotBytes": 20175,
+      "screenshotPHash": "0000003c3c000000",
+      "source": "bombadil",
+      "ordinal": 11,
+      "action": {
+        "Click": {
+          "fingerprint": {
+            "accessible_name": "Commands",
+            "tag": "button",
+            "input_type": "button",
+            "text_content": "Commands"
+          },
+          "point": {
+            "x": 526,
+            "y": 377.5
+          }
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Commands",
+          "query": "no-matching-fixture-commandno-matching-fixture-command",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "a73b6c2931ccc28b7ff5fe7b31f7eb841f0a11b0f5e3471c36ea3fdc1ca6c2a7",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0011-dialog-popover%3A77bec1202eff"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0026-layout:c528a1f35afe",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0026-layout",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0026-layout-c528a1f35afe.jpeg",
+      "screenshotDigest": "c528a1f35afeb13f954f01debaef7e4dc5f5938fd753dd285cae4bf65802fd42",
+      "screenshotBytes": 30569,
+      "screenshotPHash": "3f3f3f2f3f3f3f3f",
+      "source": "bombadil",
+      "ordinal": 26,
+      "action": "Wait",
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "open-command-palette"
+          ],
+          "dialogVisible": false,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "none",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 0
+        }
+      },
+      "normalizedStateSignature": "2f3179eeb3479c9b025720cc5c4c85bbc29600bd4f068640063fa8418eb96648",
+      "categories": [
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0026-layout%3Ac528a1f35afe"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:explore-0014-dialog-popover:c528a1f35afe",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0014-dialog-popover",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/cpr-04-workspace-command-palette-candidate-desktop-explore-0014-dialog-popover-c528a1f35afe.jpeg",
+      "screenshotDigest": "c528a1f35afeb13f954f01debaef7e4dc5f5938fd753dd285cae4bf65802fd42",
+      "screenshotBytes": 30569,
+      "screenshotPHash": "3f3f3f2f3f3f3f3f",
+      "source": "bombadil",
+      "ordinal": 14,
+      "action": {
+        "Click": {
+          "fingerprint": {
+            "accessible_name": "Search⌘K",
+            "tag": "button",
+            "input_type": "button",
+            "text_content": "Search⌘K"
+          },
+          "point": {
+            "x": 137.5,
+            "y": 82
+          }
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": true,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Chats",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "c13a042cfa91e283198d0ea64bf955f70df1a204efd47d21b068ef09bfe4138a",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Adesktop%3Aexplore-0014-dialog-popover%3Ac528a1f35afe"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:explore-0001-layout:ff067ed270b1",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0001-layout",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/cpr-04-workspace-command-palette-candidate-mobile-explore-0001-layout-ff067ed270b1.jpeg",
+      "screenshotDigest": "ff067ed270b1af92e6779361ead2d9d70b74fadf98cd3d01c2d3ca090fd25ba3",
+      "screenshotBytes": 2271,
+      "screenshotPHash": "ffffffffffffffff",
+      "source": "bombadil",
+      "ordinal": 1,
+      "action": null,
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "open-app-navigation"
+          ],
+          "dialogVisible": false,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "none",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 0
+        }
+      },
+      "normalizedStateSignature": "1878a65d9caa0456dc8cfb8388082e5255ef44a3dadcc59520d9b03a96a4a9f7",
+      "categories": [
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Amobile%3Aexplore-0001-layout%3Aff067ed270b1"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:explore-0004-dialog-popover:31e49a82afe5",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0004-dialog-popover",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/cpr-04-workspace-command-palette-candidate-mobile-explore-0004-dialog-popover-31e49a82afe5.jpeg",
+      "screenshotDigest": "31e49a82afe5f421655473496e2e40e8f2e228af6255ee3199f690d41c7d8f77",
+      "screenshotBytes": 7373,
+      "screenshotPHash": "fefefefefefefefe",
+      "source": "bombadil",
+      "ordinal": 4,
+      "action": {
+        "Click": {
+          "fingerprint": {
+            "accessible_name": "Search⌘K",
+            "tag": "button",
+            "input_type": "button",
+            "text_content": "Search⌘K"
+          },
+          "point": {
+            "x": 166.6953125,
+            "y": 82
+          }
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": true,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Chats",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "c13a042cfa91e283198d0ea64bf955f70df1a204efd47d21b068ef09bfe4138a",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Amobile%3Aexplore-0004-dialog-popover%3A31e49a82afe5"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:explore-0002-layout:e52b5a2d8117",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0002-layout",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/cpr-04-workspace-command-palette-candidate-mobile-explore-0002-layout-e52b5a2d8117.jpeg",
+      "screenshotDigest": "e52b5a2d81171ef8127e03d5978613391905b6f8f269057b25a6081be8e4a38a",
+      "screenshotBytes": 3314,
+      "screenshotPHash": "7fe080ffffffff00",
+      "source": "bombadil",
+      "ordinal": 2,
+      "action": "Wait",
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "open-app-navigation"
+          ],
+          "dialogVisible": false,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "none",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 0
+        }
+      },
+      "normalizedStateSignature": "1878a65d9caa0456dc8cfb8388082e5255ef44a3dadcc59520d9b03a96a4a9f7",
+      "categories": [
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Amobile%3Aexplore-0002-layout%3Ae52b5a2d8117"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:explore-0003-layout:2fedd13eb785",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0003-layout",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/cpr-04-workspace-command-palette-candidate-mobile-explore-0003-layout-2fedd13eb785.jpeg",
+      "screenshotDigest": "2fedd13eb785fd50ae5e43d72b9bfcf3b2542708fdd88cc8a282a7471ae23f55",
+      "screenshotBytes": 3251,
+      "screenshotPHash": "7fe080ffffffff00",
+      "source": "bombadil",
+      "ordinal": 3,
+      "action": {
+        "Click": {
+          "fingerprint": {
+            "accessible_name": "Open app navigation",
+            "tag": "button",
+            "input_type": "button"
+          },
+          "point": {
+            "x": 28,
+            "y": 30
+          }
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "open-command-palette"
+          ],
+          "dialogVisible": false,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "none",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "6622682c36aabd0c8cb2a5bb76d5293be3282d6e7cf66859e0d664882e2e22f7",
+      "categories": [
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Amobile%3Aexplore-0003-layout%3A2fedd13eb785"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:explore-0005-dialog-popover:a7496a86a729",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0005-dialog-popover",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/cpr-04-workspace-command-palette-candidate-mobile-explore-0005-dialog-popover-a7496a86a729.jpeg",
+      "screenshotDigest": "a7496a86a72996fdf2c4215d0c36937f98a94afbff2ddb4fba0bda07b2d1f8fd",
+      "screenshotBytes": 7627,
+      "screenshotPHash": "ffffff0000000000",
+      "source": "bombadil",
+      "ordinal": 5,
+      "action": {
+        "TypeText": {
+          "text": "no-matching-fixture-command",
+          "delay_millis": 0
+        }
+      },
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "palette-mode-commands"
+          ],
+          "dialogVisible": true,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": true,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "Chats",
+          "query": "no-matching-fixture-command",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "6806eab19ab6da3f679f9ef0f29ba1a10133af67afc04ea1fe7e898d5be58dba",
+      "categories": [
+        "dialog-popover",
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Amobile%3Aexplore-0005-dialog-popover%3Aa7496a86a729"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:explore-0009-layout:fb27bd065182",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "explore-0009-layout",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/cpr-04-workspace-command-palette-candidate-mobile-explore-0009-layout-fb27bd065182.jpeg",
+      "screenshotDigest": "fb27bd0651825ccf2ad53297107a502d6a6b3b0a6d88f586f6dc595d13ebbd87",
+      "screenshotBytes": 8515,
+      "screenshotPHash": "fefefe00fefefefe",
+      "source": "bombadil",
+      "ordinal": 9,
+      "action": "Wait",
+      "hashCurrent": null,
+      "normalizedState": {
+        "path": "/",
+        "palette": {
+          "controls": [
+            "open-command-palette",
+            "open-command-palette"
+          ],
+          "dialogVisible": false,
+          "empty": false,
+          "error": false,
+          "focusedControlInvalid": false,
+          "horizontalOverflow": false,
+          "inputFocused": false,
+          "loading": false,
+          "modalOutOfBounds": false,
+          "mode": "none",
+          "query": "",
+          "rootLayoutAligned": true,
+          "visibleModalCount": 1
+        }
+      },
+      "normalizedStateSignature": "e33cb20e6b7d68b92cedb04fd63ad5749981617374aa27e20e68b79851a40019",
+      "categories": [
+        "layout"
+      ],
+      "violations": [],
+      "reproducePath": "reproduce/cpr-04%3Aworkspace-command-palette%3Acandidate%3Amobile%3Aexplore-0009-layout%3Afb27bd065182"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "closed",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/016-closed.png",
+      "screenshotDigest": "cde4e23bae94f5aaabcc81674e6e8a919203e2570800de8dcfd3cf31d785f473",
+      "screenshotBytes": 49605,
+      "source": "known"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "open",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/017-open.png",
+      "screenshotDigest": "88ba94e53056f46b63bb70b1667b0f008f848688294886bbb4ab562d56fd388a",
+      "screenshotBytes": 49377,
+      "source": "known"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "commands",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/018-commands.png",
+      "screenshotDigest": "928293f41bc9a7bc6a79fd27cd651dcda20aa9701c6c9ac6212c614a59e01502",
+      "screenshotBytes": 48084,
+      "source": "known"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:closed:81743123500c",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "closed",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/019-closed.png",
+      "screenshotDigest": "81743123500c4b124e73eec33ec614d11a1c59b80168bdea944f15524d2fae69",
+      "screenshotBytes": 36590,
+      "source": "known"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "open",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/020-open.png",
+      "screenshotDigest": "e2ee7624e3524578c30e1c5b027b37359c119944ad890b5af46e727e03c8bb4c",
+      "screenshotBytes": 30002,
+      "source": "known"
+    },
+    {
+      "id": "cpr-04:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "scenarioId": "workspace-command-palette",
+      "role": "candidate",
+      "checkpoint": "commands",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1,
+        "hasTouch": true
+      },
+      "screenshotPath": "selected/mobile/021-commands.png",
+      "screenshotDigest": "414cc474961c9b36ea68fa9cd148e79304081564721f561a183830431fe30705",
+      "screenshotBytes": 37927,
+      "source": "known"
+    }
+  ],
+  "statePairs": []
+}
