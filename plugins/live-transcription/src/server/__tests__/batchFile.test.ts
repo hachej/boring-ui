@@ -28,4 +28,16 @@ describe('self-hosted batch-file transcription seam', () => {
     })).rejects.toMatchObject({ code: 'live_transcript_limit_exceeded' })
     expect(request).not.toHaveBeenCalled()
   })
+
+  test('bounds and times out the Whisper response', async () => {
+    const bytes = new Uint8Array([79, 103, 103, 83, 1])
+    await expect(transcribeBatchFile({
+      upstreamWebSocketUrl: 'ws://127.0.0.1/asr', mimeType: 'audio/ogg', bytes, maxResponseBytes: 4,
+      fetch: async () => new Response(JSON.stringify({ text: 'too large' })),
+    })).rejects.toMatchObject({ code: 'live_transcript_limit_exceeded' })
+    await expect(transcribeBatchFile({
+      upstreamWebSocketUrl: 'ws://127.0.0.1/asr', mimeType: 'audio/ogg', bytes, timeoutMs: 5,
+      fetch: async (_url, init) => await new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })),
+    })).rejects.toMatchObject({ code: 'live_transcript_upstream_failed' })
+  })
 })

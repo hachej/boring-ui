@@ -117,14 +117,16 @@ export class ChannelInboundMediaService {
 
     const transcriptPath = `channel-media/${stem}.txt`
     let transcript: string
+    let cachedTranscript = true
     try {
       transcript = await workspace.readFile(transcriptPath)
     } catch {
-      const result = await this.transcriber.transcribeFile({ bytes, mimeType })
-      transcript = result.text.trim()
-      if (!transcript || transcript.length > 100_000) throw new ChannelInboundMediaError('Voice transcription returned invalid text.', false)
-      await workspace.writeFile(transcriptPath, transcript)
+      cachedTranscript = false
+      transcript = (await this.transcriber.transcribeFile({ bytes, mimeType })).text
     }
+    transcript = transcript.trim()
+    if (!transcript || transcript.length > 100_000) throw new ChannelInboundMediaError('Voice transcription returned invalid text.', false)
+    if (!cachedTranscript) await workspace.writeFile(transcriptPath, transcript)
     return { text: `The sender attached a WhatsApp voice note. Its self-hosted transcript follows:\n\n${transcript}` }
   }
 

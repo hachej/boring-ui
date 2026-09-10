@@ -17,6 +17,8 @@ export interface BatchFileTranscriberOptions {
   readonly processorRegion: ChannelMediaRegion
   readonly bearerToken?: string
   readonly fetch?: typeof fetch
+  readonly timeoutMs?: number
+  readonly maxResponseBytes?: number
 }
 
 /** Supported server seam for retained files; uses the same self-hosted Whisper HTTP endpoint as dictation. */
@@ -30,6 +32,8 @@ export function createSelfHostedBatchFileTranscriber(options: BatchFileTranscrib
       mimeType,
       bytes,
       fetch: options.fetch,
+      timeoutMs: options.timeoutMs,
+      maxResponseBytes: options.maxResponseBytes,
     }),
   }
 }
@@ -40,6 +44,8 @@ export async function transcribeBatchFile(input: {
   mimeType: string
   bytes: Uint8Array
   fetch?: typeof fetch
+  timeoutMs?: number
+  maxResponseBytes?: number
 }): Promise<{ text: string }> {
   assertSelfHostedBatchUrl(input.upstreamWebSocketUrl)
   if (!ALLOWED_MIME_TYPES.has(input.mimeType)) {
@@ -77,6 +83,8 @@ async function transcribeBytes(input: {
   mimeType: string
   bytes: Uint8Array
   fetch?: typeof fetch
+  timeoutMs?: number
+  maxResponseBytes?: number
 }): Promise<{ text: string }> {
   const upstream = new URL(input.upstreamWebSocketUrl)
   upstream.protocol = upstream.protocol === "wss:" ? "https:" : "http:"
@@ -86,24 +94,57 @@ async function transcribeBytes(input: {
   form.set("file", new Blob([Uint8Array.from(input.bytes)], { type: input.mimeType }), `dictation.${extensionFor(input.mimeType)}`)
   form.set("model", "tiny")
   form.set("language", "fr")
-  let response: Response
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 30_000)
+  let payload: { text?: unknown } | null
   try {
-    response = await (input.fetch ?? fetch)(upstream, {
+    const response = await (input.fetch ?? fetch)(upstream, {
       method: "POST",
       headers: input.bearerToken ? { Authorization: `Bearer ${input.bearerToken}` } : undefined,
       body: form,
+      signal: controller.signal,
     })
-  } catch {
+    if (!response.ok) {
+      throw new LiveTranscriptError("live_transcript_upstream_failed", "Short dictation service rejected the audio.", 502)
+    }
+    payload = await readBoundedJson(response, input.maxResponseBytes ?? 1_000_000)
+  } catch (error) {
+    if (error instanceof LiveTranscriptError) throw error
     throw new LiveTranscriptError("live_transcript_upstream_failed", "Short dictation service was unavailable.", 502)
+  } finally {
+    clearTimeout(timer)
   }
-  if (!response.ok) {
-    throw new LiveTranscriptError("live_transcript_upstream_failed", "Short dictation service rejected the audio.", 502)
-  }
-  const payload = await response.json().catch(() => null) as { text?: unknown } | null
   if (!payload || typeof payload.text !== "string") {
     throw new LiveTranscriptError("live_transcript_upstream_failed", "Short dictation service returned an invalid response.", 502)
   }
   return { text: payload.text }
+}
+
+async function readBoundedJson(response: Response, limit: number): Promise<{ text?: unknown } | null> {
+  if (!response.body || !Number.isSafeInteger(limit) || limit <= 0) {
+    throw new LiveTranscriptError("live_transcript_upstream_failed", "Short dictation service returned an invalid response.", 502)
+  }
+  const announced = Number(response.headers.get("content-length") ?? 0)
+  if (Number.isFinite(announced) && announced > limit) throw new LiveTranscriptError("live_transcript_limit_exceeded", "Transcription response exceeded the size limit.", 502)
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const item = await reader.read()
+      if (item.done) break
+      size += item.value.byteLength
+      if (size > limit) {
+        await reader.cancel()
+        throw new LiveTranscriptError("live_transcript_limit_exceeded", "Transcription response exceeded the size limit.", 502)
+      }
+      chunks.push(item.value)
+    }
+  } finally { reader.releaseLock() }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  try { return JSON.parse(new TextDecoder().decode(bytes)) as { text?: unknown } } catch { return null }
 }
 
 function assertSelfHostedBatchUrl(value: string): void {

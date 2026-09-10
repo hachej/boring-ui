@@ -1,4 +1,7 @@
+import { resolve } from 'node:path'
 import type { CoreWhatsAppChannelOptions } from '@hachej/boring-core/app/server'
+import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
+import { createSelfHostedBatchFileTranscriber } from '@hachej/boring-transcription/server'
 
 const REQUIRED_CREDENTIALS = [
   'BORING_WHATSAPP_ACCESS_TOKEN',
@@ -25,10 +28,12 @@ export function readFullAppWhatsAppChannelOptions(
   const missing = REQUIRED_CREDENTIALS.filter((name) => !env[name]?.trim())
   if (missing.length > 0) throw new Error(`WhatsApp channel credentials missing: ${missing.join(', ')}`)
   const bindings = parseBindings(env.BORING_WHATSAPP_BINDINGS_JSON)
+  const inboundMedia = readInboundMedia(env)
 
   return {
     agentTypeId: env.BORING_WHATSAPP_AGENT_TYPE_ID?.trim() || defaultAgentTypeId,
     provisionedBindings: bindings,
+    ...(inboundMedia ? { inboundMedia } : {}),
     withCredentials: async (use) => await use({
       accessToken: env.BORING_WHATSAPP_ACCESS_TOKEN!.trim(),
       appSecret: env.BORING_WHATSAPP_APP_SECRET!.trim(),
@@ -39,6 +44,37 @@ export function readFullAppWhatsAppChannelOptions(
         ? { fallbackTemplateLanguage: env.BORING_WHATSAPP_FALLBACK_LANGUAGE.trim() }
         : {}),
       ...(env.BORING_WHATSAPP_API_VERSION?.trim() ? { apiVersion: env.BORING_WHATSAPP_API_VERSION.trim() } : {}),
+    }),
+  }
+}
+
+function readInboundMedia(env: NodeJS.ProcessEnv): CoreWhatsAppChannelOptions['inboundMedia'] {
+  if (env.BORING_WHATSAPP_MEDIA !== '1' && env.BORING_WHATSAPP_MEDIA !== 'true') return undefined
+  const baseRoot = env.BORING_AGENT_WORKSPACE_ROOT?.trim()
+  const upstreamWebSocketUrl = env.BORING_WHATSAPP_WHISPER_URL?.trim()
+  const storageRegion = env.BORING_WHATSAPP_MEDIA_REGION?.trim()
+  if (!baseRoot || !upstreamWebSocketUrl || (storageRegion !== 'CH' && storageRegion !== 'EU')) {
+    throw new Error('WhatsApp media requires BORING_AGENT_WORKSPACE_ROOT, BORING_WHATSAPP_WHISPER_URL, and BORING_WHATSAPP_MEDIA_REGION=CH|EU')
+  }
+  const workspaces = new Map<string, ReturnType<typeof createNodeWorkspace>>()
+  return {
+    runtime: {
+      storageRegion,
+      async resolveWorkspace(binding) {
+        const root = resolve(baseRoot, binding.workspaceId)
+        if (root === resolve(baseRoot) || !root.startsWith(`${resolve(baseRoot)}/`)) throw new Error('WhatsApp binding Workspace is outside the configured root')
+        let workspace = workspaces.get(binding.workspaceId)
+        if (!workspace) {
+          workspace = createNodeWorkspace(root)
+          workspaces.set(binding.workspaceId, workspace)
+        }
+        return workspace
+      },
+    },
+    transcriber: createSelfHostedBatchFileTranscriber({
+      upstreamWebSocketUrl,
+      processorRegion: storageRegion,
+      ...(env.BORING_WHATSAPP_WHISPER_TOKEN?.trim() ? { bearerToken: env.BORING_WHATSAPP_WHISPER_TOKEN.trim() } : {}),
     }),
   }
 }
@@ -68,9 +104,13 @@ function isBinding(value: unknown): value is FullAppWhatsAppBinding {
   const allowed = new Set(['conversationKey', 'workspaceId', 'authSubjectId', 'sessionKey'])
   return Object.keys(candidate).every((key) => allowed.has(key))
     && nonEmpty(candidate.conversationKey)
-    && nonEmpty(candidate.workspaceId)
+    && safeWorkspaceId(candidate.workspaceId)
     && nonEmpty(candidate.authSubjectId)
     && (candidate.sessionKey === undefined || nonEmpty(candidate.sessionKey))
+}
+
+function safeWorkspaceId(value: unknown): value is string {
+  return nonEmpty(value) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value) && value !== '.' && value !== '..'
 }
 
 function nonEmpty(value: unknown): value is string {

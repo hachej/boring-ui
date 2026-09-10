@@ -64,10 +64,14 @@ describe('ChannelInboundMediaService', () => {
     await service.prepare(binding, queued('audio'))
     expect(download).toHaveBeenCalledTimes(1)
     expect(transcribeFile).toHaveBeenCalledTimes(1)
-    await expect(target.readdir('channel-media')).resolves.toEqual(expect.arrayContaining([
+    const retained = await target.readdir('channel-media')
+    expect(retained).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: expect.stringMatching(/\.ogg$/) }),
       expect.objectContaining({ name: expect.stringMatching(/\.txt$/) }),
     ]))
+    const transcript = retained.find((entry) => entry.name.endsWith('.txt'))!
+    await target.writeFile(`channel-media/${transcript.name}`, '   ')
+    await expect(service.prepare(binding, queued('audio'))).rejects.toMatchObject({ retryable: false })
     expect(() => new ChannelInboundMediaService(
       { storageRegion: 'CH', resolveWorkspace: async () => target }, new Map(),
       { processorRegion: 'EU', transcribeFile },
@@ -125,6 +129,14 @@ describe('ChannelInboundService media admission', () => {
       text: expect.stringContaining('could not safely attach media'),
     }))
     expect(followUp.mock.calls[0]![0]).not.toHaveProperty('attachments')
+    prepare.mockResolvedValue({ text: 'The sender attached a PDF. PDFs are not supported on WhatsApp yet.' })
+    inbound.accept({
+      channel: 'whatsapp', conversationKey: '4179', providerMessageId: 'busy-pdf', text: '', receivedAt: 2,
+      media: { kind: 'document', mediaId: 'meta-pdf', declaredMimeType: 'application/pdf' },
+    }, 'default')
+    await inbound.waitForIdle()
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(followUp).toHaveBeenLastCalledWith(expect.objectContaining({ text: expect.stringContaining('PDFs are not supported') }))
     await inbound.dispose()
     db.db.close()
   })

@@ -39,7 +39,22 @@ describe('readFullAppWhatsAppChannelOptions', () => {
     }))
   })
 
-  it('fails boot when enabled without complete credentials or trusted bindings', () => {
+  it('composes bound Workspace retention with a same-region loopback Whisper processor', async () => {
+    const options = readFullAppWhatsAppChannelOptions('default', {
+      ...enabledEnv,
+      BORING_WHATSAPP_MEDIA: '1',
+      BORING_WHATSAPP_MEDIA_REGION: 'CH',
+      BORING_AGENT_WORKSPACE_ROOT: '/var/tmp/full-app-workspaces',
+      BORING_WHATSAPP_WHISPER_URL: 'ws://127.0.0.1:9090/asr',
+    })
+    expect(options?.inboundMedia).toMatchObject({
+      runtime: { storageRegion: 'CH' }, transcriber: { processorRegion: 'CH' },
+    })
+    await expect(options!.inboundMedia!.runtime.resolveWorkspace({ workspaceId: 'workspace-1' } as never))
+      .resolves.toMatchObject({ root: '/var/tmp/full-app-workspaces/workspace-1' })
+  })
+
+  it('fails boot when enabled without complete credentials, trusted bindings, or local media authority', () => {
     expect(() => readFullAppWhatsAppChannelOptions('default', {
       ...enabledEnv,
       BORING_WHATSAPP_APP_SECRET: '',
@@ -48,5 +63,12 @@ describe('readFullAppWhatsAppChannelOptions', () => {
       ...enabledEnv,
       BORING_WHATSAPP_BINDINGS_JSON: '[]',
     })).toThrow(/non-empty array/)
+    expect(() => readFullAppWhatsAppChannelOptions('default', {
+      ...enabledEnv, BORING_WHATSAPP_MEDIA: '1', BORING_WHATSAPP_MEDIA_REGION: 'US',
+    })).toThrow(/MEDIA_REGION=CH\|EU/)
+    expect(() => readFullAppWhatsAppChannelOptions('default', {
+      ...enabledEnv, BORING_WHATSAPP_MEDIA: '1', BORING_WHATSAPP_MEDIA_REGION: 'EU',
+      BORING_AGENT_WORKSPACE_ROOT: '/data/workspaces', BORING_WHATSAPP_WHISPER_URL: 'wss://api.us.example/asr',
+    })).toThrow(/self-hosted loopback/)
   })
 })

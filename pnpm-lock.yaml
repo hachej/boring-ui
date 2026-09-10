@@ -179,6 +179,9 @@ importers:
       '@hachej/boring-sandbox':
         specifier: workspace:*
         version: link:../../packages/boring-sandbox
+      '@hachej/boring-transcription':
+        specifier: workspace:*
+        version: link:../../plugins/live-transcription
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui

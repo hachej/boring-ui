@@ -216,7 +216,7 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
 
   private async authenticatedRequest(url: string, accessToken: string, signal: AbortSignal): Promise<Response> {
     try {
-      return await this.request(url, { headers: { authorization: `Bearer ${accessToken}` }, signal })
+      return await this.request(url, { headers: { authorization: `Bearer ${accessToken}` }, signal, redirect: 'manual' })
     } catch {
       throw new WhatsAppCloudApiError(0, true)
     }

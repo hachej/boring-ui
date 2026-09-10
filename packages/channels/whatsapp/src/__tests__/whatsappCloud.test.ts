@@ -135,6 +135,7 @@ describe('WhatsApp Cloud authenticated media download', () => {
       vi.fn(async (input: RequestInfo | URL) => String(input).includes('/v25.0/')
         ? Response.json({ url: 'https://lookaside.fbsbx.com/media', mime_type: 'image/png' })
         : new Response(new Uint8Array(20), { headers: { 'content-type': 'image/png' } })),
+      vi.fn(async () => new Response('', { status: 302, headers: { location: 'https://attacker.example/media' } })),
       vi.fn(async () => new Response('', { status: 401 })),
     ]) {
       const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })

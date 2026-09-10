@@ -186,7 +186,7 @@ export class ChannelInboundService {
             sessionKey: binding.sessionKey,
           })
         }
-        const prepared = queued.media && busy
+        const prepared = queued.media && queued.media.kind !== 'document' && busy
           ? { text: 'I could not safely attach media while the current turn was running. Please resend it after the reply completes.' }
           : await this.prepareInbound(binding, queued)
         const ensured = await this.store.ensureSession(binding, {
