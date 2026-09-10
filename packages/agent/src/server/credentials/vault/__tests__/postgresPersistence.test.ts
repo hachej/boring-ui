@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import postgres from 'postgres'
-import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest'
 import {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,
@@ -28,20 +28,34 @@ const TEST_DB_URL = process.env.DATABASE_URL
   ?? 'postgres://ubuntu:test@localhost:5432/boring_ui_test'
 const schemaName = `vault_s1_${randomUUID().replaceAll('-', '')}`
 const adminSql = postgres(TEST_DB_URL, { max: 1 })
+const blockerSql = postgres(TEST_DB_URL, { max: 1 })
 const sql = postgres(TEST_DB_URL, {
   max: 5,
   connection: { search_path: schemaName },
 })
+const blockerReleases = new Set<() => Promise<void>>()
 
 beforeAll(async () => {
+  // Establish service and primary-pool readiness before any behavior is
+  // measured against a deliberately short lock deadline.
+  await adminSql`SELECT 1 AS ready`
   await adminSql.unsafe(`CREATE SCHEMA ${schemaName}`)
   await runCredentialVaultPostgresMigrationsV1(sql)
+  await sql`SELECT 1 AS ready`
+})
+
+afterEach(async () => {
+  // A failed assertion must not leave an advisory-lock holder pinned and turn
+  // the remaining lifecycle cases into a misleading timeout cascade.
+  await Promise.all([...blockerReleases].map(async (release) => release()))
 })
 
 afterAll(async () => {
-  await sql.end()
+  await Promise.all([...blockerReleases].map(async (release) => release()))
+  await sql.end({ timeout: 1 })
+  await blockerSql.end({ timeout: 1 })
   await adminSql.unsafe(`DROP SCHEMA ${schemaName} CASCADE`)
-  await adminSql.end()
+  await adminSql.end({ timeout: 1 })
 })
 
 runCredentialVaultPersistenceConformanceV1(
@@ -55,13 +69,25 @@ runVaultCredentialStoreConformanceV1(
 
 describe('Postgres credential workspace lock lifecycle', () => {
   async function holdWorkspaceLock(workspaceId: string) {
-    const blocker = await adminSql.reserve()
+    // Keep fixture lock ownership separate from adminSql: adminSql is the
+    // independent eviction path under test and must remain available even when
+    // a short deadline expires during connection setup on a congested runner.
+    const blocker = await blockerSql.reserve()
     const lockKey = JSON.stringify(['credential-workspace', workspaceId])
     await blocker`SELECT pg_advisory_lock(hashtextextended(${lockKey}, 0))`
-    return async () => {
-      await blocker`SELECT pg_advisory_unlock(hashtextextended(${lockKey}, 0))`
-      blocker.release()
+    let released = false
+    const release = async () => {
+      if (released) return
+      released = true
+      blockerReleases.delete(release)
+      try {
+        await blocker`SELECT pg_advisory_unlock(hashtextextended(${lockKey}, 0))`
+      } finally {
+        blocker.release()
+      }
     }
+    blockerReleases.add(release)
+    return release
   }
 
   test('times out with a stable retryable error and releases its reserved connection', async () => {
@@ -201,45 +227,67 @@ describe('Postgres credential workspace lock lifecycle', () => {
 
   test('evicts a connection when a lock query resolves after its deadline', async () => {
     const workspaceId = `lock-late-query-${randomUUID()}`
+    const lateQuerySql = postgres(TEST_DB_URL, {
+      max: 2,
+      connection: { search_path: schemaName },
+    })
     let delayed = false
-    const delayedSql = new Proxy(sql, {
-      get(target, property, receiver) {
-        if (property !== 'reserve') return Reflect.get(target, property, receiver)
-        return async () => {
-          const reserved = await target.reserve()
-          return new Proxy(reserved, {
-            apply(queryTarget, thisArg, args) {
-              const query = Reflect.apply(queryTarget, thisArg, args)
-              const text = Array.isArray(args[0]?.raw) ? args[0].raw.join('') : ''
-              if (delayed || !text.includes('pg_try_advisory_lock')) return query
-              delayed = true
-              const pending = new Promise((resolve, reject) => {
-                void Promise.resolve(query).then(
-                  (result) => setTimeout(() => resolve(result), 80),
-                  reject,
-                )
-              })
-              return Object.assign(pending, { cancel: () => query.cancel() })
-            },
-          })
-        }
-      },
-    }) as typeof sql
-    const persistence = createPostgresCredentialVaultPersistenceV1(delayedSql, {
-      evictionSql: adminSql,
-      lockAcquireTimeoutMs: 30,
-      lockPollIntervalMs: 5,
-    })
-    await expect(persistence.withWorkspaceLock(workspaceId, async () => {
-      throw new Error('mutation must not run')
-    })).rejects.toMatchObject({
-      code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
-      retryable: true,
-    })
-    await expect(createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql })
-      .withWorkspaceLock(workspaceId, async () => 'not-left-locked'))
-      .resolves.toBe('not-left-locked')
-  })
+    try {
+      // Cold connection establishment is environmental setup, not part of the
+      // 30 ms lock-deadline behavior under test.
+      await lateQuerySql`SELECT 1 AS ready`
+      const delayedSql = new Proxy(lateQuerySql, {
+        get(target, property, receiver) {
+          if (property !== 'reserve') return Reflect.get(target, property, receiver)
+          return async () => {
+            const reserved = await target.reserve()
+            return new Proxy(reserved, {
+              apply(queryTarget, thisArg, args) {
+                const query = Reflect.apply(queryTarget, thisArg, args)
+                const text = Array.isArray(args[0]?.raw) ? args[0].raw.join('') : ''
+                if (delayed || !text.includes('pg_try_advisory_lock')) return query
+                delayed = true
+                const pending = new Promise((resolve, reject) => {
+                  void Promise.resolve(query).then(
+                    (result) => setTimeout(() => resolve(result), 80),
+                    reject,
+                  )
+                })
+                return Object.assign(pending, { cancel: () => query.cancel() })
+              },
+            })
+          }
+        },
+      }) as typeof lateQuerySql
+      const persistence = createPostgresCredentialVaultPersistenceV1(delayedSql, {
+        evictionSql: adminSql,
+        lockAcquireTimeoutMs: 30,
+        lockPollIntervalMs: 5,
+      })
+      await expect(persistence.withWorkspaceLock(workspaceId, async () => {
+        throw new Error('mutation must not run')
+      })).rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+        retryable: true,
+      })
+      // Verify through a fresh pool. The deliberately destroyed reservation is
+      // not reusable by definition; waiting for that same postgres.js pool to
+      // replace its internal slot would test driver housekeeping, not eviction.
+      const verificationSql = postgres(TEST_DB_URL, {
+        max: 2,
+        connection: { search_path: schemaName },
+      })
+      try {
+        await expect(createPostgresCredentialVaultPersistenceV1(verificationSql, { evictionSql: adminSql })
+          .withWorkspaceLock(workspaceId, async () => 'not-left-locked'))
+          .resolves.toBe('not-left-locked')
+      } finally {
+        await verificationSql.end({ timeout: 1 })
+      }
+    } finally {
+      await lateQuerySql.end({ timeout: 1 })
+    }
+  }, 15_000)
 
   test('evicts a reserved connection when unlock cannot be confirmed', async () => {
     const workspaceId = `lock-destroy-${randomUUID()}`
