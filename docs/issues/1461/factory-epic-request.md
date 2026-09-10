@@ -1,5 +1,7 @@
 # [Command Palette Replay] Factory request
 
+> **Historical evidence (superseded 10 Sep 2026):** This is the original Gate 1 request, retained unchanged below for audit. Its stop/dispatch instructions are no longer current; follow [`delivery-plan.md`](delivery-plan.md) for delivery authority.
+
 Plan GitHub issue https://github.com/hachej/boring-ui/issues/1461 on this epic only. It is distinct from closed #1390: Bombadil replay diverges before any hard gate because the command-palette fixture's candidate button pair swaps availability between record and replay.
 
 Owner outcome: make command-palette readiness/action availability deterministic for Bombadil replay and define retained-evidence plus repeatability proof at the 5/5 bar referenced by #1431.

@@ -9,6 +9,8 @@ track: fast
 
 # gh-1461 deterministic command-palette replay
 
+> **Historical implementation plan (superseded 10 Sep 2026):** Retained for audit after the implementation and 5/5 proof completed. Gate 1 and dispatch statements below describe the earlier planning state; follow [`delivery-plan.md`](delivery-plan.md) for current delivery authority.
+
 ## Problem
 
 Bombadil can begin its instrumented mobile page while the app shell still reflects a different effective viewport. The retained failing run `33182547405` proves the record/replay split before hard gates: recording offered `Open app navigation` at `(28,30)`, while replay offered the top-bar command-palette trigger at `(199.4,23.5)`. Bombadil rejects that changed action set before final-state or hard-gate validation. This is distinct from #1390's navigation settle and mobile hard-gate work.
