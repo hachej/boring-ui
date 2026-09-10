@@ -1331,6 +1331,9 @@ export function WorkspaceAgentFront<
       : rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch, sessionSourceIsCurrent])
   const resolvedCreate = useCallback((dedupeKey = "manual", ownerAgentTypeId?: string): Promise<TSession | undefined> => {
+    if (hasControlledSessionState && onCreateSession) {
+      return Promise.resolve(onCreateSession()).then((session) => validateCreatedSession<TSession>(session))
+    }
     if (remoteSessionsPending) return Promise.resolve(undefined)
     if (sessionApi) {
       // A user create owns the empty-list transition. Cancel only a queued boot
@@ -1353,14 +1356,18 @@ export function WorkspaceAgentFront<
     }
     const created = onCreateSession ? onCreateSession() : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
-  }, [coordinateRemoteCreate, fleetModeEnabled, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, hasControlledSessionState, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
-    if (!sessionSourceIsCurrent() || remoteSessionsPending || !sessionApi?.rename) return undefined
+    if (!sessionSourceIsCurrent()) return undefined
+    if (hasControlledSessionState && onRenameSession) return onRenameSession(id, title, sessionAgentTypeId)
+    if (remoteSessionsPending || !sessionApi?.rename) return undefined
     return sessionApi.rename(id, title, sessionAgentTypeId)
-  }, [remoteSessionsPending, sessionApi, sessionSourceIsCurrent])
-  const rawDelete: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
-    ? remoteSessionActionsUnavailable
-    : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
+  }, [hasControlledSessionState, onRenameSession, remoteSessionsPending, sessionApi, sessionSourceIsCurrent])
+  const rawDelete: (id: string, agentTypeId?: string) => unknown = hasControlledSessionState && onDeleteSession
+    ? onDeleteSession
+    : remoteSessionsPending
+      ? remoteSessionActionsUnavailable
+      : sessionApi?.delete ?? localSessionStore.remove
   const resolvedDelete = useCallback((id: string, sessionAgentTypeId?: string) => {
     if (!sessionSourceIsCurrent()) return undefined
     // Deleting a session owned by a non-selected addressed Agent never
@@ -1368,11 +1375,11 @@ export function WorkspaceAgentFront<
     if (sessionAgentTypeId && sessionAgentTypeId !== selectedAgentTypeId) {
       return rawDelete(id, sessionAgentTypeId)
     }
-    if (sessionApi && remoteSessionsPending && activeRemoteSessions.length <= 1) {
+    if (!hasControlledSessionState && sessionApi && remoteSessionsPending && activeRemoteSessions.length <= 1) {
       suppressEmptyAutoCreateRef.current = true
       return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
     }
-    if (sessionApi && !remoteSessionsPending && activeRemoteSessions.length <= 1) {
+    if (!hasControlledSessionState && sessionApi && !remoteSessionsPending && activeRemoteSessions.length <= 1) {
       if (sessionApi.hasMore) {
         suppressEmptyAutoCreateRef.current = true
         return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
@@ -1400,7 +1407,7 @@ export function WorkspaceAgentFront<
         })
     }
     return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-  }, [activeRemoteSessions.length, coordinateRemoteCreate, defaultSessionTitle, rawDelete, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionSourceIsCurrent, workspaceId])
+  }, [activeRemoteSessions.length, coordinateRemoteCreate, defaultSessionTitle, hasControlledSessionState, rawDelete, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionSourceIsCurrent, workspaceId])
 
   const resolvedSessionTitle = resolvedSessions.find((session) => (
     workspaceSessionKeyFor(session) === workspaceSessionKey(

@@ -1077,7 +1077,7 @@ describe("WorkspaceAgentFront", () => {
     expect(onDeleteSession.mock.calls.at(-1)).toHaveLength(2)
   })
 
-  it("renders plugin-tabs app navigation without classic session edge controls", async () => {
+  it("keeps controlled plugin-tabs sessions authoritative while remote hydration is enabled", async () => {
     const user = userEvent.setup()
     const onSwitchSession = vi.fn()
     const onCreateSession = vi.fn()
@@ -1092,6 +1092,8 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="plugin-tabs-nav"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
+        provisionWorkspace={false}
+        remoteSessionsEnabled
         sessions={sessions}
         activeSessionId="s1"
         onSwitchSession={onSwitchSession}
