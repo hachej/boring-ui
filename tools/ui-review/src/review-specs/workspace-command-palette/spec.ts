@@ -16,7 +16,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v11",
+  specRevision: "workspace-command-palette-v12",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -146,9 +146,9 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         .sort((left, right) => left.ordinal - right.ordinal)
       // DOM visibility can precede paint. Desktop replay therefore prefers the
       // earliest settled Wait over an action-frame screenshot that may still be
-      // hydrating. Compact replay prefers the earliest strongly painted action:
-      // waiting for its much smaller full-frame pHash change can cross unrelated
-      // async workspace hydration and session creation during replay.
+      // hydrating. Compact replay also prefers a corroborated Wait when present:
+      // a strongly painted action frame can still capture unrelated workspace
+      // hydration that diverges when the same trace is replayed.
       // Encoded PNG byte size is not a monotonic paint signal.
       // The pHash threshold is viewport-aware: the whole-viewport hash is
       // calibrated against desktop, where the palette covers a large share of
@@ -208,8 +208,8 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const earliestStrongAction = replayableDialogActions.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
       const isCompact = ordered[0]?.viewport.name === "mobile"
       return isCompact
-        ? earliestStrongAction
-          ?? earliestCorroboratedWait
+        ? earliestCorroboratedWait
+          ?? earliestStrongAction
           ?? earliestStrongWait
           ?? waits.find(hasGenuinelyPaintedDialog)
           ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
