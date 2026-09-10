@@ -1317,7 +1317,7 @@ export function WorkspaceAgentFront<
     ? autoSubmitSessionAgentTypeId ?? selectedAgentTypeId
     : resolvedActiveAgentTypeId
   const rawSwitch: (id: string, agentTypeId?: string) => unknown = hasControlledSessionState
-    ? onSwitchSession ?? localSessionStore.switchTo
+    ? onSwitchSession ?? remoteSessionActionsUnavailable
     : remoteSessionsPending
       ? remoteSessionActionsUnavailable
       : sessionApi?.switch ?? localSessionStore.switchTo
@@ -1331,7 +1331,8 @@ export function WorkspaceAgentFront<
       : rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch, sessionSourceIsCurrent])
   const resolvedCreate = useCallback((dedupeKey = "manual", ownerAgentTypeId?: string): Promise<TSession | undefined> => {
-    if (hasControlledSessionState && onCreateSession) {
+    if (hasControlledSessionState) {
+      if (!onCreateSession) return Promise.resolve(undefined)
       return Promise.resolve(onCreateSession()).then((session) => validateCreatedSession<TSession>(session))
     }
     if (remoteSessionsPending) return Promise.resolve(undefined)
@@ -1359,12 +1360,12 @@ export function WorkspaceAgentFront<
   }, [coordinateRemoteCreate, fleetModeEnabled, hasControlledSessionState, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
     if (!sessionSourceIsCurrent()) return undefined
-    if (hasControlledSessionState && onRenameSession) return onRenameSession(id, title, sessionAgentTypeId)
+    if (hasControlledSessionState) return onRenameSession?.(id, title, sessionAgentTypeId)
     if (remoteSessionsPending || !sessionApi?.rename) return undefined
     return sessionApi.rename(id, title, sessionAgentTypeId)
   }, [hasControlledSessionState, onRenameSession, remoteSessionsPending, sessionApi, sessionSourceIsCurrent])
-  const rawDelete: (id: string, agentTypeId?: string) => unknown = hasControlledSessionState && onDeleteSession
-    ? onDeleteSession
+  const rawDelete: (id: string, agentTypeId?: string) => unknown = hasControlledSessionState
+    ? onDeleteSession ?? remoteSessionActionsUnavailable
     : remoteSessionsPending
       ? remoteSessionActionsUnavailable
       : sessionApi?.delete ?? localSessionStore.remove
@@ -2520,8 +2521,12 @@ export function WorkspaceAgentFront<
     loadingMore: sessionApi?.loadingMore,
     onClose: () => setNavOpen(false),
   }
-  const canDeleteSessions = Boolean(sessionApi || onDeleteSession || !hasExplicitSessionProps)
-  const canRenameSessions = Boolean(sessionApi || onRenameSession || !hasExplicitSessionProps)
+  const canDeleteSessions = hasControlledSessionState
+    ? Boolean(onDeleteSession)
+    : Boolean(sessionApi || !hasExplicitSessionProps)
+  const canRenameSessions = hasControlledSessionState
+    ? Boolean(onRenameSession)
+    : Boolean(sessionApi || !hasExplicitSessionProps)
   const chatPaneSessionActions = useMemo(() => ({
     isPinned: (sessionKey: string) => pinnedIds.includes(sessionKey),
     onTogglePin: (sessionKey: string) => {
@@ -2900,7 +2905,7 @@ export function WorkspaceAgentFront<
           }}
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
-          onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
+          onRenameSession={canRenameSessions ? resolvedRename : undefined}
           onSetSessionArchived={sessionApi?.setArchived ? setChatSessionArchived : undefined}
           archivedLoaded={sessionApi?.archivedLoaded}
           archivedLoading={sessionApi?.archivedLoading}

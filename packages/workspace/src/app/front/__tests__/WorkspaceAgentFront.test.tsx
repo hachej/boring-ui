@@ -1137,6 +1137,10 @@ describe("WorkspaceAgentFront", () => {
 
     const switchCallsAfterRowClick = onSwitchSession.mock.calls.length
     await user.click(within(appNav).getByRole("button", { name: "Chat actions for Second session" }))
+    // A remote provider being available must not expose mutations that the
+    // controlled owner did not supply; doing so would leave its rows stale.
+    expect(screen.queryByRole("menuitem", { name: /Rename/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: /Delete/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole("menuitem", { name: "Pin chat" }))
     expect(onSwitchSession).toHaveBeenCalledTimes(switchCallsAfterRowClick)
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
