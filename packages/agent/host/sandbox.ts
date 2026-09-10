@@ -183,6 +183,9 @@ export function createSandboxRuntimeModeAdapter(
   }
 }
 
-export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
-  return createSandboxRuntimeModeAdapter(mode)
+export function createAgentSandboxRuntimeModeAdapter(
+  mode: RuntimeModeId = 'direct',
+  options: SandboxRuntimeModeOptions = {},
+): RuntimeModeAdapter {
+  return createSandboxRuntimeModeAdapter(mode, options)
 }
