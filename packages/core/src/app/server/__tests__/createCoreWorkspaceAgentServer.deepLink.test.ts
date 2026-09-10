@@ -80,7 +80,7 @@ describe('Core GET /a/:id lazy authorization', () => {
         expect(response.body).not.toContain(live.path)
         expect(response.headers).not.toHaveProperty('set-cookie')
       }
-      const stableHeaders = ({ date: _date, ...headers }: Record<string, string | string[] | undefined>) => headers
+      const stableHeaders = ({ date: _date, ...headers }: typeof nonMember.headers) => headers
       expect(stableHeaders(nonMember.headers)).toEqual(stableHeaders(nonexistent.headers))
       expect(stableHeaders(anonymous.headers)).toEqual(stableHeaders(nonexistent.headers))
       expect(mocks.acquireEnvironment).not.toHaveBeenCalled()
