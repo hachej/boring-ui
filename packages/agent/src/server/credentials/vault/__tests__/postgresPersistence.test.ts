@@ -228,7 +228,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
   test('evicts a connection when a lock query resolves after its deadline', async () => {
     const workspaceId = `lock-late-query-${randomUUID()}`
     const lateQuerySql = postgres(TEST_DB_URL, {
-      max: 2,
+      max: 5,
       connection: { search_path: schemaName },
     })
     let delayed = false
@@ -270,20 +270,12 @@ describe('Postgres credential workspace lock lifecycle', () => {
         code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
         retryable: true,
       })
-      // Verify through a fresh pool. The deliberately destroyed reservation is
-      // not reusable by definition; waiting for that same postgres.js pool to
-      // replace its internal slot would test driver housekeeping, not eviction.
-      const verificationSql = postgres(TEST_DB_URL, {
-        max: 2,
-        connection: { search_path: schemaName },
-      })
-      try {
-        await expect(createPostgresCredentialVaultPersistenceV1(verificationSql, { evictionSql: adminSql })
-          .withWorkspaceLock(workspaceId, async () => 'not-left-locked'))
-          .resolves.toBe('not-left-locked')
-      } finally {
-        await verificationSql.end({ timeout: 1 })
-      }
+      // Reuse the affected pool to retain the original regression assertion:
+      // eviction must leave it able to acquire the same workspace lock.
+      await lateQuerySql`SELECT 1 AS ready`
+      await expect(createPostgresCredentialVaultPersistenceV1(lateQuerySql, { evictionSql: adminSql })
+        .withWorkspaceLock(workspaceId, async () => 'not-left-locked'))
+        .resolves.toBe('not-left-locked')
     } finally {
       await lateQuerySql.end({ timeout: 1 })
     }
