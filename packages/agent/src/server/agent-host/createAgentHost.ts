@@ -1021,7 +1021,11 @@ export async function createAgentHost(
       unregister = () => {}
       providerLease.release()
     }
+    const assertActive = () => {
+      if (!active || abort.signal.aborted) throw bindingDisposedError()
+    }
     return Object.freeze({
+      workspace: guardMethods(providerLease.bundle.workspace, assertActive),
       environmentGenerationId: providerLease.generationId,
       bindingGeneration: binding.generation,
       signal: abort.signal,
@@ -1030,7 +1034,7 @@ export async function createAgentHost(
         readonly idleTtlMs: number
         readonly absoluteTtlMs: number
       }) {
-        if (!active || abort.signal.aborted) throw bindingDisposedError()
+        assertActive()
         if (!/^[A-Za-z0-9_-]{1,128}$/.test(leaseId)) throw new TypeError('leaseId is invalid')
         if (!Number.isInteger(idleTtlMs) || idleTtlMs < 1_000 || idleTtlMs > 15 * 60_000) {
           throw new TypeError('idleTtlMs must be between 1000 and 900000')

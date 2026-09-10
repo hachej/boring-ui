@@ -340,6 +340,8 @@ export interface AgentHostEnvironmentScope extends ResolvedEnvironmentScope {
 }
 
 export interface AgentHostSessionEnvironmentLease {
+  /** Guarded Workspace from this addressed session's exact provider generation. */
+  readonly workspace: Workspace
   readonly environmentGenerationId: string
   readonly bindingGeneration: number
   readonly signal: AbortSignal
