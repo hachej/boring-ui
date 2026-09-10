@@ -117,13 +117,19 @@ function GlobalCommandPanel() {
 
 function ShellCreateCapabilityProbe() {
   const capabilities = useWorkspaceShellCapabilities()
+  const [result, setResult] = useState("")
   return <>
     <span data-testid="shell-create-capability">{capabilities.createChatSession ? "available" : "unavailable"}</span>
     {capabilities.createChatSession ? (
-      <button type="button" onClick={() => { void capabilities.createChatSession?.({ title: "Shell-created" }) }}>
+      <button type="button" onClick={() => {
+        void capabilities.createChatSession?.({ title: "Shell-created" }).then((outcome) => {
+          setResult(outcome.success ? outcome.ref.sessionId : outcome.message)
+        })
+      }}>
         Create through shell capability
       </button>
     ) : null}
+    {result ? <span data-testid="shell-create-result">{result}</span> : null}
   </>
 }
 
@@ -1215,7 +1221,8 @@ describe("WorkspaceAgentFront", () => {
       agentTypeId: "default",
       title: "Controlled created session",
     }))
-    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    const onSwitchSession = vi.fn()
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }))
     vi.stubGlobal("fetch", fetchMock)
 
     render(
@@ -1225,6 +1232,7 @@ describe("WorkspaceAgentFront", () => {
         chatPanel={SessionIdChatPanel}
         sessions={[{ id: "s1", title: "Controlled session" }]}
         activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
         onCreateSession={onCreateSession}
         topBarRight={<ShellCreateCapabilityProbe />}
         persistenceEnabled={false}
@@ -1233,10 +1241,34 @@ describe("WorkspaceAgentFront", () => {
 
     expect(screen.getByTestId("shell-create-capability")).toHaveTextContent("available")
     await user.click(screen.getByRole("button", { name: "Create through shell capability" }))
-    await waitFor(() => expect(onCreateSession).toHaveBeenCalledOnce())
+    await waitFor(() => expect(onCreateSession).toHaveBeenCalledWith({ title: "Shell-created" }))
+    expect(await screen.findByTestId("shell-create-result")).toHaveTextContent("controlled-created")
+    expect(onSwitchSession).toHaveBeenCalledWith("s1", "default")
     expect(fetchMock.mock.calls.some(([input, init]) => (
       isDefaultSessionsCollectionUrl(String(input)) && (init as RequestInit | undefined)?.method === "POST"
     ))).toBe(false)
+  })
+
+  it("rejects a non-canonical result from the controlled shell create owner", async () => {
+    const user = userEvent.setup()
+    const onSwitchSession = vi.fn()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="controlled-shell-create-invalid"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "Controlled session" }]}
+        activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
+        onCreateSession={() => ({ id: "   ", agentTypeId: "default" })}
+        topBarRight={<ShellCreateCapabilityProbe />}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Create through shell capability" }))
+    expect(await screen.findByTestId("shell-create-result")).toHaveTextContent("missing a valid id")
+    expect(onSwitchSession).not.toHaveBeenCalled()
   })
 
   it("selects Chats from the collapsed app rail without expanding it", async () => {

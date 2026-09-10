@@ -323,7 +323,7 @@ export interface WorkspaceAgentFrontProps<
   /** Explicit owner for controlled colliding ids; falls back to the active session object. */
   activeSessionAgentTypeId?: string | null
   onSwitchSession?: (id: string, agentTypeId?: string) => void
-  onCreateSession?: () => unknown | Promise<unknown>
+  onCreateSession?: (options?: { title?: string }) => unknown | Promise<unknown>
   onDeleteSession?: (id: string, agentTypeId?: string) => void
   onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<void>
   onActiveSessionIdChange?: (sessionId: string | null) => void
@@ -2575,15 +2575,14 @@ export function WorkspaceAgentFront<
         return { success: false as const, reason: "create-failed" as const, message: "Controlled chat session creation is unavailable." }
       }
       try {
-        const session = await Promise.resolve(onCreateSession())
-        const sessionId = createdSessionId(session)
-        if (!sessionId) {
-          return { success: false as const, reason: "create-failed" as const, message: "Controlled chat session creation did not return a canonical session." }
+        const session = validateCreatedSession<TSession>(await Promise.resolve(onCreateSession(
+          options?.title ? { title: options.title } : undefined,
+        )))
+        const sessionId = session.id
+        const agentTypeId = session.agentTypeId ?? options?.agentTypeId ?? selectedAgentTypeId
+        if (previous.sessionId && (previous.sessionId !== sessionId || previous.agentTypeId !== agentTypeId)) {
+          rawSwitch(previous.sessionId, previous.agentTypeId)
         }
-        const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
-        const agentTypeId = typeof returnedAgentTypeId === "string"
-          ? returnedAgentTypeId
-          : options?.agentTypeId ?? selectedAgentTypeId
         return { success: true as const, ref: { agentTypeId, sessionId } }
       } catch (error) {
         return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Controlled chat session creation failed." }

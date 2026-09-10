@@ -254,8 +254,9 @@ export function WorkspaceShell() {
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
   }, [defaultAgentTypeId])
-  const createShowcaseSession = useCallback(async () => {
-    const session = await requestNewShowcaseSession("New chat", { requestId: randomId(), timeoutMs: 8_000 })
+  const createShowcaseSession = useCallback(async (options?: { title?: string }) => {
+    const title = options?.title?.trim() || "New chat"
+    const session = await requestNewShowcaseSession(title, { requestId: randomId(), timeoutMs: 8_000 })
     liveShowcaseSessionIds.current.add(session.id)
     setShowcaseSessions((current) => [...current, session])
     setShowcaseActiveSessionId(session.id)

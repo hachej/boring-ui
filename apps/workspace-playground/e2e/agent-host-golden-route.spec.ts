@@ -74,7 +74,7 @@ test.describe("checkpoint-D Agent Host golden route", () => {
 
     const prompt = `golden prompt ${Date.now()}`
     await composer.fill(prompt)
-    await page.locator('[data-boring-agent-part="composer-submit"]').click()
+    await chat.locator('[data-boring-agent-part="composer-submit"]').click()
     await expect(chat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(chat.getByLabel("Agent conversation").getByText(prompt)).toBeVisible()
 
