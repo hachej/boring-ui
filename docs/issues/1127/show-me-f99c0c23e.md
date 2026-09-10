@@ -1,0 +1,95 @@
+# WhatsApp Slices 4 and 5 — what changed, visually
+
+**Code/proof revision:** `f99c0c23e09cede07a6a57f1bfcf49100766b584`  
+**Base:** `e848867995a4d2e1a5236c0ca48dee845ad6cd4a`  
+**PR:** [#1575](https://github.com/hachej/boring-ui/pull/1575)
+
+## Files and ownership
+
+```diff
+ packages/
+ ├── agent/src/server/channels/
++│   ├── channelArtifactDeliveryService.ts  # stable capture, isolated PDF, authenticated share
++│   ├── channelInboundMediaService.ts      # authorize, validate, retain, transcribe, attach
++│   └── channel{Inbound,Outbound}Service.ts # durable admission and delivery integration
+ ├── channels/whatsapp/src/
++│   └── index.ts                           # Meta download, PDF upload, document/link sends
+ └── core/src/app/server/
++    └── whatsappChannelComposition.ts      # app authority and real adapter composition
+
+ plugins/live-transcription/src/server/
++├── dictation.ts                           # bounded self-hosted batch-file transcription
++└── index.ts                               # supported server export
+
+ apps/full-app/src/server/
++└── whatsapp.ts                            # owner-configured CH/EU runtime wiring
+```
+
+## Calls and fail-closed decisions
+
+```diff
+ assistant message-end
++  HTML file part (default/user Workspace binding only)
++    ChannelOutboundService.publishArtifacts
++      ChannelArtifactDeliveryService.publish
++        current bound Workspace → stat/read/stat stable snapshot
++        egress-blocked headless Chromium → immutable PDF bytes
++        authenticated ShareEntryStore → `/a/<opaque-id>`
++        WhatsAppCloudAdapter → private media upload → document + HTTPS link
+
+ signed WhatsApp webhook
+-  normalized text → durable queue → prompt/follow-up
++  normalized text + opaque media descriptor → durable queue
++    current Core membership authorization (before media effects)
++      bounded bearer-auth Meta download (no redirect/untrusted host)
++      MIME + magic-byte validation
++      bound CH/EU Workspace retention
++        image → existing Workspace-relative attachment + idle-only prompt
++        audio → retained original + same-region loopback Whisper + transcript prompt
++        PDF → explicit unsupported reply; no download
++        busy image/audio → explicit resend reply; no download or attachment
+```
+
+## Shipped flow
+
+```mermaid
+sequenceDiagram
+    participant Person as WhatsApp user
+    participant Meta
+    participant Core as Core membership authority
+    participant Channel as Agent channel runtime
+    participant Workspace as Bound CH/EU Workspace
+    participant Whisper as Self-hosted Whisper
+    participant Model
+
+    Person->>Meta: photo or voice note
+    Meta->>Channel: signed webhook + opaque media ID
+    Channel->>Core: reauthorize bound member
+    Core-->>Channel: current authorized scope
+    Channel->>Meta: authenticated bounded download
+    Channel->>Workspace: retain validated original
+    alt photo while session idle
+      Channel->>Model: existing image attachment seam
+    else voice note while session idle
+      Channel->>Whisper: bounded same-region batch transcription
+      Whisper-->>Channel: transcript
+      Channel->>Workspace: retain transcript sidecar
+      Channel->>Model: transcript text
+    else unsupported PDF or busy media
+      Channel-->>Person: explicit fail-closed response
+    end
+    Model-->>Person: completed reply
+    Workspace->>Channel: stable HTML artifact snapshot
+    Channel->>Channel: render isolated immutable PDF
+    Channel->>Meta: upload PDF + send document and authenticated link
+    Meta-->>Person: artifact.pdf + `/a/<opaque-id>`
+```
+
+## Deliberate boundaries
+
+```text
+owner-only      Meta permissions · credentials · target deployment · deploy/release authority
+not introduced  public unauthenticated links · capability secrets in URLs · US media processor
+rollback        revert PR and keep BORING_AGENT_CHANNELS disabled; no migration or deletion
+UI evidence     N/A: base-to-head has no browser UI source change; behavior is headless transport
+```
