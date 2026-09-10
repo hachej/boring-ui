@@ -91,6 +91,7 @@ describe('GET /a/:id (AR1-003 Lane W deep link)', () => {
       store,
       getWorkspace: async (request, shareWorkspaceId) => {
         expect(shareWorkspaceId).toBe('workspace-lazy')
+        if (!shareWorkspaceId) throw new Error('expected an existing share workspace id')
         request.workspaceContext = { workspaceId: shareWorkspaceId, authenticated: true }
         return workspace
       },
