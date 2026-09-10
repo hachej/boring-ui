@@ -52,6 +52,7 @@ export function createTrustedTaskToolBindingResolver(
           agentTypeId,
           context: actor,
           requestId: ctx.requestId?.trim() || ctx.toolCallId,
+          fundingPolicy: 'api-key-only',
         }, async (lease) => {
           const workspace: TaskSessionLinkWorkspace = lease.workspace
           result = await operation({

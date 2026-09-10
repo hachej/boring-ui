@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
+import { createFakeAuthorityVerifierV1 } from '../testing'
 import {
-  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
   withResolvedCredential,

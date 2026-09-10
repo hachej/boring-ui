@@ -1,0 +1,12 @@
+[Unit]
+Description=Boring Factory loopback streaming proxy for Tailscale HTTP/2
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/caddy run --config %h/.config/boring-factory/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

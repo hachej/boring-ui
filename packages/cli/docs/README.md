@@ -98,9 +98,9 @@ When folder/`local`-style modes run, the CLI sets
 ## Runtime plugin front loading
 
 The CLI loads plugin browser code from trusted local Pi extension roots through
-a CLI-owned runtime module host (`src/server/pluginFrontRuntime.ts`, browser
-side in `src/front/runtimePluginDiagnostics.tsx`). Each mode exposes
-diagnostics endpoints used by `boring-ui-plugin test` and the in-UI diagnostics:
+a CLI-owned runtime module host (`src/server/pluginFrontRuntime.ts`). The
+workspace's `registerAgentPlugin` loads browser modules and reports front errors.
+Each mode exposes diagnostics endpoints used by `boring-ui-plugin test`:
 
 - `GET  /api/v1/runtime-plugin-diagnostics`
 - `POST /api/v1/agent-plugins/:id/front-error`

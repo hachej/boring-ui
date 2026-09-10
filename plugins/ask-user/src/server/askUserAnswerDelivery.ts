@@ -85,6 +85,7 @@ export function createWorkspaceAgentAnswerDeliveryTransport(
           agentTypeId,
           context: { workspaceId, userId },
           requestId,
+          fundingPolicy: 'api-key-only',
         }, async (binding) => {
           await binding.dispatch({
             sessionId: question.sessionId,

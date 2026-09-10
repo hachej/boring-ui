@@ -14,7 +14,7 @@
 -├── app.ts                       # assembles every Factory primitive
 +├── app.ts                       # createFactoryHost(...) + meta route
  └── dev.ts                       # playground-owned boot (unchanged)
- 
+
 +plugins/boring-factory/src/server/
 +├── sandbox/                     # exact-SHA leases, providers, snapshots
 +├── host/                        # seats, delegation/status, supervision, demos, closure
