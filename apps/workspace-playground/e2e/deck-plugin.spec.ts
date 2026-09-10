@@ -43,7 +43,7 @@ async function openFileFromPalette(
 async function openDeckFile(page: import("@playwright/test").Page) {
   await test.step("wait for the workbench to accept its first dispatch", async () => {
     await expect(page.getByRole("status", { name: "Loading workspace" })).toHaveCount(0)
-    await expect(page.getByTestId("artifact-surface").locator(":scope > .dv-shell")).toBeVisible()
+    await expect(page.getByTestId("artifact-surface").locator(":scope > div > .dv-shell")).toBeVisible()
   })
   await openFileFromPalette(page, "intro", /intro\.md/i)
   await expect(page.getByTestId("deck-shell-read")).toBeVisible({ timeout: 10_000 })
