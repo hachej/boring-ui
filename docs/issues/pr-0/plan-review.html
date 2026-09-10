@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Postgres Lock Test Flake — Plan Review</title><style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#172033;--muted:#58647a;--blue:#2457d6;--green:#16794b;--amber:#986800;--red:#b42318;--line:#dce1ea}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:980px;margin:auto;padding:24px}.hero{background:#101a33;color:#fff;border-radius:16px;padding:24px}.hero h1{margin:6px 0}.pill{display:inline-block;background:#d9f8e8;color:#075b37;padding:4px 10px;border-radius:999px;font-weight:700}.meta{color:#bac6df}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px;overflow:auto}h2{margin-top:0;font-size:20px}table{width:100%;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted)}.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}pre.mermaid{white-space:pre-wrap;background:#f1f4f9;border-radius:10px;padding:16px;color:#22304e}.low{color:var(--green);font-weight:700}.med{color:var(--amber);font-weight:700}@media(max-width:680px){.wrap{padding:12px}.cols{grid-template-columns:1fr}.hero{padding:18px}}
+</style></head><body><main class="wrap">
+<header class="hero"><span class="pill">READY FOR PLAN APPROVAL</span><h1>Postgres Lock Test Flake</h1><p>Make real-database lock tests deterministic without weakening any credential-lock guarantee.</p><div class="meta">Orchestrator · 2026-09-10 · Epic factory-plugin-va0s · Slice factory-plugin-va0s.1</div></header>
+<section class="card"><h2>Highest-value view: guarded delivery flow</h2><pre class="mermaid">flowchart LR
+  A[Postgres readiness] --> B[Unique schema]
+  B --> C[Real lock behavior tests]
+  C --> D[5+ consecutive passes]
+  D --> E[Package + current-main checks]
+  E --> F[Independent review\nSpec · Thermo · Abstraction PASS]
+  F --> G[PR + present-pr]
+  G --> H[MERGE-READY exact SHA]
+  C -. same cause only .-> S[SQLite request-ledger repair]</pre></section>
+<section class="card cols"><div><h2>Goals</h2><ul><li>Preserve every existing lock-lifecycle assertion.</li><li>Remove readiness, isolation, and deadline scheduling flake.</li><li>Prove at least 5/5 consecutive final runs.</li><li>Deliver exact-SHA review and PR evidence.</li></ul></div><div><h2>Non-goals</h2><ul><li>No skipped, deleted, todo, or allowed-failure tests.</li><li>No weakened error or mutation assertions.</li><li>No unrelated database refactor.</li><li>No production credential change without protected review.</li></ul></div></section>
+<section class="card"><h2>Key interaction</h2><pre class="mermaid">sequenceDiagram
+  participant W as Worker
+  participant DB as Database
+  participant T as Lock suite
+  participant R as Independent reviewer
+  W->>DB: Prove ready and isolate schema/state
+  W->>T: Reproduce then repair timing seam
+  loop Five or more consecutive runs
+    W->>T: Run committed candidate
+    T-->>W: All behavior assertions pass
+  end
+  W->>R: Exact SHA
+  R-->>W: Spec + thermo + abstraction verdict
+  W->>W: Repair and repeat if any finding
+  W->>G: PR proof and terminal receipt</pre></section>
+<section class="card"><h2>Decisions</h2><table><tr><th>Decision</th><th>Options</th><th>Chosen</th><th>Why</th></tr><tr><td>Slice count</td><td>One vs split diagnosis/delivery</td><td>One bounded child Bead</td><td>One shared test seam and revision-bound evidence.</td></tr><tr><td>Determinism</td><td>Readiness, isolation, virtual time, larger bounds</td><td>Diagnose; prefer readiness/isolation and controlled deadline time</td><td>Keep real locks while removing environmental coupling.</td></tr><tr><td>SQLite</td><td>Always edit vs inspect first</td><td>Edit only on matching cause</td><td>Avoid speculative scope.</td></tr><tr><td>Merge route</td><td>Automatic vs owner</td><td>Automatic only for final test-only diff</td><td>Production credential/contract changes are protected.</td></tr></table></section>
+<section class="card"><h2>Risks</h2><table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr><tr><td>A timing increase hides a defect</td><td class="med">Medium</td><td>High</td><td>Keep exact behavior assertions; review real lock path; repetition proof.</td></tr><tr><td>Fake timers conflict with driver I/O</td><td class="med">Medium</td><td>Medium</td><td>Use virtual time only for driver-safe deadline seams.</td></tr><tr><td>Concurrent schemas still contend globally</td><td class="low">Low</td><td>Medium</td><td>Unique schema/workspace IDs and readiness probe; inspect advisory-lock keys.</td></tr><tr><td>Scope reaches production credentials</td><td class="low">Low</td><td>High</td><td>Stop automatic route and raise exact-SHA protected merge review.</td></tr></table></section>
+<section class="card"><h2>Proof and references</h2><ul><li>Affected suites: at least five consecutive runs before/after evidence.</li><li>Relevant <code>packages/agent</code> typecheck/unit/invariant checks.</li><li>Independent standards/spec and thermo review at exact final SHA.</li><li>Explicit package-abstraction PASS, current-main candidate proof, CI, present-pr.</li><li>GitHub PR 0 does not exist yet; comment/review endpoints were checked and returned no PR/404.</li><li>No unresolved owner question. No independent pre-Gate plan-review mechanism is exposed in this session; the owner decides with this disclosed gap.</li></ul></section>
+</main></body></html>
