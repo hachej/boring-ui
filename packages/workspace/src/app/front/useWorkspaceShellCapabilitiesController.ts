@@ -20,7 +20,7 @@ export function useWorkspaceShellCapabilitiesController({
   isAppLeftOverlayAvailable,
 }: {
   setFloatingChatSession: Dispatch<SetStateAction<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
-  createChatSession: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
+  createChatSession?: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
   deleteChatSession: (ref: WorkspaceShellSessionRef) => Promise<WorkspaceShellCapabilityResult>
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>

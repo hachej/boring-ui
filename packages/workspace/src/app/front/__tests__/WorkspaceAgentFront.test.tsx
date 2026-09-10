@@ -8,6 +8,7 @@ import { useWorkspacePluginClient } from "../../../front/plugin/useWorkspacePlug
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
+import { useWorkspaceShellCapabilities } from "../../../shared/plugins/workspaceShellCapabilities"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
@@ -112,6 +113,11 @@ function expandHistory(): void {
 
 function GlobalCommandPanel() {
   return <div>Global command panel body</div>
+}
+
+function ShellCreateCapabilityProbe() {
+  const capabilities = useWorkspaceShellCapabilities()
+  return <span data-testid="shell-create-capability">{capabilities.createChatSession ? "available" : "unavailable"}</span>
 }
 
 const globalCommandPanel: PanelConfig = {
@@ -1176,6 +1182,7 @@ describe("WorkspaceAgentFront", () => {
         sessions={[{ id: "s1", title: "Controlled session", updatedAt: Date.now() }]}
         activeSessionId="s1"
         onSwitchSession={vi.fn()}
+        topBarRight={<ShellCreateCapabilityProbe />}
         persistenceEnabled={false}
       />,
     )
@@ -1186,6 +1193,8 @@ describe("WorkspaceAgentFront", () => {
     const appNav = screen.getByLabelText("App navigation")
     expect(within(appNav).getByText("Controlled session")).toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: /New chat/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Split Controlled session chat/ })).not.toBeInTheDocument()
+    expect(screen.getByTestId("shell-create-capability")).toHaveTextContent("unavailable")
 
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
     const collapsedRail = screen.getByLabelText("Collapsed app navigation")

@@ -2643,7 +2643,7 @@ export function WorkspaceAgentFront<
     agentLabelByTypeId: chatHeaderAgentLabelById,
     defaultSessionTitle,
     makeCenterParams,
-    createChatSession: createShellChatSession,
+    createChatSession: canCreateSessions ? createShellChatSession : undefined,
     deleteChatSession: deleteShellChatSession,
     openChatPane,
     refreshChatSessions: async () => {
@@ -2779,7 +2779,7 @@ export function WorkspaceAgentFront<
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}
       onCreateChatPaneAfter={isPluginTabsLayout ? undefined : createChatPaneAfter}
-      onSplitChatPane={splitChatPane}
+      onSplitChatPane={canCreateSessions ? splitChatPane : undefined}
       chatPaneSplitPending={chatPaneSplitPending}
       pendingChatPanePlacement={pendingChatPanePlacement}
       onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
