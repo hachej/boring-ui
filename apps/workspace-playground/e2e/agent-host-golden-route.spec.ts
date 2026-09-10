@@ -43,8 +43,10 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     await navigation.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {
       throw new Error(`workspace shell did not render; page errors: ${pageErrors.join(" | ") || "none"}`)
     })
-    const composer = page.getByRole("textbox", { name: "Agent prompt" })
-    const chat = page.locator('[data-boring-agent-part="chat"]')
+    // New Chat intentionally opens a second pane. Keep every chat assertion
+    // scoped to the newest pane instead of assuming the page has one composer.
+    const chat = page.locator('[data-boring-agent-part="chat"]').last()
+    const composer = chat.getByRole("textbox", { name: "Agent prompt" })
     await expect(composer).toBeVisible()
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 10_000 })
 
@@ -73,16 +75,16 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     const prompt = `golden prompt ${Date.now()}`
     await composer.fill(prompt)
     await page.locator('[data-boring-agent-part="composer-submit"]').click()
-    await expect(page.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByLabel("Agent conversation").getByText(prompt)).toBeVisible()
+    await expect(chat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
+    await expect(chat.getByLabel("Agent conversation").getByText(prompt)).toBeVisible()
 
-    await expect(page.locator('[data-boring-agent-message-role="assistant"]')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId("chat-working")).toHaveCount(0, { timeout: 15_000 })
+    await expect(chat.locator('[data-boring-agent-message-role="assistant"]')).toBeVisible({ timeout: 15_000 })
+    await expect(chat.getByTestId("chat-working")).toHaveCount(0, { timeout: 15_000 })
 
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(chat).toHaveAttribute("data-pi-chat-session-id", sessionId!)
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 10_000 })
-    await expect(page.getByLabel("Agent conversation").getByText(prompt)).toBeVisible({ timeout: 10_000 })
+    await expect(chat.getByLabel("Agent conversation").getByText(prompt)).toBeVisible({ timeout: 10_000 })
 
     const renamed = `Golden addressed ${Date.now()}`
     const rename = await page.request.post(`${sessionsRoute}/${encodeURIComponent(sessionId!)}/rename`, {

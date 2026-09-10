@@ -41,7 +41,17 @@ async function openFileFromPalette(
 }
 
 async function openDeckFile(page: import("@playwright/test").Page) {
-  await openFileFromPalette(page, "intro", /intro\.md/i)
+  // The shell and workbench controllers settle independently after reload.
+  // Retry the real palette journey once if its first dispatch lands before the
+  // workbench handle is ready; the deck itself must still render afterwards.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await openFileFromPalette(page, "intro", /intro\.md/i)
+    const opened = await page.getByTestId("deck-shell-read")
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true, () => false)
+    if (opened) return
+  }
+  throw new Error("deck surface did not open after two palette dispatches")
 }
 
 test.describe("workspace-playground deck plugin", () => {
