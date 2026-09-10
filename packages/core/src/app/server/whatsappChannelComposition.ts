@@ -88,6 +88,15 @@ export function createCoreWhatsAppWorkspaceRunner(input: {
   }
 }
 
+export function assertCoreWhatsAppRuntimeRegion(
+  options: CoreWhatsAppChannelOptions,
+  runtimeWorkspaceRegion: ChannelInboundMediaRuntime['storageRegion'] | undefined,
+): void {
+  if (options.inboundMedia && runtimeWorkspaceRegion !== options.inboundMedia.storageRegion) {
+    throw new Error('WhatsApp media requires an active runtime Workspace attested to the configured CH/EU region')
+  }
+}
+
 export function assertCoreWhatsAppAgentAvailable(
   options: CoreWhatsAppChannelOptions | undefined,
   agentTypeIds: readonly string[],
@@ -115,8 +124,11 @@ export async function mountCoreWhatsAppChannel(input: {
   }) => Promise<AuthorizedAgentScope>
   /** Core-owned bridge to the exact runtime-mode Workspace generation used by the Agent Host. */
   readonly withAuthorizedWorkspace: WithAuthorizedChannelWorkspace
+  /** Region attested by the selected runtime-mode adapter; absent means unqualified. */
+  readonly runtimeWorkspaceRegion?: ChannelInboundMediaRuntime['storageRegion']
   readonly options: CoreWhatsAppChannelOptions
 }): Promise<MountedCoreWhatsAppChannel> {
+  assertCoreWhatsAppRuntimeRegion(input.options, input.runtimeWorkspaceRegion)
   const configured = input.options.provisionedBindings ?? []
   const configuredKeys = new Set<string>()
   for (const binding of configured) {

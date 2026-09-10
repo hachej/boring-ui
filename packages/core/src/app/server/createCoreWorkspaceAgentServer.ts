@@ -418,6 +418,13 @@ function normalizeOptionalPath(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
+function runtimeDataRegionFromEnv(value: string | undefined): 'CH' | 'EU' | undefined {
+  const region = value?.trim()
+  if (!region) return undefined
+  if (region === 'CH' || region === 'EU') return region
+  throw new Error('BORING_AGENT_RUNTIME_DATA_REGION must be CH or EU')
+}
+
 interface CoreAgentScopeRecord {
   readonly claim: VerifiedAgentScopeClaim
   readonly workspaceId: string
@@ -1405,7 +1412,10 @@ export async function createCoreWorkspaceAgentServer(
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
-    ?? createSandboxRuntimeModeAdapter(selectedMode, { sandboxHandleStore })
+    ?? createSandboxRuntimeModeAdapter(selectedMode, {
+      sandboxHandleStore,
+      dataRegion: runtimeDataRegionFromEnv(process.env.BORING_AGENT_RUNTIME_DATA_REGION),
+    })
   // Static app/plugin Pi configuration is known at construction time. Reject
   // invalid remote host extensions before serving requests; dynamic policies
   // are rechecked when their workspace-scoped values are resolved.
@@ -1943,6 +1953,7 @@ export async function createCoreWorkspaceAgentServer(
           workspaceId: binding.workspaceId,
           userId: binding.authSubjectId,
         }),
+        runtimeWorkspaceRegion: runtimeModeAdapter.dataRegion,
         withAuthorizedWorkspace: createCoreWhatsAppWorkspaceRunner({
           agentHost,
           resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {

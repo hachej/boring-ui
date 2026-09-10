@@ -111,6 +111,8 @@ export interface RuntimeModeAdapter {
    * host-side fs checks/prompts are safe without hard-coding sandbox IDs.
    */
   readonly workspaceFsCapability?: Workspace['fsCapability']
+  /** Host-attested physical data residency for this runtime placement. Omission is unqualified. */
+  readonly dataRegion?: 'CH' | 'EU'
   readonly readiness?: RuntimeModeReadinessHooks
   readonly cachedBindingHealthCheck?: RuntimeCachedBindingHealthCheck
   create(ctx: ModeContext): Promise<RuntimeBundle>

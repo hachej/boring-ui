@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
+import { createTestRuntimeModeAdapter } from '@agent-test-host'
 
 import type { FileSearch } from '../../../shared/file-search'
 import type { Sandbox } from '../../../shared/sandbox'
@@ -40,6 +41,11 @@ function bundle(overrides: Partial<RuntimeBundle> = {}): RuntimeBundle {
 }
 
 describe('runtime mode helpers', () => {
+  test('carries host-attested data residency on the selected remote adapter', () => {
+    expect(createTestRuntimeModeAdapter('vercel-sandbox').dataRegion).toBeUndefined()
+    expect(createTestRuntimeModeAdapter('vercel-sandbox', { dataRegion: 'CH' }).dataRegion).toBe('CH')
+  })
+
   test('returns explicit storage root when present', () => {
     expect(getRuntimeBundleStorageRoot(bundle({ storageRoot: '/host/workspace' }))).toBe('/host/workspace')
   })

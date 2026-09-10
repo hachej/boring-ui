@@ -11,8 +11,10 @@ import {
 import { InMemoryShareEntryStore, type AgentGateway } from '@hachej/boring-agent/shared'
 import {
   assertCoreWhatsAppAgentAvailable,
+  assertCoreWhatsAppRuntimeRegion,
   createCoreWhatsAppWorkspaceRunner,
   mountCoreWhatsAppChannel,
+  type CoreWhatsAppChannelOptions,
 } from '../whatsappChannelComposition.js'
 
 const roots: string[] = []
@@ -22,14 +24,23 @@ afterEach(async () => {
 })
 
 describe('mountCoreWhatsAppChannel', () => {
-  it('rejects a configured Agent outside the validated host fleet', () => {
-    expect(() => assertCoreWhatsAppAgentAvailable({
+  it('rejects a configured Agent outside the validated host fleet and unqualified media placement', () => {
+    const options: CoreWhatsAppChannelOptions = {
       withCredentials: async (use) => use({
         accessToken: 'access', appSecret: 'secret', verifyToken: 'verify', phoneNumberId: '1',
         fallbackTemplateName: 'continue',
       }),
       agentTypeId: 'typo',
-    }, ['default'])).toThrow(/not in the validated fleet: typo/)
+      inboundMedia: {
+        storageRegion: 'CH' as const,
+        transcriber: { processorRegion: 'CH' as const, transcribeFile: vi.fn() },
+      },
+    }
+    expect(() => assertCoreWhatsAppAgentAvailable(options, ['default']))
+      .toThrow(/not in the validated fleet: typo/)
+    expect(() => assertCoreWhatsAppRuntimeRegion(options, undefined)).toThrow(/attested/)
+    expect(() => assertCoreWhatsAppRuntimeRegion(options, 'EU')).toThrow(/attested/)
+    expect(() => assertCoreWhatsAppRuntimeRegion(options, 'CH')).not.toThrow()
   })
 
   it('drives signed photo and voice fixtures through authenticated download, regional retention, and model input', async () => {
@@ -94,6 +105,7 @@ describe('mountCoreWhatsAppChannel', () => {
     })
     const mounted = await mountCoreWhatsAppChannel({
       app, gateway, storage, resolveAuthorizedScope, withAuthorizedWorkspace,
+      runtimeWorkspaceRegion: 'CH',
       shareEntryStore: new InMemoryShareEntryStore(),
       options: {
         withCredentials, graphFetch, agentTypeId: 'default',
