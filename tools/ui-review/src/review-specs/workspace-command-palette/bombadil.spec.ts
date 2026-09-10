@@ -19,6 +19,7 @@ import {
   createSafeCommandPaletteActions,
   isCommandPaletteDialogName,
   isSafeCommandPaletteControl,
+  scenarioActionAccessibleName,
 } from "./scenarioActions.ts"
 import { COMMAND_PALETTE_TOUCH_EXEMPTIONS } from "./touchPolicy.ts"
 
@@ -93,7 +94,15 @@ const palette = extract((state): SafePaletteState => {
   const dialog = dialogs.find((element) => isCommandPaletteDialogName(accessibleName(element))) ?? null
   const rootControls = Array.from(state.document.querySelectorAll(
     'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"], button[aria-label="Open app navigation"]',
-  ))
+  )).sort((left, right) => {
+    if (!viewportIsCompact) return 0
+    // Once compact navigation is open, its search action is unobscured while
+    // the matching shell-header trigger sits behind the navigation overlay.
+    const mobileDrawerAction = (element: Element): number => (
+      element.getAttribute("data-boring-mobile-dismiss") === "true" ? 1 : 0
+    )
+    return mobileDrawerAction(right) - mobileDrawerAction(left)
+  })
   const allowed: Array<{ name: string; fingerprint: Fingerprint; point: Point }> = []
   const maybeAdd = (
     element: Element,
@@ -160,16 +169,10 @@ const palette = extract((state): SafePaletteState => {
     || bounds.x + bounds.width > state.window.innerWidth
     || bounds.y + bounds.height > state.window.innerHeight
   ))
-  const lastActionWasPaletteOpen = typeof state.lastAction === "object"
-    && state.lastAction !== null
-    && "Click" in state.lastAction
-    && ["Search", "Search⌘K", "Search catalogs and commands"].includes(
-      state.lastAction.Click.fingerprint.accessibleName ?? "",
-    )
-  const lastActionWasNavigationOpen = typeof state.lastAction === "object"
-    && state.lastAction !== null
-    && "Click" in state.lastAction
-    && state.lastAction.Click.fingerprint.accessibleName === "Open app navigation"
+  const lastActionAccessibleName = scenarioActionAccessibleName(state.lastAction)
+  const lastActionWasPaletteOpen = ["Search", "Search⌘K", "Search catalogs and commands"]
+    .includes(lastActionAccessibleName ?? "")
+  const lastActionWasNavigationOpen = lastActionAccessibleName === "Open app navigation"
   const lastActionWasInitial = state.lastAction === null || state.lastAction === undefined
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""

@@ -23,6 +23,7 @@ import {
   createSafeCommandPaletteActions,
   isCommandPaletteDialogName,
   isSafeCommandPaletteControl,
+  scenarioActionAccessibleName,
 } from "../review-specs/workspace-command-palette/scenarioActions"
 import { testSpec, testStagingPolicy } from "./fixtures"
 
@@ -319,6 +320,15 @@ describe("Bombadil exploration staging", () => {
 })
 
 describe("command palette action safety", () => {
+  it("recognizes Bombadil's serialized accessible-name casing", () => {
+    expect(scenarioActionAccessibleName({
+      Click: {
+        fingerprint: { accessible_name: "Search catalogs and commands" },
+        point: { x: 199, y: 24 },
+      },
+    } as never)).toBe("Search catalogs and commands")
+  })
+
   it("opens an exact fingerprinted root control without Resource Timing readiness", () => {
     const fingerprint = {
       testId: null,

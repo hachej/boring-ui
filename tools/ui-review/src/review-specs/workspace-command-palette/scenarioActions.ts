@@ -17,6 +17,12 @@ type ScenarioActionControl = {
 }
 export type ScenarioAction = ActionTemplate
 
+export function scenarioActionAccessibleName(action: ScenarioAction | null | undefined): string | undefined {
+  if (typeof action !== "object" || action === null || !("Click" in action)) return undefined
+  const fingerprint = action.Click.fingerprint as Fingerprint & { accessible_name?: string }
+  return fingerprint.accessibleName ?? fingerprint.accessible_name
+}
+
 export const COMMAND_PALETTE_COMPACT_MAX_WIDTH = 639
 export const COMMAND_PALETTE_SHELL_SELECTOR = '[data-boring-workspace-part="plugin-tabs-shell"][data-mobile-shell]'
 

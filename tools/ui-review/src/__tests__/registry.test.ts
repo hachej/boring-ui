@@ -55,7 +55,7 @@ describe("UI review spec registry", () => {
 
   it("pins the command-palette replay viewport/shell boot contract", () => {
     const commandPalette = uiReviewSpecs.get("workspace-command-palette")
-    expect(commandPalette.specRevision).toBe("workspace-command-palette-v9")
+    expect(commandPalette.specRevision).toBe("workspace-command-palette-v10")
     expect(COMMAND_PALETTE_COMPACT_MAX_WIDTH).toBe(639)
     expect(COMMAND_PALETTE_SHELL_SELECTOR).toBe(
       '[data-boring-workspace-part="plugin-tabs-shell"][data-mobile-shell]',
