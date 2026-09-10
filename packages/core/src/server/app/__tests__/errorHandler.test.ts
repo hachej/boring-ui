@@ -1,3 +1,5 @@
+import { deepLinkRoutes } from '@hachej/boring-agent/server'
+import { InMemoryShareEntryStore, type Workspace } from '@hachej/boring-agent/shared'
 import { describe, it, expect, afterEach } from 'vitest'
 import { createCoreApp } from '../createCoreApp'
 import { HttpError } from '../../../shared/errors'
@@ -71,6 +73,42 @@ describe('error handler', () => {
     expect(body.code).toBe('internal_error')
     expect(body.message).toBe('Internal server error')
     expect(body.requestId).toBeDefined()
+  })
+
+  it('preserves a deep-link Workspace outage as a sanitized 503 through the production handler', async () => {
+    const store = new InMemoryShareEntryStore()
+    const secretPath = 'private/provider-layout/report.md'
+    const entry = await store.create({
+      workspaceId: 'workspace-1',
+      path: secretPath,
+      provenance: { producerPrincipalRef: 'agent-a' },
+    })
+    const workspace = {
+      root: '/runtime/private-provider-root',
+      runtimeContext: { runtimeCwd: '/runtime/private-provider-root' },
+      async stat() {
+        throw Object.assign(new Error(`provider unavailable for ${secretPath}`), { status: 404 })
+      },
+    } as unknown as Workspace
+
+    app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
+    app.addHook('onRequest', async (request) => {
+      request.workspaceContext = { workspaceId: 'workspace-1', authenticated: true }
+    })
+    await app.register(deepLinkRoutes, { store, workspace })
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: `/a/${entry.id}` })
+    expect(res.statusCode).toBe(503)
+    expect(res.json()).toMatchObject({
+      error: 'internal_error',
+      code: 'internal_error',
+      message: 'Internal server error',
+    })
+    expect(res.body).not.toContain(secretPath)
+    expect(res.body).not.toContain('private-provider-root')
+    expect(res.body).not.toContain('provider unavailable')
+    expect(res.body).not.toContain('tombstoned')
   })
 
   it('maps Fastify validation error to 400 validation_failed', async () => {

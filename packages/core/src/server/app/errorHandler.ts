@@ -59,7 +59,14 @@ export function registerErrorHandler(app: FastifyInstance) {
 
     request.log.error({ err: error, requestId }, 'unhandled error')
 
-    return reply.status(500).send({
+    // Preserve an explicitly classified operational 5xx at the HTTP boundary,
+    // while keeping the response envelope generic so provider details cannot
+    // escape. This lets package-owned routes distinguish retryable outages
+    // (for example 503) from defects without trusting their message or code.
+    const statusCode = fastifyErr.statusCode && fastifyErr.statusCode >= 500 && fastifyErr.statusCode < 600
+      ? fastifyErr.statusCode
+      : 500
+    return reply.status(statusCode).send({
       error: 'internal_error',
       code: 'internal_error',
       message: 'Internal server error',
