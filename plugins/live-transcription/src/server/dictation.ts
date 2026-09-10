@@ -19,6 +19,8 @@ export interface BatchFileTranscriberOptions {
   readonly fetch?: typeof fetch
   readonly timeoutMs?: number
   readonly maxResponseBytes?: number
+  /** Omit to let Whisper auto-detect the voice-note language. */
+  readonly language?: string
 }
 
 /** Supported server seam for retained files; uses the same self-hosted Whisper HTTP endpoint as dictation. */
@@ -34,6 +36,7 @@ export function createSelfHostedBatchFileTranscriber(options: BatchFileTranscrib
       fetch: options.fetch,
       timeoutMs: options.timeoutMs,
       maxResponseBytes: options.maxResponseBytes,
+      language: options.language,
     }),
   }
 }
@@ -46,6 +49,7 @@ export async function transcribeBatchFile(input: {
   fetch?: typeof fetch
   timeoutMs?: number
   maxResponseBytes?: number
+  language?: string
 }): Promise<{ text: string }> {
   assertSelfHostedBatchUrl(input.upstreamWebSocketUrl)
   if (!ALLOWED_MIME_TYPES.has(input.mimeType)) {
@@ -74,7 +78,7 @@ export async function transcribeShortDictation(input: {
   if (bytes.byteLength === 0 || bytes.byteLength > SHORT_DICTATION_MAX_BYTES) {
     throw new LiveTranscriptError("live_transcript_limit_exceeded", "Short dictation exceeded the in-memory V0 limit.", 413)
   }
-  return await transcribeBytes({ ...input, bytes })
+  return await transcribeBytes({ ...input, bytes, language: 'fr' })
 }
 
 async function transcribeBytes(input: {
@@ -85,6 +89,7 @@ async function transcribeBytes(input: {
   fetch?: typeof fetch
   timeoutMs?: number
   maxResponseBytes?: number
+  language?: string
 }): Promise<{ text: string }> {
   const upstream = new URL(input.upstreamWebSocketUrl)
   upstream.protocol = upstream.protocol === "wss:" ? "https:" : "http:"
@@ -93,7 +98,10 @@ async function transcribeBytes(input: {
   const form = new FormData()
   form.set("file", new Blob([Uint8Array.from(input.bytes)], { type: input.mimeType }), `dictation.${extensionFor(input.mimeType)}`)
   form.set("model", "tiny")
-  form.set("language", "fr")
+  if (input.language) {
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(input.language)) throw new LiveTranscriptError("live_transcript_invalid_audio", "Batch transcription language is invalid.", 400)
+    form.set("language", input.language)
+  }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 30_000)
   let payload: { text?: unknown } | null

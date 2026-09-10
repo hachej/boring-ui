@@ -145,7 +145,15 @@ export async function mountCoreWhatsAppChannel(input: {
   }
   const inboundMedia = input.options.inboundMedia
     ? new ChannelInboundMediaService(
-        input.options.inboundMedia.runtime,
+        {
+          ...input.options.inboundMedia.runtime,
+          async resolveWorkspace(binding) {
+            // Reissue current app membership authority before any media byte is downloaded,
+            // retained, or disclosed to the self-hosted transcription processor.
+            await input.resolveAuthorizedScope(binding)
+            return await input.options.inboundMedia!.runtime.resolveWorkspace(binding)
+          },
+        },
         new Map([[WHATSAPP_CHANNEL_ID, adapterEdge.adapter]]),
         input.options.inboundMedia.transcriber,
       )

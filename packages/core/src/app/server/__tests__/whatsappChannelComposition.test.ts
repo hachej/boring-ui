@@ -71,8 +71,9 @@ describe('mountCoreWhatsAppChannel', () => {
       return new Response('{}')
     })
     const transcribeFile = vi.fn(async () => ({ text: 'Book the meeting tomorrow.' }))
+    const resolveAuthorizedScope = vi.fn(async () => ({}) as AuthorizedAgentScope)
     const mounted = await mountCoreWhatsAppChannel({
-      app, gateway, storage, resolveAuthorizedScope: async () => ({}) as AuthorizedAgentScope,
+      app, gateway, storage, resolveAuthorizedScope,
       options: {
         withCredentials, graphFetch, agentTypeId: 'default',
         provisionedBindings: [{ conversationKey: '4179', workspaceId: 'workspace-1', authSubjectId: 'member-1' }],
@@ -100,6 +101,7 @@ describe('mountCoreWhatsAppChannel', () => {
     expect([...files.keys()]).toEqual(expect.arrayContaining([expect.stringMatching(/\.png$/), expect.stringMatching(/\.ogg$/), expect.stringMatching(/\.txt$/)]))
     expect(transcribeFile).toHaveBeenCalledWith({ bytes: ogg, mimeType: 'audio/ogg' })
     expect(graphFetch.mock.calls.every(([, init]) => (init as RequestInit).headers && JSON.stringify((init as RequestInit).headers).includes('secret-access'))).toBe(true)
+    expect(resolveAuthorizedScope.mock.invocationCallOrder[0]).toBeLessThan(graphFetch.mock.invocationCallOrder[0]!)
     await mounted.close(); await app.close(); storage.close()
   })
 

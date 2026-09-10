@@ -13,6 +13,7 @@ describe('self-hosted batch-file transcription seam', () => {
     expect(String(request.mock.calls[0]![0])).toBe('http://127.0.0.1/v1/audio/transcriptions')
     expect(request.mock.calls[0]![1]).toMatchObject({ method: 'POST', headers: { Authorization: 'Bearer lease-token' } })
     expect(request.mock.calls[0]![1]!.body).toBeInstanceOf(FormData)
+    expect((request.mock.calls[0]![1]!.body as FormData).has('language')).toBe(false)
   })
 
   test('rejects remote processors, unsupported types, and empty files before any processor call', async () => {
