@@ -75,6 +75,22 @@ describe('error handler', () => {
     expect(body.requestId).toBeDefined()
   })
 
+  it('does not trust an unhandled provider-supplied 5xx status', async () => {
+    app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
+    app.get('/test', async () => {
+      throw Object.assign(new Error('upstream gateway detail'), {
+        statusCode: 502,
+        code: 'UPSTREAM_PROVIDER_FAILURE',
+      })
+    })
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: '/test' })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ code: 'internal_error', message: 'Internal server error' })
+    expect(res.body).not.toContain('upstream gateway detail')
+  })
+
   it('preserves a deep-link Workspace outage as a sanitized 503 through the production handler', async () => {
     const store = new InMemoryShareEntryStore()
     const secretPath = 'private/provider-layout/report.md'
