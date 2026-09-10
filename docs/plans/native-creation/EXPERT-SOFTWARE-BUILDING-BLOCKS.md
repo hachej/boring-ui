@@ -244,13 +244,68 @@ selected examples and relevant preferences enter the candidate environment.
 Production credentials, unrestricted private records, protected controls and
 the active product filesystem do not.
 
-## Questions for the building-block grill
+## Current synthesis and grill ledger
+
+### Decided or already ruled
+
+- **Two products:** Clinic and the multi-worker bot are distinct Experiences
+  over shared substrate, not modes or skins of one another.
+- **One front door, bounded workers:** user-facing bots maintain the relationship;
+  substantial jobs can go to remote agents; creator agents are one constrained
+  remote-agent class.
+- **Durable identity model:** conversation is the front door, Thread the durable
+  job, Session one runtime conversation, Run admitted execution, and artifacts
+  the durable value.
+- **Existing mechanisms remain:** OpenComputer is interface and conformance
+  inspiration, not the hosted control plane, mandatory provider, or replacement
+  for Boring's gateway, records, filesystems, sandbox providers and metering.
+- **Semantic blocks plus recipes (grill choice C):** experts get meaningful
+  capability blocks that can be assembled into ready-made workflow recipes;
+  they do not manipulate raw UI primitives or receive one permanently fixed
+  workflow.
+- **Presentation foundation:** generated Experiences compose a curated,
+  versioned shadcn-based set; common components do not impose common layouts.
+- **Software lifecycle:** a creator produces a candidate and evidence; the host
+  controls Keep/activation; private working data remains separate from software
+  revisions.
+
+### Strong working direction, still to harden
+
+- Prefer configure → compose → extend, generating candidate code only when the
+  requested behavior cannot be expressed safely through existing blocks.
+- Personalize through corrections and selected examples rather than requiring
+  experts to edit prompts.
+- Give workers bounded briefs and selected references rather than complete
+  transcript dumps by default.
+- Keep user posts, short progress, artifacts, evidence and decisions typed;
+  internal reasoning and raw tool traces stay outside the primary transcript.
+- Use the Clinic letter-ready-before-the-consultation-ends case as the first
+  latency and incremental-work tracer, then test the same block contracts in a
+  structurally different non-clinical case.
+
+### Next unresolved decision
+
+**How a nontechnical expert inspects and accepts a persistent workflow change.**
+The current recommendation is conversation-first creation plus an inspectable
+plain-language recipe—for example:
+
+```text
+Quand une orientation est détectée
+→ préparer un brouillon
+→ utiliser mon style court
+→ me laisser le valider
+→ ne jamais l'envoyer automatiquement
+```
+
+The open choice is whether every persistent behavioral change must be shown and
+confirmed in this form before becoming the default, or whether a standing policy
+may auto-accept bounded classes of low-risk changes. This has not been decided.
+
+## Remaining questions for the building-block grill
 
 Resolve these one at a time before freezing contracts:
 
-1. Does the first supported creation space include all three forms, or begin
-   with documents + interactive tools while preserving record-compatible
-   boundaries?
+1. What confirmation and standing-policy rules govern persistent recipe changes?
 2. What is the minimum semantic contract every block must expose?
 3. Which personalization changes are data/configuration, method/behavior, or
    candidate code?
@@ -265,6 +320,9 @@ Resolve these one at a time before freezing contracts:
 9. Which remote-agent classes exist initially, and what capabilities distinguish
    each?
 10. What proof is required before a creator candidate can be kept and activated?
+11. Does the first implementation creation space include documents, interactive tools
+   and record workspaces together or stage those forms while preserving compatible
+   boundaries?
 
 The grill should produce the smallest coherent block set that proves the Clinic
 letter case and a structurally different non-clinical case; it should not
