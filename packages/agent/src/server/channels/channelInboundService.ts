@@ -186,9 +186,10 @@ export class ChannelInboundService {
             sessionKey: binding.sessionKey,
           })
         }
-        const prepared = queued.media && queued.media.kind !== 'document' && busy
-          ? { text: 'I could not safely attach media while the current turn was running. Please resend it after the reply completes.' }
-          : await this.prepareInbound(binding, queued)
+        const prepareForSession = async (sessionKey: string) =>
+          queued.media && queued.media.kind !== 'document' && busy
+            ? { text: 'I could not safely attach media while the current turn was running. Please resend it after the reply completes.' }
+            : await this.prepareInbound({ ...binding, sessionKey }, queued)
         const ensured = await this.store.ensureSession(binding, {
           allocate: () => this.invoker.createSession({
             workspaceId: binding.workspaceId,
@@ -197,9 +198,13 @@ export class ChannelInboundService {
             originChannel: binding.channel,
             requestId: sessionCreationRequestId(binding),
           }),
-          admit: async (sessionKey) => this.invoker.prompt(invocation(binding, sessionKey, queued, prepared)),
+          admit: async (sessionKey) => {
+            const prepared = await prepareForSession(sessionKey)
+            await this.invoker.prompt(invocation(binding, sessionKey, queued, prepared))
+          },
         })
         if (!ensured.created) {
+          const prepared = await prepareForSession(ensured.sessionKey)
           const call = invocation(binding, ensured.sessionKey, queued, prepared)
           await (busy ? this.invoker.followUp(call) : this.invoker.prompt(call))
         }

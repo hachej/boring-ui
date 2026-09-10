@@ -10,7 +10,9 @@ function fakeWorkspace(opts: { existingPaths: Set<string>; content?: string }): 
     root: '/workspace',
     runtimeContext: { runtimeCwd: '/workspace' },
     async readFile(relPath: string) {
-      if (!opts.existingPaths.has(relPath)) throw new Error(`PATH_NOT_FOUND: ${relPath}`)
+      if (!opts.existingPaths.has(relPath)) {
+        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: 'PATH_NOT_FOUND' })
+      }
       return opts.content ?? '# current artifact'
     },
     async writeFile() {
@@ -24,7 +26,7 @@ function fakeWorkspace(opts: { existingPaths: Set<string>; content?: string }): 
     },
     async stat(relPath: string): Promise<Stat> {
       if (!opts.existingPaths.has(relPath)) {
-        throw new Error(`PATH_NOT_FOUND: ${relPath}`)
+        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: 'PATH_NOT_FOUND' })
       }
       return { size: (opts.content ?? '# current artifact').length, mtimeMs: Date.now(), kind: 'file' }
     },

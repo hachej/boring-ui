@@ -242,6 +242,7 @@ export {
   ShareEntryErrorCode,
   ShareEntryValidationError,
   InMemoryShareEntryStore,
+  isShareTargetNotFoundError,
   resolveShareEntry,
 } from './share-entry'
 export type {

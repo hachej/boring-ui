@@ -8,7 +8,12 @@
 // code") and never emits a workspace path in any response body.
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify'
 import type { Workspace } from '../../../shared/workspace'
-import { ShareEntryErrorCode, resolveShareEntry, type ShareEntryStore } from '../../../shared/share-entry'
+import {
+  ShareEntryErrorCode,
+  isShareTargetNotFoundError,
+  resolveShareEntry,
+  type ShareEntryStore,
+} from '../../../shared/share-entry'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 
@@ -92,7 +97,8 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
         let content: string
         try {
           content = await workspace.readFile(resolution.entry.path)
-        } catch {
+        } catch (error) {
+          if (!isShareTargetNotFoundError(error)) throw error
           return reply.code(200).send({
             status: 'tombstoned',
             code: ShareEntryErrorCode.enum.AR1_SHARE_TOMBSTONED,

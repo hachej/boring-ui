@@ -34,13 +34,23 @@ describe('Core GET /a/:id lazy authorization', () => {
       path: 'reports/gone.md',
       provenance: { producerPrincipalRef: 'agent-a', createdAt: '2026-09-10T00:00:00.000Z' },
     })
+    const unavailable = await store.create({
+      workspaceId: 'workspace-1',
+      path: 'reports/unavailable.md',
+      provenance: { producerPrincipalRef: 'agent-a', createdAt: '2026-09-10T00:00:00.000Z' },
+    })
     const release = vi.fn(async () => {})
     mocks.acquireEnvironment.mockImplementation(async () => ({
       workspace: {
         root: '/runtime/workspace-1',
         runtimeContext: { runtimeCwd: '/runtime/workspace-1' },
         stat: vi.fn(async (path: string) => {
-          if (path === tombstoned.path) throw new Error('PATH_NOT_FOUND')
+          if (path === tombstoned.path) {
+            throw Object.assign(new Error('PATH_NOT_FOUND'), { code: 'PATH_NOT_FOUND' })
+          }
+          if (path === unavailable.path) {
+            throw Object.assign(new Error('runtime Workspace unavailable'), { code: 'WORKSPACE_NOT_READY' })
+          }
           return { kind: 'file', size: 18, mtimeMs: 1 }
         }),
         readFile: vi.fn(async () => '# authorized live'),
@@ -116,8 +126,17 @@ describe('Core GET /a/:id lazy authorization', () => {
         },
       })
       expect(tombstone.body).not.toContain(tombstoned.path)
-      expect(mocks.acquireEnvironment).toHaveBeenCalledTimes(2)
-      expect(release).toHaveBeenCalledTimes(2)
+
+      const operationalFailure = await app.inject({
+        method: 'GET',
+        url: `/a/${unavailable.id}`,
+        headers: { 'x-test-user-id': 'member-1' },
+      })
+      expect(operationalFailure.statusCode).toBe(500)
+      expect(operationalFailure.body).not.toContain(unavailable.path)
+      expect(operationalFailure.body).not.toContain('tombstoned')
+      expect(mocks.acquireEnvironment).toHaveBeenCalledTimes(3)
+      expect(release).toHaveBeenCalledTimes(3)
     } finally {
       await app.close()
     }

@@ -65,12 +65,19 @@ describe('mountCoreWhatsAppChannel', () => {
       { agentTypeId: 'default', authSubjectId: 'member-1' },
     )
     const sends: Array<{ content: string; attachments?: readonly unknown[]; requireIdle?: true }> = []
+    const consumedAttachmentBytes: Uint8Array[] = []
     const gateway = {
       createSession: vi.fn(async () => ({ agentTypeId: 'default', sessionId: 'media-session' })),
       readSessionState: vi.fn(async () => ({ summary: { status: 'idle' } })),
       connectSession: vi.fn(async () => ({
         events: (async function* () {})(), close: async () => undefined,
-        send: async (command: { content: string; attachments?: readonly unknown[]; requireIdle?: true }) => { sends.push(command); return { accepted: true } },
+        send: async (command: { content: string; attachments?: readonly { path: string }[]; requireIdle?: true }) => {
+          sends.push(command)
+          for (const attachment of command.attachments ?? []) {
+            consumedAttachmentBytes.push(await workspace.readBinaryFile(attachment.path))
+          }
+          return { accepted: true }
+        },
       })),
     } as unknown as AgentGateway
     const secret = 'secret-app'
@@ -98,9 +105,9 @@ describe('mountCoreWhatsAppChannel', () => {
     const authorizedScope = {} as AuthorizedAgentScope
     const resolveAuthorizedScope = vi.fn(async () => authorizedScope)
     const release = vi.fn()
-    const acquireEnvironment = vi.fn(async () => ({ workspace, release }))
+    const acquireSessionEnvironment = vi.fn(async () => ({ workspace, release }))
     const withAuthorizedWorkspace = createCoreWhatsAppWorkspaceRunner({
-      agentHost: { acquireEnvironment } as never,
+      agentHost: { acquireSessionEnvironment } as never,
       resolveAuthorizedScope,
     })
     const mounted = await mountCoreWhatsAppChannel({
@@ -145,6 +152,7 @@ describe('mountCoreWhatsAppChannel', () => {
     await post({ id: 'voice-message', from: '4179', type: 'audio', audio: { id: 'voice-id', mime_type: 'audio/ogg', voice: true } })
     await post({ id: 'pdf-message', from: '4179', type: 'document', document: { id: 'pdf-id', mime_type: 'application/pdf', filename: 'invoice.pdf' } })
     expect(sends[0]).toMatchObject({ content: 'What is shown?', requireIdle: true, attachments: [{ mediaType: 'image/png', path: expect.stringMatching(/\.png$/) }] })
+    expect(consumedAttachmentBytes[0]).toEqual(png)
     expect(sends[1]!.content).toContain('Book the meeting tomorrow.')
     expect(sends[2]!.content).toContain('PDFs are not supported on WhatsApp yet')
     expect(graphFetch).not.toHaveBeenCalledWith(expect.stringContaining('pdf-id'), expect.anything())
@@ -153,12 +161,13 @@ describe('mountCoreWhatsAppChannel', () => {
     expect(render).toHaveBeenCalledWith('<html>runtime workspace quote</html>')
     expect(new TextDecoder().decode(deliveredPdfBodies[0])).toContain('runtime workspace quote')
     expect(graphFetch.mock.calls.every(([, init]) => (init as RequestInit).headers && JSON.stringify((init as RequestInit).headers).includes('secret-access'))).toBe(true)
-    expect(acquireEnvironment.mock.invocationCallOrder[0]).toBeLessThan(graphFetch.mock.invocationCallOrder[0]!)
-    expect(acquireEnvironment).toHaveBeenCalledWith({
+    expect(acquireSessionEnvironment.mock.invocationCallOrder[0]).toBeLessThan(graphFetch.mock.invocationCallOrder[0]!)
+    expect(acquireSessionEnvironment).toHaveBeenCalledWith({
       authorizedScope,
-      intent: { kind: 'dispatcher', requestId: 'channel-workspace:default:workspace-1' },
+      ref: { agentTypeId: 'default', sessionId: 'media-session' },
+      requestId: 'channel-workspace:default:workspace-1:media-session',
     })
-    expect(release).toHaveBeenCalledTimes(acquireEnvironment.mock.calls.length)
+    expect(release).toHaveBeenCalledTimes(acquireSessionEnvironment.mock.calls.length)
     await mounted.close(); await app.close(); storage.close()
   })
 

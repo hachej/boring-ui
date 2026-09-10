@@ -55,6 +55,7 @@ type ChannelWorkspaceBinding = {
   readonly workspaceId: string
   readonly authSubjectId: string
   readonly agentTypeId: string
+  readonly sessionKey?: string
 }
 
 type WithAuthorizedChannelWorkspace = <T>(
@@ -63,22 +64,21 @@ type WithAuthorizedChannelWorkspace = <T>(
 ) => Promise<T>
 
 /**
- * Adapts Core membership authority to Agent Host's public Environment lease.
- * This is the only production Workspace source for channel media and artifacts,
- * so remote runtime modes cannot diverge from a reconstructed host filesystem.
+ * Adapts Core membership authority to Agent Host's addressed-session Environment
+ * lease. This is the only production Workspace source for channel media and
+ * artifacts, so remote runtime modes and session generations cannot diverge.
  */
 export function createCoreWhatsAppWorkspaceRunner(input: {
-  readonly agentHost: Pick<CreatedAgentHost, 'acquireEnvironment'>
+  readonly agentHost: Pick<CreatedAgentHost, 'acquireSessionEnvironment'>
   readonly resolveAuthorizedScope: (binding: ChannelWorkspaceBinding) => Promise<AuthorizedAgentScope>
 }): WithAuthorizedChannelWorkspace {
   return async (binding, use) => {
+    if (!binding.sessionKey) throw new Error('WhatsApp Workspace access requires an addressed session')
     const authorizedScope = await input.resolveAuthorizedScope(binding)
-    const lease = await input.agentHost.acquireEnvironment({
+    const lease = await input.agentHost.acquireSessionEnvironment({
       authorizedScope,
-      intent: {
-        kind: 'dispatcher',
-        requestId: `channel-workspace:${binding.agentTypeId}:${binding.workspaceId}`,
-      },
+      ref: { agentTypeId: binding.agentTypeId, sessionId: binding.sessionKey },
+      requestId: `channel-workspace:${binding.agentTypeId}:${binding.workspaceId}:${binding.sessionKey}`,
     })
     try {
       return await use(lease.workspace)

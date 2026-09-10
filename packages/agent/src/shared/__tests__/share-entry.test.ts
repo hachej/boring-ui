@@ -40,7 +40,7 @@ function fakeWorkspace(opts: { existingPaths: Set<string> }): Workspace {
     },
     async stat(relPath: string): Promise<Stat> {
       if (!opts.existingPaths.has(relPath)) {
-        throw new Error(`PATH_NOT_FOUND: ${relPath}`)
+        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: 'PATH_NOT_FOUND' })
       }
       return { size: 0, mtimeMs: Date.now(), kind: 'file' }
     },
