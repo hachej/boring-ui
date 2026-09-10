@@ -22,7 +22,8 @@ export interface ChannelBatchTranscriber {
 
 export interface ChannelInboundMediaRuntime {
   readonly storageRegion: ChannelMediaRegion
-  resolveWorkspace(binding: ChannelBinding): Promise<Workspace>
+  /** Use the active authorized runtime Workspace for this binding and release its lease afterward. */
+  withWorkspace<T>(binding: ChannelBinding, use: (workspace: Workspace) => Promise<T>): Promise<T>
 }
 
 export interface PreparedChannelInbound {
@@ -74,60 +75,61 @@ export class ChannelInboundMediaService {
         ? 'The sender attached a PDF. PDFs are not supported on WhatsApp yet; ask them to send text, a photo, or a voice note instead.'
         : 'The sender attached a document type that is not supported on WhatsApp yet; ask them to send text, a photo, or a voice note instead.' }
     }
-    const workspace = await this.runtime.resolveWorkspace(binding)
-    if (!workspace.writeBinaryFile) throw new ChannelInboundMediaError('Bound Workspace does not support regional media retention.', false)
-    const downloader = this.downloaders.get(inbound.channel)
-    if (!downloader) throw new ChannelInboundMediaError('No authenticated media downloader is configured for this channel.', false)
-    await workspace.mkdir('channel-media', { recursive: true })
+    return await this.runtime.withWorkspace(binding, async (workspace) => {
+      if (!workspace.writeBinaryFile) throw new ChannelInboundMediaError('Bound Workspace does not support regional media retention.', false)
+      const downloader = this.downloaders.get(inbound.channel)
+      if (!downloader) throw new ChannelInboundMediaError('No authenticated media downloader is configured for this channel.', false)
+      await workspace.mkdir('channel-media', { recursive: true })
 
-    const allowed = media.kind === 'image' ? IMAGE_TYPES : AUDIO_TYPES
-    const maxBytes = media.kind === 'image' ? (this.options.maxImageBytes ?? 10 * 1024 * 1024) : (this.options.maxAudioBytes ?? 8 * 1024 * 1024)
-    const stem = createHash('sha256').update(`${inbound.channel}\0${inbound.providerMessageId}\0${media.mediaId}`).digest('hex')
-    const cached = await this.cachedPath(workspace, stem, allowed)
-    let path: string
-    let mimeType: string
-    let bytes: Uint8Array
-    if (cached) {
-      path = cached.path
-      mimeType = cached.mimeType
-      if (!workspace.readBinaryFile) throw new ChannelInboundMediaError('Bound Workspace cannot read retained media.', false)
-      bytes = await workspace.readBinaryFile(path)
-    } else {
-      const downloaded = await downloader.download({ mediaId: media.mediaId, maxBytes })
-      mimeType = normalizeMime(downloaded.mimeType)
-      const extension = allowed.get(mimeType)
-      if (!extension) throw new ChannelInboundMediaError('Downloaded media type is unsupported.', false)
-      bytes = downloaded.bytes
-      path = `channel-media/${stem}.${extension}`
-    }
-    const declaredMimeType = media.declaredMimeType ? normalizeMime(media.declaredMimeType) : undefined
-    if ((declaredMimeType && declaredMimeType !== mimeType) || bytes.byteLength === 0 || bytes.byteLength > maxBytes || !matchesContent(mimeType, bytes)) {
-      throw new ChannelInboundMediaError('Downloaded media failed size, type, or content validation.', false)
-    }
-    if (!cached) await workspace.writeBinaryFile(path, bytes)
-
-    if (media.kind === 'image') {
-      const caption = inbound.text.trim()
-      return {
-        text: caption || 'Describe and respond to the attached WhatsApp photo.',
-        attachments: [{ filename: `whatsapp-photo.${IMAGE_TYPES.get(mimeType)}`, mediaType: mimeType, url: `workspace://${path}`, path }],
-        requireIdle: true,
+      const allowed = media.kind === 'image' ? IMAGE_TYPES : AUDIO_TYPES
+      const maxBytes = media.kind === 'image' ? (this.options.maxImageBytes ?? 10 * 1024 * 1024) : (this.options.maxAudioBytes ?? 8 * 1024 * 1024)
+      const stem = createHash('sha256').update(`${inbound.channel}\0${inbound.providerMessageId}\0${media.mediaId}`).digest('hex')
+      const cached = await this.cachedPath(workspace, stem, allowed)
+      let path: string
+      let mimeType: string
+      let bytes: Uint8Array
+      if (cached) {
+        path = cached.path
+        mimeType = cached.mimeType
+        if (!workspace.readBinaryFile) throw new ChannelInboundMediaError('Bound Workspace cannot read retained media.', false)
+        bytes = await workspace.readBinaryFile(path)
+      } else {
+        const downloaded = await downloader.download({ mediaId: media.mediaId, maxBytes })
+        mimeType = normalizeMime(downloaded.mimeType)
+        const extension = allowed.get(mimeType)
+        if (!extension) throw new ChannelInboundMediaError('Downloaded media type is unsupported.', false)
+        bytes = downloaded.bytes
+        path = `channel-media/${stem}.${extension}`
       }
-    }
+      const declaredMimeType = media.declaredMimeType ? normalizeMime(media.declaredMimeType) : undefined
+      if ((declaredMimeType && declaredMimeType !== mimeType) || bytes.byteLength === 0 || bytes.byteLength > maxBytes || !matchesContent(mimeType, bytes)) {
+        throw new ChannelInboundMediaError('Downloaded media failed size, type, or content validation.', false)
+      }
+      if (!cached) await workspace.writeBinaryFile(path, bytes)
 
-    const transcriptPath = `channel-media/${stem}.txt`
-    let transcript: string
-    let cachedTranscript = true
-    try {
-      transcript = await workspace.readFile(transcriptPath)
-    } catch {
-      cachedTranscript = false
-      transcript = (await this.transcriber.transcribeFile({ bytes, mimeType })).text
-    }
-    transcript = transcript.trim()
-    if (!transcript || transcript.length > 100_000) throw new ChannelInboundMediaError('Voice transcription returned invalid text.', false)
-    if (!cachedTranscript) await workspace.writeFile(transcriptPath, transcript)
-    return { text: `The sender attached a WhatsApp voice note. Its self-hosted transcript follows:\n\n${transcript}` }
+      if (media.kind === 'image') {
+        const caption = inbound.text.trim()
+        return {
+          text: caption || 'Describe and respond to the attached WhatsApp photo.',
+          attachments: [{ filename: `whatsapp-photo.${IMAGE_TYPES.get(mimeType)}`, mediaType: mimeType, url: `workspace://${path}`, path }],
+          requireIdle: true,
+        }
+      }
+
+      const transcriptPath = `channel-media/${stem}.txt`
+      let transcript: string
+      let cachedTranscript = true
+      try {
+        transcript = await workspace.readFile(transcriptPath)
+      } catch {
+        cachedTranscript = false
+        transcript = (await this.transcriber.transcribeFile({ bytes, mimeType })).text
+      }
+      transcript = transcript.trim()
+      if (!transcript || transcript.length > 100_000) throw new ChannelInboundMediaError('Voice transcription returned invalid text.', false)
+      if (!cachedTranscript) await workspace.writeFile(transcriptPath, transcript)
+      return { text: `The sender attached a WhatsApp voice note. Its self-hosted transcript follows:\n\n${transcript}` }
+    })
   }
 
   private async cachedPath(workspace: Workspace, stem: string, allowed: ReadonlyMap<string, string>): Promise<{ path: string; mimeType: string } | undefined> {

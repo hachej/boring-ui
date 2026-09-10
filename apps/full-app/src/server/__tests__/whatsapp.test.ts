@@ -39,41 +39,36 @@ describe('readFullAppWhatsAppChannelOptions', () => {
     }))
   })
 
-  it('composes authenticated artifact delivery through the bound Workspace and host Chromium', async () => {
+  it('delegates artifact reads to Core runtime Workspace authority in default production composition', async () => {
     const env = {
       ...enabledEnv,
       BORING_WHATSAPP_ARTIFACTS: '1',
-      BORING_AGENT_WORKSPACE_ROOT: '/var/tmp/full-app-workspaces',
       BORING_WHATSAPP_AUTHENTICATED_ORIGIN: 'https://app.example.test',
       BORING_WHATSAPP_CHROMIUM_PATH: '/usr/bin/chromium',
     }
     const options = readFullAppWhatsAppChannelOptions('default', env)
     expect(options?.artifactDelivery).toMatchObject({
       authenticatedOrigin: 'https://app.example.test',
-      runtime: { resolveWorkspace: expect.any(Function) },
       renderer: { render: expect.any(Function) },
     })
-    await expect(options!.artifactDelivery!.runtime.resolveWorkspace({ workspaceId: 'workspace-1' } as never))
-      .resolves.toMatchObject({ root: '/var/tmp/full-app-workspaces/workspace-1' })
+    expect(options?.artifactDelivery).not.toHaveProperty('runtime')
     expect(readFullAppWhatsAppComposition('default', env)).toMatchObject({
       whatsAppChannel: { artifactDelivery: expect.any(Object) },
       shareEntryStore: expect.any(Object),
     })
   })
 
-  it('composes bound Workspace retention with a same-region loopback Whisper processor', async () => {
+  it('delegates media retention to Core runtime Workspace authority with same-region Whisper', async () => {
     const options = readFullAppWhatsAppChannelOptions('default', {
       ...enabledEnv,
       BORING_WHATSAPP_MEDIA: '1',
       BORING_WHATSAPP_MEDIA_REGION: 'CH',
-      BORING_AGENT_WORKSPACE_ROOT: '/var/tmp/full-app-workspaces',
       BORING_WHATSAPP_WHISPER_URL: 'ws://127.0.0.1:9090/asr',
     })
     expect(options?.inboundMedia).toMatchObject({
-      runtime: { storageRegion: 'CH' }, transcriber: { processorRegion: 'CH' },
+      storageRegion: 'CH', transcriber: { processorRegion: 'CH' },
     })
-    await expect(options!.inboundMedia!.runtime.resolveWorkspace({ workspaceId: 'workspace-1' } as never))
-      .resolves.toMatchObject({ root: '/var/tmp/full-app-workspaces/workspace-1' })
+    expect(options?.inboundMedia).not.toHaveProperty('runtime')
   })
 
   it('fails boot when enabled without complete credentials, trusted bindings, or local media authority', () => {

@@ -8,9 +8,10 @@ import {
   createAgentHostChannelStorage,
   type AuthorizedAgentScope,
 } from '@hachej/boring-agent/server'
-import type { AgentGateway } from '@hachej/boring-agent/shared'
+import { InMemoryShareEntryStore, type AgentGateway } from '@hachej/boring-agent/shared'
 import {
   assertCoreWhatsAppAgentAvailable,
+  createCoreWhatsAppWorkspaceRunner,
   mountCoreWhatsAppChannel,
 } from '../whatsappChannelComposition.js'
 
@@ -47,6 +48,11 @@ describe('mountCoreWhatsAppChannel', () => {
       writeBinaryFile: async (path: string, value: Uint8Array) => { files.set(path, value) },
       readdir: vi.fn(), unlink: vi.fn(), rename: vi.fn(),
     }
+    files.set('private/quote.html', '<html>runtime workspace quote</html>')
+    const stream = await storage.events.createSessionStream(
+      { workspaceScopeId: 'workspace-1', sessionId: 'media-session' },
+      { agentTypeId: 'default', authSubjectId: 'member-1' },
+    )
     const sends: Array<{ content: string; attachments?: readonly unknown[]; requireIdle?: true }> = []
     const gateway = {
       createSession: vi.fn(async () => ({ agentTypeId: 'default', sessionId: 'media-session' })),
@@ -62,25 +68,44 @@ describe('mountCoreWhatsAppChannel', () => {
     })
     const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
     const ogg = new Uint8Array([79, 103, 103, 83, 1])
-    const graphFetch = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => {
+    const deliveredPdfBodies: Uint8Array[] = []
+    const graphFetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       const value = String(url)
       if (value.endsWith('/photo-id')) return Response.json({ url: 'https://lookaside.fbsbx.com/photo', mime_type: 'image/png' })
       if (value.endsWith('/voice-id')) return Response.json({ url: 'https://lookaside.fbsbx.com/voice', mime_type: 'audio/ogg' })
       if (value.endsWith('/photo')) return new Response(png, { headers: { 'content-type': 'image/png' } })
       if (value.endsWith('/voice')) return new Response(ogg, { headers: { 'content-type': 'audio/ogg' } })
-      return new Response('{}')
+      if (value.endsWith('/media') && init?.body instanceof FormData) {
+        const file = init.body.get('file')
+        if (file instanceof Blob) deliveredPdfBodies.push(new Uint8Array(await file.arrayBuffer()))
+        return Response.json({ id: 'pdf-media-id' })
+      }
+      return Response.json({ messages: [{ id: 'sent' }] })
     })
     const transcribeFile = vi.fn(async () => ({ text: 'Book the meeting tomorrow.' }))
-    const resolveAuthorizedScope = vi.fn(async () => ({}) as AuthorizedAgentScope)
+    const render = vi.fn(async (html: string) => new TextEncoder().encode(`%PDF-${html}`))
+    const authorizedScope = {} as AuthorizedAgentScope
+    const resolveAuthorizedScope = vi.fn(async () => authorizedScope)
+    const release = vi.fn()
+    const acquireEnvironment = vi.fn(async () => ({ workspace, release }))
+    const withAuthorizedWorkspace = vi.fn(createCoreWhatsAppWorkspaceRunner({
+      agentHost: { acquireEnvironment } as never,
+      resolveAuthorizedScope,
+    }))
     const mounted = await mountCoreWhatsAppChannel({
-      app, gateway, storage, resolveAuthorizedScope,
+      app, gateway, storage, resolveAuthorizedScope, withAuthorizedWorkspace,
+      shareEntryStore: new InMemoryShareEntryStore(),
       options: {
         withCredentials, graphFetch, agentTypeId: 'default',
         provisionedBindings: [{ conversationKey: '4179', workspaceId: 'workspace-1', authSubjectId: 'member-1' }],
         inboundMedia: {
-          runtime: { storageRegion: 'CH', resolveWorkspace: async (candidate) => { expect(candidate.workspaceId).toBe('workspace-1'); return workspace as never } },
+          storageRegion: 'CH',
           transcriber: { processorRegion: 'CH', transcribeFile },
         },
+        artifactDelivery: {
+          authenticatedOrigin: 'https://app.example.test',
+          renderer: { render },
+        }
       },
     })
     const post = async (message: unknown) => {
@@ -92,6 +117,19 @@ describe('mountCoreWhatsAppChannel', () => {
       await mounted.runtime.waitForIdle()
     }
     await post({ id: 'photo-message', from: '4179', type: 'image', image: { id: 'photo-id', mime_type: 'image/png', caption: 'What is shown?' } })
+    await storage.events.appendAgentEvent(stream, { type: 'agent-start', seq: 1, turnId: 'turn-artifact' })
+    await storage.events.appendAgentEvent(stream, {
+      type: 'message-end', seq: 2, messageId: 'artifact-assistant',
+      final: {
+        id: 'artifact-assistant', role: 'assistant', turnId: 'turn-artifact',
+        parts: [
+          { type: 'text', text: 'Here is the quote.' },
+          { type: 'file', path: 'private/quote.html', filename: 'quote.html', mediaType: 'text/html' },
+        ],
+      },
+    })
+    await storage.events.appendAgentEvent(stream, { type: 'agent-end', seq: 3, turnId: 'turn-artifact', status: 'ok' })
+    await mounted.runtime.waitForIdle()
     await post({ id: 'voice-message', from: '4179', type: 'audio', audio: { id: 'voice-id', mime_type: 'audio/ogg', voice: true } })
     await post({ id: 'pdf-message', from: '4179', type: 'document', document: { id: 'pdf-id', mime_type: 'application/pdf', filename: 'invoice.pdf' } })
     expect(sends[0]).toMatchObject({ content: 'What is shown?', requireIdle: true, attachments: [{ mediaType: 'image/png', path: expect.stringMatching(/\.png$/) }] })
@@ -100,8 +138,15 @@ describe('mountCoreWhatsAppChannel', () => {
     expect(graphFetch).not.toHaveBeenCalledWith(expect.stringContaining('pdf-id'), expect.anything())
     expect([...files.keys()]).toEqual(expect.arrayContaining([expect.stringMatching(/\.png$/), expect.stringMatching(/\.ogg$/), expect.stringMatching(/\.txt$/)]))
     expect(transcribeFile).toHaveBeenCalledWith({ bytes: ogg, mimeType: 'audio/ogg' })
+    expect(render).toHaveBeenCalledWith('<html>runtime workspace quote</html>')
+    expect(new TextDecoder().decode(deliveredPdfBodies[0])).toContain('runtime workspace quote')
     expect(graphFetch.mock.calls.every(([, init]) => (init as RequestInit).headers && JSON.stringify((init as RequestInit).headers).includes('secret-access'))).toBe(true)
-    expect(resolveAuthorizedScope.mock.invocationCallOrder[0]).toBeLessThan(graphFetch.mock.invocationCallOrder[0]!)
+    expect(withAuthorizedWorkspace.mock.invocationCallOrder[0]).toBeLessThan(graphFetch.mock.invocationCallOrder[0]!)
+    expect(acquireEnvironment).toHaveBeenCalledWith({
+      authorizedScope,
+      intent: { kind: 'dispatcher', requestId: 'channel-workspace:default:workspace-1' },
+    })
+    expect(release).toHaveBeenCalledTimes(acquireEnvironment.mock.calls.length)
     await mounted.close(); await app.close(); storage.close()
   })
 
@@ -130,6 +175,7 @@ describe('mountCoreWhatsAppChannel', () => {
       gateway,
       storage,
       resolveAuthorizedScope: vi.fn(async () => ({}) as AuthorizedAgentScope),
+      withAuthorizedWorkspace: async () => { throw new Error('not used') },
       options: {
         withCredentials,
         agentTypeId: 'default',
@@ -199,6 +245,7 @@ describe('mountCoreWhatsAppChannel', () => {
       gateway,
       storage,
       resolveAuthorizedScope: vi.fn(async () => ({}) as AuthorizedAgentScope),
+      withAuthorizedWorkspace: async () => { throw new Error('not used') },
       options: {
         withCredentials,
         agentTypeId: 'default',

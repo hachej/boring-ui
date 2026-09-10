@@ -6,13 +6,13 @@ import {
   type AgentHostChannelRuntime,
   type AgentHostChannelStorage,
   type AuthorizedAgentScope,
-  type ChannelArtifactDeliveryRuntime,
   type ChannelBatchTranscriber,
   type ChannelHtmlToPdfRenderer,
   type ChannelInboundMediaRuntime,
+  type CreatedAgentHost,
   type ProvisionChannelBindingInput,
 } from '@hachej/boring-agent/server'
-import type { AgentGateway, ShareEntryStore } from '@hachej/boring-agent/shared'
+import type { AgentGateway, ShareEntryStore, Workspace } from '@hachej/boring-agent/shared'
 import {
   createWhatsAppCloudEdge,
   WHATSAPP_CHANNEL_ID,
@@ -33,15 +33,14 @@ export interface CoreWhatsAppChannelOptions {
   readonly bodyLimit?: number
   /** Test/host transport injection; defaults to global fetch. */
   readonly graphFetch?: typeof fetch
-  /** Host-owned authenticated workspace/PDF authority; omitted means HTML file parts fail closed. */
+  /** Host-owned authenticated PDF authority; Core supplies the active runtime Workspace. */
   readonly artifactDelivery?: {
     readonly authenticatedOrigin: string
-    readonly runtime: Pick<ChannelArtifactDeliveryRuntime, 'resolveWorkspace'>
     readonly renderer: ChannelHtmlToPdfRenderer
   }
   /** Bound CH/EU Workspace retention plus a same-region self-hosted batch transcriber. */
   readonly inboundMedia?: {
-    readonly runtime: ChannelInboundMediaRuntime
+    readonly storageRegion: ChannelInboundMediaRuntime['storageRegion']
     readonly transcriber: ChannelBatchTranscriber
   }
 }
@@ -50,6 +49,43 @@ export interface MountedCoreWhatsAppChannel {
   readonly runtime: AgentHostChannelRuntime<WhatsAppCloudMessage>
   readonly webhookPath: string
   close(): Promise<void>
+}
+
+type ChannelWorkspaceBinding = {
+  readonly workspaceId: string
+  readonly authSubjectId: string
+  readonly agentTypeId: string
+}
+
+type WithAuthorizedChannelWorkspace = <T>(
+  binding: ChannelWorkspaceBinding,
+  use: (workspace: Workspace) => Promise<T>,
+) => Promise<T>
+
+/**
+ * Adapts Core membership authority to Agent Host's public Environment lease.
+ * This is the only production Workspace source for channel media and artifacts,
+ * so remote runtime modes cannot diverge from a reconstructed host filesystem.
+ */
+export function createCoreWhatsAppWorkspaceRunner(input: {
+  readonly agentHost: Pick<CreatedAgentHost, 'acquireEnvironment'>
+  readonly resolveAuthorizedScope: (binding: ChannelWorkspaceBinding) => Promise<AuthorizedAgentScope>
+}): WithAuthorizedChannelWorkspace {
+  return async (binding, use) => {
+    const authorizedScope = await input.resolveAuthorizedScope(binding)
+    const lease = await input.agentHost.acquireEnvironment({
+      authorizedScope,
+      intent: {
+        kind: 'dispatcher',
+        requestId: `channel-workspace:${binding.agentTypeId}:${binding.workspaceId}`,
+      },
+    })
+    try {
+      return await use(lease.workspace)
+    } finally {
+      lease.release()
+    }
+  }
 }
 
 export function assertCoreWhatsAppAgentAvailable(
@@ -77,6 +113,8 @@ export async function mountCoreWhatsAppChannel(input: {
     readonly authSubjectId: string
     readonly agentTypeId: string
   }) => Promise<AuthorizedAgentScope>
+  /** Core-owned bridge to the exact runtime-mode Workspace generation used by the Agent Host. */
+  readonly withAuthorizedWorkspace: WithAuthorizedChannelWorkspace
   readonly options: CoreWhatsAppChannelOptions
 }): Promise<MountedCoreWhatsAppChannel> {
   const configured = input.options.provisionedBindings ?? []
@@ -138,8 +176,8 @@ export async function mountCoreWhatsAppChannel(input: {
           async authorize(binding) {
             await input.resolveAuthorizedScope(binding)
           },
-          async resolveWorkspace(binding) {
-            return await input.options.artifactDelivery!.runtime.resolveWorkspace(binding)
+          async withWorkspace(binding, use) {
+            return await input.withAuthorizedWorkspace(binding, use)
           },
         },
         input.options.artifactDelivery.renderer,
@@ -153,12 +191,11 @@ export async function mountCoreWhatsAppChannel(input: {
   const inboundMedia = input.options.inboundMedia
     ? new ChannelInboundMediaService(
         {
-          ...input.options.inboundMedia.runtime,
-          async resolveWorkspace(binding) {
-            // Reissue current app membership authority before any media byte is downloaded,
-            // retained, or disclosed to the self-hosted transcription processor.
-            await input.resolveAuthorizedScope(binding)
-            return await input.options.inboundMedia!.runtime.resolveWorkspace(binding)
+          storageRegion: input.options.inboundMedia.storageRegion,
+          async withWorkspace(binding, use) {
+            // Reissue current app membership authority and acquire the Agent Host's active
+            // runtime-mode Workspace before any media byte is downloaded or retained.
+            return await input.withAuthorizedWorkspace(binding, use)
           },
         },
         new Map([[WHATSAPP_CHANNEL_ID, adapterEdge.adapter]]),

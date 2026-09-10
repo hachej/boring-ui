@@ -63,8 +63,8 @@ export interface ChannelArtifactDocumentSender {
 export interface ChannelArtifactDeliveryRuntime {
   /** Reissue current membership authority immediately before each read or disclosure effect. */
   authorize(binding: ChannelBinding): Promise<void>
-  /** Resolve the Workspace for this exact binding after authorization. */
-  resolveWorkspace(binding: ChannelBinding): Promise<Workspace>
+  /** Use the active authorized runtime Workspace for this exact binding and release its lease afterward. */
+  withWorkspace<T>(binding: ChannelBinding, use: (workspace: Workspace) => Promise<T>): Promise<T>
 }
 
 export interface ChannelArtifactDeliveryOptions {
@@ -114,8 +114,8 @@ export class ChannelArtifactDeliveryService {
     }
 
     await this.runtime.authorize(binding)
-    const workspace = await this.runtime.resolveWorkspace(binding)
-    const html = await readStableHtml(workspace, input.artifactPath)
+    const html = await this.runtime.withWorkspace(binding, async (workspace) =>
+      await readStableHtml(workspace, input.artifactPath))
     const pdf = Uint8Array.from(await this.renderer.render(html))
     assertPdf(pdf)
 

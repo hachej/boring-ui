@@ -38,7 +38,7 @@ describe('ChannelInboundMediaService', () => {
     const download = vi.fn(async () => ({ bytes: png, mimeType: 'image/png' }))
     const transcribeFile = vi.fn()
     const service = new ChannelInboundMediaService(
-      { storageRegion: 'CH', resolveWorkspace: async (candidate) => { expect(candidate.workspaceId).toBe('workspace-1'); return target } },
+      { storageRegion: 'CH', withWorkspace: async (candidate, use) => { expect(candidate.workspaceId).toBe('workspace-1'); return await use(target) } },
       new Map([['whatsapp', { download }]]),
       { processorRegion: 'CH', transcribeFile },
     )
@@ -55,7 +55,7 @@ describe('ChannelInboundMediaService', () => {
     const download = vi.fn(async () => ({ bytes: ogg, mimeType: 'audio/ogg' }))
     const transcribeFile = vi.fn(async () => ({ text: 'Please prepare the quote.' }))
     const service = new ChannelInboundMediaService(
-      { storageRegion: 'EU', resolveWorkspace: async () => target }, new Map([['whatsapp', { download }]]),
+      { storageRegion: 'EU', withWorkspace: async (_binding, use) => await use(target) }, new Map([['whatsapp', { download }]]),
       { processorRegion: 'EU', transcribeFile },
     )
     await expect(service.prepare(binding, queued('audio'))).resolves.toMatchObject({
@@ -73,7 +73,7 @@ describe('ChannelInboundMediaService', () => {
     await target.writeFile(`channel-media/${transcript.name}`, '   ')
     await expect(service.prepare(binding, queued('audio'))).rejects.toMatchObject({ retryable: false })
     expect(() => new ChannelInboundMediaService(
-      { storageRegion: 'CH', resolveWorkspace: async () => target }, new Map(),
+      { storageRegion: 'CH', withWorkspace: async (_binding, use) => await use(target) }, new Map(),
       { processorRegion: 'EU', transcribeFile },
     )).toThrow(ChannelInboundMediaError)
   })
@@ -82,7 +82,7 @@ describe('ChannelInboundMediaService', () => {
     const target = await workspace()
     const download = vi.fn()
     const service = new ChannelInboundMediaService(
-      { storageRegion: 'CH', resolveWorkspace: async () => target }, new Map([['whatsapp', { download }]]),
+      { storageRegion: 'CH', withWorkspace: async (_binding, use) => await use(target) }, new Map([['whatsapp', { download }]]),
       { processorRegion: 'CH', transcribeFile: vi.fn() },
     )
     await expect(service.prepare(binding, queued('document'))).resolves.toEqual({
@@ -95,7 +95,7 @@ describe('ChannelInboundMediaService', () => {
     const target = await workspace()
     for (const bytes of [new Uint8Array([1, 2, 3]), new Uint8Array(10)]) {
       const service = new ChannelInboundMediaService(
-        { storageRegion: 'CH', resolveWorkspace: async () => target },
+        { storageRegion: 'CH', withWorkspace: async (_binding, use) => await use(target) },
         new Map([['whatsapp', { download: async () => ({ bytes, mimeType: 'image/png' }) }]]),
         { processorRegion: 'CH', transcribeFile: vi.fn() }, { maxImageBytes: 8 },
       )

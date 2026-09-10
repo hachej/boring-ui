@@ -6,6 +6,7 @@ import type { ChannelBinding } from '../channelBindingStore'
 import {
   ChannelArtifactDeliveryService,
   createHeadlessChromiumPdfRenderer,
+  type ChannelArtifactDeliveryRuntime,
 } from '../channelArtifactDeliveryService'
 
 const binding: ChannelBinding = {
@@ -54,9 +55,9 @@ describe('ChannelArtifactDeliveryService', () => {
     }
     const service = new ChannelArtifactDeliveryService(
       store,
-      { authorize: vi.fn(async () => undefined), resolveWorkspace: vi.fn(async (candidate) => {
+      { authorize: vi.fn(async () => undefined), withWorkspace: vi.fn(async (candidate, use) => {
         if (candidate.workspaceId !== 'workspace-1' || candidate.authSubjectId !== 'user-1') throw new Error('denied')
-        return source.workspace
+        return await use(source.workspace)
       }) },
       { render: vi.fn(async (html) => { renderedHtml = html; return pdf(html) }) },
       sender,
@@ -89,7 +90,7 @@ describe('ChannelArtifactDeliveryService', () => {
     const sender = { sendDocument: vi.fn(), sendArtifactLink: vi.fn() }
     const service = new ChannelArtifactDeliveryService(
       store,
-      { authorize: vi.fn(async () => undefined), resolveWorkspace: vi.fn(async () => source.workspace) },
+      { authorize: vi.fn(async () => undefined), withWorkspace: vi.fn(async (_binding, use) => await use(source.workspace)) },
       { render: vi.fn(async () => pdf('ok')) },
       sender,
       { authenticatedOrigin: 'https://app.example.test' },
@@ -115,7 +116,7 @@ describe('ChannelArtifactDeliveryService', () => {
           authorizations += 1
           if (authorizations === 3) throw Object.assign(new Error('membership revoked'), { code: ErrorCode.enum.UNAUTHORIZED, retryable: false })
         }),
-        resolveWorkspace: async () => source.workspace,
+        withWorkspace: async (_binding, use) => await use(source.workspace),
       },
       { render: async () => pdf('authorized') },
       sender,
@@ -130,7 +131,11 @@ describe('ChannelArtifactDeliveryService', () => {
 
   test('rejects secret-bearing or unauthenticated origins', () => {
     const source = mutableWorkspace('<html>ok</html>')
-    const deps = [new InMemoryShareEntryStore(), { authorize: async () => undefined, resolveWorkspace: async () => source.workspace }, { render: async () => pdf('ok') }, { sendDocument: async () => undefined, sendArtifactLink: async () => undefined }] as const
+    const runtime: ChannelArtifactDeliveryRuntime = {
+      authorize: async () => undefined,
+      withWorkspace: async (_binding, use) => await use(source.workspace),
+    }
+    const deps = [new InMemoryShareEntryStore(), runtime, { render: async () => pdf('ok') }, { sendDocument: async () => undefined, sendArtifactLink: async () => undefined }] as const
     for (const origin of ['http://app.example.test', 'https://user:secret@app.example.test', 'https://app.example.test/?token=secret']) {
       expect(() => new ChannelArtifactDeliveryService(...deps, { authenticatedOrigin: origin })).toThrow(/origin is invalid/)
     }
@@ -144,7 +149,7 @@ describe('ChannelArtifactDeliveryService', () => {
       .mockResolvedValue(undefined)
     const service = new ChannelArtifactDeliveryService(
       new InMemoryShareEntryStore(),
-      { authorize: async () => undefined, resolveWorkspace: async () => source.workspace },
+      { authorize: async () => undefined, withWorkspace: async (_binding, use) => await use(source.workspace) },
       { render },
       { sendDocument, sendArtifactLink: async () => undefined },
       { authenticatedOrigin: 'https://app.example.test', retryDelayMs: 1 },

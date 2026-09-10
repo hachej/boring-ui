@@ -150,6 +150,7 @@ import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.j
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 import {
   assertCoreWhatsAppAgentAvailable,
+  createCoreWhatsAppWorkspaceRunner,
   mountCoreWhatsAppChannel,
   type CoreWhatsAppChannelOptions,
   type MountedCoreWhatsAppChannel,
@@ -1941,6 +1942,13 @@ export async function createCoreWorkspaceAgentServer(
         resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
           workspaceId: binding.workspaceId,
           userId: binding.authSubjectId,
+        }),
+        withAuthorizedWorkspace: createCoreWhatsAppWorkspaceRunner({
+          agentHost,
+          resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
+            workspaceId: binding.workspaceId,
+            userId: binding.authSubjectId,
+          }),
         }),
         options: options.whatsAppChannel,
       })
