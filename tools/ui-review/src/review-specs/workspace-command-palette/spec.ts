@@ -16,7 +16,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v5",
+  specRevision: "workspace-command-palette-v12",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -133,7 +133,9 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
           && !Array.isArray(state.normalizedState.palette)
           ? state.normalizedState.palette as Record<string, unknown>
           : null
-        return state.ordinal > 2 && palette?.dialogVisible === true
+        return state.ordinal > 2
+          && palette?.dialogVisible === true
+          && palette.rootLayoutAligned === true
       })
       const ordered = [...states].sort((left, right) => left.ordinal - right.ordinal)
       const waits = dialogStates
@@ -144,22 +146,25 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         .sort((left, right) => left.ordinal - right.ordinal)
       // DOM visibility can precede paint. Desktop replay therefore prefers the
       // earliest settled Wait over an action-frame screenshot that may still be
-      // hydrating. Compact replay prefers the earliest strongly painted action:
-      // waiting for its much smaller full-frame pHash change can cross unrelated
-      // async workspace hydration and session creation during replay.
+      // hydrating. Compact replay also prefers a corroborated Wait when present:
+      // a strongly painted action frame can still capture unrelated workspace
+      // hydration that diverges when the same trace is replayed.
       // Encoded PNG byte size is not a monotonic paint signal.
       // The pHash threshold is viewport-aware: the whole-viewport hash is
       // calibrated against desktop, where the palette covers a large share of
       // the frame. At compact the dialog is deliberately small and top-anchored,
       // so opening it legitimately moves the full-page pHash by only a few bits
       // — a strict >4 would reject every genuinely painted mobile state.
-      const paintedDialogDistance = (state: UiReviewExplorationState): number | null => {
-        const closed = ordered.filter((candidate) => {
+      const precedingClosedState = (state: UiReviewExplorationState): UiReviewExplorationState | undefined => (
+        ordered.filter((candidate) => {
           const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
           return (candidate.ordinal > 2 || candidate.action === "Wait")
             && candidate.ordinal < state.ordinal
             && palette?.dialogVisible === false
         }).at(-1)
+      )
+      const paintedDialogDistance = (state: UiReviewExplorationState): number | null => {
+        const closed = precedingClosedState(state)
         return closed !== undefined
           && state.screenshotDigest !== closed.screenshotDigest
           && typeof state.screenshotPHash === "string"
@@ -170,15 +175,46 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const hasGenuinelyPaintedDialog = (state: UiReviewExplorationState): boolean => (
         (paintedDialogDistance(state) ?? -1) >= (state.viewport.name === "mobile" ? 1 : 5)
       )
+      // A whole-viewport pHash can move more for background hydration than for
+      // the palette itself, and a 64-bit pHash can also collide even when the
+      // exact screenshot changed. Prefer the first distinct Wait frame whose
+      // extracted visual-shell state and pHash are corroborated by a later Wait.
+      // Requiring two settled observations rejects one-frame hydration/action
+      // spikes without weakening replay's independent screenshot-distance gate.
+      const visualShellSignature = (state: UiReviewExplorationState): string => {
+        const palette = state.normalizedState.palette as Record<string, unknown>
+        return JSON.stringify({
+          dialogVisible: palette.dialogVisible,
+          inputFocused: palette.inputFocused,
+          horizontalOverflow: palette.horizontalOverflow,
+          modalOutOfBounds: palette.modalOutOfBounds,
+          visibleModalCount: palette.visibleModalCount,
+          focusedControlInvalid: palette.focusedControlInvalid,
+        })
+      }
+      const earliestCorroboratedWait = waits.find((state) => {
+        const closed = precedingClosedState(state)
+        if (closed === undefined || state.screenshotDigest === closed.screenshotDigest) return false
+        return waits.some((candidate) => (
+          candidate.ordinal > state.ordinal
+          && candidate.screenshotDigest !== state.screenshotDigest
+          && visualShellSignature(candidate) === visualShellSignature(state)
+          && typeof state.screenshotPHash === "string"
+          && typeof candidate.screenshotPHash === "string"
+          && hexadecimalHammingDistance(state.screenshotPHash, candidate.screenshotPHash) <= 8
+        ))
+      })
       const earliestStrongWait = waits.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
       const earliestStrongAction = replayableDialogActions.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
       const isCompact = ordered[0]?.viewport.name === "mobile"
       return isCompact
-        ? earliestStrongAction
+        ? earliestCorroboratedWait
+          ?? earliestStrongAction
           ?? earliestStrongWait
           ?? waits.find(hasGenuinelyPaintedDialog)
           ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
-        : earliestStrongWait
+        : earliestCorroboratedWait
+          ?? earliestStrongWait
           ?? waits.find(hasGenuinelyPaintedDialog)
           ?? earliestStrongAction
           ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)

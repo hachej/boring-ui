@@ -17,8 +17,20 @@ type ScenarioActionControl = {
 }
 export type ScenarioAction = ActionTemplate
 
+export function scenarioActionAccessibleName(action: unknown): string | undefined {
+  if (typeof action !== "object" || action === null || !("Click" in action)) return undefined
+  const click = (action as { Click?: unknown }).Click
+  if (typeof click !== "object" || click === null || !("fingerprint" in click)) return undefined
+  const fingerprint = click.fingerprint as Fingerprint & { accessible_name?: string }
+  return fingerprint.accessibleName ?? fingerprint.accessible_name
+}
+
+export const COMMAND_PALETTE_COMPACT_MAX_WIDTH = 639
+export const COMMAND_PALETTE_SHELL_SELECTOR = '[data-boring-workspace-part="plugin-tabs-shell"][data-mobile-shell]'
+
 export type ScenarioActionState = {
   dialogVisible: boolean
+  rootLayoutAligned: boolean
   inputFocused: boolean
   lastActionWasPaletteOpen: boolean
   lastActionWasNavigationOpen: boolean
@@ -50,12 +62,12 @@ export function createSafeCommandPaletteActions(state: ScenarioActionState): Sce
   })
 
   if (state.lastActionWasInitial) return ["Wait"]
-  if (!state.dialogVisible && state.lastActionWasNavigationOpen) return ["Wait"]
+  if (!state.dialogVisible && !state.rootLayoutAligned) return ["Wait"]
+  if (state.lastActionWasNavigationOpen || state.lastActionWasPaletteOpen) return ["Wait"]
   const openPalette = state.controls.find((control) => control.name === "open-command-palette")
   if (!state.dialogVisible && openPalette) return ["Wait", click(openPalette)]
   const openNavigation = state.controls.find((control) => control.name === "open-app-navigation")
   if (!state.dialogVisible && openNavigation) return ["Wait", click(openNavigation)]
-  if (state.dialogVisible && state.lastActionWasPaletteOpen) return ["Wait"]
 
   const generated: ScenarioAction[] = ["Wait"]
   for (const control of state.controls) generated.push(click(control))
