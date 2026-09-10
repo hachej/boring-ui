@@ -94,6 +94,18 @@ needs no new ruling; it is an Experience choice over §9a. What is open is
 whether a bot may hold several concurrent jobs per chat (recommend no for the
 first product).
 
+## Relationship to the expert-software building-block direction
+
+The later [building-block synthesis](EXPERT-SOFTWARE-BUILDING-BLOCKS.md)
+clarifies that this bot Experience and Clinic are distinct products over shared
+substrate. The bot is the conversational front door; substantial work may be
+performed by bounded remote agents, and creator agents are one remote-agent
+class. Clinic retains its domain-native workflow while using the same governed
+operations, work, artifacts and controlled software-change path. That synthesis
+also proposes a curated shadcn-based presentation constraint and records the
+open decisions for the owner grill; it is working direction, not a ratified
+amendment.
+
 ## What this changes in the epic
 
 Nothing in the bead graph; it fixes the target for three beads: `nc-v`
