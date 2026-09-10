@@ -26,7 +26,7 @@ export interface DeepLinkRoutesOptions {
    * membership for this workspace is enforced upstream, before this route's
    * handler runs, by the host's existing `onRequest` seam).
    */
-  getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+  getWorkspace?: (request: FastifyRequest, shareWorkspaceId: string) => Workspace | Promise<Workspace>
 }
 
 function getRequestWorkspaceId(request: FastifyRequest): string {
@@ -47,15 +47,14 @@ function sendShareNotFound(reply: FastifyReply): FastifyReply {
 }
 
 export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app, opts, done) => {
-  async function resolveWorkspace(request: FastifyRequest): Promise<Workspace> {
-    if (opts.getWorkspace) return await opts.getWorkspace(request)
+  async function resolveWorkspace(request: FastifyRequest, shareWorkspaceId: string): Promise<Workspace> {
+    if (opts.getWorkspace) return await opts.getWorkspace(request, shareWorkspaceId)
     if (opts.workspace) return opts.workspace
     throw new Error('deep-link route requires workspace or getWorkspace')
   }
 
   app.get<{ Params: DeepLinkParams }>('/a/:id', async (request, reply) => {
     const { id } = request.params
-    const requestWorkspaceId = getRequestWorkspaceId(request)
 
     // Lane W is same-workspace only (spec §3.1): a share entry only resolves
     // within the workspace the requester is already authorized/scoped to.
@@ -64,11 +63,13 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
     // cross-workspace existence to a caller not authorized for that
     // workspace.
     const entry = await opts.store.get(id)
-    if (!entry || entry.workspaceId !== requestWorkspaceId) {
-      return sendShareNotFound(reply)
-    }
+    if (!entry) return sendShareNotFound(reply)
 
-    const workspace = await resolveWorkspace(request)
+    // Core uses the entry's opaque workspace binding to perform its normal
+    // membership authorization and acquire that exact Workspace. Only after
+    // authorization may request.workspaceContext be trusted for comparison.
+    const workspace = await resolveWorkspace(request, entry.workspaceId)
+    if (entry.workspaceId !== getRequestWorkspaceId(request)) return sendShareNotFound(reply)
     const resolution = await resolveShareEntry(opts.store, id, workspace)
 
     switch (resolution.status) {

@@ -18,6 +18,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 export interface CoreAgentHostEnvironmentRoutesOptions {
   readonly agentHost: CreatedAgentHost
   readonly authorizeAgentRequest: (request: FastifyRequest) => Promise<AuthorizedAgentScope>
+  readonly authorizeShareRequest: (request: FastifyRequest, workspaceId: string) => Promise<AuthorizedAgentScope>
   readonly runtimeHost: AgentRuntimeHostOperations
   readonly shareEntryStore?: ShareEntryStore
 }
@@ -47,11 +48,13 @@ export async function registerCoreAgentHostEnvironmentRoutes(
       // Acquisition failures have no lease to release and retain their original error.
     }
   }
-  const acquire = (request: FastifyRequest) => {
+  const acquire = (request: FastifyRequest, shareWorkspaceId?: string) => {
     let pending = leases.get(request)
     if (!pending) {
       pending = (async () => options.agentHost.acquireEnvironment({
-        authorizedScope: await options.authorizeAgentRequest(request),
+        authorizedScope: shareWorkspaceId
+          ? await options.authorizeShareRequest(request, shareWorkspaceId)
+          : await options.authorizeAgentRequest(request),
         intent: { kind: 'http-route', requestId: request.id },
       }))()
       leases.set(request, pending)
@@ -105,7 +108,8 @@ export async function registerCoreAgentHostEnvironmentRoutes(
   if (options.shareEntryStore) {
     await app.register(deepLinkRoutes, {
       store: options.shareEntryStore,
-      getWorkspace: async (request: FastifyRequest) => (await acquire(request)).workspace,
+      getWorkspace: async (request: FastifyRequest, shareWorkspaceId: string) =>
+        (await acquire(request, shareWorkspaceId)).workspace,
     })
   }
   await app.register(gitRoutes, {

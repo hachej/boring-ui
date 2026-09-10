@@ -61,7 +61,9 @@ export interface ChannelArtifactDocumentSender {
 }
 
 export interface ChannelArtifactDeliveryRuntime {
-  /** Resolve the Workspace already authorized for this exact binding. */
+  /** Reissue current membership authority immediately before each read or disclosure effect. */
+  authorize(binding: ChannelBinding): Promise<void>
+  /** Resolve the Workspace for this exact binding after authorization. */
   resolveWorkspace(binding: ChannelBinding): Promise<Workspace>
 }
 
@@ -111,11 +113,13 @@ export class ChannelArtifactDeliveryService {
       throw artifactError(ErrorCode.enum.UNAUTHORIZED, 'artifact delivery is not authorized')
     }
 
+    await this.runtime.authorize(binding)
     const workspace = await this.runtime.resolveWorkspace(binding)
     const html = await readStableHtml(workspace, input.artifactPath)
     const pdf = Uint8Array.from(await this.renderer.render(html))
     assertPdf(pdf)
 
+    await this.runtime.authorize(binding)
     const entry = await this.store.create({
       workspaceId: binding.workspaceId,
       path: input.artifactPath,
@@ -124,13 +128,19 @@ export class ChannelArtifactDeliveryService {
     const url = new URL(`/a/${encodeURIComponent(entry.id)}`, this.origin).toString()
     const filename = 'artifact.pdf' as const
 
-    await this.sendWithRetry(() => this.sender.sendDocument({
-      conversationKey: binding.conversationKey,
-      bytes: pdf,
-      filename,
-      mimeType: 'application/pdf',
-    }))
-    await this.sendWithRetry(() => this.sender.sendArtifactLink({ conversationKey: binding.conversationKey, url }))
+    await this.sendWithRetry(async () => {
+      await this.runtime.authorize(binding)
+      await this.sender.sendDocument({
+        conversationKey: binding.conversationKey,
+        bytes: pdf,
+        filename,
+        mimeType: 'application/pdf',
+      })
+    })
+    await this.sendWithRetry(async () => {
+      await this.runtime.authorize(binding)
+      await this.sender.sendArtifactLink({ conversationKey: binding.conversationKey, url })
+    })
 
     return { shareId: entry.id, url, filename, pdfByteSize: pdf.byteLength }
   }

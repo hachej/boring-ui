@@ -78,6 +78,32 @@ describe('GET /a/:id (AR1-003 Lane W deep link)', () => {
     await app.close()
   })
 
+  test('authorizes the entry workspace lazily before comparing request scope', async () => {
+    const store = new InMemoryShareEntryStore()
+    const entry = await store.create({
+      workspaceId: 'workspace-lazy',
+      path: 'report.html',
+      provenance: { producerPrincipalRef: 'agent-a' },
+    })
+    const workspace = fakeWorkspace({ existingPaths: new Set([entry.path]), content: '<h1>report</h1>' })
+    const app = Fastify({ logger: false })
+    await app.register(deepLinkRoutes, {
+      store,
+      getWorkspace: async (request, shareWorkspaceId) => {
+        expect(shareWorkspaceId).toBe('workspace-lazy')
+        request.workspaceContext = { workspaceId: shareWorkspaceId, authenticated: true }
+        return workspace
+      },
+    })
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: `/a/${entry.id}` })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe('<h1>report</h1>')
+    await app.close()
+  })
+
   test('member tombstone: deleted target renders provenance, never a bare 404', async () => {
     const store = new InMemoryShareEntryStore()
     const entry = await store.create({

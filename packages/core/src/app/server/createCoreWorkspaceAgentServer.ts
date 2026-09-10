@@ -2221,6 +2221,10 @@ export async function createCoreWorkspaceAgentServer(
     await registerCoreAgentHostEnvironmentRoutes(app, {
       agentHost,
       authorizeAgentRequest: (request) => authorizeAgentRequest(request),
+      authorizeShareRequest: (request, workspaceId) => authorizeAgentRequest(request, {
+        workspaceId,
+        userId: request.user?.id ?? '',
+      }),
       runtimeHost,
       shareEntryStore: options.shareEntryStore,
     })

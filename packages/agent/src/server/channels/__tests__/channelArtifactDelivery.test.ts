@@ -54,7 +54,7 @@ describe('ChannelArtifactDeliveryService', () => {
     }
     const service = new ChannelArtifactDeliveryService(
       store,
-      { resolveWorkspace: vi.fn(async (candidate) => {
+      { authorize: vi.fn(async () => undefined), resolveWorkspace: vi.fn(async (candidate) => {
         if (candidate.workspaceId !== 'workspace-1' || candidate.authSubjectId !== 'user-1') throw new Error('denied')
         return source.workspace
       }) },
@@ -89,7 +89,7 @@ describe('ChannelArtifactDeliveryService', () => {
     const sender = { sendDocument: vi.fn(), sendArtifactLink: vi.fn() }
     const service = new ChannelArtifactDeliveryService(
       store,
-      { resolveWorkspace: vi.fn(async () => source.workspace) },
+      { authorize: vi.fn(async () => undefined), resolveWorkspace: vi.fn(async () => source.workspace) },
       { render: vi.fn(async () => pdf('ok')) },
       sender,
       { authenticatedOrigin: 'https://app.example.test' },
@@ -104,9 +104,33 @@ describe('ChannelArtifactDeliveryService', () => {
     expect(sender.sendDocument).not.toHaveBeenCalled()
   })
 
+  test('reauthorizes immediately before each disclosure and stops after membership revocation', async () => {
+    const source = mutableWorkspace('<html>authorized once</html>')
+    let authorizations = 0
+    const sender = { sendDocument: vi.fn(), sendArtifactLink: vi.fn() }
+    const service = new ChannelArtifactDeliveryService(
+      new InMemoryShareEntryStore(),
+      {
+        authorize: vi.fn(async () => {
+          authorizations += 1
+          if (authorizations === 3) throw Object.assign(new Error('membership revoked'), { code: ErrorCode.enum.UNAUTHORIZED, retryable: false })
+        }),
+        resolveWorkspace: async () => source.workspace,
+      },
+      { render: async () => pdf('authorized') },
+      sender,
+      { authenticatedOrigin: 'https://app.example.test' },
+    )
+
+    await expect(service.publish({ binding, artifactPath: 'quote.html' }))
+      .rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
+    expect(sender.sendDocument).not.toHaveBeenCalled()
+    expect(sender.sendArtifactLink).not.toHaveBeenCalled()
+  })
+
   test('rejects secret-bearing or unauthenticated origins', () => {
     const source = mutableWorkspace('<html>ok</html>')
-    const deps = [new InMemoryShareEntryStore(), { resolveWorkspace: async () => source.workspace }, { render: async () => pdf('ok') }, { sendDocument: async () => undefined, sendArtifactLink: async () => undefined }] as const
+    const deps = [new InMemoryShareEntryStore(), { authorize: async () => undefined, resolveWorkspace: async () => source.workspace }, { render: async () => pdf('ok') }, { sendDocument: async () => undefined, sendArtifactLink: async () => undefined }] as const
     for (const origin of ['http://app.example.test', 'https://user:secret@app.example.test', 'https://app.example.test/?token=secret']) {
       expect(() => new ChannelArtifactDeliveryService(...deps, { authenticatedOrigin: origin })).toThrow(/origin is invalid/)
     }
@@ -120,7 +144,7 @@ describe('ChannelArtifactDeliveryService', () => {
       .mockResolvedValue(undefined)
     const service = new ChannelArtifactDeliveryService(
       new InMemoryShareEntryStore(),
-      { resolveWorkspace: async () => source.workspace },
+      { authorize: async () => undefined, resolveWorkspace: async () => source.workspace },
       { render },
       { sendDocument, sendArtifactLink: async () => undefined },
       { authenticatedOrigin: 'https://app.example.test', retryDelayMs: 1 },

@@ -36,7 +36,7 @@ export interface CoreWhatsAppChannelOptions {
   /** Host-owned authenticated workspace/PDF authority; omitted means HTML file parts fail closed. */
   readonly artifactDelivery?: {
     readonly authenticatedOrigin: string
-    readonly runtime: ChannelArtifactDeliveryRuntime
+    readonly runtime: Pick<ChannelArtifactDeliveryRuntime, 'resolveWorkspace'>
     readonly renderer: ChannelHtmlToPdfRenderer
   }
   /** Bound CH/EU Workspace retention plus a same-region self-hosted batch transcriber. */
@@ -135,10 +135,10 @@ export async function mountCoreWhatsAppChannel(input: {
     ? new ChannelArtifactDeliveryService(
         input.shareEntryStore,
         {
-          async resolveWorkspace(binding) {
-            // Reissue current membership authority at the disclosure boundary,
-            // immediately before reading, rendering, sharing, or sending bytes.
+          async authorize(binding) {
             await input.resolveAuthorizedScope(binding)
+          },
+          async resolveWorkspace(binding) {
             return await input.options.artifactDelivery!.runtime.resolveWorkspace(binding)
           },
         },
