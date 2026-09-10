@@ -15,6 +15,7 @@ export type {
   ChannelOutboundStatus,
   EnqueueInboundResult,
   EnsureSessionOptions,
+  InboundChannelMedia,
   InboundChannelMessage,
   ProvisionChannelBindingInput,
   QueuedChannelInbound,
@@ -58,6 +59,18 @@ export type {
   HeadlessChromiumLauncher,
   PublishedChannelArtifact,
 } from './channelArtifactDeliveryService'
+export {
+  ChannelInboundMediaError,
+  ChannelInboundMediaService,
+} from './channelInboundMediaService'
+export type {
+  ChannelBatchTranscriber,
+  ChannelInboundMediaRuntime,
+  ChannelMediaDownload,
+  ChannelMediaDownloader,
+  ChannelMediaRegion,
+  PreparedChannelInbound,
+} from './channelInboundMediaService'
 export {
   CHANNEL_OUTBOUND_PARKED,
   CHANNEL_TURN_STALLED,

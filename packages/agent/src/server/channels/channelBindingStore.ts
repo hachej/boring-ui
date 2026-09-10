@@ -35,12 +35,20 @@ export interface ProvisionChannelBindingInput extends Omit<ChannelBinding,
   readonly outboundCursor?: string
 }
 
+export interface InboundChannelMedia {
+  readonly kind: 'image' | 'audio' | 'document'
+  /** Opaque provider identifier; resolved only by that provider's authenticated downloader. */
+  readonly mediaId: string
+  readonly declaredMimeType?: string
+}
+
 export interface InboundChannelMessage {
   readonly channel: string
   readonly conversationKey: string
   readonly providerMessageId: string
   readonly text: string
   readonly receivedAt: number
+  readonly media?: InboundChannelMedia
 }
 
 export interface QueuedChannelInbound extends InboundChannelMessage {
@@ -166,7 +174,8 @@ export class ChannelBindingStore {
       status TEXT NOT NULL DEFAULT 'pending',
       claim_owner TEXT,
       claim_expires_at INTEGER,
-      error_code TEXT
+      error_code TEXT,
+      media_json TEXT
     )`)
     this.sql.exec(`CREATE INDEX IF NOT EXISTS boring_channel_queue_binding
       ON boring_channel_inbound_queue(channel, conversation_key, agent_type_id, id)`)
@@ -178,6 +187,7 @@ export class ChannelBindingStore {
     this.ensureColumn('boring_channel_inbound_queue', 'binding_version', 'INTEGER')
     this.ensureColumn('boring_channel_inbound_queue', 'claim_owner', 'TEXT')
     this.ensureColumn('boring_channel_inbound_queue', 'claim_expires_at', 'INTEGER')
+    this.ensureColumn('boring_channel_inbound_queue', 'media_json', 'TEXT')
     this.ensureColumn('boring_channel_bindings', 'outbound_cursor', "TEXT NOT NULL DEFAULT '-1'")
     this.ensureColumn('boring_channel_bindings', 'outbound_status', "TEXT NOT NULL DEFAULT 'active'")
     this.ensureColumn('boring_channel_bindings', 'session_reset_pending', 'INTEGER NOT NULL DEFAULT 0')
@@ -337,10 +347,11 @@ export class ChannelBindingStore {
 
       const inserted = this.sql.exec(`INSERT INTO boring_channel_inbound_queue
         (channel, conversation_key, agent_type_id, workspace_id, auth_subject_id, binding_version,
-          provider_message_id, text, received_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, message.channel, message.conversationKey,
+          provider_message_id, text, received_at, media_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, message.channel, message.conversationKey,
       agentTypeId, binding.workspaceId, binding.authSubjectId, binding.bindingVersion,
-      message.providerMessageId, message.text, message.receivedAt).toArray()[0]
+      message.providerMessageId, message.text, message.receivedAt,
+      message.media ? JSON.stringify(message.media) : null).toArray()[0]
       this.sql.exec(`UPDATE boring_channel_bindings SET
           template_sent_for_inbound_at=CASE
             WHEN last_inbound_at IS NULL OR ? > last_inbound_at THEN NULL
@@ -974,6 +985,7 @@ function inboundFromRow(row: Record<string, unknown>): QueuedChannelInbound {
     receivedAt: Number(row.received_at),
     attempts: Number(row.attempts),
     status: row.status as ChannelInboundStatus,
+    ...(row.media_json ? { media: JSON.parse(String(row.media_json)) as InboundChannelMedia } : {}),
     ...(row.error_code ? { errorCode: String(row.error_code) } : {}),
   }
 }
