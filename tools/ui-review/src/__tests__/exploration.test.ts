@@ -455,6 +455,23 @@ describe("command palette action safety", () => {
     })).toEqual(["Wait"])
   })
 
+  it("waits one action after a recognized palette click while the dialog renders", () => {
+    const fingerprint = { accessibleName: "Search catalogs and commands" } as never
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      rootLayoutAligned: true,
+      inputFocused: false,
+      lastActionWasPaletteOpen: true,
+      lastActionWasNavigationOpen: false,
+      lastActionWasInitial: false,
+      controls: [{
+        name: "open-command-palette",
+        fingerprint,
+        point: { x: 166.7, y: 82 },
+      }],
+    })).toEqual(["Wait"])
+  })
+
   it("distinguishes the palette from the mobile navigation dialog", () => {
     expect(isCommandPaletteDialogName("Command Palette")).toBe(true)
     expect(isCommandPaletteDialogName("App navigation")).toBe(false)
