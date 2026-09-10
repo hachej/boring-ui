@@ -495,6 +495,10 @@ export function WorkspaceShell() {
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
+      // Showcase creates real backend sessions through the dev-only wrapper
+      // even though it skips workspace provisioning. Keep those two concerns
+      // independent so the chat hydrates/streams the returned session id.
+      remoteSessionsEnabled={showcase ? true : undefined}
       sessions={sessions}
       activeSessionId={showcase ? showcaseActiveSessionId : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}

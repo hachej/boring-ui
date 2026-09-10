@@ -1,4 +1,10 @@
 import { expect, test, type Locator } from "@playwright/test"
+import { mkdir, writeFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const APP_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
+const WORKSPACE_ROOT = resolve(APP_DIR, "e2e/fixtures/workspace")
 
 /**
  * #1451: opening a file (editor tab) put the workbench at its persisted
@@ -44,6 +50,11 @@ async function waitForStableBoundingBox(locator: Locator, timeoutMs = 5_000) {
 
 test.describe("Tasks panel width with editor tabs open", () => {
   test.use({ viewport: { width: 1024, height: 800 } })
+
+  test.beforeAll(async () => {
+    await mkdir(WORKSPACE_ROOT, { recursive: true })
+    await writeFile(resolve(WORKSPACE_ROOT, "README.md"), "# Workspace Playground\n")
+  })
 
   test("Tasks overlay stays visible and non-zero width after opening a file", async ({ page }) => {
     await page.goto("/?fresh=1")

@@ -35,7 +35,10 @@ test.describe("checkpoint-D Agent Host golden route", () => {
       }
     })
 
-    await page.goto("/")
+    // Start from one pane regardless of layout state left by a prior local run;
+    // the app strips `fresh` immediately, so subsequent reload assertions still
+    // exercise persistence for the session created below.
+    await page.goto("/?fresh=1")
     const navigation = page.locator('aside[aria-label="App navigation"]')
     await navigation.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {
       throw new Error(`workspace shell did not render; page errors: ${pageErrors.join(" | ") || "none"}`)

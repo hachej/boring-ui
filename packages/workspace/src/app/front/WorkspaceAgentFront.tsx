@@ -1151,10 +1151,13 @@ export function WorkspaceAgentFront<
       create: () => input === undefined ? create() : create(input),
     })
   }, [remoteSessionApi.create, remoteSessionsAvailable, sessionCreation, sessionSourceIsCurrent])
-  const hasExplicitSessionProps =
+  const hasExplicitSessionState =
     sessions !== undefined ||
     activeSessionId !== undefined ||
-    activeSessionAgentTypeId !== undefined ||
+    activeSessionAgentTypeId !== undefined
+  const hasControlledSessionState = hasExplicitSessionState && useSessionsProp === undefined
+  const hasExplicitSessionProps =
+    hasExplicitSessionState ||
     onSwitchSession !== undefined ||
     onCreateSession !== undefined ||
     onDeleteSession !== undefined
@@ -1228,30 +1231,34 @@ export function WorkspaceAgentFront<
         turnCount: 0,
       }]
     : []
-  const unownedResolvedSessions = sessionApi
-    ? sessionItems ?? []
-    : remoteSessionsPending
-      ? pendingStoredSessionPlaceholder
-      : hasExplicitSessionProps
-        ? sessions ?? []
+  // Controlled session props remain authoritative even when remote hydration
+  // is enabled. `remoteSessionsEnabled` controls how chat reaches the backend;
+  // it must not silently replace an app-owned list (for example showcase rows)
+  // with the hook's server inventory.
+  const unownedResolvedSessions = hasControlledSessionState
+    ? sessions ?? []
+    : sessionApi
+      ? sessionItems ?? []
+      : remoteSessionsPending
+        ? pendingStoredSessionPlaceholder
         : localSessions.sessions
   const resolvedSessions = unownedResolvedSessions.map((session) => ({
     ...session,
     agentTypeId: ("agentTypeId" in session ? session.agentTypeId : undefined) ?? selectedAgentTypeId,
   }))
-  const resolvedActiveId = sessionApi
-    ? activeRemoteSessionId ?? null
-    : remoteSessionsPending
-      ? pendingStoredActiveSessionId ?? pendingRemoteActiveSessionId
-      : hasExplicitSessionProps
-        ? activeSessionId ?? null
+  const resolvedActiveId = hasControlledSessionState
+    ? activeSessionId ?? null
+    : sessionApi
+      ? activeRemoteSessionId ?? null
+      : remoteSessionsPending
+        ? pendingStoredActiveSessionId ?? pendingRemoteActiveSessionId
         : localSessions.activeId
-  const resolvedActiveAgentTypeId = sessionApi
-    ? activeRemoteSessionAgentTypeId
-    : remoteSessionsPending
-      ? null
-      : hasExplicitSessionProps
-        ? activeSessionAgentTypeId ?? inferSessionOwner(unownedResolvedSessions, activeSessionId, selectedAgentTypeId)
+  const resolvedActiveAgentTypeId = hasControlledSessionState
+    ? activeSessionAgentTypeId ?? inferSessionOwner(unownedResolvedSessions, activeSessionId, selectedAgentTypeId)
+    : sessionApi
+      ? activeRemoteSessionAgentTypeId
+      : remoteSessionsPending
+        ? null
         : selectedAgentTypeId
   const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
   const needsFreshRemoteSessionForAutoSubmit = requestedAutoSubmitInitialDraft && shouldUseRemoteSessions && !hasExplicitSessionProps
@@ -1309,9 +1316,11 @@ export function WorkspaceAgentFront<
   const effectiveActiveSessionAgentTypeId = autoSubmitSessionId !== undefined
     ? autoSubmitSessionAgentTypeId ?? selectedAgentTypeId
     : resolvedActiveAgentTypeId
-  const rawSwitch: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
-    ? remoteSessionActionsUnavailable
-    : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
+  const rawSwitch: (id: string, agentTypeId?: string) => unknown = hasControlledSessionState
+    ? onSwitchSession ?? localSessionStore.switchTo
+    : remoteSessionsPending
+      ? remoteSessionActionsUnavailable
+      : sessionApi?.switch ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     if (!sessionSourceIsCurrent()) return undefined
     if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {

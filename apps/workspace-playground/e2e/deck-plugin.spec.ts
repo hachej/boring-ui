@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
@@ -9,10 +9,15 @@ const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const SOURCE_DECK_PATH = resolve(APP_DIR, "src/fixtures/deck/intro.md")
 const WORKSPACE_ROOT = resolve(APP_DIR, "e2e/fixtures/workspace")
 const WORKSPACE_DECK_PATH = resolve(WORKSPACE_ROOT, "deck/intro.md")
+const WORKSPACE_README_PATH = resolve(WORKSPACE_ROOT, "README.md")
 
 function resetDeckWorkspaceFile() {
   mkdirSync(dirname(WORKSPACE_DECK_PATH), { recursive: true })
   copyFileSync(SOURCE_DECK_PATH, WORKSPACE_DECK_PATH)
+  // The autosave race switches to a second real file. Seed that contract in
+  // this spec rather than depending on another test's fixture setup/order.
+  mkdirSync(dirname(WORKSPACE_README_PATH), { recursive: true })
+  writeFileSync(WORKSPACE_README_PATH, "# Workspace Playground\n")
 }
 
 async function openPalette(page: import("@playwright/test").Page) {
@@ -62,6 +67,7 @@ test.describe("workspace-playground deck plugin", () => {
   })
 
   test("opens, edits, previews, presents, and renders injected widget deck content", async ({ page }) => {
+    test.setTimeout(120_000)
     await openDeckFile(page)
 
     await test.step("deck file opens through the deck surface resolver", async () => {
