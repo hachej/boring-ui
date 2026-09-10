@@ -70,6 +70,21 @@ describe('WhatsApp Cloud webhook', () => {
     expect(accept).toHaveBeenNthCalledWith(1, expect.objectContaining({ providerMessageId: 'wamid.text-1' }), 'default')
   })
 
+  test('parses image, voice, and document media IDs without putting bytes in the webhook queue', () => {
+    const messages = parseWhatsAppInbound({
+      object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: { messages: [
+        { id: 'photo-1', from: '4179', type: 'image', image: { id: 'meta-photo', mime_type: 'image/jpeg', caption: 'receipt' } },
+        { id: 'voice-1', from: '4179', type: 'audio', audio: { id: 'meta-voice', mime_type: 'audio/ogg', voice: true } },
+        { id: 'pdf-1', from: '4179', type: 'document', document: { id: 'meta-pdf', mime_type: 'application/pdf', filename: 'invoice.pdf' } },
+      ] } }] }],
+    }, 42)
+    expect(messages).toEqual([
+      expect.objectContaining({ providerMessageId: 'photo-1', text: 'receipt', media: { kind: 'image', mediaId: 'meta-photo', declaredMimeType: 'image/jpeg' } }),
+      expect.objectContaining({ providerMessageId: 'voice-1', text: '', media: { kind: 'audio', mediaId: 'meta-voice', declaredMimeType: 'audio/ogg' } }),
+      expect.objectContaining({ providerMessageId: 'pdf-1', text: '', media: { kind: 'document', mediaId: 'meta-pdf', declaredMimeType: 'application/pdf' } }),
+    ])
+  })
+
   test('rejects signed malformed envelopes and supported messages so Meta can retry', async () => {
     const handler = createWhatsAppWebhookHandler({ withCredentials, acceptInbound: vi.fn() })
     for (const source of [
@@ -96,6 +111,52 @@ describe('WhatsApp Cloud webhook', () => {
   })
 })
 
+describe('WhatsApp Cloud authenticated media download', () => {
+  test('resolves an opaque media ID and bounds the authenticated byte stream', async () => {
+    const image = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
+    const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toEqual({ authorization: 'Bearer secret-access-token' })
+      return String(input).includes('/v25.0/media-photo')
+        ? Response.json({ url: 'https://lookaside.fbsbx.com/whatsapp/media', mime_type: 'image/png' })
+        : new Response(image, { headers: { 'content-type': 'image/png', 'content-length': String(image.byteLength) } })
+    })
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
+    await expect(adapter.download({ mediaId: 'media-photo', maxBytes: 100 })).resolves.toEqual({ bytes: image, mimeType: 'image/png' })
+    expect(request).toHaveBeenNthCalledWith(1, 'https://graph.facebook.com/v25.0/media-photo', expect.anything())
+    expect(request).toHaveBeenNthCalledWith(2, 'https://lookaside.fbsbx.com/whatsapp/media', expect.anything())
+  })
+
+  test('fails closed on untrusted URLs, MIME mismatch, oversize content, and permanent auth errors', async () => {
+    for (const request of [
+      vi.fn(async () => Response.json({ url: 'https://attacker.example/media', mime_type: 'image/png' })),
+      vi.fn(async (input: RequestInfo | URL) => String(input).includes('/v25.0/')
+        ? Response.json({ url: 'https://lookaside.fbsbx.com/media', mime_type: 'image/png' })
+        : new Response('x', { headers: { 'content-type': 'text/plain' } })),
+      vi.fn(async (input: RequestInfo | URL) => String(input).includes('/v25.0/')
+        ? Response.json({ url: 'https://lookaside.fbsbx.com/media', mime_type: 'image/png' })
+        : new Response(new Uint8Array(20), { headers: { 'content-type': 'image/png' } })),
+      vi.fn(async () => new Response('', { status: 302, headers: { location: 'https://attacker.example/media' } })),
+      vi.fn(async () => new Response('', { status: 401 })),
+    ]) {
+      const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
+      await expect(adapter.download({ mediaId: 'media-1', maxBytes: 8 })).rejects.toMatchObject({ retryable: false })
+    }
+  })
+
+  test('times out stalled media requests as retryable', async () => {
+    const request = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+    }))
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request, mediaDownloadTimeoutMs: 5 })
+    await expect(adapter.download({ mediaId: 'media-1', maxBytes: 8 })).rejects.toMatchObject({ retryable: true, status: 0 })
+  })
+
+  test('classifies raw media network failures as retryable', async () => {
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: vi.fn(async () => { throw new TypeError('offline') }) })
+    await expect(adapter.download({ mediaId: 'media-1', maxBytes: 8 })).rejects.toMatchObject({ retryable: true, status: 0 })
+  })
+})
+
 describe('WhatsApp Cloud outbound', () => {
   test('renders 4096-bounded WhatsApp chunks and sends Graph API text', async () => {
     const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{}', { status: 200 }))
@@ -118,12 +179,75 @@ describe('WhatsApp Cloud outbound', () => {
     expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject(fixture.outbound.text)
   })
 
+  test('uploads PDF bytes privately and sends a WhatsApp document beside the authenticated link', async () => {
+    const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+      String(input).endsWith('/media') ? Response.json({ id: 'media-opaque-1' }) : new Response('{}', { status: 200 }))
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
+    const bytes = new TextEncoder().encode('%PDF-snapshot-v1')
+
+    await adapter.sendDocument({
+      conversationKey: fixture.outbound.conversationKey,
+      bytes,
+      filename: 'artifact.pdf',
+      mimeType: 'application/pdf',
+    })
+    await adapter.sendArtifactLink({
+      conversationKey: fixture.outbound.conversationKey,
+      url: 'https://app.example.test/a/opaque-share-id',
+    })
+
+    expect(request).toHaveBeenCalledTimes(3)
+    const upload = request.mock.calls[0]!
+    expect(String(upload[0])).toBe('https://graph.facebook.com/v25.0/123456789/media')
+    expect(upload[1]?.headers).toEqual({ authorization: 'Bearer secret-access-token' })
+    expect(upload[1]?.body).toBeInstanceOf(FormData)
+    const form = upload[1]!.body as FormData
+    expect(form.get('messaging_product')).toBe('whatsapp')
+    expect(form.get('type')).toBe('application/pdf')
+    const file = form.get('file') as File
+    expect(file.name).toBe('artifact.pdf')
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes)
+
+    const document = JSON.parse(String(request.mock.calls[1]![1]!.body))
+    expect(document).toMatchObject({
+      to: fixture.outbound.conversationKey,
+      type: 'document',
+      document: { id: 'media-opaque-1', filename: 'artifact.pdf' },
+    })
+    expect(JSON.stringify(document)).not.toContain('secret-access-token')
+    expect(JSON.parse(String(request.mock.calls[2]![1]!.body))).toMatchObject({
+      type: 'text',
+      text: { body: 'Download artifact: https://app.example.test/a/opaque-share-id', preview_url: false },
+    })
+  })
+
+  test('rejects secret-bearing artifact links and path-bearing document filenames before Graph calls', async () => {
+    const request = vi.fn(async () => new Response('{}', { status: 200 }))
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
+    await expect(adapter.sendArtifactLink({ conversationKey: '1', url: 'https://app.example.test/a/id?token=secret' }))
+      .rejects.toMatchObject({ retryable: false })
+    await expect(adapter.sendDocument({ conversationKey: '1', bytes: new Uint8Array([1]), filename: '../quote.pdf', mimeType: 'application/pdf' }))
+      .rejects.toMatchObject({ retryable: false })
+    expect(request).not.toHaveBeenCalled()
+  })
+
   test('sends the approved fallback template outside the service window', async () => {
     const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{}', { status: 200 }))
     const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
     expect(adapter.serviceWindowMs).toBe(86_400_000)
     await adapter.sendWindowTemplate({ conversationKey: fixture.outbound.conversationKey })
     expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject(fixture.outbound.template)
+  })
+
+  test('classifies network failures as retryable for text and document upload', async () => {
+    const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: vi.fn(async () => { throw new TypeError('connection reset') }) })
+    await expect(adapter.send({
+      conversationKey: '1',
+      message: { messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { body: 'hello', preview_url: false } },
+    })).rejects.toEqual(expect.objectContaining<Partial<WhatsAppCloudApiError>>({ status: 0, retryable: true }))
+    await expect(adapter.sendDocument({
+      conversationKey: '1', bytes: new TextEncoder().encode('%PDF-ok'), filename: 'artifact.pdf', mimeType: 'application/pdf',
+    })).rejects.toEqual(expect.objectContaining<Partial<WhatsAppCloudApiError>>({ status: 0, retryable: true }))
   })
 
   test('classifies throttling as retryable and auth failures as permanent', async () => {

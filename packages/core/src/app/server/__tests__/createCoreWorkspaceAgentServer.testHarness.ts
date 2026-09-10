@@ -8,6 +8,7 @@ export const mocks = (() => {
   const hostRegisterDirectRoutes = vi.fn((_projection: any) => async () => {})
   const hostClose = vi.fn(async () => {})
   const acquireEnvironment = vi.fn()
+  const acquireSessionEnvironment = vi.fn()
   const hostRunWithWorkspaceAgent = vi.fn(async (_input: unknown, run: (binding: unknown) => Promise<void>) => {
     await run({ marker: 'lease-bound-workspace-agent' })
   })
@@ -26,6 +27,7 @@ export const mocks = (() => {
         host: { close: hostClose, drain: vi.fn(async () => {}) },
         registerDirectRoutes: hostRegisterDirectRoutes,
         acquireEnvironment,
+        acquireSessionEnvironment,
         gateway: { readSessionState: gatewayReadSessionState },
         runWithWorkspaceAgent: hostRunWithWorkspaceAgent,
       }
@@ -33,6 +35,7 @@ export const mocks = (() => {
     hostRegisterDirectRoutes,
     hostClose,
     acquireEnvironment,
+    acquireSessionEnvironment,
     hostRunWithWorkspaceAgent,
     gatewayReadSessionState,
     createDatabase,
@@ -201,6 +204,7 @@ beforeEach(() => {
   mocks.provisionWorkspaceRuntime.mockResolvedValue({ changed: false, env: {}, pathEntries: [], skillPaths: [] })
   mocks.resolveDefaultWorkspacePluginPackagePaths.mockImplementation(() => [])
   mocks.acquireEnvironment.mockReset()
+  mocks.acquireSessionEnvironment.mockReset()
   mocks.hostRunWithWorkspaceAgent.mockClear()
   mocks.gatewayReadSessionState.mockClear()
   mocks.isMember.mockResolvedValue(true)

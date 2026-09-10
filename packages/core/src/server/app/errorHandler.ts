@@ -1,3 +1,4 @@
+import { ErrorCode as AgentErrorCode } from '@hachej/boring-agent/shared'
 import type { FastifyInstance, FastifyError } from 'fastify'
 import { HttpError } from '../../shared/errors.js'
 
@@ -59,13 +60,24 @@ export function registerErrorHandler(app: FastifyInstance) {
 
     request.log.error({ err: error, requestId }, 'unhandled error')
 
-    return reply.status(500).send({
+    // Preserve only Agent's canonical Workspace-readiness outage contract at
+    // this package boundary. The response remains generic so provider details
+    // cannot escape; all other unhandled/provider-supplied 5xx values stay 500.
+    const statusCode = isWorkspaceNotReadyError(error) ? 503 : 500
+    return reply.status(statusCode).send({
       error: 'internal_error',
       code: 'internal_error',
       message: 'Internal server error',
       requestId,
     })
   })
+}
+
+function isWorkspaceNotReadyError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const candidate = error as { code?: unknown; statusCode?: unknown }
+  return candidate.code === AgentErrorCode.enum.WORKSPACE_NOT_READY
+    && candidate.statusCode === 503
 }
 
 function isValidationError(error: unknown): boolean {

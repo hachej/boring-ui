@@ -168,6 +168,44 @@ describe('durable channel outbound', () => {
     })
   })
 
+  test('publishes HTML file parts through the bound artifact seam before sending reply text', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.artifact', text: 'send quote', receivedAt: Date.now(),
+      }, 'default')
+      await append({ type: 'agent-start', seq: 1, turnId: 'turn-artifact' })
+      await append({
+        type: 'message-end', seq: 2, messageId: 'artifact-assistant',
+        final: {
+          id: 'artifact-assistant', role: 'assistant', turnId: 'turn-artifact',
+          parts: [
+            { type: 'text', text: 'Here is the quote.' },
+            { type: 'file', path: 'private/quote.html', filename: 'quote.html', mediaType: 'text/html' },
+            { type: 'file', path: 'private/ignored.html', filesystem: 'other' },
+          ],
+        },
+      })
+      await append({ type: 'agent-end', seq: 3, turnId: 'turn-artifact', status: 'ok' })
+      const sent: string[] = []
+      const artifactPublisher = { publish: vi.fn(async () => ({ url: 'https://app.example.test/a/opaque' })) }
+      const service = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent)]]), { artifactPublisher })
+
+      service.start()
+      await service.waitForIdle()
+      await service.dispose()
+
+      expect(artifactPublisher.publish).toHaveBeenCalledOnce()
+      expect(artifactPublisher.publish).toHaveBeenCalledWith({
+        binding: expect.objectContaining({ workspaceId: 'workspace-1', authSubjectId: 'user-1' }),
+        artifactPath: 'private/quote.html',
+      })
+      expect(sent).toEqual(['Here is the quote.'])
+    })
+  })
+
   test('graceful disposal waits for an in-flight send and prevents restart duplicates', async () => {
     await withChannel(async ({ bindings, events, path, append }) => {
       bindings.provision(bindingInput)

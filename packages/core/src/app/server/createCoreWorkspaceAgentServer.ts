@@ -150,6 +150,7 @@ import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.j
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 import {
   assertCoreWhatsAppAgentAvailable,
+  createCoreWhatsAppWorkspaceRunner,
   mountCoreWhatsAppChannel,
   type CoreWhatsAppChannelOptions,
   type MountedCoreWhatsAppChannel,
@@ -415,6 +416,13 @@ type AgentPiOptions = PiHarnessOptions | undefined
 function normalizeOptionalPath(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function runtimeDataRegionFromEnv(value: string | undefined): 'CH' | 'EU' | undefined {
+  const region = value?.trim()
+  if (!region) return undefined
+  if (region === 'CH' || region === 'EU') return region
+  throw new Error('BORING_AGENT_RUNTIME_DATA_REGION must be CH or EU')
 }
 
 interface CoreAgentScopeRecord {
@@ -1404,7 +1412,10 @@ export async function createCoreWorkspaceAgentServer(
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
-    ?? createSandboxRuntimeModeAdapter(selectedMode, { sandboxHandleStore })
+    ?? createSandboxRuntimeModeAdapter(selectedMode, {
+      sandboxHandleStore,
+      dataRegion: runtimeDataRegionFromEnv(process.env.BORING_AGENT_RUNTIME_DATA_REGION),
+    })
   // Static app/plugin Pi configuration is known at construction time. Reject
   // invalid remote host extensions before serving requests; dynamic policies
   // are rechecked when their workspace-scoped values are resolved.
@@ -1937,9 +1948,18 @@ export async function createCoreWorkspaceAgentServer(
         app,
         gateway: agentHost.gateway,
         storage: channelStorage,
+        shareEntryStore: options.shareEntryStore,
         resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
           workspaceId: binding.workspaceId,
           userId: binding.authSubjectId,
+        }),
+        runtimeWorkspaceRegion: runtimeModeAdapter.dataRegion,
+        withAuthorizedWorkspace: createCoreWhatsAppWorkspaceRunner({
+          agentHost,
+          resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
+            workspaceId: binding.workspaceId,
+            userId: binding.authSubjectId,
+          }),
         }),
         options: options.whatsAppChannel,
       })
@@ -2220,6 +2240,21 @@ export async function createCoreWorkspaceAgentServer(
     await registerCoreAgentHostEnvironmentRoutes(app, {
       agentHost,
       authorizeAgentRequest: (request) => authorizeAgentRequest(request),
+      authorizeShareRequest: async (request, workspaceId) => {
+        try {
+          return await authorizeAgentRequest(request, {
+            // Empty is structurally impossible for a persisted share workspace
+            // id, but still drives the same Core membership lookup for an
+            // unknown opaque locator before the route emits its generic 404.
+            workspaceId: workspaceId ?? '',
+            userId: request.user?.id ?? '',
+          })
+        } catch (error) {
+          const statusCode = (error as { statusCode?: unknown }).statusCode
+          if (statusCode === 401 || statusCode === 403) return null
+          throw error
+        }
+      },
       runtimeHost,
       shareEntryStore: options.shareEntryStore,
     })

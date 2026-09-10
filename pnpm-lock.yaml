@@ -179,6 +179,9 @@ importers:
       '@hachej/boring-sandbox':
         specifier: workspace:*
         version: link:../../packages/boring-sandbox
+      '@hachej/boring-transcription':
+        specifier: workspace:*
+        version: link:../../plugins/live-transcription
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -191,6 +194,9 @@ importers:
       fastify:
         specifier: ^5.12.1
         version: 5.12.1
+      playwright-core:
+        specifier: ^1.62.1
+        version: 1.62.1
       react:
         specifier: ^19.2.8
         version: 19.2.8

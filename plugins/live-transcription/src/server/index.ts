@@ -9,6 +9,8 @@ import { LiveTranscriptError, liveTranscriptErrorPayload } from "./errors"
 import { LiveTranscriptManager, type LiveTranscriptManagerOptions } from "./manager"
 import { KyutaiComposerManager } from "./kyutaiComposer"
 import { transcribeShortDictation } from "./dictation"
+export { createSelfHostedBatchFileTranscriber, transcribeBatchFile } from "./dictation"
+export type { BatchFileTranscriberOptions } from "./dictation"
 import { ComputeLifecycleClient, ComputeLifecycleCoordinator, validateLifecycleUrl } from "./computeLifecycle"
 import { TranscriptRefiner } from "./refine"
 

@@ -7,8 +7,14 @@
 // "Access denial is the existing generic membership denial, not an AR1
 // code") and never emits a workspace path in any response body.
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { Workspace } from '../../../shared/workspace'
-import { ShareEntryErrorCode, resolveShareEntry, type ShareEntryStore } from '../../../shared/share-entry'
+import {
+  ShareEntryErrorCode,
+  isShareTargetNotFoundError,
+  resolveShareEntry,
+  type ShareEntryStore,
+} from '../../../shared/share-entry'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 
@@ -16,17 +22,27 @@ interface DeepLinkParams {
   id: string
 }
 
+class ShareTargetUnavailableError extends Error {
+  readonly code = ErrorCode.enum.WORKSPACE_NOT_READY
+  readonly statusCode = 503
+
+  constructor(cause: unknown) {
+    super('share target is temporarily unavailable', { cause })
+    this.name = 'ShareTargetUnavailableError'
+  }
+}
+
 export interface DeepLinkRoutesOptions {
   /** Workspace-agnostic store: entries carry their own `workspaceId`. */
   store: ShareEntryStore
   workspace?: Workspace
   /**
-   * Resolves the `Workspace` already authorized for the request's scoped
-   * workspace (the same `getWorkspace` shape used by fileRoutes/treeRoutes —
-   * membership for this workspace is enforced upstream, before this route's
-   * handler runs, by the host's existing `onRequest` seam).
+   * Resolves the `Workspace` only after authorizing the requester for the
+   * entry's opaque workspace binding. Return `null` for an authentication or
+   * membership denial so the route can make denied and unknown locators
+   * externally indistinguishable; operational failures must still throw.
    */
-  getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+  getWorkspace?: (request: FastifyRequest, shareWorkspaceId: string | null) => Workspace | null | Promise<Workspace | null>
 }
 
 function getRequestWorkspaceId(request: FastifyRequest): string {
@@ -47,15 +63,14 @@ function sendShareNotFound(reply: FastifyReply): FastifyReply {
 }
 
 export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app, opts, done) => {
-  async function resolveWorkspace(request: FastifyRequest): Promise<Workspace> {
-    if (opts.getWorkspace) return await opts.getWorkspace(request)
+  async function resolveWorkspace(request: FastifyRequest, shareWorkspaceId: string | null): Promise<Workspace | null> {
+    if (opts.getWorkspace) return await opts.getWorkspace(request, shareWorkspaceId)
     if (opts.workspace) return opts.workspace
     throw new Error('deep-link route requires workspace or getWorkspace')
   }
 
   app.get<{ Params: DeepLinkParams }>('/a/:id', async (request, reply) => {
     const { id } = request.params
-    const requestWorkspaceId = getRequestWorkspaceId(request)
 
     // Lane W is same-workspace only (spec §3.1): a share entry only resolves
     // within the workspace the requester is already authorized/scoped to.
@@ -64,12 +79,23 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
     // cross-workspace existence to a caller not authorized for that
     // workspace.
     const entry = await opts.store.get(id)
-    if (!entry || entry.workspaceId !== requestWorkspaceId) {
+    if (!entry) {
+      // Exercise the host's authentication/authorization path even when the
+      // opaque locator is unknown. Core substitutes an impossible workspace
+      // id, so this performs the same authority checks without granting or
+      // acquiring any Workspace.
+      await resolveWorkspace(request, null)
       return sendShareNotFound(reply)
     }
 
-    const workspace = await resolveWorkspace(request)
-    const resolution = await resolveShareEntry(opts.store, id, workspace)
+    // Core uses the entry's opaque workspace binding to perform its normal
+    // membership authorization and acquire that exact Workspace. Only after
+    // authorization may request.workspaceContext be trusted for comparison.
+    const workspace = await resolveWorkspace(request, entry.workspaceId)
+    if (!workspace || entry.workspaceId !== getRequestWorkspaceId(request)) return sendShareNotFound(reply)
+    const resolution = await resolveShareEntry(opts.store, id, workspace).catch((error: unknown) => {
+      throw new ShareTargetUnavailableError(error)
+    })
 
     switch (resolution.status) {
       case 'not_found':
@@ -80,14 +106,40 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
           code: resolution.code,
           tombstone: resolution.tombstone,
         })
-      case 'ok':
-        return reply.code(200).send({
-          status: 'ok',
-          workspaceId: resolution.entry.workspaceId,
-          id: resolution.entry.id,
-        })
+      case 'ok': {
+        let content: string
+        try {
+          content = await workspace.readFile(resolution.entry.path)
+        } catch (error) {
+          if (!isShareTargetNotFoundError(error)) throw new ShareTargetUnavailableError(error)
+          return reply.code(200).send({
+            status: 'tombstoned',
+            code: ShareEntryErrorCode.enum.AR1_SHARE_TOMBSTONED,
+            tombstone: {
+              id: resolution.entry.id,
+              workspaceId: resolution.entry.workspaceId,
+              provenance: resolution.entry.provenance,
+            },
+          })
+        }
+        // A share opens the live file as a safe attachment. Serving agent-authored
+        // HTML inline at the application origin would create a stored-XSS boundary.
+        return reply
+          .header('content-type', 'application/octet-stream')
+          .header('content-disposition', `attachment; filename="${downloadFilename(resolution.entry.path)}"`)
+          .header('x-content-type-options', 'nosniff')
+          .header('content-security-policy', "sandbox; default-src 'none'")
+          .code(200)
+          .send(content)
+      }
     }
   })
 
   done()
+}
+
+function downloadFilename(path: string): string {
+  const match = /\.(html?|md|json|txt)$/i.exec(path)
+  const extension = match?.[1]?.toLowerCase() ?? 'txt'
+  return `artifact.${extension}`
 }

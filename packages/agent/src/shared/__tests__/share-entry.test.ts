@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { ErrorCode } from '../error-codes'
 import {
   InMemoryShareEntryStore,
   OpaqueShareLocatorIdSchema,
@@ -40,7 +41,7 @@ function fakeWorkspace(opts: { existingPaths: Set<string> }): Workspace {
     },
     async stat(relPath: string): Promise<Stat> {
       if (!opts.existingPaths.has(relPath)) {
-        throw new Error(`PATH_NOT_FOUND: ${relPath}`)
+        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: ErrorCode.enum.PATH_NOT_FOUND })
       }
       return { size: 0, mtimeMs: Date.now(), kind: 'file' }
     },

@@ -15,6 +15,7 @@ export type {
   ChannelOutboundStatus,
   EnqueueInboundResult,
   EnsureSessionOptions,
+  InboundChannelMedia,
   InboundChannelMessage,
   ProvisionChannelBindingInput,
   QueuedChannelInbound,
@@ -47,6 +48,30 @@ export type {
   ChannelMessageAck,
 } from './channelIntentionService'
 export {
+  ChannelArtifactDeliveryService,
+  createHeadlessChromiumPdfRenderer,
+} from './channelArtifactDeliveryService'
+export type {
+  ChannelArtifactDeliveryOptions,
+  ChannelArtifactDeliveryRuntime,
+  ChannelArtifactDocumentSender,
+  ChannelHtmlToPdfRenderer,
+  HeadlessChromiumLauncher,
+  PublishedChannelArtifact,
+} from './channelArtifactDeliveryService'
+export {
+  ChannelInboundMediaError,
+  ChannelInboundMediaService,
+} from './channelInboundMediaService'
+export type {
+  ChannelBatchTranscriber,
+  ChannelInboundMediaRuntime,
+  ChannelMediaDownload,
+  ChannelMediaDownloader,
+  ChannelMediaRegion,
+  PreparedChannelInbound,
+} from './channelInboundMediaService'
+export {
   CHANNEL_OUTBOUND_PARKED,
   CHANNEL_TURN_STALLED,
   DEFAULT_CHANNEL_STALL_TIMEOUT_MS,
@@ -57,6 +82,7 @@ export {
 } from './channelOutboundService'
 export type {
   ChannelOutboundAdapter,
+  ChannelOutboundArtifactPublisher,
   ChannelOutboundRuntime,
   ChannelOutboundServiceOptions,
   ChannelOutboundTurn,

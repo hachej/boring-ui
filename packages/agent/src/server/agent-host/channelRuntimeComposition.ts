@@ -3,6 +3,7 @@ import type { AgentGateway, AuthorizedAgentScope } from '../../shared/gateway/ty
 import type { OriginChannel } from '../../shared/channel'
 import { ChannelBindingStore, type ChannelBinding, type InboundChannelMessage, type ProvisionChannelBindingInput } from '../channels/channelBindingStore'
 import { ChannelInboundService, type ChannelAgentInvocation } from '../channels/channelInboundService'
+import type { ChannelInboundMediaService } from '../channels/channelInboundMediaService'
 import {
   ChannelIntentionService,
   ChannelMessageRouter,
@@ -56,6 +57,7 @@ export interface CreateAgentHostChannelRuntimeOptions<Message> {
   /** Workspace-scoped ask_user source/answer seam; omit only when channels cannot ask owners. */
   readonly intentionRuntime?: ChannelIntentionRuntime
   readonly outbound?: ChannelOutboundServiceOptions
+  readonly inboundMedia?: ChannelInboundMediaService
 }
 
 export interface AgentHostChannelRuntime<Message> {
@@ -129,6 +131,7 @@ export function createAgentHostChannelRuntime<Message>(
     },
   }, {
     onInboundDelivered: (binding) => notifyOutbound(binding),
+    ...(options.inboundMedia ? { media: options.inboundMedia } : {}),
   })
 
   async function sendToSession(input: ChannelAgentInvocation, kind: 'prompt' | 'followup'): Promise<void> {
@@ -139,6 +142,8 @@ export function createAgentHostChannelRuntime<Message>(
           requestId: input.requestId,
           clientNonce: input.requestId,
           content: input.text,
+          ...(input.attachments ? { attachments: input.attachments } : {}),
+          ...(input.requireIdle ? { requireIdle: true as const } : {}),
         })
       } else {
         await connection.send({

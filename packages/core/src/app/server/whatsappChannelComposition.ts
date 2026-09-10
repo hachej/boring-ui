@@ -1,12 +1,18 @@
 import type { FastifyInstance } from 'fastify'
 import {
+  ChannelArtifactDeliveryService,
+  ChannelInboundMediaService,
   createAgentHostChannelRuntime,
   type AgentHostChannelRuntime,
   type AgentHostChannelStorage,
   type AuthorizedAgentScope,
+  type ChannelBatchTranscriber,
+  type ChannelHtmlToPdfRenderer,
+  type ChannelInboundMediaRuntime,
+  type CreatedAgentHost,
   type ProvisionChannelBindingInput,
 } from '@hachej/boring-agent/server'
-import type { AgentGateway } from '@hachej/boring-agent/shared'
+import type { AgentGateway, ShareEntryStore, Workspace } from '@hachej/boring-agent/shared'
 import {
   createWhatsAppCloudEdge,
   WHATSAPP_CHANNEL_ID,
@@ -25,12 +31,70 @@ export interface CoreWhatsAppChannelOptions {
   readonly provisionedBindings?: readonly Omit<ProvisionChannelBindingInput, 'channel' | 'agentTypeId'>[]
   readonly webhookPath?: string
   readonly bodyLimit?: number
+  /** Test/host transport injection; defaults to global fetch. */
+  readonly graphFetch?: typeof fetch
+  /** Host-owned authenticated PDF authority; Core supplies the active runtime Workspace. */
+  readonly artifactDelivery?: {
+    readonly authenticatedOrigin: string
+    readonly renderer: ChannelHtmlToPdfRenderer
+  }
+  /** Bound CH/EU Workspace retention plus a same-region self-hosted batch transcriber. */
+  readonly inboundMedia?: {
+    readonly storageRegion: ChannelInboundMediaRuntime['storageRegion']
+    readonly transcriber: ChannelBatchTranscriber
+  }
 }
 
 export interface MountedCoreWhatsAppChannel {
   readonly runtime: AgentHostChannelRuntime<WhatsAppCloudMessage>
   readonly webhookPath: string
   close(): Promise<void>
+}
+
+type ChannelWorkspaceBinding = {
+  readonly workspaceId: string
+  readonly authSubjectId: string
+  readonly agentTypeId: string
+  readonly sessionKey?: string
+}
+
+type WithAuthorizedChannelWorkspace = <T>(
+  binding: ChannelWorkspaceBinding,
+  use: (workspace: Workspace) => Promise<T>,
+) => Promise<T>
+
+/**
+ * Adapts Core membership authority to Agent Host's addressed-session Environment
+ * lease. This is the only production Workspace source for channel media and
+ * artifacts, so remote runtime modes and session generations cannot diverge.
+ */
+export function createCoreWhatsAppWorkspaceRunner(input: {
+  readonly agentHost: Pick<CreatedAgentHost, 'acquireSessionEnvironment'>
+  readonly resolveAuthorizedScope: (binding: ChannelWorkspaceBinding) => Promise<AuthorizedAgentScope>
+}): WithAuthorizedChannelWorkspace {
+  return async (binding, use) => {
+    if (!binding.sessionKey) throw new Error('WhatsApp Workspace access requires an addressed session')
+    const authorizedScope = await input.resolveAuthorizedScope(binding)
+    const lease = await input.agentHost.acquireSessionEnvironment({
+      authorizedScope,
+      ref: { agentTypeId: binding.agentTypeId, sessionId: binding.sessionKey },
+      requestId: `channel-workspace:${binding.agentTypeId}:${binding.workspaceId}:${binding.sessionKey}`,
+    })
+    try {
+      return await use(lease.workspace)
+    } finally {
+      lease.release()
+    }
+  }
+}
+
+export function assertCoreWhatsAppRuntimeRegion(
+  options: CoreWhatsAppChannelOptions,
+  runtimeWorkspaceRegion: ChannelInboundMediaRuntime['storageRegion'] | undefined,
+): void {
+  if (options.inboundMedia && runtimeWorkspaceRegion !== options.inboundMedia.storageRegion) {
+    throw new Error('WhatsApp media requires an active runtime Workspace attested to the configured CH/EU region')
+  }
 }
 
 export function assertCoreWhatsAppAgentAvailable(
@@ -51,13 +115,20 @@ export async function mountCoreWhatsAppChannel(input: {
   readonly app: FastifyInstance
   readonly gateway: AgentGateway
   readonly storage: AgentHostChannelStorage
+  /** Must be the same store mounted by the authenticated `/a/:id` route. */
+  readonly shareEntryStore?: ShareEntryStore
   readonly resolveAuthorizedScope: (binding: {
     readonly workspaceId: string
     readonly authSubjectId: string
     readonly agentTypeId: string
   }) => Promise<AuthorizedAgentScope>
+  /** Core-owned bridge to the exact runtime-mode Workspace generation used by the Agent Host. */
+  readonly withAuthorizedWorkspace: WithAuthorizedChannelWorkspace
+  /** Region attested by the selected runtime-mode adapter; absent means unqualified. */
+  readonly runtimeWorkspaceRegion?: ChannelInboundMediaRuntime['storageRegion']
   readonly options: CoreWhatsAppChannelOptions
 }): Promise<MountedCoreWhatsAppChannel> {
+  assertCoreWhatsAppRuntimeRegion(input.options, input.runtimeWorkspaceRegion)
   const configured = input.options.provisionedBindings ?? []
   const configuredKeys = new Set<string>()
   for (const binding of configured) {
@@ -108,12 +179,48 @@ export async function mountCoreWhatsAppChannel(input: {
     // Assigned after runtime construction; webhook traffic cannot arrive before Fastify is ready.
     inbound: { accept: (message, agentTypeId) => runtime.acceptInbound(message, agentTypeId) },
     ...(input.options.bodyLimit === undefined ? {} : { bodyLimit: input.options.bodyLimit }),
+    ...(input.options.graphFetch ? { fetch: input.options.graphFetch } : {}),
   })
+  const artifactPublisher = input.options.artifactDelivery && input.shareEntryStore
+    ? new ChannelArtifactDeliveryService(
+        input.shareEntryStore,
+        {
+          async authorize(binding) {
+            await input.resolveAuthorizedScope(binding)
+          },
+          async withWorkspace(binding, use) {
+            return await input.withAuthorizedWorkspace(binding, use)
+          },
+        },
+        input.options.artifactDelivery.renderer,
+        adapterEdge.adapter,
+        { authenticatedOrigin: input.options.artifactDelivery.authenticatedOrigin },
+      )
+    : undefined
+  if (input.options.artifactDelivery && !artifactPublisher) {
+    throw new Error('WhatsApp artifact delivery requires the authenticated share-entry store')
+  }
+  const inboundMedia = input.options.inboundMedia
+    ? new ChannelInboundMediaService(
+        {
+          storageRegion: input.options.inboundMedia.storageRegion,
+          async withWorkspace(binding, use) {
+            // Reissue current app membership authority and acquire the Agent Host's active
+            // runtime-mode Workspace before any media byte is downloaded or retained.
+            return await input.withAuthorizedWorkspace(binding, use)
+          },
+        },
+        new Map([[WHATSAPP_CHANNEL_ID, adapterEdge.adapter]]),
+        input.options.inboundMedia.transcriber,
+      )
+    : undefined
   const runtime = createAgentHostChannelRuntime<WhatsAppCloudMessage>({
     gateway: input.gateway,
     storage: input.storage,
     resolveAuthorizedScope: input.resolveAuthorizedScope,
     outboundAdapters: new Map([[WHATSAPP_CHANNEL_ID, adapterEdge.adapter]]),
+    ...(artifactPublisher ? { outbound: { artifactPublisher } } : {}),
+    ...(inboundMedia ? { inboundMedia } : {}),
   })
   const webhookPath = input.options.webhookPath ?? CORE_WHATSAPP_WEBHOOK_PATH
   const bodyLimit = input.options.bodyLimit ?? WHATSAPP_WEBHOOK_BODY_LIMIT

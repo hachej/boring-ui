@@ -18,7 +18,7 @@ import {
   registerFullAppManagedAgentMcpRoutes,
 } from './managedAgentMcp.js'
 import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
-import { readFullAppWhatsAppChannelOptions } from './whatsapp.js'
+import { readFullAppWhatsAppComposition } from './whatsapp.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -97,6 +97,7 @@ startCoreWorkspaceAgentDevServer({
     let appDb: unknown
     let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
     let managedAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
+    const { whatsAppChannel, shareEntryStore } = readFullAppWhatsAppComposition(config.defaultAgentTypeId)
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
@@ -104,7 +105,8 @@ startCoreWorkspaceAgentDevServer({
       defaultPluginPackages: [...pluginComposition.defaultPluginPackages],
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
-      whatsAppChannel: readFullAppWhatsAppChannelOptions(config.defaultAgentTypeId),
+      whatsAppChannel,
+      ...(shareEntryStore ? { shareEntryStore } : {}),
       metering: governance.createMeteringSink(credits.meteringSink, () => {
         if (!appDb) throw new Error('governance metering db is not attached')
         return appDb as never

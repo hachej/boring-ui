@@ -269,11 +269,17 @@ export type ShareEntryResolution =
  * - Entry exists and the target file stats successfully -> `ok`, with the
  *   full (server-internal) entry for the caller to act on.
  *
- * Any `workspace.stat` rejection (not just a "does not exist" error) is
- * treated as "target gone" — the spec's fail-safe is to render a tombstone,
- * never a bare 404; a later bead may narrow this to distinguish stat
- * failure causes if that proves necessary.
+ * Only an adapter's explicit not-found signal is treated as "target gone".
+ * Permission, availability, and transport failures remain operational errors;
+ * presenting those as deletion would mislead an authorized member.
  */
+export function isShareTargetNotFoundError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null | undefined)?.code
+  // HTTP status is deliberately excluded: remote providers also use 404/410
+  // for an expired or unavailable sandbox, which is not file deletion.
+  return code === 'ENOENT' || code === ErrorCode.enum.PATH_NOT_FOUND
+}
+
 export async function resolveShareEntry(
   store: ShareEntryStore,
   id: string,
@@ -285,7 +291,8 @@ export async function resolveShareEntry(
   }
   try {
     await workspace.stat(entry.path)
-  } catch {
+  } catch (error) {
+    if (!isShareTargetNotFoundError(error)) throw error
     return {
       status: 'tombstoned',
       code: ShareEntryErrorCode.enum.AR1_SHARE_TOMBSTONED,

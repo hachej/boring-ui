@@ -33,7 +33,12 @@ export interface ChannelOutboundRuntime {
   createSession(binding: ChannelBinding): Promise<string>
 }
 
+export interface ChannelOutboundArtifactPublisher {
+  publish(input: { readonly binding: ChannelBinding; readonly artifactPath: string }): Promise<{ readonly url: string }>
+}
+
 export interface ChannelOutboundServiceOptions {
+  readonly artifactPublisher?: ChannelOutboundArtifactPublisher
   readonly maxSendAttempts?: number
   readonly retryDelayMs?: number
   readonly stallTimeoutMs?: number
@@ -44,6 +49,8 @@ export interface ChannelOutboundServiceOptions {
 interface AssembledTurn {
   readonly turn: ChannelOutboundTurn
   readonly terminalOffset: string
+  /** Authorized workspace paths stay internal to the channel host. */
+  readonly artifactPaths?: readonly string[]
 }
 
 export class ChannelOutboundService<Message = unknown> {
@@ -195,6 +202,7 @@ export class ChannelOutboundService<Message = unknown> {
 
         try {
           if (claimLost) return
+          await this.publishArtifacts(binding, assembled)
           await this.sendWithRetry(adapter, binding, assembled.turn, claimOwner)
         } catch (error) {
           if (!this.store.ownsOutboundClaim(claimOwner)) return
@@ -333,6 +341,20 @@ export class ChannelOutboundService<Message = unknown> {
     }
   }
 
+  private async publishArtifacts(binding: ChannelBinding, assembled: AssembledTurn): Promise<void> {
+    if (!assembled.artifactPaths?.length) return
+    const publisher = this.options.artifactPublisher
+    if (!publisher) {
+      throw Object.assign(new Error('Channel artifact publisher is unavailable.'), {
+        code: CHANNEL_OUTBOUND_PARKED,
+        retryable: false,
+      })
+    }
+    for (const artifactPath of new Set(assembled.artifactPaths)) {
+      await publisher.publish({ binding, artifactPath })
+    }
+  }
+
   private async sendWithRetry(
     adapter: ChannelOutboundAdapter<Message>,
     binding: ChannelBinding,
@@ -390,13 +412,13 @@ export function assembleNextTurn(
   now = Date.now(),
   stallTimeoutMs = DEFAULT_CHANNEL_STALL_TIMEOUT_MS,
 ): AssembledTurn | undefined {
-  let active: { turnId: string; startedAt: number; assistantText: string } | undefined
+  let active: { turnId: string; startedAt: number; assistantText: string; artifactPaths: string[] } | undefined
   for (const entry of entries) {
     if (!isAgentEvent(entry.data)) continue
     const { chunk } = entry.data
     if (chunk.type === 'agent-start') {
       if (!active) {
-        active = { turnId: chunk.turnId, startedAt: entry.data.timestamp, assistantText: '' }
+        active = { turnId: chunk.turnId, startedAt: entry.data.timestamp, assistantText: '', artifactPaths: [] }
       } else if (now - active.startedAt >= stallTimeoutMs) {
         return {
           terminalOffset: entries[Math.max(0, entries.indexOf(entry) - 1)]?.offset ?? entry.offset,
@@ -433,12 +455,18 @@ export function assembleNextTurn(
     if (chunk.type === 'message-end' && chunk.final.role === 'assistant'
       && (!chunk.final.turnId || chunk.final.turnId === active.turnId)) {
       active.assistantText = displayText(chunk.final)
+      active.artifactPaths = chunk.final.parts
+        .filter((part) => part.type === 'file' && typeof part.path === 'string'
+          && (part.filesystem === undefined || part.filesystem === 'user')
+          && (part.mediaType === 'text/html' || part.path.toLowerCase().endsWith('.html')))
+        .map((part) => (part as { path: string }).path)
       continue
     }
     if (chunk.type === 'agent-end' && chunk.turnId === active.turnId && chunk.willRetry !== true) {
       const status = chunk.status
       return {
         terminalOffset: entry.offset,
+        ...(status === 'ok' && active.artifactPaths.length > 0 ? { artifactPaths: active.artifactPaths } : {}),
         turn: {
           turnId: active.turnId,
           status,

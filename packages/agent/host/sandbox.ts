@@ -85,6 +85,8 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
   readonly bwrap?: BwrapSandboxProviderOptions
+  /** Host deployment attestation; channel media fails closed when absent or mismatched. */
+  readonly dataRegion?: 'CH' | 'EU'
 }
 
 type ResolvedBwrapPolicy = Required<Pick<
@@ -133,16 +135,19 @@ export function createSandboxRuntimeModeAdapter(
   mode: RuntimeModeId,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
+  const attest = (adapter: RuntimeModeAdapter): RuntimeModeAdapter => options.dataRegion
+    ? { ...adapter, dataRegion: options.dataRegion }
+    : adapter
   switch (mode) {
     case 'direct':
-      return createDirectModeAdapter({
+      return attest(createDirectModeAdapter({
         provider: createDirectSandboxProvider(),
         runtimeHost: agentSandboxRuntimeHostOperations,
-      })
+      }))
     case 'local': {
       const policy = resolveBwrapPolicy(options.bwrap)
       const runtimeHost = withBwrapPolicy(agentSandboxRuntimeHostOperations, policy)
-      return createLocalModeAdapter({
+      return attest(createLocalModeAdapter({
         provider: createBwrapSandboxProvider({
           ...options.bwrap,
           sandbox: {
@@ -151,10 +156,10 @@ export function createSandboxRuntimeModeAdapter(
           },
         }),
         runtimeHost,
-      })
+      }))
     }
     case 'vercel-sandbox':
-      return createVercelSandboxModeAdapter({
+      return attest(createVercelSandboxModeAdapter({
         provider: createVercelSandboxProvider({
           ...(options.sandboxHandleStore
             ? { store: options.sandboxHandleStore, orphanGuardMaxIdleMs: null }
@@ -163,14 +168,14 @@ export function createSandboxRuntimeModeAdapter(
         runtimeHost: agentSandboxRuntimeHostOperations,
         remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
         workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
-      })
+      }))
     case 'blaxel':
-      return createBlaxelSandboxModeAdapter({
+      return attest(createBlaxelSandboxModeAdapter({
         provider: createBlaxelSandboxProvider({
           ...(options.sandboxHandleStore ? { handleStore: options.sandboxHandleStore } : {}),
         }),
         runtimeHost: agentSandboxRuntimeHostOperations,
-      })
+      }))
     default:
       throw new Error(
         `Runtime mode "${String(mode)}" has no built-in adapter. Pass runtimeModeAdapter to use a custom sandbox mode.`,
@@ -178,6 +183,9 @@ export function createSandboxRuntimeModeAdapter(
   }
 }
 
-export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
-  return createSandboxRuntimeModeAdapter(mode)
+export function createAgentSandboxRuntimeModeAdapter(
+  mode: RuntimeModeId = 'direct',
+  options: SandboxRuntimeModeOptions = {},
+): RuntimeModeAdapter {
+  return createSandboxRuntimeModeAdapter(mode, options)
 }
