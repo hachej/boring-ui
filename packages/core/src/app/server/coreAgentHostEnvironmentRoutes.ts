@@ -18,7 +18,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 export interface CoreAgentHostEnvironmentRoutesOptions {
   readonly agentHost: CreatedAgentHost
   readonly authorizeAgentRequest: (request: FastifyRequest) => Promise<AuthorizedAgentScope>
-  readonly authorizeShareRequest: (request: FastifyRequest, workspaceId: string) => Promise<AuthorizedAgentScope>
+  /** Returns null only for an authentication/membership denial; operational failures throw. */
+  readonly authorizeShareRequest: (request: FastifyRequest, workspaceId: string | null) => Promise<AuthorizedAgentScope | null>
   readonly runtimeHost: AgentRuntimeHostOperations
   readonly shareEntryStore?: ShareEntryStore
 }
@@ -48,19 +49,23 @@ export async function registerCoreAgentHostEnvironmentRoutes(
       // Acquisition failures have no lease to release and retain their original error.
     }
   }
-  const acquire = (request: FastifyRequest, shareWorkspaceId?: string) => {
+  const acquireWithScope = (request: FastifyRequest, authorizedScope: AuthorizedAgentScope) => {
     let pending = leases.get(request)
     if (!pending) {
-      pending = (async () => options.agentHost.acquireEnvironment({
-        authorizedScope: shareWorkspaceId
-          ? await options.authorizeShareRequest(request, shareWorkspaceId)
-          : await options.authorizeAgentRequest(request),
+      pending = options.agentHost.acquireEnvironment({
+        authorizedScope,
         intent: { kind: 'http-route', requestId: request.id },
-      }))()
+      })
       leases.set(request, pending)
       pending.catch(() => leases.delete(request))
     }
     return pending
+  }
+  const acquire = async (request: FastifyRequest) =>
+    await acquireWithScope(request, await options.authorizeAgentRequest(request))
+  const acquireShare = async (request: FastifyRequest, workspaceId: string | null) => {
+    const authorizedScope = await options.authorizeShareRequest(request, workspaceId)
+    return authorizedScope ? await acquireWithScope(request, authorizedScope) : null
   }
   const deferLeaseRelease = (request: FastifyRequest) => {
     if (deferred.has(request)) return
@@ -108,8 +113,8 @@ export async function registerCoreAgentHostEnvironmentRoutes(
   if (options.shareEntryStore) {
     await app.register(deepLinkRoutes, {
       store: options.shareEntryStore,
-      getWorkspace: async (request: FastifyRequest, shareWorkspaceId: string) =>
-        (await acquire(request, shareWorkspaceId)).workspace,
+      getWorkspace: async (request: FastifyRequest, shareWorkspaceId: string | null) =>
+        (await acquireShare(request, shareWorkspaceId))?.workspace ?? null,
     })
   }
   await app.register(gitRoutes, {

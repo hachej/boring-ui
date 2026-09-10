@@ -2240,10 +2240,21 @@ export async function createCoreWorkspaceAgentServer(
     await registerCoreAgentHostEnvironmentRoutes(app, {
       agentHost,
       authorizeAgentRequest: (request) => authorizeAgentRequest(request),
-      authorizeShareRequest: (request, workspaceId) => authorizeAgentRequest(request, {
-        workspaceId,
-        userId: request.user?.id ?? '',
-      }),
+      authorizeShareRequest: async (request, workspaceId) => {
+        try {
+          return await authorizeAgentRequest(request, {
+            // Empty is structurally impossible for a persisted share workspace
+            // id, but still drives the same Core membership lookup for an
+            // unknown opaque locator before the route emits its generic 404.
+            workspaceId: workspaceId ?? '',
+            userId: request.user?.id ?? '',
+          })
+        } catch (error) {
+          const statusCode = (error as { statusCode?: unknown }).statusCode
+          if (statusCode === 401 || statusCode === 403) return null
+          throw error
+        }
+      },
       runtimeHost,
       shareEntryStore: options.shareEntryStore,
     })

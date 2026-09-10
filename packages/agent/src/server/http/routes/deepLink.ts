@@ -21,12 +21,12 @@ export interface DeepLinkRoutesOptions {
   store: ShareEntryStore
   workspace?: Workspace
   /**
-   * Resolves the `Workspace` already authorized for the request's scoped
-   * workspace (the same `getWorkspace` shape used by fileRoutes/treeRoutes —
-   * membership for this workspace is enforced upstream, before this route's
-   * handler runs, by the host's existing `onRequest` seam).
+   * Resolves the `Workspace` only after authorizing the requester for the
+   * entry's opaque workspace binding. Return `null` for an authentication or
+   * membership denial so the route can make denied and unknown locators
+   * externally indistinguishable; operational failures must still throw.
    */
-  getWorkspace?: (request: FastifyRequest, shareWorkspaceId: string) => Workspace | Promise<Workspace>
+  getWorkspace?: (request: FastifyRequest, shareWorkspaceId: string | null) => Workspace | null | Promise<Workspace | null>
 }
 
 function getRequestWorkspaceId(request: FastifyRequest): string {
@@ -47,7 +47,7 @@ function sendShareNotFound(reply: FastifyReply): FastifyReply {
 }
 
 export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app, opts, done) => {
-  async function resolveWorkspace(request: FastifyRequest, shareWorkspaceId: string): Promise<Workspace> {
+  async function resolveWorkspace(request: FastifyRequest, shareWorkspaceId: string | null): Promise<Workspace | null> {
     if (opts.getWorkspace) return await opts.getWorkspace(request, shareWorkspaceId)
     if (opts.workspace) return opts.workspace
     throw new Error('deep-link route requires workspace or getWorkspace')
@@ -63,13 +63,20 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
     // cross-workspace existence to a caller not authorized for that
     // workspace.
     const entry = await opts.store.get(id)
-    if (!entry) return sendShareNotFound(reply)
+    if (!entry) {
+      // Exercise the host's authentication/authorization path even when the
+      // opaque locator is unknown. Core substitutes an impossible workspace
+      // id, so this performs the same authority checks without granting or
+      // acquiring any Workspace.
+      await resolveWorkspace(request, null)
+      return sendShareNotFound(reply)
+    }
 
     // Core uses the entry's opaque workspace binding to perform its normal
     // membership authorization and acquire that exact Workspace. Only after
     // authorization may request.workspaceContext be trusted for comparison.
     const workspace = await resolveWorkspace(request, entry.workspaceId)
-    if (entry.workspaceId !== getRequestWorkspaceId(request)) return sendShareNotFound(reply)
+    if (!workspace || entry.workspaceId !== getRequestWorkspaceId(request)) return sendShareNotFound(reply)
     const resolution = await resolveShareEntry(opts.store, id, workspace)
 
     switch (resolution.status) {
