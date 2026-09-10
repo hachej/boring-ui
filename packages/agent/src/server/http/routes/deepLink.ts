@@ -80,14 +80,39 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
           code: resolution.code,
           tombstone: resolution.tombstone,
         })
-      case 'ok':
-        return reply.code(200).send({
-          status: 'ok',
-          workspaceId: resolution.entry.workspaceId,
-          id: resolution.entry.id,
-        })
+      case 'ok': {
+        let content: string
+        try {
+          content = await workspace.readFile(resolution.entry.path)
+        } catch {
+          return reply.code(200).send({
+            status: 'tombstoned',
+            code: ShareEntryErrorCode.enum.AR1_SHARE_TOMBSTONED,
+            tombstone: {
+              id: resolution.entry.id,
+              workspaceId: resolution.entry.workspaceId,
+              provenance: resolution.entry.provenance,
+            },
+          })
+        }
+        // A share opens the live file as a safe attachment. Serving agent-authored
+        // HTML inline at the application origin would create a stored-XSS boundary.
+        return reply
+          .header('content-type', 'application/octet-stream')
+          .header('content-disposition', `attachment; filename="${downloadFilename(resolution.entry.path)}"`)
+          .header('x-content-type-options', 'nosniff')
+          .header('content-security-policy', "sandbox; default-src 'none'")
+          .code(200)
+          .send(content)
+      }
     }
   })
 
   done()
+}
+
+function downloadFilename(path: string): string {
+  const match = /\.(html?|md|json|txt)$/i.exec(path)
+  const extension = match?.[1]?.toLowerCase() ?? 'txt'
+  return `artifact.${extension}`
 }

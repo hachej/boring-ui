@@ -141,11 +141,16 @@ describe('ChannelArtifactDeliveryService', () => {
       setContent: vi.fn(async () => undefined),
       pdf: vi.fn(async () => pdf('chromium')),
     }
-    const launch = vi.fn(async () => ({ newPage: async () => page, close }))
+    const newPage = vi.fn(async () => page)
+    const launch = vi.fn(async () => ({ newPage, close }))
     const renderer = createHeadlessChromiumPdfRenderer({ launch })
 
     await expect(renderer.render('<html>quote</html>')).resolves.toEqual(pdf('chromium'))
-    expect(launch).toHaveBeenCalledWith({ headless: true })
+    expect(launch).toHaveBeenCalledWith({
+      headless: true,
+      args: expect.arrayContaining(['--disable-webrtc', '--host-resolver-rules=MAP * ~NOTFOUND']),
+    })
+    expect(newPage).toHaveBeenCalledWith({ javaScriptEnabled: false, offline: true, serviceWorkers: 'block' })
     expect(page.route).toHaveBeenCalledWith('**/*', expect.any(Function))
     expect(page.routeWebSocket).toHaveBeenCalledWith('**/*', expect.any(Function))
     expect(page.setContent).toHaveBeenCalledWith('<html>quote</html>', { waitUntil: 'load' })

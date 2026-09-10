@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { createHeadlessChromiumPdfRenderer } from '@hachej/boring-agent/server'
+import { InMemoryShareEntryStore } from '@hachej/boring-agent/shared'
 import type { CoreWhatsAppChannelOptions } from '@hachej/boring-core/app/server'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createSelfHostedBatchFileTranscriber } from '@hachej/boring-transcription/server'
@@ -18,6 +19,20 @@ interface FullAppWhatsAppBinding {
   readonly workspaceId: string
   readonly authSubjectId: string
   readonly sessionKey?: string
+}
+
+export function readFullAppWhatsAppComposition(
+  defaultAgentTypeId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): {
+  readonly whatsAppChannel: CoreWhatsAppChannelOptions | undefined
+  readonly shareEntryStore?: InMemoryShareEntryStore
+} {
+  const whatsAppChannel = readFullAppWhatsAppChannelOptions(defaultAgentTypeId, env)
+  return {
+    whatsAppChannel,
+    ...(whatsAppChannel?.artifactDelivery ? { shareEntryStore: new InMemoryShareEntryStore() } : {}),
+  }
 }
 
 /** Reads host-owned deployment config without exporting credential material. */
@@ -106,11 +121,11 @@ function readArtifactDelivery(
     authenticatedOrigin,
     runtime: { resolveWorkspace },
     renderer: createHeadlessChromiumPdfRenderer({
-      async launch({ headless }) {
-        const browser = await chromium.launch({ headless, executablePath })
+      async launch({ headless, args }) {
+        const browser = await chromium.launch({ headless, executablePath, args: [...args] })
         return {
-          async newPage() {
-            const page = await browser.newPage()
+          async newPage(options) {
+            const page = await browser.newPage(options)
             return {
               async route(pattern, handler) { await page.route(pattern, async (route) => { await handler(route) }) },
               async routeWebSocket(pattern, handler) { await page.routeWebSocket(pattern, (socket) => handler(socket)) },

@@ -217,7 +217,7 @@ describe('WhatsApp Cloud outbound', () => {
     expect(JSON.stringify(document)).not.toContain('secret-access-token')
     expect(JSON.parse(String(request.mock.calls[2]![1]!.body))).toMatchObject({
       type: 'text',
-      text: { body: 'View artifact: https://app.example.test/a/opaque-share-id', preview_url: false },
+      text: { body: 'Download artifact: https://app.example.test/a/opaque-share-id', preview_url: false },
     })
   })
 

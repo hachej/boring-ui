@@ -196,7 +196,7 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         type: 'text',
-        text: { body: `View artifact: ${parsed.toString()}`, preview_url: false },
+        text: { body: `Download artifact: ${parsed.toString()}`, preview_url: false },
       },
     })
   }

@@ -134,7 +134,14 @@ export async function mountCoreWhatsAppChannel(input: {
   const artifactPublisher = input.options.artifactDelivery && input.shareEntryStore
     ? new ChannelArtifactDeliveryService(
         input.shareEntryStore,
-        input.options.artifactDelivery.runtime,
+        {
+          async resolveWorkspace(binding) {
+            // Reissue current membership authority at the disclosure boundary,
+            // immediately before reading, rendering, sharing, or sending bytes.
+            await input.resolveAuthorizedScope(binding)
+            return await input.options.artifactDelivery!.runtime.resolveWorkspace(binding)
+          },
+        },
         input.options.artifactDelivery.renderer,
         adapterEdge.adapter,
         { authenticatedOrigin: input.options.artifactDelivery.authenticatedOrigin },

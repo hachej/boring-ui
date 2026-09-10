@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readFullAppWhatsAppChannelOptions } from '../whatsapp.js'
+import { readFullAppWhatsAppChannelOptions, readFullAppWhatsAppComposition } from '../whatsapp.js'
 
 const enabledEnv = {
   BORING_AGENT_CHANNELS: '1',
@@ -40,13 +40,14 @@ describe('readFullAppWhatsAppChannelOptions', () => {
   })
 
   it('composes authenticated artifact delivery through the bound Workspace and host Chromium', async () => {
-    const options = readFullAppWhatsAppChannelOptions('default', {
+    const env = {
       ...enabledEnv,
       BORING_WHATSAPP_ARTIFACTS: '1',
       BORING_AGENT_WORKSPACE_ROOT: '/var/tmp/full-app-workspaces',
       BORING_WHATSAPP_AUTHENTICATED_ORIGIN: 'https://app.example.test',
       BORING_WHATSAPP_CHROMIUM_PATH: '/usr/bin/chromium',
-    })
+    }
+    const options = readFullAppWhatsAppChannelOptions('default', env)
     expect(options?.artifactDelivery).toMatchObject({
       authenticatedOrigin: 'https://app.example.test',
       runtime: { resolveWorkspace: expect.any(Function) },
@@ -54,6 +55,10 @@ describe('readFullAppWhatsAppChannelOptions', () => {
     })
     await expect(options!.artifactDelivery!.runtime.resolveWorkspace({ workspaceId: 'workspace-1' } as never))
       .resolves.toMatchObject({ root: '/var/tmp/full-app-workspaces/workspace-1' })
+    expect(readFullAppWhatsAppComposition('default', env)).toMatchObject({
+      whatsAppChannel: { artifactDelivery: expect.any(Object) },
+      shareEntryStore: expect.any(Object),
+    })
   })
 
   it('composes bound Workspace retention with a same-region loopback Whisper processor', async () => {

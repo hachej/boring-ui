@@ -4,13 +4,14 @@ import { deepLinkRoutes } from '../deepLink'
 import { InMemoryShareEntryStore, ShareEntryErrorCode, type ShareEntryStore } from '../../../../shared/share-entry'
 import type { Stat, Workspace } from '../../../../shared/workspace'
 
-/** Minimal fake satisfying the `Workspace` contract for `stat`-only tests (mirrors share-entry.test.ts). */
-function fakeWorkspace(opts: { existingPaths: Set<string> }): Workspace {
+/** Minimal fake satisfying the `Workspace` contract for live share tests. */
+function fakeWorkspace(opts: { existingPaths: Set<string>; content?: string }): Workspace {
   return {
     root: '/workspace',
     runtimeContext: { runtimeCwd: '/workspace' },
-    async readFile() {
-      throw new Error('not implemented')
+    async readFile(relPath: string) {
+      if (!opts.existingPaths.has(relPath)) throw new Error(`PATH_NOT_FOUND: ${relPath}`)
+      return opts.content ?? '# current artifact'
     },
     async writeFile() {
       throw new Error('not implemented')
@@ -25,7 +26,7 @@ function fakeWorkspace(opts: { existingPaths: Set<string> }): Workspace {
       if (!opts.existingPaths.has(relPath)) {
         throw new Error(`PATH_NOT_FOUND: ${relPath}`)
       }
-      return { size: 0, mtimeMs: Date.now(), kind: 'file' }
+      return { size: (opts.content ?? '# current artifact').length, mtimeMs: Date.now(), kind: 'file' }
     },
     async mkdir() {
       throw new Error('not implemented')
@@ -62,15 +63,18 @@ describe('GET /a/:id (AR1-003 Lane W deep link)', () => {
       path: 'reports/q1.md',
       provenance: { producerPrincipalRef: 'agent-a' },
     })
-    const workspace = fakeWorkspace({ existingPaths: new Set([entry.path]) })
+    const workspace = fakeWorkspace({ existingPaths: new Set([entry.path]), content: '# current quarter' })
     const app = await buildApp({ store, workspace, requestWorkspaceId: 'workspace-1' })
 
     const res = await app.inject({ method: 'GET', url: `/a/${entry.id}` })
 
     expect(res.statusCode).toBe(200)
-    const body = res.json()
-    expect(body).toEqual({ status: 'ok', workspaceId: 'workspace-1', id: entry.id })
-    expect(JSON.stringify(body)).not.toContain('reports/q1.md')
+    expect(res.body).toBe('# current quarter')
+    expect(res.headers['content-type']).toContain('application/octet-stream')
+    expect(res.headers['content-disposition']).toBe('attachment; filename="artifact.md"')
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+    expect(res.headers['content-security-policy']).toContain("default-src 'none'")
+    expect(res.body).not.toContain('reports/q1.md')
     await app.close()
   })
 

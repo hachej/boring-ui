@@ -12,8 +12,8 @@ export interface ChannelHtmlToPdfRenderer {
 }
 
 export interface HeadlessChromiumLauncher {
-  launch(options: { headless: true }): Promise<{
-    newPage(): Promise<{
+  launch(options: { headless: true; args: readonly string[] }): Promise<{
+    newPage(options: { javaScriptEnabled: false; offline: true; serviceWorkers: 'block' }): Promise<{
       route(pattern: '**/*', handler: (route: { abort(): Promise<void> }) => Promise<void>): Promise<void>
       routeWebSocket(pattern: '**/*', handler: (socket: { close(): void }) => void): Promise<void>
       setContent(html: string, options: { waitUntil: 'load' }): Promise<void>
@@ -27,9 +27,18 @@ export interface HeadlessChromiumLauncher {
 export function createHeadlessChromiumPdfRenderer(launcher: HeadlessChromiumLauncher): ChannelHtmlToPdfRenderer {
   return {
     async render(html) {
-      const browser = await launcher.launch({ headless: true })
+      const browser = await launcher.launch({
+        headless: true,
+        args: [
+          '--disable-background-networking',
+          '--disable-quic',
+          '--disable-webrtc',
+          '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+          '--host-resolver-rules=MAP * ~NOTFOUND',
+        ],
+      })
       try {
-        const page = await browser.newPage()
+        const page = await browser.newPage({ javaScriptEnabled: false, offline: true, serviceWorkers: 'block' })
         await page.route('**/*', async (route) => route.abort())
         await page.routeWebSocket('**/*', (socket) => socket.close())
         await page.setContent(html, { waitUntil: 'load' })
