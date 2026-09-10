@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { afterEach, describe, expect, test } from 'vitest'
 
 import { sha256Bytes } from '../../../shared/digest'
+import { ErrorCode } from '../../../shared/error-codes'
 import { InMemoryShareEntryStore, type ShareEntryStore } from '../../../shared/share-entry'
 import type { SessionCtx } from '../../../shared/session'
 import type { Stat, Workspace } from '../../../shared/workspace'
@@ -200,17 +201,17 @@ function fakeWorkspace(files: Record<string, string>): Workspace {
     runtimeContext: { runtimeCwd: '/workspace' },
     async stat(path: string): Promise<Stat> {
       const entry = entries.get(path)
-      if (!entry) throw new Error(`missing ${path}`)
+      if (!entry) throw Object.assign(new Error(`missing ${path}`), { code: ErrorCode.enum.PATH_NOT_FOUND })
       return { kind: 'file', size: entry.bytes.byteLength, mtimeMs: entry.mtimeMs }
     },
     async readBinaryFile(path: string): Promise<Uint8Array> {
       const entry = entries.get(path)
-      if (!entry) throw new Error(`missing ${path}`)
+      if (!entry) throw Object.assign(new Error(`missing ${path}`), { code: ErrorCode.enum.PATH_NOT_FOUND })
       return entry.bytes.slice()
     },
     async readFile(path: string): Promise<string> {
       const entry = entries.get(path)
-      if (!entry) throw new Error(`missing ${path}`)
+      if (!entry) throw Object.assign(new Error(`missing ${path}`), { code: ErrorCode.enum.PATH_NOT_FOUND })
       return new TextDecoder().decode(entry.bytes)
     },
     async writeFile(): Promise<void> {
