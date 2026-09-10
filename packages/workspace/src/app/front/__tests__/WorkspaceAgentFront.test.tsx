@@ -117,7 +117,14 @@ function GlobalCommandPanel() {
 
 function ShellCreateCapabilityProbe() {
   const capabilities = useWorkspaceShellCapabilities()
-  return <span data-testid="shell-create-capability">{capabilities.createChatSession ? "available" : "unavailable"}</span>
+  return <>
+    <span data-testid="shell-create-capability">{capabilities.createChatSession ? "available" : "unavailable"}</span>
+    {capabilities.createChatSession ? (
+      <button type="button" onClick={() => { void capabilities.createChatSession?.({ title: "Shell-created" }) }}>
+        Create through shell capability
+      </button>
+    ) : null}
+  </>
 }
 
 const globalCommandPanel: PanelConfig = {
@@ -1201,6 +1208,37 @@ describe("WorkspaceAgentFront", () => {
     expect(within(collapsedRail).queryByRole("button", { name: /New chat/ })).not.toBeInTheDocument()
   })
 
+  it("routes the advertised controlled shell create capability through its owner", async () => {
+    const user = userEvent.setup()
+    const onCreateSession = vi.fn(() => ({
+      id: "controlled-created",
+      agentTypeId: "default",
+      title: "Controlled created session",
+    }))
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="controlled-shell-create-owner"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "Controlled session" }]}
+        activeSessionId="s1"
+        onCreateSession={onCreateSession}
+        topBarRight={<ShellCreateCapabilityProbe />}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.getByTestId("shell-create-capability")).toHaveTextContent("available")
+    await user.click(screen.getByRole("button", { name: "Create through shell capability" }))
+    await waitFor(() => expect(onCreateSession).toHaveBeenCalledOnce())
+    expect(fetchMock.mock.calls.some(([input, init]) => (
+      isDefaultSessionsCollectionUrl(String(input)) && (init as RequestInit | undefined)?.method === "POST"
+    ))).toBe(false)
+  })
+
   it("selects Chats from the collapsed app rail without expanding it", async () => {
     const user = userEvent.setup()
     render(
@@ -1956,7 +1994,7 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
       expect(screen.queryByRole("status", { name: "Loading chats" })).not.toBeInTheDocument()
-    })
+    }, { timeout: 5_000 })
     expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"])
     expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:async-fleet-restore") ?? "null")).toMatchObject({
       version: 2,

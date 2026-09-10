@@ -2570,6 +2570,25 @@ export function WorkspaceAgentFront<
     options?: { title?: string; agentTypeId?: string },
   ) => {
     const previous = effectiveActiveSessionRef.current
+    if (hasControlledSessionState) {
+      if (!onCreateSession) {
+        return { success: false as const, reason: "create-failed" as const, message: "Controlled chat session creation is unavailable." }
+      }
+      try {
+        const session = await Promise.resolve(onCreateSession())
+        const sessionId = createdSessionId(session)
+        if (!sessionId) {
+          return { success: false as const, reason: "create-failed" as const, message: "Controlled chat session creation did not return a canonical session." }
+        }
+        const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
+        const agentTypeId = typeof returnedAgentTypeId === "string"
+          ? returnedAgentTypeId
+          : options?.agentTypeId ?? selectedAgentTypeId
+        return { success: true as const, ref: { agentTypeId, sessionId } }
+      } catch (error) {
+        return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Controlled chat session creation failed." }
+      }
+    }
     // The guard below asserts the server created the session under the owner we
     // ASKED for. That is the requested Agent, which since the New chat picker
     // became independent is no longer always the addressed one.
@@ -2617,7 +2636,7 @@ export function WorkspaceAgentFront<
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [coordinateRemoteCreate, fleetModeEnabled, rawDelete, rawSwitch, selectedAgentTypeId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, hasControlledSessionState, onCreateSession, rawDelete, rawSwitch, selectedAgentTypeId])
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     shellSessionCreateSequenceRef.current += 1
     return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
