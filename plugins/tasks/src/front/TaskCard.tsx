@@ -179,9 +179,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
               <FileText className="size-3.5" strokeWidth={1.75} />
             </button>
           ) : null}
-          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Start new chat for ${task.number}`} title="Start new task chat" disabled={openingChat}>
-            <MessageSquarePlus className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
-          </button>
+          {shell.createChatSession ? (
+            <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Start new chat for ${task.number}`} title="Start new task chat" disabled={openingChat}>
+              <MessageSquarePlus className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
+            </button>
+          ) : null}
           <div ref={menuRef} className="relative">
             <button type="button" draggable={false} onClick={(event) => { stopCardAction(event); setMenuOpen((current) => !current) }} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open actions for ${task.number}`} aria-expanded={menuOpen} title="Task actions">
               <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
@@ -232,9 +234,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
               <FileText className="size-3.5" strokeWidth={1.75} />
             </button>
           ) : null}
-          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Start new chat for ${task.number}`} title="Start new task chat" disabled={openingChat}>
-            <MessageSquarePlus className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
-          </button>
+          {shell.createChatSession ? (
+            <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Start new chat for ${task.number}`} title="Start new task chat" disabled={openingChat}>
+              <MessageSquarePlus className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
+            </button>
+          ) : null}
           <div ref={menuRef} className="relative">
             <button type="button" draggable={false} onClick={(event) => { stopCardAction(event); setMenuOpen((current) => !current) }} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open actions for ${task.number}`} aria-expanded={menuOpen} title="Task actions">
               <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
