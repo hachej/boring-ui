@@ -11,6 +11,7 @@ COPY packages/agent/package.json packages/agent/package.json
 COPY packages/boring-bash/package.json packages/boring-bash/package.json
 COPY packages/boring-sandbox/package.json packages/boring-sandbox/package.json
 COPY packages/channels/whatsapp/package.json packages/channels/whatsapp/package.json
+COPY plugins/live-transcription/package.json plugins/live-transcription/package.json
 COPY plugins/boring-mcp/package.json plugins/boring-mcp/package.json
 COPY plugins/boring-governance/package.json plugins/boring-governance/package.json
 COPY plugins/boring-automation/package.json plugins/boring-automation/package.json
@@ -26,6 +27,7 @@ COPY plugins/boring-mcp/ plugins/boring-mcp/
 COPY plugins/boring-governance/ plugins/boring-governance/
 COPY plugins/boring-automation/ plugins/boring-automation/
 COPY plugins/browser/ plugins/browser/
+COPY plugins/live-transcription/ plugins/live-transcription/
 COPY apps/full-app/ apps/full-app/
 
 # Build packages in dependency order.
@@ -48,6 +50,8 @@ RUN pnpm --filter @hachej/boring-bash exec tsup
 RUN pnpm --filter @hachej/boring-agent run build
 
 RUN pnpm --filter @hachej/channel-whatsapp run build
+
+RUN pnpm --filter @hachej/boring-transcription run build
 
 RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
   && pnpm --filter @hachej/boring-workspace exec vite build \
@@ -78,7 +82,7 @@ LABEL org.opencontainers.image.source=$SOURCE \
   org.opencontainers.image.title="boring-ui full-app" \
   boring.role="web"
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bubblewrap ca-certificates util-linux \
+  && apt-get install -y --no-install-recommends bubblewrap ca-certificates chromium util-linux \
   && rm -rf /var/lib/apt/lists/* \
   && corepack enable \
   && groupadd --system --gid 10001 boring \
@@ -136,6 +140,10 @@ COPY --from=build /app/plugins/boring-automation/node_modules/ plugins/boring-au
 COPY --from=build /app/plugins/browser/dist/ plugins/browser/dist/
 COPY --from=build /app/plugins/browser/package.json plugins/browser/package.json
 COPY --from=build /app/plugins/browser/node_modules/ plugins/browser/node_modules/
+
+COPY --from=build /app/plugins/live-transcription/dist/ plugins/live-transcription/dist/
+COPY --from=build /app/plugins/live-transcription/package.json plugins/live-transcription/package.json
+COPY --from=build /app/plugins/live-transcription/node_modules/ plugins/live-transcription/node_modules/
 
 COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
 COPY --from=build /app/apps/full-app/boring.app.toml apps/full-app/boring.app.toml

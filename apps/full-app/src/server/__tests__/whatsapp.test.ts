@@ -39,6 +39,23 @@ describe('readFullAppWhatsAppChannelOptions', () => {
     }))
   })
 
+  it('composes authenticated artifact delivery through the bound Workspace and host Chromium', async () => {
+    const options = readFullAppWhatsAppChannelOptions('default', {
+      ...enabledEnv,
+      BORING_WHATSAPP_ARTIFACTS: '1',
+      BORING_AGENT_WORKSPACE_ROOT: '/var/tmp/full-app-workspaces',
+      BORING_WHATSAPP_AUTHENTICATED_ORIGIN: 'https://app.example.test',
+      BORING_WHATSAPP_CHROMIUM_PATH: '/usr/bin/chromium',
+    })
+    expect(options?.artifactDelivery).toMatchObject({
+      authenticatedOrigin: 'https://app.example.test',
+      runtime: { resolveWorkspace: expect.any(Function) },
+      renderer: { render: expect.any(Function) },
+    })
+    await expect(options!.artifactDelivery!.runtime.resolveWorkspace({ workspaceId: 'workspace-1' } as never))
+      .resolves.toMatchObject({ root: '/var/tmp/full-app-workspaces/workspace-1' })
+  })
+
   it('composes bound Workspace retention with a same-region loopback Whisper processor', async () => {
     const options = readFullAppWhatsAppChannelOptions('default', {
       ...enabledEnv,
@@ -63,6 +80,9 @@ describe('readFullAppWhatsAppChannelOptions', () => {
       ...enabledEnv,
       BORING_WHATSAPP_BINDINGS_JSON: '[]',
     })).toThrow(/non-empty array/)
+    expect(() => readFullAppWhatsAppChannelOptions('default', {
+      ...enabledEnv, BORING_WHATSAPP_ARTIFACTS: '1',
+    })).toThrow(/artifacts require/)
     expect(() => readFullAppWhatsAppChannelOptions('default', {
       ...enabledEnv, BORING_WHATSAPP_MEDIA: '1', BORING_WHATSAPP_MEDIA_REGION: 'US',
     })).toThrow(/MEDIA_REGION=CH\|EU/)

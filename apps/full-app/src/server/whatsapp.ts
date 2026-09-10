@@ -1,7 +1,9 @@
 import { resolve } from 'node:path'
+import { createHeadlessChromiumPdfRenderer } from '@hachej/boring-agent/server'
 import type { CoreWhatsAppChannelOptions } from '@hachej/boring-core/app/server'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createSelfHostedBatchFileTranscriber } from '@hachej/boring-transcription/server'
+import { chromium } from 'playwright-core'
 
 const REQUIRED_CREDENTIALS = [
   'BORING_WHATSAPP_ACCESS_TOKEN',
@@ -28,12 +30,15 @@ export function readFullAppWhatsAppChannelOptions(
   const missing = REQUIRED_CREDENTIALS.filter((name) => !env[name]?.trim())
   if (missing.length > 0) throw new Error(`WhatsApp channel credentials missing: ${missing.join(', ')}`)
   const bindings = parseBindings(env.BORING_WHATSAPP_BINDINGS_JSON)
-  const inboundMedia = readInboundMedia(env)
+  const resolveWorkspace = createWorkspaceResolver(env)
+  const inboundMedia = readInboundMedia(env, resolveWorkspace)
+  const artifactDelivery = readArtifactDelivery(env, resolveWorkspace)
 
   return {
     agentTypeId: env.BORING_WHATSAPP_AGENT_TYPE_ID?.trim() || defaultAgentTypeId,
     provisionedBindings: bindings,
     ...(inboundMedia ? { inboundMedia } : {}),
+    ...(artifactDelivery ? { artifactDelivery } : {}),
     withCredentials: async (use) => await use({
       accessToken: env.BORING_WHATSAPP_ACCESS_TOKEN!.trim(),
       appSecret: env.BORING_WHATSAPP_APP_SECRET!.trim(),
@@ -48,33 +53,74 @@ export function readFullAppWhatsAppChannelOptions(
   }
 }
 
-function readInboundMedia(env: NodeJS.ProcessEnv): CoreWhatsAppChannelOptions['inboundMedia'] {
-  if (env.BORING_WHATSAPP_MEDIA !== '1' && env.BORING_WHATSAPP_MEDIA !== 'true') return undefined
+type WorkspaceResolver = NonNullable<CoreWhatsAppChannelOptions['inboundMedia']>['runtime']['resolveWorkspace']
+
+function createWorkspaceResolver(env: NodeJS.ProcessEnv): WorkspaceResolver | undefined {
   const baseRoot = env.BORING_AGENT_WORKSPACE_ROOT?.trim()
+  if (!baseRoot) return undefined
+  const resolvedBase = resolve(baseRoot)
+  const workspaces = new Map<string, ReturnType<typeof createNodeWorkspace>>()
+  return async (binding) => {
+    const root = resolve(resolvedBase, binding.workspaceId)
+    if (root === resolvedBase || !root.startsWith(`${resolvedBase}/`)) throw new Error('WhatsApp binding Workspace is outside the configured root')
+    let workspace = workspaces.get(binding.workspaceId)
+    if (!workspace) {
+      workspace = createNodeWorkspace(root)
+      workspaces.set(binding.workspaceId, workspace)
+    }
+    return workspace
+  }
+}
+
+function readInboundMedia(
+  env: NodeJS.ProcessEnv,
+  resolveWorkspace: WorkspaceResolver | undefined,
+): CoreWhatsAppChannelOptions['inboundMedia'] {
+  if (env.BORING_WHATSAPP_MEDIA !== '1' && env.BORING_WHATSAPP_MEDIA !== 'true') return undefined
   const upstreamWebSocketUrl = env.BORING_WHATSAPP_WHISPER_URL?.trim()
   const storageRegion = env.BORING_WHATSAPP_MEDIA_REGION?.trim()
-  if (!baseRoot || !upstreamWebSocketUrl || (storageRegion !== 'CH' && storageRegion !== 'EU')) {
+  if (!resolveWorkspace || !upstreamWebSocketUrl || (storageRegion !== 'CH' && storageRegion !== 'EU')) {
     throw new Error('WhatsApp media requires BORING_AGENT_WORKSPACE_ROOT, BORING_WHATSAPP_WHISPER_URL, and BORING_WHATSAPP_MEDIA_REGION=CH|EU')
   }
-  const workspaces = new Map<string, ReturnType<typeof createNodeWorkspace>>()
   return {
-    runtime: {
-      storageRegion,
-      async resolveWorkspace(binding) {
-        const root = resolve(baseRoot, binding.workspaceId)
-        if (root === resolve(baseRoot) || !root.startsWith(`${resolve(baseRoot)}/`)) throw new Error('WhatsApp binding Workspace is outside the configured root')
-        let workspace = workspaces.get(binding.workspaceId)
-        if (!workspace) {
-          workspace = createNodeWorkspace(root)
-          workspaces.set(binding.workspaceId, workspace)
-        }
-        return workspace
-      },
-    },
+    runtime: { storageRegion, resolveWorkspace },
     transcriber: createSelfHostedBatchFileTranscriber({
       upstreamWebSocketUrl,
       processorRegion: storageRegion,
       ...(env.BORING_WHATSAPP_WHISPER_TOKEN?.trim() ? { bearerToken: env.BORING_WHATSAPP_WHISPER_TOKEN.trim() } : {}),
+    }),
+  }
+}
+
+function readArtifactDelivery(
+  env: NodeJS.ProcessEnv,
+  resolveWorkspace: WorkspaceResolver | undefined,
+): CoreWhatsAppChannelOptions['artifactDelivery'] {
+  if (env.BORING_WHATSAPP_ARTIFACTS !== '1' && env.BORING_WHATSAPP_ARTIFACTS !== 'true') return undefined
+  const authenticatedOrigin = env.BORING_WHATSAPP_AUTHENTICATED_ORIGIN?.trim()
+  if (!resolveWorkspace || !authenticatedOrigin) {
+    throw new Error('WhatsApp artifacts require BORING_AGENT_WORKSPACE_ROOT and BORING_WHATSAPP_AUTHENTICATED_ORIGIN')
+  }
+  const executablePath = env.BORING_WHATSAPP_CHROMIUM_PATH?.trim() || '/usr/bin/chromium'
+  return {
+    authenticatedOrigin,
+    runtime: { resolveWorkspace },
+    renderer: createHeadlessChromiumPdfRenderer({
+      async launch({ headless }) {
+        const browser = await chromium.launch({ headless, executablePath })
+        return {
+          async newPage() {
+            const page = await browser.newPage()
+            return {
+              async route(pattern, handler) { await page.route(pattern, async (route) => { await handler(route) }) },
+              async routeWebSocket(pattern, handler) { await page.routeWebSocket(pattern, (socket) => handler(socket)) },
+              async setContent(html, options) { await page.setContent(html, options) },
+              async pdf(options) { return await page.pdf(options) },
+            }
+          },
+          async close() { await browser.close() },
+        }
+      },
     }),
   }
 }
