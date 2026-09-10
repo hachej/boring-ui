@@ -4,8 +4,8 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const APP_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
-const WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
-const COMPANY_ROOT = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || resolve(APP_DIR, "e2e/fixtures/company-context"))
+const WORKSPACE_ROOT = resolve(APP_DIR, "e2e/fixtures/workspace")
+const COMPANY_ROOT = resolve(APP_DIR, "e2e/fixtures/company-context")
 const DUPLICATE_FILE = "duplicate-search.md"
 
 test.beforeAll(async () => {

@@ -41,7 +41,7 @@ export interface AppLeftPaneAgentCardProps {
   onToggle?: () => void
   /** Omitted in nested mode: the disclosure replaces the per-Agent lens. */
   onToggleFilter?: () => void
-  onCreateSession: () => void
+  onCreateSession?: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
   onOpenSettings?: () => void
@@ -186,7 +186,7 @@ export function AppLeftPaneAgentCard({
             <Settings className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
         ) : null}
-        {onCreateSplitSession || onCreatePopoverSession ? (
+        {onCreateSession && (onCreateSplitSession || onCreatePopoverSession) ? (
           // One "+" creates the default chat; this caret is the single place
           // for the placement variants (owner: three placement icons were too
           // many — compact into one affordance, keep the options).
@@ -223,17 +223,18 @@ export function AppLeftPaneAgentCard({
           </DropdownMenu>
         ) : null}
       </span>
-      {/* The "+" is the card's primary affordance, so it never hides. */}
-      <button
-        type="button"
-        aria-label={`New chat with ${label}`}
-        title={`New chat with ${short}`}
-        data-boring-mobile-dismiss="true"
-        onClick={onCreateSession}
-        className={cn(cardActionClassName, "app-left-agent-card-create text-foreground/80 hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.16)] hover:text-[color:var(--accent)]")}
-      >
-        <Plus className="size-4" strokeWidth={2} aria-hidden="true" />
-      </button>
+      {onCreateSession ? (
+        <button
+          type="button"
+          aria-label={`New chat with ${label}`}
+          title={`New chat with ${short}`}
+          data-boring-mobile-dismiss="true"
+          onClick={onCreateSession}
+          className={cn(cardActionClassName, "app-left-agent-card-create text-foreground/80 hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.16)] hover:text-[color:var(--accent)]")}
+        >
+          <Plus className="size-4" strokeWidth={2} aria-hidden="true" />
+        </button>
+      ) : null}
     </div>
   )
 }

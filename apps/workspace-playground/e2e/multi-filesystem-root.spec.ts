@@ -4,8 +4,8 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const APP_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
-const WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
-const COMPANY_CONTEXT_ROOT = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || resolve(APP_DIR, "e2e/fixtures/company-context"))
+const WORKSPACE_ROOT = resolve(APP_DIR, "e2e/fixtures/workspace")
+const COMPANY_CONTEXT_ROOT = resolve(APP_DIR, "e2e/fixtures/company-context")
 const WORKSPACE_FILE = "workspace-root-test.md"
 const COMPANY_FILE = "company-root-test.md"
 const WORKSPACE_CONTENT = "Workspace source content 996"
@@ -45,9 +45,11 @@ async function openAndAssertFile(
 }
 
 test("opening files preserves the selected Workspace and Company roots", async ({ page }) => {
-  const catalogResponse = page.waitForResponse((response) => response.url().endsWith("/api/v1/filesystems"))
   await page.goto("/?fresh=1&multiFilesystem=1")
-  const catalog = await catalogResponse
+  // Chromium may discard a navigation-time response body before Playwright can
+  // consume it. Exercise the same public endpoint through the context request
+  // client, while the root selector below proves the browser consumed it too.
+  const catalog = await page.request.get("/api/v1/filesystems")
   expect(catalog.status()).toBe(200)
   const catalogBody = await catalog.text()
   expect((JSON.parse(catalogBody) as { filesystems: Array<{ filesystem: string }> }).filesystems.map((entry) => entry.filesystem)).toEqual([

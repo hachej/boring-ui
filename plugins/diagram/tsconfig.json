@@ -11,6 +11,7 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
+    "ignoreDeprecations": "6.0",
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
     "paths": {
       "@hachej/boring-agent/front": ["../../packages/agent/src/front/index.ts"],

@@ -161,7 +161,7 @@ export interface AppLeftPaneProps {
   pinnedSessionIds?: readonly string[]
   /** Structured Workspace-internal pinned refs. */
   pinnedSessionRefs?: readonly WorkspaceSessionRef[]
-  onCreateSession: (agentTypeId?: string) => void
+  onCreateSession?: (agentTypeId?: string) => void
   onCreateSplitSession?: (agentTypeId?: string) => void
   onCreatePopoverSession?: (agentTypeId?: string) => void
   navigationEntries: readonly AppLeftNavigationEntry[]
@@ -223,11 +223,13 @@ export function AppLeftRail({
         ))}
       </nav>
       <div className="flex w-full shrink-0 flex-col items-center gap-1 border-t border-border/50 pt-1">
-        <RailAction
-          icon={<Plus className="h-4 w-4" strokeWidth={2} />}
-          label="New chat"
-          onClick={onCreateSession}
-        />
+        {onCreateSession ? (
+          <RailAction
+            icon={<Plus className="h-4 w-4" strokeWidth={2} />}
+            label="New chat"
+            onClick={onCreateSession}
+          />
+        ) : null}
         {footerSlot ? (
           <div className="flex w-9 justify-center" data-boring-workspace-part="app-left-rail-footer">
             {footerSlot}
@@ -611,7 +613,7 @@ export function AppLeftPane({
         // The per-Agent lens only exists where a shared list remains to
         // filter (the multi-project tree); nesting replaces it elsewhere.
         onToggleFilter={nestedAgentChats ? undefined : () => toggleChatsAgentLens(agent.agentTypeId)}
-        onCreateSession={createForAgent(onCreateSession)}
+        onCreateSession={onCreateSession ? createForAgent(onCreateSession) : undefined}
         onCreateSplitSession={onCreateSplitSession ? createForAgent(onCreateSplitSession) : undefined}
         onCreatePopoverSession={onCreatePopoverSession ? createForAgent(onCreatePopoverSession) : undefined}
         onOpenSettings={onOpenAgentSettings ? () => onOpenAgentSettings(agent.agentTypeId) : undefined}
@@ -640,17 +642,19 @@ export function AppLeftPane({
                 : (
                   <div className="flex min-h-[26px] items-center gap-1.5 pl-6 pr-1.5 text-[12px] text-muted-foreground/80">
                     <span>No chats yet.</span>
-                    <button
-                      type="button"
-                      data-boring-mobile-dismiss="true"
-                      onClick={() => {
-                        onSelectAgent?.(agent.agentTypeId)
-                        onCreateSession(agent.agentTypeId)
-                      }}
-                      className="app-left-empty-start rounded-sm text-[12px] font-medium text-[color:var(--accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      Start one
-                    </button>
+                    {onCreateSession ? (
+                      <button
+                        type="button"
+                        data-boring-mobile-dismiss="true"
+                        onClick={() => {
+                          onSelectAgent?.(agent.agentTypeId)
+                          onCreateSession(agent.agentTypeId)
+                        }}
+                        className="app-left-empty-start rounded-sm text-[12px] font-medium text-[color:var(--accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        Start one
+                      </button>
+                    ) : null}
                   </div>
                 )}
           </div>
@@ -792,7 +796,7 @@ export function AppLeftPane({
   // Item 6: one global new-chat entry point for both layouts, targeting the
   // Agent the pane is currently addressing (the host resolves that to the
   // default Agent until one is explicitly picked).
-  const renderFleetNewChat = () => (
+  const renderFleetNewChat = () => onCreateSession ? (
     <div className="px-0">
       <FleetNewChatAction
         agents={agents}
@@ -812,7 +816,7 @@ export function AppLeftPane({
         } : undefined}
       />
     </div>
-  )
+  ) : null
 
   const lensAgentLabel = chatsAgentLens ? agentLabelById.get(chatsAgentLens) : undefined
   // Wherever fleet chats are listed, the active lens is visible and clearable
@@ -906,7 +910,7 @@ export function AppLeftPane({
             {chatsNavigationEntry?.label}
           </h2>
         ) : null}
-        {!fleetChromeEnabled ? (
+        {!fleetChromeEnabled && onCreateSession ? (
           <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
             <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
           </div>

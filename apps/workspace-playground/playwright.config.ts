@@ -3,9 +3,14 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
-const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
-const E2E_COMPANY_CONTEXT_ROOT = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || resolve(APP_DIR, "e2e/fixtures/company-context"))
-const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
+const CI = process.env.CI === "true" || process.env.CI === "1"
+// Never inherit the agent harness's own workspace/session roots here. Factory
+// workers export BORING_AGENT_WORKSPACE_ROOT for tool authority, but the browser
+// suite must stay pinned to its disposable fixtures rather than serving and
+// mutating whichever checkout launched Playwright.
+const E2E_WORKSPACE_ROOT = resolve(APP_DIR, "e2e/fixtures/workspace")
+const E2E_COMPANY_CONTEXT_ROOT = resolve(APP_DIR, "e2e/fixtures/company-context")
+const E2E_SESSION_ROOT = resolve(APP_DIR, "e2e/fixtures/sessions")
 const VITE_PORT = Number(process.env.PLAYWRIGHT_VITE_PORT) || 5380
 const AGENT_API_PORT = Number(process.env.PLAYWRIGHT_AGENT_API_PORT) || 5390
 const SERVER_HOME = resolve(process.env.HOME || resolve(APP_DIR, "e2e/fixtures/home"))
@@ -20,7 +25,15 @@ export default defineConfig({
     "apps/workspace-playground/e2e/**/*.spec.ts",
     "plugins/ask-user/e2e/**/*.spec.ts",
   ],
+  // The release-candidate route deliberately refuses to run against Vite's
+  // source-serving mode. Keep it in its explicit dist-only command without
+  // hiding any ordinary source-mode coverage.
+  testIgnore: process.env.BORING_PLAYGROUND_DIST_ONLY === "1"
+    ? []
+    : ["apps/workspace-playground/e2e/release-candidate-golden-route.spec.ts"],
+  globalTimeout: CI ? 1_200_000 : undefined,
   timeout: 30_000,
+  forbidOnly: CI,
   // The playground tests share a single Vite dev server (one HMR socket,
   // one mockApi state, one localStorage origin). Running tests in
   // parallel makes them step on each other — resize handles get
@@ -29,10 +42,13 @@ export default defineConfig({
   // deterministic.
   workers: 1,
   fullyParallel: false,
-  retries: process.env.CI ? 1 : 0,
+  retries: CI ? 1 : 0,
+  reporter: CI ? [["line"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: `http://127.0.0.1:${VITE_PORT}`,
     headless: true,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   webServer: {
     // Pin to a non-default port so playwright never reuses an unrelated

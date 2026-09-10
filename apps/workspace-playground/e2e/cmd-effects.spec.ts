@@ -10,7 +10,7 @@ const STORAGE_PREFIX = "boring-ui-v2:layout:playground"
 
 async function waitForPluginTabsShell(page: import("@playwright/test").Page) {
   await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole("textbox", { name: "Agent prompt" }).last()).toBeVisible({ timeout: 10_000 })
 }
 
 async function runCommandFromPalette(
@@ -55,12 +55,12 @@ test.describe("command palette effects", () => {
 
   test("New Chat command keeps the composer ready", async ({ page }) => {
     await runCommandFromPalette(page, "New Chat")
-    await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole("textbox", { name: "Agent prompt" }).last()).toBeVisible({ timeout: 5_000 })
   })
 
   test("Focus Chat returns focus to the composer", async ({ page }) => {
     await page.locator('aside[aria-label="App navigation"]').getByRole("button", { name: /^search$/i }).focus()
     await runCommandFromPalette(page, "Focus Chat")
-    await expect(page.locator('[data-boring-agent] textarea[name="message"]')).toBeFocused({ timeout: 2_000 })
+    await expect(page.locator('[data-boring-agent] textarea[name="message"]').last()).toBeFocused({ timeout: 2_000 })
   })
 })

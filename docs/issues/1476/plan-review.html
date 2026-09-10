@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>[Playground E2E CI] Plan approval</title>
+<style>
+:root{color-scheme:light dark;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#5d697a;--line:#dce2eb;--blue:#2856d8;--green:#147d53;--amber:#986b00;--red:#a42c2c}@media(prefers-color-scheme:dark){:root{--bg:#10141b;--card:#181e28;--ink:#edf2f8;--muted:#a9b5c5;--line:#303a4b;--blue:#8daeff;--green:#69d8a7;--amber:#f0c866;--red:#ff9292}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:980px;margin:auto;padding:18px}.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #0000000d}.hero{padding:22px 24px;border-top:5px solid var(--blue)}.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.09em}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}h1{font-size:clamp(25px,4vw,38px);line-height:1.12;margin:6px 0}.pill{padding:4px 10px;border-radius:999px;background:#fff1c2;color:#6d4b00;font-weight:750;font-size:12px}.meta,.small{color:var(--muted)}.tldr{font-size:18px;max-width:820px}.card{padding:20px 22px;margin-top:16px}h2{margin:0 0 12px;font-size:21px}table{border-collapse:collapse;width:100%;display:block;overflow:auto}th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}th{background:color-mix(in srgb,var(--blue) 8%,var(--card))}.two td{width:50%}ul{margin:5px 0;padding-left:20px}code{background:color-mix(in srgb,var(--muted) 13%,transparent);padding:2px 5px;border-radius:5px}.mermaid{white-space:pre-wrap;background:color-mix(in srgb,var(--blue) 5%,var(--card));border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font:13px/1.45 ui-monospace,SFMono-Regular,monospace}.low{background:color-mix(in srgb,var(--green) 14%,var(--card))}.med{background:color-mix(in srgb,var(--amber) 17%,var(--card))}.status{border-left:4px solid var(--green);padding-left:12px}.review{border-left:4px solid var(--amber);padding-left:12px}@media(max-width:620px){.wrap{padding:10px}.hero,.card{padding:16px}th,td{min-width:145px}}
+</style></head><body><main class="wrap">
+<header class="hero"><div class="eyebrow">Gate 1 · Revised plan approval</div><div class="row"><h1>Playground E2E becomes a green, bounded CI gate</h1><span class="pill">RE-APPROVAL REQUIRED</span></div><p class="tldr">The CI wiring is pushed and reviewed, but running the previously invisible suite exposed seven failures. One dependency-correct follow-up reconciles current main and restores green without weakening multi-agent coverage.</p><div class="meta">Orchestrator · 7 Sep 2026 · Issue #1476 · Epic wt-391-forward-t9zq · Delivered .1 @ 24e2660 · Proposed .2</div></header>
+<section class="card"><h2>Proposed architecture</h2><pre class="mermaid">flowchart LR
+  Change[PR or main change] --> Route[Existing changes.e2e routing]
+  Route --> Job[CI E2E job]
+  Job --> Agent[Agent Playwright suite]
+  Job --> PG[Workspace-playground test:e2e]
+  PG --> Config[App-owned Playwright config]
+  Config --> Multi[Multi-agent addressed UI spec]
+  Config --> Full[Full playground + ask-user testMatch]
+  PG -. failure only .-> Evidence[HTML report + test-results + traces/screenshots]
+  Evidence --> Upload[Pinned upload-artifact; finite retention]
+  classDef changed fill:#dbe7ff,stroke:#2856d8,color:#172033;
+  class PG,Config,Evidence,Upload changed;</pre><p class="small">The change reuses the existing package command, Chromium install, path routing, summary gate, and pinned upload action. No production runtime changes.</p></section>
+<section class="card"><h2>Execution discovery</h2><div class="review"><p><strong>Required proof exposed the real baseline:</strong> 40 tests ran; 29 passed, 4 skipped, and 7 failed in 10.6 minutes. The focused multi-agent test failed before its repaired split action with <code>WORKSPACE_UNINITIALIZED</code>. Other failures cover agent-host boot, deck/tasks fixtures, multi-filesystem behavior, and a dist-only release-candidate spec in the ordinary match.</p><p>Slice <code>.1</code> is handed off, pushed, and fresh-reviewed at <code>24e2660</code>. Because a known-red gate cannot meet the outcome, slice <code>.2</code> is a material scope expansion and requires owner re-approval.</p></div></section>
+<section class="card"><h2>Goals / Non-goals</h2><table class="two"><tr><th>Goals</th><th>Non-goals</th></tr><tr><td><ul><li>Run the full app-owned playground suite in CI</li><li>Keep addressed multi-agent browser coverage</li><li>Bound suite steps and the containing job</li><li>Retain actionable diagnostics on failure</li><li>Keep E2E summaries authoritative</li></ul></td><td><ul><li>No production UI changes</li><li>No suite parallelization</li><li>No new browsers or video capture</li><li>No duplicate package script</li><li>No unrelated test rewrites</li></ul></td></tr></table></section>
+<section class="card"><h2>Key CI flow</h2><pre class="mermaid">sequenceDiagram
+  participant GitHub
+  participant E2E as E2E job
+  participant Agent as Agent runner
+  participant PG as Playground runner
+  participant Store as Artifact store
+  GitHub->>E2E: route qualifying change
+  E2E->>Agent: bounded existing pnpm e2e
+  Agent-->>E2E: pass
+  E2E->>PG: bounded workspace-playground test:e2e
+  alt green
+    PG-->>E2E: pass; no failure artifact
+  else failed
+    PG-->>E2E: report, results, trace, screenshot
+    E2E->>Store: upload finite-retention bundle
+  end</pre></section>
+<section class="card"><h2>Decisions</h2><table><tr><th>Decision</th><th>Options</th><th>Chosen</th><th>Why</th></tr><tr><td>Stale spec</td><td>Repair / retire / keep repaired</td><td>Keep repaired</td><td><code>2b35ebde3</code> already moved the locator to the #1176 split hover action; HEAD retains it. Retirement loses focused addressed-agent coverage.</td></tr><tr><td>Invocation</td><td>Root script / package script / file list</td><td>Existing package <code>test:e2e</code></td><td>It owns dependency builds and the full app config without duplicating scripts.</td></tr><tr><td>Concurrency</td><td>Parallel / serial</td><td>Serial, one worker</td><td>Tests share one Vite server, mock state, and localStorage origin.</td></tr><tr><td>Diagnostics</td><td>Always upload / failure only / none</td><td>Failure only</td><td>Retains report, test results, trace, and screenshots without green-run noise.</td></tr><tr><td>Bounds</td><td>Runner only / workflow only / layered</td><td>Layered</td><td>Playwright, each run step, and the job each cap a different hang mode.</td></tr></table></section>
+<section class="card"><h2>Risks</h2><table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr><tr><td>Serial suite lengthens CI</td><td class="med">Medium</td><td class="med">Medium</td><td>Existing path routing, cancel-in-progress, one retry, and finite suite/step/job caps.</td></tr><tr><td>Shared test state flakes under concurrency</td><td class="low">Low</td><td class="med">Medium</td><td>Preserve one worker and sequential suite execution.</td></tr><tr><td>Failure lacks useful output</td><td class="low">Low</td><td class="med">Medium</td><td>HTML + test-results plus retain-on-failure trace and failure screenshot; upload both directories.</td></tr><tr><td>Reported stale test is changed unnecessarily</td><td class="low">Low</td><td class="med">Medium</td><td>History and HEAD show the locator already repaired; focused proof, not speculative rewrite.</td></tr></table></section>
+<section class="card"><h2>Revised Bead dependency graph</h2><pre class="mermaid">graph LR
+  E[wt-391-forward-t9zq Epic] --> A[.1 CI wiring closed at 24e2660]
+  E --> B[.2 Restore green suite P0 ready]
+  A -->|blocks; satisfied| B
+  classDef done fill:#d9f4e8,stroke:#147d53,color:#172033;
+  classDef next fill:#fff1c2,stroke:#986b00,color:#172033;
+  class A done; class B next;</pre><div class="status"><p><strong>Validated:</strong> zero active cycles; scoped graph has 3 nodes and 1 edge, topological order epic → .1 → .2. Slice .2 owns current-main reconciliation and the seven named failures; it may touch production source only when reproduction proves an actual regression.</p></div></section>
+<section class="card"><h2>Independent review status</h2><div class="review"><p><strong>Plan review unavailable.</strong> This session exposes no host-provided independent plan-review mechanism. The Orchestrator did not substitute a direct Codex loop or Worker session. Slice .1 did receive an approving fresh implementation review at <code>24e2660</code>; that does not independently certify this revised scope.</p></div></section>
+<section class="card"><h2>Open question</h2><p><strong>Owner:</strong> approve or reject expansion from two configuration files to one bounded restoration slice covering current-main reconciliation and the seven enumerated suite failures. Assertions and ordinary coverage may not be weakened.</p></section>
+<section class="card"><h2>Proof path & references</h2><table><tr><th>Evidence</th><th>Exact target</th></tr><tr><td>Full public seam</td><td><code>CI=true pnpm --filter workspace-playground run test:e2e</code></td></tr><tr><td>Focused regression</td><td><code>CI=true pnpm --filter workspace-playground exec playwright test apps/workspace-playground/e2e/multi-agent-addressed-ui.spec.ts</code></td></tr><tr><td>Workflow pins</td><td><code>pnpm check:action-pins</code></td></tr><tr><td>CI evidence</td><td>Green E2E check logs both bounded runner steps; failed playground runs upload <code>workspace-playground-playwright-failure</code>.</td></tr><tr><td>Canonical plan</td><td><code>docs/issues/1476/plan.md</code></td></tr><tr><td>GitHub issue</td><td>https://github.com/hachej/boring-ui/issues/1476</td></tr></table><p class="small">Planning obeyed the no-install/no-build constraint; only repository files and git history were inspected.</p></section>
+</main></body></html>

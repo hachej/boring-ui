@@ -42,7 +42,7 @@ export function useWorkspaceShellCapabilitiesHost({
   agentLabelByTypeId?: Map<string, string> | null
   defaultSessionTitle: string
   makeCenterParams: (sessionKey: string, options?: { bridgeEnabled?: boolean }) => unknown
-  createChatSession: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
+  createChatSession?: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
   deleteChatSession: (ref: WorkspaceShellSessionRef) => Promise<WorkspaceShellCapabilityResult>
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
