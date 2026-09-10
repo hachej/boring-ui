@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import { describe, expect, test } from 'vitest'
 import { deepLinkRoutes } from '../deepLink'
+import { ErrorCode } from '../../../../shared/error-codes'
 import { InMemoryShareEntryStore, ShareEntryErrorCode, type ShareEntryStore } from '../../../../shared/share-entry'
 import type { Stat, Workspace } from '../../../../shared/workspace'
 
@@ -11,7 +12,7 @@ function fakeWorkspace(opts: { existingPaths: Set<string>; content?: string }): 
     runtimeContext: { runtimeCwd: '/workspace' },
     async readFile(relPath: string) {
       if (!opts.existingPaths.has(relPath)) {
-        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: 'PATH_NOT_FOUND' })
+        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: ErrorCode.enum.PATH_NOT_FOUND })
       }
       return opts.content ?? '# current artifact'
     },
@@ -26,7 +27,7 @@ function fakeWorkspace(opts: { existingPaths: Set<string>; content?: string }): 
     },
     async stat(relPath: string): Promise<Stat> {
       if (!opts.existingPaths.has(relPath)) {
-        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: 'PATH_NOT_FOUND' })
+        throw Object.assign(new Error(`PATH_NOT_FOUND: ${relPath}`), { code: ErrorCode.enum.PATH_NOT_FOUND })
       }
       return { size: (opts.content ?? '# current artifact').length, mtimeMs: Date.now(), kind: 'file' }
     },

@@ -1,4 +1,4 @@
-import { InMemoryShareEntryStore, ShareEntryErrorCode } from '@hachej/boring-agent/shared'
+import { ErrorCode, InMemoryShareEntryStore, ShareEntryErrorCode } from '@hachej/boring-agent/shared'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
 import { mocks } from './createCoreWorkspaceAgentServer.testHarness.js'
@@ -46,10 +46,10 @@ describe('Core GET /a/:id lazy authorization', () => {
         runtimeContext: { runtimeCwd: '/runtime/workspace-1' },
         stat: vi.fn(async (path: string) => {
           if (path === tombstoned.path) {
-            throw Object.assign(new Error('PATH_NOT_FOUND'), { code: 'PATH_NOT_FOUND' })
+            throw Object.assign(new Error('PATH_NOT_FOUND'), { code: ErrorCode.enum.PATH_NOT_FOUND })
           }
           if (path === unavailable.path) {
-            throw Object.assign(new Error('runtime Workspace unavailable'), { code: 'WORKSPACE_NOT_READY' })
+            throw Object.assign(new Error('runtime Workspace unavailable'), { code: ErrorCode.enum.WORKSPACE_NOT_READY })
           }
           return { kind: 'file', size: 18, mtimeMs: 1 }
         }),
