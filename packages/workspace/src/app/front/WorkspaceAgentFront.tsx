@@ -1201,6 +1201,7 @@ export function WorkspaceAgentFront<
   const remoteSessionInventoryLoading = !hasControlledSessionState && (
     remoteSessionsTransitioning || Boolean(
       remoteSessionsPending
+        && remoteSessionApi.loading
         && !remoteSessionsHaveStaleData
         && !remoteSessionApi.error,
     )
