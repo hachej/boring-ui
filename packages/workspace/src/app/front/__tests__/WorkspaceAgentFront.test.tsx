@@ -1163,6 +1163,35 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   }, 10_000)
 
+  it("hides controlled plugin-tabs create controls when remote hydration is enabled without a create owner", async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.mocked(fetch)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-controlled-no-create"
+        workspaceLayout="plugin-tabs"
+        provisionWorkspace={false}
+        remoteSessionsEnabled
+        sessions={[{ id: "s1", title: "Controlled session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        onSwitchSession={vi.fn()}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true)
+    })
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).getByText("Controlled session")).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: /New chat/ })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+    const collapsedRail = screen.getByLabelText("Collapsed app navigation")
+    expect(within(collapsedRail).queryByRole("button", { name: /New chat/ })).not.toBeInTheDocument()
+  })
+
   it("selects Chats from the collapsed app rail without expanding it", async () => {
     const user = userEvent.setup()
     render(

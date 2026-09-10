@@ -2838,10 +2838,10 @@ export function WorkspaceAgentFront<
         <AppLeftRail
           navigationEntries={appLeftNavigationEntries}
           footerSlot={showThemeToggle ? <ThemeToggle /> : undefined}
-          onCreateSession={() => {
+          onCreateSession={canCreateSessions ? () => {
             setLeftOverlay(null)
             void createChatSession()
-          }}
+          } : undefined}
         />
       )}
       leftPane={(
@@ -2857,7 +2857,7 @@ export function WorkspaceAgentFront<
           onOpenProjectSession={onOpenAppLeftProjectSession}
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
           onCreateProject={onCreateAppLeftProject}
-          onCreateProjectSession={(projectId) => {
+          onCreateProjectSession={canCreateSessions ? (projectId) => {
             // Active project → create a chat in place. Other project → switch to
             // it (lands in a fresh "new chat" surface). Cross-project new-session
             // without a switch needs the pending-entry contract (plan §5.1) — deferred.
@@ -2867,7 +2867,7 @@ export function WorkspaceAgentFront<
             } else {
               onSwitchAppLeftProject?.(projectId)
             }
-          }}
+          } : undefined}
           onOpenProjectSettings={onOpenAppLeftProjectSettings}
           onOpenProjectInNewTab={onOpenAppLeftProjectInNewTab}
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
@@ -2891,15 +2891,15 @@ export function WorkspaceAgentFront<
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}
           pinnedSessionRefs={pinnedRefs}
-          onCreateSession={(ownerAgentTypeId) => {
+          onCreateSession={canCreateSessions ? (ownerAgentTypeId) => {
             setLeftOverlay(null)
             void createChatSession(ownerAgentTypeId)
-          }}
-          onCreateSplitSession={(ownerAgentTypeId) => {
+          } : undefined}
+          onCreateSplitSession={canCreateSessions ? (ownerAgentTypeId) => {
             setLeftOverlay(null)
             void createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
-          }}
-          onCreatePopoverSession={createChatSessionInPopover}
+          } : undefined}
+          onCreatePopoverSession={canCreateSessions ? createChatSessionInPopover : undefined}
           navigationEntries={appLeftNavigationEntries}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
