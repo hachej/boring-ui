@@ -1198,10 +1198,12 @@ export function WorkspaceAgentFront<
   // A persisted chat pane can render while its list inventory is still
   // resolving. Keep that shell available, but do not mistake the temporary
   // empty inventory for an authoritative empty list in app-left navigation.
-  const remoteSessionInventoryLoading = remoteSessionsTransitioning || Boolean(
-    remoteSessionsPending
-      && !remoteSessionsHaveStaleData
-      && !remoteSessionApi.error,
+  const remoteSessionInventoryLoading = !hasControlledSessionState && (
+    remoteSessionsTransitioning || Boolean(
+      remoteSessionsPending
+        && !remoteSessionsHaveStaleData
+        && !remoteSessionApi.error,
+    )
   )
 
   useEffect(() => {
@@ -1774,8 +1776,9 @@ export function WorkspaceAgentFront<
   // While remote sessions load, resolvedSessions is a one-item placeholder
   // for the stored active session — never an authoritative list to prune
   // restored panes against.
-  const sessionListAuthoritative = !remoteSessionsPending
-    && (sessionApi?.inventoryAuthoritative ?? !sessionApi?.hasMore)
+  const sessionListAuthoritative = hasControlledSessionState || (
+    !remoteSessionsPending && (sessionApi?.inventoryAuthoritative ?? !sessionApi?.hasMore)
+  )
   const resolvedSessionsByKey = useMemo(() => new Map(
     resolvedSessions.map((session) => [workspaceSessionKeyFor(session), session]),
   ), [resolvedSessions])
@@ -1857,7 +1860,7 @@ export function WorkspaceAgentFront<
       // ephemeral "default" placeholder — restored pane state is more
       // trustworthy than it, so leave the layout untouched until the real
       // session list arrives.
-      if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
+      if (!hasControlledSessionState && remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
       const currentActiveRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
       const activeOwnerIsExplicit = Boolean(effectiveActiveSessionAgentTypeId)
       // #1472 review: a fleet create's addressed-Agent switch and its pane
@@ -1917,7 +1920,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, optimisticCreateAckTick, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
+  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, hasControlledSessionState, optimisticCreateAckTick, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -2246,9 +2249,9 @@ export function WorkspaceAgentFront<
   }), [])
 
   useEffect(() => {
-    if (remoteSessionsPending) return
+    if (!hasControlledSessionState && remoteSessionsPending) return
     onActiveSessionIdChange?.(effectiveActiveSessionId ?? null)
-  }, [effectiveActiveSessionId, onActiveSessionIdChange, remoteSessionsPending])
+  }, [effectiveActiveSessionId, hasControlledSessionState, onActiveSessionIdChange, remoteSessionsPending])
 
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
@@ -2420,7 +2423,8 @@ export function WorkspaceAgentFront<
     }
     return [...refs.values()]
   }, [effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, providerChatPaneSessionRefs, resolvedSessions, selectedAgentTypeId])
-  const attentionSessionsAuthoritative = !remoteSessionsPending && !(sessionApi?.hasMore ?? false)
+  const attentionSessionsAuthoritative = hasControlledSessionState
+    || (!remoteSessionsPending && !(sessionApi?.hasMore ?? false))
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
@@ -2500,6 +2504,15 @@ export function WorkspaceAgentFront<
   const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null
   const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => workspaceSessionRefFromKey(id)), [chatPaneIds])
   const pinnedRefs = useMemo(() => pinnedIds.map((id) => workspaceSessionRefFromKey(id)), [pinnedIds])
+  const canCreateSessions = hasControlledSessionState
+    ? Boolean(onCreateSession)
+    : true
+  const canDeleteSessions = hasControlledSessionState
+    ? Boolean(onDeleteSession)
+    : Boolean(sessionApi || !hasExplicitSessionProps)
+  const canRenameSessions = hasControlledSessionState
+    ? Boolean(onRenameSession)
+    : Boolean(sessionApi || !hasExplicitSessionProps)
   const navParams = {
     sessions: resolvedSessions,
     activeRef: activeChatPaneRef,
@@ -2514,19 +2527,13 @@ export function WorkspaceAgentFront<
     // transaction (no pending pane, no placement, collidable with any other
     // manual create) AND silently addressed the *read* Agent, not the picker
     // target.
-    onCreate: () => createChatSession(),
-    onDelete: deleteSessionAndPane,
+    onCreate: canCreateSessions ? () => createChatSession() : undefined,
+    onDelete: canDeleteSessions ? deleteSessionAndPane : undefined,
     onLoadMore: sessionApi?.loadMore,
     hasMore: sessionApi?.hasMore,
     loadingMore: sessionApi?.loadingMore,
     onClose: () => setNavOpen(false),
   }
-  const canDeleteSessions = hasControlledSessionState
-    ? Boolean(onDeleteSession)
-    : Boolean(sessionApi || !hasExplicitSessionProps)
-  const canRenameSessions = hasControlledSessionState
-    ? Boolean(onRenameSession)
-    : Boolean(sessionApi || !hasExplicitSessionProps)
   const chatPaneSessionActions = useMemo(() => ({
     isPinned: (sessionKey: string) => pinnedIds.includes(sessionKey),
     onTogglePin: (sessionKey: string) => {

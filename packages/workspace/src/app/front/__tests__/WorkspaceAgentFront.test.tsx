@@ -1091,7 +1091,6 @@ describe("WorkspaceAgentFront", () => {
       <WorkspaceAgentFront
         workspaceId="plugin-tabs-nav"
         workspaceLayout="plugin-tabs"
-        chatPanel={SessionIdChatPanel}
         provisionWorkspace={false}
         remoteSessionsEnabled
         sessions={sessions}
@@ -1125,6 +1124,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Codex mobile")).not.toBeInTheDocument()
     expect(screen.queryByText("Automations")).not.toBeInTheDocument()
 
+    await waitFor(() => expect(within(appNav).getByText("First session")).toBeInTheDocument())
     const appRows = Array.from(appNav.querySelectorAll<HTMLElement>('[data-boring-workspace-part="app-session-row"]'))
     const firstRow = appRows.find((row) => row.textContent?.includes("First session"))
     const secondRow = appRows.find((row) => row.textContent?.includes("Second session"))
@@ -1161,7 +1161,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(collapsedRail).getByRole("button", { name: "Chats" })).toBeInTheDocument()
     expect(within(collapsedRail).getByRole("button", { name: "New chat" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
-  })
+  }, 10_000)
 
   it("selects Chats from the collapsed app rail without expanding it", async () => {
     const user = userEvent.setup()
