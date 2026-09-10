@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "stateId": "cpr-04:workspace-command-palette:candidate:mobile:explore-0004-dialog-popover:31e49a82afe5",
+  "scenarioId": "workspace-command-palette",
+  "scenarioSpecRevision": "workspace-command-palette-v9",
+  "fixtureResetId": "workspace-playground-e2e-fresh-v1",
+  "origin": "http://127.0.0.1:6430",
+  "targetUrl": "http://127.0.0.1:6430/?fresh=1",
+  "viewport": {
+    "name": "mobile",
+    "width": 390,
+    "height": 844,
+    "deviceScaleFactor": 1,
+    "hasTouch": true
+  },
+  "expectedNormalizedStateSignature": "c13a042cfa91e283198d0ea64bf955f70df1a204efd47d21b068ef09bfe4138a",
+  "expectedScreenshotDigest": "31e49a82afe5f421655473496e2e40e8f2e228af6255ee3199f690d41c7d8f77",
+  "expectedScreenshotPHash": "fefefefefefefefe",
+  "maximumScreenshotPHashDistance": 8,
+  "traceDigest": "e4abe04414c1bd99b6b77d68a9559628adf87556f1fd79fba8878a6006e2ac5b",
+  "sourceScreenshotName": "1788997619570011.jpeg",
+  "actionCount": 4,
+  "hashCurrent": null
+}

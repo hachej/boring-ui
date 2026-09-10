@@ -1,0 +1,594 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "command-palette-v4",
+  "results": [
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0001-layout:ffcb818f5244",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0003-dialog-popover:ae74552712e9",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0002-layout:e824b0eff543",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0004-dialog-popover:d3de00cfd1d0",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0006-dialog-popover:78ac3640eb95",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0007-dialog-popover:5e68af20ddfe",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0008-dialog-popover:9988990424c4",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0009-dialog-popover:ee6455ad089e",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:explore-0011-dialog-popover:b8a1bd6131f2",
+      "passed": true,
+      "evidence": "All 49 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0001-layout:ff067ed270b1",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0006-dialog-popover:8f7ae3b996d9",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0002-layout:fe94fdbff847",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0005-layout:af14161ee2c1",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0008-layout:4d62e8c245e5",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0044-dialog-popover:01f2e22c8af9",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0011-dialog-popover:195dbeb8de49",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0012-layout:90ea43497543",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "bombadil-properties",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:explore-0032-dialog-popover:8aa5a4546617",
+      "passed": true,
+      "evidence": "All 50 raw Bombadil states passed exported properties."
+    },
+    {
+      "id": "console-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:6230/api/v1/filesystems\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/alpha/ready-status\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/session-activity/events?workspaceId=workspace\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "modal-viewport-bounds",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "inside"
+    },
+    {
+      "id": "modal-blocker-count",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "visible=0"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "command-palette-visibility",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "checkpoint=closed;visible=false"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:closed:cde4e23bae94",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:6230/api/v1/filesystems\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/alpha/ready-status\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/session-activity/events?workspaceId=workspace\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "serious:nested-interactive:1"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "modal-viewport-bounds",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "inside"
+    },
+    {
+      "id": "modal-blocker-count",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "visible=1"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "{\"label\":\"input\",\"bounds\":{\"x\":566.921875,\"y\":363,\"width\":460.078125,\"height\":48},\"occluded\":false}"
+    },
+    {
+      "id": "command-palette-visibility",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "checkpoint=open;visible=true"
+    },
+    {
+      "id": "command-palette-input-divider",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "count=1"
+    },
+    {
+      "id": "command-palette-desktop-width",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "width=640"
+    },
+    {
+      "id": "command-palette-keyboard-hints",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "present=true"
+    },
+    {
+      "id": "command-palette-command-mode",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "pressed=false"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:open:88ba94e53056",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:6230/api/v1/filesystems\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/alpha/ready-status\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/session-activity/events?workspaceId=workspace\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "modal-viewport-bounds",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "inside"
+    },
+    {
+      "id": "modal-blocker-count",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "visible=1"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "{\"label\":\"input\",\"bounds\":{\"x\":566.921875,\"y\":313,\"width\":460.078125,\"height\":48},\"occluded\":false}"
+    },
+    {
+      "id": "command-palette-visibility",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "checkpoint=commands;visible=true"
+    },
+    {
+      "id": "command-palette-input-divider",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "count=1"
+    },
+    {
+      "id": "command-palette-desktop-width",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "width=640"
+    },
+    {
+      "id": "command-palette-keyboard-hints",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "present=true"
+    },
+    {
+      "id": "command-palette-command-mode",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "pressed=true"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "cpr-02:workspace-command-palette:candidate:desktop:commands:928293f41bc9",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:6230/api/v1/filesystems\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/alpha/ready-status\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/session-activity/events?workspaceId=workspace\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "modal-viewport-bounds",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "inside"
+    },
+    {
+      "id": "modal-blocker-count",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "visible=0"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "command-palette-visibility",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "checkpoint=closed;visible=false"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:closed:45ff859e660a",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:6230/api/v1/filesystems\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/alpha/ready-status\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/session-activity/events?workspaceId=workspace\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "serious:nested-interactive:1"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "modal-viewport-bounds",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "inside"
+    },
+    {
+      "id": "modal-blocker-count",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "visible=1"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "{\"label\":\"input\",\"bounds\":{\"x\":44.921875,\"y\":17,\"width\":316.078125,\"height\":48},\"occluded\":false}"
+    },
+    {
+      "id": "command-palette-visibility",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "checkpoint=open;visible=true"
+    },
+    {
+      "id": "command-palette-input-divider",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "count=1"
+    },
+    {
+      "id": "command-palette-touch-hint",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "present=true"
+    },
+    {
+      "id": "command-palette-command-mode",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "pressed=false"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:open:e2ee7624e352",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:6230/api/v1/filesystems\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/tree?path=.\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/alpha/ready-status\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/agents/session-activity/events?workspaceId=workspace\nnet::ERR_ABORTED http://127.0.0.1:6230/api/v1/ui/state"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "modal-viewport-bounds",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "inside"
+    },
+    {
+      "id": "modal-blocker-count",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "visible=1"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "{\"label\":\"input\",\"bounds\":{\"x\":44.921875,\"y\":17,\"width\":316.078125,\"height\":48},\"occluded\":false}"
+    },
+    {
+      "id": "command-palette-visibility",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "checkpoint=commands;visible=true"
+    },
+    {
+      "id": "command-palette-input-divider",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "count=1"
+    },
+    {
+      "id": "command-palette-touch-hint",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "present=true"
+    },
+    {
+      "id": "command-palette-command-mode",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "pressed=true"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "cpr-02:workspace-command-palette:candidate:mobile:commands:414cc474961c",
+      "passed": true,
+      "evidence": "pass"
+    }
+  ]
+}
