@@ -7,6 +7,7 @@
 // "Access denial is the existing generic membership denial, not an AR1
 // code") and never emits a workspace path in any response body.
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { Workspace } from '../../../shared/workspace'
 import {
   ShareEntryErrorCode,
@@ -19,6 +20,16 @@ const DEFAULT_WORKSPACE_ID = 'default'
 
 interface DeepLinkParams {
   id: string
+}
+
+class ShareTargetUnavailableError extends Error {
+  readonly code = ErrorCode.enum.WORKSPACE_NOT_READY
+  readonly statusCode = 503
+
+  constructor(cause: unknown) {
+    super('share target is temporarily unavailable', { cause })
+    this.name = 'ShareTargetUnavailableError'
+  }
 }
 
 export interface DeepLinkRoutesOptions {
@@ -82,7 +93,9 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
     // authorization may request.workspaceContext be trusted for comparison.
     const workspace = await resolveWorkspace(request, entry.workspaceId)
     if (!workspace || entry.workspaceId !== getRequestWorkspaceId(request)) return sendShareNotFound(reply)
-    const resolution = await resolveShareEntry(opts.store, id, workspace)
+    const resolution = await resolveShareEntry(opts.store, id, workspace).catch((error: unknown) => {
+      throw new ShareTargetUnavailableError(error)
+    })
 
     switch (resolution.status) {
       case 'not_found':
@@ -98,7 +111,7 @@ export const deepLinkRoutes: FastifyPluginCallback<DeepLinkRoutesOptions> = (app
         try {
           content = await workspace.readFile(resolution.entry.path)
         } catch (error) {
-          if (!isShareTargetNotFoundError(error)) throw error
+          if (!isShareTargetNotFoundError(error)) throw new ShareTargetUnavailableError(error)
           return reply.code(200).send({
             status: 'tombstoned',
             code: ShareEntryErrorCode.enum.AR1_SHARE_TOMBSTONED,

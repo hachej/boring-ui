@@ -274,11 +274,10 @@ export type ShareEntryResolution =
  * presenting those as deletion would mislead an authorized member.
  */
 export function isShareTargetNotFoundError(error: unknown): boolean {
-  const candidate = error as { code?: unknown; status?: unknown; statusCode?: unknown } | null | undefined
-  return candidate?.code === 'ENOENT'
-    || candidate?.code === ErrorCode.enum.PATH_NOT_FOUND
-    || candidate?.status === 404
-    || candidate?.statusCode === 404
+  const code = (error as { code?: unknown } | null | undefined)?.code
+  // HTTP status is deliberately excluded: remote providers also use 404/410
+  // for an expired or unavailable sandbox, which is not file deletion.
+  return code === 'ENOENT' || code === ErrorCode.enum.PATH_NOT_FOUND
 }
 
 export async function resolveShareEntry(

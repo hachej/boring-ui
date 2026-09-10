@@ -49,7 +49,9 @@ describe('Core GET /a/:id lazy authorization', () => {
             throw Object.assign(new Error('PATH_NOT_FOUND'), { code: ErrorCode.enum.PATH_NOT_FOUND })
           }
           if (path === unavailable.path) {
-            throw Object.assign(new Error('runtime Workspace unavailable'), { code: ErrorCode.enum.WORKSPACE_NOT_READY })
+            // Vercel uses HTTP 404 for an expired sandbox. That operational
+            // failure must not be confused with canonical PATH_NOT_FOUND.
+            throw Object.assign(new Error('runtime Workspace unavailable'), { status: 404 })
           }
           return { kind: 'file', size: 18, mtimeMs: 1 }
         }),
@@ -132,7 +134,7 @@ describe('Core GET /a/:id lazy authorization', () => {
         url: `/a/${unavailable.id}`,
         headers: { 'x-test-user-id': 'member-1' },
       })
-      expect(operationalFailure.statusCode).toBe(500)
+      expect(operationalFailure.statusCode).toBe(503)
       expect(operationalFailure.body).not.toContain(unavailable.path)
       expect(operationalFailure.body).not.toContain('tombstoned')
       expect(mocks.acquireEnvironment).toHaveBeenCalledTimes(3)
