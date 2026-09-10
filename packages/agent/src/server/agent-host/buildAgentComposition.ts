@@ -28,6 +28,12 @@ import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
 import type { AgentHarnessBackend } from './harnessBackend/types'
 import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
+import type {
+  WorkspaceCredentialRuntimeViewV1,
+  WorkspaceCredentialVaultCompositionV1,
+} from '../credentials/startupComposition'
+import type { AgentInvocationFundingPolicyV1 } from '../../shared/workspaceAgentDispatcher'
+import { assertChannelDurability } from '../channels'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -124,13 +130,25 @@ function reportEventStoreOpenFailure(telemetry: TelemetrySink | undefined, path:
 export interface BuildAgentCompositionInput {
   readonly agent: CompiledAgentHostAgentSpec
   readonly workspaceScopeId: string
+  /** Verified claim subject; omitted only by direct test/dev composition. */
+  readonly actorUserId?: string
+  /** Invocation authority, independent of the authored Agent's mutable name/id. */
+  readonly fundingPolicy: AgentInvocationFundingPolicyV1
   readonly runtimeScope: ResolvedAgentRuntimeScope
   readonly runtimeBundle: RuntimeBundle
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
     CreateAgentHostOptions,
-    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
+    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory' | 'eventStore'
   >
+  /**
+   * [1082 slice B] Host-scope credential-vault composition, resolved ONCE at
+   * host startup (`createAgentHost`) and shared by every runtime binding so
+   * all bindings see the same vault. This function never resolves env or
+   * constructs vault state itself; it only attaches the narrowed per-binding
+   * view. Env misconfiguration therefore throws at host startup, not here.
+   */
+  readonly credentialComposition?: WorkspaceCredentialVaultCompositionV1
   readonly observeSessionEvent?: (sessionId: string, event: import('../../shared/chat').PiChatEvent) => void
 }
 
@@ -143,7 +161,20 @@ export interface BuiltAgentComposition {
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
   readonly getFilesystemBindings?: (ctx: { sessionId?: string; userId?: string; requestId?: string }) => Promise<readonly RuntimeFilesystemBinding[]>
+  /**
+   * [1082 slice B] Narrowed per-binding credential view (registries + the
+   * pre-bound resolver). Present only when `BORING_CREDENTIAL_KMS_BACKEND`
+   * selected a backend at host startup. The raw vault backend and resolver
+   * minting stay on the host-scope composition and are deliberately not
+   * exposed here.
+   */
+  readonly credentials?: WorkspaceCredentialRuntimeViewV1
   dispose(): Promise<void>
+}
+
+/** Only an explicitly authorized interactive invocation may spend personal subscription OAuth. */
+export function allowsSubscriptionOAuthForInvocationV1(policy: AgentInvocationFundingPolicyV1): boolean {
+  return policy === 'personal-subscription'
 }
 
 /** Environment skill roots require an ordinary trusted host provisioning grant. */
@@ -162,6 +193,7 @@ export function provisionedSkillPathsForAgent(
 export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
+  assertChannelDurability(isDurableStreamEnabled() || input.options.eventStore !== undefined)
   const { runtimeScope, options } = input
   const bindingIsVisible = (binding: RuntimeFilesystemBinding) =>
     binding.agentTypeIds === undefined || binding.agentTypeIds.includes(input.agent.agentTypeId)
@@ -268,6 +300,18 @@ export async function buildAgentComposition(
   const getUnprojectedHotResources = unprojectedPi.getHotReloadableResources
   const pi = {
     ...unprojectedPi,
+    ...(input.credentialComposition
+      ? {
+          credentialStore: input.credentialComposition.createPiCredentialStore(
+            input.workspaceScopeId,
+            input.actorUserId,
+            {
+              allowSubscriptionOAuth: input.actorUserId !== undefined
+                && allowsSubscriptionOAuthForInvocationV1(input.fundingPolicy),
+            },
+          ),
+        }
+      : {}),
     additionalSkillPaths: projectSkillPaths(unprojectedPi.additionalSkillPaths ?? []),
     ...(getUnprojectedHotResources
       ? {
@@ -325,13 +369,15 @@ export async function buildAgentComposition(
     telemetry: options.telemetry,
   })
   const sessionStore = harness.sessions
-  const durableEventStore = isDurableStreamEnabled()
-    ? openDurableEventStore({
-        sessionRoot: options.sessionRoot,
-        hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
-        telemetry: options.telemetry,
-      })
-    : undefined
+  const durableEventStore = options.eventStore
+    ? { store: options.eventStore, close: undefined }
+    : isDurableStreamEnabled()
+      ? openDurableEventStore({
+          sessionRoot: options.sessionRoot,
+          hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+          telemetry: options.telemetry,
+        })
+      : undefined
   const backend = createPiSessionHarnessBackend({
     agentTypeId: input.agent.agentTypeId,
     harness,
@@ -355,8 +401,9 @@ export async function buildAgentComposition(
     runtimeBundle,
     readyTracker,
     ...(getFilesystemBindings ? { getFilesystemBindings } : {}),
+    credentials: input.credentialComposition?.runtimeView,
     dispose() {
-      disposed ??= backend.close().finally(() => durableEventStore?.close())
+      disposed ??= backend.close().finally(() => durableEventStore?.close?.())
       return disposed
     },
   }

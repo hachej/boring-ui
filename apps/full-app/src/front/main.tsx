@@ -13,16 +13,23 @@ import {
   UserMenu,
   UserSettingsPage,
   WorkspaceSwitcher,
+  useCurrentWorkspace,
+  useWorkspaceRole,
 } from '@hachej/boring-core/front'
+import { CredentialSettingsSurface } from '@hachej/boring-agent/front'
 import '@hachej/boring-core/app/front/styles.css'
 import { GovernanceUsagePanel, createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
 import boringAutomationPlugin from '@hachej/boring-automation/front'
+import browserPlugin from '@hachej/boring-browser/front'
 import { PublicHeroDescription } from './PublicHeroDescription'
 import { fullAppBoringMcpOptions } from './boringMcp'
 
 const PRODUCT_NAME = 'Seneca AI'
-const fullAppFrontPlugins = [boringAutomationPlugin]
+// Deployment-owned immutable boot flag. The server independently fails closed
+// unless the selected runtime has an exact qualified trusted-service-v1.
+const browserEnabled = import.meta.env.VITE_BORING_BROWSER_ENABLED === '1'
+const fullAppFrontPlugins = [boringAutomationPlugin, ...(browserEnabled ? [browserPlugin] : [])]
 
 // Show the Buy-credits button when the server has Lemon Squeezy checkout wired
 // (set this alongside the server-side LS env). The checkout itself is created
@@ -59,9 +66,20 @@ function McpIcon({ className }: { className?: string }) {
 // self-hide and otherwise leave a dangling nav link with no target.
 const AccountSettingsPage = () => {
   const { hidden } = useCreditBalance()
+  const workspace = useCurrentWorkspace()
+  const workspaceRole = useWorkspaceRole()
+  const isWorkspaceOwner = workspaceRole === 'owner'
   return (
     <UserSettingsPage
       extraSections={[
+        ...(isWorkspaceOwner
+          ? [{
+              id: 'credentials',
+              navLabel: 'AI providers',
+              navDescription: 'Workspace credentials and funding',
+              content: <CredentialSettingsSurface isWorkspaceOwner workspaceId={workspace?.id} />,
+            }]
+          : []),
         // Full governed-usage panel (role + aggregate cap + company-context
         // access + per-model usage meters + context paths). Self-fetches from the
         // governance usage-summary route and renders nothing when governance is

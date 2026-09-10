@@ -1,4 +1,5 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -45,6 +46,12 @@
       "@hachej/boring-agent/server": [
         "../agent/src/server/index.ts"
       ],
+      "@hachej/boring-agent/shared": [
+        "../agent/src/shared/index.ts"
+      ],
+      "@hachej/channel-whatsapp": [
+        "../channels/whatsapp/src/index.ts"
+      ],
       "@hachej/boring-agent/server/agent-host/testing/compositionRouteProof": [
         "../agent/src/server/agent-host/testing/compositionRouteProof.ts"
       ],
@@ -53,24 +60,6 @@
       ],
       "@hachej/boring-bash/server": [
         "../boring-bash/src/server/index.ts"
-      ],
-      "@hachej/boring-sandbox/shared": [
-        "../boring-sandbox/src/shared/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/bwrap": [
-        "../boring-sandbox/src/providers/bwrap/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/direct": [
-        "../boring-sandbox/src/providers/direct/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/node-workspace": [
-        "../boring-sandbox/src/providers/node-workspace/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/vercel-sandbox": [
-        "../boring-sandbox/src/providers/vercel-sandbox/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/blaxel": [
-        "../boring-sandbox/src/providers/blaxel/index.ts"
       ],
       "@/*": [
         "../workspace/src/*"
@@ -92,7 +81,8 @@
     "ignoreDeprecations": "6.0"
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "e2e/**/*"
   ],
   "exclude": [
     "node_modules",

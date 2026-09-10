@@ -2,7 +2,11 @@ import { resolve } from 'node:path'
 
 import { createLogger } from '@hachej/boring-bash/server'
 
-import { loadConfiguredAgentFleet, type DiscoveredAgentPackageDescriptor } from './loadConfiguredAgentFleet'
+import {
+  FleetConfigError,
+  loadConfiguredAgentFleet,
+  type DiscoveredAgentPackageDescriptor,
+} from './loadConfiguredAgentFleet'
 import { DEFAULT_AGENT_TYPE_ID, type AgentHostAgentSpec } from '../agent-host/types'
 
 const logger = createLogger('agent-fleet-loader')
@@ -37,9 +41,10 @@ export interface ResolveDefaultAgentFleetOptions {
  * Resolves one deployment-static fleet for Core, Workspace, and CLI hosts.
  *
  * The built-in default is a regular configured Agent. When authored fleet
- * discovery is enabled it remains available alongside discovered seats so old
- * `default` session references stay routable. Invalid enabled fleet
- * composition fails boot; it never degrades to a pseudo-Agent.
+ * discovery is enabled it remains available alongside valid discovered seats
+ * so old `default` session references stay routable. Missing fleet config and
+ * individual package failures degrade to that valid subset; malformed whole-
+ * fleet configuration still rejects boot.
  */
 export async function resolveDefaultAgentFleet(
   options: ResolveDefaultAgentFleetOptions,
@@ -52,13 +57,24 @@ export async function resolveDefaultAgentFleet(
     throw new Error('agent package discovery descriptors were not injected by the boot layer')
   }
 
-  const { agents: configuredAgents, diagnostics } = await loadConfiguredAgentFleet({
-    discoveredPackages: options.discoveredPackages,
-    fleetConfigPath: resolve(root, '.agents', 'factory', 'fleet.yaml'),
-    policyPath: resolve(root, '.agents', 'factory', 'policy.yaml'),
-    skillsRoot: resolve(root, '.agents', 'skills'),
-    env,
-  })
+  let loaded: Awaited<ReturnType<typeof loadConfiguredAgentFleet>>
+  try {
+    loaded = await loadConfiguredAgentFleet({
+      discoveredPackages: options.discoveredPackages,
+      fleetConfigPath: resolve(root, '.agents', 'factory', 'fleet.yaml'),
+      policyPath: resolve(root, '.agents', 'factory', 'policy.yaml'),
+      skillsRoot: resolve(root, '.agents', 'skills'),
+      env,
+    })
+  } catch (error) {
+    const cause = error instanceof FleetConfigError ? error.cause as NodeJS.ErrnoException | undefined : undefined
+    if (error instanceof FleetConfigError && error.field === 'fleetConfigPath' && cause?.code === 'ENOENT') {
+      logger.warn('fleet config is absent; authored Agent packages remain inert', { code: error.code })
+      return DEFAULT_AGENT_FLEET
+    }
+    throw error
+  }
+  const { agents: configuredAgents, diagnostics } = loaded
   for (const diagnostic of diagnostics) {
     logger.warn('fleet package excluded or inert', {
       seat: diagnostic.seat,

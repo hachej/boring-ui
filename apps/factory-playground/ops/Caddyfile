@@ -1,0 +1,17 @@
+# Loopback adapter behind Tailscale Serve (HTTPS + HTTP/2).
+# Keep this separate from the agent host: restarting the proxy must not stop runs.
+{
+	admin off
+	auto_https off
+}
+
+http://:5221 {
+	bind 127.0.0.1
+	reverse_proxy 127.0.0.1:5220 {
+		# Vite rejects the tailnet DNS hostname. Do not disable its host check.
+		header_up Host localhost:5220
+		# Keep NDJSON low-latency AND cancel upstream on browser disconnect.
+		# Negative flush intervals detach the upstream request from cancellation.
+		flush_interval 1ms
+	}
+}

@@ -1,0 +1,6 @@
+# Bead ledger: independent branches append records concurrently; union-merge avoids
+# a conflict on every landing (2026-09-08 owner ruling).
+.beads/issues.jsonl merge=beads
+# `beads` is a local merge driver (union by id, newest updated_at wins). Configure once per clone:
+#   git config merge.beads.driver "/path/to/beads-merge.py %O %A %B"
+# Without it git falls back to a normal (conflicting) merge, never to a silent union.

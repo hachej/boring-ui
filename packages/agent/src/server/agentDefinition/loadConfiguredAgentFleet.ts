@@ -295,10 +295,9 @@ async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding
  * descriptors, `.agents/factory/policy.yaml` `models.seats` tiers, and the
  * priority-ordered `models.tiers` candidates declared in fleet.yaml.
  *
- * Fails startup when any configured seat cannot materialize or verify. Only
- * genuinely unseated discovered packages remain nonfatal diagnostics. Whole-
- * fleet config errors (including unreadable/malformed fleet or policy YAML)
- * throw `FleetConfigError`.
+ * Excludes an individual package when a configured seat cannot materialize or
+ * verify, allowing valid sibling seats to boot. Whole-fleet config errors
+ * (including unreadable/malformed fleet or policy YAML) throw `FleetConfigError`.
  */
 export async function loadConfiguredAgentFleet(
   options: LoadConfiguredAgentFleetOptions,
@@ -447,18 +446,6 @@ export async function loadConfiguredAgentFleet(
         })
       }
     }
-  }
-
-  const fatalDiagnostics = diagnostics.filter((diagnostic) =>
-    diagnostic.seat !== undefined || seatedDefinitionIds.has(diagnostic.agentTypeId),
-  )
-  if (fatalDiagnostics.length > 0) {
-    throw new FleetConfigError({
-      field: 'seats',
-      message: `configured Agent fleet is invalid: ${fatalDiagnostics
-        .map((diagnostic) => `${diagnostic.agentTypeId}: ${diagnostic.message}`)
-        .join('; ')}`,
-    })
   }
 
   return Object.freeze({ agents: Object.freeze(agents), diagnostics: Object.freeze(diagnostics) })

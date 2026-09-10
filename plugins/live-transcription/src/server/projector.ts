@@ -13,8 +13,16 @@ export interface TranscriptDocument {
   state: "active" | "complete" | "interrupted"
   /** False for providers such as Kyutai that do not identify speakers. */
   showSpeakerLabels?: boolean
+  /** ISO timestamp of the offline refinement pass, when the transcript has been refined. */
+  refinedAt?: string
+  /** Parenthetical detail rendered next to `refinedAt` (e.g. model, word and speaker counts). */
+  refinedNote?: string
+  /** Phonetic drug-name corrections applied during refinement, in first-seen order. */
+  corrections?: readonly { from: string; to: string }[]
   lines: readonly ProjectedTranscriptLine[]
 }
+
+const MAX_RENDERED_CORRECTIONS = 30
 
 const encoder = new TextEncoder()
 
@@ -25,6 +33,16 @@ export function renderTranscriptMarkdown(document: TranscriptDocument): string {
     `- Started: ${document.startedAt}`,
     `- State: ${document.state}`,
   ]
+  if (document.refinedAt) {
+    const suffix = document.refinedNote ? ` (${document.refinedNote})` : ""
+    lines.push(`- Refined: ${document.refinedAt}${suffix}`)
+  }
+  if (document.corrections && document.corrections.length > 0) {
+    const unique = uniquePairs(document.corrections)
+    const shown = unique.slice(0, MAX_RENDERED_CORRECTIONS).map((pair) => `${pair.from} → ${pair.to}`)
+    const suffix = unique.length > MAX_RENDERED_CORRECTIONS ? ", …" : ""
+    lines.push(`- Corrections: ${shown.join(", ")}${suffix}`)
+  }
   for (const line of document.lines) {
     const text = line.text.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim()
     if (!text) continue
@@ -36,6 +54,18 @@ export function renderTranscriptMarkdown(document: TranscriptDocument): string {
     lines.push("", `[${formatTimestamp(line.startSeconds)}] ${content}`)
   }
   return `${lines.join("\n")}\n`
+}
+
+function uniquePairs(pairs: readonly { from: string; to: string }[]): { from: string; to: string }[] {
+  const seen = new Set<string>()
+  const unique: { from: string; to: string }[] = []
+  for (const pair of pairs) {
+    const key = `${pair.from} ${pair.to}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(pair)
+  }
+  return unique
 }
 
 function cleanTitle(value: string): string {
@@ -125,6 +155,15 @@ export class LiveTranscriptProjector {
     await this.queue
   }
 
+  /** Replaces the terminal projection only if no external edit changed it. */
+  async replaceAfterFinalize(markdown: string): Promise<void> {
+    await this.queue
+    if (!this.terminal) {
+      throw new LiveTranscriptError("live_transcript_revision_conflict", "Transcript refinement started before capture finalized.", 409)
+    }
+    await this.writeGuarded(markdown)
+  }
+
   private flushScheduled(): void {
     const document = this.pendingDocument
     this.pendingDocument = undefined
@@ -154,6 +193,10 @@ export class LiveTranscriptProjector {
   }
 
   private async project(document: TranscriptDocument): Promise<void> {
+    await this.writeGuarded(renderTranscriptMarkdown(document))
+  }
+
+  private async writeGuarded(markdown: string): Promise<void> {
     if (!this.workspace.readBinaryFile || !this.workspace.writeFileWithStat) {
       throw new LiveTranscriptError("live_transcript_disabled", "Workspace does not support guarded transcript projection.", 503)
     }
@@ -179,7 +222,6 @@ export class LiveTranscriptProjector {
       )
     }
 
-    const markdown = renderTranscriptMarkdown(document)
     const nextBytes = encoder.encode(markdown)
     this.lastWriteAt = this.now()
     if (bytesEqual(nextBytes, this.expectedBytes)) return

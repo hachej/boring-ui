@@ -186,7 +186,7 @@ describe('CoreWorkspaceAgentFront', () => {
       // host's own preload set; it is not a separate per-boot request.
       bootPreloadPaths: ['/custom-preload', '/api/v1/workspace/meta'],
     })
-  }, 30_000) // Cold Core composition can exceed 15s under full-suite CI load.
+  }, 60_000) // Clean-checkout source composition can exceed 30s under full-suite contention.
 
   it('forwards the persisted regular default instead of the app compatibility fallback', async () => {
     currentWorkspaceDefaultAgentTypeId = 'reviewer'
