@@ -111,6 +111,17 @@ async function withBrowser(run: (page: import("@playwright/test").Page, trace: s
   const page = await browser.newPage()
   const trace: string[] = []
   page.on("console", (message) => trace.push(`[browser:${message.type()}] ${message.text()}`))
+  page.on("pageerror", (error) => trace.push(`[browser:pageerror] ${error.message}`))
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      const headers = response.request().headers()
+      trace.push(
+        `[http:${response.status()}] ${response.request().method()} ${response.url()}` +
+        ` workspace=${headers["x-boring-workspace-id"] ?? "-"}` +
+        ` storage=${headers["x-boring-storage-scope"] ?? "-"}`,
+      )
+    }
+  })
   try {
     await run(page, trace)
   } catch (error) {
@@ -151,7 +162,6 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
   const app = await createLocalFolderModeApp({
     workspaceRoot,
     mode: "direct",
-    projectName: "Folder Browser",
   })
   const address = await startApp(app)
 

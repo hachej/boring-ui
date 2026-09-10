@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, preHandlerHookHandler } from 'fastify'
+import type { z } from 'zod'
 import fp from 'fastify-plugin'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
@@ -52,29 +53,41 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
     },
   )
 
-  app.post(
+  const validateInvite: preHandlerHookHandler = async (request) => {
+    const parsed = createInviteBody.safeParse(request.body)
+    if (!parsed.success) {
+      throw new HttpError({
+        status: 400,
+        code: ERROR_CODES.VALIDATION_FAILED,
+        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+        requestId: request.id,
+      })
+    }
+    request.body = parsed.data
+  }
+
+  app.post<{ Body: z.infer<typeof createInviteBody> }>(
     '/api/v1/workspaces/:id/invites',
     {
-      preHandler: idem
-        ? [requireWorkspaceMember('owner'), idem.guard('invites')]
-        : requireWorkspaceMember('owner'),
+      preHandler: [
+        requireWorkspaceMember('owner'),
+        validateInvite,
+        ...(idem ? [idem.guard((request) => JSON.stringify([
+          app.config.appId,
+          'invites.create',
+          (request.params as { id: string }).id,
+          request.user!.id,
+        ]), { legacyScope: 'invites' })] : []),
+      ],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      const parsed = createInviteBody.safeParse(request.body)
-      if (!parsed.success) {
-        throw new HttpError({
-          status: 400,
-          code: ERROR_CODES.VALIDATION_FAILED,
-          message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
-          requestId: request.id,
-        })
-      }
+      const { email, role } = request.body
 
       const { invite, rawToken } = await store.createInvite(
         id,
-        parsed.data.email,
-        parsed.data.role,
+        email,
+        role,
         request.user!.id,
         { ttlDays: app.config.features.inviteTtlDays },
       )
@@ -83,22 +96,22 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
         const workspace = await store.get(id)
         const acceptUrl = buildInviteAcceptUrl(app.config, rawToken)
         try {
-          const email = await renderWorkspaceInvite({
-            to: parsed.data.email,
+          const message = await renderWorkspaceInvite({
+            to: email,
             acceptUrl,
             appName: app.config.appName,
             inviterName: request.user!.name ?? request.user!.email,
             workspaceName: workspace?.name ?? 'Workspace',
-            role: parsed.data.role,
+            role,
             expiresInDays: app.config.features.inviteTtlDays,
           })
-          await transport.send(email)
+          await transport.send(message)
         } catch (err) {
           request.log.warn({ workspaceId: id, inviteId: invite.id, err }, 'invite.email.send.failed')
         }
       }
 
-      request.log.info({ workspaceId: id, inviteId: invite.id, email: parsed.data.email }, 'invite.create')
+      request.log.info({ workspaceId: id, inviteId: invite.id, email }, 'invite.create')
       reply.status(201)
 
       if (!transport) {

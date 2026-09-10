@@ -126,6 +126,7 @@ beforeAll(async () => {
   app.decorate('config', { appId: APP_ID, defaultAgentTypeId: 'default' } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   app.decorate('provisioner', null)
+  app.decorate('shredWorkspaceCredentials', null)
   registerErrorHandler(app)
 
   app.addHook('onRequest', async (request) => {
@@ -157,6 +158,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   resetState()
+  app.shredWorkspaceCredentials = null
 })
 
 function inject(method: string, url: string, userId?: string, payload?: unknown, scopeWorkspaceId?: string) {
@@ -392,6 +394,37 @@ describe('DELETE /api/v1/workspaces/:id', () => {
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ deleted: true })
+  })
+
+  it('crypto-shreds credentials before final workspace deletion', async () => {
+    const ws = seedWorkspaceWithMembers('Delete with credentials', OWNER_ID)
+    app.shredWorkspaceCredentials = async (workspaceId) => {
+      storeCalls.push(`cryptoShredWorkspace:${workspaceId}`)
+    }
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+
+    expect(res.statusCode).toBe(200)
+    expect(storeCalls.indexOf(`cryptoShredWorkspace:${ws.id}`)).toBeGreaterThanOrEqual(0)
+    expect(storeCalls.indexOf(`cryptoShredWorkspace:${ws.id}`)).toBeLessThan(
+      storeCalls.indexOf(`deleteAndRecreateDefaultIfEmpty:${ws.id}`),
+    )
+    expect(workspaces.get(ws.id)?.deletedAt).toBeTruthy()
+  })
+
+  it('fails closed without deleting the workspace when credential shred is uncertain', async () => {
+    const ws = seedWorkspaceWithMembers('Preserve on shred failure', OWNER_ID)
+    app.shredWorkspaceCredentials = async () => {
+      throw new Error('secret-provider-canary')
+    }
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json().code).toBe(ERROR_CODES.CREDENTIAL_SHRED_FAILED)
+    expect(res.body).not.toContain('secret-provider-canary')
+    expect(workspaces.get(ws.id)?.deletedAt).toBeNull()
+    expect(storeCalls).not.toContain(`deleteAndRecreateDefaultIfEmpty:${ws.id}`)
   })
 
   it('editor → 403 forbidden', async () => {

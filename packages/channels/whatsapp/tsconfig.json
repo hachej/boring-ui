@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"], "strict": true,
+    "skipLibCheck": true, "noEmit": true, "ignoreDeprecations": "6.0", "types": ["vitest/globals"],
+    "paths": {
+      "@hachej/boring-agent/server": ["../../agent/src/server/index.ts"],
+      "@hachej/boring-agent/shared": ["../../agent/src/shared/index.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}

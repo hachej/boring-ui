@@ -28,6 +28,33 @@ architecture.
 > for every product. The kernel remains the compounding layer; ordinary
 > operate-mode products are not forced into its ontology.
 
+> **Amendment — 2026-09-05 (owner-requested; implementation pending;
+> first-consumer timing superseded by the 2026-09-07 amendment below):** personal software evolution is an explicit
+> product goal. A user can start with a minimal useful workspace, request
+> changes to its interface and permitted behavior, try an immutable candidate,
+> keep or undo it, and retain local intent through shared upgrades. Useful
+> changes can become optional reusable packages through an authorized export
+> and review. This extends controlled revision to the Experience itself;
+> it does not require an optimization Objective for every preference.
+> **Clinic clarification:** the starting Experience can be a French medical-
+> document dashboard with an ambient agent and optional chat. Workspace is the
+> governed world, not mandatory chrome. Domain resources, primary surfaces,
+> presence, triggers, and scoped context compose independently; records and
+> admitted work outlive any conversation or mounted UI. The first proof reuses
+> one document unit in both document-first and chat-first compositions.
+> Binding scope and amendments: [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+
+> **Amendment — 2026-09-07 (owner ruling, ratified via #1561; RECONCILIATION §13):**
+> native creation of expert software is the **first complete product
+> journey**: create → immutable release → install for a separate consumer →
+> adapt → maintain, without founder source edits. Three layers are ruled
+> (host = broker · product runtime = one per installed product, modes
+> `embedded`/`local`/`remote` · sandbox = disposable lease). Product's
+> private release/installation half leaves the deferred list; K9's "only
+> then" timing is superseded; builder agents are a distinct class; the
+> execution home is this repository. Every banner below dated 2026-09-07
+> points here.
+
 ## 1. The decisive discovery: the three documents describe ONE system
 
 The V2 kernel's 12 nouns map almost entirely onto machinery that is built,
@@ -85,6 +112,8 @@ strangler, not a fork: the old repo is a quarry and a running business, not a
 parallel architecture. Rationale accepted: this monorepo is a high-traffic
 factory; a kernel package here must win a CI fight on every merge, while a
 kernel repo makes the discipline structural.
+
+> **2026-09-07 (§13f):** R-a stands as doctrine but is demoted from "the next major build" to an evidence-triggered later port. `hachej/boring-v2` does not exist and nothing has been ported; the native-creation journey executes in `hachej/boring-ui`.
 
 **Port protocol (keeps the strangler honest):**
 1. **Interfaces before mechanisms, always.** Nothing lands in v2 without a
@@ -146,7 +175,10 @@ with the product noun. Do at A1 (types extraction) where the rename is free.
 Process, Schema, Module-runtime, DataSource, MountSlot, marketplace, A2A-remote.
 Each has a named promotion trigger (Rule of Three / second runtime mode / two
 real verticals). AgentState and Product were already reserved; the V2 doc
-agrees.
+agrees. *(2026-09-07, §13a: Product's private release/installation half is
+promoted for the native-creation journey; its public-packaging half stays
+deferred. Release and Installation are product-module records, not kernel
+nouns.)*
 
 ## 4. Invariants (normative; merges V2 §31, product doc §31, plan rules)
 
@@ -155,7 +187,7 @@ The five backbone invariants (ratified) come first; the rest derive:
 1. **Agents exist independently of workspaces; workspaces bind them through Seats.**
 2. **The Agent owns its session record; the Host owns accepted-work authority/envelope.** RunId := RequestKey, minted by the admitting authority before execution, stable across metering, artifacts, evaluations, outcomes.
 3. **Effective capability = Agent-declared ∩ Workspace-granted** (∩ thread/run restriction; authority only narrows).
-4. **Agents reason over semantic resources, views, artifacts — never renderer concepts.**
+4. **Agents reason over semantic resources, views, artifacts — never renderer concepts.** *(2026-09-07, §13e: narrowed for the distinct software-builder agent class only, which edits renderer/operation code inside candidates; domain agents unchanged.)*
 5. **A Seat grants participation, not identity** — a workspace constrains an agent but never mutates what agent it is.
 
 Derived (kernel additions): 6. Capabilities are defined once and projected to
@@ -174,7 +206,9 @@ stay outside the kernel; every platform investment is pulled by a real
 experiment or customer.
 13. Sovereignty: Boring owns memory, context, optimization history, policy,
 evaluation, recursive intelligence; model providers are replaceable compute.
-14. Docs never precede the implementations they describe.
+14. Documentation must not claim implementation guarantees before they are
+demonstrated. Explicitly unbuilt plans/specifications may precede implementation
+(2026-09-05 clarification, effective on owner merge; RECONCILIATION §11g).
 
 ## 5. Unified roadmap (V2's 14 steps collapsed into the frozen DAG + new work)
 
@@ -197,7 +231,7 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 - **K6** First recursive challenger loop (instructions/tool-selection/model-routing only; sandbox → benchmark → promote-if-independently-better)
 - **K7** First paid vertical (creator growth — shortest feedback loop), as an experiment composition, concierge OK
 - **K8** Second structurally different vertical (macro / formulation / SME GTM)
-- **K9** Only then: extract Product packaging
+- **K9** Only then: extract Product packaging *(superseded 2026-09-07, §13a: private release and installation are the first complete journey; only public packaging waits.)*
 
 > **Amendment — 2026-08-26 (owner ruling, tracked in #1399; full text in
 > RECONCILIATION.md §8):** the product surface these verticals are delivered
@@ -213,8 +247,27 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 > 2026-08-27 §9 update: transcript presentation is now multi-author, and the
 > storage value-root is ruled — only the shape remains spiked.)*
 
+> **Scope reconciliation — 2026-09-05:** the 2026-08-27 ruling in
+> RECONCILIATION §8(a) scoped the shell sentence above to the Meridian flagship.
+> It does not require that shell for verticals. §10 defaults vertical SaaS to
+> ambient presence; §11 makes Clinic's document-first proof explicit.
+
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
+
+**Workspace Evolution milestone extension — 2026-09-05.** Add the E0–E6
+product milestones in the [execution plan](../../native-creation/LIFECYCLE.md#milestones):
+request/preview preparation, durable workspace activation, personal scope,
+behavior revision, isolated generated modules, upgrade reconciliation, and
+approved reuse. Clinic's document dashboard and a second supported document
+mount are the first proofs; live acceptance requires domain identity and
+server work independent of chat. Seneca is the target
+authenticated host for the personal-scope proof. This historical extension did not replace the first-commercial-vertical
+decision or renumber K1–K9/M0–M8. The [implementation-spec
+crosswalk](V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
+maps capabilities. The 2026-09-07 native-creation ruling supersedes its first
+consumer and timing; [current DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey)
+preserves the relevant premise gates.
 
 ## 6. Research program & kill criteria (adopted verbatim from V2)
 
@@ -244,6 +297,19 @@ autonomous trading/ad-budgets, self-modifying production repo, Product DSL,
 BSL rewrite, universal Mount, cross-tenant recursive learning, big package
 reorg **in the old repo** (dissolved into the port — see R-a), arbitrary
 untrusted hosted plugin execution (P0.6).
+
+**Scope amendment — 2026-09-07 (§13c).** Generated *server* code is admitted
+inside a product runtime in `local`/`remote` mode, brokered by the host. "Arbitrary
+untrusted hosted plugin execution (P0.6)" still excludes loading it into the
+host process outside the default-off `embedded` mode.
+
+**Scope amendment — 2026-09-05.** The general-purpose "universal app
+generator" exclusion above does not exclude the bounded personal evolution
+program in §11. Existing-component configuration is the first lane; new
+generated modules require the isolated C4 tier before hosted preview or use.
+Untrusted in-process execution, autonomous production-source rewriting,
+automatic private-data sharing, and a marketplace prerequisite remain
+excluded. Arbitrary code cannot promise conflict-free automatic upgrades.
 
 ## 9. One diagram
 
@@ -276,4 +342,41 @@ untrusted hosted plugin execution (P0.6).
 
 1. ~~R-a~~ RULED: new repo, interface-first, port mechanisms (protocol above).
 2. Track K sequencing after P0 as in §5 — confirm.
-3. Creator growth as first vertical (K7) — confirm or substitute.
+3. Creator growth as first vertical (K7) — confirm or substitute. *(2026-09-07: the first native-creation proof consumer is the Seneca mathematics tutor product, §13g; K7 as the first commercial vertical is a tenant-side decision and is not re-ruled here.)*
+
+## 11. Owner-requested clarification — 2026-09-06 (software model)
+
+**Retained as the §12 software model; no implementation claim.** The current
+Experience-over-governed-work north star remains; §13 supersedes this section's
+first-consumer timing. The owner requested that it
+be made concrete across Clinic, the Charlotte Ledoux/Seneca knowledge product,
+and an ESG portfolio-impact use case, instead of being defined by Clinic.
+
+The product responsibilities are **state and knowledge, domain operations,
+Experiences, and durable work**, under **authority, evidence and lifecycle
+control**. They map to existing resource/artifact, Capability, View,
+Thread/Session/Run, and host contracts. They are not additional kernel nouns.
+Domain truth may remain in external systems or read-only corpora; no universal
+record schema or mandatory system-of-record migration follows. Deterministic
+calculations and manual operations are valid without model inference. The
+explicit optimization loop remains optional under the 2026-08-27 scope ruling.
+
+Domain packages own schemas, methods, validation and review meaning. Shared
+mechanisms own composition, authority, context, accepted work and compatible
+software revision. Software undo does not undo domain records or effects.
+Each vertical earns its own readiness; source-grounded knowledge adaptation
+does not prove medical correctness, and a synthetic portfolio fixture does
+not prove a live financial client.
+
+**Named scope amendment:** the September 5 E-program references to Clinic as
+the first universal proof and Seneca only as an authenticated host are
+superseded by cross-domain preparation and one selected live consumer, then
+second-consumer evidence for claimed shared capabilities. Clinic retains its
+mandatory migration when selected; E1b retains its Thread/attribution premises
+for every selected consumer. This changes neither K/M commercial ordering nor
+Rule of Three, the frozen noun set, the port doctrine or the security model.
+
+Normative detail: [RECONCILIATION §12](RECONCILIATION.md#12-owner-requested-amendment--2026-09-06-software-model-and-cross-domain-proof).
+Readable model/evidence: [software model](../../../vision/software-model.md).
+The September 6 dispatch link is historical; §13 supersedes its first consumer
+and timing. Current dispatch: [DIRECTION 2026-09-07](../../../direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey).

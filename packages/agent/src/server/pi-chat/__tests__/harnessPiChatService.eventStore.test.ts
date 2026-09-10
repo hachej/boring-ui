@@ -16,7 +16,7 @@ import {
 import { openDatabase } from '../../events/sqlStorage'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
-import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
@@ -101,6 +101,19 @@ function createService(eventStore: EventStreamStore, adapter = createAdapter(), 
 }
 
 describe('HarnessPiChatService event store tap', () => {
+  it('resolves the canonical durable stream path only for an existing session', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const { service } = createService(store)
+      await expect(service.resolveSessionStreamPath(ctx, 's1')).resolves.toBe(streamPathFor(ctx, 's1'))
+      expect(sessionStore.load).toHaveBeenCalled()
+      await service.dispose()
+    } finally {
+      db.db.close()
+    }
+  })
+
   it.each(['dispose', 'delete'] as const)('awaits the final native event published during %s unsubscribe', async (operation) => {
     const db = openDatabase(':memory:')
     try {

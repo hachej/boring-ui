@@ -8,15 +8,30 @@ only into the package you're working on.
 
 Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
 `CLAUDE.md`). Agent workflow, coding process, review history, and proof
-procedures live in [`procedures/`](procedures/README.md).
+procedures live in [`procedures/`](procedures/README.md). Start with
+[risk-based delivery](procedures/boring-loop.md) for the owner-review boundaries
+(>500 changed package production lines), the mandatory cross-package abstraction
+gate, and automatic-eligible plugin UI with Playwright before/after evidence.
+The procedure distinguishes adopted policy from automation not yet enabled.
 
 ## Cold-start reading order (5 files)
 
 1. [`vision/README.md`](vision/README.md) — what Boring is, the ratified thesis.
 2. [`roadmap/README.md`](roadmap/README.md) — the shape of the programs.
 3. [`direction/DIRECTION.md`](direction/DIRECTION.md) — the ONLY "when".
-4. [`plans/multiagent-shell/README.md`](plans/multiagent-shell/README.md) — the active program pack.
+4. [`plans/multiagent-shell/README.md`](plans/multiagent-shell/README.md) — the premises program pack; [`plans/native-creation/README.md`](plans/native-creation/README.md) — the native-creation program pack (its named consumer).
 5. [`plans/agent-runtime/alignment/CONTRADICTIONS.md`](plans/agent-runtime/alignment/CONTRADICTIONS.md) — what was fought over and resolved.
+
+## Active program: native creation (ratified 2026-09-07)
+
+[`plans/native-creation/`](plans/native-creation/README.md) is the first
+complete product journey: an expert creates, installs for a separate consumer,
+adapts and maintains software inside Seneca without founder source edits.
+Rulings: [RECONCILIATION §13](plans/long-term/ratified/RECONCILIATION.md#13-owner-ruling--2026-09-07-native-creation-the-first-complete-product-journey)
+and [DECISIONS D33](DECISIONS.md#33-installed-products-run-in-their-own-runtime-one-trusted-installationactivation-path).
+Dispatch: [DIRECTION amendment 2026-09-07](direction/DIRECTION.md#amendment-2026-09-07--native-creation-is-the-first-complete-product-journey);
+epic [#1562](https://github.com/hachej/boring-ui/issues/1562). It runs beside
+the premises program, as its named consumer; it does not reorder Wave A.
 
 ## Precedence (who wins)
 

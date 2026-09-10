@@ -1,23 +1,31 @@
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, expectTypeOf, test } from 'vitest'
 import {
   createInMemoryCredentialVaultPersistenceV1,
+  createInMemoryCredentialVersionAnchorV1,
+  createLocalFileCredentialVersionAnchorV1,
   createLocalKekFileSourceV1,
   createLocalKekWorkspaceKekProviderV1,
   createVaultCredentialStoreBackendV1,
   decryptCredentialFieldV1,
   encodeCredentialFieldAadV1,
   encryptCredentialFieldV1,
+  initializeLocalFileCredentialVersionAnchorV1,
   resolveLocalKekProviderConfigV1,
 } from '..'
 import type {
+  CredentialVersionMutationResultV1,
   CredentialVaultPersistenceV1,
+  CredentialVaultPersistenceV2,
   VaultCredentialStoreBackendV1,
+  VaultCredentialStoreOptionsV1,
+  WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionAnchorV2,
 } from '..'
+import { createFakeAuthorityVerifierV1 } from '../../testing'
 import {
-  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   withResolvedCredential,
 } from '../..'
@@ -28,6 +36,8 @@ import {
   createProviderCredentialRefFactoryV1,
   createProviderRegistryV1,
 } from '../../../../shared/credentials'
+import { runCredentialVaultPersistenceConformanceV1 } from './persistenceConformance'
+import { runVaultCredentialStoreConformanceV1 } from './vaultBackendConformance'
 import type {
   AuthorizedWorkspaceCredentialScopeV1,
   CredentialConsumerBindingId,
@@ -49,6 +59,27 @@ const FIELD_API_KEY = fieldId('api-key')
 const SECRET_VALUE = 'sk-test-super-secret-value-0123456789'
 const KEK_A = Buffer.alloc(32, 0xa1)
 const KEK_B = Buffer.alloc(32, 0xb2)
+const anchors = new WeakMap<object, ReturnType<typeof createInMemoryCredentialVersionAnchorV1>>()
+function anchorMutation<T>(mutation: Readonly<{
+  nextCredentialVersion: number
+  nextCredentialMaterialKind: 'field-set' | 'none'
+  nextCredentialFieldIds: readonly string[]
+  nextCredentialLifecycleState: 'active' | 'intentionally_absent'
+  nextCredentialType: string
+  nextDekGeneration: number
+  result: T
+}>) {
+  return mutation
+}
+
+runCredentialVaultPersistenceConformanceV1(
+  'in-memory',
+  async () => createInMemoryCredentialVaultPersistenceV1(),
+)
+runVaultCredentialStoreConformanceV1(
+  'in-memory',
+  async () => createInMemoryCredentialVaultPersistenceV1(),
+)
 
 function kekProvider(
   kek: Buffer,
@@ -65,18 +96,63 @@ function context(workspaceId: string, dekGeneration = 1) {
   return { workspaceId, dekGeneration, requestId: 'req-1' }
 }
 
+async function createDbToAnchorBoundaryFixture(workspaceId: string) {
+  const anchorFilePath = join(
+    await mkdtemp(join(tmpdir(), 'boring-anchor-recovery-')),
+    'anchor',
+  )
+  const stableLoadKek = async () => new Uint8Array(KEK_A)
+  await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek: stableLoadKek })
+  const persistence = createInMemoryCredentialVaultPersistenceV1()
+  let failFinalAnchor = true
+  const boundaryLoadKek = async () => {
+    const serialized = await readFile(anchorFilePath, 'utf8')
+    if (failFinalAnchor && serialized.includes('pendingCredentialMutation')) {
+      throw new Error('simulated anchor EIO after DB commit')
+    }
+    return new Uint8Array(KEK_A)
+  }
+  const createBackend = (
+    store: CredentialVaultPersistenceV2,
+    loadKek: () => Promise<Uint8Array>,
+  ) => createVaultCredentialStoreBackendV1({
+    persistence: store,
+    versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
+    kmsBackend: kekProvider(KEK_A),
+  })
+  return {
+    anchorFilePath,
+    persistence,
+    failingBackend: createBackend(persistence, boundaryLoadKek),
+    stableBackend: () => {
+      failFinalAnchor = false
+      return createBackend(persistence, stableLoadKek)
+    },
+    enableFinalAnchorFailure: () => {
+      failFinalAnchor = true
+    },
+    workspaceId,
+  }
+}
+
 function vaultStore(
   kek: Buffer = KEK_A,
-  persistence: CredentialVaultPersistenceV1 =
+  persistence: CredentialVaultPersistenceV2 =
     createInMemoryCredentialVaultPersistenceV1(),
 ): Readonly<{
   backend: VaultCredentialStoreBackendV1
-  persistence: CredentialVaultPersistenceV1
+  persistence: CredentialVaultPersistenceV2
 }> {
+  let versionAnchor = anchors.get(persistence)
+  if (!versionAnchor) {
+    versionAnchor = createInMemoryCredentialVersionAnchorV1()
+    anchors.set(persistence, versionAnchor)
+  }
   return {
     backend: createVaultCredentialStoreBackendV1({
       kmsBackend: kekProvider(kek),
       persistence,
+      versionAnchor,
     }),
     persistence,
   }
@@ -271,14 +347,447 @@ describe('local-KEK configuration resolution', () => {
     const config = resolveLocalKekProviderConfigV1({
       BORING_CREDENTIAL_KMS_BACKEND: 'local-kek',
       BORING_CREDENTIAL_LOCAL_KEK_FILE: '/run/secrets/kek',
+      BORING_CREDENTIAL_LOCAL_KEK_ANCHOR_FILE: '/run/secrets/credential-anchor',
       WORKSPACE_SETTINGS_ENCRYPTION_KEY: KEK_A.toString('hex'),
     })
     expect(config).toEqual({
       backend: 'local-kek',
       keyFilePath: '/run/secrets/kek',
+      anchorFilePath: '/run/secrets/credential-anchor',
       keyRef: 'default',
       keyVersion: 1,
     })
+  })
+})
+
+describe('local-KEK credential version anchor', () => {
+  test('keeps V1 result-bearing while V2 statically and dynamically requires deferred commit', async () => {
+    expectTypeOf<CredentialVersionMutationResultV1<string>>().toEqualTypeOf<{
+      readonly nextCredentialVersion: number
+      readonly nextCredentialMaterialKind: 'field-set' | 'none'
+      readonly nextCredentialFieldIds: readonly string[]
+      readonly nextCredentialLifecycleState: import('../../../../shared/credentials').CredentialLifecycleStateV1
+      readonly nextCredentialType: string
+      readonly nextDekGeneration: number
+      readonly result: string
+    }>()
+    expectTypeOf<WorkspaceCredentialVersionAnchorV1>()
+      .not.toMatchTypeOf<WorkspaceCredentialVersionAnchorV2>()
+
+    const recoverable = createInMemoryCredentialVersionAnchorV1()
+    const {
+      contractVersion: _contractVersion,
+      withRecoverableMutation: _recoverableMutation,
+      ...legacyOnly
+    } = recoverable
+    expectTypeOf(legacyOnly).toMatchTypeOf<WorkspaceCredentialVersionAnchorV1>()
+    const legacyAlias = {
+      ...recoverable,
+      withRecoverableMutation: recoverable.withMutation,
+    }
+    const acceptVaultOptions = (_options: VaultCredentialStoreOptionsV1) => undefined
+    if (false) {
+      // @ts-expect-error A nominal V1 anchor cannot satisfy the V2 vault seam.
+      acceptVaultOptions({ versionAnchor: legacyOnly })
+      // @ts-expect-error A legacy mutation callback cannot masquerade as deferred commit.
+      acceptVaultOptions({ versionAnchor: legacyAlias })
+    }
+
+    const recoverablePersistence = createInMemoryCredentialVaultPersistenceV1()
+    const {
+      contractVersion: _persistenceVersion,
+      commitCredentialVersionV2: _atomicMetadataCommit,
+      ...legacyPersistence
+    } = recoverablePersistence
+    expectTypeOf(legacyPersistence).toMatchTypeOf<CredentialVaultPersistenceV1>()
+    const acceptPersistence = (_persistence: CredentialVaultPersistenceV2) => undefined
+    if (false) {
+      // @ts-expect-error A V1 persistence adapter cannot satisfy the V2 vault seam.
+      acceptPersistence(legacyPersistence)
+    }
+
+    const commonOptions = {
+      persistence: recoverablePersistence,
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'test-key',
+        keyVersion: 1,
+        loadKek: async () => new Uint8Array(32).fill(1),
+      }),
+    }
+    for (const invalidAnchor of [legacyOnly, legacyAlias]) {
+      expect(() => createVaultCredentialStoreBackendV1({
+        ...commonOptions,
+        versionAnchor: invalidAnchor as WorkspaceCredentialVersionAnchorV2,
+      })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
+    }
+    expect(() => createVaultCredentialStoreBackendV1({
+      ...commonOptions,
+      persistence: legacyPersistence as CredentialVaultPersistenceV2,
+      versionAnchor: recoverable,
+    })).toThrowError(expect.objectContaining({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED }))
+
+    const badScopedPersistence: CredentialVaultPersistenceV2 = {
+      ...recoverablePersistence,
+      async withWorkspaceLock(_workspaceId, mutate) {
+        return mutate(legacyPersistence as CredentialVaultPersistenceV2)
+      },
+    }
+    const badScopedBackend = createVaultCredentialStoreBackendV1({
+      ...commonOptions,
+      persistence: badScopedPersistence,
+      versionAnchor: recoverable,
+    })
+    await expect(badScopedBackend.listCredentialMetadata('ws-a')).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+    })
+  })
+  test('serializes provider-list inspections with anchor mutations', async () => {
+    const anchor = createInMemoryCredentialVersionAnchorV1()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let mutationEntered = false
+    const inspection = anchor.withReadLock('ws-a', async (readLocked) => {
+      expect(await readLocked()).toBeUndefined()
+      await gate
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mutation = anchor.withMutation('ws-a', PROVIDER_A, async () => {
+      mutationEntered = true
+      return {
+        nextCredentialVersion: 1,
+        nextCredentialMaterialKind: 'none',
+        nextCredentialFieldIds: [],
+        nextCredentialLifecycleState: 'intentionally_absent',
+        nextCredentialType: 'api-key',
+        nextDekGeneration: 1,
+        result: undefined,
+      }
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mutationEntered).toBe(false)
+    release()
+    await Promise.all([inspection, mutation])
+    expect(mutationEntered).toBe(true)
+  })
+
+  test('persists one workspace counter with exact per-provider current versions', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'boring-anchor-'))
+    const anchorFilePath = join(dir, 'credential-anchor')
+    const options = {
+      anchorFilePath,
+      loadKek: async () => new Uint8Array(KEK_A),
+    }
+    await initializeLocalFileCredentialVersionAnchorV1(options)
+    const anchor = createLocalFileCredentialVersionAnchorV1(options)
+    await anchor.withMutation('ws-a', providerId('provider-a'), async () => anchorMutation({
+      nextCredentialVersion: 1,
+      nextCredentialMaterialKind: 'field-set',
+        nextCredentialFieldIds: ['api-key'],
+      nextCredentialLifecycleState: 'active',
+      nextCredentialType: 'oauth',
+      nextDekGeneration: 1,
+      result: undefined,
+    }))
+    await anchor.withMutation('ws-a', providerId('provider-b'), async (state) => {
+      expect(state?.counter).toBe(1)
+      expect(state?.credentialVersions['provider-a']).toBe(1)
+      return anchorMutation({
+        nextCredentialVersion: 1,
+        nextCredentialMaterialKind: 'none',
+        nextCredentialFieldIds: [],
+        nextCredentialLifecycleState: 'intentionally_absent',
+        nextCredentialType: 'api-key',
+        nextDekGeneration: 1,
+        result: undefined,
+      })
+    })
+
+    const reloaded = createLocalFileCredentialVersionAnchorV1(options)
+    expect(await reloaded.read('ws-a')).toEqual({
+      counter: 2,
+      cryptoShredGeneration: 0,
+      dekGeneration: 1,
+      dekRotationReceipts: {},
+      credentialVersions: { 'provider-a': 1, 'provider-b': 1 },
+      credentialMaterialKinds: {
+        'provider-a': 'field-set',
+        'provider-b': 'none',
+      },
+      credentialFieldIds: {
+        'provider-a': ['api-key'],
+        'provider-b': [],
+      },
+      credentialLifecycleStates: {
+        'provider-a': 'active',
+        'provider-b': 'intentionally_absent',
+      },
+      credentialTypes: {
+        'provider-a': 'oauth',
+        'provider-b': 'api-key',
+      },
+    })
+  })
+
+  test('persists an irreversible shred fence before cleanup and keeps retries idempotent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'boring-shred-anchor-'))
+    const anchorFilePath = join(dir, 'credential-anchor')
+    const options = {
+      anchorFilePath,
+      loadKek: async () => new Uint8Array(KEK_A),
+    }
+    await initializeLocalFileCredentialVersionAnchorV1(options)
+    const anchor = createLocalFileCredentialVersionAnchorV1(options)
+    await anchor.withMutation('ws-a', PROVIDER_A, async () => anchorMutation({
+      nextCredentialVersion: 1,
+      nextCredentialMaterialKind: 'field-set',
+        nextCredentialFieldIds: ['api-key'],
+      nextCredentialLifecycleState: 'active',
+      nextCredentialType: 'api-key',
+      nextDekGeneration: 1,
+      result: undefined,
+    }))
+
+    await expect(anchor.withCryptoShredMutation('ws-a', async (state) => {
+      expect(state.cryptoShredGeneration).toBe(1)
+      throw new Error('simulated cleanup failure')
+    })).rejects.toThrow('simulated cleanup failure')
+    expect((await anchor.read('ws-a'))?.cryptoShredGeneration).toBe(1)
+
+    let retries = 0
+    await anchor.withCryptoShredMutation('ws-a', async (state) => {
+      retries += 1
+      expect(state.cryptoShredGeneration).toBe(1)
+      return { result: undefined }
+    })
+    expect(retries).toBe(1)
+    expect((await anchor.read('ws-a'))?.cryptoShredGeneration).toBe(1)
+    await expectCredentialError(
+      () => anchor.withMutation('ws-a', PROVIDER_A, async () => anchorMutation({
+        nextCredentialVersion: 2,
+        nextCredentialMaterialKind: 'field-set',
+        nextCredentialFieldIds: ['api-key'],
+        nextCredentialLifecycleState: 'active',
+        nextCredentialType: 'api-key',
+        nextDekGeneration: 1,
+        result: undefined,
+      })),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+
+    const sealed = JSON.parse(await readFile(anchorFilePath, 'utf8'))
+    sealed.state.workspaces['ws-a'].cryptoShredGeneration = 2
+    await writeFile(anchorFilePath, `${JSON.stringify(sealed)}\n`)
+    await expectCredentialError(
+      () => anchor.read('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
+  test('fails closed when the sealed anchor is missing or tampered', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'boring-anchor-'))
+    const anchorFilePath = join(dir, 'credential-anchor')
+    const options = {
+      anchorFilePath,
+      loadKek: async () => new Uint8Array(KEK_A),
+    }
+    const anchor = createLocalFileCredentialVersionAnchorV1(options)
+    await expectCredentialError(
+      () => anchor.read('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+    await initializeLocalFileCredentialVersionAnchorV1(options)
+    await writeFile(anchorFilePath, '{"tampered":true}\n')
+    await expectCredentialError(
+      () => anchor.read('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
+  test('normalizes malformed KEK loader values to the canonical fail-closed error', async () => {
+    const anchorFilePath = join(await mkdtemp(join(tmpdir(), 'boring-anchor-kek-')), 'anchor')
+    await initializeLocalFileCredentialVersionAnchorV1({
+      anchorFilePath,
+      loadKek: async () => new Uint8Array(KEK_A),
+    })
+    const malformed = createLocalFileCredentialVersionAnchorV1({
+      anchorFilePath,
+      loadKek: async () => ({ notBytes: true }) as unknown as Uint8Array,
+    })
+
+    const error = await expectCredentialError(
+      () => malformed.read('ws-a'),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    expect(error).toBeInstanceOf(CredentialResolutionError)
+    expect(error).not.toBeInstanceOf(TypeError)
+  })
+
+  test.each([
+    ['displayLabel', { displayLabel: 'tampered-label' }],
+    ['maskedLastFourSuffix', { maskedLastFourSuffix: '9999' }],
+  ] as const)(
+    'rejects exact-after recovery when committed %s is tampered',
+    async (metadataField, tamperedUpdate) => {
+      const boundary = await createDbToAnchorBoundaryFixture(`ws-tampered-${metadataField}`)
+      await expectCredentialError(
+        () => boundary.failingBackend.writeCredentialFields({
+          workspaceId: boundary.workspaceId,
+          providerId: PROVIDER_A,
+          fields: new Map([[FIELD_API_KEY, new TextEncoder().encode(SECRET_VALUE)]]),
+          metadata: {
+            displayLabel: 'Original label',
+            credentialType: 'api-key.v1',
+            maskedLastFourSuffix: '1234',
+          },
+        }),
+        CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+      )
+      expect(await readFile(boundary.anchorFilePath, 'utf8')).toContain('pendingCredentialMutation')
+      await boundary.persistence.updateCredentialMetadata(
+        boundary.workspaceId,
+        PROVIDER_A,
+        { state: 'active', ...tamperedUpdate },
+      )
+      await expectCredentialError(
+        () => boundary.stableBackend().read(
+          boundary.workspaceId,
+          PROVIDER_A,
+          [FIELD_API_KEY],
+        ),
+        CREDENTIAL_ERROR_CODES.UNREADABLE,
+      )
+      expect(await readFile(boundary.anchorFilePath, 'utf8')).toContain('pendingCredentialMutation')
+    },
+  )
+
+  test('recovers only exact authenticated before/after states across the DB-to-anchor boundary', async () => {
+    const committed = await createDbToAnchorBoundaryFixture('ws-committed')
+    await expectCredentialError(
+      () => committed.failingBackend.writeCredentialFields({
+        workspaceId: committed.workspaceId,
+        providerId: PROVIDER_A,
+        fields: new Map([[FIELD_API_KEY, new TextEncoder().encode(SECRET_VALUE)]]),
+      }),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    const pendingFile = await readFile(committed.anchorFilePath, 'utf8')
+    expect(pendingFile).toContain('pendingCredentialMutation')
+    expect(pendingFile).not.toContain(SECRET_VALUE)
+    const recovered = await committed.stableBackend().read(
+      committed.workspaceId,
+      PROVIDER_A,
+      [FIELD_API_KEY],
+    )
+    expect(recovered.kind).toBe('field-set')
+    if (recovered.kind !== 'field-set') throw new Error('expected recovered field set')
+    expect(new TextDecoder().decode(recovered.fields.get(FIELD_API_KEY))).toBe(SECRET_VALUE)
+    expect(await readFile(committed.anchorFilePath, 'utf8')).not.toContain(
+      'pendingCredentialMutation',
+    )
+    await committed.persistence.updateCredentialMetadata(
+      committed.workspaceId,
+      PROVIDER_A,
+      { state: 'disabled', credentialType: 'attacker-controlled' },
+    )
+    await expectCredentialError(
+      () => committed.stableBackend().writeCredentialFields({
+        workspaceId: committed.workspaceId,
+        providerId: PROVIDER_A,
+        fields: new Map([[FIELD_API_KEY, new TextEncoder().encode('replacement')]]),
+      }),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+
+    const lifecycle = await createDbToAnchorBoundaryFixture('ws-lifecycle')
+    const lifecycleStable = lifecycle.stableBackend()
+    await lifecycleStable.writeAbsentCredential(lifecycle.workspaceId, PROVIDER_A)
+    lifecycle.enableFinalAnchorFailure()
+    await expectCredentialError(
+      () => lifecycle.failingBackend.setCredentialLifecycleState(
+        lifecycle.workspaceId,
+        PROVIDER_A,
+        'disabled',
+      ),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    expect((await lifecycle.stableBackend().getCredentialMetadata(
+      lifecycle.workspaceId,
+      PROVIDER_A,
+    ))?.state).toBe('disabled')
+
+    const forgedAhead = await createDbToAnchorBoundaryFixture('ws-forged-ahead')
+    await expectCredentialError(
+      () => forgedAhead.failingBackend.writeAbsentCredential(
+        forgedAhead.workspaceId,
+        PROVIDER_A,
+      ),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    await forgedAhead.persistence.putCredentialRecord(forgedAhead.workspaceId, PROVIDER_A, {
+      credentialId: 'attacker-replay',
+      credentialVersion: 2,
+      dekGeneration: 1,
+      materialKind: 'none',
+    })
+    await expectCredentialError(
+      () => forgedAhead.stableBackend().getCredentialMetadata(
+        forgedAhead.workspaceId,
+        PROVIDER_A,
+      ),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+
+    const beforeCommit = await createDbToAnchorBoundaryFixture('ws-before-commit')
+    let rejectingPersistence!: CredentialVaultPersistenceV2
+    rejectingPersistence = Object.freeze({
+      ...beforeCommit.persistence,
+      async withWorkspaceLock<T>(
+        _workspaceId: string,
+        mutate: (locked: CredentialVaultPersistenceV2) => Promise<T>,
+      ): Promise<T> {
+        return mutate(rejectingPersistence)
+      },
+      async commitCredentialVersionV2() {
+        throw new Error('simulated DB commit failure')
+      },
+    })
+    const rejectingBackend = createVaultCredentialStoreBackendV1({
+      persistence: rejectingPersistence,
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({
+        anchorFilePath: beforeCommit.anchorFilePath,
+        loadKek: async () => new Uint8Array(KEK_A),
+      }),
+      kmsBackend: kekProvider(KEK_A),
+    })
+    await expect(rejectingBackend.writeAbsentCredential(
+      beforeCommit.workspaceId,
+      PROVIDER_A,
+    )).rejects.toThrow('simulated DB commit failure')
+    await expectCredentialError(
+      () => beforeCommit.stableBackend().listCredentialMetadata(beforeCommit.workspaceId),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    await expectCredentialError(
+      () => beforeCommit.stableBackend().rotateWorkspaceDek(
+        beforeCommit.workspaceId,
+        'must-not-bypass-pending',
+      ),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    await expectCredentialError(
+      () => beforeCommit.stableBackend().cryptoShredWorkspace(beforeCommit.workspaceId),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    await expectCredentialError(
+      () => beforeCommit.stableBackend().writeAbsentCredential(
+        beforeCommit.workspaceId,
+        PROVIDER_A,
+      ),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    expect(await readFile(beforeCommit.anchorFilePath, 'utf8')).toContain(
+      'pendingCredentialMutation',
+    )
   })
 })
 
@@ -400,6 +909,119 @@ function expectSyncCredentialError(run: () => unknown): CredentialResolutionErro
 }
 
 describe('vault credential store backend', () => {
+  test('provider listing rejects authenticated tombstoned state when metadata is missing', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const versionAnchor = createInMemoryCredentialVersionAnchorV1()
+    const kmsBackend = kekProvider(KEK_A)
+    const writer = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor,
+      kmsBackend,
+    })
+    await writer.writeCredentialFields({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      fields: new Map([
+        [FIELD_API_KEY, new Uint8Array(Buffer.from(SECRET_VALUE, 'utf8'))],
+      ]),
+      metadata: { credentialType: 'api-key' },
+    })
+    await writer.writeAbsentCredential('ws-a', PROVIDER_A)
+
+    const metadataMissingPersistence: CredentialVaultPersistenceV2 = {
+      ...persistence,
+      async withWorkspaceLock(_workspaceId, mutate) {
+        return mutate(metadataMissingPersistence)
+      },
+      async listCredentialMetadata() { return [] },
+    }
+    const metadataMissing = createVaultCredentialStoreBackendV1({
+      persistence: metadataMissingPersistence,
+      versionAnchor,
+      kmsBackend,
+    })
+    await expectCredentialError(
+      () => metadataMissing.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
+  test('provider listing rejects a missing anchor when orphaned vault artifacts remain', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const kmsBackend = kekProvider(KEK_A)
+    const generated = await kmsBackend.generateDataKey(context('ws-a'))
+    try {
+      await persistence.putWrappedDek('ws-a', 1, generated.wrappedDek)
+    } finally {
+      generated.plaintextDek.fill(0)
+    }
+    const anchorFilePath = join(
+      await mkdtemp(join(tmpdir(), 'boring-missing-list-anchor-')),
+      'credential-anchor',
+    )
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({
+        anchorFilePath,
+        loadKek: async () => new Uint8Array(KEK_A),
+      }),
+      kmsBackend,
+    })
+
+    await expectCredentialError(
+      () => backend.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
+  test('provider listing rejects orphaned artifacts beside a valid empty anchor', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const generated = await kekProvider(KEK_A).generateDataKey(context('ws-a'))
+    try {
+      await persistence.putWrappedDek('ws-a', 1, generated.wrappedDek)
+    } finally {
+      generated.plaintextDek.fill(0)
+    }
+    const anchorFilePath = join(
+      await mkdtemp(join(tmpdir(), 'boring-empty-list-anchor-')),
+      'credential-anchor',
+    )
+    const anchorOptions = {
+      anchorFilePath,
+      loadKek: async () => new Uint8Array(KEK_A),
+    }
+    await initializeLocalFileCredentialVersionAnchorV1(anchorOptions)
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor: createLocalFileCredentialVersionAnchorV1(anchorOptions),
+      kmsBackend: kekProvider(KEK_A),
+    })
+
+    await expectCredentialError(
+      () => backend.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
+  test('provider listing does not excuse a present malformed anchor for empty persistence', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'boring-list-anchor-'))
+    const anchorFilePath = join(dir, 'credential-anchor')
+    await writeFile(anchorFilePath, '{"tampered":true}\n')
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({
+        anchorFilePath,
+        loadKek: async () => new Uint8Array(KEK_A),
+      }),
+      kmsBackend: kekProvider(KEK_A),
+    })
+
+    await expectCredentialError(
+      () => backend.listCredentialMetadata('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
   test('round-trips a credential field end to end', async () => {
     const { backend } = vaultStore()
     const record = await backend.writeCredentialFields({
@@ -416,6 +1038,61 @@ describe('vault credential store backend', () => {
     if (resolved.kind !== 'field-set') throw new Error('expected field-set')
     expect(Buffer.from(resolved.fields.get(FIELD_API_KEY)!).toString('utf8'))
       .toBe(SECRET_VALUE)
+  })
+
+  test('makes shred completion a barrier for in-flight credential reads', async () => {
+    const basePersistence = createInMemoryCredentialVaultPersistenceV1()
+    let delayReads = false
+    let releaseRead!: () => void
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve })
+    let signalReadEntered!: () => void
+    const readEntered = new Promise<void>((resolve) => { signalReadEntered = resolve })
+    const persistence: CredentialVaultPersistenceV2 = {
+      ...basePersistence,
+      async withWorkspaceLock(workspaceId, mutate) {
+        return basePersistence.withWorkspaceLock(workspaceId, () => mutate(persistence))
+      },
+      async getWrappedDek(workspaceId, dekGeneration) {
+        const wrapped = await basePersistence.getWrappedDek(workspaceId, dekGeneration)
+        if (delayReads) {
+          signalReadEntered()
+          await readGate
+        }
+        return wrapped
+      },
+    }
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor: createInMemoryCredentialVersionAnchorV1(),
+      kmsBackend: kekProvider(KEK_A),
+    })
+    await backend.writeCredentialFields({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      fields: new Map([
+        [FIELD_API_KEY, new Uint8Array(Buffer.from(SECRET_VALUE, 'utf8'))],
+      ]),
+    })
+
+    delayReads = true
+    const inFlightRead = backend.read('ws-a', PROVIDER_A, [FIELD_API_KEY])
+    await readEntered
+    let shredCompleted = false
+    const shred = backend.cryptoShredWorkspace('ws-a').then(() => {
+      shredCompleted = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(shredCompleted).toBe(false)
+
+    releaseRead()
+    const resolved = await inFlightRead
+    expect(resolved.kind).toBe('field-set')
+    await shred
+    expect(shredCompleted).toBe(true)
+    await expectCredentialError(
+      () => backend.read('ws-a', PROVIDER_A, [FIELD_API_KEY]),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
   })
 
   test('persists ciphertext only, never plaintext', async () => {
@@ -455,11 +1132,41 @@ describe('vault credential store backend', () => {
         loadKek: createLocalKekFileSourceV1('/nonexistent/boring-16f2-kek'),
       }),
       persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createInMemoryCredentialVersionAnchorV1(),
     })
     const error = await expectCredentialError(
       () => backend.read('ws-a', PROVIDER_A, [FIELD_API_KEY]),
       CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
     )
+    expectNoSecretLeak(error)
+  })
+
+  test('keeps a KEK outage retryable when the source disappears after readiness', async () => {
+    const anchorFilePath = join(await mkdtemp(join(tmpdir(), 'boring-anchor-kek-outage-')), 'anchor')
+    let loadCount = 0
+    const loadKek = async (): Promise<Uint8Array> => {
+      loadCount += 1
+      // Initialization and backend readiness succeed; the authenticated anchor
+      // reload then observes the simulated source outage.
+      if (loadCount === 3) throw new Error('simulated KEK source outage')
+      return new Uint8Array(KEK_A)
+    }
+    await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek })
+    const backend = createVaultCredentialStoreBackendV1({
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'disappearing',
+        keyVersion: 1,
+        loadKek,
+      }),
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
+    })
+
+    const error = await expectCredentialError(
+      () => backend.read('ws-a', PROVIDER_A, [FIELD_API_KEY]),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    expect(error.retryable).toBe(true)
     expectNoSecretLeak(error)
   })
 
@@ -535,6 +1242,35 @@ describe('vault credential store backend', () => {
       .toBe(SECRET_VALUE)
   })
 
+  test('an absent credential tombstones superseded fields without ciphertext', async () => {
+    const { backend, persistence } = vaultStore()
+    await backend.writeCredentialFields({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      fields: new Map([
+        [FIELD_API_KEY, new Uint8Array(Buffer.from(SECRET_VALUE, 'utf8'))],
+      ]),
+    })
+    const absent = await backend.writeAbsentCredential('ws-a', PROVIDER_A)
+    expect(absent.materialKind).toBe('none')
+    expect(await persistence.getField({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      credentialVersion: 1,
+      fieldId: FIELD_API_KEY,
+    })).toBeUndefined()
+    expect(await persistence.getFieldTombstone({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      credentialVersion: 1,
+      fieldId: FIELD_API_KEY,
+    })).toMatchObject({ reason: 'credential-tombstone' })
+    expect(await backend.read('ws-a', PROVIDER_A, [])).toEqual({
+      kind: 'none',
+      credentialVersion: 2,
+    })
+  })
+
   test('an older credential version cannot be read at the new version identity', async () => {
     const { backend, persistence } = vaultStore()
     await backend.writeCredentialFields({
@@ -544,6 +1280,12 @@ describe('vault credential store backend', () => {
         [FIELD_API_KEY, new Uint8Array(Buffer.from('old-value', 'utf8'))],
       ]),
     })
+    const v1 = await persistence.getField({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      credentialVersion: 1,
+      fieldId: FIELD_API_KEY,
+    })
     const second = await backend.writeCredentialFields({
       workspaceId: 'ws-a',
       providerId: PROVIDER_A,
@@ -552,13 +1294,7 @@ describe('vault credential store backend', () => {
       ]),
     })
     expect(second.credentialVersion).toBe(2)
-    // Splice v1 ciphertext under the v2 key: AAD version binding rejects it.
-    const v1 = await persistence.getField({
-      workspaceId: 'ws-a',
-      providerId: PROVIDER_A,
-      credentialVersion: 1,
-      fieldId: FIELD_API_KEY,
-    })
+    // Splice the captured v1 ciphertext under the v2 key: AAD binding rejects it.
     await persistence.putField(
       {
         workspaceId: 'ws-a',

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PR #1211 · WhatsApp plan reintegration</title>
+  <style>
+    :root { color-scheme: light; --ink:#172033; --muted:#5f6b7a; --line:#dbe2ea; --ok:#176b3a; --bg:#f5f7fa; --card:#fff; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,sans-serif; }
+    main { max-width:960px; margin:0 auto; padding:48px 24px 72px; } h1 { margin:.2rem 0 .5rem; font-size:clamp(2rem,5vw,3.4rem); line-height:1.05; }
+    h2 { margin-top:2rem; } .eyebrow { color:var(--ok); font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+    .lead { color:var(--muted); font-size:1.15rem; max-width:760px; } .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px; margin:18px 0; box-shadow:0 5px 20px #1720330a; }
+    code { background:#eef2f6; border-radius:5px; padding:.1em .35em; overflow-wrap:anywhere; } ul { padding-left:1.25rem; } li+li { margin-top:.45rem; }
+    .status { display:inline-block; color:var(--ok); border:1px solid #8bc7a6; background:#eef9f2; border-radius:999px; padding:.25rem .7rem; font-weight:700; }
+    .two-line { margin-bottom:1.3rem; } .two-line strong { display:block; } footer { margin-top:2.5rem; color:var(--muted); font-size:.92rem; }
+  </style>
+</head>
+<body><main>
+  <div class="eyebrow">WhatsApp Plan · PR #1211</div>
+  <h1>Main-integrated documentation handoff</h1>
+  <p class="lead">Recovery merges <code>origin/main</code> into <code>docs/1127-whatsapp-plan</code> without rebasing or force-pushing. Implemented runtime facts from #1550/#1534 are authoritative; the approved r4.1 plan remains represented through the plan version already landed on main.</p>
+  <p><span class="status">Ready for orchestrator verification</span></p>
+
+  <section class="card">
+    <h2>Integration anchor</h2>
+    <ul>
+      <li>Approved-plan source: <code>a9e63690c398ba971a5e9e09d5fca4c191877564</code>.</li>
+      <li>Main source merged: <code>c248adba89e5514d0c60bf436ae8c8bcf707609b</code>.</li>
+      <li>Authoritative final pushed SHA, exact-SHA CI result, and independent-review provenance are recorded in Bead <code>wt-391-forward-fiv0.1</code>'s durable handoff comment.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Conflict resolution · two lines per file</h2>
+    <div class="two-line"><strong><code>docs/issues/1127/plan-whatsapp.md</code></strong>
+      Kept main’s r4.1/runtime baseline: adopted execution subset, current source paths/types, corrected <code>changeEmail</code> flow, and verified billing wording.<br />Preserved the approved plan’s registry, identity, security, and later-phase design because main already carries the reconciled plan landing.</div>
+    <div class="two-line"><strong><code>docs/issues/1127/references/README.md</code></strong>
+      Kept main’s explicit verification gates for Meta OTP-window and fresh-number ramp claims, plus the recovered better-auth spike report index.<br />Preserved the PR’s durable-evidence scope and links from the research set into identity, security, billing, and slice 1c.</div>
+    <div class="two-line"><strong><code>docs/issues/1127/references/getnao-auth-study.md</code></strong>
+      Kept main’s corrected model: phone lives on the user row, OAuth account linking does not attach phone, and application-owned orchestration is required.<br />Preserved nao’s useful internal-user/linking-code evidence while separating identity linking from single-use web-session establishment.</div>
+    <div class="two-line"><strong><code>docs/issues/1127/references/whatsapp-auth-billing-research.md</code></strong>
+      Kept main’s uncertainty labels for uncited Meta limits/window behavior and its accurate conditional Swiss QR-bill wording.<br />Preserved the PR’s OTP, fallback, Checkout, VAT/UID, and Swiss payment context as gated Phase-2 research rather than implemented fact.</div>
+  </section>
+
+  <section class="card">
+    <h2>Proof contract</h2>
+    <ul>
+      <li>The four resolved files are byte-identical to their <code>origin/main</code> versions.</li>
+      <li><code>.beads/issues.jsonl</code> was reconciled by the configured <code>beads</code> merge driver; JSONL parsing and duplicate-ID count are checked separately.</li>
+      <li>No feature scope, deployment, PR merge, or owner decision is performed by this recovery.</li>
+    </ul>
+  </section>
+  <footer>Durable review artifact for Bead wt-391-forward-fiv0.1. The Bead comment is authoritative for revision-specific receipts.</footer>
+</main></body></html>

@@ -6,7 +6,9 @@ import path from 'node:path'
 import {
   autoDetectMode,
   createAgentHost,
+  createAgentHostChannelStorage,
   createEnvironmentProvisioningFingerprint,
+  createPostgresCredentialVaultPersistenceV1,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   createRemoteWorkerModeAdapter,
@@ -16,6 +18,7 @@ import {
   projectAuthorizedSessionRunDetails,
   resolveDefaultAgentFleet,
   resolveRequestLedgerPath,
+  runCredentialVaultPostgresMigrationsV1,
   withRuntimeEnvContributions,
   type AgentAccessDecision,
   type AgentAccessOperation,
@@ -24,6 +27,7 @@ import {
   type AgentGatewayEffect,
   type AgentHarnessFactory,
   type AgentHostAgentSpec,
+  type AgentHostCredentialOptionsV1,
   type AgentHostDirectProjectionOptions,
   type AgentHostEnvironmentScope,
   type AgentMeteringSink,
@@ -39,8 +43,10 @@ import {
   type RuntimeProvisioningContribution,
   type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
+  type WorkspaceCredentialLifecycleV1,
 } from '@hachej/boring-agent/server'
 import { AgentGatewayErrorCode } from '@hachej/boring-agent/shared'
+import type { VerifiedWorkspaceCredentialAuthorityV1 } from '@hachej/boring-agent/shared'
 import type {
   AgentTool,
   SandboxHandleStore,
@@ -65,6 +71,7 @@ import {
 import {
   createWorkspaceUiTools,
   discoverRepositoryAgentPackages,
+  runtimeProjectionRoutes,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -73,6 +80,7 @@ import {
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRuntimeEnvOptions,
   type WorkspaceServerPlugin,
+  type RuntimeProjectionRoutesOptions,
 } from '@hachej/boring-workspace/server'
 import {
   applyRuntimePiExtensionIsolation,
@@ -140,6 +148,12 @@ import {
 } from '../../shared/workspaceDefaultAgent.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
+import {
+  assertCoreWhatsAppAgentAvailable,
+  mountCoreWhatsAppChannel,
+  type CoreWhatsAppChannelOptions,
+  type MountedCoreWhatsAppChannel,
+} from './whatsappChannelComposition.js'
 
 const WORKSPACE_DEFAULT_AGENT_GATED_EFFECTS = new Set<AgentGatewayEffect>([
   'session.create',
@@ -235,6 +249,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   mode?: RuntimeModeId
   runtimeModeAdapter?: RuntimeModeAdapter
   runtimeHost?: AgentRuntimeHostOperations
+  /** Explicit Host-owned same-origin projection authority; absent by default. */
+  runtimeProjection?: RuntimeProjectionRoutesOptions
   extraTools?: AgentTool[]
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -243,6 +259,10 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   piResourceAuthorizedRoots?: string[]
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  /** Mount the owner-only workspace credential routes with durable Core Postgres storage. */
+  credentials?: boolean
+  /** Trusted, provisioned-only WhatsApp Cloud API mount. Omit to keep the edge disabled. */
+  whatsAppChannel?: CoreWhatsAppChannelOptions
   filterModels?: AgentHostDirectProjectionOptions['filterModels']
   shareEntryStore?: ShareEntryStore
   externalPlugins?: boolean
@@ -1008,6 +1028,7 @@ async function createCoreRuntime(
   requestScopeResolver?: CoreRequestScopeResolver,
   authBaseURL?: CoreDynamicAuthBaseURL,
   resolveInitialAgentSeat?: ResolveInitialAgentSeat,
+  shredWorkspaceCredentials?: (workspaceId: string) => Promise<void>,
 ): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
@@ -1028,7 +1049,10 @@ async function createCoreRuntime(
     config.encryption.workspaceSettingsKey,
   )
 
-  const app = await createCoreApp(config, { requestScopeResolver }) as CoreWorkspaceAgentServer
+  const app = await createCoreApp(config, {
+    requestScopeResolver,
+    shredWorkspaceCredentials,
+  }) as CoreWorkspaceAgentServer
   // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
   const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
   const telemetrySource = customTelemetry
@@ -1143,6 +1167,14 @@ export async function createCoreWorkspaceAgentServer(
     defaultAgentTypeId: applicationDefaultAgentTypeId,
     signupAgentDefaults,
   }
+  let credentialLifecycle: WorkspaceCredentialLifecycleV1 | undefined
+  const shredWorkspaceCredentials = options.credentials
+    ? async (workspaceId: string) => {
+        const lifecycle = credentialLifecycle
+        if (!lifecycle) throw new Error('credential lifecycle is not ready')
+        await lifecycle.cryptoShredWorkspace(workspaceId)
+      }
+    : undefined
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
     config,
     signupAgentDefaults,
@@ -1151,7 +1183,17 @@ export async function createCoreWorkspaceAgentServer(
     options.requestScopeResolver,
     options.authBaseURL,
     options.resolveInitialAgentSeat,
+    shredWorkspaceCredentials,
   )
+  // Credential advisory locks need an independently pooled control connection:
+  // it must remain available to terminate a reserved lock holder even when the
+  // application pool is saturated or its unlock query stalls.
+  // postgres() is lazy: this allocates no socket/handle during startup, so a
+  // construction failure before first credential use has no live pool to leak.
+  const credentialEvictionSql = options.credentials ? createDatabase(config).sql : undefined
+  if (credentialEvictionSql) {
+    app.addHook('onClose', async () => { await credentialEvictionSql.end() })
+  }
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
@@ -1419,6 +1461,38 @@ export async function createCoreWorkspaceAgentServer(
       : options.sessionNamespace ?? ctx.workspaceId
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
+
+  const credentialOptions: AgentHostCredentialOptionsV1 | undefined = options.credentials
+    ? {
+        env: process.env,
+        vaultPersistence: createPostgresCredentialVaultPersistenceV1(sql, {
+          evictionSql: credentialEvictionSql!,
+        }),
+        onLifecycleReady(lifecycle) {
+          credentialLifecycle = lifecycle
+        },
+        async authorizeOwnerRequest(request): Promise<VerifiedWorkspaceCredentialAuthorityV1> {
+          const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
+          const userId = request.user?.id
+          if (!userId) throw httpError('authentication required', 401)
+          const [workspace, membershipRole] = await Promise.all([
+            workspaceStore.get(workspaceId),
+            workspaceStore.getMemberRole(workspaceId, userId),
+          ])
+          if (!workspace || workspace.appId !== config.appId || !membershipRole) {
+            throw httpError('workspace access denied', 403)
+          }
+          return {
+            workspaceId,
+            appId: config.appId,
+            principal: { kind: 'user', userId, membershipRole },
+            authorizationReceiptId: `credential-owner:${request.id}`,
+            expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          }
+        },
+      }
+    : undefined
+  if (credentialOptions) await runCredentialVaultPostgresMigrationsV1(sql)
 
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
@@ -1749,6 +1823,10 @@ export async function createCoreWorkspaceAgentServer(
     },
   }
 
+  assertCoreWhatsAppAgentAvailable(options.whatsAppChannel, agentTypeIds)
+  const channelStorage = options.whatsAppChannel
+    ? createAgentHostChannelStorage({ sessionRoot: sessionRoot ?? workspaceRoot })
+    : undefined
   const agentHost = await createAgentHost({
     agents: hostAgents,
     fleetCompiler: createValidatingAgentFleetCompiler({
@@ -1768,6 +1846,7 @@ export async function createCoreWorkspaceAgentServer(
     }),
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
     scopeVerifier: scopeAuthority.verifier,
+    ...(credentialOptions ? { credentials: credentialOptions } : {}),
     ...(options.workspaceAgentAccessMode === 'enforce'
       ? {
           resolveAgentAccess: async ({ verifiedClaim, agentTypeId, operation }) => {
@@ -1791,6 +1870,7 @@ export async function createCoreWorkspaceAgentServer(
     metering: options.metering,
     harnessFactory: options.harnessFactory,
     effectAdmission: coreEffectAdmission,
+    ...(channelStorage ? { eventStore: channelStorage.events } : {}),
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       return scopeAuthority.resolveEnvironment(authorizedScope)
     },
@@ -1844,10 +1924,28 @@ export async function createCoreWorkspaceAgentServer(
           : runtime.revalidateResourceInputs,
       }
     },
+  }).catch((error: unknown) => {
+    channelStorage?.close()
+    throw error
   })
 
   let hostMounted = false
+  let whatsAppMount: MountedCoreWhatsAppChannel | undefined
   try {
+    if (options.whatsAppChannel && channelStorage) {
+      whatsAppMount = await mountCoreWhatsAppChannel({
+        app,
+        gateway: agentHost.gateway,
+        storage: channelStorage,
+        resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
+          workspaceId: binding.workspaceId,
+          userId: binding.authSubjectId,
+        }),
+        options: options.whatsAppChannel,
+      })
+      app.addHook('preClose', async () => whatsAppMount?.close())
+    }
+
     await reconcileWorkspaceDefaultAgentTypes({
       workspaceStore,
       appId: config.appId,
@@ -2114,6 +2212,11 @@ export async function createCoreWorkspaceAgentServer(
       } satisfies WorkspaceDefaultAgentState
     })
 
+    if (channelStorage) {
+      // Fastify runs onClose hooks in reverse registration order. Register the
+      // root storage hook before Agent Host so Host shutdown completes first.
+      app.addHook('onClose', async () => channelStorage.close())
+    }
     await registerCoreAgentHostEnvironmentRoutes(app, {
       agentHost,
       authorizeAgentRequest: (request) => authorizeAgentRequest(request),
@@ -2156,6 +2259,9 @@ export async function createCoreWorkspaceAgentServer(
       getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
       preserveStateKeys: pluginCollection.preservedUiStateKeys,
     })
+    if (options.runtimeProjection) {
+      await app.register(runtimeProjectionRoutes, options.runtimeProjection)
+    }
 
     await coreBridge.registerHttpRoutes(app)
 
@@ -2167,8 +2273,12 @@ export async function createCoreWorkspaceAgentServer(
       await registerFrontendFallback(app, appRoot, telemetry, options.frontendRootHandler)
     }
   } catch (error) {
+    await whatsAppMount?.close().catch(() => undefined)
     if (!hostMounted) await agentHost.host.close().catch(() => undefined)
+    // When mounted, app.close runs Agent Host's hooks before the root storage
+    // hook. On partial mounting, close the Host explicitly before storage.
     await app.close().catch(() => undefined)
+    channelStorage?.close()
     throw error
   }
 

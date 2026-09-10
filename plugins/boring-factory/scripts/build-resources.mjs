@@ -21,6 +21,9 @@ const sources = [
   },
   ...[
     'boring-loop.md',
+    'coding-invariants.md',
+    'worktree-agent.md',
+    'visual-review.md',
     'MODEL-CARD.md',
     'issue-plans.md',
     'bead-ready.md',
@@ -52,6 +55,7 @@ const sources = [
 
   ...[
     'boring-loop.md',
+    'coding-invariants.md',
     'MODEL-CARD.md',
     'worktree-agent.md',
     'bead-ready.md',

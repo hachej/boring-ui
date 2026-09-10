@@ -31,10 +31,10 @@ import {
 export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 
 /** Bump when this file's delegation behavior changes; hashed into the plugin's contentDigest. */
-const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v3.2026-09-05'
+const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v5.2026-09-07'
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000
-const POLL_INTERVAL_MS = 1_000
+const POLL_INTERVAL_MS = 5_000
 const BRIEF_MIN_LENGTH = 20
 const BRIEF_MAX_LENGTH = 8_000
 
@@ -253,6 +253,17 @@ function capRefusal(
   }, true)
 }
 
+function reviewCapRefusal(targetKey: string, current: number, maximum: number): ToolResult {
+  return textResult({
+    code: 'REVIEW_ROUND_CAP_REACHED',
+    reviewTarget: targetKey,
+    current,
+    maximum,
+    blocked: true,
+    message: `Factory host refused review: the review-round cap is reached (${current}/${maximum}). Do not infer approval or create another review. The Worker must hand off the current SHA with unresolved findings; the Orchestrator must escalate them to the owner.`,
+  }, true)
+}
+
 function createDelegateTool(
   toolName: string,
   targetAgentTypeId: string,
@@ -264,7 +275,10 @@ function createDelegateTool(
   admitSessionMutation: <T>(operation: () => Promise<T>) => Promise<T>,
 ): AgentTool {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const workspaceHeader = { 'x-boring-workspace-id': options.workspaceScopeId }
+  const workspaceHeader = {
+    'x-boring-workspace-id': options.workspaceScopeId,
+    'x-boring-invocation-mode': 'unattended',
+  }
 
   return {
     name: toolName,
@@ -395,8 +409,22 @@ function createDelegateTool(
 
           const timestamp = new Date(options.now?.() ?? Date.now()).toISOString()
           let dispatchRecord: FactoryDispatchRecord | undefined
+          let reviewRecord: FactoryReviewRecord | undefined
           if (toolName === 'dispatch_worker') {
             dispatchRecord = await ledger.reserveDispatch({ epicKey: epic.epicKey, beadId: beadId!, timestamp })
+          } else {
+            const reservation = await ledger.reserveReview({
+              epicKey: epic.epicKey,
+              targetKey: reviewTargetKey!,
+              ...(beadId ? { beadId } : {}),
+              ...(reviewSha ? { sha: reviewSha } : {}),
+              ...(ctx.sessionId ? { parentSessionId: ctx.sessionId } : {}),
+              timestamp,
+            }, limits.maxReviewRounds)
+            if (!reservation.accepted) {
+              return reviewCapRefusal(reservation.targetKey, reservation.current, reservation.maximum)
+            }
+            reviewRecord = reservation.record
           }
           const createResponse = await app.inject({
             method: 'POST',
@@ -406,26 +434,17 @@ function createDelegateTool(
           })
           if (createResponse.statusCode !== 201) {
             if (dispatchRecord) await ledger.updateDispatch(dispatchRecord.id, 'failed')
+            if (reviewRecord) await ledger.updateReview(reviewRecord.id, 'failed')
             return textResult(
               { code: 'CREATE_SESSION_FAILED', status: createResponse.statusCode, body: createResponse.body },
               true,
             )
           }
           const { sessionId } = createResponse.json<{ sessionId: string }>()
-          let reviewRecord: FactoryReviewRecord | undefined
           if (toolName === 'dispatch_worker') {
             dispatchRecord = await ledger.attachDispatch(dispatchRecord!.id, sessionId, 'created')
           } else {
-            reviewRecord = await ledger.appendReview({
-              epicKey: epic.epicKey,
-              targetKey: reviewTargetKey!,
-              ...(beadId ? { beadId } : {}),
-              ...(reviewSha ? { sha: reviewSha } : {}),
-              ...(ctx.sessionId ? { parentSessionId: ctx.sessionId } : {}),
-              childSessionId: sessionId,
-              timestamp,
-              outcome: 'created',
-            })
+            reviewRecord = await ledger.attachReview(reviewRecord!.id, sessionId, 'created')
           }
 
           try {
@@ -478,23 +497,51 @@ function createDelegateTool(
         const deadline = Date.now() + timeoutMs
         let status: 'completed' | 'timeout' = 'timeout'
         let lastState: DelegateSessionState | undefined
+        // Poll the cheap batch-summary projection (status + turnCount) instead of
+        // serialising the child's full transcript every second: with a dozen lanes
+        // the full-state poll saturated the host event loop and starved the UI.
         while (Date.now() < deadline) {
           if (ctx.abortSignal.aborted) throw new DelegateAbortedError()
-          const stateResponse = await app.inject({
-            method: 'GET',
-            url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/state`,
-            headers: workspaceHeader,
-          })
-          if (stateResponse.statusCode === 200) {
-            lastState = stateResponse.json<DelegateSessionState>()
-            const turnCount = lastState.summary?.turnCount ?? 0
-            if (lastState.state?.status === 'idle' && turnCount >= 1) {
-              status = 'completed'
-              break
+          let probe: { status?: string; turnCount?: number } | undefined
+          try {
+            const summaryResponse = await app.inject({
+              method: 'POST',
+              url: `/api/v1/agents/${targetAgentTypeId}/sessions/summaries`,
+              headers: workspaceHeader,
+              payload: { sessionIds: [sessionId] },
+            })
+            if (summaryResponse.statusCode === 200) {
+              probe = summaryResponse.json<{ summaries?: Array<{ status?: string; turnCount?: number }> }>().summaries?.[0]
+            }
+          } catch {
+            probe = undefined
+          }
+          if (!probe) {
+            // Hosts without the batch projection (or a session it has not indexed
+            // yet) fall back to the full-state read so completion is never missed.
+            const stateResponse = await app.inject({
+              method: 'GET',
+              url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/state`,
+              headers: workspaceHeader,
+            })
+            if (stateResponse.statusCode === 200) {
+              lastState = stateResponse.json<DelegateSessionState>()
+              probe = { status: lastState.state?.status, turnCount: lastState.summary?.turnCount }
             }
           }
+          if (probe?.status === 'idle' && (probe.turnCount ?? 0) >= 1) break
           await sleep(POLL_INTERVAL_MS, ctx.abortSignal)
         }
+        // One full-state read at the end for the model and final assistant text.
+        const finalStateResponse = await app.inject({
+          method: 'GET',
+          url: `/api/v1/agents/${targetAgentTypeId}/sessions/${sessionId}/state`,
+          headers: workspaceHeader,
+        })
+        if (finalStateResponse.statusCode === 200) lastState = finalStateResponse.json<DelegateSessionState>()
+        // The full state is authoritative: it both confirms completion and carries
+        // the answer. This also catches a child that became idle at the deadline.
+        if (lastState?.state?.status === 'idle' && (lastState.summary?.turnCount ?? 0) >= 1) status = 'completed'
 
         const finishedAt = new Date().toISOString()
         const model = lastState?.state?.currentModel
@@ -513,7 +560,7 @@ function createDelegateTool(
             reviewTarget: started.reviewRecord.targetKey,
             capReached: started.capReached,
             ...(started.capReached ? {
-              capInstructions: `Review-round cap reached (${started.reviewRecord.round}/${limits.maxReviewRounds}). Hand off at the current SHA and file remaining findings as follow-up Beads; do not fix forward again.`,
+              capInstructions: `Review-round cap reached (${started.reviewRecord.round}/${limits.maxReviewRounds}). Do not infer approval or fix forward again. The Worker must hand off the current SHA with unresolved findings; the Orchestrator must escalate them to the owner.`,
             } : {}),
           } : {}),
           provenance: {

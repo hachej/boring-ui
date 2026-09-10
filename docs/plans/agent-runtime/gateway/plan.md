@@ -342,12 +342,12 @@ interface CreateAgentSessionInput extends AuthorizedAgentScope {
   readonly requestId: string         // caller-generated idempotency key
   readonly title?: string
 }
-// Within the active ledger's published retention window, the same requestId
-// yields the same AgentSessionRef and never a second transcript. The window
-// is level-defined: process-lifetime at Level B — an HTTP retry that crosses
-// a Host restart therefore degrades to today's wire semantics (a new
-// session), an explicitly accepted Level-B limitation — and ≥24h durable at
-// Level D (streaming lane).
+// For as long as its ledger record is retained, the same requestId yields the
+// same AgentSessionRef and never a second transcript. Production Level B uses
+// the durable transactional request ledger, so completed create receipts
+// survive Host restart. Request-ledger durability is independent of Level D's
+// durable event offsets; a bounded eviction policy is a separate retention
+// contract and is not implied by the B/D replay level.
 
 interface RenameAgentSessionInput extends AuthorizedAgentScope {
   readonly ref: AgentSessionRef
@@ -547,15 +547,19 @@ stable code:
 | --- | --- |
 | `AGENT_TYPE_UNKNOWN` | `agentTypeId` not in this gateway's catalog |
 | `AGENT_SESSION_NOT_FOUND` | ref unknown **or** scope mismatch (fail closed; indistinguishable by design) |
-| `AGENT_SCOPE_DENIED` | caller's scope failed authorization |
+| `AGENT_SCOPE_DENIED` | caller's workspace/subject scope failed authorization |
+| `AGENT_ENTITLEMENT_REQUIRED` | access requires a subscription or entitlement the caller does not have |
+| `AGENT_ACCESS_FORBIDDEN` | the authoritative access policy denied this caller and Agent |
+| `AGENT_ACCESS_POLICY_UNAVAILABLE` | the authoritative access policy could not make a decision; retry according to details |
 | `AGENT_SESSION_REPLAY_GAP` | requested cursor evicted; recover via `readSessionState` then reconnect at snapshot `seq` |
 | `AGENT_SESSION_CURSOR_AHEAD` | cursor beyond live edge (client bug / stale ref) |
 | `AGENT_SESSION_CURSOR_EXPIRED` | reserved for snapshot-registry pagination (v2 pool cursor; optional early streaming-lane adoption) — v0 keyset cursors fail as `AGENT_SESSION_CURSOR_INVALID` |
 | `AGENT_SESSION_CURSOR_INVALID` | malformed/tampered list cursor or scope/filter binding mismatch — structural invalidity only; a valid server-issued keyset cursor remains valid under mutation and may yield an empty page; indistinguishable by design |
-| `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest |
-| `AGENT_REQUEST_OUTCOME_UNKNOWN` | effect was durably admitted but Host died before a safe completed receipt; never replay silently |
+| `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest, or an invalid ledger transition was attempted |
+| `AGENT_REQUEST_IN_PROGRESS` | same-key/same-digest request already has another active owner; retry after that request reaches a replayable terminal state |
+| `AGENT_REQUEST_OUTCOME_UNKNOWN` | the live Host durably recorded an ambiguous post-effect result (including graceful-drain timeout); never replay silently |
+| `AGENT_RUNTIME_RESTART_REQUIRED` | the pinned Agent runtime changed incompatibly and requires a process/session restart before reuse |
 | `AGENT_COMMAND_INVALID_STATE` | command/payload is not valid for the authoritative Pi chat status |
-| `AGENT_SESSION_RUNTIME_SCOPE_MISMATCH` | authorized actor cannot safely reuse the session's pinned runtime scope; no second writer is opened |
 | `AGENT_SHARED_ENVIRONMENT_UNAVAILABLE` | Agents requiring one canonical Workspace environment resolve incompatible placement identities/providers |
 | `AGENT_GATEWAY_CLOSED` | gateway/host shutting down; retry after reconnect |
 
@@ -575,8 +579,9 @@ revocation and forged/cross-scope values fail closed; create/rename/delete/
 send/control/queue-clear idempotency (same `(scope, operation, target,
 requestId)` + digest ⇒
 same typed receipt, conflicting digest ⇒ `AGENT_REQUEST_CONFLICT`); command
-receipts survive Host restart at Level D; close-is-unsubscribe; current status/queue transitions;
-monotonic `seq` with no duplicates at Level D and documented-gap at Level B;
+receipts survive Host restart with the production durable ledger at Level B and
+Level D; close-is-unsubscribe; current status/queue transitions; monotonic `seq`
+with no duplicates at Level D and documented-gap at Level B;
 pagination conformance parameterized separately from replay level — Level B
 asserts keyset total order, scope/filter cursor binding, and the documented
 mutation semantics (a moved/updated row may shift relative to the traversal,
@@ -587,46 +592,76 @@ ledger target is `agentTypeId` for create and the full Agent/session ref for
 session effects. It persists `pending-admission` plus the canonical digest,
 calls an admission adapter that is itself idempotent on the full ledger key,
 and durably records either its acceptance receipt or stable typed rejection
-before any mutation. A retryable admission failure leaves the record pending;
-it is not retained as a denial. Only after an accepted receipt is durable does
-the Host advance to `in-flight`, then store the completed typed receipt before
+before any mutation. An explicit retryable admission result or retryable prompt
+state guard marks the pending record `retryable: true`; it is not retained as a
+denial. A same-key/same-digest `prepare` must atomically consume that marker and
+return `ownership: 'reclaimed'` to exactly one caller. Concurrent losers return
+`ownership: 'existing'` and remain in progress, while a different digest
+conflicts. `acceptAdmission` is forbidden while the marker remains set. After
+reclaim clears it, the gateway must advance only a `created` or `reclaimed`
+result and return `AGENT_REQUEST_IN_PROGRESS` for `existing`; the ledger's
+state transition prevents multiple callers from accepting, but does not encode
+caller identity in a separate ownership token. Unmarked pending records are
+never implicitly released after reopen. Only after an accepted receipt is
+durable does the Host advance to `in-flight`, then store the completed typed receipt before
 acknowledgement. A crash after external admission succeeds but before local
-receipt persistence is reconciled by the adapter with the same key—never by a
-second non-idempotent admission call. Restart of an unresolved in-flight record
-returns `AGENT_REQUEST_OUTCOME_UNKNOWN`; it never repeats the effect. Completed
-create records/tombstones outlive session deletion
-for the configured Host idempotency-retention window, so delete + retry cannot
-create a second transcript. Conformance covers concurrent retry, cross-scope,
-cross-Agent and cross-session same IDs, acknowledgement loss, and crashes at
-admission/effect/receipt boundaries. Level D stream cases remain skipped for the
-streaming lane.
+receipt persistence must never cause a second non-idempotent admission call.
+The shipped Host has no startup reconciler: after abrupt restart, an unmarked
+`pending-admission`, `admission-accepted`, or `in-flight` record remains in that
+state and a same-key retry returns `AGENT_REQUEST_IN_PROGRESS`. It becomes
+`AGENT_REQUEST_OUTCOME_UNKNOWN` only when the live Host explicitly records that
+terminal state after an ambiguous action failure or a bounded graceful-drain
+timeout. Completed create records outlive session deletion for their configured
+terminal-payload retention window. After that window, the built-in SQLite
+ledger atomically replaces terminal payloads with permanent key/digest
+tombstones, so delete + retry still cannot create a second transcript.
+Level-B conformance covers concurrent retry, cross-scope, cross-Agent and
+cross-session same IDs, acknowledgement loss, explicit retryable-admission
+reclaim across reopen, terminal replay across reopen, and preservation (without
+reclaim or implicit terminalization) of unresolved records across reopen. The
+automatic crash-reconciliation matrix and Level D stream cases remain skipped
+for the streaming lane.
 
 `AgentRequestLedger` has durable `prepare(key,digest)`,
-`acceptAdmission(key,admissionReceipt)`, `beginEffect(key)`,
-`reject(key,stableError)`, `complete(key,receipt)`,
+`markAdmissionRetryable(key)`, `acceptAdmission(key,admissionReceipt)`,
+`beginEffect(key)`, `reject(key,stableError)`, `complete(key,receipt)`,
 `markOutcomeUnknown(key,error)`, and `read(key)` operations
 over `pending-admission | admission-accepted | in-flight | rejected | completed
 | outcome-unknown` records. Same-digest retries return the same terminal
-rejection. Pending admission is safe to reconcile/retry after restart; only
-unresolved in-flight work becomes outcome-unknown. **v0 owner descope
-(2026-07-23):** the Level-B floor is a process-lifetime in-memory default
-ledger implementing this exact state machine and API — strictly stronger than
-today's wire, which has no command idempotency at all. HTTP callers survive a
-Host restart; for them, retry protection spans the process lifetime and a
-retry crossing a restart degrades to today's wire semantics (documented at
-each affected promise: create retention, legacy-error replay, drain
-outcome-unknown). In-process embedded callers die with the process and
-recover via the documented snapshot loop. The durable file/SQLite ledger beside `sessionRoot` — with
-≥24-hour completed-record/create-tombstone retention (config may increase,
-never decrease), restart receipt replay, and active
-`AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation — becomes the mandatory
-default at Level D and lands with the streaming lane's SQLite activation; a
-lane needing crash-safe admission earlier (for example a MIG-CORE billing
-policy) may adopt the durable adapter ahead of Level D. Conformance at Level
-B covers admission rejection before mutation, concurrent retry, retryable
-adapter failure, and conflict; the crash/restart matrix (crash after external
-acceptance but before local receipt persistence; restart separately from true
-unknown effect outcome) runs at Level D.
+rejection. Only a `pending-admission` record explicitly marked `retryable` is
+safe to reclaim after restart. Unmarked pending, accepted, and in-flight records
+remain nonterminal/in-progress until an owner with evidence transitions them;
+reopening the ledger does not itself convert in-flight work to outcome-unknown.
+Production Host composition
+requires a transactional durable ledger: omission of `requestLedger` constructs
+the built-in SQLite ledger at `requestLedgerPath`, or at a Host-owned path
+derived from `sessionRoot`. An injected ledger must also report
+`durable-transactional`. The in-memory implementation remains available only
+through an explicit `inMemoryRequestLedgerMode: 'test' | 'development'` opt-in;
+it is never an implicit production fallback. The durable ledger provides
+restart receipt/service-error replay and persistence of completed records/create
+tombstones. When `requestRetentionMs` is configured, the built-in SQLite ledger
+lazily prunes terminal payloads during `prepare`; omitted retention preserves
+them indefinitely. Configured values below 24 hours are raised to 24 hours.
+Cleanup runs in the same `BEGIN IMMEDIATE` transaction as the next ownership
+claim: only `rejected | completed | outcome-unknown` rows with `updated_at`
+strictly less than `now - retention` move to the tombstone table, then the
+payload row is deleted. Pending-admission, admission-accepted, and in-flight
+rows are never eligible regardless of age. A retained tombstone keeps the full
+request key and digest: the same digest returns stable
+`AGENT_REQUEST_OUTCOME_UNKNOWN`, while a changed digest remains
+`AGENT_REQUEST_CONFLICT`; it can never become `created` or `reclaimed`.
+Retention adds no operation to the current `AgentRequestLedger` interface.
+Injected implementations of that current interface keep owning their storage
+policy; `requestRetentionMs` configures only the Agent-owned built-in SQLite
+ledger. (The separately approved retry-reclaim contract already requires
+`markAdmissionRetryable`; retention does not change that requirement.)
+The SQLite implementation does not perform startup state reconciliation.
+Level-B conformance covers admission rejection before mutation, concurrent
+retry, retryable adapter failure, conflict, retention boundaries/tombstones,
+and the exact durable reopen behavior above. Level D adds durable stream
+offsets plus a separately implemented/proven crash reconciler; it does not
+defer request-ledger durability or retention.
 
 The server-only ledger/admission contract is exact (none of these records is a
 transport DTO):
@@ -635,12 +670,15 @@ transport DTO):
 type AgentGatewayEffect =
   | 'session.create'
   | 'session.rename'
+  | 'session.archive'
   | 'session.delete'
   | 'session.prompt'
   | 'session.followup'
   | 'session.interrupt'
   | 'session.stop'
   | 'session.queue.clear'
+  | 'agent.reload'
+  | 'session.command.execute'
 
 type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }
@@ -659,30 +697,36 @@ interface AgentGatewayErrorDTO {
     | 'AGENT_TYPE_UNKNOWN'
     | 'AGENT_SESSION_NOT_FOUND'
     | 'AGENT_SCOPE_DENIED'
+    | 'AGENT_ENTITLEMENT_REQUIRED'
+    | 'AGENT_ACCESS_FORBIDDEN'
+    | 'AGENT_ACCESS_POLICY_UNAVAILABLE'
     | 'AGENT_SESSION_REPLAY_GAP'
     | 'AGENT_SESSION_CURSOR_AHEAD'
     | 'AGENT_SESSION_CURSOR_EXPIRED'
     | 'AGENT_SESSION_CURSOR_INVALID'
     | 'AGENT_REQUEST_CONFLICT'
+    | 'AGENT_REQUEST_IN_PROGRESS'
     | 'AGENT_REQUEST_OUTCOME_UNKNOWN'
+    | 'AGENT_RUNTIME_RESTART_REQUIRED'
     | 'AGENT_COMMAND_INVALID_STATE'
-    | 'AGENT_SESSION_RUNTIME_SCOPE_MISMATCH'
     | 'AGENT_SHARED_ENVIRONMENT_UNAVAILABLE'
     | 'AGENT_GATEWAY_CLOSED'
   readonly message: string
   readonly details?: JsonValue
 }
 
+interface AgentStableServiceErrorDTO {
+  readonly statusCode: number
+  readonly error: {
+    readonly code: string
+    readonly message: string
+    readonly retryable?: boolean
+  }
+}
+
 type AgentRequestFailure =
   | { readonly kind: 'gateway'; readonly error: AgentGatewayErrorDTO }
-  | {
-      /** Server-only compatibility envelope; never returned by AgentGateway. */
-      readonly kind: 'legacy-admission'
-      readonly code: string
-      readonly statusCode: 500
-      readonly message: string
-      readonly details?: JsonValue
-    }
+  | { readonly kind: 'service'; readonly error: AgentStableServiceErrorDTO }
 
 interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
@@ -690,7 +734,11 @@ interface AgentRequestLedgerRecordBase {
   readonly updatedAt: number
 }
 type AgentRequestLedgerRecord =
-  | (AgentRequestLedgerRecordBase & { readonly state: 'pending-admission' })
+  | (AgentRequestLedgerRecordBase & {
+      readonly state: 'pending-admission'
+      /** Explicit safe release before admission acceptance or effect dispatch. */
+      readonly retryable?: true
+    })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'admission-accepted'
       readonly admissionReceipt: string
@@ -709,35 +757,46 @@ type AgentRequestLedgerRecord =
       readonly error: AgentGatewayErrorDTO
     })
 
+interface AgentRequestLedgerPrepareResult {
+  readonly ownership: 'created' | 'reclaimed' | 'existing'
+  readonly record: AgentRequestLedgerRecord
+}
+
 interface AgentRequestLedger {
-  prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerRecord>
+  readonly durability: 'durable-transactional' | 'in-memory'
+  prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult>
+  markAdmissionRetryable(key: AgentRequestKey): Promise<void>
   acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
   beginEffect(key: AgentRequestKey): Promise<void>
   reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void>
   complete(key: AgentRequestKey, receipt: JsonValue): Promise<void>
   markOutcomeUnknown(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void>
   read(key: AgentRequestKey): Promise<AgentRequestLedgerRecord | undefined>
+  close?(): void | Promise<void>
 }
 ```
 
-Runtime validation enforces create → Agent target and every other effect → full
-session target. The canonical digest covers the complete effect payload but not
-`requestId`; conflicting digests under one key return
+Runtime validation enforces `session.create`/`agent.reload` → Agent target and
+every other effect → full session target. The canonical digest covers the
+complete effect payload but not `requestId`; conflicting digests under one key return
 `AGENT_REQUEST_CONFLICT`. Valid transactional transitions are exact:
 
 | Operation | Valid predecessor → result |
 | --- | --- |
-| `prepare` | missing → `pending-admission`; same key/digest → current record; different digest → conflict |
-| `acceptAdmission` | `pending-admission` → `admission-accepted` |
-| strong `reject` | `pending-admission` → `rejected(kind=gateway)` |
+| `prepare` | missing → `pending-admission` + `created`; retryable same key/digest → atomically clear marker + `reclaimed` for one caller; every other same key/digest → current record + `existing`; different digest → conflict |
+| `markAdmissionRetryable` | unmarked `pending-admission` → `pending-admission, retryable: true`; every other predecessor → conflict |
+| `acceptAdmission` | unmarked `pending-admission` → `admission-accepted`; retryable pending or any concurrent second transition → conflict; callers must invoke only after their `created`/`reclaimed` prepare result |
+| strong `reject` | `pending-admission | admission-accepted | in-flight` → `rejected(kind=gateway)` |
 | `beginEffect` | `admission-accepted` → `in-flight` |
-| legacy observed reject | `in-flight` → `rejected(kind=legacy-admission)` |
+| stable service reject | `in-flight` → `rejected(kind=service)` |
 | `complete` | `in-flight` → `completed` |
 | `markOutcomeUnknown` | `in-flight` → `outcome-unknown` |
 
 Terminal states return their recorded result on a same-digest retry; every
-other predecessor is rejected. Retryable strong admission leaves
-`pending-admission` unchanged.
+other predecessor is rejected. A retryable strong admission or prompt guard
+marks `pending-admission` explicitly retryable before returning its error. That
+marker is the only authority for a later atomic reclaim; it preserves the key
+and digest, grants exactly one new owner, and is cleared by the reclaim.
 
 ### 6.9 `AgentHostAgentSpec` (agent vs host split)
 
@@ -780,8 +839,9 @@ legacy output unchanged. All non-legacy specs require `definition`.
 
 Host options (mechanism + custody — never in the spec): plugin **loading**
 (dirs/managers), model **credentials/providers**, `sessionRoot` (host
-namespaces per `agentTypeId` internally), `runtimeModeAdapter`/`runtimeHost`,
-`auth`.
+namespaces per `agentTypeId` internally), `requestLedgerPath` or an injected
+transactional ledger, explicit test/development-only in-memory ledger mode,
+`runtimeModeAdapter`/`runtimeHost`, `auth`.
 
 ### 6.10 `createAgentHost()`
 
@@ -803,10 +863,16 @@ interface CreateAgentHostOptions {
   }) => Promise<ResolvedAgentRuntimeScope>
   readonly telemetry?: TelemetrySink
   readonly metering?: AgentMeteringSink
-  /** Optional adapter override; omission constructs the Level-B in-memory
-      default (the durable default becomes mandatory at Level D per §6.8). */
+  /** Optional adapter override; production overrides must be transactional. */
   readonly requestLedger?: AgentRequestLedger
-  readonly requestRetentionMs?: number // durable ledger only; minimum enforced: 24h
+  /** Durable effect-ledger path, independent of transcript/session storage.
+      When omitted, production derives a Host-owned path from sessionRoot. */
+  readonly requestLedgerPath?: string
+  /** Explicit opt-in for tests/development; never a production fallback. */
+  readonly inMemoryRequestLedgerMode?: 'test' | 'development'
+  /** Built-in SQLite terminal-payload retention; omitted means indefinite.
+      Values below 24 hours are raised to the 24-hour safety minimum. */
+  readonly requestRetentionMs?: number
   /** Omission selects the built-in idempotent accept-all adapter for
       trusted-local composition; it never skips ledger admission. */
   readonly effectAdmission?: AgentEffectAdmission
@@ -942,9 +1008,10 @@ One native session has exactly one execution/writer lease keyed by its full ref,
 independent of caller/runtime-binding caches. Creation persists the selected
 `runtimeScopeIdentity`. Later Workspace-authorized actors may read through the
 same session authority, but a mutation must resolve/reuse that pinned identity;
-if actor-sensitive policy cannot authorize safe reuse it fails with
-`AGENT_SESSION_RUNTIME_SCOPE_MISMATCH` instead of opening a second harness or
-changing tools/prompt mid-session. Concurrent same-session commands across two
+if actor-sensitive policy cannot authorize safe reuse it fails closed through
+the current access-policy errors; incompatible published/runtime identity drift
+fails with `AGENT_RUNTIME_RESTART_REQUIRED` instead of opening a second harness
+or changing tools/prompt mid-session. Concurrent same-session commands across two
 subjects prove one model loop/writer and deterministic admission.
 
 Environment ownership is separate from Agent runtime bindings. One canonical
@@ -977,29 +1044,30 @@ Existing `registerAgentRoutes` callers retain their current optional
 `({ workspaceId, requestId }) => Promise<void>` callback unchanged
 (`packages/agent/src/core/piChatSessionService.ts:73-75`): the compat wrapper
 records a built-in `legacy-at-most-once` acceptance, places that legacy callback
-*after* ledger `beginEffect` and immediately before
-the mutation, invokes it at most once, and maps any crash/ambiguous completion
-to `AGENT_REQUEST_OUTCOME_UNKNOWN` rather than retrying. A synchronous/observed
-`AgentEffectAdmissionError` becomes the server-only
-`legacy-admission` failure record. Its arbitrary code, fixed status, message,
-and details are canonicalized through the same JSON projection used by today's
-alias, then the legacy alias replays that exact shape on first response and
-same-ID retry (retry-across-restart replay requires the durable Level-D
-ledger; at Level B the record clears with the process); it never enters the
-public Gateway error union. This
-preserves existing custom failures such as
-`AGENT_HOST_ADMISSION_RECORD_FAILED`
-(`packages/agent/src/server/http/routes/__tests__/piChat.test.ts:22,494-504`).
-Retryability is unavailable at this legacy level. Golden tests preserve its
-arguments, ordering, custom code/details, and restart replay. This mapping is
-compatibility only, never advertised as the strong reconcilable level.
+*after* ledger `beginEffect` and immediately before the mutation, invokes it at
+most once, and maps an ambiguity observed by the live Host to
+`AGENT_REQUEST_OUTCOME_UNKNOWN` rather than retrying. Abrupt process death leaves
+`in-flight` preserved/in-progress until Level-D reconciliation exists. An observed action failure
+is replayable only when `stableServiceActionFailure` can project it to the
+server-only `{ kind: 'service', error: AgentStableServiceErrorDTO }` record:
+the error must have a canonical shared `ErrorCode`, an integer 4xx/5xx status
+(or the canonical payment status), and optional boolean `retryable`. The same
+stable service shape is replayed on a same-ID retry; unprojectable failures
+become outcome-unknown. In production Level B, the durable ledger replays a
+persisted service failure across Host restart; only the explicit test/development
+in-memory mode clears records with the process. Service failures never enter the
+public Gateway error union. This compatibility mapping is not advertised as the
+strong reconcilable admission level.
 
 Lifecycle ownership is single and explicit: the mounted plugin calls
 `host.drain()` from `preClose`, which rejects new work, proactively closes or
 cancels unbounded event subscriptions, waits for finite effects only until
-`shutdownGraceMs`, then marks remaining effects outcome-unknown (durably at
-Level D; process-lifetime at Level B, where a subsequent restart clears the
-record — same accepted limitation as create retention) and force-aborts them. Resource generations are fenced: late callbacks cannot write
+`shutdownGraceMs`, then uses the production durable ledger to reject still
+pre-effect records with `AGENT_GATEWAY_CLOSED` and mark tracked `in-flight`
+effects `AGENT_REQUEST_OUTCOME_UNKNOWN`; explicit test/development in-memory
+mode retains those terminalizations only for that process. Abrupt process death
+cannot run this drain path and receives no startup terminalization in Level B.
+Resource generations are fenced: late callbacks cannot write
 receipts, mutate a recycled lease, or acknowledge success. An adapter that
 ignores cancellation is safely detached before `preClose` returns. `onClose`
 calls `host.close()` to dispose bindings, Environment leases, then the mode
@@ -1156,7 +1224,8 @@ recorded on the epic; graph creation is not approval.
    trusted-proxy compatibility sentinel unless a separately approved migration
    proves a real collision.
 9. Proof: full Agent suites + Level B + request-ledger ack-loss/conflict/
-   concurrent-retry tests at the process-lifetime floor + pre-AH0 legacy
+   concurrent-retry and durable-reopen tests (terminal replay plus unresolved
+   state preservation without implicit reconciliation) + pre-AH0 legacy
    transcript read/list/stream fixture + golden HTTP contracts + two
    Workspaces × two Agents through one gateway, with independent scope
    roots/session namespaces and no actor bleed + fleet/prompt compilation
@@ -1179,17 +1248,18 @@ maps the old callback.
 
 1. **Streaming** (first): wire `SqliteEventStreamStore` into
    `buildAgentComposition`, unconditional durable append, offset reconnect,
-   collapse `AgentLiveEventBuffer`; flip conformance to Level D. Level D also
-   activates the owner-descoped durability set: the durable request ledger
-   (restart receipt replay, ≥24h tombstones, active
-   `AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation, crash-boundary matrix) and
-   the durable checkpointed activity index with startup reconciliation. The
+   collapse `AgentLiveEventBuffer`; flip conformance to Level D. The production
+   request ledger is already durable at Level B (including restart replay of
+   terminal receipts and safe configured terminal-payload retention); Level D
+   adds the still-unshipped request-ledger recovery set: startup reconciliation
+   backed by external admission/effect evidence and the full crash-boundary
+   matrix. It must not
+   infer `outcome-unknown` merely from finding `in-flight`. The durable
+   checkpointed activity index also gains startup reconciliation. The
    snapshot-registry pagination MAY land here or wait for the v2 pool cursor.
-   Upgrade boundary: Level-D retention guarantees apply to requests admitted
-   at Level D; activation occurs across a Host restart, so the empty durable
-   ledger has the same semantics as any Level-B restart. One conformance case
-   covers a pre-upgrade requestId retried post-upgrade (treated as a new
-   admission; documented).
+   Upgrade changes event replay/recovery capability without emptying or
+   reinterpreting existing request-ledger rows; a pre-upgrade unresolved row
+   remains in progress until the new reconciler proves a safe terminal state.
 2. **Catalog revival**: `AgentHostAgentSpec.definition` backed by
    `materializeAgentDirectory`/digests; `AgentSummary.definition` populated.
 3. **#861**: remove Bash/Sandbox→Agent back-edges (required before v2 package
@@ -1264,10 +1334,11 @@ intended for external authors.**
       remains an unforgeable app capability.
 - [ ] Request receipts pass concurrent retry, cross-scope same-ID,
       cross-Agent/session same-ID, acknowledgement-loss, retryable-admission,
-      and conflict tests at the Level-B process-lifetime floor; effect
-      admission rejects before mutation for every Gateway effect. The
-      crash-reconciliation/Host-restart matrix is a Level D requirement
-      (streaming lane).
+      conflict, and durable reopen tests at Level B; effect admission rejects
+      before mutation for every Gateway effect. Level-B reopen proves terminal
+      replay and preserves unresolved rows as in-progress without implicit
+      conversion. Automatic startup reconciliation and the complete abrupt-crash
+      boundary matrix are Level D requirements (streaming lane).
 - [ ] Host fleet startup rejects duplicate/unsafe Agent IDs and unknown
       plugin/config bindings; a declared model policy with no app compiler
       fails closed (`AGENT_FLEET_MODEL_POLICY_UNCOMPILED`); prompt precedence
@@ -1319,11 +1390,15 @@ wrappers/legacy routes (contraction approval); #861.
 
 ## 13. Adversarial review findings and status
 
-> **Note (2026-07-23):** the dispositions below record the pre-O-R23 review
-> state. Where a disposition names durable-ledger/rename-journal/
-> snapshot-pagination/activity-checkpoint machinery in the present tense, the
-> normative v0 behavior is the owner-descope delta in §6/§8/§10; those
-> dispositions describe the Level D/v2 form of the fix.
+> **Note (updated 2026-09-07):** the dispositions below are historical review
+> records, not the current runtime contract. O-R23/DS-R1 originally deferred the
+> durable request ledger to Level D; the subsequently shipped AH0 production
+> composition requires SQLite (or another transactional durable ledger) at
+> Level B. The normative current behavior is §6.8/§8/§10 above: terminal replay
+> survives reopen, unresolved rows are preserved without startup reconciliation,
+> and Level D still owns evidence-backed crash reconciliation and its matrix.
+> Other references below to rename journals, snapshot pagination, or activity
+> checkpoints continue to describe their Level D/v2 form.
 
 Concrete consolidated findings (duplicate reviewer reports share one row):
 

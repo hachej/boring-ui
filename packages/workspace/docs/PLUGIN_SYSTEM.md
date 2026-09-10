@@ -440,7 +440,12 @@ while capturing the front factory.
 ## 7. Non-goals
 
 - Hot-registering Fastify routes or static `agentTools` from generated plugins
-  into a live server process.
+  into a live server process. *(Drift note 2026-09-07: `src/server/runtimeBackend/`
+  does dispatch external plugins' `boring.server` modules in-process via
+  `/api/v1/plugins/:pluginId/*`. Under RECONCILIATION §13(c) that is the product
+  runtime's `embedded` mode and is being gated default-off — bead
+  `wt-391-forward-nc-0-embedded-runtime-gate-y6ke`. Until that lands, this
+  non-goal describes policy, not code.)*
 - Loading untrusted hosted plugin JavaScript directly into the host React tree.
 - Replacing app/internal domain APIs (for example Macro routes) with runtime
   plugin RPC for purity.
