@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "workspace-command-palette",
+  "candidateRevision": "efdb52bcae90beb89f114794acf5d6f53282ffe0",
+  "candidateTreeHash": "a0764a12e5b818721f361c98c85c689f895b88ed11103e164b91dec518fe5648",
+  "score": {
+    "candidate": {
+      "overall": 8,
+      "dimensions": {
+        "hierarchy": 8,
+        "spacingAlignment": 8,
+        "typographyColor": 8,
+        "consistency": 8,
+        "interactionStates": 8,
+        "responsiveAccessibility": 8
+      }
+    }
+  },
+  "confidence": 1,
+  "promptHash": "414e7065528e1667d8256f5e085f6e97b796c416245ec974dd6376627220865d",
+  "rubricHash": "f3d176733eb814330ea99bcef5507c89ed8de4dae800c289135da9266897448e",
+  "manifestHash": "0f8df33184046e4b95d05703f23be11d1b40730de7039835d5821fec27efd259",
+  "screenshotDigests": [
+    "1ba281c2b481f72c5c8f54849b36603cdfeb1b9edfc326aa0ee4a83b075db32e",
+    "1e9bef84da5b02e9c03ddb47f474a9067213f9194a91143a797ddefd6357c4d1",
+    "220092bc11b74c7b591f8247155cd855aa757d9674608c189927c8aed124b153",
+    "24b8f2a2c931a72e2d4a4015a120bbe17f22097b0caef4c98a1773cbecaf66c0",
+    "345f5dc564ad1153d6e3c50d92581e6a655fea23f84977d8e5624e64b34fcb08",
+    "3d7d8a0198e02319e3a93b269083d0109bba2a04ba04f9f969a2bad1c5375383",
+    "414cc474961c9b36ea68fa9cd148e79304081564721f561a183830431fe30705",
+    "45ff859e660a920272c9395dd5543cf91188453dfbe487664a1d399cb20c9aa3",
+    "4d62e8c245e53d7199fee6c65f414b0e814f36ee4674afb0626fbc35cf7a3fae",
+    "53b90722d6f97593a1f649d3e7b3284d31edf4e5af1a5f40dd005f68431208db",
+    "69a8abd03c3692f18b525e7c397aec2b6036cca983638b99681a45c1f6413462",
+    "734ef24a7a9bccf673203f58e850c985ef2cf4186dde1326592afd31aa44b557",
+    "775e03f9ceef7348ab92d23fdfd759290710ddd9020ec6bf986ff38a131a7954",
+    "928293f41bc9a7bc6a79fd27cd651dcda20aa9701c6c9ac6212c614a59e01502",
+    "a147da9a02e84b1b34ea393df959081bb9c082d940194e0b7711f08367ac2e97",
+    "b1992dc0a12b95e7f70330d9bbc1a81e5366dc23e358f08dc2be37bb7776f3fa",
+    "c528a1f35afeb13f954f01debaef7e4dc5f5938fd753dd285cae4bf65802fd42",
+    "ca386646eca73118cc85e5c5e81ebd4b28eea8ab3f09184ed4959fc4a3c83e5d",
+    "cde4e23bae94f5aaabcc81674e6e8a919203e2570800de8dcfd3cf31d785f473",
+    "e2ee7624e3524578c30e1c5b027b37359c119944ad890b5af46e727e03c8bb4c",
+    "fa07d14eaf46550b9425f0a90eadec124756f47dcd57dbda39ff8cb4f0d88acd",
+    "ff067ed270b1af92e6779361ead2d9d70b74fadf98cd3d01c2d3ca090fd25ba3",
+    "ffcb818f52441994792403928ca4fd6a9cfed3da25f5cf1777fba22ba1a848b8"
+  ],
+  "resolvedModel": "fixture",
+  "ownerDisposition": "pending"
+}

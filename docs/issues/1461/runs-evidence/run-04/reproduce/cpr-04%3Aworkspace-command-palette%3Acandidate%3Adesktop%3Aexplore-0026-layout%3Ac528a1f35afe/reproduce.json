@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "stateId": "cpr-04:workspace-command-palette:candidate:desktop:explore-0026-layout:c528a1f35afe",
+  "scenarioId": "workspace-command-palette",
+  "scenarioSpecRevision": "workspace-command-palette-v9",
+  "fixtureResetId": "workspace-playground-e2e-fresh-v1",
+  "origin": "http://127.0.0.1:6430",
+  "targetUrl": "http://127.0.0.1:6430/?fresh=1",
+  "viewport": {
+    "name": "desktop",
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 1
+  },
+  "expectedNormalizedStateSignature": "2f3179eeb3479c9b025720cc5c4c85bbc29600bd4f068640063fa8418eb96648",
+  "expectedScreenshotDigest": "c528a1f35afeb13f954f01debaef7e4dc5f5938fd753dd285cae4bf65802fd42",
+  "expectedScreenshotPHash": "3f3f3f2f3f3f3f3f",
+  "maximumScreenshotPHashDistance": 8,
+  "traceDigest": "7ccbe11ff4f95ad59334c09e6c23966bd3914e60cd2fdb56465faedca89bd507",
+  "sourceScreenshotName": "1788997590665516.jpeg",
+  "actionCount": 26,
+  "hashCurrent": null
+}

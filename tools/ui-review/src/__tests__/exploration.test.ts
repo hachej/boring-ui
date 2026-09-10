@@ -23,6 +23,7 @@ import {
   createSafeCommandPaletteActions,
   isCommandPaletteDialogName,
   isSafeCommandPaletteControl,
+  scenarioActionAccessibleName,
 } from "../review-specs/workspace-command-palette/scenarioActions"
 import { testSpec, testStagingPolicy } from "./fixtures"
 
@@ -252,6 +253,7 @@ describe("Bombadil exploration staging", () => {
       mode: "Commands",
       query: "",
       workspaceReady: false,
+      rootLayoutAligned: true,
       lastActionWasPaletteOpen: true,
       lastActionWasNavigationOpen: false,
       lastActionWasInitial: false,
@@ -295,6 +297,16 @@ describe("Bombadil exploration staging", () => {
       workspaceCommandPaletteSpec,
     )).resolves.toBeUndefined()
 
+    const staleLayoutRoot = await fixture([entry(1, {
+      screenshot: "stable",
+      palette: { ...transient, rootLayoutAligned: false },
+    })])
+    await expect(verifyReproducedFinalState(
+      staleLayoutRoot,
+      manifest,
+      workspaceCommandPaletteSpec,
+    )).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
+
     const durableMismatchRoot = await fixture([entry(1, {
       screenshot: "stable",
       palette: { ...transient, mode: "Files" },
@@ -308,6 +320,15 @@ describe("Bombadil exploration staging", () => {
 })
 
 describe("command palette action safety", () => {
+  it("recognizes Bombadil's serialized accessible-name casing", () => {
+    expect(scenarioActionAccessibleName({
+      Click: {
+        fingerprint: { accessible_name: "Search catalogs and commands" },
+        point: { x: 199, y: 24 },
+      },
+    } as never)).toBe("Search catalogs and commands")
+  })
+
   it("opens an exact fingerprinted root control without Resource Timing readiness", () => {
     const fingerprint = {
       testId: null,
@@ -329,6 +350,7 @@ describe("command palette action safety", () => {
     }
     expect(createSafeCommandPaletteActions({
       dialogVisible: false,
+      rootLayoutAligned: true,
       inputFocused: false,
       lastActionWasPaletteOpen: false,
       lastActionWasNavigationOpen: false,
@@ -337,12 +359,71 @@ describe("command palette action safety", () => {
     })).toEqual(["Wait", { Click: { fingerprint, point: trigger.point } }])
     expect(createSafeCommandPaletteActions({
       dialogVisible: false,
+      rootLayoutAligned: true,
       inputFocused: false,
       lastActionWasPaletteOpen: false,
       lastActionWasNavigationOpen: false,
       lastActionWasInitial: true,
       controls: [trigger],
     })).toEqual(["Wait"])
+  })
+
+  it("offers Wait only while the viewport and rendered root shell disagree", () => {
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      rootLayoutAligned: false,
+      inputFocused: false,
+      lastActionWasPaletteOpen: false,
+      lastActionWasNavigationOpen: false,
+      lastActionWasInitial: false,
+      controls: [{
+        name: "open-command-palette",
+        fingerprint: { accessibleName: "Search catalogs and commands" } as never,
+        point: { x: 24, y: 24 },
+      }],
+    })).toEqual(["Wait"])
+  })
+
+  it("keeps matched mobile navigation available", () => {
+    const fingerprint = { accessibleName: "Open app navigation" } as never
+    const navigation = {
+      name: "open-app-navigation",
+      fingerprint,
+      point: { x: 28, y: 30 },
+    }
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      rootLayoutAligned: true,
+      inputFocused: false,
+      lastActionWasPaletteOpen: false,
+      lastActionWasNavigationOpen: false,
+      lastActionWasInitial: false,
+      controls: [navigation],
+    })).toEqual(["Wait", { Click: { fingerprint, point: navigation.point } }])
+  })
+
+  it("leaves dialog controls unchanged when root layout is mismatched", () => {
+    const fingerprint = { accessibleName: "Commands" } as never
+    const commands = {
+      name: "palette-mode-commands",
+      fingerprint,
+      point: { x: 304, y: 99 },
+    }
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: true,
+      rootLayoutAligned: false,
+      inputFocused: true,
+      lastActionWasPaletteOpen: false,
+      lastActionWasNavigationOpen: false,
+      lastActionWasInitial: false,
+      controls: [commands],
+    })).toEqual([
+      "Wait",
+      { Click: { fingerprint, point: commands.point } },
+      { PressKey: { code: 27 } },
+      { TypeText: { text: { Regexp: ">" }, delayMillis: 0 } },
+      { TypeText: { text: { Regexp: "no-matching-fixture-command" }, delayMillis: 0 } },
+    ])
   })
 
   it("waits one action after opening app navigation before using revealed controls", () => {
@@ -361,9 +442,27 @@ describe("command palette action safety", () => {
     }
     expect(createSafeCommandPaletteActions({
       dialogVisible: false,
+      rootLayoutAligned: true,
       inputFocused: false,
       lastActionWasPaletteOpen: false,
       lastActionWasNavigationOpen: true,
+      lastActionWasInitial: false,
+      controls: [{
+        name: "open-command-palette",
+        fingerprint,
+        point: { x: 166.7, y: 82 },
+      }],
+    })).toEqual(["Wait"])
+  })
+
+  it("waits one action after a recognized palette click while the dialog renders", () => {
+    const fingerprint = { accessibleName: "Search catalogs and commands" } as never
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      rootLayoutAligned: true,
+      inputFocused: false,
+      lastActionWasPaletteOpen: true,
+      lastActionWasNavigationOpen: false,
       lastActionWasInitial: false,
       controls: [{
         name: "open-command-palette",
