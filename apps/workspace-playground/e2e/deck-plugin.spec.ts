@@ -64,7 +64,7 @@ test.describe("workspace-playground deck plugin", () => {
           if (key?.startsWith(prefix)) localStorage.removeItem(key)
         }
         localStorage.setItem(`${prefix}:drawer`, "0")
-        localStorage.setItem(`${prefix}:surface`, "0")
+        localStorage.setItem(`${prefix}:workbenchOpen`, "1")
       }, STORAGE_KEY)
       await page.reload()
       await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
