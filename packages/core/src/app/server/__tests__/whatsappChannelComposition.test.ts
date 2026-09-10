@@ -88,10 +88,10 @@ describe('mountCoreWhatsAppChannel', () => {
     const resolveAuthorizedScope = vi.fn(async () => authorizedScope)
     const release = vi.fn()
     const acquireEnvironment = vi.fn(async () => ({ workspace, release }))
-    const withAuthorizedWorkspace = vi.fn(createCoreWhatsAppWorkspaceRunner({
+    const withAuthorizedWorkspace = createCoreWhatsAppWorkspaceRunner({
       agentHost: { acquireEnvironment } as never,
       resolveAuthorizedScope,
-    }))
+    })
     const mounted = await mountCoreWhatsAppChannel({
       app, gateway, storage, resolveAuthorizedScope, withAuthorizedWorkspace,
       shareEntryStore: new InMemoryShareEntryStore(),
@@ -141,7 +141,7 @@ describe('mountCoreWhatsAppChannel', () => {
     expect(render).toHaveBeenCalledWith('<html>runtime workspace quote</html>')
     expect(new TextDecoder().decode(deliveredPdfBodies[0])).toContain('runtime workspace quote')
     expect(graphFetch.mock.calls.every(([, init]) => (init as RequestInit).headers && JSON.stringify((init as RequestInit).headers).includes('secret-access'))).toBe(true)
-    expect(withAuthorizedWorkspace.mock.invocationCallOrder[0]).toBeLessThan(graphFetch.mock.invocationCallOrder[0]!)
+    expect(acquireEnvironment.mock.invocationCallOrder[0]).toBeLessThan(graphFetch.mock.invocationCallOrder[0]!)
     expect(acquireEnvironment).toHaveBeenCalledWith({
       authorizedScope,
       intent: { kind: 'dispatcher', requestId: 'channel-workspace:default:workspace-1' },
