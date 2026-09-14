@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { normalizeServerRoutePrefix } from "../routePrefix"
 
 export interface RuntimeProjectionIdentity {
   readonly workspaceId: string
@@ -48,18 +49,7 @@ const opaque = () => randomBytes(32).toString("base64url")
 const digest = (value: string) => createHash("sha256").update(value).digest("base64url")
 
 export function normalizeRuntimeProjectionMountBase(value: string | undefined): string {
-  const trimmed = value?.trim() ?? ""
-  if (!trimmed || /^\/+$/u.test(trimmed)) return ""
-  if (!trimmed.startsWith("/") || /[?#]/u.test(trimmed)) throw new TypeError("runtime projection mount base must be an absolute path")
-  const segments = trimmed.split("/").filter(Boolean)
-  for (const segment of segments) {
-    let decoded: string
-    try { decoded = decodeURIComponent(segment) } catch { throw new TypeError("runtime projection mount base has invalid encoding") }
-    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) {
-      throw new TypeError("runtime projection mount base contains traversal or a path separator")
-    }
-  }
-  return `/${segments.join("/")}`
+  return normalizeServerRoutePrefix(value, "runtime projection mount base")
 }
 
 /**

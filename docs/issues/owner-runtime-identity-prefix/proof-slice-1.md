@@ -18,3 +18,15 @@ Additional focused proof (2026-09-15):
 - Workspace typecheck remains environment-blocked by absent generated `@hachej/boring-agent` declaration outputs. ESLint was attempted twice but the local linter process was OOM-terminated; CI must provide the authoritative lint result.
 
 No slice-2 browser proof or later runtime/identity work is included.
+
+Real-listening composed-server proof (current slice-1 correction revision):
+
+- `createWorkspaceAgentServer.listening.test.ts` starts two actual TCP listeners with distinct prefixes, tokens, runtime-backend registries, projection brokers, and UI bridges. It covers public prefixed health/readiness; missing/valid bearer auth; header-authenticated polling; runtimeBackend prefixed raw HTTP logical suffix plus unprefixed and plugin-root negatives; generated projection bootstrap/cookie/location plus HTTP suffix proxying; prefixed projection WebSocket success and bounded unprefixed rejection; an unrelated sibling WebSocket; cross-instance command isolation; and close-one/other-remains-live behavior.
+- This proof intentionally does not invent a runtimeBackend WebSocket protocol: runtimeBackend coverage is raw HTTP; HTTP+WebSocket coverage belongs to runtimeProjection.
+- Focused real-listener test: `pnpm --dir packages/workspace exec vitest run src/server/__tests__/createWorkspaceAgentServer.listening.test.ts` — 1 passed.
+- Combined focused suite: 66 passed; one pre-existing/environmental fixture failed because `@hachej/boring-workspace/dist/server.js` has not been built in this worktree.
+- Prefix validation is shared by the composed server and runtimeProjection broker through `server/routePrefix.ts`, removing the duplicate normalizers.
+
+Abstraction review remains pending until review is rerun against the new head; this document does not claim merge readiness.
+- After building `@hachej/boring-agent`, `pnpm --dir packages/workspace typecheck` passed.
+- `pnpm --dir packages/workspace test` ran 2,327 tests: 2,313 passed, 11 skipped, and 3 failed (missing unbuilt Workspace dist fixture; existing late-route-init rejection behavior; unrelated async fleet UI timing). The new real-listener test passed in the package run.

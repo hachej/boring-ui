@@ -11,7 +11,7 @@ track: reviewed-plan
 
 The owner needs four aligned capabilities before embedding Boring Workspace in another product:
 
-1. `createWorkspaceAgentServer` must mount its **complete** owned surface below a host-selected prefix. “Complete” includes ordinary HTTP routes, plugin routes, `runtimeProjection` broker/routes, and `runtimeBackend` raw HTTP and WebSocket upgrade paths; path-based authorization must not regress.
+1. `createWorkspaceAgentServer` must mount its **complete** owned surface below a host-selected prefix. “Complete” includes ordinary HTTP routes, plugin routes, `runtimeProjection` HTTP/WebSocket broker routes and `runtimeBackend` raw HTTP paths; path-based authorization must not regress.
 2. A real plugin pane must open through the sole canonical dispatch path, `UiBridge.postCommand` → an authenticated SSE/poll transport → browser Workspace dispatch. The transport may not put bearer/session tokens in query strings, browser history, or logs.
 3. A host needs application-owned `RuntimeModeId`s for ECS-local Workspace on shared EFS and AgentCore remote exec Sandbox on that EFS. Only provisioning/runtime-ID extension seams proven by repository census may be opened. Remote handles need a durable fenced lifecycle protocol.
 4. Every accepted run needs one canonical identity and immutable authority context through durable admission, queueing/readmission, metering, tools, and delegation. Current Pi metering derives `pi-run:*` identifiers, conflicting with `RunId := RequestKey`.
@@ -29,7 +29,7 @@ The interrupted uncommitted Workspace diff is exploratory evidence only and is n
 
 ## Solution
 
-Use nine bounded slices. First make the complete composed server instance prefix-safe, including broker/raw/WS paths, choose and implement one authenticated browser bridge contract without query tokens, and instance-scope `uiBridgeRegistry`. Then prove the plugin pane flow against a real server and browser.
+Use nine bounded slices. First make the complete composed server instance prefix-safe, including runtimeBackend raw HTTP and runtimeProjection HTTP/WS paths, choose and implement one authenticated browser bridge contract without query tokens, and instance-scope `uiBridgeRegistry`. Then prove the plugin pane flow against a real server and browser.
 
 For hybrid runtime, first inventory provisioning and runtime-ID composition and open only seams demonstrated missing by a compile/test fixture. Specify and implement a host-owned durable fenced sandbox-handle store before composing the two application modes and attempting live qualification.
 
@@ -37,7 +37,7 @@ For accepted work, use **one nested `acceptedWork` value**, not optional identit
 
 ## User Stories / Scenarios
 
-- A host mounts a server at `/owners/alice/workspace`; prefixed health, agents, files, plugin bootstrap/runtime, `runtimeProjection`, `runtimeBackend` raw/WS, WorkspaceBridge, UiBridge SSE/poll, and plugin-defined routes work, while equivalent root paths are absent.
+- A host mounts a server at `/owners/alice/workspace`; prefixed health, agents, files, plugin bootstrap/runtime, `runtimeProjection` HTTP/WS, `runtimeBackend` raw HTTP, WorkspaceBridge, UiBridge SSE/poll, and plugin-defined routes work, while equivalent root paths are absent.
 - An authenticated agent tool posts `openSurface`; a real browser receives it once over the selected server transport and opens the plugin pane. Credentials never appear in a URL.
 - Two server instances in one process use distinct prefixes and bridges without cross-instance registry delivery or teardown interference.
 - The host selects `ecs-local-efs` or `agentcore-remote-efs`; both map to one validated tenant/workspace EFS namespace, while a remote sandbox is safely resumed after restart and stale owners cannot mutate or delete it.
@@ -46,8 +46,8 @@ For accepted work, use **one nested `acceptedWork` value**, not optional identit
 ## Decisions
 
 - Prefix normalization: empty or `/` means root; reject query/fragment, dot segments, encoded traversal/separators, and absolute URLs; document/test the trailing-slash rule.
-- Mount through Fastify encapsulation/registration plus explicit prefix-aware handling for paths outside ordinary routing (notably raw/WS upgrade dispatch). Never assume Fastify’s HTTP prefix automatically covers `runtimeProjection` or `runtimeBackend`.
-- Inventory every server registration site before editing. The required matrix names owner, route kind (HTTP/raw/WS), auth hook, prefixed positive case, and unprefixed negative case.
+- Mount through Fastify encapsulation/registration plus explicit prefix-aware handling for paths outside ordinary routing (notably runtimeProjection WebSocket upgrade dispatch). Never assume Fastify’s HTTP prefix automatically covers `runtimeProjection` or `runtimeBackend`.
+- Inventory every server registration site before editing. The required matrix names owner, route kind (HTTP/runtimeBackend raw/runtimeProjection WS), auth hook, prefixed positive case, and unprefixed negative case.
 - Select exactly one authenticated bridge contract during slice 1: same-origin secure-cookie EventSource if compatible with host auth, otherwise authenticated `fetch` streaming or authenticated poll with an authorization header. Native EventSource plus query token is forbidden. Preserve explicit `bridgeEndpoint: null` disable semantics.
 - Replace process-global `uiBridgeRegistry` authority with server/workspace-instance ownership; registration, lookup, and teardown are scoped to the constructed server instance. No implicit default may permit cross-instance delivery.
 - Plugin proof must use a real listening server and browser plugin-pane UI. Fastify injection, manually invoking a subscriber, or unit-only DOM dispatch is insufficient.
@@ -69,7 +69,7 @@ For accepted work, use **one nested `acceptedWork` value**, not optional identit
 ## Flag / Abstraction
 
 - **Needed?:** Prefix is opt-in by `routePrefix`; root remains default. Custom modes are opt-in host configuration. Accepted-work expansion may use a temporary compatibility adapter, not a product flag. Bridge transport is an explicit endpoint/auth strategy, not ambient global state.
-- **Path:** server-owned mount + explicit raw/WS prefix dispatch → instance-owned bridge → authenticated transport → existing provider adapter after seam census → fenced host store → gateway-created nested `acceptedWork` → ledger → fresh readmission → consumers.
+- **Path:** server-owned mount + explicit runtimeBackend-raw-HTTP and runtimeProjection-WS prefix dispatch → instance-owned bridge → authenticated transport → existing provider adapter after seam census → fenced host store → gateway-created nested `acceptedWork` → ledger → fresh readmission → consumers.
 - **Rollback:** omit prefix; select existing runtime mode while retaining handles/EFS; revert consumers to compatibility adapters while retaining accepted-work ledger data. Never delete remote handles or shared data merely because code rolls back.
 
 ## Test Seams
@@ -80,7 +80,7 @@ For accepted work, use **one nested `acceptedWork` value**, not optional identit
 
 ## Acceptance
 
-- All ordinary, plugin, `runtimeProjection` broker/routes, and `runtimeBackend` raw/WS paths are prefix-mounted and root-negative; path-sensitive auth remains correct.
+- All ordinary, plugin, `runtimeProjection` HTTP/WS broker routes and `runtimeBackend` raw HTTP paths are prefix-mounted and root-negative; path-sensitive auth remains correct.
 - SSE/poll auth has a documented browser-compatible contract and no token in URL/query. Two servers cannot see or tear down each other’s bridge registrations.
 - Real browser/server proof opens a representative plugin pane exactly once through `UiBridge.postCommand`, with authenticated transport evidence.
 - Public runtime/provisioning APIs change only where a pre-change failing fixture proves a missing seam. Application-owned modes do not modify builtin unions.
@@ -99,9 +99,9 @@ For accepted work, use **one nested `acceptedWork` value**, not optional identit
 
 ### Slice 1: Complete prefixed server boundary and instance-scoped authenticated bridge
 **Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.1`  
-**Delivers:** registration census; normalized prefix; prefixed ordinary/plugin routes, `runtimeProjection` broker/routes, and `runtimeBackend` raw/WS paths; one selected authenticated SSE/poll contract without query tokens; instance-owned `uiBridgeRegistry`; two-instance isolation and root-negative tests.  
+**Delivers:** registration census; normalized prefix; prefixed ordinary/plugin routes, `runtimeProjection` HTTP/WS broker routes and `runtimeBackend` raw HTTP paths; one selected authenticated SSE/poll contract without query tokens; instance-owned `uiBridgeRegistry`; two-instance isolation and root-negative tests.
 **Blocked by:** None.  
-**Proof:** Workspace targeted tests with explicit HTTP/raw/WS route matrix, WebSocket handshake tests, auth rejection/acceptance, URL credential assertion, and two simultaneous server instances.  
+**Proof:** Workspace targeted tests with explicit HTTP/runtimeBackend-raw/runtimeProjection-HTTP+WS route matrix, WebSocket handshake tests, auth rejection/acceptance, URL credential assertion, and two simultaneous server instances.
 **Review budget:** one security-sensitive implementation slice; production scope limited to server/bridge composition and directly required browser endpoint wiring.
 
 ### Slice 2: Real server/browser plugin-pane proof
@@ -181,7 +181,7 @@ Accepted-work plumbing uses expand → migrate → contract: add nested context 
 
 T1 cross-model review of the prior revision returned **NOT READY**. This revision accepts every blocker:
 
-- complete prefix scope now explicitly includes `runtimeProjection` broker/routes and `runtimeBackend` raw/WS paths;
+- complete prefix scope now explicitly includes `runtimeProjection` HTTP/WS broker routes and `runtimeBackend` raw HTTP paths;
 - bridge transport must select an authenticated browser contract with no query token;
 - pane proof requires a listening server and real browser;
 - process-global `uiBridgeRegistry` is replaced by instance scope and tested with two servers;
@@ -199,4 +199,4 @@ No accepted finding widens the ratified architecture. Residual review gate: impl
 
 `ready-for-agent`.
 
-Exact first `/exec` slice: **`factory-plugin-owner-runtime-identity-prefix-8pdn.1` — Complete prefixed server boundary and instance-scoped authenticated bridge.** Stop after its HTTP/raw/WS route matrix, authenticated token-free bridge contract, and two-server registry-isolation proof; do not begin plugin-pane E2E or any runtime/identity slice in the same execution.
+Exact first `/exec` slice: **`factory-plugin-owner-runtime-identity-prefix-8pdn.1` — Complete prefixed server boundary and instance-scoped authenticated bridge.** Stop after its HTTP/runtimeBackend-raw/runtimeProjection-HTTP+WS route matrix, authenticated token-free bridge contract, and two-server registry-isolation proof; do not begin plugin-pane E2E or any runtime/identity slice in the same execution.

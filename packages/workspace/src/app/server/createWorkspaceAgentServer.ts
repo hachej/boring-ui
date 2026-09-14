@@ -71,6 +71,7 @@ import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginS
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runtimeBackend"
+import { normalizeServerRoutePrefix } from "../../server/routePrefix"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
   readPiSettingsBoringPluginSources,
@@ -407,25 +408,6 @@ function createWorkspaceAgentScopeIssuer(workspaceScopeId: string): WorkspaceAge
       },
     },
   }
-}
-
-function normalizeWorkspaceAgentRoutePrefix(prefix: string | undefined): string {
-  const trimmed = prefix?.trim() ?? ""
-  if (!trimmed || /^\/+$/u.test(trimmed)) return ""
-  if (!trimmed.startsWith("/") || /[?#]/u.test(trimmed)) {
-    throw new TypeError("routePrefix must be an absolute URL path without a query or fragment")
-  }
-  const segments = trimmed.split("/").filter(Boolean)
-  for (const segment of segments) {
-    let decoded: string
-    try { decoded = decodeURIComponent(segment) } catch {
-      throw new TypeError("routePrefix must contain valid percent-encoding")
-    }
-    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) {
-      throw new TypeError("routePrefix must not contain traversal or encoded path separators")
-    }
-  }
-  return `/${segments.join("/")}`
 }
 
 function workspaceAgentRoutePathname(request: FastifyRequest, routePrefix: string): string {
@@ -1397,7 +1379,7 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
-  const routePrefix = normalizeWorkspaceAgentRoutePrefix(opts.routePrefix)
+  const routePrefix = normalizeServerRoutePrefix(opts.routePrefix, "routePrefix")
   // Protection is on by default: an omitted option must not silently disable
   // `.agents` enforcement. Only an explicit empty array opts out.
   const resolvedReadonlyWorkspacePaths = opts.readonlyWorkspacePaths ?? DEFAULT_READONLY_WORKSPACE_PATHS
