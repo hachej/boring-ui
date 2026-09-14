@@ -807,6 +807,9 @@ export function WorkspaceAgentFront<
   const externalPluginsEnabled = externalPlugins !== false
   const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
   const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
+  // The API base addresses the whole composed Workspace server, including its
+  // UI-command transport. An explicit null still disables bridge traffic.
+  const resolvedBridgeEndpoint = bridgeEndpoint === undefined ? apiBaseUrl : bridgeEndpoint
   const resolvedProviderStorageKey =
     providerStorageKey ?? `boring-ui-v2:layout:${workspaceId}`
   const resolvedSurfaceStorageKey =
@@ -1685,13 +1688,14 @@ export function WorkspaceAgentFront<
   // Keep exactly one stream across pane switches so inactive pane cleanup cannot
   // strand proxy-side SSE requests and starve ordinary Agent HTTP requests.
   useEffect(() => {
-    if (bridgeEndpoint === null) return
+    if (resolvedBridgeEndpoint === null) return
     return startUiCommandStream({
-      endpoint: uiCommandStreamEndpoint(bridgeEndpoint),
+      endpoint: uiCommandStreamEndpoint(resolvedBridgeEndpoint),
       query: { workspaceId },
+      requestHeaders: resolvedRequestHeaders,
       ctx: surfaceDispatch,
     })
-  }, [bridgeEndpoint, surfaceDispatch, workspaceId])
+  }, [resolvedBridgeEndpoint, resolvedRequestHeaders, surfaceDispatch, workspaceId])
 
   const openWorkspacePanel = useCallback((panel?: OpenPanelConfig) => {
     surfaceOpenRef.current = true
@@ -2973,7 +2977,7 @@ export function WorkspaceAgentFront<
           />
         ) : null}
         <WorkspaceUiStateSync
-          bridgeEndpoint={bridgeEndpoint}
+          bridgeEndpoint={resolvedBridgeEndpoint}
           requestHeaders={resolvedRequestHeaders}
           navOpen={publishedNavOpen}
           surfaceOpen={surfaceOpen}

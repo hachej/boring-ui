@@ -40,6 +40,8 @@ export interface StreamOptions {
   eventSourceCtor?: typeof EventSource | null
   /** Inject fetch for the polling fallback. Defaults to global fetch. */
   fetcher?: typeof fetch
+  /** Auth/tenant headers for the browser-compatible polling transport. */
+  requestHeaders?: Readonly<Record<string, string>>
   /** Polling cadence when on the fallback path. */
   pollIntervalMs?: number
   /** Backoff between SSE reconnect attempts (linear). */
@@ -54,6 +56,7 @@ export interface UiCommandTransportOptions {
   eventSourceCtor?: typeof EventSource | null
   eventSourceInit?: EventSourceInit
   fetcher?: typeof fetch
+  requestHeaders?: Readonly<Record<string, string>>
   pollIntervalMs?: number
   reconnectDelayMs?: number
   maxReconnects?: number
@@ -97,11 +100,23 @@ function appendQuery(url: string, query?: StreamOptions["query"]): string {
 export function startUiCommandTransport(opts: UiCommandTransportOptions): () => void {
   const endpoint = opts.endpoint ?? ""
   const query = opts.query
-  const ESCtor =
-    opts.eventSourceCtor === null
+  // Native EventSource cannot attach Authorization headers. Authenticated
+  // callers therefore use fetch polling; credentials never enter the URL.
+  const hasAuthorizationHeader = Object.keys(opts.requestHeaders ?? {})
+    .some((name) => name.toLowerCase() === "authorization")
+  const ESCtor = hasAuthorizationHeader
+    ? null
+    : opts.eventSourceCtor === null
       ? null
       : opts.eventSourceCtor ?? (typeof EventSource !== "undefined" ? EventSource : null)
-  const fetcher = opts.fetcher ?? (typeof fetch !== "undefined" ? fetch : null)
+  const baseFetcher = opts.fetcher ?? (typeof fetch !== "undefined" ? fetch : null)
+  const fetcher = baseFetcher && opts.requestHeaders && Object.keys(opts.requestHeaders).length > 0
+    ? ((input, init) => {
+        const headers = new Headers(init?.headers)
+        for (const [name, value] of Object.entries(opts.requestHeaders ?? {})) headers.set(name, value)
+        return baseFetcher(input, { ...init, headers })
+      }) as typeof fetch
+    : baseFetcher
   const reconnectDelayMs = opts.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS
   const maxReconnects = opts.maxReconnects ?? DEFAULT_MAX_RECONNECTS
   const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS
@@ -267,6 +282,7 @@ export function startUiCommandStream(opts: StreamOptions): () => void {
     query: opts.query,
     eventSourceCtor: opts.eventSourceCtor,
     fetcher: opts.fetcher,
+    requestHeaders: opts.requestHeaders,
     pollIntervalMs: opts.pollIntervalMs,
     reconnectDelayMs: opts.reconnectDelayMs,
     maxReconnects: opts.maxReconnects,

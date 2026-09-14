@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { CommandResult, UiBridge, UiCommand } from "../../ui-bridge"
 import {
+  createWorkspaceUiCommands,
   execWorkspaceUi,
   getWorkspaceUiBridge,
   NoWorkspaceUiBridgeError,
@@ -67,7 +68,20 @@ describe("workspace UI bridge registry", () => {
     }
   })
 
-  it("unregister only clears the slot if it still holds the same bridge", () => {
+  it("keeps bound helpers isolated across two simultaneous server bridges", async () => {
+    const first = makeBridge()
+    const second = makeBridge()
+    const firstCommands = createWorkspaceUiCommands(first.bridge)
+    const secondCommands = createWorkspaceUiCommands(second.bridge)
+
+    await firstCommands.openSurface({ kind: "owner.first" })
+    await secondCommands.notify("second")
+
+    expect(first.posted).toEqual([{ kind: "openSurface", params: { kind: "owner.first" } }])
+    expect(second.posted).toEqual([{ kind: "showNotification", params: { msg: "second", level: "info" } }])
+  })
+
+  it("unregister only clears the legacy ambient slot if it still holds the same bridge", () => {
     const first = makeBridge().bridge
     const second = makeBridge().bridge
     const unregisterFirst = registerWorkspaceUiBridge(first)

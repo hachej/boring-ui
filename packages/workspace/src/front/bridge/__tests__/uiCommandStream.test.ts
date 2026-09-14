@@ -282,6 +282,25 @@ describe("startUiCommandStream — reconnect + fallback", () => {
     stop()
   })
 
+  it("uses authenticated fetch polling without putting the bearer token in the URL", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 }))
+    const eventSourceCtor = vi.fn() as unknown as typeof EventSource
+    const stop = startUiCommandStream({
+      ctx: dispatchCtx(),
+      eventSourceCtor,
+      fetcher: fetcher as unknown as typeof fetch,
+      requestHeaders: { Authorization: "Bearer secret-token" },
+      pollIntervalMs: 100,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(eventSourceCtor).not.toHaveBeenCalled()
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe("/api/v1/ui/commands/next?poll=true")
+    expect(url).not.toContain("secret-token")
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer secret-token")
+    stop()
+  })
+
   it("uses polling immediately when EventSource is forced off (eventSourceCtor: null)", async () => {
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify([{ kind: "openFile", params: { path: "x.ts" } }]), {

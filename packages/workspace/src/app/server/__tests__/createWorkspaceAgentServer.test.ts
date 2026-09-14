@@ -197,9 +197,22 @@ async function writeHotPlugin(root: string, extension: string): Promise<void> {
 }
 
 describe("createWorkspaceAgentServer local Pi session principal", () => {
+  test("preserves the caller composition window for late host routes", async () => {
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-late-host-route-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+    })
+    app.get("/host-composed-after-factory", async () => ({ ok: true }))
+    try {
+      expect((await app.inject({ method: "GET", url: "/host-composed-after-factory" })).json()).toEqual({ ok: true })
+    } finally { await app.close() }
+  })
+
   test("closes post-mount Host and Workspace resources exactly once when late route init fails", async () => {
     const backendClose = vi.spyOn(RuntimeBackendRegistry.prototype, "close")
-    await expect(createWorkspaceAgentServer({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("boring-post-mount-cleanup-"),
       logger: false,
       provisionWorkspace: false,
@@ -208,7 +221,8 @@ describe("createWorkspaceAgentServer local Pi session principal", () => {
         id: "late-init-failure",
         routes: async () => { throw new Error("injected late route init failure") },
       }],
-    })).rejects.toThrow("injected late route init failure")
+    })
+    await expect(app.ready()).rejects.toThrow("injected late route init failure")
     expect(agentServerMock.hostClose).toHaveBeenCalledOnce()
     expect(backendClose).toHaveBeenCalledOnce()
   })
