@@ -30,3 +30,11 @@ Real-listening composed-server proof (current slice-1 correction revision):
 Abstraction review remains pending until review is rerun against the new head; this document does not claim merge readiness.
 - After building `@hachej/boring-agent`, `pnpm --dir packages/workspace typecheck` passed.
 - `pnpm --dir packages/workspace test` ran 2,327 tests: 2,313 passed, 11 skipped, and 3 failed (missing unbuilt Workspace dist fixture; existing late-route-init rejection behavior; unrelated async fleet UI timing). The new real-listener test passed in the package run.
+
+Final-review correction (code revision `53ab1696f`; proof-only amendment follows):
+
+- Late plugin initialization failure is asserted at the factory promise, so Fastify's thenable rejection is consumed while the existing cleanup assertions prove Host and runtime-backend resources close exactly once; the separate late-route test retains the extensible Fastify contract.
+- Hosted ask-user composition now uses `createAskUserServerPluginFactory`, whose `WorkspaceAgentServerPluginContext` receives the server instance bridge. The ask-user server no longer imports or consults `getWorkspaceUiBridge`.
+- The PR Typecheck diagnostic was `workspace singleton export metadata is stale`; rebuilding workspace and running `pnpm --dir packages/cli run generate:singleton-exports` refreshed the checked-in metadata.
+- Focused ask-user test: 19 passed. Focused workspace lifecycle/listening suite: 68 passed. Cross-package Agent Host composition: all seven roots passed. Workspace and ask-user typechecks passed.
+- `pnpm lint` was bounded and terminated by the repository wrapper after its linter process was OOM-killed; CI remains authoritative for lint. No slice-2 work is included and reviewer PASS remains pending.

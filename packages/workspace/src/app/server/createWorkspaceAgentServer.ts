@@ -248,7 +248,11 @@ export interface WorkspaceAgentServerPluginContext {
  *     registration is still boot-time. Directory entries may contribute
  *     `workspaceBridgeHandlers` only when marked `trust: "internal"`.
  */
-export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
+export type WorkspaceAgentServerPluginFactory = (
+  ctx: WorkspaceAgentServerPluginContext,
+) => WorkspaceServerPlugin | Promise<WorkspaceServerPlugin>
+
+export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry | WorkspaceAgentServerPluginFactory
 
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
@@ -1131,7 +1135,7 @@ export async function resolveWorkspaceAgentServerPluginCollection(
     allPluginEntries.map(async (entry): Promise<ResolvedWorkspacePluginArtifact> => {
       const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(
         entry,
-        "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
+        typeof entry === "object" && "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
       )
       assertWorkspaceBridgeHandlersTrusted(plugin, entry)
       return {

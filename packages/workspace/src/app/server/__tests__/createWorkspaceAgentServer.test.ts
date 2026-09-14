@@ -212,7 +212,7 @@ describe("createWorkspaceAgentServer local Pi session principal", () => {
 
   test("closes post-mount Host and Workspace resources exactly once when late route init fails", async () => {
     const backendClose = vi.spyOn(RuntimeBackendRegistry.prototype, "close")
-    const app = await createWorkspaceAgentServer({
+    await expect(createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("boring-post-mount-cleanup-"),
       logger: false,
       provisionWorkspace: false,
@@ -221,8 +221,7 @@ describe("createWorkspaceAgentServer local Pi session principal", () => {
         id: "late-init-failure",
         routes: async () => { throw new Error("injected late route init failure") },
       }],
-    })
-    await expect(app.ready()).rejects.toThrow("injected late route init failure")
+    })).rejects.toThrow("injected late route init failure")
     expect(agentServerMock.hostClose).toHaveBeenCalledOnce()
     expect(backendClose).toHaveBeenCalledOnce()
   })

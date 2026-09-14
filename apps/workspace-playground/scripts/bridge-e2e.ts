@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { WorkspaceBridgeClient } from '@hachej/boring-workspace/bridge-client'
 import { defineServerPlugin, mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken } from '@hachej/boring-workspace/server'
-import { createAskUserServerPlugin } from '@hachej/boring-ask-user/server'
+import { createAskUserServerPluginFactory } from '@hachej/boring-ask-user/server'
 import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from '@hachej/boring-ask-user/shared'
 
 const SECRET = 'e2e-test-secret-do-not-use-in-prod'
@@ -93,7 +93,7 @@ async function main() {
           handler: ({ input }) => ({ pluginEchoed: input }),
         }],
       }),
-      createAskUserServerPlugin({ workspaceRoot, sessionId: 's1' }),
+      createAskUserServerPluginFactory({ sessionId: 's1' }),
     ],
     workspaceBridge: {
       allowInsecureLocalCliBrowserAuth: true,

@@ -32,6 +32,7 @@ export {
   type WorkspaceAgentPiOptions,
   type WorkspaceAgentServerPluginCollection,
   type WorkspaceAgentServerPluginContext,
+  type WorkspaceAgentServerPluginFactory,
   type WorkspacePluginPackagePiSnapshot,
   type WorkspacePluginEntry,
   type WorkspaceRuntimeProvisioningInput,

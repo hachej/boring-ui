@@ -1,7 +1,6 @@
 import { join } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
 import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
-import { getWorkspaceUiBridge } from "@hachej/boring-workspace/plugin"
 import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
@@ -44,8 +43,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   let stopDelivery: (() => Promise<void>) | undefined
   const ensurePublisher = () => {
     if (stopPublisher) return
-    const bridge = options.bridge ?? getWorkspaceUiBridge()
-    if (bridge) stopPublisher = new AskUserStatePublisher(store, bridge).start()
+    if (options.bridge) stopPublisher = new AskUserStatePublisher(store, options.bridge).start()
   }
   const lifecycle: FastifyPluginAsync = async (app) => {
     // Boot must not touch persisted questions. A `ready` question is a durable
@@ -79,6 +77,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   })
   return defineServerPlugin({
     id: ASK_USER_PLUGIN_ID,
+    contentDigest: "ask-user-server-v1",
     label: "Questions",
     systemPrompt: [
       "Use `ask_user` with blocking:false for decisions that should not stop the current turn; the answer arrives later as a follow-up message.",
@@ -95,6 +94,17 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     }),
     routes: lifecycle,
     preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
+  })
+}
+
+export function createAskUserServerPluginFactory(
+  options: AskUserServerPluginOptions = {},
+): (ctx: { workspaceRoot: string; bridge: UiBridge; agentTypeId?: string }) => WorkspaceServerPlugin {
+  return (ctx) => createAskUserServerPlugin({
+    ...options,
+    workspaceRoot: options.workspaceRoot ?? ctx.workspaceRoot,
+    bridge: options.bridge ?? ctx.bridge,
+    agentTypeId: options.agentTypeId ?? ctx.agentTypeId,
   })
 }
 

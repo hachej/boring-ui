@@ -98,66 +98,66 @@ For accepted work, use **one nested `acceptedWork` value**, not optional identit
 ## Slices
 
 ### Slice 1: Complete prefixed server boundary and instance-scoped authenticated bridge
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.1`  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.1`
 **Delivers:** registration census; normalized prefix; prefixed ordinary/plugin routes, `runtimeProjection` HTTP/WS broker routes and `runtimeBackend` raw HTTP paths; one selected authenticated SSE/poll contract without query tokens; instance-owned `uiBridgeRegistry`; two-instance isolation and root-negative tests.
-**Blocked by:** None.  
+**Blocked by:** None.
 **Proof:** Workspace targeted tests with explicit HTTP/runtimeBackend-raw/runtimeProjection-HTTP+WS route matrix, WebSocket handshake tests, auth rejection/acceptance, URL credential assertion, and two simultaneous server instances.
 **Review budget:** one security-sensitive implementation slice; production scope limited to server/bridge composition and directly required browser endpoint wiring.
 
 ### Slice 2: Real server/browser plugin-pane proof
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.2`  
-**Delivers:** representative real plugin surface opened by agent-triggered `UiBridge.postCommand`; fixes only observed defects.  
-**Blocked by:** Slice 1.  
-**Proof:** Playwright against a listening prefixed server; trace/recording; pane content and exactly-once command assertion; no query credentials.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.2`
+**Delivers:** representative real plugin surface opened by agent-triggered `UiBridge.postCommand`; fixes only observed defects.
+**Blocked by:** Slice 1.
+**Proof:** Playwright against a listening prefixed server; trace/recording; pane content and exactly-once command assertion; no query credentials.
 **Review budget:** one implementation/evidence session.
 
 ### Slice 3: Provisioning and runtime-ID seam census
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.3`  
-**Delivers:** repository census and compile/test host fixture locating runtime-ID typing, provider factory, provisioning, exports, and ownership; minimal API openings only where fixture failure proves need.  
-**Blocked by:** None.  
-**Proof:** before/after fixture evidence, targeted typecheck, built-export smoke; explicit list of considered seams left closed.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.3`
+**Delivers:** repository census and compile/test host fixture locating runtime-ID typing, provider factory, provisioning, exports, and ownership; minimal API openings only where fixture failure proves need.
+**Blocked by:** None.
+**Proof:** before/after fixture evidence, targeted typecheck, built-export smoke; explicit list of considered seams left closed.
 **Review budget:** one focused API-boundary slice.
 
 ### Slice 4: Fenced durable sandbox-handle protocol
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.4`  
-**Delivers:** host-owned durable store contract and reference fixture implementing claim/renew/update/release/delete with generation + lease fencing and encrypted opaque payload.  
-**Blocked by:** Slice 3 (uses only proven composition seam).  
-**Proof:** deterministic concurrent claim, stale writer/delete, expiry takeover, restart, cleanup ambiguity, and provider/mode mismatch tests.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.4`
+**Delivers:** host-owned durable store contract and reference fixture implementing claim/renew/update/release/delete with generation + lease fencing and encrypted opaque payload.
+**Blocked by:** Slice 3 (uses only proven composition seam).
+**Proof:** deterministic concurrent claim, stale writer/delete, expiry takeover, restart, cleanup ambiguity, and provider/mode mismatch tests.
 **Review budget:** one high-risk persistence slice.
 
 ### Slice 5: Compose and qualify ECS-local/AgentCore shared-EFS modes
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.5`  
-**Delivers:** application-owned adapters through `createProviderRuntimeModeAdapter`, validated EFS mapping, fenced store integration, local restart proof, and live runbook/qualification status.  
-**Blocked by:** Slices 3 and 4.  
-**Proof:** provider conformance and restart/shared-file/isolation tests; live disposable digest/resume/teardown evidence or explicit unverified status.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.5`
+**Delivers:** application-owned adapters through `createProviderRuntimeModeAdapter`, validated EFS mapping, fenced store integration, local restart proof, and live runbook/qualification status.
+**Blocked by:** Slices 3 and 4.
+**Proof:** provider conformance and restart/shared-file/isolation tests; live disposable digest/resume/teardown evidence or explicit unverified status.
 **Review budget:** local contract fits one session; live qualification is separately gated by credentials/infrastructure.
 
 ### Slice 6: Frozen accepted-work context atomically in ledger
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.6`  
-**Delivers:** one nested `AcceptedWorkContext`, canonical projection/serializer, gateway construction, and atomic persistence in every ledger state; provenance stored separately from current authority.  
-**Blocked by:** None.  
-**Proof:** in-memory and SQLite conformance over all transitions, restart/replay, collision and immutability tests, forged-field rejection, standalone/multi-Seat cases.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.6`
+**Delivers:** one nested `AcceptedWorkContext`, canonical projection/serializer, gateway construction, and atomic persistence in every ledger state; provenance stored separately from current authority.
+**Blocked by:** None.
+**Proof:** in-memory and SQLite conformance over all transitions, restart/replay, collision and immutability tests, forged-field rejection, standalone/multi-Seat cases.
 **Review budget:** one structural/high-risk Agent slice.
 
 ### Slice 7: Durable queue reference and fresh readmission
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.7`  
-**Delivers:** queued accepted-work reference/request persistence and fresh host authorization at dequeue/resume, including fail-closed revocation state.  
-**Blocked by:** Slice 6.  
-**Proof:** restart with queued work, authority revoked/changed/retained cases, no stale snapshot execution, auditable terminal states.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.7`
+**Delivers:** queued accepted-work reference/request persistence and fresh host authorization at dequeue/resume, including fail-closed revocation state.
+**Blocked by:** Slice 6.
+**Proof:** restart with queued work, authority revoked/changed/retained cases, no stale snapshot execution, auditable terminal states.
 **Review budget:** one authority-boundary slice.
 
 ### Slice 8: Retry-stable child delegation identity
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.8`  
-**Delivers:** deterministic child request/delegation key and verified lineage from parent accepted work; no model-authored authority/idempotency.  
-**Blocked by:** Slices 6 and 7 (delegated queued work follows the same readmission rule).  
-**Proof:** retry/restart/concurrent distinct-child tests and forged argument rejection.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.8`
+**Delivers:** deterministic child request/delegation key and verified lineage from parent accepted work; no model-authored authority/idempotency.
+**Blocked by:** Slices 6 and 7 (delegated queued work follows the same readmission rule).
+**Proof:** retry/restart/concurrent distinct-child tests and forged argument rejection.
 **Review budget:** one confused-deputy/idempotency slice.
 
 ### Slice 9: Pi deployment census, cutover, and consumer migration
-**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.9`  
-**Delivers:** deployment/persistence census and approved direct or versioned cutover, then metering/tool/delegation migration to nested accepted work and retirement of canonical `pi-run:*`.  
-**Blocked by:** Slices 6–8 and a resolved census/cutover decision.  
-**Proof:** census artifact; sink compatibility tests; addressed prompt through ledger/meter/tool/child; replay/follow-up/concurrency; repository search showing no canonical `pi-run:*` producer.  
+**Bead:** `factory-plugin-owner-runtime-identity-prefix-8pdn.9`
+**Delivers:** deployment/persistence census and approved direct or versioned cutover, then metering/tool/delegation migration to nested accepted work and retirement of canonical `pi-run:*`.
+**Blocked by:** Slices 6–8 and a resolved census/cutover decision.
+**Proof:** census artifact; sink compatibility tests; addressed prompt through ledger/meter/tool/child; replay/follow-up/concurrency; repository search showing no canonical `pi-run:*` producer.
 **Review budget:** census is a separate go/no-go checkpoint; migration is one structural session after resolution.
 
 ## Wide Refactor Strategy
