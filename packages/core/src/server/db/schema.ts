@@ -258,6 +258,80 @@ export const workspaceRuntimeResources = pgTable(
   ],
 )
 
+export const fencedSandboxHandles = pgTable(
+  'fenced_sandbox_handles',
+  {
+    hostScope: text('host_scope').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    provider: text('provider').notNull(),
+    mode: text('mode').notNull(),
+    generation: bigint('generation', { mode: 'number' }).notNull().default(0),
+    leaseOwner: text('lease_owner'),
+    leaseToken: uuid('lease_token'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    encryptedHandle: bytea('encrypted_handle'),
+    encryptionNonce: bytea('encryption_nonce'),
+    encryptionAuthTag: bytea('encryption_auth_tag'),
+    encryptionVersion: integer('encryption_version'),
+    handleVersion: integer('handle_version'),
+    createAttemptIdempotencyKey: uuid('create_attempt_idempotency_key'),
+    createAttemptState: text('create_attempt_state'),
+    createAttemptStartedAt: timestamp('create_attempt_started_at', { withTimezone: true }),
+    createAttemptResolvedAt: timestamp('create_attempt_resolved_at', { withTimezone: true }),
+    cleanupOutcome: text('cleanup_outcome'),
+    cleanupDetail: text('cleanup_detail'),
+    cleanupRecordedAt: timestamp('cleanup_recorded_at', { withTimezone: true }),
+    tombstonedAt: timestamp('tombstoned_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.hostScope, table.workspaceId, table.provider, table.mode] }),
+    check(
+      'fenced_sandbox_handles_lease_check',
+      sql`(${table.leaseOwner} IS NULL AND ${table.leaseToken} IS NULL AND ${table.leaseExpiresAt} IS NULL) OR (${table.leaseOwner} IS NOT NULL AND ${table.leaseToken} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)`,
+    ),
+    check(
+      'fenced_sandbox_handles_cleanup_check',
+      sql`(${table.cleanupOutcome} IS NULL AND ${table.cleanupDetail} IS NULL AND ${table.cleanupRecordedAt} IS NULL) OR (${table.cleanupOutcome} IN ('succeeded', 'failed', 'ambiguous') AND ${table.cleanupRecordedAt} IS NOT NULL)`,
+    ),
+    check(
+      'fenced_sandbox_handles_encryption_check',
+      sql`(${table.encryptedHandle} IS NULL AND ${table.encryptionNonce} IS NULL AND ${table.encryptionAuthTag} IS NULL AND ${table.encryptionVersion} IS NULL AND ${table.handleVersion} IS NULL) OR (${table.encryptedHandle} IS NOT NULL AND ${table.encryptionNonce} IS NOT NULL AND ${table.encryptionAuthTag} IS NOT NULL AND ${table.encryptionVersion} IS NOT NULL AND ${table.handleVersion} IS NOT NULL)`,
+    ),
+    check(
+      'fenced_sandbox_handles_create_attempt_check',
+      sql`(${table.createAttemptIdempotencyKey} IS NULL AND ${table.createAttemptState} IS NULL AND ${table.createAttemptStartedAt} IS NULL AND ${table.createAttemptResolvedAt} IS NULL) OR (${table.createAttemptIdempotencyKey} IS NOT NULL AND ${table.createAttemptState} = 'started' AND ${table.createAttemptStartedAt} IS NOT NULL AND ${table.createAttemptResolvedAt} IS NULL) OR (${table.createAttemptIdempotencyKey} IS NOT NULL AND ${table.createAttemptState} = 'completed' AND ${table.createAttemptStartedAt} IS NOT NULL AND ${table.createAttemptResolvedAt} IS NOT NULL)`,
+    ),
+    check(
+      'fenced_sandbox_handles_tombstone_check',
+      sql`${table.tombstonedAt} IS NULL OR (${table.leaseOwner} IS NULL AND ${table.encryptedHandle} IS NULL AND ${table.createAttemptState} IS NULL AND ${table.cleanupOutcome} = 'succeeded')`,
+    ),
+  ],
+)
+
+export const fencedSandboxHandleAudit = pgTable(
+  'fenced_sandbox_handle_audit',
+  {
+    auditId: text('audit_id').primaryKey(),
+    hostScope: text('host_scope').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    provider: text('provider').notNull(),
+    mode: text('mode').notNull(),
+    generation: bigint('generation', { mode: 'number' }).notNull(),
+    action: text('action').notNull(),
+    operatorId: text('operator_id').notNull(),
+    evidenceDetail: text('evidence_detail').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'fenced_sandbox_handle_audit_action_check',
+      sql`${table.action} IN ('reconcile-create-absent', 'reconcile-create-refused-active-lease', 'reconcile-delete', 'reconcile-delete-refused-active-lease')`,
+    ),
+  ],
+)
+
 export const workspaceRuntimeResourcesRelations = relations(
   workspaceRuntimeResources,
   ({ one }) => ({

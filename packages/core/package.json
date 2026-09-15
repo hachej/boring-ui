@@ -53,8 +53,11 @@
     "drizzle"
   ],
   "scripts": {
-    "build": "tsup && pnpm run build:assert",
+    "build": "tsup --config tsup.config.ts && tsup --config tsup.db.config.ts && pnpm run build:assert",
+    "build:docker": "tsup --config tsup.config.ts --no-dts && tsup --config tsup.db.config.ts --no-dts && pnpm run build:assert:runtime",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
+    "build:assert:runtime": "node ./scripts/assert-build-artifacts.mjs --runtime-only",
+    "test:pack-types": "node ./scripts/test-packed-db-types.mjs",
     "dev": "tsup --watch",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",

@@ -2,6 +2,12 @@ export { createDatabase } from './connection.js'
 export type { Database } from './connection.js'
 export { runMigrations } from './migrate.js'
 export type { RunMigrationsOptions } from './migrate.js'
+export {
+  PostgresFencedSandboxHandleAdmin,
+  PostgresFencedSandboxHandleForceAdmin,
+  PostgresFencedSandboxHandleStore,
+} from '../runtime/PostgresFencedSandboxHandleStore.js'
+export { createSandboxHandleCipher } from '../runtime/FencedSandboxHandleStore.js'
 export { LocalUserStore } from './stores/index.js'
 export { LocalWorkspaceStore } from './stores/index.js'
 export { PostgresWorkspaceStore } from './stores/index.js'
