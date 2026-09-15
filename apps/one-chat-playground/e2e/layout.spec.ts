@@ -33,6 +33,10 @@ test('one chat, one screen', async ({ page }) => {
   await expect(theme).toHaveAttribute('aria-label', 'Switch to light theme')
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(theme).toBeHidden()
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme')
 })
 
 test('phone chat snaps button → half → full, then swipes down to button', async ({ page }) => {

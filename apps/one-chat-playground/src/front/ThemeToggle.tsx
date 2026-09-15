@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 const THEME_STORAGE_KEY = 'one-chat.theme'
+const DESKTOP_QUERY = '(min-width: 721px)'
 type Theme = 'light' | 'dark'
 
 function storedTheme(): Theme | null {
@@ -22,23 +23,33 @@ function applyTheme(theme: Theme | null): void {
   document.documentElement.style.colorScheme = theme ?? 'light dark'
 }
 
-/** Run before React mounts so a stored theme never flashes the system palette. */
+/** Run before React mounts so a stored desktop theme never flashes the system palette. */
 export function initializeTheme(): void {
-  applyTheme(storedTheme())
+  applyTheme(window.matchMedia(DESKTOP_QUERY).matches ? storedTheme() : null)
 }
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme | null>(() => storedTheme())
   const [system, setSystem] = useState<Theme>(() => systemTheme())
-  const resolved = theme ?? system
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_QUERY).matches)
+  const resolved = isDesktop ? theme ?? system : system
 
   useEffect(() => {
-    applyTheme(theme)
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => setSystem(media.matches ? 'dark' : 'light')
-    media.addEventListener('change', onChange)
-    return () => media.removeEventListener('change', onChange)
-  }, [theme])
+    applyTheme(isDesktop ? theme : null)
+  }, [isDesktop, theme])
+
+  useEffect(() => {
+    const colorMedia = window.matchMedia('(prefers-color-scheme: dark)')
+    const desktopMedia = window.matchMedia(DESKTOP_QUERY)
+    const onColorChange = () => setSystem(colorMedia.matches ? 'dark' : 'light')
+    const onDesktopChange = () => setIsDesktop(desktopMedia.matches)
+    colorMedia.addEventListener('change', onColorChange)
+    desktopMedia.addEventListener('change', onDesktopChange)
+    return () => {
+      colorMedia.removeEventListener('change', onColorChange)
+      desktopMedia.removeEventListener('change', onDesktopChange)
+    }
+  }, [])
 
   const next: Theme = resolved === 'dark' ? 'light' : 'dark'
   return (
