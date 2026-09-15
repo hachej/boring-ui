@@ -34,9 +34,13 @@ builtin selection behavior was added.
 4. Standalone injection is
    `createWorkspaceAgentServer({ runtimeModeAdapter })` (Workspace) or
    `createStandaloneAgentHostApp({ runtimeModeAdapter })` (Agent). Core injection
-   is `createCoreWorkspaceAgentServer({ runtimeModeAdapter })`. All select
-   `runtimeModeAdapter.id` before `mode`/auto-detection, so application-owned
-   IDs bypass builtin resolution.
+   is `createCoreWorkspaceAgentServer({ runtimeModeAdapter })`. In Core,
+   `selectedMode` is computed first from `options.mode`,
+   `BORING_AGENT_MODE`, or auto-detection, and that selection may construct a
+   builtin Blaxel/Vercel handle store. Only afterward does
+   `options.runtimeModeAdapter` take execution precedence over the remote-worker
+   and builtin adapters. The builtin store is passed only to the builtin adapter
+   factory; it is not injected into the custom adapter.
 
 ## Exact type findings and decisions
 
@@ -90,10 +94,13 @@ provider must return `Workspace.root` consistent with `resolveRuntimeRoot`.
 
 The generic seams expose only provider lifecycle (`create`, `invalidate`,
 `close`) and pair lifecycle (`dispose`, optional health/projection). They do not
-store or expose opaque provider handles. Existing Core
-`WorkspaceRuntimeSandboxHandleStore` is selected only for builtin Blaxel/Vercel
-composition and is not a suitable authority for an application-owned
-AgentCore protocol.
+store or expose opaque provider handles. Core may construct an existing
+`WorkspaceRuntimeSandboxHandleStore` when its independently resolved
+`selectedMode` is builtin Blaxel/Vercel, even when a custom
+`options.runtimeModeAdapter` later takes execution precedence. That store is
+passed only to the builtin adapter factory and is not injected into the custom
+adapter; in either case, it is not a suitable authority for an
+application-owned AgentCore protocol.
 
 Slice 4 should therefore define a **host-owned store contract outside Agent and
 boring-sandbox**, keyed by host scope + workspace + provider + mode. The
