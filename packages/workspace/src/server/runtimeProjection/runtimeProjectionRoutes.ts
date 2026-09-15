@@ -26,7 +26,8 @@ export interface RuntimeProjectionRoutesOptions {
 }
 
 function safeSuffix(rawUrl: string, prefix: string): { leaseId: string; suffix: string; search: string } | undefined {
-  const parsed = new URL(rawUrl, "http://same-origin.invalid")
+  let parsed: URL
+  try { parsed = new URL(rawUrl, "http://same-origin.invalid") } catch { return undefined }
   if (!parsed.pathname.startsWith(prefix)) return undefined
   const rest = parsed.pathname.slice(prefix.length)
   const slash = rest.indexOf("/")
@@ -65,6 +66,9 @@ export function runtimeProjectionRoutes(
   opts: RuntimeProjectionRoutesOptions,
   done: (error?: Error) => void,
 ): void {
+  const routePrefix = app.prefix === "/" ? "" : app.prefix.replace(/\/$/u, "")
+  opts.broker.bindMountBase(routePrefix)
+  const viewPrefix = `${routePrefix}${VIEW_PREFIX}`
   app.post(`${BOOTSTRAP_PREFIX}:leaseId`, async (request, reply) => {
     const { leaseId } = request.params as { leaseId: string }
     const body = request.body as { grant?: unknown } | undefined
@@ -79,7 +83,7 @@ export function runtimeProjectionRoutes(
   })
 
   app.all(`${VIEW_PREFIX}:leaseId/*`, async (request, reply) => {
-    const parsed = safeSuffix(request.raw.url ?? "", VIEW_PREFIX)
+    const parsed = safeSuffix(request.raw.url ?? "", viewPrefix)
     if (!parsed) return reply.code(400).send({ error: "projection_path_invalid" })
     const identity = await opts.resolveIdentity(request)
     const authorized = opts.broker.authorize({
@@ -122,8 +126,14 @@ export function runtimeProjectionRoutes(
 
   const onUpgrade = (request: IncomingMessage, socket: Socket, head: Buffer) => {
     void (async () => {
-      const parsed = safeSuffix(request.url ?? "", VIEW_PREFIX)
-      if (!parsed) return
+      const rawUrl = request.url ?? ""
+      const parsed = safeSuffix(rawUrl, viewPrefix)
+      if (!parsed) {
+        // Reject only this feature's accidentally-unprefixed upgrade shape.
+        // Leave every unrelated upgrade URL untouched for sibling handlers.
+        if (routePrefix && safeSuffix(rawUrl, VIEW_PREFIX)) sendDenied(socket, "404 Not Found")
+        return
+      }
       const identity = await opts.resolveUpgradeIdentity(request)
       const authorized = opts.broker.authorize({
         leaseId: parsed.leaseId,

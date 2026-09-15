@@ -207,6 +207,7 @@ export function workspaceBridgeHttpRoutes(
         workspaceId: verified.claims.workspaceId,
         sessionId: verified.claims.sessionId,
         runtimeId: verified.claims.runtimeId,
+        onBehalfOf: verified.claims.onBehalfOf,
         capabilities: verified.claims.capabilities,
         ttlMs,
       })

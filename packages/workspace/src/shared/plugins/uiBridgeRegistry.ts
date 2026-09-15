@@ -83,8 +83,34 @@ function requireBridge(): UiBridge {
  * the same call the agent's `exec_ui` tool makes; the connected browser drains
  * the command. Prefer the named helpers below for common actions.
  */
+/** @deprecated Use createWorkspaceUiCommands(ctx.bridge) in hosted plugins. */
 export async function execWorkspaceUi(command: UiCommand): Promise<CommandResult> {
   return requireBridge().postCommand(command)
+}
+
+export interface WorkspaceUiCommands {
+  execWorkspaceUi(command: UiCommand): Promise<CommandResult>
+  openPanel(args: OpenPanelArgs): Promise<CommandResult>
+  openSurface(params: Record<string, unknown>): Promise<CommandResult>
+  notify(msg: string, level?: "info" | "warn" | "error"): Promise<CommandResult>
+}
+
+/**
+ * Create instance-bound command helpers. Hosted plugins should build this from
+ * their injected `ctx.bridge`; unlike the deprecated ambient helpers below,
+ * the returned facade cannot observe or tear down another server's bridge.
+ */
+export function createWorkspaceUiCommands(bridge: UiBridge): WorkspaceUiCommands {
+  const exec = async (command: UiCommand) => await bridge.postCommand(command)
+  return {
+    execWorkspaceUi: exec,
+    openPanel: async (args) => await exec({
+      kind: "openPanel",
+      params: { id: args.id, component: args.component, params: args.params },
+    }),
+    openSurface: async (params) => await exec({ kind: "openSurface", params }),
+    notify: async (msg, level = "info") => await exec({ kind: "showNotification", params: { msg, level } }),
+  }
 }
 
 export interface OpenPanelArgs {
@@ -100,6 +126,7 @@ export interface OpenPanelArgs {
  * Open an app/plugin panel in the workspace from a plugin slash command.
  * In-process — no URL, no env. Throws `NoWorkspaceUiBridgeError` if no bridge.
  */
+/** @deprecated Use createWorkspaceUiCommands(ctx.bridge) in hosted plugins. */
 export async function openPanel(args: OpenPanelArgs): Promise<CommandResult> {
   return execWorkspaceUi({
     kind: "openPanel",
@@ -112,6 +139,7 @@ export async function openPanel(args: OpenPanelArgs): Promise<CommandResult> {
  * Pi's `ctx.ui.notify` (a terminal notification that is swallowed in
  * server/headless mode), this surfaces in the browser via the UI bridge.
  */
+/** @deprecated Use createWorkspaceUiCommands(ctx.bridge) in hosted plugins. */
 export async function notify(
   msg: string,
   level: "info" | "warn" | "error" = "info",

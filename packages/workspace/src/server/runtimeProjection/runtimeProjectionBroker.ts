@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { normalizeServerRoutePrefix } from "../routePrefix"
 
 export interface RuntimeProjectionIdentity {
   readonly workspaceId: string
@@ -47,6 +48,10 @@ const equalIdentity = (a: RuntimeProjectionIdentity, b: RuntimeProjectionIdentit
 const opaque = () => randomBytes(32).toString("base64url")
 const digest = (value: string) => createHash("sha256").update(value).digest("base64url")
 
+export function normalizeRuntimeProjectionMountBase(value: string | undefined): string {
+  return normalizeServerRoutePrefix(value, "runtime projection mount base")
+}
+
 /**
  * In-memory authority for sealed, same-origin runtime projections. Upstream
  * URLs and provider credentials never leave this object. Revocation is
@@ -55,6 +60,19 @@ const digest = (value: string) => createHash("sha256").update(value).digest("bas
  */
 export class RuntimeProjectionBroker {
   private readonly records = new Map<string, ProjectionRecord>()
+  private mountBase: string
+
+  constructor(mountBase?: string) {
+    this.mountBase = normalizeRuntimeProjectionMountBase(mountBase)
+  }
+
+  /** Bind a broker supplied without a base to its composed route mount. */
+  bindMountBase(mountBase: string): void {
+    const normalized = normalizeRuntimeProjectionMountBase(mountBase)
+    if (this.records.size > 0 && normalized !== this.mountBase) throw new Error("cannot change runtime projection mount base with active leases")
+    if (this.mountBase && this.mountBase !== normalized) throw new Error("runtime projection mount base does not match route mount")
+    this.mountBase = normalized
+  }
 
   create(input: {
     readonly identity: RuntimeProjectionIdentity
@@ -80,7 +98,7 @@ export class RuntimeProjectionBroker {
     record.expiryTimer.unref?.()
     return Object.freeze({
       leaseId,
-      bootstrapPath: `/api/v1/runtime-projection/bootstrap/${leaseId}`,
+      bootstrapPath: `${this.mountBase}/api/v1/runtime-projection/bootstrap/${leaseId}`,
       grant,
       expiresAt: input.upstream.expiresAt,
       revoke: () => this.revoke(leaseId),
@@ -100,8 +118,8 @@ export class RuntimeProjectionBroker {
     const cookie = opaque()
     record.sessionHash = digest(cookie)
     return {
-      cookie: `boring_projection=${cookie}; HttpOnly; SameSite=Strict; Path=/api/v1/runtime-projection/view/${record.leaseId}/; Max-Age=${Math.max(1, Math.floor((Date.parse(record.upstream.expiresAt) - Date.now()) / 1000))}`,
-      location: `/api/v1/runtime-projection/view/${record.leaseId}/`,
+      cookie: `boring_projection=${cookie}; HttpOnly; SameSite=Strict; Path=${this.mountBase}/api/v1/runtime-projection/view/${record.leaseId}/; Max-Age=${Math.max(1, Math.floor((Date.parse(record.upstream.expiresAt) - Date.now()) / 1000))}`,
+      location: `${this.mountBase}/api/v1/runtime-projection/view/${record.leaseId}/`,
     }
   }
 

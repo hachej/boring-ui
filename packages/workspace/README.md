@@ -56,6 +56,39 @@ export const myPlugin = definePlugin({
 (`() => import(...)`) are auto-wrapped in `React.lazy + Suspense + ErrorBoundary` —
 do not set `lazy: true`.
 
+### Mounting the composed server under a path prefix
+
+`createWorkspaceAgentServer` can mount its complete route surface under one
+prefix. The prefix applies to workspace and Agent APIs, the UI and Workspace
+bridges, health/readiness, runtime plugin APIs, and boot-time plugin routes.
+Leading, trailing, and repeated slashes are normalized. Omit `routePrefix` (or
+pass `""` or `"/"`) to preserve the root-mounted behavior.
+
+```tsx
+// server
+const routePrefix = "/owners/alice/workspace"
+const server = await createWorkspaceAgentServer({ routePrefix })
+
+// browser
+<WorkspaceAgentFront
+  workspaceId="alice"
+  agentTypeId="default"
+  apiBaseUrl={routePrefix}
+/>
+```
+
+`WorkspaceAgentFront` uses `apiBaseUrl` for Agent/workspace requests, plugin
+reload and front-module URLs, and—unless `bridgeEndpoint` is explicitly set—the
+UI-command SSE/poll bridge. When an Authorization header is configured, the
+bridge uses authenticated fetch polling because native EventSource cannot set
+headers; the token is never copied into the URL. Use an absolute `apiBaseUrl`
+ending in the same prefix when the server is on another origin.
+
+Hosted plugins receive their server's bridge as `ctx.bridge`. Use
+`createWorkspaceUiCommands(ctx.bridge)` for instance-bound command helpers.
+The older zero-argument helpers are deprecated single-server compatibility and
+must not be used by multi-server hosts.
+
 ## Package surfaces
 
 | Import | Environment | What you get |

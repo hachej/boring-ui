@@ -17,6 +17,7 @@ interface WorkspaceBridgeTokenClaimsBase {
   workspaceId: string
   sessionId?: string
   runtimeId?: string
+  onBehalfOf?: { id: string; label: string }
   capabilities: readonly string[]
   iat: number
   exp: number
@@ -39,6 +40,8 @@ export interface MintWorkspaceBridgeRuntimeTokenOptions {
   workspaceId: string
   sessionId?: string
   runtimeId?: string
+  /** Trusted human principal represented by this runtime token. */
+  onBehalfOf?: { id: string; label: string }
   capabilities: readonly string[]
   ttlMs?: number
   nowMs?: number
@@ -174,7 +177,7 @@ export function runtimeClaimsToBridgeAuthContext(
         label: claims.runtimeId ? `runtime:${claims.runtimeId}` : "runtime:agent",
         id: claims.runtimeId,
       },
-      onBehalfOf: claims.sessionId ? { label: `session:${claims.sessionId}` } : undefined,
+      onBehalfOf: claims.onBehalfOf ?? (claims.sessionId ? { label: `session:${claims.sessionId}` } : undefined),
     },
   }
 }
@@ -190,6 +193,7 @@ function mintWorkspaceBridgeToken(options: MintWorkspaceBridgeRuntimeTokenOption
     workspaceId: options.workspaceId,
     sessionId: options.sessionId,
     runtimeId: options.runtimeId,
+    ...(options.onBehalfOf ? { onBehalfOf: { id: options.onBehalfOf.id, label: options.onBehalfOf.label } } : {}),
     capabilities: [...options.capabilities],
     iat: Math.floor(nowMs / 1000),
     exp: Math.floor((nowMs + options.ttlMs!) / 1000),
@@ -269,11 +273,20 @@ function parseClaims(payload: unknown): WorkspaceBridgeTokenClaimsBase {
   if (claims.tokenTtlMs !== undefined && (typeof claims.tokenTtlMs !== "number" || !Number.isFinite(claims.tokenTtlMs) || claims.tokenTtlMs <= 0)) {
     throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token claims are invalid")
   }
+  const onBehalfOf = claims.onBehalfOf
+  if (onBehalfOf !== undefined && (
+    !onBehalfOf || typeof onBehalfOf !== "object" ||
+    typeof (onBehalfOf as Record<string, unknown>).id !== "string" ||
+    typeof (onBehalfOf as Record<string, unknown>).label !== "string"
+  )) {
+    throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token claims are invalid")
+  }
   return {
     aud: claims.aud,
     workspaceId: claims.workspaceId,
     sessionId: optionalString(claims.sessionId),
     runtimeId: optionalString(claims.runtimeId),
+    ...(onBehalfOf ? { onBehalfOf: { id: (onBehalfOf as { id: string }).id, label: (onBehalfOf as { label: string }).label } } : {}),
     capabilities: [...claims.capabilities] as string[],
     iat: claims.iat,
     exp: claims.exp,

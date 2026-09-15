@@ -17,7 +17,6 @@ import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
 import { MemoryAskUserStore } from "./testAskUserStore"
 import { UI_STATE_INVALIDATION_COMMAND, createInMemoryBridge, uiRoutes, type UiBridge, type UiCommand, type UiState } from "@hachej/boring-workspace/server"
-import * as workspacePlugin from "@hachej/boring-workspace/plugin"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 
@@ -234,9 +233,8 @@ describe("createAskUserServerPlugin", () => {
 
   it("lazily attaches its state publisher to the server bridge before tool execution", async () => {
     const { store, runtime } = await fixture()
-    const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "fallback" })
     const liveBridge = bridge()
-    const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
+    const plugin = createAskUserServerPlugin({ store, runtime, bridge: liveBridge, sessionId: "fallback" })
     try {
       const tool = plugin.agentToolFactory?.({ agentTypeId: "reviewer" }).find((candidate) => candidate.name === "ask_user")
       expect(tool).toBeDefined()
@@ -253,7 +251,6 @@ describe("createAskUserServerPlugin", () => {
       await runtime.cancelQuestion(pending.questionId, "session-live")
       await pendingResult
     } finally {
-      bridgeSpy.mockRestore()
     }
   })
 
@@ -426,9 +423,8 @@ describe("createAskUserServerPlugin", () => {
     const { store, runtime } = await fixture()
     const pendingResult = runtime.ask({ sessionId: "restart-session", title: "Persisted question", schema, timeoutMs: 60_000 })
     const pending = await waitForPendingQuestion(store, "restart-session")
-    const plugin = createAskUserServerPlugin({ store, runtime })
     const liveBridge = bridge()
-    const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
+    const plugin = createAskUserServerPlugin({ store, runtime, bridge: liveBridge })
     const app = Fastify()
     try {
       await app.register(plugin.routes!)
@@ -440,7 +436,6 @@ describe("createAskUserServerPlugin", () => {
       await pendingResult
     } finally {
       await app.close()
-      bridgeSpy.mockRestore()
     }
   })
 
@@ -452,9 +447,8 @@ describe("createAskUserServerPlugin", () => {
     const pendingResult = previousRuntime.ask({ sessionId: "orphan-session", title: "Orphaned question", schema })
     const pending = await waitForPendingQuestion(store, "orphan-session")
     const restartedRuntime = new AskUserRuntime({ store })
-    const plugin = createAskUserServerPlugin({ store, runtime: restartedRuntime })
     const liveBridge = bridge()
-    const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
+    const plugin = createAskUserServerPlugin({ store, runtime: restartedRuntime, bridge: liveBridge })
     const app = Fastify()
     try {
       await app.register(plugin.routes!)
@@ -469,7 +463,6 @@ describe("createAskUserServerPlugin", () => {
       await pendingResult
     } finally {
       await app.close()
-      bridgeSpy.mockRestore()
     }
   })
 

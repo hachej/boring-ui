@@ -30,9 +30,9 @@ function rawPathFromRequest(request: FastifyRequest): string {
   return queryIndex === -1 ? url : url.slice(0, queryIndex)
 }
 
-function rawGatewayTail(request: FastifyRequest, pluginId: string): string {
+function rawGatewayTail(request: FastifyRequest, pluginId: string, routePrefix: string): string {
   const rawPath = rawPathFromRequest(request)
-  const prefix = `${GATEWAY_PREFIX}${pluginId}`
+  const prefix = `${routePrefix}${GATEWAY_PREFIX}${pluginId}`
   if (rawPath === prefix || rawPath === `${prefix}/`) return "/"
   if (!rawPath.startsWith(`${prefix}/`)) {
     throw new RuntimeBackendError(
@@ -132,6 +132,7 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
 }
 
 export async function runtimeBackendGateway(app: FastifyInstance, opts: RuntimeBackendGatewayOptions): Promise<void> {
+  const routePrefix = app.prefix === "/" ? "" : app.prefix.replace(/\/$/u, "")
   const handle = async (request: FastifyRequest<{ Params: GatewayParams }>, reply: FastifyReply) => {
     const { pluginId } = request.params
     if (!isValidBoringPluginId(pluginId)) {
@@ -144,7 +145,7 @@ export async function runtimeBackendGateway(app: FastifyInstance, opts: RuntimeB
 
     let path: string
     try {
-      path = normalizeGatewayPath(rawGatewayTail(request, pluginId))
+      path = normalizeGatewayPath(rawGatewayTail(request, pluginId, routePrefix))
     } catch (error) {
       return sendError(reply, error)
     }

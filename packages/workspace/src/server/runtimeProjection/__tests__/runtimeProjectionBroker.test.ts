@@ -28,6 +28,20 @@ function cookieValue(value: string) {
 }
 
 describe("RuntimeProjectionBroker", () => {
+  it("projects a validated mount base into bootstrap, location, and cookie scope", () => {
+    const broker = new RuntimeProjectionBroker(" /tenant/a/ ")
+    const grant = broker.create({ identity, upstream: {
+      url: "https://sealed.example/view",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      revoke: async () => {},
+    } })
+    expect(grant.bootstrapPath).toBe(`/tenant/a/api/v1/runtime-projection/bootstrap/${grant.leaseId}`)
+    const consumed = broker.consumeGrant({ leaseId: grant.leaseId, grant: grant.grant, identity })!
+    expect(consumed.location).toBe(`/tenant/a/api/v1/runtime-projection/view/${grant.leaseId}/`)
+    expect(consumed.cookie).toContain(`Path=/tenant/a/api/v1/runtime-projection/view/${grant.leaseId}/`)
+    expect(() => new RuntimeProjectionBroker("/tenant/%2fescape")).toThrow(/path separator/)
+  })
+
   it("consumes an opaque grant once and never returns the sealed upstream", () => {
     const { broker, grant, token } = grantFixture()
     expect(grant.bootstrapPath).not.toContain("sealed.example")

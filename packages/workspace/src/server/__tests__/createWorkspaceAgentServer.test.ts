@@ -99,6 +99,50 @@ describe("createWorkspaceAgentServer — runtime provisioning packages", () => {
   })
 })
 
+describe("createWorkspaceAgentServer — route prefix", () => {
+  test("mounts health, readiness, workspace, agent, UI bridge, and plugin routes under one normalized prefix", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-route-prefix-")
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      disableDefaultFileTools: true,
+      externalPlugins: false,
+      routePrefix: "//owners/alice/workspace//",
+      plugins: [serverApi.defineServerPlugin({
+        id: "prefixed-plugin",
+        routes: async (instance) => {
+          instance.get("/plugin/ping", async () => ({ ok: true }))
+        },
+      })],
+    })
+
+    try {
+      const prefix = "/owners/alice/workspace"
+      const prefixedRoutes = [
+        "/health",
+        "/ready",
+        "/api/v1/filesystems",
+        "/api/v1/agents/default/tools",
+        "/api/v1/ui/state",
+        "/api/v1/agent-plugins",
+        "/plugin/ping",
+      ]
+      for (const route of prefixedRoutes) {
+        const response = await app.inject({ method: "GET", url: `${prefix}${route}` })
+        expect(response.statusCode, `${route}: ${response.body}`).toBe(200)
+      }
+      for (const route of prefixedRoutes) {
+        const response = await app.inject({ method: "GET", url: route })
+        expect(response.statusCode, route).toBe(404)
+      }
+    } finally {
+      await app.close()
+    }
+  })
+})
+
 describe("createWorkspaceAgentServer — plugin wiring", () => {
   test("registers pre-built plugin routes and tools", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-plugin-wiring-")

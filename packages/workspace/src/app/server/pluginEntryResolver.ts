@@ -186,5 +186,6 @@ export async function resolveOnePluginEntry<TPlugin extends WorkspaceServerPlugi
   ctx: PluginResolveContext,
 ): Promise<TPlugin> {
   if (isDirEntry(entry)) return (await resolveDirServerPlugin(entry, ctx)) as TPlugin
+  if (typeof entry === "function") return await entry(ctx) as TPlugin
   return entry as TPlugin
 }

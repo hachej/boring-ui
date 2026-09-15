@@ -159,6 +159,7 @@ export const WORKSPACE_PLUGIN_SINGLETON_EXPORTS = [
   "WORKSPACE_OPEN_PATH_SURFACE_KIND",
   "captureFrontPlugin",
   "createCapturingBoringFrontAPI",
+  "createWorkspaceUiCommands",
   "definePlugin",
   "execWorkspaceUi",
   "getWorkspaceUiBridge",

@@ -71,6 +71,7 @@ import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginS
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runtimeBackend"
+import { normalizeServerRoutePrefix } from "../../server/routePrefix"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
   readPiSettingsBoringPluginSources,
@@ -92,7 +93,6 @@ export {
 } from "@hachej/boring-agent/server"
 import { pluginRootFromExtensionPath, scanBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
-import { registerWorkspaceUiBridge } from "../../shared/plugins/uiBridgeRegistry"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
@@ -248,7 +248,11 @@ export interface WorkspaceAgentServerPluginContext {
  *     registration is still boot-time. Directory entries may contribute
  *     `workspaceBridgeHandlers` only when marked `trust: "internal"`.
  */
-export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
+export type WorkspaceAgentServerPluginFactory = (
+  ctx: WorkspaceAgentServerPluginContext,
+) => WorkspaceServerPlugin | Promise<WorkspaceServerPlugin>
+
+export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry | WorkspaceAgentServerPluginFactory
 
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
@@ -341,6 +345,12 @@ export interface CreateWorkspaceAgentServerOptions
    * default at its composition boundary.
    */
   installPluginAuthoring?: boolean
+  /**
+   * Mount every route owned by this server under one path prefix. Leading and
+   * trailing slashes are normalized; omitted, empty, and `/` preserve the
+   * existing root-mounted routes.
+   */
+  routePrefix?: string
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
   /**
@@ -404,12 +414,20 @@ function createWorkspaceAgentScopeIssuer(workspaceScopeId: string): WorkspaceAge
   }
 }
 
+function workspaceAgentRoutePathname(request: FastifyRequest, routePrefix: string): string {
+  const pathname = request.url.split("?", 1)[0] ?? request.url
+  if (!routePrefix) return pathname
+  if (pathname === routePrefix) return "/"
+  return pathname.startsWith(`${routePrefix}/`) ? pathname.slice(routePrefix.length) : pathname
+}
+
 function trustedWorkspaceScopeId(
   request: FastifyRequest,
   workspaceScopeId: string,
   allowedSelectors: ReadonlySet<string>,
+  routePrefix: string,
 ): string {
-  const pathname = request.url.split("?", 1)[0] ?? request.url
+  const pathname = workspaceAgentRoutePathname(request, routePrefix)
   const rawFileWorkspaceSelector = pathname === "/api/v1/files/raw"
     && request.query
     && typeof request.query === "object"
@@ -1117,7 +1135,7 @@ export async function resolveWorkspaceAgentServerPluginCollection(
     allPluginEntries.map(async (entry): Promise<ResolvedWorkspacePluginArtifact> => {
       const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(
         entry,
-        "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
+        typeof entry === "object" && "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
       )
       assertWorkspaceBridgeHandlersTrusted(plugin, entry)
       return {
@@ -1309,8 +1327,8 @@ function authenticatedRequestUserId(request: FastifyRequest): string | undefined
   return typeof id === "string" && id.length > 0 ? id : undefined
 }
 
-function isAgentSessionRequest(request: FastifyRequest): boolean {
-  const pathname = request.url.split("?", 1)[0] ?? request.url
+function isAgentSessionRequest(request: FastifyRequest, routePrefix: string): boolean {
+  const pathname = workspaceAgentRoutePathname(request, routePrefix)
   return /^\/api\/v1\/agents\/[^/]+\/sessions(?:\/|$)/.test(pathname)
 }
 
@@ -1365,6 +1383,7 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  const routePrefix = normalizeServerRoutePrefix(opts.routePrefix, "routePrefix")
   // Protection is on by default: an omitted option must not silently disable
   // `.agents` enforcement. Only an explicit empty array opts out.
   const resolvedReadonlyWorkspacePaths = opts.readonlyWorkspacePaths ?? DEFAULT_READONLY_WORKSPACE_PATHS
@@ -2162,18 +2181,20 @@ export async function createWorkspaceAgentServer(
       }
     },
   })
-  const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
-  const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
+  // Keep the bridge instance-owned; hosted commands bind ctx.bridge. Ambient
+  // publication is available only through the explicit legacy adapter.
+  const rootApp = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   let lifecycleTransferred = false
+  await rootApp.register(async (app) => {
   app.addHook("onRequest", createAgentAuthMiddleware({
     authToken: opts.authToken,
     workspaceId: workspaceScopeId,
-    publicPaths: ["/health", "/ready"],
+    publicPaths: [`${routePrefix}/health`, `${routePrefix}/ready`],
   }))
   app.addHook("onRequest", async (request, reply) => {
     if (reply.sent) return
     try {
-      trustedWorkspaceScopeId(request, workspaceScopeId, allowedWorkspaceSelectors)
+      trustedWorkspaceScopeId(request, workspaceScopeId, allowedWorkspaceSelectors, routePrefix)
     } catch (error) {
       return reply.code(403).send({
         error: {
@@ -2188,9 +2209,9 @@ export async function createWorkspaceAgentServer(
     let authorized = authorizedScopeByRequest.get(request)
     if (!authorized) {
       authorized = (async () => {
-        const selectedWorkspaceId = trustedWorkspaceScopeId(request, workspaceScopeId, allowedWorkspaceSelectors)
+        const selectedWorkspaceId = trustedWorkspaceScopeId(request, workspaceScopeId, allowedWorkspaceSelectors, routePrefix)
         let authSubject = authenticatedRequestUserId(request) ?? "local"
-        if (isAgentSessionRequest(request)) {
+        if (isAgentSessionRequest(request, routePrefix)) {
           const storageScopeHeader = request.headers["x-boring-storage-scope"]
           const defaultContext: WorkspacePiSessionRequestContext = {
             workspaceId: selectedWorkspaceId,
@@ -2231,7 +2252,6 @@ export async function createWorkspaceAgentServer(
     lifecycleTransferred = true
     app.addHook("onClose", async () => {
       await runtimeBackendRegistry.close()
-      unregisterUiBridge()
     })
 
     const directDispatcher: WorkspaceAgentDispatcherResolver = {
@@ -2278,7 +2298,6 @@ export async function createWorkspaceAgentServer(
       try { await agentHost.host.close() } catch {}
       try { await app.close() } catch {}
     }
-    unregisterUiBridge()
     throw error
   }
   try {
@@ -2309,7 +2328,7 @@ export async function createWorkspaceAgentServer(
       __boringAssetManager?: BoringPluginAssetManager
       __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
     }
-    const internals = app as FastifyInstance & BoringWorkspaceInternals
+    const internals = rootApp as FastifyInstance & BoringWorkspaceInternals
     internals.__boringWorkspaceBridgeRegistry = workspaceBridgeRegistry
     internals.__boringRebuildPlugins = rebuildPlugins
     internals.__boringAssetManager = boringAssetManager
@@ -2323,9 +2342,13 @@ export async function createWorkspaceAgentServer(
       await app.register(routes)
     }
 
-    return app
   } catch (error) {
-    try { await app.close() } catch {}
+    try { await runtimeBackendRegistry.close() } catch {}
+    try { await agentHost.host.close() } catch {}
     throw error
   }
+  }, { prefix: routePrefix })
+  // Preserve the caller's composition window. Fastify initializes this plugin
+  // when the completed host calls ready()/listen(), after late routes are added.
+  return rootApp
 }
