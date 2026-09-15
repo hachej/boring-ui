@@ -17,7 +17,7 @@ export const INTENTS_RELATIVE_DIR = path.join('agent', 'intents')
 export const CHANGES_RELATIVE_PATH = path.join('docs', 'CHANGES.md')
 export const PRODUCT_RELATIVE_PATH = path.join('docs', 'PRODUCT.md')
 
-export const INTENT_STATUSES = ['proposed', 'agreed', 'building', 'kept', 'undone'] as const
+export const INTENT_STATUSES = ['proposed', 'agreed', 'building', 'built', 'kept', 'undone'] as const
 export type IntentStatus = (typeof INTENT_STATUSES)[number]
 
 /** Statuses that mean the track is finished and no longer "where we are". */

@@ -31,16 +31,27 @@ screen: `show_on_screen({url, title})` raises one sheet over the app,
 Three plain Markdown files in the user's app, and nothing else:
 
 - `agent/intents/<slug>.md` — one track of work. First line `status:
-  proposed|agreed|building|kept|undone`, then timestamped entries, then a
+  proposed|agreed|building|built|kept|undone`, then timestamped entries, then a
   `## What we agreed` section once the user has said yes.
 - `docs/CHANGES.md` — append-only, one line per kept change or undo.
 - `docs/PRODUCT.md` — what the app is today, rewritten in place.
 
-Five tools write them: `open_intent`, `note_intent`, `agree_intent`,
-`set_intent_status`, `record_change`. The dynamic prompt carries one generated
+Five memory tools write them: `open_intent`, `note_intent`, `agree_intent`,
+`set_intent_status`, `record_change`. Two host tools start isolated work:
+`run_builder` and `run_documenter`. The dynamic prompt carries one generated
 line built from those files — `Where we are: active intent track-invoices
 (agreed). Last kept: members-list (2026-09-15).` — recomputed only when one of
 them changes, never per turn.
+
+## Fresh builder and documenter
+
+The user speaks only with the pinned `default` colleague. Once an intent is
+agreed, the host compacts that conversation and `run_builder` starts a fresh
+`builder` session in the same workspace. Only one builder may run at a time.
+At agent-end the host records the builder's final text, marks the intent
+`built`, and prompts the live colleague to announce it naturally. The
+colleague starts a fresh `documenter` to update `docs/CHANGES.md` and
+`docs/PRODUCT.md`. Neither child's transcript is shown to the user.
 
 ## Asking the user
 

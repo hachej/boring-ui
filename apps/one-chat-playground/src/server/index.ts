@@ -47,6 +47,8 @@ const runtime = await createOneChatRuntime({
   allowedOrigins,
   sessionRoot,
   systemPromptPath: path.join(appRoot, 'prompts', 'system.md'),
+  builderPromptPath: path.join(appRoot, 'prompts', 'builder.md'),
+  documenterPromptPath: path.join(appRoot, 'prompts', 'documenter.md'),
 })
 
 const apiAddress = await runtime.app.listen({ port: 0, host: '127.0.0.1' })

@@ -45,6 +45,7 @@ const SLUG_PARAM = {
 export function createMemoryTools(options: {
   readonly workspaceRoot: string
   readonly now?: Clock
+  readonly onAgreement?: (slug: string, sessionId: string | undefined) => void
 }): AgentTool[] {
   const root = options.workspaceRoot
   const now = options.now ?? systemClock
@@ -114,12 +115,13 @@ export function createMemoryTools(options: {
       required: ['slug', 'agreement'],
       additionalProperties: false,
     },
-    async execute(params) {
+    async execute(params, ctx) {
       return guarded(async () => {
         assertValidSlug(params.slug)
         const body = str(params.agreement)
         if (!body) throw new Error('An agreement cannot be empty.')
         const intent = await agreeIntent(root, params.slug, body, now)
+        options.onAgreement?.(intent.slug, ctx.sessionId)
         return `Agreed on ${intent.slug}. You can build it now.`
       })
     },
@@ -127,7 +129,7 @@ export function createMemoryTools(options: {
 
   const status: AgentTool = {
     name: 'set_intent_status',
-    description: `Move a track along: ${INTENT_STATUSES.join(', ')}. Use "building" when you start building, "undone" if the change was taken back.`,
+    description: `Move a track along: ${INTENT_STATUSES.join(', ')}. Use "building" while a builder works, "built" when it finishes, and "undone" if the change was taken back.`,
     parameters: {
       type: 'object',
       properties: {

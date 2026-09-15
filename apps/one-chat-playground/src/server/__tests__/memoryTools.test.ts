@@ -75,7 +75,8 @@ describe('memory tools', () => {
     await call('open_intent', { slug: 'crm', text: 'x' })
     expect((await call('set_intent_status', { slug: 'crm', status: 'shipped' })).isError).toBe(true)
     expect((await call('set_intent_status', { slug: 'crm', status: 'building' })).body).toContain('crm is now building')
-    expect((await readIntent(root, 'crm'))?.status).toBe('building')
+    expect((await call('set_intent_status', { slug: 'crm', status: 'built' })).body).toContain('crm is now built')
+    expect((await readIntent(root, 'crm'))?.status).toBe('built')
   })
 
   test('record_change logs one line, rewrites the description, and closes the track', async () => {
