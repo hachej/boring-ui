@@ -7,6 +7,8 @@ export interface StageToolsOptions {
   readonly bus: StageBus
   /** Origin patterns that may be framed. See ../shared/allowedOrigins.ts. */
   readonly allowedOrigins: readonly string[]
+  /** The base page already visible on the right, used when showing one of its routes. */
+  readonly appBaseUrl?: string
 }
 
 function text(body: string, isError = false): Awaited<ReturnType<AgentTool['execute']>> {
@@ -22,7 +24,7 @@ export function createStageTools(options: StageToolsOptions): AgentTool[] {
   const showOnScreen: AgentTool = {
     name: 'show_on_screen',
     description:
-      'Show a page on the user\'s screen, on top of their app. Use it for a mockup, a preview or a page you want the user to look at. Only one thing can be shown at a time; calling this again replaces it. Call back_to_app when the user is done looking.',
+      `Show a page on the user's screen, on top of their app. Use it for a mockup, a preview or a page you want the user to look at. ${options.appBaseUrl ? `The user's app starts at ${options.appBaseUrl}; use that exact origin for its routes. ` : ''}Only one thing can be shown at a time; calling this again replaces it. Call back_to_app when the user is done looking.`,
     parameters: {
       type: 'object',
       properties: {

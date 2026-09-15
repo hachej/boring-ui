@@ -101,6 +101,7 @@ async function postToColleague(options: {
         requestId,
         clientNonce: requestId,
         content: options.prompt,
+        displayContent: '',
       })
     } else {
       await connection.send({
@@ -109,6 +110,7 @@ async function postToColleague(options: {
         clientNonce: requestId,
         clientSeq: Date.now(),
         content: options.prompt,
+        displayContent: '',
       })
     }
   } finally {

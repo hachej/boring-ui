@@ -8,17 +8,17 @@ import { createSessionTracker } from '../reloadTools'
 describe('agreement compaction', () => {
   test('maps command arguments to Pi custom compaction instructions', async () => {
     let registered: { handler: (args: string, ctx: { compact(options: unknown): void }) => Promise<void> } | undefined
-    createCompactCommandExtension({
+    createCompactCommandExtension()({
       registerCommand(_name: string, command: typeof registered) { registered = command },
     } as never)
     let received: { customInstructions?: string; onComplete(): void } | undefined
-    const running = registered!.handler('Keep this.', {
-      compact(options) {
+    await registered!.handler('Keep this.', {
+      getContextUsage: () => ({ tokens: 123, contextWindow: 1_000, percent: 12.3 }),
+      compact(options: unknown) {
         received = options as typeof received
         received!.onComplete()
       },
-    })
-    await running
+    } as never)
     expect(received?.customInstructions).toBe('Keep this.')
   })
 

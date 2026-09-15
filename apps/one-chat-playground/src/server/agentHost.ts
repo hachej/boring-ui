@@ -50,6 +50,8 @@ export interface OneChatRuntimeOptions {
   /** Absolute paths to the isolated builder and documenter prompts. */
   readonly builderPromptPath?: string
   readonly documenterPromptPath?: string
+  /** Browser-reachable base URL for the app on the right. */
+  readonly appBaseUrl?: string
   readonly allowedOrigins?: readonly string[]
   readonly runtimeModeAdapter?: RuntimeModeAdapter
   readonly logger?: boolean
@@ -113,7 +115,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
   const { scope, verifier } = createTrustedLocalScope()
   const stage = createStageBus()
   const allowedOrigins = options.allowedOrigins ?? resolveAllowedOriginsFromEnv()
-  const stageTools = createStageTools({ bus: stage, allowedOrigins })
+  const stageTools = createStageTools({ bus: stage, allowedOrigins, appBaseUrl: options.appBaseUrl })
   const instructionsTools = createInstructionsTools({ workspaceRoot })
   const askUser = createAskUser({
     statePath: options.askUserStatePath
@@ -219,7 +221,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         identity: JSON.stringify(['one-chat-playground', agentTypeId, modeAdapter.id, workspaceRoot]),
         physicalBindingIdentity: JSON.stringify([agentTypeId, modeAdapter.id, workspaceRoot]),
         resourceInputDigest: JSON.stringify(['one-chat-playground', agentTypeId, modeAdapter.id, workspaceRoot]),
-        sessionNamespace: `one-chat-playground:${agentTypeId}`,
+        sessionNamespace: `one-chat-playground-${agentTypeId}`,
         // Every seat gets only the skills shipped in the user's app. The two
         // paths cover the tiny sample app and the standard template app.
         pi: {
@@ -227,7 +229,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
             path.join(workspaceRoot, SKILLS_RELATIVE_DIR),
             path.join(workspaceRoot, 'skills'),
           ],
-          ...(isColleague ? { extensionFactories: [createCompactCommandExtension] } : {}),
+          ...(isColleague ? { extensionFactories: [createCompactCommandExtension(log)] } : {}),
         },
         ...(isColleague
           ? {

@@ -32,7 +32,7 @@ const sessionRoot = path.resolve(
 // anyone being told to reload.
 const sampleApp: ChildProcess = spawn('pnpm', ['exec', 'vite'], {
   cwd: sampleAppRoot,
-  env: { ...process.env, SAMPLE_APP_PORT: String(sampleAppPort) },
+  env: { ...process.env, SAMPLE_APP_PORT: String(sampleAppPort), PORT: String(sampleAppPort) },
   stdio: 'inherit',
 })
 sampleApp.on('exit', (code) => {
@@ -49,6 +49,7 @@ const runtime = await createOneChatRuntime({
   systemPromptPath: path.join(appRoot, 'prompts', 'system.md'),
   builderPromptPath: path.join(appRoot, 'prompts', 'builder.md'),
   documenterPromptPath: path.join(appRoot, 'prompts', 'documenter.md'),
+  appBaseUrl: sampleAppUrl,
 })
 
 const apiAddress = await runtime.app.listen({ port: 0, host: '127.0.0.1' })

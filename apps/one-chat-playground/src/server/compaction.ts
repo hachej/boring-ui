@@ -10,19 +10,25 @@ const POLL_MS = 250
 const IDLE_TIMEOUT_MS = 2 * 60_000
 
 /** Headless Pi has no built-in `/compact`; bridge the Host command route to its SDK context. */
-export const createCompactCommandExtension: PiExtensionFactory = (pi) => {
-  pi.registerCommand('compact', {
-    description: 'Compact this session with optional focus instructions.',
-    handler: async (args, ctx) => {
-      await new Promise<void>((resolve, reject) => {
+export function createCompactCommandExtension(log?: (message: string) => void): PiExtensionFactory {
+  return (pi) => {
+    pi.registerCommand('compact', {
+      description: 'Compact this session with optional focus instructions.',
+      handler: async (args, ctx) => {
+        const before = ctx.getContextUsage()?.tokens
+        // Pi's command context deliberately starts compaction in the background.
+        // Returning now lets the Host record a known successful dispatch; the
+        // callbacks carry the real completion result without an ambiguous effect.
         ctx.compact({
           customInstructions: args.trim() || undefined,
-          onComplete: () => resolve(),
-          onError: (error) => reject(error),
+          onComplete: (result) => log?.(
+            `compaction complete: context ${before ?? 'unknown'} -> ${result.estimatedTokensAfter ?? 'unknown'} tokens (summarized ${result.tokensBefore})`,
+          ),
+          onError: (error) => log?.(`compaction did not run: ${error.message}; context ${before ?? 'unknown'} tokens`),
         })
-      })
-    },
-  })
+      },
+    })
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -66,9 +72,8 @@ export async function compactAfterAgreement(options: {
       args: instruction,
     },
   })
-  const after = await options.gateway.readSessionState({ scope: options.scope, ref })
   options.log?.(
-    `compaction ${options.slug}: ${response.statusCode}; messages ${before.state.messages.length} -> ${after.state.messages.length}; ${response.body.slice(0, 300)}`,
+    `compaction dispatched for ${options.slug}: ${response.statusCode}; ${before.state.messages.length} transcript messages; ${response.body.slice(0, 300)}`,
   )
   if (response.statusCode >= 300) {
     throw new Error(`compaction failed (${response.statusCode}): ${response.body.slice(0, 500)}`)
