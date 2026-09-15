@@ -3,6 +3,12 @@ import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  PostgresFencedSandboxHandleStore,
+  createDatabase,
+  createSandboxHandleCipher,
+  runMigrations,
+} from '@hachej/boring-core/server'
 import type {
   FencedSandboxHandleStore,
   SandboxCleanupOutcome,
@@ -86,7 +92,9 @@ class Store implements FencedSandboxHandleStore {
     this.maxConcurrentRenews = Math.max(this.maxConcurrentRenews, this.concurrentRenews)
     try {
       await this.renewGate
-      return this.row(fence.key).token === fence.leaseToken && this.renewResult
+      const current = this.row(fence.key)
+      if (!this.renewResult && current.token === fence.leaseToken) current.token = 'lost-fence'
+      return current.token === fence.leaseToken && this.renewResult
     } finally {
       this.concurrentRenews--
     }
@@ -212,13 +220,13 @@ describe('application-owned shared-EFS runtime modes', () => {
       hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
     })
     const localPair = await local.create(f.context)
-    expect(createHash('sha256').update(await localPair.workspace.readFileBuffer('proof')).digest('hex')).toBe(expected)
+    expect(createHash('sha256').update(await localPair.workspace.readBinaryFile!('proof')).digest('hex')).toBe(expected)
     expect(decoder.decode((await localPair.sandbox.exec('sha256sum proof')).stdout)).toContain(expected)
     await localPair.disposeRuntime?.()
 
     const remotePair = await f.adapter.create(f.context)
     expect(remotePair.workspace.root).toBe(f.runtimeRoot)
-    expect(createHash('sha256').update(await remotePair.workspace.readFileBuffer('proof')).digest('hex')).toBe(expected)
+    expect(createHash('sha256').update(await remotePair.workspace.readBinaryFile!('proof')).digest('hex')).toBe(expected)
     expect(decoder.decode((await remotePair.sandbox.exec('sha256sum proof')).stdout)).toContain(expected)
     await remotePair.disposeRuntime?.()
     expect(f.remote.stats().deletes).toBe(0)
@@ -311,8 +319,9 @@ describe('application-owned shared-EFS runtime modes', () => {
     const f = await fixture()
     const pair = await f.adapter.create(f.context)
     const pending = pair.sandbox.exec('wait')
+    await vi.waitFor(() => expect(f.remote.stats().execs).toBe(1))
     const disposing = pair.disposeRuntime!()
-    await expect(pair.sandbox.exec('cat proof')).rejects.toThrow(/not active/)
+    await expect(pair.sandbox.exec('cat proof')).rejects.toThrow(/not active|disposing/)
     await expect(pending).rejects.toThrow()
     await disposing
     expect(f.remote.stats().aborted).toBe(true)
@@ -350,9 +359,33 @@ describe('application-owned shared-EFS runtime modes', () => {
     expect(row.owner).toBeNull()
   })
 
+  it('retries durable cleanup debt without resuming it as a normal session', async () => {
+    const f = await fixture()
+    const failing = client(new Map([[f.runtimeRoot, f.hostRoot]]), {
+      reportedRoot: '/wrong',
+      deleteResult: { outcome: 'failed', detail: 'retry me' },
+    })
+    const firstAdapter = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+      handleStore: f.store, agentCore: failing.value, leaseOwner: 'host-1',
+    })
+    await expect(firstAdapter.create(f.context)).rejects.toThrow(/cleanup failed/)
+
+    const retrying = client(new Map([[f.runtimeRoot, f.hostRoot]]))
+    const retryAdapter = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+      handleStore: f.store, agentCore: retrying.value, leaseOwner: 'host-2',
+    })
+    await expect(retryAdapter.create(f.context)).rejects.toThrow(/cleanup debt was resolved/)
+    expect(retrying.stats()).toMatchObject({ deletes: 1, resumes: 0, creates: 0 })
+    const recreated = await retryAdapter.create(f.context)
+    expect(retrying.stats().creates).toBe(1)
+    await recreated.disposeRuntime?.()
+  })
+
   it('centrally deletes and tombstones a newly created session after path failure', async () => {
     const f = await fixture()
-    const wrong = client(new Map([[f.runtimeRoot, f.hostRoot]]), { reportedRoot: '/wrong' })
+    const wrong = client(new Map([[f.runtimeRoot, f.hostRoot]]), { reportedRoot: `${f.runtimeRoot}/wrong` })
     const adapter = createAgentCoreRemoteEfsRuntimeMode({
       hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
       handleStore: f.store, agentCore: wrong.value, leaseOwner: 'host-1',
@@ -364,12 +397,83 @@ describe('application-owned shared-EFS runtime modes', () => {
     expect(row.handle).toBeNull()
   })
 
+  it('does not delete a persisted normal session when resumed metadata is invalid', async () => {
+    const f = await fixture()
+    const first = await f.adapter.create(f.context)
+    await first.disposeRuntime?.()
+    const wrong = client(new Map([[f.runtimeRoot, f.hostRoot]]), { reportedRoot: `${f.runtimeRoot}/wrong` })
+    const adapter = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+      handleStore: f.store, agentCore: wrong.value, leaseOwner: 'host-2',
+    })
+    await expect(adapter.create(f.context)).rejects.toThrow(/does not match/)
+    expect(wrong.stats().deletes).toBe(0)
+    expect([...f.store.rows.values()][0]!.handle).not.toBeNull()
+  })
+
   it('cleans up a created session when durable handle publication loses its fence', async () => {
     const store = new Store()
     store.failUpdate = true
     const f = await fixture('ws', { store })
     await expect(f.adapter.create(f.context)).rejects.toThrow(/fence/)
     expect(f.remote.stats().deletes).toBe(1)
+  })
+
+  it('reconstructs the real Postgres store, adapter, and client across a host restart', async () => {
+    const databaseUrl = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
+    await runMigrations({ databaseUrl } as never)
+    const root = await mkdtemp(join(tmpdir(), 'agentcore-postgres-efs-'))
+    roots.push(root)
+    const hostRoot = join(root, 'tenant', 'postgres-ws')
+    await mkdir(hostRoot, { recursive: true })
+    const hostScope = `agentcore-adapter-${process.pid}-${crypto.randomUUID()}`
+    const cipher = createSandboxHandleCipher(randomBytes(32))
+    const sessions = new Map<string, string>()
+    const stats = { creates: 0, resumes: 0 }
+    const newClient = (): AgentCoreRuntimeClient => ({
+      async createSession({ runtimeCwd }) {
+        stats.creates++
+        const handle = encoder.encode(`postgres-session-${stats.creates}`)
+        sessions.set(decoder.decode(handle), runtimeCwd)
+        return { handle, runtimeCwd }
+      },
+      async resumeSession({ handle }) {
+        stats.resumes++
+        return { runtimeCwd: sessions.get(decoder.decode(handle))! }
+      },
+      async exec() {
+        return { exitCode: 0, stdout: encoder.encode(''), stderr: encoder.encode(''), truncated: false, durationMs: 1 }
+      },
+      async deleteSession() {},
+    })
+    const context = { workspaceId: 'postgres-ws', workspaceRoot: hostRoot, sessionId: 'session' }
+    const connectionA = createDatabase({ databaseUrl } as never)
+    try {
+      const adapterA = createAgentCoreRemoteEfsRuntimeMode({
+        hostScope, tenantId: 'tenant', accessPointRoot: root, runtimeRoot: '/runtime',
+        handleStore: new PostgresFencedSandboxHandleStore(connectionA.db, cipher),
+        agentCore: newClient(), leaseOwner: 'process-a',
+      })
+      const first = await adapterA.create(context)
+      await first.disposeRuntime?.()
+    } finally {
+      await connectionA.sql.end()
+    }
+
+    const connectionB = createDatabase({ databaseUrl } as never)
+    try {
+      const adapterB = createAgentCoreRemoteEfsRuntimeMode({
+        hostScope, tenantId: 'tenant', accessPointRoot: root, runtimeRoot: '/runtime',
+        handleStore: new PostgresFencedSandboxHandleStore(connectionB.db, cipher),
+        agentCore: newClient(), leaseOwner: 'process-b',
+      })
+      const resumed = await adapterB.create(context)
+      expect(stats).toEqual({ creates: 1, resumes: 1 })
+      await resumed.disposeRuntime?.()
+    } finally {
+      await connectionB.sql`DELETE FROM fenced_sandbox_handles WHERE host_scope = ${hostScope}`
+      await connectionB.sql.end()
+    }
   })
 
   it('allows distinct workspace keys to acquire independently while rejecting one key twice', async () => {

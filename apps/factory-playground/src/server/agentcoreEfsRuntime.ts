@@ -1,23 +1,31 @@
-import { resolve, sep } from 'node:path'
+import { lstat, realpath } from 'node:fs/promises'
+import { parse, relative, resolve, sep } from 'node:path'
+import { posix } from 'node:path'
 import { createProviderRuntimeModeAdapter, sandboxRuntimeHostOperations } from '@hachej/boring-agent/server'
 import type { ModeContext, RuntimeModeAdapter } from '@hachej/boring-agent/server'
-import type { FencedSandboxHandleStore, SandboxHandleFence, SandboxHandleKey } from '@hachej/boring-core/server'
+import type { FencedSandboxHandleStore, SandboxCleanupOutcome, SandboxHandleFence, SandboxHandleKey } from '@hachej/boring-core/server'
+import { createDirectSandboxProvider } from '@hachej/boring-sandbox/providers/direct'
 import { createNodeWorkspace, disposeNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
-import { createDirectSandbox } from '@hachej/boring-sandbox/providers/direct'
 import { PROVIDER_CONTRACT_VERSION } from '@hachej/boring-sandbox/shared'
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
-import type { ExecOptions, ExecResult, Sandbox } from '@hachej/boring-agent/shared'
+import type { ExecOptions, Sandbox } from '@hachej/boring-agent/shared'
 
 export const ECS_LOCAL_EFS_MODE = 'factory:ecs-local-efs'
 export const AGENTCORE_REMOTE_EFS_MODE = 'factory:agentcore-remote-efs'
 const AGENTCORE_PROVIDER = 'aws-agentcore'
 
+export interface AgentCoreDeleteResult {
+  readonly outcome: 'succeeded' | 'failed' | 'ambiguous'
+  readonly detail?: string
+}
+
 /** Minimal host-owned protocol. The application supplies an authenticated AWS client implementation. */
 export interface AgentCoreRuntimeClient {
   createSession(input: { idempotencyKey: string; runtimeCwd: string; signal: AbortSignal }): Promise<{ handle: Uint8Array; runtimeCwd: string }>
   resumeSession(input: { handle: Uint8Array; signal: AbortSignal }): Promise<{ runtimeCwd: string }>
-  exec(input: { handle: Uint8Array; command: string; cwd: string; options?: ExecOptions }): Promise<ExecResult>
-  deleteSession(input: { handle: Uint8Array }): Promise<void>
+  exec(input: { handle: Uint8Array; command: string; cwd: string; options?: ExecOptions }): ReturnType<Sandbox['exec']>
+  /** A thrown transport error is conservatively treated as an ambiguous delete outcome. */
+  deleteSession(input: { handle: Uint8Array }): Promise<void | AgentCoreDeleteResult>
 }
 
 export interface SharedEfsRuntimeOptions {
@@ -31,6 +39,8 @@ export interface SharedEfsRuntimeOptions {
   leaseForMs?: number
 }
 
+type SharedEfsMappingOptions = Pick<SharedEfsRuntimeOptions, 'tenantId' | 'accessPointRoot' | 'runtimeRoot'>
+
 function safeSegment(value: string, name: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) || value === '.' || value === '..') {
     throw new Error(`${name} is not a safe EFS path segment`)
@@ -38,39 +48,122 @@ function safeSegment(value: string, name: string): string {
   return value
 }
 
-function mapping(options: SharedEfsRuntimeOptions, context: ModeContext) {
+function canonicalPosixAbsolute(value: string, name: string): string {
+  if (!posix.isAbsolute(value) || posix.resolve(value) !== value) {
+    throw new Error(`${name} must be a canonical POSIX absolute path`)
+  }
+  return value
+}
+
+function isContained(root: string, candidate: string, pathRelative: (from: string, to: string) => string): boolean {
+  const rel = pathRelative(root, candidate)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !posix.isAbsolute(rel))
+}
+
+function mapping(options: SharedEfsMappingOptions, context: ModeContext) {
   const workspaceId = safeSegment(context.workspaceId ?? '', 'workspaceId')
   const tenantId = safeSegment(options.tenantId, 'tenantId')
   const accessPointRoot = resolve(options.accessPointRoot)
+  if (options.accessPointRoot !== accessPointRoot) {
+    throw new Error('accessPointRoot must be a canonical host absolute path')
+  }
   const hostRoot = resolve(accessPointRoot, tenantId, workspaceId)
-  if (!hostRoot.startsWith(`${accessPointRoot}${sep}`)) throw new Error('workspace escaped EFS access point')
-  if (resolve(context.workspaceRoot) !== hostRoot) {
+  if (!isContained(accessPointRoot, hostRoot, relative) || hostRoot === accessPointRoot) {
+    throw new Error('workspace escaped EFS access point')
+  }
+  if (context.workspaceRoot !== resolve(context.workspaceRoot)) {
+    throw new Error('workspaceRoot must be a canonical host absolute path')
+  }
+  if (context.workspaceRoot !== hostRoot) {
     throw new Error(`EFS workspace mapping mismatch: expected ${hostRoot}`)
   }
-  const runtimeRoot = options.runtimeRoot.replace(/\/$/, '')
-  if (!runtimeRoot.startsWith('/')) throw new Error('runtimeRoot must be absolute')
-  return { workspaceId, hostRoot, runtimeRoot: `${runtimeRoot}/${tenantId}/${workspaceId}` }
+
+  const configuredRuntimeRoot = canonicalPosixAbsolute(options.runtimeRoot, 'runtimeRoot')
+  const runtimeRoot = posix.resolve(configuredRuntimeRoot, tenantId, workspaceId)
+  if (!isContained(configuredRuntimeRoot, runtimeRoot, posix.relative) || runtimeRoot === configuredRuntimeRoot) {
+    throw new Error('workspace escaped AgentCore runtime root')
+  }
+  return { workspaceId, tenantId, accessPointRoot, hostRoot, runtimeRoot }
+}
+
+async function inspectCanonicalDirectory(path: string, name: string): Promise<string> {
+  const root = parse(path).root
+  const components = path.slice(root.length).split(sep).filter(Boolean)
+  let current = root
+  for (const component of components) {
+    current = resolve(current, component)
+    const metadata = await lstat(current)
+    if (metadata.isSymbolicLink()) throw new Error(`${name} contains a symlink: ${current}`)
+    if (!metadata.isDirectory()) throw new Error(`${name} component is not a directory: ${current}`)
+    const canonical = await realpath(current)
+    if (canonical !== current) throw new Error(`${name} is not canonical: ${current}`)
+  }
+  return await realpath(path)
+}
+
+async function preflightEfs(options: SharedEfsMappingOptions, context: ModeContext): Promise<void> {
+  const mapped = mapping(options, context)
+  const canonicalAccessPointRoot = await inspectCanonicalDirectory(mapped.accessPointRoot, 'EFS access-point root')
+  const canonicalTenantRoot = await inspectCanonicalDirectory(resolve(mapped.accessPointRoot, mapped.tenantId), 'EFS tenant namespace')
+  const canonicalWorkspaceRoot = await inspectCanonicalDirectory(mapped.hostRoot, 'EFS workspace namespace')
+  if (!isContained(canonicalAccessPointRoot, canonicalTenantRoot, relative)
+      || !isContained(canonicalAccessPointRoot, canonicalWorkspaceRoot, relative)
+      || canonicalWorkspaceRoot !== mapped.hostRoot) {
+    throw new Error('canonical EFS workspace escaped canonical access-point root')
+  }
+  // This is a fail-closed pre-acquisition check, not a filesystem lock. Namespace
+  // components can still change afterward; production authority is EFS access-point
+  // identity/isolation plus IAM, not this inherently TOCTOU-prone host inspection.
+}
+
+function assertRemoteCwd(root: string, value: string, name: string): string {
+  const cwd = canonicalPosixAbsolute(value, name)
+  const rel = posix.relative(root, cwd)
+  if (rel === '..' || rel.startsWith('../') || posix.isAbsolute(rel)) {
+    throw new Error(`${name} escaped authorized EFS namespace`)
+  }
+  return cwd
 }
 
 function fenceOf(lease: { key: SandboxHandleKey; generation: number; leaseToken: string }): SandboxHandleFence {
   return { key: lease.key, generation: lease.generation, leaseToken: lease.leaseToken }
 }
 
-export function createEcsLocalEfsRuntimeMode(options: Omit<SharedEfsRuntimeOptions, 'handleStore' | 'agentCore' | 'leaseOwner'>): RuntimeModeAdapter {
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function abortError(signal: AbortSignal, fallback: string): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error(fallback)
+}
+
+export function createEcsLocalEfsRuntimeMode(
+  options: Omit<SharedEfsRuntimeOptions, 'handleStore' | 'agentCore' | 'leaseOwner'>,
+): RuntimeModeAdapter {
+  const direct = createDirectSandboxProvider()
   const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: ECS_LOCAL_EFS_MODE as SandboxProviderV1['providerId'],
-    capabilities: { fs: 'readwrite', exec: true, watch: true, search: true, sourceOfTruth: 'storage-primary', provisioningSupport: true, providerContractVersion: PROVIDER_CONTRACT_VERSION, runtimeImage: false, networkIsolation: 'none', hardening: 'none', filesystemPersistence: 'durable' },
-    resolveRuntimeRoot(context) { return mapping(options as SharedEfsRuntimeOptions, context).hostRoot },
+    capabilities: direct.capabilities,
+    resolveRuntimeRoot(context) { return mapping(options, context).hostRoot },
     async create(context) {
-      const { hostRoot } = mapping(options as SharedEfsRuntimeOptions, context)
-      const runtimeContext = { runtimeCwd: hostRoot }
-      const workspace = createNodeWorkspace(hostRoot, { runtimeContext })
-      const sandbox = createDirectSandbox({ runtimeContext })
-      return { workspace, sandbox, async dispose() { await sandbox.dispose?.(); await disposeNodeWorkspace(workspace) } }
+      const { hostRoot } = mapping(options, context)
+      // Preserve the canonical provider's mkdir, Sandbox.init, pair disposal, and
+      // error cleanup. This wrapper owns only the shared-EFS path projection.
+      return await direct.create({ ...context, workspaceRoot: hostRoot })
     },
+    async close() { await direct.close?.() },
   }
-  return createProviderRuntimeModeAdapter({ id: ECS_LOCAL_EFS_MODE, provider, runtimeHost: sandboxRuntimeHostOperations, workspaceFsCapability: 'strong', bash: { kind: 'host' }, filesystem: { kind: 'host' }, storageRoot: (ctx: ModeContext) => mapping(options as SharedEfsRuntimeOptions, ctx).hostRoot })
+  return createProviderRuntimeModeAdapter({
+    id: ECS_LOCAL_EFS_MODE,
+    provider,
+    preflight: (context) => preflightEfs(options, context),
+    runtimeHost: sandboxRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host' },
+    filesystem: { kind: 'host' },
+    storageRoot: (context) => mapping(options, context).hostRoot,
+  })
 }
 
 /** Creates the atomic Workspace/Sandbox pair; no builtin mode registry or auto detection is modified. */
@@ -79,38 +172,134 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
   const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: AGENTCORE_PROVIDER as SandboxProviderV1['providerId'],
-    capabilities: { fs: 'readwrite', exec: true, watch: false, search: true, sourceOfTruth: 'storage-primary', provisioningSupport: true, providerContractVersion: PROVIDER_CONTRACT_VERSION, runtimeImage: 'unknown', networkIsolation: 'provider', hardening: 'provider', filesystemPersistence: 'durable' },
+    capabilities: {
+      fs: 'readwrite', exec: true, watch: false, search: true,
+      sourceOfTruth: 'storage-primary', provisioningSupport: true,
+      providerContractVersion: PROVIDER_CONTRACT_VERSION, runtimeImage: 'unknown',
+      networkIsolation: 'provider', hardening: 'provider', filesystemPersistence: 'durable',
+    },
     resolveRuntimeRoot(context) { return mapping(options, context).runtimeRoot },
     async create(context): Promise<WorkspaceSandboxPairV1> {
       const { workspaceId, hostRoot, runtimeRoot } = mapping(options, context)
       const key = { hostScope: options.hostScope, workspaceId, provider: AGENTCORE_PROVIDER, mode: AGENTCORE_REMOTE_EFS_MODE }
       const lease = await options.handleStore.claim({ key, leaseOwner: options.leaseOwner, leaseForMs })
       if (!lease) throw new Error('AgentCore session is owned by another runtime')
-      if (lease.status === 'create-ambiguous') throw new Error(`AgentCore create outcome is ambiguous (${lease.idempotencyKey}); operator reconciliation required`)
+      if (lease.status === 'create-ambiguous') {
+        throw new Error(`AgentCore create outcome is ambiguous (${lease.idempotencyKey}); operator reconciliation required`)
+      }
+
       const fence = fenceOf(lease)
       const lifecycle = new AbortController()
-      const renewTimer = setInterval(() => {
-        void options.handleStore.renew(fence, leaseForMs).then((renewed) => {
-          if (!renewed) lifecycle.abort(new Error('AgentCore session ownership fence was lost'))
-        }, (error) => lifecycle.abort(error))
-      }, Math.max(1, Math.floor(leaseForMs / 3)))
-      renewTimer.unref()
+      let state: 'active' | 'disposing' | 'disposed' = 'active'
+      let fenceLost = false
+      let renewTimer: NodeJS.Timeout | undefined
+      let renewTail = Promise.resolve()
+      let disposalPromise: Promise<void> | undefined
+      const inFlight = new Set<Promise<unknown>>()
+
+      const stopRenewal = () => {
+        if (renewTimer) clearTimeout(renewTimer)
+        renewTimer = undefined
+      }
+      const loseFence = (cause?: unknown) => {
+        if (fenceLost) return
+        fenceLost = true
+        stopRenewal()
+        lifecycle.abort(new Error('AgentCore session ownership fence was lost', { cause }))
+      }
+      const renewFence = (): Promise<void> => {
+        const renewal = renewTail.then(async () => {
+          if (state !== 'active' || lifecycle.signal.aborted) throw abortError(lifecycle.signal, 'AgentCore runtime is not active')
+          let renewed: boolean
+          try {
+            renewed = await options.handleStore.renew(fence, leaseForMs)
+          } catch (error) {
+            loseFence(error)
+            throw abortError(lifecycle.signal, 'AgentCore session ownership fence was lost')
+          }
+          if (!renewed) {
+            loseFence()
+            throw abortError(lifecycle.signal, 'AgentCore session ownership fence was lost')
+          }
+        })
+        renewTail = renewal.catch(() => undefined)
+        return renewal
+      }
+      const scheduleRenewal = () => {
+        if (state !== 'active' || lifecycle.signal.aborted) return
+        renewTimer = setTimeout(() => {
+          renewTimer = undefined
+          void renewFence().then(scheduleRenewal, () => undefined)
+        }, Math.max(1, Math.floor(leaseForMs / 3)))
+        renewTimer.unref()
+      }
+      scheduleRenewal()
+
       let handle = lease.handle
+      let createdUnpublished = false
+      let cleanupStarted = false
+      let published = false
+
+      const cleanupUnpublished = async (reason: string): Promise<AgentCoreDeleteResult> => {
+        if (!handle) throw new Error('AgentCore unpublished cleanup has no durable handle')
+        cleanupStarted = true
+        let cleanup: AgentCoreDeleteResult
+        try {
+          cleanup = await options.agentCore.deleteSession({ handle }) ?? { outcome: 'succeeded' }
+        } catch (error) {
+          cleanup = { outcome: 'ambiguous', detail: errorDetail(error) }
+        }
+        const durable: SandboxCleanupOutcome = {
+          outcome: cleanup.outcome,
+          detail: [reason, cleanup.detail].filter(Boolean).join(': '),
+          recordedAt: new Date().toISOString(),
+        }
+        const deleted = await options.handleStore.delete(fence, durable).catch(() => false)
+        if (cleanup.outcome !== 'succeeded') {
+          await options.handleStore.release(fence).catch(() => false)
+          throw new Error(`AgentCore unpublished session cleanup ${cleanup.outcome}: ${durable.detail}`)
+        }
+        if (!deleted) throw new Error('AgentCore session was deleted but cleanup outcome lost its ownership fence')
+        return cleanup
+      }
+
       try {
+        if (lease.cleanup && lease.cleanup.outcome !== 'succeeded') {
+          if (!handle) throw new Error('AgentCore cleanup debt has no durable handle; operator reconciliation required')
+          await cleanupUnpublished('retry prior unpublished-session cleanup debt')
+          throw new Error('AgentCore cleanup debt was resolved; retry acquisition')
+        }
+
         if (handle) {
           const resumed = await options.agentCore.resumeSession({ handle, signal: lifecycle.signal })
-          if (resumed.runtimeCwd !== runtimeRoot) throw new Error('AgentCore resumed runtime cwd does not match authorized EFS namespace')
+          const reported = assertRemoteCwd(runtimeRoot, resumed.runtimeCwd, 'AgentCore resumed runtime cwd')
+          if (reported !== runtimeRoot) throw new Error('AgentCore resumed runtime cwd does not match authorized EFS namespace')
+          // Resume is not publishable until a current fenced mutation verifies this owner.
+          await renewFence()
         } else {
           const attempt = await options.handleStore.beginCreate(fence)
           if (!attempt || attempt.status !== 'started') throw new Error('AgentCore create could not acquire a durable idempotency key')
-          const created = await options.agentCore.createSession({ idempotencyKey: attempt.idempotencyKey, runtimeCwd: runtimeRoot, signal: lifecycle.signal })
+          const created = await options.agentCore.createSession({
+            idempotencyKey: attempt.idempotencyKey,
+            runtimeCwd: runtimeRoot,
+            signal: lifecycle.signal,
+          })
           handle = created.handle
-          if (created.runtimeCwd !== runtimeRoot) {
-            await options.agentCore.deleteSession({ handle })
-            await options.handleStore.delete(fence, { outcome: 'succeeded', detail: 'runtime cwd mismatch', recordedAt: new Date().toISOString() })
-            throw new Error('AgentCore created runtime cwd does not match authorized EFS namespace')
+          createdUnpublished = true
+
+          // Persist the opaque handle before validating provider metadata so every
+          // later path/fence failure has durable, retryable cleanup material.
+          if (!await options.handleStore.update(fence, handle, 1)) {
+            loseFence()
+            throw abortError(lifecycle.signal, 'AgentCore session handle lost its ownership fence')
           }
-          if (!await options.handleStore.update(fence, handle, 1)) throw new Error('AgentCore session handle lost its ownership fence')
+          const reported = assertRemoteCwd(runtimeRoot, created.runtimeCwd, 'AgentCore created runtime cwd')
+          if (reported !== runtimeRoot) throw new Error('AgentCore created runtime cwd does not match authorized EFS namespace')
+          await renewFence()
+        }
+
+        if (lifecycle.signal.aborted || state !== 'active' || fenceLost) {
+          throw abortError(lifecycle.signal, 'AgentCore runtime is not active')
         }
         const runtimeContext = { runtimeCwd: runtimeRoot }
         const workspace = createNodeWorkspace(hostRoot, { runtimeContext })
@@ -120,32 +309,81 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
           placement: 'remote',
           capabilities: ['exec', 'persistent-fs'],
           runtimeContext,
-          exec: (command: string, execOptions?: ExecOptions) => {
-            const cwd = execOptions?.cwd ?? runtimeRoot
-            if (cwd !== runtimeRoot && !cwd.startsWith(`${runtimeRoot}/`)) {
-              throw new Error('AgentCore exec cwd escaped authorized EFS namespace')
+          exec(command: string, execOptions?: ExecOptions) {
+            if (state !== 'active' || lifecycle.signal.aborted || fenceLost) {
+              return Promise.reject(abortError(lifecycle.signal, 'AgentCore runtime is not active'))
             }
-            return options.agentCore.exec({
-            handle: handle!,
-            command,
-            cwd,
-            options: {
-              ...execOptions,
-              signal: execOptions?.signal
-                ? AbortSignal.any([execOptions.signal, lifecycle.signal])
-                : lifecycle.signal,
-            },
-          })},
+            let cwd: string
+            try {
+              cwd = assertRemoteCwd(runtimeRoot, execOptions?.cwd ?? runtimeRoot, 'AgentCore exec cwd')
+            } catch (error) {
+              return Promise.reject(error)
+            }
+            if (execOptions?.signal?.aborted) {
+              return Promise.reject(abortError(execOptions.signal, 'AgentCore exec was aborted'))
+            }
+            const signal = execOptions?.signal
+              ? AbortSignal.any([execOptions.signal, lifecycle.signal])
+              : lifecycle.signal
+            if (signal.aborted) return Promise.reject(abortError(signal, 'AgentCore exec was aborted'))
+
+            const execution = Promise.resolve().then(() => options.agentCore.exec({
+              handle: handle!,
+              command,
+              cwd,
+              options: { ...execOptions, signal },
+            }))
+            inFlight.add(execution)
+            void execution.finally(() => inFlight.delete(execution)).catch(() => undefined)
+            return execution
+          },
         }
-        let disposed = false
-        return { workspace, sandbox, async dispose() { if (disposed) return; disposed = true; clearInterval(renewTimer); lifecycle.abort(); await disposeNodeWorkspace(workspace); await options.handleStore.release(fence) } }
+
+        const dispose = (): Promise<void> => {
+          if (state === 'disposed') return Promise.resolve()
+          if (disposalPromise) return disposalPromise
+          state = 'disposing'
+          stopRenewal()
+          lifecycle.abort(new Error('AgentCore runtime is disposing'))
+          disposalPromise = (async () => {
+            await Promise.allSettled([...inFlight])
+            await renewTail
+            disposeNodeWorkspace(workspace)
+            const released = await options.handleStore.release(fence)
+            if (!released) throw new Error('AgentCore runtime disposal lost its ownership fence')
+            state = 'disposed'
+          })().finally(() => {
+            if (state !== 'disposed') disposalPromise = undefined
+          })
+          return disposalPromise
+        }
+        published = true
+        return { workspace, sandbox, dispose }
       } catch (error) {
-        clearInterval(renewTimer)
-        lifecycle.abort()
-        await options.handleStore.release(fence).catch(() => false)
+        stopRenewal()
+        lifecycle.abort(error)
+        await renewTail
+        if (createdUnpublished && !published && handle && !cleanupStarted) {
+          try {
+            await cleanupUnpublished(`pair publication failed: ${errorDetail(error)}`)
+          } catch (cleanupError) {
+            throw new Error(errorDetail(cleanupError), { cause: error })
+          }
+        } else if (!cleanupStarted) {
+          await options.handleStore.release(fence).catch(() => false)
+        }
         throw error
       }
     },
   }
-  return createProviderRuntimeModeAdapter({ id: AGENTCORE_REMOTE_EFS_MODE, provider, runtimeHost: sandboxRuntimeHostOperations, workspaceFsCapability: 'strong', bash: { kind: 'remote' }, filesystem: { kind: 'remote-workspace' }, storageRoot: (ctx: ModeContext) => mapping(options, ctx).hostRoot })
+  return createProviderRuntimeModeAdapter({
+    id: AGENTCORE_REMOTE_EFS_MODE,
+    provider,
+    preflight: (context) => preflightEfs(options, context),
+    runtimeHost: sandboxRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'remote' },
+    filesystem: { kind: 'remote-workspace' },
+    storageRoot: (context) => mapping(options, context).hostRoot,
+  })
 }

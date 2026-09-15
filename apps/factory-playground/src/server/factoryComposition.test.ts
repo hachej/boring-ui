@@ -2,9 +2,10 @@ import { spawnSync } from 'node:child_process'
 import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFactoryPlayground } from './app'
 import { startFactoryHost } from './factoryHost'
+import { createSandboxRuntimeModeAdapter } from '@hachej/boring-agent/server'
 import {
   loadNativeFactoryFleet,
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
@@ -124,11 +125,14 @@ describe('native Factory composition', () => {
   it('boots the native app with supervise/factory_status only on the Orchestrator and sandbox only on the Worker', async () => {
     const root = await mkdtemp(resolve(tmpdir(), 'factory-native-app-'))
     temporaryRoots.push(root)
+    const directRuntime = createSandboxRuntimeModeAdapter('direct')
+    const disposeRuntimeMode = vi.fn(directRuntime.dispose)
     const app = await createFactoryPlayground({
       appRoot,
       repositoryRoot,
       workspaceRoot: repositoryRoot,
       logger: false,
+      runtimeModeAdapter: { ...directRuntime, id: 'factory:host-selected', dispose: disposeRuntimeMode },
       env: {
         BORING_AGENT_SESSION_ROOT: resolve(root, 'sessions'),
         BORING_FACTORY_STATE_ROOT: resolve(root, 'state'),
@@ -186,6 +190,7 @@ describe('native Factory composition', () => {
       expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'recover_stale_claims', 'dispatch_worker', 'demo_sandbox']))
     } finally {
       await app.close()
+      expect(disposeRuntimeMode).toHaveBeenCalledOnce()
     }
   }, 30_000)
 

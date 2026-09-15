@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createFactoryHost, deriveFactoryWorkspaceScopeId } from '@hachej/boring-factory/server'
+import type { RuntimeModeAdapter } from '@hachej/boring-agent/server'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 
 export interface FactoryRegistration {
@@ -24,6 +25,8 @@ export interface StartFactoryHostOptions {
   readonly logger?: boolean
   /** Tests and in-process embedders may bind routes without opening a socket. */
   readonly listen?: boolean
+  /** Host-only runtime authority; never sourced from registration or client input. */
+  readonly runtimeModeAdapter?: RuntimeModeAdapter
 }
 
 export async function startFactoryHost(options: StartFactoryHostOptions) {
@@ -65,7 +68,9 @@ export async function startFactoryHost(options: StartFactoryHostOptions) {
     sessionId: deriveFactoryWorkspaceScopeId(),
     sessionRoot: hostEnv.BORING_AGENT_SESSION_ROOT,
     requestLedgerPath: resolve(stateRoot, 'request-ledger.sqlite'),
-    mode: 'direct',
+    ...(options.runtimeModeAdapter
+      ? { runtimeModeAdapter: options.runtimeModeAdapter }
+      : { mode: 'direct' as const }),
     logger: options.logger ?? true,
     readonlyWorkspacePaths: ['.agents'],
     agents: host.agents,
