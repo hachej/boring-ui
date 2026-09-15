@@ -1,0 +1,127 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  initialStageState,
+  parseStageEvent,
+  stageReducer,
+  type StageState,
+} from '../stage.js'
+import {
+  DEFAULT_ALLOWED_ORIGINS,
+  originMatchesPattern,
+  parseAllowedOrigins,
+  resolveAllowedOriginsFromEnv,
+  resolveStageUrl,
+} from '../allowedOrigins.js'
+
+describe('stageReducer', () => {
+  it('starts with no sheet', () => {
+    expect(initialStageState).toEqual({ sheet: null })
+  })
+
+  it('raises a sheet on stage.show', () => {
+    const next = stageReducer(initialStageState, {
+      type: 'stage.show',
+      url: 'http://127.0.0.1:5321/mockup',
+      title: 'New layout',
+    })
+    expect(next.sheet).toEqual({ url: 'http://127.0.0.1:5321/mockup', title: 'New layout' })
+  })
+
+  it('defaults the title when the tool omits it', () => {
+    const next = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/x' })
+    expect(next.sheet?.title).toBe('Preview')
+  })
+
+  it('replaces rather than stacks — only one sheet at a time', () => {
+    const first = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
+    const second = stageReducer(first, { type: 'stage.show', url: 'http://localhost:9/b', title: 'B' })
+    expect(second.sheet).toEqual({ url: 'http://localhost:9/b', title: 'B' })
+  })
+
+  it('clears back to the base app', () => {
+    const shown = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
+    expect(stageReducer(shown, { type: 'stage.clear' })).toEqual({ sheet: null })
+  })
+
+  it('is referentially stable for no-op events', () => {
+    const shown = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
+    expect(stageReducer(shown, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })).toBe(shown)
+    expect(stageReducer(initialStageState, { type: 'stage.clear' })).toBe(initialStageState)
+  })
+
+  it('ignores an empty url', () => {
+    expect(stageReducer(initialStageState, { type: 'stage.show', url: '   ' })).toBe(initialStageState)
+  })
+
+  it('ignores unknown events', () => {
+    const state: StageState = initialStageState
+    expect(stageReducer(state, { type: 'stage.nope' } as never)).toBe(state)
+  })
+})
+
+describe('parseStageEvent', () => {
+  it('accepts well-formed events', () => {
+    expect(parseStageEvent({ type: 'stage.clear' })).toEqual({ type: 'stage.clear' })
+    expect(parseStageEvent({ type: 'stage.show', url: 'http://localhost:1/', title: 'T' })).toEqual({
+      type: 'stage.show',
+      url: 'http://localhost:1/',
+      title: 'T',
+    })
+  })
+
+  it('rejects malformed payloads', () => {
+    expect(parseStageEvent(null)).toBeNull()
+    expect(parseStageEvent('stage.clear')).toBeNull()
+    expect(parseStageEvent({ type: 'stage.show' })).toBeNull()
+    expect(parseStageEvent({ type: 'stage.show', url: 42 })).toBeNull()
+  })
+})
+
+describe('resolveStageUrl', () => {
+  const origins = [...DEFAULT_ALLOWED_ORIGINS]
+
+  it('allows loopback on any port', () => {
+    expect(resolveStageUrl('http://127.0.0.1:5321/clients', origins)).toMatchObject({ ok: true })
+    expect(resolveStageUrl('http://localhost:65000/', origins)).toMatchObject({ ok: true })
+  })
+
+  it('rejects non-http schemes, credentials, foreign origins and junk', () => {
+    expect(resolveStageUrl('file:///etc/passwd', origins)).toMatchObject({ ok: false, reason: 'protocol-not-allowed' })
+    expect(resolveStageUrl('javascript:alert(1)', origins)).toMatchObject({ ok: false, reason: 'protocol-not-allowed' })
+    expect(resolveStageUrl('http://user:pw@localhost:3000/', origins)).toMatchObject({
+      ok: false,
+      reason: 'credentials-not-allowed',
+    })
+    expect(resolveStageUrl('https://evil.example.com/', origins)).toMatchObject({ ok: false, reason: 'origin-not-allowed' })
+    expect(resolveStageUrl('not a url', origins)).toMatchObject({ ok: false, reason: 'unparseable' })
+    expect(resolveStageUrl('', origins)).toMatchObject({ ok: false, reason: 'empty' })
+  })
+
+  it('honours an extended allowlist', () => {
+    const extended = [...origins, 'https://preview.example.com']
+    expect(resolveStageUrl('https://preview.example.com/deck', extended)).toMatchObject({ ok: true })
+    expect(resolveStageUrl('https://other.example.com/deck', extended)).toMatchObject({ ok: false })
+  })
+})
+
+describe('origin allowlist plumbing', () => {
+  it('matches only whole-port wildcards', () => {
+    expect(originMatchesPattern('http://localhost:5321', 'http://localhost:*')).toBe(true)
+    expect(originMatchesPattern('http://localhost:5321', 'http://localhost')).toBe(false)
+    expect(originMatchesPattern('http://sub.localhost:80', 'http://*.localhost:*')).toBe(false)
+  })
+
+  it('parses the env list form', () => {
+    expect(parseAllowedOrigins('https://a.test, https://b.test')).toEqual(['https://a.test', 'https://b.test'])
+    expect(parseAllowedOrigins(undefined)).toEqual([])
+  })
+
+  it('extends the defaults from ONE_CHAT_ALLOWED_ORIGINS', () => {
+    expect(resolveAllowedOriginsFromEnv({ ONE_CHAT_ALLOWED_ORIGINS: 'https://a.test' } as NodeJS.ProcessEnv)).toEqual([
+      ...DEFAULT_ALLOWED_ORIGINS,
+      'https://a.test',
+    ])
+    expect(resolveAllowedOriginsFromEnv({} as NodeJS.ProcessEnv)).toEqual([...DEFAULT_ALLOWED_ORIGINS])
+  })
+})
