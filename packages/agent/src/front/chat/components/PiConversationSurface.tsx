@@ -16,6 +16,7 @@ import {
 } from '../../primitives/conversation'
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
+import { MESSAGES_ONLY_WORKING_LABEL, type ChatRenderMode } from '../renderMode'
 import type { MessageMention, MessageMentionCatalog } from './MessageMentions'
 import { hasTerminalChatError } from './terminalChatErrors'
 
@@ -53,6 +54,8 @@ export interface PiConversationSurfaceProps {
   onRestoreDraft: (text: string) => void
   /** Changes when the active session changes; resets the history window to the latest page. */
   windowResetKey?: string
+  /** `messages-only` hides reasoning/tool parts and shows one quiet working line while streaming. */
+  renderMode?: ChatRenderMode
 }
 
 export function PiConversationSurface({
@@ -74,6 +77,7 @@ export function PiConversationSurface({
   onSuggestionSubmit,
   onRestoreDraft,
   windowResetKey,
+  renderMode = 'full',
 }: PiConversationSurfaceProps) {
   const messageItems = buildMessageRenderItems(messages)
   const total = messageItems.length
@@ -145,8 +149,20 @@ export function PiConversationSurface({
             toolRenderers={toolRenderers}
             mentionCatalog={mentionCatalog}
             onMentionActivate={onMentionActivate}
+            renderMode={renderMode}
           />
         ))}
+        {renderMode === 'messages-only' && isStreaming ? (
+          <div
+            role="status"
+            aria-live="polite"
+            data-boring-agent-part="messages-only-working"
+            className="flex items-center gap-2 text-[13px] text-muted-foreground"
+          >
+            <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-muted-foreground/60 motion-reduce:animate-none" />
+            <span>{MESSAGES_ONLY_WORKING_LABEL}</span>
+          </div>
+        ) : null}
         <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} historyEmpty={historyEmpty} />
       </ConversationContent>
       <ConversationScrollButton />

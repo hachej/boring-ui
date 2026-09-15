@@ -6,6 +6,7 @@ export { uploadFile } from './upload/uploadFile'
 export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
 export { PiChatPanel, PiChatPanel as ChatPanel } from './chat/PiChatPanel'
+export type { ChatRenderMode } from './chat/renderMode'
 export type {
   AgentPluginReloadResult,
   ChatBeforeSubmitResult,

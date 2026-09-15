@@ -1,0 +1,118 @@
+// @vitest-environment jsdom
+import { render, screen } from '@testing-library/react'
+import { describe, expect, test, vi } from 'vitest'
+import type { BoringChatMessage } from '../../../../shared/chat'
+import { PiTimelineMessage } from '../PiTimelineMessage'
+import { PiConversationSurface } from '../PiConversationSurface'
+
+vi.mock('../../../primitives/message', () => ({
+  Message: ({ children, from, ...props }: any) => <article data-from={from} {...props}>{children}</article>,
+  MessageContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  MessageResponse: ({ children }: any) => <div data-testid="message-response">{children}</div>,
+}))
+
+vi.mock('../../../primitives/reasoning', () => ({
+  Reasoning: ({ children }: any) => <section data-testid="reasoning">{children}</section>,
+  ReasoningTrigger: () => <button type="button">thoughts</button>,
+  ReasoningContent: ({ children }: any) => <div data-testid="reasoning-content">{children}</div>,
+}))
+
+vi.mock('../../../primitives/tool-call-group', () => ({
+  ToolCallGroup: ({ tools }: any) => (
+    <div data-testid="tool-call-group">{tools.map(({ part }: any) => part.toolName).join(',')}</div>
+  ),
+}))
+
+vi.mock('../../../primitives/conversation', () => ({
+  Conversation: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  ConversationContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  ConversationScrollButton: () => null,
+}))
+
+vi.mock('use-stick-to-bottom', () => ({
+  useStickToBottomContext: () => ({ scrollRef: { current: null } }),
+}))
+
+/** One assistant turn with the full machinery: reasoning, a read-only tool, an action tool, text. */
+const noisyTurn: BoringChatMessage = {
+  id: 'assistant-1',
+  role: 'assistant',
+  parts: [
+    { type: 'reasoning', text: 'Let me look at the client list first.', state: 'done' },
+    { type: 'tool-call', id: 'call-read', toolName: 'read', state: 'output-available', input: { path: 'src/App.tsx' } },
+    { type: 'tool-call', id: 'call-edit', toolName: 'edit', state: 'output-available', input: { path: 'src/App.tsx' } },
+    { type: 'text', text: 'Done — your client list now shows the last contact date.' },
+  ],
+}
+
+function renderMessage(renderMode?: 'full' | 'messages-only') {
+  return render(
+        <PiTimelineMessage
+          message={noisyTurn}
+          isLast
+          isStreaming={false}
+          showThoughts
+          toolRenderers={{}}
+          {...(renderMode ? { renderMode } : {})}
+        />
+  )
+}
+
+describe('PiTimelineMessage renderMode', () => {
+  test('defaults to full: reasoning and tool parts are rendered', () => {
+    renderMessage()
+    expect(screen.getByTestId('reasoning')).toBeTruthy()
+    expect(screen.getByTestId('tool-call-group')).toBeTruthy()
+    expect(document.querySelectorAll('[data-boring-agent-part="message-tools"]').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('message-response').textContent).toContain('Done — your client list')
+  })
+
+  test('messages-only keeps the text and drops reasoning and every tool part', () => {
+    renderMessage('messages-only')
+    expect(screen.queryByTestId('reasoning')).toBeNull()
+    expect(screen.queryByTestId('tool-call-group')).toBeNull()
+    expect(document.querySelector('[data-boring-agent-part="message-tools"]')).toBeNull()
+    expect(screen.getByTestId('message-response').textContent).toContain('Done — your client list')
+  })
+})
+
+function renderSurface(renderMode: 'full' | 'messages-only', isStreaming: boolean) {
+  return render(
+        <PiConversationSurface
+          chrome={false}
+          emptyHero={false}
+          messages={[noisyTurn]}
+          emptyStateHydrating={false}
+          suggestions={[]}
+          isStreaming={isStreaming}
+          showThoughts
+          toolRenderers={{}}
+          runtimeNotices={[]}
+          onDismissNotice={() => {}}
+          onScrollToBottomReady={() => {}}
+          onSuggestionSubmit={async () => undefined}
+          onRestoreDraft={() => {}}
+          renderMode={renderMode}
+        />
+  )
+}
+
+describe('PiConversationSurface messages-only status line', () => {
+  test('shows one quiet working line while a turn streams', () => {
+    renderSurface('messages-only', true)
+    const working = document.querySelectorAll('[data-boring-agent-part="messages-only-working"]')
+    expect(working.length).toBe(1)
+    expect(working[0]?.textContent).toContain('Working on it')
+  })
+
+  test('hides the working line once the turn settles', () => {
+    renderSurface('messages-only', false)
+    expect(document.querySelector('[data-boring-agent-part="messages-only-working"]')).toBeNull()
+  })
+
+  test('never shows it in full mode', () => {
+    renderSurface('full', true)
+    expect(document.querySelector('[data-boring-agent-part="messages-only-working"]')).toBeNull()
+    expect(screen.getByTestId('tool-call-group')).toBeTruthy()
+  })
+})

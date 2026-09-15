@@ -54,6 +54,7 @@ import {
   type PanelNotice,
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
+import type { ChatRenderMode } from './renderMode'
 import { filterCompetingNoiseNotices } from './components/terminalChatErrors'
 import type {
   ActionableSlashCommand,
@@ -155,6 +156,12 @@ export interface PiChatPanelProps<
   fetch?: typeof globalThis.fetch
   className?: string
   chrome?: boolean
+  /**
+   * How much of a turn the transcript shows. `messages-only` renders user and
+   * assistant text only — no reasoning, no tool calls, one quiet working line
+   * while a turn streams. Defaults to `full`, so existing hosts are unchanged.
+   */
+  renderMode?: ChatRenderMode
   debug?: boolean
   showSessions?: boolean
   hotReloadEnabled?: boolean
@@ -226,6 +233,7 @@ export function PiChatPanel<
   fetch,
   className,
   chrome = true,
+  renderMode = 'full',
   debug = false,
   showSessions,
   hotReloadEnabled = true,
@@ -1423,6 +1431,7 @@ export function PiChatPanel<
               onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
               onRestoreDraft={setComposerDraft}
               windowResetKey={activeSessionId}
+              renderMode={renderMode}
             />
 
             {composerSurface}
