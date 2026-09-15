@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,6 +17,7 @@ import type {
 } from '@hachej/boring-agent/shared'
 
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
+import { bindToolGroups, loadOneChatAgentPackages, type OneChatSeat } from './agentPackages.js'
 import { createAskUser } from './askUser.js'
 import { compactAfterAgreement, createCompactCommandExtension } from './compaction.js'
 import { createInstructionsLoader } from './instructionsFile.js'
@@ -39,8 +39,8 @@ export const ONE_CHAT_AUTH_SUBJECT_ID = 'trusted-local'
 export const ONE_CHAT_SESSION_ID = 'one-chat'
 /** Skills that ship with the user's app, vendored into the workspace. */
 export const SKILLS_RELATIVE_DIR = path.join('.pi', 'skills')
-/** Per-seat platform skills: apps/one-chat-playground/agents/<seat>/skills. */
-const agentsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../agents')
+/** Per-seat packages: apps/one-chat-playground/agents/<seat>/. */
+export const ONE_CHAT_AGENTS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../agents')
 
 export interface OneChatRuntimeOptions {
   /** The user's app. The agent's read/write/edit/bash all act here. */
@@ -48,11 +48,8 @@ export interface OneChatRuntimeOptions {
   readonly sessionRoot?: string
   /** Where the pending-question record lives. Defaults under the session root. */
   readonly askUserStatePath?: string
-  /** Absolute path to the plain-language system prompt appended for the colleague. */
-  readonly systemPromptPath?: string
-  /** Absolute paths to the isolated builder and documenter prompts. */
-  readonly builderPromptPath?: string
-  readonly documenterPromptPath?: string
+  /** Agent package root. Defaults to this app's versioned agents/ directory. */
+  readonly agentsRoot?: string
   /** Browser-reachable base URL for the app on the right. */
   readonly appBaseUrl?: string
   readonly allowedOrigins?: readonly string[]
@@ -89,12 +86,6 @@ function createTrustedLocalScope(): { scope: AuthorizedAgentScope; verifier: Age
   }
 }
 
-async function readSystemPrompt(promptPath: string | undefined): Promise<string | undefined> {
-  if (!promptPath) return undefined
-  const body = (await readFile(promptPath, 'utf8')).trim()
-  return body || undefined
-}
-
 async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance, onClose?: () => void): Promise<void> {
   let firstError: unknown
   onClose?.()
@@ -114,6 +105,9 @@ async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance, onC
  */
 export async function createOneChatRuntime(options: OneChatRuntimeOptions): Promise<OneChatRuntime> {
   const workspaceRoot = path.resolve(options.workspaceRoot)
+  // Read and validate all three manifests before creating any host resources.
+  // A typo in a capability name is a startup error, never a silent grant/drop.
+  const agentPackages = await loadOneChatAgentPackages(options.agentsRoot ?? ONE_CHAT_AGENTS_ROOT)
   const modeAdapter = options.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter('direct')
   const { scope, verifier } = createTrustedLocalScope()
   const stage = createStageBus()
@@ -137,28 +131,31 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     log,
   }
   const reloadTool = createReloadTool(reloadOptions)
-  const [basePrompt, builderPrompt, documenterPrompt] = await Promise.all([
-    readSystemPrompt(options.systemPromptPath),
-    readSystemPrompt(options.builderPromptPath),
-    readSystemPrompt(options.documenterPromptPath),
-  ])
-  const instructions = createInstructionsLoader({ workspaceRoot, basePrompt })
+  // The colleague's package owns its base instructions. This loader adds only
+  // the workspace's standing instructions and generated "where we are" line.
+  const instructions = createInstructionsLoader({ workspaceRoot, basePrompt: undefined })
+  const colleagueUsesCompact = agentPackages.colleague.tools.includes('compact')
+  const colleagueUsesReload = agentPackages.colleague.tools.includes('reload')
   const memoryTools = createMemoryTools({
     workspaceRoot,
-    onAgreement(slug, sessionId) {
-      sessions.remember(sessionId)
-      setTimeout(() => {
-        if (!hostApp || !createdHost) return
-        void compactAfterAgreement({
-          app: hostApp,
-          gateway: createdHost.gateway,
-          scope,
-          sessions,
-          slug,
-          log,
-        }).catch((error) => log(`compaction failed for ${slug}: ${String(error)}`))
-      }, 0)
-    },
+    ...(colleagueUsesCompact
+      ? {
+          onAgreement(slug: string, sessionId: string | undefined) {
+            sessions.remember(sessionId)
+            setTimeout(() => {
+              if (!hostApp || !createdHost) return
+              void compactAfterAgreement({
+                app: hostApp,
+                gateway: createdHost.gateway,
+                scope,
+                sessions,
+                slug,
+                log,
+              }).catch((error) => log(`compaction failed for ${slug}: ${String(error)}`))
+            }, 0)
+          },
+        }
+      : {}),
   })
   const runAgentTools = createRunAgentTools({
     workspaceRoot,
@@ -169,38 +166,41 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     appBaseUrl: options.appBaseUrl,
     log,
   })
+  const availableToolGroups = {
+    intents: memoryTools,
+    instructions: instructionsTools,
+    stage: stageTools,
+    ask_user: [askUser.tool],
+    run_agents: runAgentTools,
+    reload: [reloadTool],
+  } as const
+  const boundBySeat = Object.fromEntries(
+    (Object.keys(agentPackages) as OneChatSeat[]).map((seat) => [
+      seat,
+      bindToolGroups(agentPackages[seat].tools, availableToolGroups),
+    ]),
+  ) as Record<OneChatSeat, ReturnType<typeof bindToolGroups>>
 
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   hostApp = app
-  const stopWatchingExtensions = watchExtensions({ ...reloadOptions, workspaceRoot })
+  const stopWatchingExtensions = colleagueUsesReload
+    ? watchExtensions({ ...reloadOptions, workspaceRoot })
+    : () => {}
   const startedAt = Date.now()
   const created = await createAgentHost({
     agents: [
-      {
-        agentTypeId: ONE_CHAT_AGENT_TYPE_ID,
-        definition: {
-          instructions: "You are the assistant built into the user's app.",
-          label: 'App assistant',
-          version: '1',
-        },
+      { agentTypeId: ONE_CHAT_AGENT_TYPE_ID, definition: agentPackages.colleague },
+      { agentTypeId: BUILDER_AGENT_TYPE_ID, definition: agentPackages.builder },
+      { agentTypeId: DOCUMENTER_AGENT_TYPE_ID, definition: agentPackages.documenter },
+    ].map(({ agentTypeId, definition }) => ({
+      agentTypeId,
+      definition: {
+        instructions: definition.instructions,
+        label: definition.label,
+        version: definition.version,
+        ...(definition.definitionDigest ? { digest: definition.definitionDigest } : {}),
       },
-      {
-        agentTypeId: BUILDER_AGENT_TYPE_ID,
-        definition: {
-          instructions: 'You build one agreed app intent in a fresh session.',
-          label: 'Builder',
-          version: '1',
-        },
-      },
-      {
-        agentTypeId: DOCUMENTER_AGENT_TYPE_ID,
-        definition: {
-          instructions: 'You record one completed app intent in a fresh session.',
-          label: 'Documenter',
-          version: '1',
-        },
-      },
-    ],
+    })),
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: 'one-chat-playground',
     scopeVerifier: verifier,
@@ -217,46 +217,50 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     },
     async resolveAuthorizedAgentRuntimeScope({ agentTypeId }) {
       const isColleague = agentTypeId === ONE_CHAT_AGENT_TYPE_ID
-      const prompt = agentTypeId === BUILDER_AGENT_TYPE_ID
-        ? builderPrompt
-        : agentTypeId === DOCUMENTER_AGENT_TYPE_ID
-          ? documenterPrompt
-          : undefined
+      const seat: OneChatSeat = isColleague
+        ? 'colleague'
+        : agentTypeId === BUILDER_AGENT_TYPE_ID
+          ? 'builder'
+          : 'documenter'
+      const agentPackage = agentPackages[seat]
+      const bound = boundBySeat[seat]
       return {
-        identity: JSON.stringify(['one-chat-playground', agentTypeId, modeAdapter.id, workspaceRoot]),
+        identity: JSON.stringify([
+          'one-chat-playground',
+          agentTypeId,
+          agentPackage.definitionDigest,
+          agentPackage.tools,
+          modeAdapter.id,
+          workspaceRoot,
+        ]),
         physicalBindingIdentity: JSON.stringify([agentTypeId, modeAdapter.id, workspaceRoot]),
-        resourceInputDigest: JSON.stringify(['one-chat-playground', agentTypeId, modeAdapter.id, workspaceRoot]),
+        resourceInputDigest: JSON.stringify([
+          'one-chat-playground',
+          agentTypeId,
+          agentPackage.definitionDigest,
+          agentPackage.tools,
+          modeAdapter.id,
+          workspaceRoot,
+        ]),
         sessionNamespace: `one-chat-playground-${agentTypeId}`,
-        // Every seat gets only the skills shipped in the user's app. The two
-        // paths cover the tiny sample app and the standard template app.
-        // Platform skills ship with the agent definition (agents/<seat>/skills),
-        // fixed and versioned with the host. The workspace's own skills folder
-        // holds only what the colleague made for itself.
+        // Platform skills live with the owning package. Only the colleague may
+        // also discover skills that belong to the user's workspace.
         pi: {
           additionalSkillPaths: isColleague
             ? [
-                path.join(agentsRoot, 'colleague', 'skills'),
+                path.join(agentPackage.packageRoot, 'skills'),
                 path.join(workspaceRoot, SKILLS_RELATIVE_DIR),
                 path.join(workspaceRoot, 'skills'),
               ]
-            : agentTypeId === BUILDER_AGENT_TYPE_ID
-              ? [path.join(agentsRoot, 'builder', 'skills')]
+            : seat === 'builder'
+              ? [path.join(agentPackage.packageRoot, 'skills')]
               : [],
-          ...(isColleague ? { extensionFactories: [createCompactCommandExtension(log)] } : {}),
+          ...(bound.compact ? { extensionFactories: [createCompactCommandExtension(log)] } : {}),
         },
-        ...(isColleague
-          ? {
-              extraTools: trackSessions([
-                ...stageTools,
-                ...instructionsTools,
-                ...memoryTools,
-                ...runAgentTools,
-                askUser.tool,
-                reloadTool,
-              ], sessions),
-              loadSystemPromptAppend: () => instructions.load(),
-            }
-          : { systemPromptAppend: prompt }),
+        ...(bound.tools.length
+          ? { extraTools: isColleague ? trackSessions(bound.tools, sessions) : [...bound.tools] }
+          : {}),
+        ...(isColleague ? { loadSystemPromptAppend: () => instructions.load() } : {}),
       }
     },
   })

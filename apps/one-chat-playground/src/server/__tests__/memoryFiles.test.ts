@@ -48,7 +48,11 @@ describe('open_intent', () => {
     expect(created).toBe(true)
     expect(intent.status).toBe('proposed')
     const raw = await readFile(intentPath(root, 'track-invoices'), 'utf8')
-    expect(raw.split('\n')[0]).toBe('status: proposed')
+    expect(raw.split('\n').slice(0, 2)).toEqual([
+      'status: proposed',
+      'title: invoice list',
+    ])
+    expect(intent.title).toBe('invoice list')
     expect(raw).toContain('- 2026-09-15 14:02 — I need to track my invoices')
   })
 
@@ -156,6 +160,12 @@ describe('parseIntent', () => {
   test('defaults a missing or unknown status to proposed', () => {
     expect(parseIntent('x', 'no status here\nbody').status).toBe('proposed')
     expect(parseIntent('x', 'status: nonsense\nbody').status).toBe('proposed')
+  })
+
+  test('reads an authored human title without leaving it in the body', () => {
+    const intent = parseIntent('track-suppliers', 'status: agreed\ntitle: supplier list\n\n- request\n')
+    expect(intent.title).toBe('supplier list')
+    expect(intent.body).toBe('- request')
   })
 })
 

@@ -53,7 +53,9 @@ export function intentPath(workspaceRoot: string, slug: string): string {
 export interface IntentFile {
   readonly slug: string
   readonly status: IntentStatus
-  /** Everything between the status line and the agreement heading. */
+  /** Short user-facing name used in progress UI; persisted as `title:`. */
+  readonly title?: string
+  /** Everything between the metadata and the agreement heading. */
   readonly body: string
   /** The text under "## What we agreed", or undefined while it is still being understood. */
   readonly agreement: string | undefined
@@ -75,23 +77,56 @@ export function stamp(now: Date): string {
 }
 
 export function parseIntent(slug: string, raw: string): IntentFile {
-  const statusMatch = /^status:\s*(\S+)\s*$/m.exec(raw.split('\n', 1)[0] ?? '')
+  const lines = raw.split('\n')
+  const statusMatch = /^status:\s*(\S+)\s*$/.exec(lines[0] ?? '')
   const status: IntentStatus = isIntentStatus(statusMatch?.[1]) ? statusMatch[1] : 'proposed'
-  const afterStatus = raw.split('\n').slice(1).join('\n')
-  const headingIndex = afterStatus.indexOf(AGREEMENT_HEADING)
-  if (headingIndex < 0) return { slug, status, body: afterStatus.trim(), agreement: undefined }
+  const titleMatch = /^title:\s*(.+?)\s*$/.exec(lines[1] ?? '')
+  const title = titleMatch?.[1]?.trim() || undefined
+  const afterMetadata = lines.slice(title ? 2 : 1).join('\n')
+  const headingIndex = afterMetadata.indexOf(AGREEMENT_HEADING)
+  if (headingIndex < 0) return { slug, status, title, body: afterMetadata.trim(), agreement: undefined }
   return {
     slug,
     status,
-    body: afterStatus.slice(0, headingIndex).trim(),
-    agreement: afterStatus.slice(headingIndex + AGREEMENT_HEADING.length).trim() || undefined,
+    title,
+    body: afterMetadata.slice(0, headingIndex).trim(),
+    agreement: afterMetadata.slice(headingIndex + AGREEMENT_HEADING.length).trim() || undefined,
   }
 }
 
 export function serializeIntent(intent: Omit<IntentFile, 'slug'>): string {
-  const parts = [`status: ${intent.status}`, '', intent.body.trim()]
+  const parts = [
+    `status: ${intent.status}`,
+    ...(intent.title ? [`title: ${intent.title}`] : []),
+    '',
+    intent.body.trim(),
+  ]
   if (intent.agreement) parts.push('', AGREEMENT_HEADING, '', intent.agreement.trim())
   return `${parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
+}
+
+function singular(value: string): string {
+  if (/ies$/i.test(value)) return `${value.slice(0, -3)}y`
+  if (/s$/i.test(value) && !/ss$/i.test(value)) return value.slice(0, -1)
+  return value
+}
+
+/** A stable fallback when the model does not provide the short title itself. */
+export function intentTitleFromUserWords(text: string, slug: string): string {
+  const cleaned = text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?]+$/, '')
+    .replace(/^(?:please\s+)?(?:i\s+(?:need|want|would like)\s+(?:to\s+)?|can you\s+|could you\s+)/i, '')
+  const tracked = /^track\s+(?:my\s+|the\s+)?(.+?)(?:\s+(?:with|by|so|that|for)\b|$)/i.exec(cleaned)?.[1]
+  if (tracked) {
+    const subject = tracked.split(/\s+/).map(singular).join(' ')
+    return /\blist$/i.test(subject) ? subject : `${subject} list`
+  }
+  const words = cleaned.split(/\s+/).filter(Boolean)
+  if (words.length === 1 && /s$/i.test(words[0]!)) return `${singular(words[0]!)} list`
+  const fallback = words.slice(0, 6).join(' ') || slug.replace(/-/g, ' ')
+  return `${fallback.charAt(0).toLowerCase()}${fallback.slice(1)}`
 }
 
 export async function readIntent(workspaceRoot: string, slug: string): Promise<IntentFile | undefined> {
@@ -114,12 +149,15 @@ export async function openIntent(
   slug: string,
   text: string,
   now: Clock = systemClock,
+  title?: string,
 ): Promise<{ intent: IntentFile; created: boolean }> {
   const existing = await readIntent(workspaceRoot, slug)
   const entry = `- ${stamp(now())} — ${text.trim()}`
+  const requestedTitle = title?.replace(/\s+/g, ' ').trim().slice(0, 80)
+  const humanTitle = requestedTitle || intentTitleFromUserWords(text, slug)
   const next: Omit<IntentFile, 'slug'> = existing
-    ? { status: existing.status, body: [existing.body, entry].filter(Boolean).join('\n'), agreement: existing.agreement }
-    : { status: 'proposed', body: entry, agreement: undefined }
+    ? { status: existing.status, title: existing.title ?? humanTitle, body: [existing.body, entry].filter(Boolean).join('\n'), agreement: existing.agreement }
+    : { status: 'proposed', title: humanTitle, body: entry, agreement: undefined }
   await writeIntent(workspaceRoot, slug, next)
   return { intent: { slug, ...next }, created: !existing }
 }
@@ -135,6 +173,7 @@ export async function noteIntent(
   if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
   const next = {
     status: existing.status,
+    title: existing.title,
     body: [existing.body, `- ${stamp(now())} — ${text.trim()}`].filter(Boolean).join('\n'),
     agreement: existing.agreement,
   }
@@ -150,7 +189,7 @@ export async function agreeIntent(
   now: Clock = systemClock,
 ): Promise<IntentFile> {
   const existing = (await readIntent(workspaceRoot, slug)) ?? (await openIntent(workspaceRoot, slug, 'Opened.', now)).intent
-  const next = { status: 'agreed' as const, body: existing.body, agreement: agreement.trim() }
+  const next = { status: 'agreed' as const, title: existing.title, body: existing.body, agreement: agreement.trim() }
   await writeIntent(workspaceRoot, slug, next)
   return { slug, ...next }
 }
@@ -162,7 +201,7 @@ export async function setIntentStatus(
 ): Promise<IntentFile> {
   const existing = await readIntent(workspaceRoot, slug)
   if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
-  const next = { status, body: existing.body, agreement: existing.agreement }
+  const next = { status, title: existing.title, body: existing.body, agreement: existing.agreement }
   await writeIntent(workspaceRoot, slug, next)
   return { slug, ...next }
 }

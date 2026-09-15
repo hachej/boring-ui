@@ -1,0 +1,14 @@
+{
+  "name": "@one-chat/agent-documenter",
+  "private": true,
+  "version": "1.0.0",
+  "boring": {
+    "agent": {
+      "definitionId": "documenter",
+      "version": "1.0.0",
+      "label": "Documenter",
+      "instructionsRef": "instructions.md"
+    }
+  },
+  "tools": ["instructions"]
+}

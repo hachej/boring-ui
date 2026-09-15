@@ -225,7 +225,7 @@ export function createRunAgentTools(options: {
         const mockupRelativePath = `public/mockups/${slug}.html`
         const activity = {
           slug,
-          label: slug.replace(/-/g, ' '),
+          label: intent.title ?? slug.replace(/-/g, ' '),
           stage,
           startedAt: new Date().toISOString(),
         } as const
@@ -276,7 +276,7 @@ export function createRunAgentTools(options: {
                   slug,
                   summary: finalSummary,
                   url: mockupUrl(options.appBaseUrl, slug),
-                  title: `Sketch: ${humanIntentTitle(slug)}`,
+                  title: `Sketch: ${intent.title ?? humanIntentTitle(slug)}`,
                 }),
                 log: options.log,
               })

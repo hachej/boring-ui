@@ -72,8 +72,10 @@ describe('fresh agent run tools', () => {
 
     const activityBus = createStageBus()
     const activityEvents: string[] = []
+    const activityLabels: string[] = []
     activityBus.subscribe((event) => {
       if (event.type.startsWith('activity.')) activityEvents.push(event.type)
+      if (event.type === 'activity.started') activityLabels.push(event.label)
     })
     const tools = createRunAgentTools({
       workspaceRoot: root,
@@ -87,6 +89,7 @@ describe('fresh agent run tools', () => {
     expect(resultText(first)).toBe('started build')
     expect((await readIntent(root, 'suppliers'))?.status).toBe('building')
     expect(activityEvents).toEqual(['activity.started'])
+    expect(activityLabels).toEqual(['supplier list'])
 
     const second = await runBuilder.execute({ slug: 'suppliers', stage: 'mockup' }, { sessionId: 'live-colleague' } as never)
     expect(resultText(second)).toBe('a builder is already running')

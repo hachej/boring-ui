@@ -1,0 +1,14 @@
+{
+  "name": "@one-chat/agent-builder",
+  "private": true,
+  "version": "1.0.0",
+  "boring": {
+    "agent": {
+      "definitionId": "builder",
+      "version": "1.0.0",
+      "label": "Builder",
+      "instructionsRef": "instructions.md"
+    }
+  },
+  "tools": []
+}

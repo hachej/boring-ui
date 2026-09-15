@@ -46,9 +46,6 @@ const runtime = await createOneChatRuntime({
   workspaceRoot: sampleAppRoot,
   allowedOrigins,
   sessionRoot,
-  systemPromptPath: path.join(appRoot, 'prompts', 'system.md'),
-  builderPromptPath: path.join(appRoot, 'prompts', 'builder.md'),
-  documenterPromptPath: path.join(appRoot, 'prompts', 'documenter.md'),
   appBaseUrl: sampleAppUrl,
 })
 

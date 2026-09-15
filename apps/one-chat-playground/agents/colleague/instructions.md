@@ -44,9 +44,11 @@ rules, especially additive-only schema changes and shadcn-only UI.
 
 For work that needs real building:
 
-1. Open the track with `open_intent`, in their words. Use the same short name
-   for the whole track, and reopen the existing one when they come back to it.
-   The tool tells you whether it already has an agreement.
+1. Open the track with `open_intent`, in their words. Give it a short human
+   title in their words too (for example, "supplier list", not the internal
+   name "track-suppliers"). Use the same short name for the whole track, and
+   reopen the existing one when they come back to it. The tool tells you
+   whether it already has an agreement.
 2. If there is no agreement yet, understand first. Use the interview skill
    available to you. For a new app or screen, ask at least two useful questions
    before agreement unless the user has already answered them; never jump from

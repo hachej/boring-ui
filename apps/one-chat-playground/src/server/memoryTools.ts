@@ -59,6 +59,10 @@ export function createMemoryTools(options: {
       properties: {
         slug: SLUG_PARAM,
         text: { type: 'string', description: "What the user asked, in their own words." },
+        title: {
+          type: 'string',
+          description: 'A short human name in the user\'s words, e.g. "supplier list". Omit only when the request itself is already a short title.',
+        },
       },
       required: ['slug', 'text'],
       additionalProperties: false,
@@ -68,7 +72,7 @@ export function createMemoryTools(options: {
         assertValidSlug(params.slug)
         const body = str(params.text)
         if (!body) throw new Error('Say what the user asked.')
-        const { intent, created } = await openIntent(root, params.slug, body, now)
+        const { intent, created } = await openIntent(root, params.slug, body, now, str(params.title))
         const agreement = intent.agreement
           ? 'It already has an agreement — you can build.'
           : 'It has no agreement yet — understand first, then agree.'
