@@ -5,8 +5,16 @@ workspace_root=${ONE_CHAT_WORKSPACE_ROOT:-/data/one-chat/workspaces/app}
 template_root=${ONE_CHAT_TEMPLATE_ROOT:-/app/apps/one-chat-playground/template-app}
 session_root=${BORING_AGENT_SESSION_ROOT:-/data/one-chat/sessions}
 app_base=${ONE_CHAT_APP_BASE:-/app/}
+public_app_url=${ONE_CHAT_PUBLIC_APP_URL:-}
 
 mkdir -p "$workspace_root" "$session_root"
+
+# The deployment contract names the full browser URL explicitly. Keep the
+# shorter legacy name populated while the owner reviews the source-level env.
+if [ -n "$public_app_url" ]; then
+  ONE_CHAT_APP_URL=${ONE_CHAT_APP_URL:-$public_app_url}
+  export ONE_CHAT_APP_URL
+fi
 
 # A named volume starts empty. Seed the editable app exactly once, including its
 # installed dependencies and hidden Pi resources; later starts preserve edits.
