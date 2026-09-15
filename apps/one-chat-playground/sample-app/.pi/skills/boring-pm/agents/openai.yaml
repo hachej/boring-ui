@@ -1,0 +1,4 @@
+interface:
+  display_name: "Boring PM"
+  short_description: "Explore solutions that fit the user and their expertise"
+  default_prompt: "Use $boring-pm to understand my technical comfort, explore solutions that fit me, and turn the best-supported approach into a Boring UI specification."
