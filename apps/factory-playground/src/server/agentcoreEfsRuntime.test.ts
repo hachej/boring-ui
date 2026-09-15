@@ -1,94 +1,392 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash, randomBytes } from 'node:crypto'
+import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import type { FencedSandboxHandleStore, SandboxHandleFence, SandboxHandleKey, SandboxHandleLease } from '@hachej/boring-core/server'
-import type { AgentCoreRuntimeClient } from './agentcoreEfsRuntime'
-import { createAgentCoreRemoteEfsRuntimeMode } from './agentcoreEfsRuntime'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type {
+  FencedSandboxHandleStore,
+  SandboxCleanupOutcome,
+  SandboxHandleFence,
+  SandboxHandleKey,
+  SandboxHandleLease,
+} from '@hachej/boring-core/server'
+import type { AgentCoreDeleteResult, AgentCoreRuntimeClient } from './agentcoreEfsRuntime'
+import { createAgentCoreRemoteEfsRuntimeMode, createEcsLocalEfsRuntimeMode } from './agentcoreEfsRuntime'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+const roots: string[] = []
+const keyOf = (key: SandboxHandleKey) => JSON.stringify([key.hostScope, key.workspaceId, key.provider, key.mode])
+
+interface Row {
+  key: SandboxHandleKey
+  handle: Uint8Array | null
+  owner: string | null
+  generation: number
+  token: string
+  creating: boolean
+  cleanup: SandboxCleanupOutcome | null
+}
+
 class Store implements FencedSandboxHandleStore {
-  handle: Uint8Array | null = null
-  owner: string | null = null
-  generation = 0
-  token = ''
-  creating = false
+  readonly rows = new Map<string, Row>()
   claims = 0
-  key?: SandboxHandleKey
-  async claim(input: { key: SandboxHandleKey; leaseOwner: string }) {
+  renewCalls = 0
+  concurrentRenews = 0
+  maxConcurrentRenews = 0
+  releases = 0
+  failUpdate = false
+  failReleaseOnce = false
+  renewResult = true
+  renewGate?: Promise<void>
+
+  row(key: SandboxHandleKey): Row {
+    const id = keyOf(key)
+    let row = this.rows.get(id)
+    if (!row) {
+      row = { key, handle: null, owner: null, generation: 0, token: '', creating: false, cleanup: null }
+      this.rows.set(id, row)
+    }
+    return row
+  }
+
+  async claim(input: { key: SandboxHandleKey; leaseOwner: string; leaseForMs: number }) {
     this.claims++
-    if (this.owner) return null
-    if (this.creating) return { status: 'create-ambiguous' as const, key: input.key, generation: this.generation, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
-    this.owner = input.leaseOwner; this.key = input.key; this.generation++; this.token = `t${this.generation}`
-    return { status: 'claimed' as const, key: input.key, generation: this.generation, leaseOwner: input.leaseOwner, leaseToken: this.token, leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(), handle: this.handle, handleVersion: this.handle ? 1 : null, cleanup: null } satisfies SandboxHandleLease
+    const row = this.row(input.key)
+    if (row.owner) return null
+    if (row.creating) {
+      return { status: 'create-ambiguous' as const, key: input.key, generation: row.generation, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
+    }
+    row.owner = input.leaseOwner
+    row.generation++
+    row.token = `t${row.generation}`
+    return {
+      status: 'claimed' as const,
+      key: input.key,
+      generation: row.generation,
+      leaseOwner: input.leaseOwner,
+      leaseToken: row.token,
+      leaseExpiresAt: new Date(Date.now() + input.leaseForMs).toISOString(),
+      handle: row.handle,
+      handleVersion: row.handle ? 1 : null,
+      cleanup: row.cleanup,
+    } satisfies SandboxHandleLease
   }
-  async beginCreate() { this.creating = true; return { status: 'started' as const, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() } }
-  async renew() { return true }
-  async update(fence: SandboxHandleFence, handle: Uint8Array) { if (fence.leaseToken !== this.token) return false; this.handle = handle; this.creating = false; return true }
-  async release(fence: SandboxHandleFence) { if (fence.leaseToken !== this.token) return false; this.owner = null; return true }
-  async delete(fence: SandboxHandleFence) { if (fence.leaseToken !== this.token) return false; this.handle = null; this.creating = false; this.owner = null; return true }
+
+  async beginCreate(fence: SandboxHandleFence) {
+    const row = this.row(fence.key)
+    if (row.token !== fence.leaseToken) return null
+    row.creating = true
+    return { status: 'started' as const, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
+  }
+
+  async renew(fence: SandboxHandleFence) {
+    this.renewCalls++
+    this.concurrentRenews++
+    this.maxConcurrentRenews = Math.max(this.maxConcurrentRenews, this.concurrentRenews)
+    try {
+      await this.renewGate
+      return this.row(fence.key).token === fence.leaseToken && this.renewResult
+    } finally {
+      this.concurrentRenews--
+    }
+  }
+
+  async update(fence: SandboxHandleFence, handle: Uint8Array) {
+    const row = this.row(fence.key)
+    if (this.failUpdate || row.token !== fence.leaseToken) return false
+    row.handle = handle
+    row.creating = false
+    return true
+  }
+
+  async release(fence: SandboxHandleFence) {
+    this.releases++
+    if (this.failReleaseOnce) {
+      this.failReleaseOnce = false
+      throw new Error('release failed')
+    }
+    const row = this.row(fence.key)
+    if (row.token !== fence.leaseToken) return false
+    row.owner = null
+    return true
+  }
+
+  async delete(fence: SandboxHandleFence, cleanup: SandboxCleanupOutcome) {
+    const row = this.row(fence.key)
+    if (row.token !== fence.leaseToken) return false
+    row.cleanup = cleanup
+    if (cleanup.outcome !== 'succeeded') return false
+    row.handle = null
+    row.creating = false
+    row.owner = null
+    return true
+  }
 }
 
-function client(hostRoot: string, reportedRoot?: string) {
-  let creates = 0; let resumes = 0; let deletes = 0; let aborted = false
+function client(hostRoots: Map<string, string>, options: {
+  reportedRoot?: string
+  deleteResult?: AgentCoreDeleteResult
+  deleteError?: Error
+} = {}) {
+  let creates = 0
+  let resumes = 0
+  let deletes = 0
+  let execs = 0
+  let aborted = false
+  const handles = new Map<string, string>()
   const value: AgentCoreRuntimeClient = {
-    async createSession({ runtimeCwd }) { creates++; return { handle: encoder.encode('session-1'), runtimeCwd: reportedRoot ?? runtimeCwd } },
-    async resumeSession() { resumes++; return { runtimeCwd: reportedRoot ?? '/runtime/tenant/ws' } },
-    async exec({ command, cwd, options }): Promise<import('@hachej/boring-agent/shared').ExecResult> {
-      if (command === 'wait') return await new Promise<never>((_, reject) => options?.signal?.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')) }, { once: true }))
-      const relative = command.replace(/^cat /, '')
-      const content = await readFile(join(hostRoot, relative), 'utf8')
-      return { exitCode: 0, stdout: encoder.encode(content), stderr: encoder.encode(''), truncated: false, durationMs: 1 }
+    async createSession({ runtimeCwd, signal }) {
+      if (signal.aborted) throw signal.reason
+      creates++
+      const handle = encoder.encode(`session-${creates}`)
+      handles.set(decoder.decode(handle), runtimeCwd)
+      return { handle, runtimeCwd: options.reportedRoot ?? runtimeCwd }
     },
-    async deleteSession() { deletes++ },
+    async resumeSession({ handle, signal }) {
+      if (signal.aborted) throw signal.reason
+      resumes++
+      return { runtimeCwd: options.reportedRoot ?? handles.get(decoder.decode(handle)) ?? '/runtime/tenant/ws' }
+    },
+    async exec({ command, cwd, options: execOptions }) {
+      execs++
+      if (execOptions?.signal?.aborted) throw execOptions.signal.reason
+      if (command === 'wait') {
+        return await new Promise<never>((_, reject) => execOptions?.signal?.addEventListener('abort', () => {
+          aborted = true
+          reject(execOptions.signal?.reason ?? new Error('aborted'))
+        }, { once: true }))
+      }
+      const root = [...hostRoots.entries()].find(([runtimeRoot]) => cwd === runtimeRoot || cwd.startsWith(`${runtimeRoot}/`))?.[1]
+      if (!root) throw new Error(`no host root for ${cwd}`)
+      const relative = command.replace(/^sha256sum /, '').replace(/^cat /, '')
+      const content = await readFile(join(root, relative))
+      const stdout = command.startsWith('sha256sum ')
+        ? encoder.encode(`${createHash('sha256').update(content).digest('hex')}  ${relative}\n`)
+        : content
+      return { exitCode: 0, stdout, stderr: encoder.encode(''), truncated: false, durationMs: 1 }
+    },
+    async deleteSession() {
+      deletes++
+      if (options.deleteError) throw options.deleteError
+      return options.deleteResult
+    },
   }
-  return { value, stats: () => ({ creates, resumes, deletes, aborted }) }
+  return { value, stats: () => ({ creates, resumes, deletes, execs, aborted }) }
 }
 
-async function fixture(workspace = 'ws') {
+async function fixture(workspace = 'ws', overrides: {
+  runtimeRoot?: string
+  store?: Store
+  remote?: ReturnType<typeof client>
+  leaseForMs?: number
+} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'agentcore-efs-'))
+  roots.push(root)
   const hostRoot = join(root, 'tenant', workspace)
   await mkdir(hostRoot, { recursive: true })
-  const store = new Store(); const remote = client(hostRoot)
-  const adapter = createAgentCoreRemoteEfsRuntimeMode({ hostScope: 'app', tenantId: 'tenant', accessPointRoot: root, runtimeRoot: '/runtime', handleStore: store, agentCore: remote.value, leaseOwner: 'host-1' })
-  return { root, hostRoot, store, remote, adapter, context: { workspaceId: workspace, workspaceRoot: hostRoot, sessionId: 's' } }
+  const runtimeRoot = `${overrides.runtimeRoot ?? '/runtime'}/tenant/${workspace}`
+  const store = overrides.store ?? new Store()
+  const remote = overrides.remote ?? client(new Map([[runtimeRoot, hostRoot]]))
+  const adapter = createAgentCoreRemoteEfsRuntimeMode({
+    hostScope: 'app', tenantId: 'tenant', accessPointRoot: root,
+    runtimeRoot: overrides.runtimeRoot ?? '/runtime', handleStore: store,
+    agentCore: remote.value, leaseOwner: 'host-1', leaseForMs: overrides.leaseForMs,
+  })
+  return { root, hostRoot, runtimeRoot, store, remote, adapter, context: { workspaceId: workspace, workspaceRoot: hostRoot, sessionId: 's' } }
 }
 
-describe('application-owned AgentCore shared-EFS mode', () => {
-  it('sees the same file through local Workspace and fake remote exec, then resumes after restart', async () => {
-    const f = await fixture(); await writeFile(join(f.hostRoot, 'proof'), 'same-digest')
+afterEach(async () => {
+  vi.useRealTimers()
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
+
+describe('application-owned shared-EFS runtime modes', () => {
+  it('has local and remote conformance over one EFS namespace with a shared SHA-256', async () => {
+    const f = await fixture()
+    const bytes = randomBytes(64)
+    await writeFile(join(f.hostRoot, 'proof'), bytes)
+    const expected = createHash('sha256').update(bytes).digest('hex')
+
+    const local = createEcsLocalEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+    })
+    const localPair = await local.create(f.context)
+    expect(createHash('sha256').update(await localPair.workspace.readFileBuffer('proof')).digest('hex')).toBe(expected)
+    expect(decoder.decode((await localPair.sandbox.exec('sha256sum proof')).stdout)).toContain(expected)
+    await localPair.disposeRuntime?.()
+
+    const remotePair = await f.adapter.create(f.context)
+    expect(remotePair.workspace.root).toBe(f.runtimeRoot)
+    expect(createHash('sha256').update(await remotePair.workspace.readFileBuffer('proof')).digest('hex')).toBe(expected)
+    expect(decoder.decode((await remotePair.sandbox.exec('sha256sum proof')).stdout)).toContain(expected)
+    await remotePair.disposeRuntime?.()
+    expect(f.remote.stats().deletes).toBe(0)
+    await expect(lstat(f.hostRoot)).resolves.toBeDefined()
+  })
+
+  it.each(['/runtime/', '/runtime//root', '/runtime/./root', '/runtime/../runtime'])('rejects noncanonical remote root %s before acquisition', async (runtimeRoot) => {
+    const f = await fixture('ws', { runtimeRoot })
+    await expect(f.adapter.create(f.context)).rejects.toThrow(/canonical POSIX/)
+    expect(f.store.claims).toBe(0)
+  })
+
+  it.each([
+    '/runtime/tenant/ws/../other',
+    '/runtime/tenant/ws//nested',
+    '/runtime/tenant/ws/./nested',
+    '/runtime/tenant/other',
+    'relative',
+  ])('rejects noncanonical or escaping exec cwd %s without calling the client', async (cwd) => {
+    const f = await fixture()
+    const pair = await f.adapter.create(f.context)
+    await expect(pair.sandbox.exec('cat proof', { cwd })).rejects.toThrow(/canonical POSIX|escaped/)
+    expect(f.remote.stats().execs).toBe(0)
+    await pair.disposeRuntime?.()
+  })
+
+  it('rejects an already-aborted exec before calling the client', async () => {
+    const f = await fixture()
+    const pair = await f.adapter.create(f.context)
+    const controller = new AbortController()
+    controller.abort(new Error('caller aborted'))
+    await expect(pair.sandbox.exec('cat proof', { signal: controller.signal })).rejects.toThrow('caller aborted')
+    expect(f.remote.stats().execs).toBe(0)
+    await pair.disposeRuntime?.()
+  })
+
+  it('preflights every EFS namespace component and rejects symlinks before remote acquisition', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agentcore-efs-link-'))
+    roots.push(root)
+    const target = join(root, 'target')
+    await mkdir(join(target, 'ws'), { recursive: true })
+    await symlink(target, join(root, 'tenant'))
+    const store = new Store()
+    const remote = client(new Map())
+    const adapter = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: root, runtimeRoot: '/runtime',
+      handleStore: store, agentCore: remote.value, leaseOwner: 'host-1',
+    })
+    await expect(adapter.create({ workspaceId: 'ws', workspaceRoot: join(root, 'tenant', 'ws'), sessionId: 's' }))
+      .rejects.toThrow(/symlink/)
+    expect(store.claims).toBe(0)
+  })
+
+  it('resumes after reconstructed adapter/client state and renews the fence before publishing', async () => {
+    const f = await fixture()
     const first = await f.adapter.create(f.context)
-    expect(first.workspace.root).toBe('/runtime/tenant/ws')
-    expect(await first.workspace.readFile('proof')).toBe('same-digest')
-    expect(decoder.decode((await first.sandbox.exec('cat proof')).stdout)).toBe('same-digest')
     await first.disposeRuntime?.()
-    const second = await f.adapter.create(f.context)
-    expect(f.remote.stats()).toMatchObject({ creates: 1, resumes: 1 })
-    await second.disposeRuntime?.(); await rm(f.root, { recursive: true })
+    let releaseRenew!: () => void
+    f.store.renewGate = new Promise<void>((resolve) => { releaseRenew = resolve })
+    const restartedClient = client(new Map([[f.runtimeRoot, f.hostRoot]]))
+    // A reconstructed authenticated client can resume the opaque durable handle.
+    restartedClient.value.resumeSession = f.remote.value.resumeSession
+    const restarted = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+      handleStore: f.store, agentCore: restartedClient.value, leaseOwner: 'host-2',
+    })
+    const creating = restarted.create(f.context)
+    await vi.waitFor(() => expect(f.store.renewCalls).toBeGreaterThan(0))
+    let published = false
+    void creating.then(() => { published = true })
+    await Promise.resolve()
+    expect(published).toBe(false)
+    releaseRenew()
+    const second = await creating
+    await second.disposeRuntime?.()
   })
 
-  it('fails closed and cleans up a created session on path mismatch', async () => {
-    const f = await fixture(); const wrong = client(f.hostRoot, '/wrong')
-    const adapter = createAgentCoreRemoteEfsRuntimeMode({ hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime', handleStore: f.store, agentCore: wrong.value, leaseOwner: 'host-1' })
+  it('uses a serialized renewal loop and fence loss aborts and blocks execution', async () => {
+    const f = await fixture('ws', { leaseForMs: 30 })
+    const pair = await f.adapter.create(f.context)
+    f.store.renewResult = false
+    await vi.waitFor(() => expect(f.store.renewCalls).toBeGreaterThan(1))
+    await expect(pair.sandbox.exec('cat proof')).rejects.toThrow(/fence was lost/)
+    expect(f.remote.stats().execs).toBe(0)
+    expect(f.store.maxConcurrentRenews).toBe(1)
+    await expect(pair.disposeRuntime?.()).rejects.toThrow(/fence/)
+  })
+
+  it('drains an in-flight execution before release and refuses calls once disposal starts', async () => {
+    const f = await fixture()
+    const pair = await f.adapter.create(f.context)
+    const pending = pair.sandbox.exec('wait')
+    const disposing = pair.disposeRuntime!()
+    await expect(pair.sandbox.exec('cat proof')).rejects.toThrow(/not active/)
+    await expect(pending).rejects.toThrow()
+    await disposing
+    expect(f.remote.stats().aborted).toBe(true)
+    expect(f.store.releases).toBe(1)
+  })
+
+  it('shares concurrent disposal and leaves a failed disposal retryable', async () => {
+    const store = new Store()
+    store.failReleaseOnce = true
+    const f = await fixture('ws', { store })
+    const pair = await f.adapter.create(f.context)
+    const first = pair.disposeRuntime!()
+    const concurrent = pair.disposeRuntime!()
+    await expect(first).rejects.toThrow('release failed')
+    await expect(concurrent).rejects.toThrow('release failed')
+    expect(store.releases).toBe(1)
+    await expect(pair.disposeRuntime!()).resolves.toBeUndefined()
+    expect(store.releases).toBe(2)
+  })
+
+  it.each([
+    [{ outcome: 'failed', detail: 'provider rejected delete' } satisfies AgentCoreDeleteResult, 'failed'],
+    [{ outcome: 'ambiguous', detail: 'provider timed out' } satisfies AgentCoreDeleteResult, 'ambiguous'],
+  ] as const)('records %s unpublished-session cleanup as durable retryable debt', async (deleteResult, outcome) => {
+    const f = await fixture()
+    const failing = client(new Map([[f.runtimeRoot, f.hostRoot]]), { reportedRoot: '/wrong', deleteResult })
+    const adapter = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+      handleStore: f.store, agentCore: failing.value, leaseOwner: 'host-1',
+    })
+    await expect(adapter.create(f.context)).rejects.toThrow(/cleanup/)
+    const row = [...f.store.rows.values()][0]!
+    expect(row.cleanup?.outcome).toBe(outcome)
+    expect(row.handle).not.toBeNull()
+    expect(row.owner).toBeNull()
+  })
+
+  it('centrally deletes and tombstones a newly created session after path failure', async () => {
+    const f = await fixture()
+    const wrong = client(new Map([[f.runtimeRoot, f.hostRoot]]), { reportedRoot: '/wrong' })
+    const adapter = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+      handleStore: f.store, agentCore: wrong.value, leaseOwner: 'host-1',
+    })
     await expect(adapter.create(f.context)).rejects.toThrow('does not match')
-    expect(wrong.stats().deletes).toBe(1); expect(f.store.handle).toBeNull()
-    await rm(f.root, { recursive: true })
+    expect(wrong.stats().deletes).toBe(1)
+    const row = [...f.store.rows.values()][0]!
+    expect(row.cleanup?.outcome).toBe('succeeded')
+    expect(row.handle).toBeNull()
   })
 
-  it('isolates provider/mode/workspace keys and rejects concurrent ownership', async () => {
-    const f = await fixture(); const first = await f.adapter.create(f.context)
-    await expect(f.adapter.create(f.context)).rejects.toThrow('owned by another runtime')
-    expect(f.store.key).toEqual({ hostScope: 'app', workspaceId: 'ws', provider: 'aws-agentcore', mode: 'factory:agentcore-remote-efs' })
-    const isolated = createAgentCoreRemoteEfsRuntimeMode({ hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime', handleStore: f.store, agentCore: f.remote.value, leaseOwner: 'x' })
-    await expect(isolated.create({ ...f.context, workspaceId: 'other', workspaceRoot: join(f.root, 'tenant', 'other') })).rejects.toThrow('owned by another runtime')
-    await first.disposeRuntime?.(); await rm(f.root, { recursive: true })
+  it('cleans up a created session when durable handle publication loses its fence', async () => {
+    const store = new Store()
+    store.failUpdate = true
+    const f = await fixture('ws', { store })
+    await expect(f.adapter.create(f.context)).rejects.toThrow(/fence/)
+    expect(f.remote.stats().deletes).toBe(1)
   })
 
-  it('aborts in-flight remote execution when the atomic pair is disposed', async () => {
-    const f = await fixture(); const pair = await f.adapter.create(f.context)
-    const pending = pair.sandbox.exec('wait'); await pair.disposeRuntime?.()
-    await expect(pending).rejects.toThrow('aborted'); expect(f.remote.stats().aborted).toBe(true)
-    await rm(f.root, { recursive: true })
+  it('allows distinct workspace keys to acquire independently while rejecting one key twice', async () => {
+    const store = new Store()
+    const first = await fixture('one', { store })
+    const secondRoot = join(first.root, 'tenant', 'two')
+    await mkdir(secondRoot, { recursive: true })
+    const runtimeRoots = new Map([[first.runtimeRoot, first.hostRoot], ['/runtime/tenant/two', secondRoot]])
+    const remote = client(runtimeRoots)
+    const adapter = createAgentCoreRemoteEfsRuntimeMode({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: first.root, runtimeRoot: '/runtime',
+      handleStore: store, agentCore: remote.value, leaseOwner: 'host-1',
+    })
+    const one = await adapter.create(first.context)
+    const two = await adapter.create({ workspaceId: 'two', workspaceRoot: secondRoot, sessionId: 's2' })
+    await expect(adapter.create(first.context)).rejects.toThrow('owned by another runtime')
+    expect([...store.rows.values()].map((row) => row.key.workspaceId).sort()).toEqual(['one', 'two'])
+    await Promise.all([one.disposeRuntime?.(), two.disposeRuntime?.()])
   })
 })
