@@ -295,6 +295,55 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
 })
 
 describe('SqliteAgentRequestLedger', () => {
+  it('migrates legacy active rows and raw-key tombstones for every canonical effect across reopen', async () => {
+    const path = join(tmpdir(), `legacy-accepted-work-${randomUUID()}.sqlite`)
+    const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const legacy = new SqliteDatabaseSync(path) as DatabaseSync
+    legacy.exec(`
+      CREATE TABLE agent_request_ledger (request_key TEXT PRIMARY KEY, digest TEXT NOT NULL, state TEXT NOT NULL, record_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE agent_request_tombstones (request_key TEXT PRIMARY KEY, digest TEXT NOT NULL, key_json TEXT NOT NULL, pruned_at INTEGER NOT NULL);
+    `)
+    const keys = AGENT_GATEWAY_EFFECTS.map((operation, index): AgentRequestKey => ({
+      ...key,
+      operation,
+      target: operation === 'session.create' || operation === 'agent.reload'
+        ? { kind: 'agent', agentTypeId: 'alpha' }
+        : { kind: 'session', ref: { agentTypeId: 'alpha', sessionId: `session-${index}` } },
+      requestId: `legacy-${operation}`,
+    }))
+    const storageKey = (requestKey: AgentRequestKey) => JSON.stringify([
+      requestKey.workspaceScopeId, requestKey.authSubjectId, requestKey.operation, requestKey.target.kind,
+      requestKey.target.kind === 'agent' ? requestKey.target.agentTypeId : [requestKey.target.ref.agentTypeId, requestKey.target.ref.sessionId],
+      requestKey.requestId,
+    ])
+    for (const [index, requestKey] of keys.entries()) {
+      const id = storageKey(requestKey)
+      legacy.prepare('INSERT INTO agent_request_ledger VALUES (?, ?, ?, ?, ?)').run(
+        id, `active-${index}`, 'pending-admission', JSON.stringify({ key: requestKey, digest: `active-${index}`, state: 'pending-admission', updatedAt: index }), index,
+      )
+      const tombstoneKey = { ...requestKey, requestId: `${requestKey.requestId}-tombstone` }
+      legacy.prepare('INSERT INTO agent_request_tombstones VALUES (?, ?, ?, ?)').run(
+        storageKey(tombstoneKey), `tombstone-${index}`, JSON.stringify(tombstoneKey), index,
+      )
+    }
+    legacy.close()
+
+    // Construction invokes the production migrateLegacyAcceptedWork path.
+    new SqliteAgentRequestLedger(path).close()
+    const reopened = new SqliteAgentRequestLedger(path)
+    try {
+      for (const [index, requestKey] of keys.entries()) {
+        expect((await reopened.read(requestKey))?.acceptedWork).toEqual(acceptedFor(requestKey))
+        const tombstoneKey = { ...requestKey, requestId: `${requestKey.requestId}-tombstone` }
+        expect((await reopened.read(tombstoneKey))?.acceptedWork).toEqual(acceptedFor(tombstoneKey))
+        expect((await reopened.read(tombstoneKey))?.digest).toBe(`tombstone-${index}`)
+      }
+    } finally {
+      reopened.close()
+      rmSync(path, { force: true }); rmSync(`${path}-wal`, { force: true }); rmSync(`${path}-shm`, { force: true })
+    }
+  })
+
   it('atomically elects one retry owner across concurrent connections and starts only its effect', async () => {
     const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
     const setup = new SqliteAgentRequestLedger(path)

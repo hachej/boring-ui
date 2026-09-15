@@ -42,8 +42,6 @@ export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispat
 /** Single runtime and type-level source of truth for gateway operations persisted in request keys. */
 export const AGENT_GATEWAY_EFFECTS = [
   'session.create',
-  'session.list',
-  'session.get',
   'session.rename',
   'session.archive',
   'session.delete',
