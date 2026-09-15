@@ -116,3 +116,44 @@ describe('PiConversationSurface messages-only status line', () => {
     expect(screen.getByTestId('tool-call-group')).toBeTruthy()
   })
 })
+
+describe('messages-only, one tool opted back in', () => {
+  const askTurn: BoringChatMessage = {
+    id: 'assistant-2',
+    role: 'assistant',
+    parts: [
+      { type: 'tool-call', id: 'call-read', toolName: 'read', state: 'output-available', input: {} },
+      { type: 'tool-call', id: 'call-ask', toolName: 'ask_user', state: 'input-available', input: { title: 'Which one?' } },
+      { type: 'text', text: 'Pick one and I will continue.' },
+    ],
+  }
+
+  const renderAsk = (visible?: readonly string[]) =>
+    render(
+      <PiTimelineMessage
+        message={askTurn}
+        isLast
+        isStreaming={false}
+        showThoughts
+        renderMode="messages-only"
+        toolRenderers={{
+          ask_user: Object.assign(() => <div data-testid="question-card">Which one?</div>, { presentation: 'inline' as const }),
+        }}
+        {...(visible ? { messagesOnlyVisibleTools: visible } : {})}
+      />,
+    )
+
+  test('stays hidden by default, so the mode is unchanged for every other host', () => {
+    renderAsk()
+    expect(screen.queryByTestId('question-card')).toBeNull()
+    expect(screen.queryByTestId('tool-call-group')).toBeNull()
+  })
+
+  test('renders the opted-in tool with the host renderer, and nothing else', () => {
+    renderAsk(['ask_user'])
+    expect(screen.getByTestId('question-card')).toBeTruthy()
+    // The other tool call is still machinery, and never joins a group summary.
+    expect(screen.queryByTestId('tool-call-group')).toBeNull()
+    expect(screen.getByText('Pick one and I will continue.')).toBeTruthy()
+  })
+})

@@ -10,6 +10,10 @@ export default defineConfig({
     alias: [
       { find: /^@hachej\/boring-agent\/server$/, replacement: resolve(repositoryRoot, 'packages/agent/src/server/index.ts') },
       { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repositoryRoot, 'packages/agent/src/shared/index.ts') },
+      // The ask-user plugin's server core needs exactly one schema from the
+      // workspace package. Point it at that source module so these tests run
+      // without building (or depending on) the whole workspace.
+      { find: /^@hachej\/boring-workspace\/shared$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/shared/artifacts/humanArtifact.ts') },
       { find: /^@hachej\/boring-bash\/server$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/server/index.ts') },
       { find: /^@hachej\/boring-bash\/agent$/, replacement: resolve(repositoryRoot, 'packages/boring-bash/src/agent/index.ts') },
       sandboxSourceAlias,

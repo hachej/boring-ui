@@ -162,6 +162,12 @@ export interface PiChatPanelProps<
    * while a turn streams. Defaults to `full`, so existing hosts are unchanged.
    */
   renderMode?: ChatRenderMode
+  /**
+   * Tool names that stay visible under `renderMode="messages-only"`. Empty by
+   * default. Pair each with a renderer in `toolRenderers`: the host opts a tool
+   * back in when the call is itself something the user must see and act on.
+   */
+  messagesOnlyVisibleTools?: readonly string[]
   debug?: boolean
   showSessions?: boolean
   hotReloadEnabled?: boolean
@@ -234,6 +240,7 @@ export function PiChatPanel<
   className,
   chrome = true,
   renderMode = 'full',
+  messagesOnlyVisibleTools,
   debug = false,
   showSessions,
   hotReloadEnabled = true,
@@ -1432,6 +1439,7 @@ export function PiChatPanel<
               onRestoreDraft={setComposerDraft}
               windowResetKey={activeSessionId}
               renderMode={renderMode}
+              messagesOnlyVisibleTools={messagesOnlyVisibleTools}
             />
 
             {composerSurface}

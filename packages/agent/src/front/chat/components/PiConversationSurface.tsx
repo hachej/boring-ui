@@ -56,6 +56,7 @@ export interface PiConversationSurfaceProps {
   windowResetKey?: string
   /** `messages-only` hides reasoning/tool parts and shows one quiet working line while streaming. */
   renderMode?: ChatRenderMode
+  messagesOnlyVisibleTools?: readonly string[]
 }
 
 export function PiConversationSurface({
@@ -78,6 +79,7 @@ export function PiConversationSurface({
   onRestoreDraft,
   windowResetKey,
   renderMode = 'full',
+  messagesOnlyVisibleTools,
 }: PiConversationSurfaceProps) {
   const messageItems = buildMessageRenderItems(messages)
   const total = messageItems.length
@@ -150,6 +152,7 @@ export function PiConversationSurface({
             mentionCatalog={mentionCatalog}
             onMentionActivate={onMentionActivate}
             renderMode={renderMode}
+            messagesOnlyVisibleTools={messagesOnlyVisibleTools}
           />
         ))}
         {renderMode === 'messages-only' && isStreaming ? (

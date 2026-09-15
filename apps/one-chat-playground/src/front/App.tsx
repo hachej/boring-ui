@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Resizer, useChatSize, useIsMobile } from './Resizer'
 import { ChatPanel as PiChatPanel } from '@hachej/boring-agent/front'
 
+import { QuestionCard } from './QuestionCard'
+import { resolveQuestionCardState } from './askUserCard'
+import { useAskUser } from './useAskUser'
 import { Stage } from './Stage'
 import { resolvePinnedSessionId } from './session'
 import { useStage } from './useStage'
 
 const AGENT_TYPE_ID = 'default'
+/** The only tool the user sees: a question they have to answer. */
+const VISIBLE_TOOLS = ['ask_user'] as const
 
 declare global {
   interface Window {
@@ -22,9 +27,34 @@ export function App() {
   const stage = useStage()
   const mobile = useIsMobile()
   const chat = useChatSize(mobile)
+  const askUser = useAskUser()
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionError, setSessionError] = useState<string | null>(null)
   const baseUrl = window.__ONE_CHAT_BASE_URL__ ?? 'http://127.0.0.1:5321/'
+
+  // The agent's turn is blocked on the answer, so the composer is too: one
+  // question at a time, answered where it was asked.
+  const composerBlockers = useMemo(
+    () => askUser.pending.map((question) => ({
+      id: `ask-user:${question.questionId}`,
+      reason: 'ask-user.question',
+      label: question.title ?? 'Answer the question above to continue.',
+    })),
+    [askUser.pending],
+  )
+
+  const toolRenderers = useMemo(() => ({
+    ask_user: Object.assign(
+      (part: { toolCallId: string; state: string; output?: unknown }) => (
+        <QuestionCard
+          state={resolveQuestionCardState({ call: part, pending: askUser.pending, justAnswered: askUser.justAnswered })}
+          submitting={askUser.submitting !== null}
+          onAnswer={(question, values) => void askUser.submit(question, values)}
+        />
+      ),
+      { presentation: 'inline' as const },
+    ),
+  }), [askUser])
 
   useEffect(() => {
     let cancelled = false
@@ -64,6 +94,9 @@ export function App() {
             sessionId={sessionId}
             storageScope="one-chat"
             renderMode="messages-only"
+            messagesOnlyVisibleTools={VISIBLE_TOOLS}
+            toolRenderers={toolRenderers}
+            composerBlockers={composerBlockers}
             chrome={false}
             debug={false}
             showSessions={false}

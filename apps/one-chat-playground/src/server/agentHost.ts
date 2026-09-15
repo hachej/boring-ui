@@ -17,6 +17,7 @@ import type {
 } from '@hachej/boring-agent/shared'
 
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
+import { createAskUser } from './askUser.js'
 import { createInstructionsLoader } from './instructionsFile.js'
 import { createInstructionsTools } from './instructionsTool.js'
 import { createMemoryTools } from './memoryTools.js'
@@ -29,11 +30,15 @@ export const ONE_CHAT_WORKSPACE_SCOPE_ID = 'one-chat-playground'
 export const ONE_CHAT_AUTH_SUBJECT_ID = 'trusted-local'
 /** Pinned: one chat, one session, for the life of the app. */
 export const ONE_CHAT_SESSION_ID = 'one-chat'
+/** Skills that ship with the user's app, vendored into the workspace. */
+export const SKILLS_RELATIVE_DIR = path.join('.pi', 'skills')
 
 export interface OneChatRuntimeOptions {
   /** The user's app. The agent's read/write/edit/bash all act here. */
   readonly workspaceRoot: string
   readonly sessionRoot?: string
+  /** Where the pending-question record lives. Defaults under the session root. */
+  readonly askUserStatePath?: string
   /** Absolute path to the plain-language system prompt appended for this agent. */
   readonly systemPromptPath?: string
   readonly allowedOrigins?: readonly string[]
@@ -102,6 +107,12 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
   const stageTools = createStageTools({ bus: stage, allowedOrigins })
   const instructionsTools = createInstructionsTools({ workspaceRoot })
   const memoryTools = createMemoryTools({ workspaceRoot })
+  const askUser = createAskUser({
+    statePath: options.askUserStatePath
+      ?? path.join(options.sessionRoot ?? path.join(workspaceRoot, '.boring-agent'), 'ask-user.json'),
+    agentTypeId: ONE_CHAT_AGENT_TYPE_ID,
+    defaultSessionId: ONE_CHAT_SESSION_ID,
+  })
   let hostApp: FastifyInstance | undefined
   const sessions = createSessionTracker()
   const reloadOptions = {
@@ -147,7 +158,12 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         physicalBindingIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
         resourceInputDigest: JSON.stringify(['one-chat-playground', modeAdapter.id, workspaceRoot]),
         sessionNamespace: 'one-chat-playground',
-        extraTools: trackSessions([...stageTools, ...instructionsTools, ...memoryTools, reloadTool], sessions),
+        // The interview method the agent follows when a request is about the
+        // app itself. An explicit path rather than ambient discovery: this
+        // agent gets exactly the skills that ship with the user's app, and
+        // never whatever happens to sit in the host's home directory.
+        pi: { additionalSkillPaths: [path.join(workspaceRoot, SKILLS_RELATIVE_DIR)] },
+        extraTools: trackSessions([...stageTools, ...instructionsTools, ...memoryTools, askUser.tool, reloadTool], sessions),
         loadSystemPromptAppend: () => instructions.load(),
       }
     },
@@ -160,6 +176,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     }))
     app.get('/ready', async () => ({ status: 'ready' }))
     registerStageRoutes(app, stage)
+    await askUser.registerRoutes(app)
     await registerAgentHostEnvironmentRoutes(app, {
       created,
       authorizeAgentRequest: async () => scope,

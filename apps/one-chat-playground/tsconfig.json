@@ -15,7 +15,13 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "6.0",
+    // The ask-user plugin's server core is workspace-free except for one zod
+    // schema. Point that one specifier at its source module so this playground
+    // can reuse the plugin without building (or depending on) the workspace.
+    "paths": {
+      "@hachej/boring-workspace/shared": ["../../packages/workspace/src/shared/artifacts/humanArtifact.ts"]
+    }
   },
   "include": ["src", "e2e", "playwright.config.ts"],
   "exclude": ["node_modules", "sample-app"]
