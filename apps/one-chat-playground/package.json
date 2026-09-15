@@ -8,6 +8,7 @@
     "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build:dev",
     "dev": "pnpm run build:deps && pnpm run dev:app",
     "dev:app": "tsx src/server/index.ts",
+    "eval": "tsx eval/run.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"

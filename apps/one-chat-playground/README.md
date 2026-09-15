@@ -74,3 +74,7 @@ Out of scope in this cut: sandboxing (the agent runs in `direct` mode on the
 host), the Keep loop, git hiding, auth, and any workspace/Dockview shell.
 
 The standard app a user's agent builds on lives in `template-app/` (TanStack Start + SQLite/Drizzle + shadcn; `bash template-app/verify.sh`).
+
+## On-demand behavior eval
+
+`pnpm -C apps/one-chat-playground eval` runs the cases in `eval/cases.yaml` against the real host through its HTTP API. The runner restarts the host on ports 5360/5361 for each fresh workspace, prints pass/fail results, and writes a JSON report under `eval/reports/`. Use `--case <name>` for one case or `--keep` to retain its `.eval-workspaces/` copy. This spends model tokens and is intentionally not part of CI.
