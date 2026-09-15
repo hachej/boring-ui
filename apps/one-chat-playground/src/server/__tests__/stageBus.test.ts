@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createStageBus } from '../stageBus.js'
+import { devCspPolicy } from '../csp.js'
 
 describe('createStageBus', () => {
   it('fans an event out to every subscriber', () => {
@@ -35,5 +36,15 @@ describe('createStageBus', () => {
     bus.subscribe(healthy)
     expect(() => bus.emit({ type: 'stage.clear' })).not.toThrow()
     expect(healthy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('devCspPolicy', () => {
+  it('frames exactly what the show_on_screen allowlist permits', () => {
+    const policy = devCspPolicy(['http://localhost:*', 'http://127.0.0.1:*', 'http://[::1]:*', 'https://preview.test'])
+    expect(policy).toContain("frame-src 'self' http://localhost:* http://127.0.0.1:* https://preview.test")
+    // Bracketed IPv6 literals are not valid CSP host-sources.
+    expect(policy).not.toContain('[::1]')
+    expect(policy).toContain("default-src 'self'")
   })
 })

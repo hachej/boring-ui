@@ -3,10 +3,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import react from '@vitejs/plugin-react'
-import { applyCspHeaders } from '@hachej/boring-agent/server'
+import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
 import { createOneChatRuntime } from './agentHost.js'
+import { devCspPolicy } from './csp.js'
+import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const repoRoot = path.resolve(appRoot, '../..')
@@ -32,8 +34,12 @@ sampleApp.on('exit', (code) => {
   if (code && code !== 0) console.error(`[one-chat] sample app exited with code ${code}`)
 })
 
+const allowedOrigins = resolveAllowedOriginsFromEnv()
+const cspPolicy = devCspPolicy(allowedOrigins)
+
 const runtime = await createOneChatRuntime({
   workspaceRoot: sampleAppRoot,
+  allowedOrigins,
   sessionRoot,
   systemPromptPath: path.join(appRoot, 'prompts', 'system.md'),
 })
@@ -46,11 +52,12 @@ const vite = await createViteServer({
   root: appRoot,
   plugins: [
     react(),
+    tailwindcss(),
     {
       name: 'one-chat-index',
       configureServer(server) {
         server.middlewares.use((_req, res, next) => {
-          applyCspHeaders(res, { dev: true })
+          res.setHeader('Content-Security-Policy', cspPolicy)
           next()
         })
         server.middlewares.use(async (req, res, next) => {

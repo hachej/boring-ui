@@ -3,11 +3,26 @@
 /* Standard boring theme (light + dark --boring-* values + shadcn bridge). */
 @import '@hachej/boring-ui-kit/tokens.css' layer(base);
 
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
+/* Must match the selector the token palettes key on (ui-kit tokens.css and
+ * the agent front styles both use [data-theme="dark"]). */
+@custom-variant dark (&:is([data-theme="dark"], [data-theme="dark"] *));
+
+/* App-local Tailwind scan roots only. Agent classes ship precompiled via
+ * @hachej/boring-agent/front/styles.css, imported from main.tsx. */
+@source "./**/*.{ts,tsx}";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body, #root { height: 100%; margin: 0; }
+  body { background-color: var(--color-background); color: var(--color-foreground); }
 }
 
 /* Chat left, screen right. One column under a phone width. */
@@ -15,7 +30,6 @@ body,
   display: grid;
   grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
   height: 100%;
-  background: var(--background);
 }
 
 @media (max-width: 720px) {
