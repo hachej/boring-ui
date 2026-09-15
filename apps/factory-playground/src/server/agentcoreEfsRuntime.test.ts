@@ -95,6 +95,7 @@ class Store implements FencedSandboxHandleStore {
     if (row.handle) throw new Error('sandbox handle already exists')
     if (row.creating) return { status: 'create-ambiguous' as const, key: fence.key, generation: row.generation, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
     row.creating = true
+    if (row.cleanup?.outcome === 'succeeded') row.cleanup = null
     return { status: 'started' as const, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
   }
 
