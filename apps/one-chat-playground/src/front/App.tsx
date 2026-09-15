@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChatPanel as PiChatPanel } from '@hachej/boring-agent/front'
 
 import { ActivityStrip } from './ActivityStrip'
+import { ChatWindow } from './ChatWindow'
 import { AppRail } from './AppRail'
 import { QuestionCard } from './QuestionCard'
 import { Resizer, useChatSize, useIsMobile } from './Resizer'
@@ -38,7 +40,9 @@ export function App() {
       />
       <main className="one-chat-workspace">
         {apps.loading ? <div className="one-chat-boot">Opening your apps…</div> : null}
-        {!apps.loading && apps.activeApp ? <AppExperience key={apps.activeApp.slug} app={apps.activeApp} mobile={mobile} /> : null}
+        {!apps.loading && apps.activeApp ? (
+          <AppExperience key={`${apps.activeApp.slug}:${mobile ? 'phone' : 'desktop'}`} app={apps.activeApp} mobile={mobile} />
+        ) : null}
         {!apps.loading && !apps.activeApp ? (
           <div className="one-chat-no-app" data-testid="one-chat-no-app">
             <span>N</span>
@@ -59,6 +63,12 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
   const askUser = useAskUser(app.slug)
   const viewport = useVisualViewport()
   const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null)
+  const [chatMount] = useState(() => {
+    const element = document.createElement('div')
+    element.className = 'one-chat-chat-mount'
+    return element
+  })
+  const chatRootRef = useRef<HTMLDivElement>(null)
   const activityRef = useRef(stage.activity)
   activityRef.current = stage.activity
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -126,11 +136,16 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
       && event.kind === 'text'
       && typeof event.text === 'string'
       && event.text.trim().length > 0
-    const assistantMessageFinished = event.type === 'message-end'
-      && event.final?.role === 'assistant'
-      && event.final.parts?.some((part) => part.type === 'text' && typeof part.text === 'string' && part.text.trim())
+    const finalAssistantText = event.type === 'message-end' && event.final?.role === 'assistant'
+      ? event.final.parts
+        ?.filter((part) => part.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text as string)
+        .join('\n')
+        .trim() ?? ''
+      : ''
+    const assistantMessageFinished = finalAssistantText.length > 0
     if (assistantStartedWithText || assistantTextDelta || assistantTextFinished || assistantMessageFinished) clearWaitingActivity()
-    if (assistantMessageFinished) stage.markAssistantMessage()
+    if (assistantMessageFinished) stage.markAssistantMessage(finalAssistantText)
   }, [clearWaitingActivity, stage.markAssistantMessage])
 
   const toolRenderers = useMemo(() => ({
@@ -161,9 +176,58 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
     return () => { cancelled = true }
   }, [app.slug])
 
+  const desktopPresence = !mobile && stage.screen ? stage.chatPresence.mode : 'column'
+  const focusComposer = useCallback(() => {
+    chatRootRef.current?.querySelector<HTMLTextAreaElement>('[data-boring-agent-part="composer-input"]')?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (mobile || desktopPresence !== 'bar') return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      event.preventDefault()
+      focusComposer()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [desktopPresence, focusComposer, mobile])
+
+  useEffect(() => {
+    if (mobile || desktopPresence !== 'window') return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      stage.userCollapse()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [desktopPresence, mobile, stage.userCollapse])
+
+  const attachChat = useCallback((node: HTMLDivElement | null) => {
+    if (node) node.append(chatMount)
+  }, [chatMount])
+
   const chatSurface = (
-    <div className="one-chat-chat relative flex min-h-0 min-w-0 flex-col bg-background" data-testid="one-chat-chat">
-      {!mobile ? <ThemeToggle /> : null}
+    <div ref={chatRootRef} className="one-chat-chat relative flex min-h-0 min-w-0 flex-col bg-background" data-testid="one-chat-chat">
+      {!mobile && desktopPresence === 'column' ? (
+        stage.screen ? (
+          <div className="one-chat-header-controls">
+            <button
+              type="button"
+              className="one-chat-undock"
+              aria-label="Open chat window"
+              title="Open chat window"
+              data-testid="one-chat-column-to-window"
+              onClick={stage.userCollapse}
+            >
+              <WindowChevronIcon />
+            </button>
+            <ThemeToggle />
+          </div>
+        ) : <ThemeToggle />
+      ) : null}
       {sessionError ? <p className="m-4 text-[13px] text-muted-foreground" role="alert">{sessionError}</p> : null}
       {sessionId ? (
         <PiChatPanel
@@ -191,7 +255,7 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
             title: 'What would you like to build?',
             description: 'Describe it in your own words. Your colleague will take it from there.',
           }}
-          composerPlaceholder="Tell me what you need…"
+          composerPlaceholder="Tell me what to change…"
           composerActivity={stage.activity || thinkingStartedAt !== null
             ? <ActivityStrip builder={stage.activity} thinkingStartedAt={thinkingStartedAt} />
             : null}
@@ -214,7 +278,8 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
       data-resizing={chat.resizing ? '' : undefined}
       data-mobile={mobile ? '' : undefined}
       data-screen-visible={stage.screen ? '' : undefined}
-      data-chat-mode={mobile ? stage.mobileChat.mode : undefined}
+      data-chat-mode={mobile ? stage.chatPresence.mode : undefined}
+      data-chat-presence={!mobile ? desktopPresence : undefined}
       style={{
         ['--one-chat-chat-width' as string]: `${chat.width}px`,
         ...(mobile
@@ -232,42 +297,105 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
             <div
               className="one-chat-mobile-sheet"
               data-testid="one-chat-mobile-sheet"
-              aria-hidden={stage.mobileChat.mode === 'button' ? 'true' : undefined}
-              inert={stage.mobileChat.mode === 'button' ? true : undefined}
+              aria-hidden={stage.chatPresence.mode === 'button' ? 'true' : undefined}
+              inert={stage.chatPresence.mode === 'button' ? true : undefined}
             >
               <Resizer
                 orientation="horizontal"
-                mobileMode={stage.mobileChat.mode === 'full' ? 'full' : 'half'}
+                mobileMode={stage.chatPresence.mode === 'full' ? 'full' : 'half'}
                 onExpand={stage.expandChat}
                 onHide={stage.hideChat}
                 onResizingChange={chat.setResizing}
               />
-              {chatSurface}
+              <div ref={attachChat} className="one-chat-chat-slot" />
             </div>
             <button type="button" className="one-chat-launcher" aria-label="Open chat" data-testid="one-chat-launcher" onClick={stage.openChat}>
               <ColleagueIcon />
-              {stage.mobileChat.unseenAssistant ? <span className="one-chat-launcher-dot" data-testid="one-chat-unseen" /> : null}
+              {stage.chatPresence.unseenAssistant ? <span className="one-chat-launcher-dot" data-testid="one-chat-unseen" /> : null}
             </button>
           </>
-        ) : chatSurface
+        ) : <div ref={attachChat} className="one-chat-chat-slot" />
+      ) : !stage.screen ? <div ref={attachChat} className="one-chat-chat-slot" /> : desktopPresence === 'column' ? (
+        <>
+          <div ref={attachChat} className="one-chat-chat-slot" />
+          <Resizer
+            size={chat.size}
+            orientation="vertical"
+            onChange={chat.apply}
+            onReset={chat.reset}
+            onResizingChange={chat.setResizing}
+          />
+          <Stage screen={stage.screen} />
+        </>
       ) : (
         <>
-          {chatSurface}
-          {stage.screen ? (
-            <>
-              <Resizer
-                size={chat.size}
-                orientation="vertical"
-                onChange={chat.apply}
-                onReset={chat.reset}
-                onResizingChange={chat.setResizing}
-              />
-              <Stage screen={stage.screen} />
-            </>
-          ) : null}
+          <Stage screen={stage.screen} />
+          {desktopPresence === 'bar' ? (
+            <div
+              className="one-chat-bar"
+              data-testid="one-chat-bar"
+              onClick={(event) => {
+                const target = event.target as HTMLElement
+                if (!target.closest('button, input, textarea, select, a')) focusComposer()
+              }}
+            >
+              {stage.chatPresence.peek ? (
+                <button
+                  type="button"
+                  className="one-chat-reply-peek"
+                  data-testid="one-chat-reply-peek"
+                  aria-live="polite"
+                  onClick={stage.userExpand}
+                >
+                  <span className="one-chat-peek-speaker"><ColleagueIcon /></span>
+                  <span>{stage.chatPresence.peek}</span>
+                </button>
+              ) : null}
+              <div className="one-chat-bar-frame">
+                <div ref={attachChat} className="one-chat-bar-chat" />
+                <button
+                  type="button"
+                  className="one-chat-bar-expand"
+                  aria-label={stage.chatPresence.unseenAssistant ? 'Open chat window, new reply' : 'Open chat window'}
+                  title="Open chat window"
+                  data-testid="one-chat-bar-expand"
+                  onClick={stage.userExpand}
+                >
+                  <WindowChevronIcon />
+                  {stage.chatPresence.unseenAssistant ? <span className="one-chat-bar-dot" data-testid="one-chat-unseen" /> : null}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="one-chat-window"
+              data-testid="one-chat-window"
+              data-question-pending={stage.chatPresence.questionPending ? '' : undefined}
+            >
+              <ChatWindow
+                title="Colleague"
+                subtitle={app.title}
+                icon={<ColleagueIcon />}
+                ariaLabel={`Chat with your colleague about ${app.title}`}
+                onClose={stage.chatPresence.questionPending ? undefined : stage.userCollapse}
+                onDock={stage.userExpand}
+              >
+                <div ref={attachChat} className="one-chat-chat-slot" />
+              </ChatWindow>
+            </div>
+          )}
         </>
       )}
+      {createPortal(chatSurface, chatMount)}
     </div>
+  )
+}
+
+function WindowChevronIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m14.5 7-5 5 5 5" />
+    </svg>
   )
 }
 

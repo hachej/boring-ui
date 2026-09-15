@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { MobileChatMode } from '../shared/stage'
+import type { MobileChatPresence } from '../shared/stage'
 import {
   CHAT_WIDTH_DEFAULT,
   clampChatHeight,
@@ -79,7 +79,7 @@ interface ResizerProps {
   onReset?: () => void
   onResizingChange: (resizing: boolean) => void
   /** Phone snap state. When present, drag commits to half/full/button. */
-  mobileMode?: Exclude<MobileChatMode, 'button'>
+  mobileMode?: Exclude<MobileChatPresence, 'button'>
   onExpand?: () => void
   onHide?: () => void
 }

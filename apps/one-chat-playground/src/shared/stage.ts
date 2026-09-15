@@ -1,8 +1,4 @@
-/**
- * Host-driven screen state plus the existing phone chat-sheet state. The screen
- * begins absent: chat is home until the colleague deliberately shows an app or
- * preview through the stage bus.
- */
+/** Host-driven screen state plus the responsive chat-presence state machine. */
 
 export type StageScreenKind = 'app' | 'page'
 
@@ -23,20 +19,182 @@ export interface BuilderActivity {
   readonly startedAt: string
 }
 
-export type MobileChatMode = 'button' | 'half' | 'full'
+export type DesktopChatPresence = 'bar' | 'window' | 'column'
+export type MobileChatPresence = 'button' | 'half' | 'full'
+export type ChatPresence = DesktopChatPresence | MobileChatPresence
+export type ChatViewport = 'desktop' | 'phone'
 
-export interface MobileChatState {
-  readonly mode: MobileChatMode
-  readonly appReady: boolean
-  readonly unseenAssistant: boolean
+export interface ChatPresenceState {
+  readonly viewport: ChatViewport
+  readonly mode: ChatPresence
+  readonly remembered: boolean
+  readonly stageSeen: boolean
   readonly questionPending: boolean
+  readonly unseenAssistant: boolean
+  readonly peek: string | null
+  readonly replyVersion: number
+}
+
+export type ChatPresenceEvent =
+  | { readonly type: 'userExpand' }
+  | { readonly type: 'userCollapse' }
+  | { readonly type: 'colleagueNeedsRoom' }
+  | { readonly type: 'cardPending'; readonly pending: boolean }
+  | { readonly type: 'stageShown' }
+  | { readonly type: 'replyArrived'; readonly preview: string }
+  | { readonly type: 'peekExpired'; readonly replyVersion: number }
+  | { readonly type: 'restore'; readonly mode: MobileChatPresence }
+
+export function createInitialChatPresence(
+  viewport: ChatViewport,
+  rememberedDesktopMode: DesktopChatPresence | null = null,
+): ChatPresenceState {
+  return {
+    viewport,
+    mode: viewport === 'phone' ? 'full' : rememberedDesktopMode ?? 'column',
+    remembered: viewport === 'desktop' && rememberedDesktopMode !== null,
+    stageSeen: false,
+    questionPending: false,
+    unseenAssistant: false,
+    peek: null,
+    replyVersion: 0,
+  }
+}
+
+function clearReplyNotice(state: ChatPresenceState): Pick<ChatPresenceState, 'peek' | 'unseenAssistant'> {
+  return { peek: null, unseenAssistant: false }
+}
+
+/**
+ * One reducer owns both ladders. The phone keeps its existing snap behavior:
+ * collapse closes either open sheet, while desktop collapse moves down one rung.
+ */
+export function chatPresenceReducer(state: ChatPresenceState, event: ChatPresenceEvent): ChatPresenceState {
+  if (state.viewport === 'phone') return reducePhonePresence(state, event)
+  return reduceDesktopPresence(state, event)
+}
+
+function reduceDesktopPresence(state: ChatPresenceState, event: ChatPresenceEvent): ChatPresenceState {
+  switch (event.type) {
+    case 'userExpand': {
+      const mode = state.mode === 'bar' ? 'window' : state.mode === 'window' ? 'column' : 'column'
+      if (mode === state.mode && !state.peek && !state.unseenAssistant) return state
+      return { ...state, mode, remembered: true, ...clearReplyNotice(state) }
+    }
+    case 'userCollapse': {
+      const mode = state.mode === 'column'
+        ? 'window'
+        : state.mode === 'window' && !state.questionPending
+          ? 'bar'
+          : state.mode
+      if (mode === state.mode && !state.peek && !state.unseenAssistant) return state
+      return { ...state, mode, remembered: true, ...clearReplyNotice(state) }
+    }
+    case 'colleagueNeedsRoom':
+      if (state.mode !== 'bar') return state
+      return { ...state, mode: 'window', remembered: true, ...clearReplyNotice(state) }
+    case 'cardPending': {
+      const mode = event.pending && state.mode === 'bar' ? 'window' : state.mode
+      if (state.questionPending === event.pending && mode === state.mode) return state
+      return {
+        ...state,
+        mode,
+        remembered: state.remembered,
+        questionPending: event.pending,
+        ...(event.pending ? clearReplyNotice(state) : {}),
+      }
+    }
+    case 'stageShown': {
+      if (state.stageSeen) return state
+      const rememberedMode = state.remembered ? state.mode : 'bar'
+      const mode = state.questionPending && rememberedMode === 'bar' ? 'window' : rememberedMode
+      return { ...state, mode, remembered: true, stageSeen: true, ...clearReplyNotice(state) }
+    }
+    case 'replyArrived': {
+      if (state.mode !== 'bar') return state
+      return {
+        ...state,
+        peek: event.preview,
+        unseenAssistant: false,
+        replyVersion: state.replyVersion + 1,
+      }
+    }
+    case 'peekExpired':
+      if (event.replyVersion !== state.replyVersion || state.mode !== 'bar' || !state.peek) return state
+      return { ...state, peek: null, unseenAssistant: true }
+    case 'restore':
+      return state
+    default:
+      return state
+  }
+}
+
+function reducePhonePresence(state: ChatPresenceState, event: ChatPresenceEvent): ChatPresenceState {
+  switch (event.type) {
+    case 'userExpand': {
+      const mode = state.mode === 'button' ? 'half' : state.mode === 'half' ? 'full' : 'full'
+      if (mode === state.mode && !state.unseenAssistant) return state
+      return { ...state, mode, ...clearReplyNotice(state) }
+    }
+    case 'userCollapse': {
+      const mode = state.questionPending ? 'half' : 'button'
+      if (mode === state.mode) return state
+      return { ...state, mode }
+    }
+    case 'colleagueNeedsRoom':
+      if (state.mode !== 'button') return state
+      return { ...state, mode: 'half', ...clearReplyNotice(state) }
+    case 'cardPending': {
+      const mode = event.pending && state.mode === 'button' ? 'half' : state.mode
+      if (state.questionPending === event.pending && mode === state.mode) return state
+      return {
+        ...state,
+        mode,
+        questionPending: event.pending,
+        ...(event.pending ? clearReplyNotice(state) : {}),
+      }
+    }
+    case 'stageShown': {
+      const mode = state.questionPending
+        ? (state.mode === 'full' ? 'full' : 'half')
+        : 'button'
+      if (state.stageSeen && mode === state.mode) return state
+      return { ...state, mode, stageSeen: true, ...clearReplyNotice(state) }
+    }
+    case 'replyArrived':
+      if (state.mode !== 'button' || state.unseenAssistant) return state
+      return { ...state, unseenAssistant: true }
+    case 'peekExpired':
+      return state
+    case 'restore': {
+      const mode = state.questionPending && event.mode === 'button' ? 'half' : event.mode
+      if (mode === state.mode && (mode === 'button' || !state.unseenAssistant)) return state
+      return {
+        ...state,
+        mode,
+        unseenAssistant: mode === 'button' && state.unseenAssistant,
+        peek: null,
+      }
+    }
+    default:
+      return state
+  }
+}
+
+export function firstReplyLine(text: string): string {
+  return text.trim().split(/\r?\n/, 1)[0]?.trim() ?? ''
+}
+
+/** A newline or a line too wide for the detached window needs transcript room. */
+export function replyNeedsRoom(text: string): boolean {
+  const trimmed = text.trim()
+  return /\r?\n/.test(trimmed) || firstReplyLine(trimmed).length > 100
 }
 
 export interface StageState {
   /** Null means chat owns the available space. */
   readonly screen: StageScreen | null
   readonly activity: BuilderActivity | null
-  readonly mobileChat: MobileChatState
 }
 
 export type StageEvent =
@@ -45,10 +203,6 @@ export type StageEvent =
   | ({ readonly type: 'activity.started' } & Omit<BuilderActivity, 'milestone'>)
   | ({ readonly type: 'activity.verifying' | 'activity.done' } & Omit<BuilderActivity, 'milestone'>)
   | { readonly type: 'activity.clear' }
-  | { readonly type: 'app.ready' }
-  | { readonly type: 'chat.open' | 'chat.expand' | 'chat.hide' | 'chat.assistant' }
-  | { readonly type: 'chat.question'; readonly pending: boolean }
-  | { readonly type: 'chat.history'; readonly mode: MobileChatMode }
 
 export const STAGE_EVENT_TYPES = [
   'stage.show',
@@ -62,12 +216,6 @@ export const STAGE_EVENT_TYPES = [
 export const initialStageState: StageState = {
   screen: null,
   activity: null,
-  mobileChat: { mode: 'full', appReady: false, unseenAssistant: false, questionPending: false },
-}
-
-function hiddenChatMode(state: StageState): MobileChatMode {
-  if (!state.screen) return 'full'
-  return state.mobileChat.questionPending ? 'half' : 'button'
 }
 
 export function stageReducer(state: StageState, event: StageEvent): StageState {
@@ -77,24 +225,15 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
       if (!url) return state
       const title = event.title?.trim() || (event.what === 'app' ? 'Your app' : 'Preview')
       const screen = { what: event.what, url, title } as const
-      const mode = state.mobileChat.questionPending
-        ? (state.mobileChat.mode === 'full' ? 'full' : 'half')
-        : 'button'
       if (
         state.screen?.what === screen.what
         && state.screen.url === screen.url
         && state.screen.title === screen.title
-        && state.mobileChat.mode === mode
       ) return state
-      return { ...state, screen, mobileChat: { ...state.mobileChat, mode } }
+      return { ...state, screen }
     }
     case 'stage.clear':
-      if (state.screen === null && state.mobileChat.mode === 'full') return state
-      return {
-        ...state,
-        screen: null,
-        mobileChat: { ...state.mobileChat, mode: 'full', appReady: false, unseenAssistant: false },
-      }
+      return state.screen === null ? state : { ...state, screen: null }
     case 'activity.started':
     case 'activity.verifying':
     case 'activity.done': {
@@ -111,49 +250,6 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
     }
     case 'activity.clear':
       return state.activity === null ? state : { ...state, activity: null }
-    case 'app.ready':
-      if (state.mobileChat.appReady) return state
-      return {
-        ...state,
-        mobileChat: { ...state.mobileChat, appReady: true, mode: hiddenChatMode(state) },
-      }
-    case 'chat.open':
-      if (!state.screen) return state
-      if (state.mobileChat.mode !== 'button' && !state.mobileChat.unseenAssistant) return state
-      return { ...state, mobileChat: { ...state.mobileChat, mode: 'half', unseenAssistant: false } }
-    case 'chat.expand':
-      if (state.mobileChat.mode === 'full' && !state.mobileChat.unseenAssistant) return state
-      return { ...state, mobileChat: { ...state.mobileChat, mode: 'full', unseenAssistant: false } }
-    case 'chat.hide': {
-      const mode = hiddenChatMode(state)
-      if (state.mobileChat.mode === mode) return state
-      return { ...state, mobileChat: { ...state.mobileChat, mode } }
-    }
-    case 'chat.assistant':
-      if (state.mobileChat.mode !== 'button' || state.mobileChat.unseenAssistant) return state
-      return { ...state, mobileChat: { ...state.mobileChat, unseenAssistant: true } }
-    case 'chat.question': {
-      const mode = event.pending && state.mobileChat.mode === 'button' ? 'half' : state.mobileChat.mode
-      if (state.mobileChat.questionPending === event.pending && mode === state.mobileChat.mode) return state
-      return {
-        ...state,
-        mobileChat: {
-          ...state.mobileChat,
-          questionPending: event.pending,
-          mode,
-          ...(event.pending ? { unseenAssistant: false } : {}),
-        },
-      }
-    }
-    case 'chat.history': {
-      const requested = state.screen ? event.mode : 'full'
-      const mode = state.mobileChat.questionPending && requested === 'button' ? 'half' : requested
-      if (state.mobileChat.mode === mode && (mode === 'button' || !state.mobileChat.unseenAssistant)) return state
-      return {
-        ...state,
-        mobileChat: { ...state.mobileChat, mode, unseenAssistant: mode === 'button' && state.mobileChat.unseenAssistant },
-      }
-    }
     default:
       return state
   }

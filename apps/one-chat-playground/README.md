@@ -12,6 +12,12 @@ Ports: front `5320` (`ONE_CHAT_PORT`); app servers use the inclusive
 nine ports). The agent API binds an ephemeral port behind the front's `/api`
 proxy.
 
+Chat follows the same three-rung presence ladder on both screen sizes. On phones
+it moves between button, half sheet, and full sheet. On desktop it moves between
+a bottom composer bar, a draggable chat window, and the docked left column; each
+app remembers its desktop rung, while replies and pending question cards may
+only raise the chat when they need room.
+
 Remote viewing: set `HOST=0.0.0.0` and `ONE_CHAT_PUBLIC_HOST=<ip or hostname the browser uses>`
 plus `ONE_CHAT_ALLOWED_ORIGINS=http://<that host>:*` so the app iframe and the
 `show_on_screen` allowlist both use an address the viewer can reach.

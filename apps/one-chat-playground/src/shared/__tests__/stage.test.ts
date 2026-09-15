@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  chatPresenceReducer,
+  createInitialChatPresence,
+  firstReplyLine,
   initialStageState,
   parseStageEvent,
+  replyNeedsRoom,
   stageReducer,
   type StageState,
 } from '../stage.js'
@@ -15,12 +19,8 @@ import {
 } from '../allowedOrigins.js'
 
 describe('stageReducer', () => {
-  it('starts full while the app is empty', () => {
-    expect(initialStageState).toEqual({
-      screen: null,
-      activity: null,
-      mobileChat: { mode: 'full', appReady: false, unseenAssistant: false, questionPending: false },
-    })
+  it('starts without a screen or activity', () => {
+    expect(initialStageState).toEqual({ screen: null, activity: null })
   })
 
   it('raises a sheet on stage.show', () => {
@@ -87,50 +87,101 @@ describe('stageReducer', () => {
     expect(stageReducer(done, { type: 'activity.clear' })).toEqual(initialStageState)
   })
 
-  it('moves button → half → full, then a downward hide returns to button', () => {
-    const shown = stageReducer(initialStageState, { type: 'stage.show', what: 'app', url: 'http://localhost:9/' })
-    const ready = stageReducer(shown, { type: 'app.ready' })
-    expect(ready.mobileChat.mode).toBe('button')
-    const half = stageReducer(ready, { type: 'chat.open' })
-    expect(half.mobileChat.mode).toBe('half')
-    const full = stageReducer(half, { type: 'chat.expand' })
-    expect(full.mobileChat.mode).toBe('full')
-    expect(stageReducer(full, { type: 'chat.hide' }).mobileChat.mode).toBe('button')
+  it('ignores unknown events', () => {
+    const state: StageState = initialStageState
+    expect(stageReducer(state, { type: 'stage.nope' } as never)).toBe(state)
+  })
+})
+
+describe('chatPresenceReducer', () => {
+  it('uses bar → window → column on desktop and lets the user move down one rung', () => {
+    const empty = createInitialChatPresence('desktop')
+    expect(empty.mode).toBe('column')
+
+    const bar = chatPresenceReducer(empty, { type: 'stageShown' })
+    expect(bar.mode).toBe('bar')
+    const windowed = chatPresenceReducer(bar, { type: 'userExpand' })
+    expect(windowed.mode).toBe('window')
+    const column = chatPresenceReducer(windowed, { type: 'userExpand' })
+    expect(column.mode).toBe('column')
+    expect(chatPresenceReducer(column, { type: 'userCollapse' }).mode).toBe('window')
+    expect(chatPresenceReducer(windowed, { type: 'userCollapse' }).mode).toBe('bar')
   })
 
-  it('collapses for stage.show and marks a new hidden assistant message unseen', () => {
-    const full = stageReducer(initialStageState, { type: 'chat.expand' })
-    const shown = stageReducer(full, { type: 'stage.show', what: 'page', url: 'http://localhost:9/sketch' })
-    expect(shown.mobileChat.mode).toBe('button')
-    const messaged = stageReducer(shown, { type: 'chat.assistant' })
-    expect(messaged.mobileChat.unseenAssistant).toBe(true)
-    expect(stageReducer(messaged, { type: 'chat.open' }).mobileChat).toMatchObject({
-      mode: 'half',
+  it('restores a remembered desktop rung when the stage first appears', () => {
+    const remembered = createInitialChatPresence('desktop', 'window')
+    expect(chatPresenceReducer(remembered, { type: 'stageShown' }).mode).toBe('window')
+  })
+
+  it('does not lower a remembered column when a card arrives before the stage', () => {
+    const rememberedColumn = createInitialChatPresence('desktop', 'column')
+    const pending = chatPresenceReducer(rememberedColumn, { type: 'cardPending', pending: true })
+    expect(chatPresenceReducer(pending, { type: 'stageShown' }).mode).toBe('column')
+
+    const newApp = createInitialChatPresence('desktop')
+    const newAppPending = chatPresenceReducer(newApp, { type: 'cardPending', pending: true })
+    expect(chatPresenceReducer(newAppPending, { type: 'stageShown' }).mode).toBe('window')
+  })
+
+  it('lets colleague events nudge desktop chat up but never down', () => {
+    const bar = chatPresenceReducer(createInitialChatPresence('desktop'), { type: 'stageShown' })
+    const windowed = chatPresenceReducer(bar, { type: 'colleagueNeedsRoom' })
+    expect(windowed.mode).toBe('window')
+    expect(chatPresenceReducer(windowed, { type: 'colleagueNeedsRoom' })).toBe(windowed)
+    const column = chatPresenceReducer(windowed, { type: 'userExpand' })
+    expect(chatPresenceReducer(column, { type: 'colleagueNeedsRoom' })).toBe(column)
+  })
+
+  it('keeps a pending card in window or column until answered', () => {
+    const bar = chatPresenceReducer(createInitialChatPresence('desktop'), { type: 'stageShown' })
+    const pending = chatPresenceReducer(bar, { type: 'cardPending', pending: true })
+    expect(pending.mode).toBe('window')
+    expect(chatPresenceReducer(pending, { type: 'userCollapse' }).mode).toBe('window')
+
+    const column = chatPresenceReducer(pending, { type: 'userExpand' })
+    expect(chatPresenceReducer(column, { type: 'userCollapse' }).mode).toBe('window')
+    const answered = chatPresenceReducer(pending, { type: 'cardPending', pending: false })
+    expect(chatPresenceReducer(answered, { type: 'userCollapse' }).mode).toBe('bar')
+  })
+
+  it('replaces a desktop peek, then folds only the current reply into an unseen dot', () => {
+    const bar = chatPresenceReducer(createInitialChatPresence('desktop'), { type: 'stageShown' })
+    const first = chatPresenceReducer(bar, { type: 'replyArrived', preview: 'First reply' })
+    const newest = chatPresenceReducer(first, { type: 'replyArrived', preview: 'Newest reply' })
+    expect(newest.peek).toBe('Newest reply')
+    expect(chatPresenceReducer(newest, { type: 'peekExpired', replyVersion: first.replyVersion })).toBe(newest)
+
+    const folded = chatPresenceReducer(newest, { type: 'peekExpired', replyVersion: newest.replyVersion })
+    expect(folded).toMatchObject({ mode: 'bar', peek: null, unseenAssistant: true })
+    expect(chatPresenceReducer(folded, { type: 'userExpand' })).toMatchObject({
+      mode: 'window',
       unseenAssistant: false,
     })
   })
 
-  it('keeps a pending question at least half open until it is answered', () => {
-    const button = stageReducer(initialStageState, { type: 'stage.show', what: 'app', url: 'http://localhost:9/' })
-    const pending = stageReducer(button, { type: 'chat.question', pending: true })
-    expect(pending.mobileChat.mode).toBe('half')
-    expect(stageReducer(pending, { type: 'chat.hide' }).mobileChat.mode).toBe('half')
-    expect(stageReducer(pending, { type: 'stage.show', what: 'page', url: 'http://localhost:9/sketch' }).mobileChat.mode).toBe('half')
-    const answered = stageReducer(pending, { type: 'chat.question', pending: false })
-    expect(stageReducer(answered, { type: 'chat.hide' }).mobileChat.mode).toBe('button')
+  it('keeps the existing phone button → half → full ladder and collapse behavior', () => {
+    const full = createInitialChatPresence('phone')
+    const button = chatPresenceReducer(full, { type: 'stageShown' })
+    expect(button.mode).toBe('button')
+    const half = chatPresenceReducer(button, { type: 'userExpand' })
+    expect(half.mode).toBe('half')
+    const open = chatPresenceReducer(half, { type: 'userExpand' })
+    expect(open.mode).toBe('full')
+    expect(chatPresenceReducer(open, { type: 'userCollapse' }).mode).toBe('button')
   })
 
-  it('restores phone modes from history without letting Back hide a pending question', () => {
-    const shown = stageReducer(initialStageState, { type: 'stage.show', what: 'app', url: 'http://localhost:9/' })
-    const ready = stageReducer(shown, { type: 'app.ready' })
-    expect(stageReducer(ready, { type: 'chat.history', mode: 'full' }).mobileChat.mode).toBe('full')
-    const pending = stageReducer(ready, { type: 'chat.question', pending: true })
-    expect(stageReducer(pending, { type: 'chat.history', mode: 'button' }).mobileChat.mode).toBe('half')
+  it('does not let phone history hide a pending card', () => {
+    const button = chatPresenceReducer(createInitialChatPresence('phone'), { type: 'stageShown' })
+    const pending = chatPresenceReducer(button, { type: 'cardPending', pending: true })
+    expect(pending.mode).toBe('half')
+    expect(chatPresenceReducer(pending, { type: 'restore', mode: 'button' }).mode).toBe('half')
   })
 
-  it('ignores unknown events', () => {
-    const state: StageState = initialStageState
-    expect(stageReducer(state, { type: 'stage.nope' } as never)).toBe(state)
+  it('recognises reply previews and replies that need transcript room', () => {
+    expect(firstReplyLine('  Short answer\nMore detail')).toBe('Short answer')
+    expect(replyNeedsRoom('Short answer')).toBe(false)
+    expect(replyNeedsRoom('Short answer\nMore detail')).toBe(true)
+    expect(replyNeedsRoom('x'.repeat(101))).toBe(true)
   })
 })
 
