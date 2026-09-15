@@ -219,16 +219,21 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
       const generation = row.generation + 1
       if (!Number.isSafeInteger(generation)) throw new Error('sandbox handle generation exhausted')
       const priorPayload = encryptedPayload(row)
-      const nextPayload = priorPayload
+      if (priorPayload !== null && row.handleState === null) {
+        throw new Error('fenced sandbox handle has incomplete publication state')
+      }
+      const priorPublishedPayload = row.handleState === 'published' ? priorPayload : null
+      const nextPayload = priorPublishedPayload
         ? this.cipher.encrypt(
             input.key,
             generation,
             row.handleVersion!,
-            this.cipher.decrypt(input.key, row.generation, row.handleVersion!, priorPayload),
+            this.cipher.decrypt(input.key, row.generation, row.handleVersion!, priorPublishedPayload),
           )
         : null
       const leaseToken = randomUUID()
       const recreated = row.tombstonedAt !== null
+      const abandonedUnpublishedHandle = priorPayload !== null && row.handleState === 'pending-validation'
       const updated = await tx
         .update(fencedSandboxHandles)
         .set({
@@ -242,7 +247,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
           encryptionVersion: nextPayload?.encryptionVersion ?? null,
           handleVersion: nextPayload ? row.handleVersion : null,
           handleState: nextPayload ? row.handleState : null,
-          ...(recreated
+          ...(recreated || abandonedUnpublishedHandle
             ? {
                 createAttemptIdempotencyKey: null,
                 createAttemptState: null,

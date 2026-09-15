@@ -258,6 +258,66 @@ describe('PostgresFencedSandboxHandleStore', () => {
     expect((await admin.listAudit(KEY)).map((entry) => entry.auditId)).not.toContain('stale-gen-one-delete')
   })
 
+  it('does not publish or delete an unpublished pending handle after delayed-delete takeover', async () => {
+    const { a, b, admin } = stores()
+    const pending = await claim(a, KEY, 'deleting-owner')
+    const pendingAttempt = await a.beginCreate(fence(pending))
+    expect(pendingAttempt?.status).toBe('started')
+    expect(await a.update(fence(pending), bytes('pending-provider-session'), 1)).toBe(true)
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 1,
+      hasHandle: true,
+      handleState: 'pending-validation',
+      createAttempt: { state: 'completed' },
+    })
+
+    let releaseProviderDelete!: () => void
+    const providerDeleteBarrier = new Promise<void>((resolve) => { releaseProviderDelete = resolve })
+    const delayedDelete = (async () => {
+      await providerDeleteBarrier
+      return a.delete(fence(pending), {
+        outcome: 'succeeded',
+        detail: 'provider delayed delete completed after successor takeover',
+        recordedAt: '2026-09-14T00:00:05.000Z',
+      })
+    })()
+
+    await expireLease(sqlA)
+    const successor = await claim(b, KEY, 'successor-owner')
+    expect(successor.generation).toBe(2)
+    expect(successor.handle).toBeNull()
+    expect(successor.handleState).toBeNull()
+    await expect(b.publish(fence(successor))).resolves.toBe(false)
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 2,
+      hasHandle: false,
+      handleState: null,
+      createAttempt: null,
+      tombstoned: false,
+    })
+
+    releaseProviderDelete()
+    await expect(delayedDelete).resolves.toBe(false)
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 2,
+      hasHandle: false,
+      cleanup: null,
+      tombstoned: false,
+    })
+
+    const successorAttempt = await b.beginCreate(fence(successor))
+    expect(successorAttempt?.status).toBe('started')
+    expect(await b.update(fence(successor), bytes('successor-provider-session'), 2)).toBe(true)
+    expect(await b.publish(fence(successor))).toBe(true)
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 2,
+      hasHandle: true,
+      handleState: 'published',
+      handleVersion: 2,
+      tombstoned: false,
+    })
+  })
+
   it('tombstones deletion, preserves receipt/generation, and rejects old ciphertext replay after recreation', async () => {
     const { a, b, admin } = stores()
     const lease = await claim(a)
