@@ -10,7 +10,10 @@ import {
   type SandboxHandleKey,
   type SandboxHandleLease,
 } from '../FencedSandboxHandleStore.js'
-import { PostgresFencedSandboxHandleStore } from '../PostgresFencedSandboxHandleStore.js'
+import {
+  PostgresFencedSandboxHandleAdmin,
+  PostgresFencedSandboxHandleStore,
+} from '../PostgresFencedSandboxHandleStore.js'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const HOST_SCOPE = `fenced-postgres-${process.pid}`
@@ -27,6 +30,12 @@ const fence = (lease: SandboxHandleLease) => ({
   key: lease.key,
   generation: lease.generation,
   leaseToken: lease.leaseToken,
+})
+const evidence = (auditId: string) => ({
+  auditId,
+  operatorId: 'operator@example.test',
+  detail: 'provider request log and console inspected',
+  recordedAt: '2026-09-14T00:00:04.000Z',
 })
 
 const BASE_CONFIG: CoreConfig = {
@@ -66,7 +75,30 @@ function stores() {
   return {
     a: new PostgresFencedSandboxHandleStore(drizzle(sqlA), cipher),
     b: new PostgresFencedSandboxHandleStore(drizzle(sqlB), cipher),
+    admin: new PostgresFencedSandboxHandleAdmin(drizzle(sqlA)),
   }
+}
+
+async function claim(
+  store: PostgresFencedSandboxHandleStore,
+  key = KEY,
+  leaseOwner = 'process-a',
+  leaseForMs = 10_000,
+): Promise<SandboxHandleLease> {
+  const result = await store.claim({ key, leaseOwner, leaseForMs })
+  if (!result || result.status !== 'claimed') throw new Error('expected successful claim')
+  return result
+}
+
+async function expireLease(sql: postgres.Sql, key = KEY) {
+  await sql`
+    UPDATE fenced_sandbox_handles
+    SET lease_expires_at = clock_timestamp() - interval '1 second'
+    WHERE host_scope = ${key.hostScope}
+      AND workspace_id = ${key.workspaceId}
+      AND provider = ${key.provider}
+      AND mode = ${key.mode}
+  `
 }
 
 beforeAll(async () => {
@@ -76,31 +108,114 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  if (sqlA) await sqlA`DELETE FROM fenced_sandbox_handles WHERE host_scope = ${HOST_SCOPE}`
+  if (sqlA) {
+    await sqlA`DELETE FROM fenced_sandbox_handle_audit WHERE host_scope = ${HOST_SCOPE}`
+    await sqlA`DELETE FROM fenced_sandbox_handles WHERE host_scope = ${HOST_SCOPE}`
+  }
   await Promise.all([sqlA?.end(), sqlB?.end()])
 })
 
 beforeEach(async () => {
+  await sqlA`DELETE FROM fenced_sandbox_handle_audit WHERE host_scope = ${HOST_SCOPE}`
   await sqlA`DELETE FROM fenced_sandbox_handles WHERE host_scope = ${HOST_SCOPE}`
 })
 
 describe('PostgresFencedSandboxHandleStore', () => {
-  it('atomically admits one of two independently connected claimers and survives restart encrypted at rest', async () => {
-    const { a, b } = stores()
+  it('atomically admits one claimer and exposes plaintext/token only from that successful claim', async () => {
+    const { a, b, admin } = stores()
     const claims = await Promise.all([
       a.claim({ key: KEY, leaseOwner: 'process-a', leaseForMs: 10_000 }),
       b.claim({ key: KEY, leaseOwner: 'process-b', leaseForMs: 10_000 }),
     ])
-    expect(claims.filter(Boolean)).toHaveLength(1)
-    const winner = claims.find((claim): claim is SandboxHandleLease => claim !== null)
-    if (!winner) throw new Error('expected a winning claim')
-    expect(winner.generation).toBe(1)
+    const winners = claims.filter((result): result is SandboxHandleLease => result?.status === 'claimed')
+    expect(winners).toHaveLength(1)
+    expect(claims).toContain(null)
+    expect(winners[0]!.generation).toBe(1)
+    expect(a).not.toHaveProperty('get')
+    expect(a).not.toHaveProperty('reconcileDelete')
 
-    await (winner.leaseOwner === 'process-a' ? a : b).update(fence(winner), bytes(SECRET), 7)
-    const restarted = new PostgresFencedSandboxHandleStore(drizzle(sqlB), cipher)
-    expect(text((await restarted.get(KEY))!.handle)).toBe(SECRET)
+    const inspection = await admin.inspect(KEY)
+    expect(inspection).toMatchObject({ generation: 1, hasHandle: false })
+    expect(inspection).not.toHaveProperty('leaseToken')
+    expect(inspection).not.toHaveProperty('handle')
+  })
+
+  it('survives restart encrypted at rest and fences stale mutations after expiry takeover', async () => {
+    const { a, b } = stores()
+    const oldLease = await claim(a, KEY, 'old-process')
+    const attempt = await a.beginCreate(fence(oldLease))
+    expect(attempt?.status).toBe('started')
+    await a.update(fence(oldLease), bytes(SECRET), 7)
 
     const [raw] = await sqlA<{
+      encrypted_handle: Uint8Array
+      encryption_nonce: Uint8Array
+      encryption_auth_tag: Uint8Array
+      encryption_version: number
+      handle_version: number
+      create_attempt_idempotency_key: string
+      create_attempt_state: string
+    }[]>`
+      SELECT encrypted_handle, encryption_nonce, encryption_auth_tag, encryption_version,
+             handle_version, create_attempt_idempotency_key, create_attempt_state
+      FROM fenced_sandbox_handles
+      WHERE host_scope = ${KEY.hostScope}
+        AND workspace_id = ${KEY.workspaceId}
+        AND provider = ${KEY.provider}
+        AND mode = ${KEY.mode}
+    `
+    expect(raw).toMatchObject({
+      encryption_version: 1,
+      handle_version: 7,
+      create_attempt_idempotency_key: attempt?.idempotencyKey,
+      create_attempt_state: 'completed',
+    })
+    expect(Buffer.from(raw!.encrypted_handle).includes(Buffer.from(SECRET))).toBe(false)
+    expect(raw!.encryption_nonce).toHaveLength(12)
+    expect(raw!.encryption_auth_tag).toHaveLength(16)
+
+    await expireLease(sqlA)
+    const restarted = new PostgresFencedSandboxHandleStore(drizzle(sqlB), cipher)
+    const nextLease = await claim(restarted, KEY, 'new-process')
+    expect(nextLease.generation).toBe(oldLease.generation + 1)
+    expect(text(nextLease.handle)).toBe(SECRET)
+    await expect(a.renew(fence(oldLease), 10_000)).resolves.toBe(false)
+    await expect(a.update(fence(oldLease), bytes('stale-write'), 2)).resolves.toBe(false)
+    await expect(a.release(fence(oldLease))).resolves.toBe(false)
+    await expect(a.delete(fence(oldLease), {
+      outcome: 'succeeded',
+      recordedAt: new Date().toISOString(),
+    })).resolves.toBe(false)
+  })
+
+  it('returns create-ambiguous after provider success crashes before handle persistence', async () => {
+    const { a, b, admin } = stores()
+    const lease = await claim(a, KEY, 'crashing-process')
+    const attempt = await a.beginCreate(fence(lease))
+    expect(attempt).toMatchObject({ status: 'started', idempotencyKey: expect.any(String) })
+    expect((await admin.inspect(KEY))?.createAttempt).toMatchObject({
+      state: 'started',
+      idempotencyKey: attempt?.idempotencyKey,
+    })
+
+    // The provider accepted create(attempt.idempotencyKey), then this owner crashed.
+    await expireLease(sqlA)
+    await expect(b.claim({ key: KEY, leaseOwner: 'replacement', leaseForMs: 10_000 })).resolves.toMatchObject({
+      status: 'create-ambiguous',
+      idempotencyKey: attempt?.idempotencyKey,
+      generation: lease.generation,
+    })
+    expect(await admin.reconcileCreateAbsent(KEY, evidence('audit-create-absent'))).toBe(true)
+    const replacement = await claim(b, KEY, 'replacement')
+    expect(replacement.generation).toBe(lease.generation + 1)
+  })
+
+  it('tombstones deletion, preserves receipt/generation, and rejects old ciphertext replay after recreation', async () => {
+    const { a, b, admin } = stores()
+    const lease = await claim(a)
+    await a.beginCreate(fence(lease))
+    await a.update(fence(lease), bytes(SECRET), 4)
+    const [old] = await sqlA<{
       encrypted_handle: Uint8Array
       encryption_nonce: Uint8Array
       encryption_auth_tag: Uint8Array
@@ -114,96 +229,65 @@ describe('PostgresFencedSandboxHandleStore', () => {
         AND provider = ${KEY.provider}
         AND mode = ${KEY.mode}
     `
-    expect(raw).toMatchObject({ encryption_version: 1, handle_version: 7 })
-    expect(Buffer.from(raw!.encrypted_handle).includes(Buffer.from(SECRET))).toBe(false)
-    expect(raw!.encryption_nonce).toHaveLength(12)
-    expect(raw!.encryption_auth_tag).toHaveLength(16)
-  })
-
-  it('increments generation on expiry takeover and fences the stale writer, releaser, and deleter', async () => {
-    const { a, b } = stores()
-    const oldLease = (await a.claim({ key: KEY, leaseOwner: 'old-process', leaseForMs: 10_000 }))!
-    await a.update(fence(oldLease), bytes(SECRET), 1)
-    await sqlA`
-      UPDATE fenced_sandbox_handles
-      SET lease_expires_at = clock_timestamp() - interval '1 second'
-      WHERE host_scope = ${KEY.hostScope}
-        AND workspace_id = ${KEY.workspaceId}
-        AND provider = ${KEY.provider}
-        AND mode = ${KEY.mode}
-    `
-
-    const nextLease = (await b.claim({ key: KEY, leaseOwner: 'new-process', leaseForMs: 10_000 }))!
-    expect(nextLease.generation).toBe(oldLease.generation + 1)
-    expect(text(nextLease.handle)).toBe(SECRET)
-    await expect(a.renew(fence(oldLease), 10_000)).resolves.toBeNull()
-    await expect(a.update(fence(oldLease), bytes('stale-write'), 2)).resolves.toBeNull()
-    await expect(a.release(fence(oldLease))).resolves.toBe(false)
-    await expect(a.delete(fence(oldLease), {
-      outcome: 'succeeded',
-      recordedAt: new Date().toISOString(),
-    })).resolves.toBe(false)
-    expect((await b.get(KEY))?.leaseToken).toBe(nextLease.leaseToken)
-    expect(text((await b.get(KEY))!.handle)).toBe(SECRET)
-  })
-
-  it('isolates provider and mode, rejects AAD replay, and persists cleanup debt before deletion', async () => {
-    const { a, b } = stores()
-    const lease = (await a.claim({ key: KEY, leaseOwner: 'cleanup-process', leaseForMs: 10_000 }))!
-    await a.update(fence(lease), bytes(SECRET), 4)
-
-    const otherKey = { ...KEY, provider: 'ecs', mode: 'ecs-local-efs' }
-    const otherLease = (await b.claim({ key: otherKey, leaseOwner: 'other-process', leaseForMs: 10_000 }))!
-    expect(otherLease.leaseToken).not.toBe(lease.leaseToken)
-    await sqlA`
-      UPDATE fenced_sandbox_handles AS target
-      SET encrypted_handle = source.encrypted_handle,
-          encryption_nonce = source.encryption_nonce,
-          encryption_auth_tag = source.encryption_auth_tag,
-          encryption_version = source.encryption_version,
-          handle_version = source.handle_version
-      FROM fenced_sandbox_handles AS source
-      WHERE target.host_scope = ${otherKey.hostScope}
-        AND target.workspace_id = ${otherKey.workspaceId}
-        AND target.provider = ${otherKey.provider}
-        AND target.mode = ${otherKey.mode}
-        AND source.host_scope = ${KEY.hostScope}
-        AND source.workspace_id = ${KEY.workspaceId}
-        AND source.provider = ${KEY.provider}
-        AND source.mode = ${KEY.mode}
-    `
-    await expect(b.get(otherKey)).rejects.toThrow()
 
     await expect(a.delete(fence(lease), {
       outcome: 'ambiguous',
       detail: 'provider timeout',
       recordedAt: '2026-09-14T00:00:01.000Z',
     })).resolves.toBe(false)
-    expect((await a.get(KEY))?.cleanup).toEqual({
-      outcome: 'ambiguous',
-      detail: 'provider timeout',
-      recordedAt: '2026-09-14T00:00:01.000Z',
-    })
-    await expect(a.delete(fence(lease), {
-      outcome: 'failed',
-      detail: 'provider unavailable',
-      recordedAt: '2026-09-14T00:00:02.000Z',
-    })).resolves.toBe(false)
-    const [debt] = await sqlA<{ cleanup_outcome: string; cleanup_detail: string }[]>`
-      SELECT cleanup_outcome, cleanup_detail
-      FROM fenced_sandbox_handles
-      WHERE host_scope = ${KEY.hostScope}
-        AND workspace_id = ${KEY.workspaceId}
-        AND provider = ${KEY.provider}
-        AND mode = ${KEY.mode}
-    `
-    expect(debt).toEqual({ cleanup_outcome: 'failed', cleanup_detail: 'provider unavailable' })
-
+    expect((await admin.inspect(KEY))?.cleanup?.outcome).toBe('ambiguous')
     await expect(a.delete(fence(lease), {
       outcome: 'succeeded',
       detail: 'provider confirmed deletion',
       recordedAt: '2026-09-14T00:00:03.000Z',
     })).resolves.toBe(true)
-    await expect(a.get(KEY)).resolves.toBeNull()
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 1,
+      tombstoned: true,
+      hasHandle: false,
+      cleanup: { outcome: 'succeeded', detail: 'provider confirmed deletion' },
+    })
+
+    const recreated = await claim(b, KEY, 'recreator')
+    expect(recreated.generation).toBe(2)
+    expect(recreated.handle).toBeNull()
+    await sqlA`
+      UPDATE fenced_sandbox_handles
+      SET encrypted_handle = ${old!.encrypted_handle},
+          encryption_nonce = ${old!.encryption_nonce},
+          encryption_auth_tag = ${old!.encryption_auth_tag},
+          encryption_version = ${old!.encryption_version},
+          handle_version = ${old!.handle_version}
+      WHERE host_scope = ${KEY.hostScope}
+        AND workspace_id = ${KEY.workspaceId}
+        AND provider = ${KEY.provider}
+        AND mode = ${KEY.mode}
+    `
+    await expireLease(sqlA)
+    await expect(a.claim({ key: KEY, leaseOwner: 'replay-reader', leaseForMs: 10_000 })).rejects.toThrow()
+  })
+
+  it('isolates discriminators and requires audited policy to reconcile an active lease', async () => {
+    const { a, b, admin } = stores()
+    const lease = await claim(a)
+    const otherKey = { ...KEY, provider: 'ecs', mode: 'ecs-local-efs' }
+    const otherLease = await claim(b, otherKey, 'other-process')
+    expect(otherLease.leaseToken).not.toBe(lease.leaseToken)
+
+    expect(await admin.reconcileDelete(KEY, {
+      outcome: 'succeeded',
+      recordedAt: '2026-09-14T00:00:03.000Z',
+    }, evidence('audit-refused'))).toBe(false)
+    expect((await admin.inspect(KEY))?.tombstoned).toBe(false)
+    expect(await admin.reconcileDelete(KEY, {
+      outcome: 'succeeded',
+      detail: 'operator verified provider absence',
+      recordedAt: '2026-09-14T00:00:03.000Z',
+    }, evidence('audit-authorized'), { allowActiveLease: true })).toBe(true)
+    expect((await admin.listAudit(KEY)).map((entry) => entry.action)).toEqual([
+      'reconcile-delete-refused-active-lease',
+      'reconcile-delete',
+    ])
+    expect(Object.keys(KEY)).not.toContain('efsPath')
   })
 })

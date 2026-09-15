@@ -5,19 +5,23 @@ export type {
   WorkspaceRuntimeStoreLike,
   WorkspaceSandboxHandleRecord,
 } from './WorkspaceRuntimeSandboxHandleStore.js'
-export {
-  CoreFencedSandboxHandleStore,
-  InMemorySandboxHandleBackend,
-  createSandboxHandleCipher,
-} from './FencedSandboxHandleStore.js'
-export { PostgresFencedSandboxHandleStore } from './PostgresFencedSandboxHandleStore.js'
 export type {
   EncryptedSandboxHandle,
+  FencedSandboxHandleAdmin,
   FencedSandboxHandleStore,
+  SandboxAdminReconciliationPolicy,
   SandboxCleanupOutcome,
+  SandboxCreateAmbiguous,
+  SandboxCreateAttemptResult,
+  SandboxCreateAttemptStarted,
+  SandboxHandleAuditAction,
+  SandboxHandleAuditRecord,
   SandboxHandleCipher,
   SandboxHandleClaim,
+  SandboxHandleClaimResult,
   SandboxHandleFence,
+  SandboxHandleInspection,
   SandboxHandleKey,
   SandboxHandleLease,
+  SandboxOperatorEvidence,
 } from './FencedSandboxHandleStore.js'

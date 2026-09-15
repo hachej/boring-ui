@@ -21,7 +21,6 @@ export default defineConfig([
   {
     entry: {
       'server/index': 'src/server/index.ts',
-      'server/db/index': 'src/server/db/index.ts',
       'app/server/index': 'src/app/server/index.ts',
       'app/front/index': 'src/app/front/index.ts',
       'app/vite/index': 'src/app/vite/index.ts',
@@ -55,5 +54,18 @@ export default defineConfig([
         copyFileSync(`src/${rel}`, dest)
       }
     },
+  },
+  {
+    // Keep concrete database adapters out of the main server's shared chunks.
+    // The server/db package subpath is an intentional, independently bundled
+    // Node-only composition boundary.
+    entry: { 'server/db/index': 'src/server/db/index.ts' },
+    format: ['esm'],
+    dts: true,
+    splitting: false,
+    clean: false,
+    outDir: 'dist',
+    target: 'es2022',
+    external: EXTERNALS,
   },
 ])

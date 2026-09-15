@@ -5,53 +5,60 @@ Bead: `factory-plugin-owner-runtime-identity-prefix-8pdn.4`
 The Core contract keys disposable provider handles by host scope, workspace,
 provider, and application-owned mode. The encrypted payload is generation-bound;
 lease ownership is opaque and all ordinary mutations compare generation/token
-and require an unexpired lease. Takeover increments generation. Cleanup failure
-or ambiguity remains durable; deletion requires a recorded successful outcome or
-the explicitly named operator reconciliation method.
+and require an unexpired lease. Shared EFS paths, namespaces, mounts, and data are
+not represented or deleted by this lifecycle.
 
-The migration deliberately contains no EFS path, namespace, mount, or deletion
-field. Shared EFS data is not part of the disposable handle lifecycle.
+## Provider and host capabilities
 
-## Production adapter and host seam
+`FencedSandboxHandleStore` is the provider-facing contract. It has no operational
+`get` or reconciliation method. A successful `claim` is the only operation that
+returns a lease token or decrypted handle; `renew`, `update`, `release`, and
+`delete` return status only. A restarted process must wait for lease expiry and
+claim. Redacted host inspection is available only from the separate
+`FencedSandboxHandleAdmin` capability and reports neither token nor handle.
 
-`PostgresFencedSandboxHandleStore` is the production implementation. Claim uses
-a Postgres transaction, a discriminator-row `SELECT ... FOR UPDATE`, and a
-conditional generation/expiry update. Renew, update, and release use one
-conditional statement; delete first conditionally records cleanup under the
-same generation/token/unexpired fence and deletes only a successful outcome in
-the same transaction. The privileged reconciliation method likewise records
-its operator outcome before delete. This makes the database row lock and
-conditional SQL—not process-local state—the concurrency authority.
+`beginCreate` atomically persists a provider idempotency key and `started` state
+before returning the key for an external create call. The initial encrypted
+handle update is rejected unless that attempt exists, and the same update marks
+it `completed`. If a process stops after provider success but before the handle
+update, every takeover returns `create-ambiguous`, without a lease token or
+handle. It remains blocked until an operator certifies provider absence through
+the host-only reconciliation capability.
 
-The adapter uses the reference AES-256-GCM `SandboxHandleCipher`. AAD includes
-host scope, workspace, provider, mode, generation, handle version, and encryption
-version. A takeover decrypts and re-encrypts the opaque handle for its incremented
-generation. The plaintext is never stored.
+Successful ordinary deletion atomically records the cleanup-success receipt and
+turns the row into a tombstone. It clears the encrypted handle, encryption
+metadata, create attempt, and lease, but retains the discriminator and
+generation. Claiming the tombstone recreates generation 1 as generation 2, so
+old ciphertext cannot be replayed under the new generation-bound AAD. Failed or
+ambiguous cleanup remains durable without tombstoning.
 
-The adapter is exported from `@hachej/boring-core/server` for an application
-provider closure to consume. Per the slice-3 seam ruling, that closure is
-injected only through `createCoreWorkspaceAgentServer({ runtimeModeAdapter })`;
-no handle fields were added to Agent provider/runtime contracts and Core does
-not select a custom store from a mode string. The existing
-`SandboxHandleStore` option and `WorkspaceRuntimeSandboxHandleStore` behavior
-are unchanged.
+The explicit host administrator requires non-empty audit ID, operator identity,
+evidence detail, and timestamp. Reconciliation writes an immutable audit row in
+the same transaction. An active lease is refused and audited unless the caller
+passes the explicit `allowActiveLease` policy. Provider closures receive only
+the ordinary interface; the administrator is a separately constructed object.
 
-## Postgres integration proof
+## Packaging and migration
 
-`PostgresFencedSandboxHandleStore.test.ts` runs against real Postgres using two
-independent `postgres` clients and independently constructed store adapters. It
-covers simultaneous claim, adapter restart, expiry takeover, generation
-increment, stale renew/update/release/delete, provider/mode isolation, AAD replay
-rejection, cleanup ambiguity/failure debt, successful cleanup deletion, and raw
-ciphertext/nonce/tag/version assertions at rest.
+The main `@hachej/boring-core/server` entry exports only the fenced-handle type
+contracts. The concrete `PostgresFencedSandboxHandleStore`, separate
+`PostgresFencedSandboxHandleAdmin`, and cipher constructor are exported from the
+Node-only `@hachej/boring-core/server/db` subpath. The in-memory deterministic
+fixture is not in a package export. The db entry is built independently so its
+concrete adapter does not inflate the main server shared chunk.
 
-The in-memory reference suite remains as a deterministic protocol proof and now
-also rejects handle-version AAD replay. It is not cited as production database
-evidence.
+Migration `0029_fenced_sandbox_handles.sql` uses exact `CREATE TABLE` statements
+(no `IF NOT EXISTS`) for the handle and immutable audit tables. The migration
+smoke applies it in a fresh isolated schema, proves a representative pre-existing
+old-code table still reads/writes after upgrade, and proves a second accidental
+application fails with PostgreSQL duplicate-table error. The migration and
+schema contain no EFS ownership fields.
 
-Commands:
+## Verification
 
-- `pnpm --filter @hachej/boring-agent build` — passed; Agent JavaScript and declaration outputs built and artifact assertions passed.
+- `pnpm --filter @hachej/boring-core exec vitest run src/server/runtime/__tests__/PostgresFencedSandboxHandleStore.test.ts src/server/runtime/__tests__/FencedSandboxHandleStore.test.ts src/server/db/__tests__/fencedSandboxHandles.migration.test.ts src/server/runtime/__tests__/WorkspaceRuntimeSandboxHandleStore.test.ts --no-file-parallelism` — passed: 4 files, 15 tests, including two independent real Postgres connections, crash ambiguity, tombstone generation 1→2, old-ciphertext replay rejection, audited active-lease refusal, fresh migration, and rollback compatibility smoke.
 - `pnpm --filter @hachej/boring-core typecheck` — passed.
-- `pnpm --filter @hachej/boring-core exec vitest run src/server/runtime/__tests__/PostgresFencedSandboxHandleStore.test.ts src/server/runtime/__tests__/FencedSandboxHandleStore.test.ts src/server/runtime/__tests__/WorkspaceRuntimeSandboxHandleStore.test.ts --no-file-parallelism` — 3 files, 12 tests passed, including the real Postgres suite.
+- `pnpm --filter @hachej/boring-agent typecheck` — passed.
+- `pnpm --filter @hachej/boring-core build` — passed, including declaration output and package artifact assertions.
+- `pnpm --filter @hachej/boring-core check:bundle-size` — passed; main server is 75.07 KB gzip (+3.0% against baseline, below the 10% budget).
 - `pnpm lint:invariants` — passed all Agent, boring-bash, boring-sandbox, Workspace plugin, alignment, and skill-digest phases.

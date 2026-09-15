@@ -89,24 +89,28 @@ export type { WorkspaceProvisioner, ProvisionContext, ProvisionResult } from './
 export { createFsProvisioner } from './provisioner/index.js'
 export type { FsProvisionerOptions } from './provisioner/index.js'
 
-export {
-  WorkspaceRuntimeSandboxHandleStore,
-  CoreFencedSandboxHandleStore,
-  PostgresFencedSandboxHandleStore,
-  InMemorySandboxHandleBackend,
-  createSandboxHandleCipher,
-} from './runtime/index.js'
+export { WorkspaceRuntimeSandboxHandleStore } from './runtime/index.js'
 export type {
   WorkspaceRuntimeStoreLike,
   WorkspaceSandboxHandleRecord,
   EncryptedSandboxHandle,
+  FencedSandboxHandleAdmin,
   FencedSandboxHandleStore,
+  SandboxAdminReconciliationPolicy,
   SandboxCleanupOutcome,
+  SandboxCreateAmbiguous,
+  SandboxCreateAttemptResult,
+  SandboxCreateAttemptStarted,
+  SandboxHandleAuditAction,
+  SandboxHandleAuditRecord,
   SandboxHandleCipher,
   SandboxHandleClaim,
+  SandboxHandleClaimResult,
   SandboxHandleFence,
+  SandboxHandleInspection,
   SandboxHandleKey,
   SandboxHandleLease,
+  SandboxOperatorEvidence,
 } from './runtime/index.js'
 
 export {
