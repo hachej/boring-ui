@@ -13,7 +13,6 @@ export const ONE_CHAT_TOOL_GROUPS = [
   'stage',
   'ask_user',
   'run_agents',
-  'reload',
   'compact',
 ] as const
 export type OneChatToolGroupName = (typeof ONE_CHAT_TOOL_GROUPS)[number]

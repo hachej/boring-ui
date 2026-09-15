@@ -24,9 +24,11 @@ import {
 
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CASES_PATH = path.join(APP_ROOT, 'eval', 'cases.yaml')
-const WORKSPACES_ROOT = path.join(APP_ROOT, '.eval-workspaces')
+const WORKSPACES_ROOT = path.resolve(
+  process.env.ONE_CHAT_EVAL_WORKSPACES_ROOT ?? path.join(APP_ROOT, '.eval-workspaces'),
+)
 const REPORTS_ROOT = path.join(APP_ROOT, 'eval', 'reports')
-const SESSION_ROOT = '/var/tmp/one-chat-eval/sessions'
+const SESSION_ROOT = process.env.BORING_AGENT_SESSION_ROOT ?? '/var/tmp/one-chat-eval/sessions'
 const FRONT_PORT = Number(process.env.ONE_CHAT_PORT ?? 5360)
 const APP_PORT = Number(process.env.SAMPLE_APP_PORT ?? 5361)
 const API_ROOT = `http://127.0.0.1:${FRONT_PORT}`
@@ -171,8 +173,10 @@ function sourceFor(candidate: EvalCase): string {
 
 function prepareWorkspace(candidate: EvalCase): { root: string; source: string } {
   mkdirSync(WORKSPACES_ROOT, { recursive: true })
-  const root = path.join(WORKSPACES_ROOT, safeCaseName(candidate.name))
-  rmSync(root, { recursive: true, force: true })
+  const caseRoot = path.join(WORKSPACES_ROOT, safeCaseName(candidate.name))
+  const root = path.join(caseRoot, 'default')
+  rmSync(caseRoot, { recursive: true, force: true })
+  mkdirSync(caseRoot, { recursive: true })
   const source = sourceFor(candidate)
   cpSync(source, root, { recursive: true })
   for (const seed of candidate.seed ?? []) {
@@ -230,7 +234,6 @@ async function waitForReady(host: ChildProcess, log: () => string): Promise<void
 }
 
 async function startHost(workspaceRoot: string): Promise<{ host: ChildProcess; log: () => string }> {
-  rmSync('/var/tmp/one-chat-eval', { recursive: true, force: true })
   mkdirSync(SESSION_ROOT, { recursive: true })
   let output = ''
   const host = spawn('pnpm', ['dev:app'], {
@@ -244,6 +247,7 @@ async function startHost(workspaceRoot: string): Promise<{ host: ChildProcess; l
       ONE_CHAT_PORT: String(FRONT_PORT),
       SAMPLE_APP_PORT: String(APP_PORT),
       ONE_CHAT_APP_URL: APP_URL,
+      ONE_CHAT_APPS_ROOT: path.dirname(workspaceRoot),
       ONE_CHAT_WORKSPACE_ROOT: workspaceRoot,
       HOST: '127.0.0.1',
       TMPDIR: '/var/tmp',
@@ -542,7 +546,7 @@ async function runCase(candidate: EvalCase, keep: boolean): Promise<CaseReport> 
   } finally {
     await stopHost(host ?? activeHost)
     currentWorkspace = undefined
-    if (!keep) rmSync(prepared.root, { recursive: true, force: true })
+    if (!keep) rmSync(path.dirname(prepared.root), { recursive: true, force: true })
   }
 }
 

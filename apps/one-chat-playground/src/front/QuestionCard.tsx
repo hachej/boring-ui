@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import type { PendingQuestionView } from '../server/askUser'
-import type { AskUserAnswerValue, AskUserField } from '../../../../plugins/ask-user/src/shared/types'
+import type { AskUserAnswerValue, AskUserField } from '@hachej/boring-ask-user/shared'
 import { describeAnswer, type QuestionCardState } from './askUserCard'
 
 const CARD_CLASS =

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { PendingQuestionView } from '../server/askUser'
-import type { AskUserAnswerValue } from '../../../../plugins/ask-user/src/shared/types'
+import type { AskUserAnswerValue } from '@hachej/boring-ask-user/shared'
 import type { AnsweredHere } from './askUserCard'
 
 const PENDING_URL = '/api/v1/questions/pending'
@@ -21,7 +21,7 @@ export interface AskUserState {
  * second against a local server, and no socket to keep alive for an app that
  * has exactly one user and one conversation.
  */
-export function useAskUser(): AskUserState {
+export function useAskUser(appSlug: string): AskUserState {
   const [pending, setPending] = useState<readonly PendingQuestionView[]>([])
   const [justAnswered, setJustAnswered] = useState<Record<string, AnsweredHere>>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
@@ -29,17 +29,19 @@ export function useAskUser(): AskUserState {
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch(PENDING_URL, { headers: { accept: 'application/json' } })
+      const response = await fetch(PENDING_URL, { headers: { accept: 'application/json', 'x-one-chat-app': appSlug } })
       if (!response.ok) return
       const body = (await response.json()) as { questions?: PendingQuestionView[] }
       if (alive.current) setPending(body.questions ?? [])
     } catch {
       // The API restarting is not the user's problem; the next tick retries.
     }
-  }, [])
+  }, [appSlug])
 
   useEffect(() => {
     alive.current = true
+    setPending([])
+    setJustAnswered({})
     void refresh()
     const timer = setInterval(() => void refresh(), POLL_MS)
     return () => {
@@ -53,7 +55,7 @@ export function useAskUser(): AskUserState {
     try {
       const response = await fetch(COMMANDS_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-one-chat-app': appSlug },
         body: JSON.stringify({
           kind: 'questions.submit',
           params: {
@@ -73,7 +75,7 @@ export function useAskUser(): AskUserState {
       setSubmitting(null)
       void refresh()
     }
-  }, [refresh])
+  }, [appSlug, refresh])
 
   return useMemo(
     () => ({ pending, justAnswered, submitting, submit }),

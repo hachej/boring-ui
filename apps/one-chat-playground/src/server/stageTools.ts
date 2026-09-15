@@ -5,9 +5,7 @@ import type { StageBus } from './stageBus.js'
 
 export interface StageToolsOptions {
   readonly bus: StageBus
-  /** Origin patterns that may be framed. See ../shared/allowedOrigins.ts. */
   readonly allowedOrigins: readonly string[]
-  /** The base page already visible on the right, used when showing one of its routes. */
   readonly appBaseUrl?: string
 }
 
@@ -15,51 +13,75 @@ function text(body: string, isError = false): Awaited<ReturnType<AgentTool['exec
   return { content: [{ type: 'text', text: body }], ...(isError ? { isError: true } : {}) }
 }
 
-/**
- * The two tools that let the agent drive the right-hand screen. Deliberately
- * tiny: everything the agent can do to the stage is "put this one page over the
- * app" and "take it away".
- */
+function showApp(options: StageToolsOptions, title?: string): Awaited<ReturnType<AgentTool['execute']>> {
+  if (!options.appBaseUrl) return text('The app URL is not available.', true)
+  options.bus.emit({ type: 'stage.show', what: 'app', url: options.appBaseUrl, title: title?.trim() || 'Your app' })
+  return text('Showing the app on the user\'s screen.')
+}
+
 export function createStageTools(options: StageToolsOptions): AgentTool[] {
   const showOnScreen: AgentTool = {
     name: 'show_on_screen',
     description:
-      `Show a page on the user's screen, on top of their app. Use it for a mockup, a preview or a page you want the user to look at. ${options.appBaseUrl ? `The user's app starts at ${options.appBaseUrl}; use that exact origin for its routes. ` : ''}Only one thing can be shown at a time; calling this again replaces it. Call back_to_app when the user is done looking.`,
+      'Show either the user\'s app or one preview/sketch page. On a fresh app, do not show the empty template. Show the app after the first real build, or when the user asks to see it. Showing again replaces the current screen.',
     parameters: {
       type: 'object',
       properties: {
+        what: {
+          type: 'string',
+          enum: ['app', 'page'],
+          description: 'Use "app" for the live app and "page" for a preview or sketch URL.',
+        },
         url: {
           type: 'string',
-          description: 'Absolute http(s) URL to display. Must be a local address unless the host allows more.',
+          description: 'Absolute http(s) URL. Required only when what is "page".',
         },
         title: {
           type: 'string',
-          description: 'Short human title shown above the page, e.g. "New client page".',
+          description: 'Short human title, e.g. "Supplier sketch".',
         },
       },
-      required: ['url'],
+      required: ['what'],
       additionalProperties: false,
     },
     async execute(params) {
+      if (params.what === 'app') return showApp(options, typeof params.title === 'string' ? params.title : undefined)
+      if (params.what !== 'page') return text('Choose either app or page.', true)
       const resolution = resolveStageUrl(typeof params.url === 'string' ? params.url : '', options.allowedOrigins)
       if (!resolution.ok) return text(`Could not show that on screen: ${resolution.message}`, true)
-
-      const rawTitle = typeof params.title === 'string' ? params.title.trim() : ''
-      const title = rawTitle || 'Preview'
-      options.bus.emit({ type: 'stage.show', url: resolution.url, title })
+      const title = typeof params.title === 'string' && params.title.trim() ? params.title.trim() : 'Preview'
+      options.bus.emit({ type: 'stage.show', what: 'page', url: resolution.url, title })
       return text(`Showing "${title}" on the user's screen.`)
     },
   }
 
   const backToApp: AgentTool = {
     name: 'back_to_app',
-    description: "Close whatever is being shown on top of the user's app and put them back on their app.",
+    description: 'Replace the current preview with the live app.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     async execute() {
-      options.bus.emit({ type: 'stage.clear' })
-      return text('The user is back on their app.')
+      return showApp(options)
     },
   }
 
-  return [showOnScreen, backToApp]
+  const showPreviousVersion: AgentTool = {
+    name: 'show_previous_version',
+    description: 'Reserved for showing an earlier kept version. Version history is not connected yet.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    async execute() {
+      return text('Previous versions are not available yet.', true)
+    },
+  }
+
+  const clearScreen: AgentTool = {
+    name: 'clear_screen',
+    description: 'Hide the screen and return to full-width chat.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    async execute() {
+      options.bus.emit({ type: 'stage.clear' })
+      return text('The screen is clear and chat is full width.')
+    },
+  }
+
+  return [showOnScreen, backToApp, showPreviousVersion, clearScreen]
 }

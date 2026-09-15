@@ -1,45 +1,73 @@
 import http from 'node:http'
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 
 const listenPort = Number(process.env.ONE_CHAT_APP_PROXY_PORT ?? 5321)
-const upstreamPort = Number(process.env.SAMPLE_APP_PORT ?? 5322)
-const basePath = process.env.ONE_CHAT_APP_BASE ?? '/app/'
-const baseWithoutSlash = basePath.slice(0, -1)
+const appsRoot = path.resolve(process.env.ONE_CHAT_APPS_ROOT ?? '/data/one-chat/apps')
+const registryPath = path.join(appsRoot, 'apps.json')
+const basePattern = process.env.ONE_CHAT_APP_BASE ?? '/app/{slug}/'
+const basePrefix = basePattern.slice(0, basePattern.indexOf('{slug}'))
 
 if (!Number.isInteger(listenPort) || listenPort < 1) {
   throw new Error('ONE_CHAT_APP_PROXY_PORT must be a valid port')
 }
-if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort === listenPort) {
-  throw new Error('SAMPLE_APP_PORT must be a valid port distinct from ONE_CHAT_APP_PROXY_PORT')
-}
-if (!basePath.startsWith('/') || !basePath.endsWith('/')) {
-  throw new Error('ONE_CHAT_APP_BASE must start and end with /')
+if (!basePattern.startsWith('/') || !basePattern.endsWith('/') || !basePattern.includes('{slug}')) {
+  throw new Error('ONE_CHAT_APP_BASE must start and end with / and include {slug}')
 }
 
-function toUpstreamPath(rawUrl = '/') {
-  const url = new URL(rawUrl, 'http://one-chat.local')
-  if (url.pathname !== baseWithoutSlash && !url.pathname.startsWith(basePath)) {
-    url.pathname = `${baseWithoutSlash}${url.pathname}`
+function registryApps() {
+  try {
+    const parsed = JSON.parse(readFileSync(registryPath, 'utf8'))
+    return Array.isArray(parsed.apps) ? parsed.apps : []
+  } catch {
+    return []
   }
-  return `${url.pathname}${url.search}`
 }
 
-function upstreamOptions(req) {
+function resolveUpstream(rawUrl = '/') {
+  const url = new URL(rawUrl, 'http://one-chat.local')
+  let incoming = url.pathname
+  // Production Caddy strips /app before forwarding. Accept the unstripped
+  // shape too so this bridge is directly testable.
+  if (basePrefix !== '/' && incoming.startsWith(basePrefix)) incoming = `/${incoming.slice(basePrefix.length)}`
+  const [slugFromPath, ...rest] = incoming.split('/').filter(Boolean)
+  const apps = registryApps()
+  const app = apps.find((candidate) => candidate.slug === slugFromPath)
+    ?? (!slugFromPath ? apps.find((candidate) => candidate.slug === 'default') ?? apps[0] : undefined)
+  if (!app || !Number.isInteger(app.port)) return undefined
+  const slug = encodeURIComponent(app.slug)
+  const appBase = basePattern.replaceAll('{slug}', slug).replaceAll('{port}', String(app.port))
+  const suffix = app.slug === slugFromPath ? rest.join('/') : ''
+  url.pathname = `${appBase}${suffix}`
+  return {
+    app,
+    path: `${url.pathname}${url.search}`,
+  }
+}
+
+function upstreamOptions(req, upstream) {
   return {
     hostname: '127.0.0.1',
-    port: upstreamPort,
+    port: upstream.app.port,
     method: req.method,
-    path: toUpstreamPath(req.url),
+    path: upstream.path,
     headers: {
       ...req.headers,
-      host: `127.0.0.1:${upstreamPort}`,
+      host: `127.0.0.1:${upstream.app.port}`,
       'x-forwarded-host': req.headers.host ?? '',
     },
   }
 }
 
 const server = http.createServer((req, res) => {
-  const proxyRequest = http.request(upstreamOptions(req), (proxyResponse) => {
+  const upstream = resolveUpstream(req.url)
+  if (!upstream) {
+    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('Unknown app\n')
+    return
+  }
+  const proxyRequest = http.request(upstreamOptions(req, upstream), (proxyResponse) => {
     res.writeHead(proxyResponse.statusCode ?? 502, proxyResponse.headers)
     proxyResponse.pipe(res)
   })
@@ -51,7 +79,12 @@ const server = http.createServer((req, res) => {
 })
 
 server.on('upgrade', (req, socket, head) => {
-  const proxyRequest = http.request(upstreamOptions(req))
+  const upstream = resolveUpstream(req.url)
+  if (!upstream) {
+    socket.destroy()
+    return
+  }
+  const proxyRequest = http.request(upstreamOptions(req, upstream))
   proxyRequest.on('upgrade', (proxyResponse, proxySocket, proxyHead) => {
     const status = `HTTP/1.1 ${proxyResponse.statusCode ?? 101} ${proxyResponse.statusMessage ?? 'Switching Protocols'}`
     const headers = []
@@ -73,7 +106,7 @@ await new Promise((resolve, reject) => {
   server.once('error', reject)
   server.listen(listenPort, '0.0.0.0', resolve)
 })
-console.log(`[one-chat] app path bridge http://0.0.0.0:${listenPort}${basePath} -> http://127.0.0.1:${upstreamPort}${basePath}`)
+console.log(`[one-chat] app path bridge http://0.0.0.0:${listenPort}${basePrefix}* -> ports in ${registryPath}`)
 
 const [command, ...args] = process.argv.slice(2)
 if (!command) throw new Error('No One Chat command was provided')

@@ -26,6 +26,7 @@ export interface ReloadOptions {
    * called "default", which is not the user's, and reports `reloaded: false`.
    */
   readonly sessions: SessionTracker
+  readonly requestHeaders?: Readonly<Record<string, string>>
   readonly log?: (message: string) => void
 }
 
@@ -68,6 +69,7 @@ export async function requestReload(
   const response = await app.inject({
     method: 'POST',
     url: `/api/v1/agents/${encodeURIComponent(options.agentTypeId)}/reload`,
+    headers: options.requestHeaders,
     payload: { requestId, sessionId },
   })
   const body = response.body

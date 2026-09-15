@@ -1,26 +1,32 @@
-const SESSION_STORAGE_KEY = 'one-chat:session-id'
+function storageKey(appSlug: string): string {
+  return `one-chat:session-id:${appSlug}`
+}
 
-function readStoredSessionId(): string | null {
+function readStoredSessionId(appSlug: string): string | null {
   try {
-    return window.localStorage.getItem(SESSION_STORAGE_KEY)
+    return window.localStorage.getItem(storageKey(appSlug))
   } catch {
     return null
   }
 }
 
-function storeSessionId(sessionId: string): void {
+function storeSessionId(appSlug: string, sessionId: string): void {
   try {
-    window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId)
+    window.localStorage.setItem(storageKey(appSlug), sessionId)
   } catch {
-    // Private mode / blocked storage: the chat still works, it just starts a
-    // new conversation on the next reload.
+    // The chat still works; it starts a new conversation on the next reload.
   }
 }
 
-async function sessionExists(agentTypeId: string, sessionId: string): Promise<boolean> {
+function headers(appSlug: string): Record<string, string> {
+  return { 'x-one-chat-app': appSlug }
+}
+
+async function sessionExists(agentTypeId: string, sessionId: string, appSlug: string): Promise<boolean> {
   try {
     const response = await fetch(
       `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/state`,
+      { headers: headers(appSlug) },
     )
     return response.ok
   } catch {
@@ -28,10 +34,10 @@ async function sessionExists(agentTypeId: string, sessionId: string): Promise<bo
   }
 }
 
-async function createSession(agentTypeId: string): Promise<string> {
+async function createSession(agentTypeId: string, appSlug: string): Promise<string> {
   const response = await fetch(`/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { ...headers(appSlug), 'content-type': 'application/json' },
     body: JSON.stringify({}),
   })
   if (!response.ok) throw new Error(`Could not start the conversation (${response.status})`)
@@ -40,18 +46,11 @@ async function createSession(agentTypeId: string): Promise<string> {
   return body.sessionId
 }
 
-/**
- * One chat means one session, forever.
- *
- * The id is pinned in localStorage so a reload resumes the same conversation.
- * The stored id is probed before it is used: a session root wiped between runs
- * would otherwise leave the panel showing "session was not found" with no way
- * for a non-technical user to recover.
- */
-export async function resolvePinnedSessionId(agentTypeId: string): Promise<string> {
-  const stored = readStoredSessionId()
-  if (stored && (await sessionExists(agentTypeId, stored))) return stored
-  const created = await createSession(agentTypeId)
-  storeSessionId(created)
+/** One durable browser-pinned session for each app slug. */
+export async function resolvePinnedSessionId(agentTypeId: string, appSlug: string): Promise<string> {
+  const stored = readStoredSessionId(appSlug)
+  if (stored && (await sessionExists(agentTypeId, stored, appSlug))) return stored
+  const created = await createSession(agentTypeId, appSlug)
+  storeSessionId(appSlug, created)
   return created
 }

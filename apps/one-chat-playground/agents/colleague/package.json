@@ -16,7 +16,6 @@
     "stage",
     "ask_user",
     "run_agents",
-    "reload",
     "compact"
   ]
 }

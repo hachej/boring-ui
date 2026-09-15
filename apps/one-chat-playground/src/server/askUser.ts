@@ -1,16 +1,15 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AgentTool } from '@hachej/boring-agent/shared'
 
-// The ask-user plugin's published entry point is bound to the Workspace shell
-// (Dockview panels, the Inbox, the UI bridge). This playground has none of
-// that, so it deep-imports only the three modules that are shell-free — the
-// tool, the runtime that blocks the turn, and the file-backed store — and
-// renders the question itself, inline in the transcript.
-import { createAskUserTool } from '../../../../plugins/ask-user/src/server/createAskUserTool'
-import { AskUserRuntime } from '../../../../plugins/ask-user/src/server/askUserRuntime'
-import { FileAskUserStore } from '../../../../plugins/ask-user/src/server/askUserStore'
-import { questionsRoutes } from '../../../../plugins/ask-user/src/server/questionsRoutes'
-import type { AskUserQuestion } from '../../../../plugins/ask-user/src/shared/types'
+import {
+  AskUserRuntime,
+  FileAskUserStore,
+  QuestionsBridge,
+  QuestionsBridgeError,
+  createAskUserTool,
+  questionsRoutes,
+} from '@hachej/boring-ask-user/server'
+import { QuestionsCommandSchema, type AskUserQuestion, type QuestionsCommand } from '@hachej/boring-ask-user/shared'
 
 /** What the front needs to draw one question card and answer it. */
 export interface PendingQuestionView {
@@ -29,6 +28,9 @@ export const PENDING_QUESTIONS_ROUTE = '/api/v1/questions/pending'
 
 export interface OneChatAskUser {
   readonly tool: AgentTool
+  readonly store: FileAskUserStore
+  readonly runtime: AskUserRuntime
+  abandonStale(): Promise<void>
   registerRoutes(app: FastifyInstance): Promise<void>
 }
 
@@ -95,14 +97,21 @@ export function createAskUser(options: {
     },
   }
 
+  const abandonStale = async () => {
+    // A question left pending by a previous run has no waiter any more: its
+    // card would never resolve. Retire it before the first page load.
+    for (const stale of await store.listPending()) {
+      await runtime.cancelQuestion(stale.questionId, stale.sessionId, 'abandoned').catch(() => undefined)
+    }
+  }
+
   return {
     tool,
+    store,
+    runtime,
+    abandonStale,
     async registerRoutes(app) {
-      // A question left pending by a previous run has no waiter any more: its
-      // card would never resolve. Retire them before the first page load.
-      for (const stale of await store.listPending()) {
-        await runtime.cancelQuestion(stale.questionId, stale.sessionId, 'abandoned').catch(() => undefined)
-      }
+      await abandonStale()
       app.get(PENDING_QUESTIONS_ROUTE, async () => ({
         questions: (await store.listPending()).map(toView),
       }))
@@ -121,4 +130,43 @@ export function createAskUser(options: {
       })
     },
   }
+}
+
+/** One set of question routes, dispatching to the app selected by the host. */
+export function registerScopedAskUserRoutes(
+  app: FastifyInstance,
+  resolve: (request: FastifyRequest) => Promise<OneChatAskUser>,
+): void {
+  app.get(PENDING_QUESTIONS_ROUTE, async (request) => {
+    const selected = await resolve(request)
+    return { questions: (await selected.store.listPending()).map(toView) }
+  })
+
+  app.post('/api/v1/questions/commands', async (request, reply) => {
+    const parsed = QuestionsCommandSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'validation_error', message: parsed.error.issues[0]?.message ?? 'invalid command' })
+    }
+    const selected = await resolve(request)
+    const bridge = new QuestionsBridge({
+      store: selected.store,
+      runtime: selected.runtime,
+      getAuthContext: () => ({
+        sessionId: sessionIdOf(request.body) ?? 'one-chat',
+        principalId: LOCAL_PRINCIPAL,
+      }),
+    })
+    try {
+      return await bridge.handle(parsed.data as QuestionsCommand)
+    } catch (error) {
+      return sendScopedError(reply, error)
+    }
+  })
+}
+
+function sendScopedError(reply: FastifyReply, error: unknown) {
+  if (error instanceof QuestionsBridgeError) {
+    return reply.code(error.statusCode).send({ error: error.code, message: error.message })
+  }
+  throw error
 }

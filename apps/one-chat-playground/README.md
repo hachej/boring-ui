@@ -1,31 +1,57 @@
 # one-chat-playground
 
-**One Chat, One Screen.** One chat on the left, the user's app on the right.
-Built for a non-technical user: the transcript shows messages only — no tool
-calls, no reasoning — and the agent talks about the app, never about files.
+**One Chat, One Screen.** Each app has one folder, one URL, and one pinned
+conversation. A narrow host-owned rail switches apps; chat owns the workspace
+until the colleague deliberately shows an app or page on screen. The transcript
+shows messages only — no tool calls or reasoning.
 
 Run: `pnpm -C apps/one-chat-playground dev` (builds deps, then boots everything).
 
-Ports: front `5320` (`ONE_CHAT_PORT`), sample app `5321` (`SAMPLE_APP_PORT`);
-the agent API binds an ephemeral port behind the front's `/api` proxy.
+Ports: front `5320` (`ONE_CHAT_PORT`); app servers use the inclusive
+`ONE_CHAT_APP_PORT_RANGE` (default starts at `SAMPLE_APP_PORT=5321` and reserves
+nine ports). The agent API binds an ephemeral port behind the front's `/api`
+proxy.
 
 Remote viewing: set `HOST=0.0.0.0` and `ONE_CHAT_PUBLIC_HOST=<ip or hostname the browser uses>`
 plus `ONE_CHAT_ALLOWED_ORIGINS=http://<that host>:*` so the app iframe and the
 `show_on_screen` allowlist both use an address the viewer can reach.
 
-Env: a model must be configured — `BORING_AGENT_DEFAULT_MODEL` (e.g.
-`anthropic:claude-sonnet-4-5`) plus that provider's key (`ANTHROPIC_API_KEY`, …).
-`ONE_CHAT_ALLOWED_ORIGINS` extends the `show_on_screen` allowlist beyond
-loopback (comma separated origins; `https://host:*` wildcards the port only).
-`BORING_AGENT_SESSION_ROOT` moves the chat transcripts off the app directory.
-`ONE_CHAT_WORKSPACE_ROOT` points the agent at another copy of the app, so a
-second instance can run without touching the one a live session is using.
+Env: a model must be configured through the standard Boring Agent model env.
+`ONE_CHAT_APPS_ROOT` defaults to `.workspaces/` and contains `apps.json` plus one
+folder per slug. `ONE_CHAT_APP_URL` may use `{slug}` and `{port}` placeholders,
+for example `https://{slug}.apps.example.test:{port}/`; without placeholders its
+port is replaced for compatibility. `ONE_CHAT_ALLOWED_ORIGINS` extends the
+screen allowlist beyond loopback. Path-based deployments set
+`ONE_CHAT_APP_BASE=/app/{slug}/` and an absolute `ONE_CHAT_APP_URL` with the same
+slug placeholder; the deployment proxy resolves each slug through `apps.json`.
+`BORING_AGENT_SESSION_ROOT` remains host data and must live outside app folders.
 
-The agent works in `sample-app/` (a tiny Vite + React "Clients" page) and its
-edits appear live in the right-hand iframe via HMR. Two extra tools drive the
-screen: `show_on_screen({url, title})` raises one sheet over the app,
-`back_to_app()` drops it. On phones the app is full screen behind a floating
-colleague button; chat snaps to half or full height, and browser Back closes it.
+`POST /api/one-chat/apps` copies `template-app/`, runs a frozen install and
+`db:push`, assigns a free app port, then starts its Vite server. The registry
+restarts failed app servers and stops them with the host. `GET /api/one-chat/apps`
+lists apps and `GET /api/one-chat/apps/:slug` resolves one.
+
+Legacy migration: `ONE_CHAT_WORKSPACE_ROOT=/path/to/old-app` is copied once to
+`<ONE_CHAT_APPS_ROOT>/default` and recorded as the `default` app. If the legacy
+variable points at the apps root itself (the owner's existing `.workspaces`
+shape), valid child app folders such as `julien-app/` are discovered in place
+instead of recursively copied. Keep `apps.json` after first boot; it owns stable
+ports.
+
+The frontend sends `x-one-chat-app: <slug>`. One Agent Host turns that header
+into an `AuthorizedAgentScope`; its existing runtime-scope resolver binds the
+workspace root, session namespace, tools, prompt/intents watchers, stage bus,
+and builder lock for that app. This request-scoped seam avoids parallel gateway
+implementations while preserving strict per-app runtime state. The app keeps a
+separate browser-pinned session id per slug.
+
+Screen tools are `show_on_screen({what: "app" | "page", url?, title?})`,
+`back_to_app()` (show live app), and `clear_screen()` (return to full-width
+chat); `show_previous_version()` is the explicit not-yet-available stub. On
+phones chat is home; after a screen is shown, the existing
+button/half/full chat sheet takes over and browser Back closes it. A narrow SSE
+adapter subscribes to the public in-memory `UiBridge`; every stage effect enters
+through `UiBridge.postCommand` without mounting the Workspace shell.
 
 ## What the agent remembers
 
@@ -63,9 +89,9 @@ to the user.
 `ask_user` blocks the turn until the user answers. The question appears inline
 in the transcript as a card (buttons for a choice, a small input otherwise) and
 the composer is blocked until it is answered — no pane, no inbox. The server
-reuses the ask-user plugin's tool, runtime and file store by deep import; the
-plugin's published entry point is bound to the Workspace shell, which this app
-does not have. The card is opted in through `messagesOnlyVisibleTools` on
+reuses the ask-user plugin's tool, runtime and file store through its public
+`./server` and `./shared` package surfaces. The card is opted in through
+`messagesOnlyVisibleTools` on
 `PiChatPanel`, which is empty for every other host. This app also opts out of
 message copy actions and replaces the generic composer working pill with its
 user-waiting activity strip; both package defaults remain unchanged.
@@ -76,7 +102,7 @@ Each seat is a package under `agents/<seat>/`: `package.json#boring.agent`
 owns its identity and `instructionsRef`, while the package's top-level `tools`
 array names trusted host capability groups. Startup rejects unknown groups.
 The colleague receives `intents`, `instructions`, `stage`, `ask_user`,
-`run_agents`, `reload`, and `compact`; the builder receives none; the
+`run_agents`, and `compact`; the builder receives none; the
 documenter receives only the two `instructions` tools.
 
 Platform skills live under the owning package's `skills/`. The colleague also
@@ -87,8 +113,11 @@ The desktop chat includes a 40px sun/moon control. An explicit choice is kept
 in local storage; with no choice, the page leaves `data-theme` unset and follows
 the system palette. Phones follow the system theme without showing the control.
 
-Out of scope in this cut: sandboxing (the agent runs in `direct` mode on the
-host), the Keep loop, git hiding, auth, and any workspace/Dockview shell.
+The trusted host currently uses direct mode, so ambient executable extensions
+are disabled (`noExtensions: true`): app-authored code is never loaded into the
+host process. An isolated product-runtime tier is required before editable
+runtime extensions can return. Out of scope in this cut: the Keep loop, git
+hiding, auth, and any workspace/Dockview shell.
 
 The standard app a user's agent builds on lives in `template-app/` (TanStack Start + SQLite/Drizzle + shadcn; `bash template-app/verify.sh`).
 

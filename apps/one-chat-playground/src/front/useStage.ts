@@ -26,22 +26,30 @@ export interface UseStageResult extends StageState {
 }
 
 /** Subscribes the stage to the server's SSE channel. The reducer stays pure and tested. */
-export function useStage(streamUrl: string = STAGE_STREAM_URL): UseStageResult {
+export function useStage(appSlug: string, mobile: boolean, streamUrl: string = STAGE_STREAM_URL): UseStageResult {
   const [state, dispatch] = useReducer(stageReducer, initialStageState)
   const stateRef = useRef(state)
   stateRef.current = state
 
   const historyMode = (): MobileChatMode | undefined => {
+    const queryMode = new URLSearchParams(window.location.search).get('chat')
+    if (queryMode === 'button' || queryMode === 'half' || queryMode === 'full') return queryMode
     const value = window.history.state as { oneChatMode?: unknown } | null
     return value?.oneChatMode === 'button' || value?.oneChatMode === 'half' || value?.oneChatMode === 'full'
       ? value.oneChatMode
       : undefined
   }
+  const historyUrl = (mode: MobileChatMode) => {
+    const url = new URL(window.location.href)
+    if (mode === 'button') url.searchParams.delete('chat')
+    else url.searchParams.set('chat', mode)
+    return `${url.pathname}${url.search}${url.hash}`
+  }
   const replaceHistory = useCallback((mode: MobileChatMode) => {
-    window.history.replaceState({ ...(window.history.state ?? {}), oneChatMode: mode }, '')
+    window.history.replaceState({ ...(window.history.state ?? {}), oneChatMode: mode }, '', historyUrl(mode))
   }, [])
   const pushHistory = useCallback((mode: MobileChatMode) => {
-    window.history.pushState({ ...(window.history.state ?? {}), oneChatMode: mode }, '')
+    window.history.pushState({ ...(window.history.state ?? {}), oneChatMode: mode }, '', historyUrl(mode))
   }, [])
   const closeHistory = useCallback(() => {
     if (historyMode() === 'half' || historyMode() === 'full') window.history.back()
@@ -49,7 +57,8 @@ export function useStage(streamUrl: string = STAGE_STREAM_URL): UseStageResult {
   }, [replaceHistory])
 
   useEffect(() => {
-    if (!historyMode()) replaceHistory('button')
+    if (!mobile) return
+    if (!historyMode()) replaceHistory('full')
     const onPopState = (event: PopStateEvent) => {
       const value = event.state as { oneChatMode?: unknown } | null
       const mode = value?.oneChatMode === 'half' || value?.oneChatMode === 'full' ? value.oneChatMode : 'button'
@@ -58,10 +67,12 @@ export function useStage(streamUrl: string = STAGE_STREAM_URL): UseStageResult {
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [pushHistory, replaceHistory])
+  }, [mobile, pushHistory, replaceHistory])
 
   useEffect(() => {
-    const source = new EventSource(streamUrl)
+    dispatch({ type: 'stage.clear' })
+    if (mobile) replaceHistory('full')
+    const source = new EventSource(`${streamUrl}?app=${encodeURIComponent(appSlug)}`)
     source.onmessage = (event) => {
       let payload: unknown
       try {
@@ -72,21 +83,22 @@ export function useStage(streamUrl: string = STAGE_STREAM_URL): UseStageResult {
       const stageEvent = parseStageEvent(payload)
       if (!stageEvent) return
       dispatch(stageEvent)
-      if (stageEvent.type === 'stage.show' && !stateRef.current.mobileChat.questionPending) closeHistory()
+      if (mobile && stageEvent.type === 'stage.show' && !stateRef.current.mobileChat.questionPending) replaceHistory('button')
     }
     return () => source.close()
-  }, [closeHistory, streamUrl])
+  }, [appSlug, mobile, replaceHistory, streamUrl])
 
   const clearSheet = useCallback(() => {
     // Optimistic: the SSE echo is idempotent, and the button must feel instant.
     dispatch({ type: 'stage.clear' })
-    void fetch(STAGE_CLEAR_URL, { method: 'POST' }).catch(() => {})
-  }, [])
+    if (mobile) replaceHistory('full')
+    void fetch(STAGE_CLEAR_URL, { method: 'POST', headers: { 'x-one-chat-app': appSlug } }).catch(() => {})
+  }, [appSlug, mobile, replaceHistory])
 
   const clearActivity = useCallback(() => {
     dispatch({ type: 'activity.clear' })
-    void fetch(ACTIVITY_CLEAR_URL, { method: 'POST' }).catch(() => {})
-  }, [])
+    void fetch(ACTIVITY_CLEAR_URL, { method: 'POST', headers: { 'x-one-chat-app': appSlug } }).catch(() => {})
+  }, [appSlug])
 
   const markAppReady = useCallback(() => {
     dispatch({ type: 'app.ready' })

@@ -37,8 +37,9 @@ const fail = (message) => {
 };
 
 const createAgentHostAllowlist = new Set([
-  // Standalone playground composition root.
+  // Standalone playground composition roots.
   "apps/agent-playground/src/server/agentHost.ts",
+  "apps/one-chat-playground/src/server/agentHost.ts",
   // CLI mode composition root.
   "packages/cli/src/server/modeApps.ts",
   // Core application composition root.

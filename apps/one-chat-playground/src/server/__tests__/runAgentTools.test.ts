@@ -104,7 +104,7 @@ describe('fresh agent run tools', () => {
       content: 'BUILD intent suppliers. Match the approved sketch at public/mockups/suppliers.html when it exists.',
     })
     expect(prompts.find((entry) => entry.agentTypeId === 'default')?.content).toBe(
-      '[system event] The builder finished intent suppliers: Suppliers can now be listed. Tell the user in one or two sentences and suggest exactly one useful next step.',
+      '[system event] The builder finished intent suppliers: Suppliers can now be listed. Show the live app with show_on_screen({what: "app"}), then tell the user in one or two sentences and suggest exactly one useful next step.',
     )
   })
 

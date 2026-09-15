@@ -1,11 +1,13 @@
 /**
- * The stage is the right-hand half of "One Chat, One Screen": a base iframe
- * showing the user's app, and at most one overlay sheet the agent can raise
- * over it. Server stage/activity events and local phone-sheet transitions stay
- * in one pure reducer so the emitter, history coordinator and renderer cannot drift.
+ * Host-driven screen state plus the existing phone chat-sheet state. The screen
+ * begins absent: chat is home until the colleague deliberately shows an app or
+ * preview through the stage bus.
  */
 
-export interface StageSheet {
+export type StageScreenKind = 'app' | 'page'
+
+export interface StageScreen {
+  readonly what: StageScreenKind
   readonly url: string
   readonly title: string
 }
@@ -31,16 +33,14 @@ export interface MobileChatState {
 }
 
 export interface StageState {
-  /** The overlay currently covering the base app, or null when the app is visible. */
-  readonly sheet: StageSheet | null
-  /** Only a sketch/build the user is actively waiting for; never general background work. */
+  /** Null means chat owns the available space. */
+  readonly screen: StageScreen | null
   readonly activity: BuilderActivity | null
-  /** Phone-only presentation. Desktop ignores it and keeps the two-column layout. */
   readonly mobileChat: MobileChatState
 }
 
 export type StageEvent =
-  | { readonly type: 'stage.show'; readonly url: string; readonly title?: string }
+  | { readonly type: 'stage.show'; readonly what: StageScreenKind; readonly url: string; readonly title?: string }
   | { readonly type: 'stage.clear' }
   | ({ readonly type: 'activity.started' } & Omit<BuilderActivity, 'milestone'>)
   | ({ readonly type: 'activity.verifying' | 'activity.done' } & Omit<BuilderActivity, 'milestone'>)
@@ -60,35 +60,41 @@ export const STAGE_EVENT_TYPES = [
 ] as const
 
 export const initialStageState: StageState = {
-  sheet: null,
+  screen: null,
   activity: null,
-  // Chat is the useful empty state while the app iframe is still loading.
   mobileChat: { mode: 'full', appReady: false, unseenAssistant: false, questionPending: false },
 }
 
-/**
- * Only one sheet at a time: `stage.show` replaces whatever is up rather than
- * stacking, so `back_to_app` is always a single step back to the base app.
- */
+function hiddenChatMode(state: StageState): MobileChatMode {
+  if (!state.screen) return 'full'
+  return state.mobileChat.questionPending ? 'half' : 'button'
+}
+
 export function stageReducer(state: StageState, event: StageEvent): StageState {
   switch (event.type) {
     case 'stage.show': {
       const url = event.url.trim()
       if (!url) return state
-      const title = event.title?.trim() || 'Preview'
-      const sameSheet = state.sheet?.url === url && state.sheet.title === title
+      const title = event.title?.trim() || (event.what === 'app' ? 'Your app' : 'Preview')
+      const screen = { what: event.what, url, title } as const
       const mode = state.mobileChat.questionPending
         ? (state.mobileChat.mode === 'full' ? 'full' : 'half')
         : 'button'
-      if (sameSheet && state.mobileChat.mode === mode) return state
-      return {
-        ...state,
-        sheet: { url, title },
-        mobileChat: { ...state.mobileChat, mode },
-      }
+      if (
+        state.screen?.what === screen.what
+        && state.screen.url === screen.url
+        && state.screen.title === screen.title
+        && state.mobileChat.mode === mode
+      ) return state
+      return { ...state, screen, mobileChat: { ...state.mobileChat, mode } }
     }
     case 'stage.clear':
-      return state.sheet === null ? state : { ...state, sheet: null }
+      if (state.screen === null && state.mobileChat.mode === 'full') return state
+      return {
+        ...state,
+        screen: null,
+        mobileChat: { ...state.mobileChat, mode: 'full', appReady: false, unseenAssistant: false },
+      }
     case 'activity.started':
     case 'activity.verifying':
     case 'activity.done': {
@@ -109,20 +115,17 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
       if (state.mobileChat.appReady) return state
       return {
         ...state,
-        mobileChat: {
-          ...state.mobileChat,
-          appReady: true,
-          mode: state.mobileChat.questionPending ? 'half' : 'button',
-        },
+        mobileChat: { ...state.mobileChat, appReady: true, mode: hiddenChatMode(state) },
       }
     case 'chat.open':
+      if (!state.screen) return state
       if (state.mobileChat.mode !== 'button' && !state.mobileChat.unseenAssistant) return state
       return { ...state, mobileChat: { ...state.mobileChat, mode: 'half', unseenAssistant: false } }
     case 'chat.expand':
       if (state.mobileChat.mode === 'full' && !state.mobileChat.unseenAssistant) return state
       return { ...state, mobileChat: { ...state.mobileChat, mode: 'full', unseenAssistant: false } }
     case 'chat.hide': {
-      const mode = state.mobileChat.questionPending ? 'half' : 'button'
+      const mode = hiddenChatMode(state)
       if (state.mobileChat.mode === mode) return state
       return { ...state, mobileChat: { ...state.mobileChat, mode } }
     }
@@ -143,7 +146,8 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
       }
     }
     case 'chat.history': {
-      const mode = state.mobileChat.questionPending && event.mode === 'button' ? 'half' : event.mode
+      const requested = state.screen ? event.mode : 'full'
+      const mode = state.mobileChat.questionPending && requested === 'button' ? 'half' : requested
       if (state.mobileChat.mode === mode && (mode === 'button' || !state.mobileChat.unseenAssistant)) return state
       return {
         ...state,
@@ -155,15 +159,20 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
   }
 }
 
-/** Narrow unknown SSE payloads to a StageEvent; anything else is dropped. */
+/** Narrow unknown SSE payloads; malformed frames never change UI state. */
 export function parseStageEvent(raw: unknown): StageEvent | null {
   if (typeof raw !== 'object' || raw === null) return null
   const candidate = raw as Record<string, unknown>
   if (candidate.type === 'stage.clear') return { type: 'stage.clear' }
   if (candidate.type === 'activity.clear') return { type: 'activity.clear' }
-  if (candidate.type === 'stage.show' && typeof candidate.url === 'string') {
+  if (
+    candidate.type === 'stage.show'
+    && (candidate.what === 'app' || candidate.what === 'page')
+    && typeof candidate.url === 'string'
+  ) {
     return {
       type: 'stage.show',
+      what: candidate.what,
       url: candidate.url,
       ...(typeof candidate.title === 'string' ? { title: candidate.title } : {}),
     }

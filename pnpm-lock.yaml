@@ -240,9 +240,15 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@hachej/boring-ask-user':
+        specifier: workspace:*
+        version: link:../../plugins/ask-user
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       fastify:
         specifier: ^5.12.1
         version: 5.12.1

@@ -11,15 +11,15 @@ describe('createStageBus', () => {
     bus.subscribe(a)
     bus.subscribe(b)
 
-    bus.emit({ type: 'stage.show', url: 'http://localhost:1/', title: 'T' })
+    bus.emit({ type: 'stage.show', what: 'page', url: 'http://localhost:1/', title: 'T' })
 
-    expect(a).toHaveBeenCalledWith({ type: 'stage.show', url: 'http://localhost:1/', title: 'T' })
+    expect(a).toHaveBeenCalledWith({ type: 'stage.show', what: 'page', url: 'http://localhost:1/', title: 'T' })
     expect(b).toHaveBeenCalledTimes(1)
   })
 
   it('replays the current stage sheet after a reconnect until it is cleared', () => {
     const bus = createStageBus()
-    const sheet = { type: 'stage.show' as const, url: 'http://localhost:1/sketch', title: 'Sketch' }
+    const sheet = { type: 'stage.show' as const, what: 'page' as const, url: 'http://localhost:1/sketch', title: 'Sketch' }
     bus.emit(sheet)
     const reconnected = vi.fn()
     bus.subscribe(reconnected)

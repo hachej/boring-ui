@@ -17,7 +17,7 @@ import {
 describe('stageReducer', () => {
   it('starts full while the app is empty', () => {
     expect(initialStageState).toEqual({
-      sheet: null,
+      screen: null,
       activity: null,
       mobileChat: { mode: 'full', appReady: false, unseenAssistant: false, questionPending: false },
     })
@@ -26,39 +26,37 @@ describe('stageReducer', () => {
   it('raises a sheet on stage.show', () => {
     const next = stageReducer(initialStageState, {
       type: 'stage.show',
+      what: 'page',
       url: 'http://127.0.0.1:5321/mockup',
       title: 'New layout',
     })
-    expect(next.sheet).toEqual({ url: 'http://127.0.0.1:5321/mockup', title: 'New layout' })
+    expect(next.screen).toEqual({ what: 'page', url: 'http://127.0.0.1:5321/mockup', title: 'New layout' })
   })
 
   it('defaults the title when the tool omits it', () => {
-    const next = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/x' })
-    expect(next.sheet?.title).toBe('Preview')
+    const next = stageReducer(initialStageState, { type: 'stage.show', what: 'page', url: 'http://localhost:9/x' })
+    expect(next.screen?.title).toBe('Preview')
   })
 
   it('replaces rather than stacks — only one sheet at a time', () => {
-    const first = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
-    const second = stageReducer(first, { type: 'stage.show', url: 'http://localhost:9/b', title: 'B' })
-    expect(second.sheet).toEqual({ url: 'http://localhost:9/b', title: 'B' })
+    const first = stageReducer(initialStageState, { type: 'stage.show', what: 'page', url: 'http://localhost:9/a', title: 'A' })
+    const second = stageReducer(first, { type: 'stage.show', what: 'page', url: 'http://localhost:9/b', title: 'B' })
+    expect(second.screen).toEqual({ what: 'page', url: 'http://localhost:9/b', title: 'B' })
   })
 
   it('clears back to the base app', () => {
-    const shown = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
-    expect(stageReducer(shown, { type: 'stage.clear' })).toEqual({
-      ...initialStageState,
-      mobileChat: { ...initialStageState.mobileChat, mode: 'button' },
-    })
+    const shown = stageReducer(initialStageState, { type: 'stage.show', what: 'page', url: 'http://localhost:9/a', title: 'A' })
+    expect(stageReducer(shown, { type: 'stage.clear' })).toEqual(initialStageState)
   })
 
   it('is referentially stable for no-op events', () => {
-    const shown = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
-    expect(stageReducer(shown, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })).toBe(shown)
+    const shown = stageReducer(initialStageState, { type: 'stage.show', what: 'page', url: 'http://localhost:9/a', title: 'A' })
+    expect(stageReducer(shown, { type: 'stage.show', what: 'page', url: 'http://localhost:9/a', title: 'A' })).toBe(shown)
     expect(stageReducer(initialStageState, { type: 'stage.clear' })).toBe(initialStageState)
   })
 
   it('ignores an empty url', () => {
-    expect(stageReducer(initialStageState, { type: 'stage.show', url: '   ' })).toBe(initialStageState)
+    expect(stageReducer(initialStageState, { type: 'stage.show', what: 'page', url: '   ' })).toBe(initialStageState)
   })
 
   it('tracks builder milestones independently from the stage sheet', () => {
@@ -90,7 +88,8 @@ describe('stageReducer', () => {
   })
 
   it('moves button → half → full, then a downward hide returns to button', () => {
-    const ready = stageReducer(initialStageState, { type: 'app.ready' })
+    const shown = stageReducer(initialStageState, { type: 'stage.show', what: 'app', url: 'http://localhost:9/' })
+    const ready = stageReducer(shown, { type: 'app.ready' })
     expect(ready.mobileChat.mode).toBe('button')
     const half = stageReducer(ready, { type: 'chat.open' })
     expect(half.mobileChat.mode).toBe('half')
@@ -100,8 +99,8 @@ describe('stageReducer', () => {
   })
 
   it('collapses for stage.show and marks a new hidden assistant message unseen', () => {
-    const full = stageReducer(stageReducer(initialStageState, { type: 'app.ready' }), { type: 'chat.expand' })
-    const shown = stageReducer(full, { type: 'stage.show', url: 'http://localhost:9/sketch' })
+    const full = stageReducer(initialStageState, { type: 'chat.expand' })
+    const shown = stageReducer(full, { type: 'stage.show', what: 'page', url: 'http://localhost:9/sketch' })
     expect(shown.mobileChat.mode).toBe('button')
     const messaged = stageReducer(shown, { type: 'chat.assistant' })
     expect(messaged.mobileChat.unseenAssistant).toBe(true)
@@ -112,17 +111,18 @@ describe('stageReducer', () => {
   })
 
   it('keeps a pending question at least half open until it is answered', () => {
-    const button = stageReducer(initialStageState, { type: 'app.ready' })
+    const button = stageReducer(initialStageState, { type: 'stage.show', what: 'app', url: 'http://localhost:9/' })
     const pending = stageReducer(button, { type: 'chat.question', pending: true })
     expect(pending.mobileChat.mode).toBe('half')
     expect(stageReducer(pending, { type: 'chat.hide' }).mobileChat.mode).toBe('half')
-    expect(stageReducer(pending, { type: 'stage.show', url: 'http://localhost:9/sketch' }).mobileChat.mode).toBe('half')
+    expect(stageReducer(pending, { type: 'stage.show', what: 'page', url: 'http://localhost:9/sketch' }).mobileChat.mode).toBe('half')
     const answered = stageReducer(pending, { type: 'chat.question', pending: false })
     expect(stageReducer(answered, { type: 'chat.hide' }).mobileChat.mode).toBe('button')
   })
 
   it('restores phone modes from history without letting Back hide a pending question', () => {
-    const ready = stageReducer(initialStageState, { type: 'app.ready' })
+    const shown = stageReducer(initialStageState, { type: 'stage.show', what: 'app', url: 'http://localhost:9/' })
+    const ready = stageReducer(shown, { type: 'app.ready' })
     expect(stageReducer(ready, { type: 'chat.history', mode: 'full' }).mobileChat.mode).toBe('full')
     const pending = stageReducer(ready, { type: 'chat.question', pending: true })
     expect(stageReducer(pending, { type: 'chat.history', mode: 'button' }).mobileChat.mode).toBe('half')
@@ -137,8 +137,9 @@ describe('stageReducer', () => {
 describe('parseStageEvent', () => {
   it('accepts well-formed events', () => {
     expect(parseStageEvent({ type: 'stage.clear' })).toEqual({ type: 'stage.clear' })
-    expect(parseStageEvent({ type: 'stage.show', url: 'http://localhost:1/', title: 'T' })).toEqual({
+    expect(parseStageEvent({ type: 'stage.show', what: 'page', url: 'http://localhost:1/', title: 'T' })).toEqual({
       type: 'stage.show',
+      what: 'page',
       url: 'http://localhost:1/',
       title: 'T',
     })
@@ -164,7 +165,7 @@ describe('parseStageEvent', () => {
     expect(parseStageEvent(null)).toBeNull()
     expect(parseStageEvent('stage.clear')).toBeNull()
     expect(parseStageEvent({ type: 'stage.show' })).toBeNull()
-    expect(parseStageEvent({ type: 'stage.show', url: 42 })).toBeNull()
+    expect(parseStageEvent({ type: 'stage.show', what: 'page', url: 42 })).toBeNull()
   })
 })
 

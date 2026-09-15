@@ -1,17 +1,18 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { createInMemoryBridge } from '@hachej/boring-workspace/server'
 
 import type { StageEvent } from '../shared/stage.js'
 
 export const STAGE_STREAM_ROUTE = '/api/one-chat/stage/stream'
 export const STAGE_CLEAR_ROUTE = '/api/one-chat/stage/clear'
 export const ACTIVITY_CLEAR_ROUTE = '/api/one-chat/activity/clear'
+const STAGE_UI_COMMAND = 'oneChat.stageEvent'
 
 /**
- * One in-process fan-out from the agent tools to every open browser tab.
- *
- * Deliberately not the agent event stream: the stage is host UI state, not
- * conversation content, and keeping it on its own channel means the chat can be
- * rendered messages-only without losing the screen.
+ * A narrow adapter from the canonical UiBridge command seam to stage SSE.
+ * Stage state is host UI state rather than conversation content, so browsers
+ * consume it separately while every agent-authored UI effect still enters via
+ * UiBridge.postCommand.
  */
 export interface StageBus {
   emit(event: StageEvent): void
@@ -20,28 +21,37 @@ export interface StageBus {
 }
 
 export function createStageBus(): StageBus {
+  const bridge = createInMemoryBridge()
   const listeners = new Set<(event: StageEvent) => void>()
-  let currentSheet: StageEvent | null = null
+  let currentScreen: StageEvent | null = null
   let currentActivity: StageEvent | null = null
+
+  bridge.subscribeCommands((command) => {
+    if (command.kind !== STAGE_UI_COMMAND) return false
+    const event = command.params.event as StageEvent
+    if (event.type === 'stage.show') currentScreen = event
+    else if (event.type === 'stage.clear') currentScreen = null
+    if (event.type === 'activity.clear' || event.type === 'activity.done') currentActivity = null
+    else if (event.type === 'activity.started' || event.type === 'activity.verifying') currentActivity = event
+    for (const listener of [...listeners]) {
+      try {
+        listener(event)
+      } catch {
+        // A dead response must never take down the command dispatch.
+      }
+    }
+    return true
+  })
+
   return {
     emit(event) {
-      if (event.type === 'stage.show') currentSheet = event
-      else if (event.type === 'stage.clear') currentSheet = null
-      if (event.type === 'activity.clear' || event.type === 'activity.done') currentActivity = null
-      else if (event.type === 'activity.started' || event.type === 'activity.verifying') currentActivity = event
-      for (const listener of [...listeners]) {
-        try {
-          listener(event)
-        } catch {
-          // A dead response must never take down the tool call that emitted.
-        }
-      }
+      void bridge.postCommand({ kind: STAGE_UI_COMMAND, params: { event } })
     },
     subscribe(listener) {
       listeners.add(listener)
       // Stage overlays and builder work outlive browser connections. Replay
       // both so reload/reconnect cannot silently return to a stale screen.
-      for (const event of [currentSheet, currentActivity]) {
+      for (const event of [currentScreen, currentActivity]) {
         if (!event) continue
         try {
           listener(event)
@@ -60,8 +70,13 @@ export function createStageBus(): StageBus {
 }
 
 /** SSE endpoint the stage subscribes to. Text frames with current activity replay. */
-export function registerStageRoutes(app: FastifyInstance, bus: StageBus): void {
-  app.get(STAGE_STREAM_ROUTE, (request, reply) => {
+export function registerStageRoutes(
+  app: FastifyInstance,
+  source: StageBus | ((request: FastifyRequest) => StageBus | Promise<StageBus>),
+): void {
+  const resolve = (request: FastifyRequest) => typeof source === 'function' ? source(request) : source
+  app.get(STAGE_STREAM_ROUTE, async (request, reply) => {
+    const bus = await resolve(request)
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache, no-transform',
@@ -84,14 +99,16 @@ export function registerStageRoutes(app: FastifyInstance, bus: StageBus): void {
 
   // "Back to my app" goes through the bus rather than local state so every open
   // tab agrees on what is on screen.
-  app.post(STAGE_CLEAR_ROUTE, async () => {
+  app.post(STAGE_CLEAR_ROUTE, async (request) => {
+    const bus = await resolve(request)
     bus.emit({ type: 'stage.clear' })
     return { ok: true }
   })
 
   // The browser clears completed builder activity when the colleague starts
   // speaking, and fans that clear to every open tab.
-  app.post(ACTIVITY_CLEAR_ROUTE, async () => {
+  app.post(ACTIVITY_CLEAR_ROUTE, async (request) => {
+    const bus = await resolve(request)
     bus.emit({ type: 'activity.clear' })
     return { ok: true }
   })

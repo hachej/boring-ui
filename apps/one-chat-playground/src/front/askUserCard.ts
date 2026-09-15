@@ -1,5 +1,5 @@
 import type { PendingQuestionView } from '../server/askUser'
-import type { AskUserAnswerValue } from '../../../../plugins/ask-user/src/shared/types'
+import type { AskUserAnswerValue } from '@hachej/boring-ask-user/shared'
 
 /**
  * What the inline question card shows for one `ask_user` tool call.

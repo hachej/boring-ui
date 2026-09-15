@@ -42,6 +42,7 @@ export async function compactAfterAgreement(options: {
   readonly scope: AuthorizedAgentScope
   readonly sessions: SessionTracker
   readonly slug: string
+  readonly requestHeaders?: Readonly<Record<string, string>>
   readonly log?: (message: string) => void
 }): Promise<void> {
   const sessionId = options.sessions.current()
@@ -65,6 +66,7 @@ export async function compactAfterAgreement(options: {
   const response = await options.app.inject({
     method: 'POST',
     url: '/api/v1/agents/default/commands/execute',
+    headers: options.requestHeaders,
     payload: {
       requestId: `compact:${randomUUID()}`,
       sessionId,

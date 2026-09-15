@@ -5,7 +5,7 @@
   "type": "module",
   "description": "One Chat, One Screen — a single chat next to a single app, for a non-technical user.",
   "scripts": {
-    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build:dev",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build",
     "dev": "pnpm run build:deps && pnpm run dev:app",
     "dev:app": "tsx src/server/index.ts",
     "eval": "tsx eval/run.ts",
@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "fastify": "^5.12.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

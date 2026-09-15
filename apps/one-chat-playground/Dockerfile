@@ -28,7 +28,7 @@ LABEL org.opencontainers.image.source=$SOURCE \
 RUN corepack enable \
   && groupadd --system --gid 10001 boring \
   && useradd --system --uid 10001 --gid 10001 --create-home --home-dir /home/boring boring \
-  && mkdir -p /data/one-chat/workspaces /data/one-chat/sessions \
+  && mkdir -p /data/one-chat/apps /data/one-chat/workspaces /data/one-chat/sessions \
   && chown -R boring:boring /data/one-chat /home/boring
 
 # Dev mode is deliberate for the tester rollout: the front and editable app
@@ -44,12 +44,14 @@ ENV NODE_ENV=development \
   ONE_CHAT_PORT=5320 \
   ONE_CHAT_APP_PROXY_PORT=5321 \
   SAMPLE_APP_PORT=5322 \
-  ONE_CHAT_APP_BASE=/app/ \
+  ONE_CHAT_APP_PORT_RANGE=5322-5330 \
+  ONE_CHAT_APP_BASE=/app/{slug}/ \
+  ONE_CHAT_APPS_ROOT=/data/one-chat/apps \
   ONE_CHAT_WORKSPACE_ROOT=/data/one-chat/workspaces/app \
   ONE_CHAT_TEMPLATE_ROOT=/app/apps/one-chat-playground/template-app \
   BORING_AGENT_SESSION_ROOT=/data/one-chat/sessions
 
-VOLUME ["/data/one-chat/workspaces", "/data/one-chat/sessions"]
+VOLUME ["/data/one-chat/apps", "/data/one-chat/workspaces", "/data/one-chat/sessions"]
 EXPOSE 5320 5321
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -7,47 +6,61 @@ import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
 import { createOneChatRuntime } from './agentHost.js'
+import { createAppRegistry } from './appRegistry.js'
+import { registerAppRoutes } from './appRoutes.js'
 import { devCspPolicy } from './csp.js'
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const repoRoot = path.resolve(appRoot, '../..')
 const agentSourceRoot = path.resolve(repoRoot, 'packages/agent/src')
-// The user's app. Overridable so a second instance can run against a copy
-// without touching the one a live session is using.
-const sampleAppRoot = path.resolve(process.env.ONE_CHAT_WORKSPACE_ROOT ?? path.join(appRoot, 'sample-app'))
+const appsRoot = path.resolve(process.env.ONE_CHAT_APPS_ROOT ?? path.join(appRoot, '.workspaces'))
+const templateRoot = path.resolve(path.join(appRoot, 'template-app'))
+const legacyWorkspaceRoot = process.env.ONE_CHAT_WORKSPACE_ROOT
+  ? path.resolve(process.env.ONE_CHAT_WORKSPACE_ROOT)
+  : undefined
 
 const frontPort = Number(process.env.ONE_CHAT_PORT ?? 5320)
-const sampleAppPort = Number(process.env.SAMPLE_APP_PORT ?? 5321)
-// Host the browser uses to reach this machine (a Tailscale IP, a hostname).
-// Defaults to loopback for local use; the app iframe must be reachable from the viewer.
+const firstAppPort = Number(process.env.SAMPLE_APP_PORT ?? 5321)
+const configuredRange = process.env.ONE_CHAT_APP_PORT_RANGE?.match(/^(\d+)-(\d+)$/)
+const portStart = Number(process.env.ONE_CHAT_APP_PORT_START ?? configuredRange?.[1] ?? firstAppPort)
+const portEnd = Number(process.env.ONE_CHAT_APP_PORT_END ?? configuredRange?.[2] ?? (portStart + 8))
+if (!Number.isInteger(portStart) || !Number.isInteger(portEnd) || portStart < 1 || portEnd < portStart) {
+  throw new Error('ONE_CHAT_APP_PORT_RANGE must be an inclusive range such as 5321-5329')
+}
 const publicHost = process.env.ONE_CHAT_PUBLIC_HOST ?? '127.0.0.1'
-const sampleAppUrl = process.env.ONE_CHAT_APP_URL ?? `http://${publicHost}:${sampleAppPort}/`
 const sessionRoot = path.resolve(
   process.env.BORING_AGENT_SESSION_ROOT ?? path.join(appRoot, '.boring-agent', 'sessions'),
 )
 
-// The user's app. The agent's filesystem and bash tools are rooted here, and
-// Vite's HMR is what makes an agent edit show up in the base iframe without
-// anyone being told to reload.
-const sampleApp: ChildProcess = spawn('pnpm', ['exec', 'vite'], {
-  cwd: sampleAppRoot,
-  env: { ...process.env, SAMPLE_APP_PORT: String(sampleAppPort), PORT: String(sampleAppPort) },
-  stdio: 'inherit',
+const registry = createAppRegistry({
+  appsRoot,
+  templateRoot,
+  publicHost,
+  appUrlPattern: process.env.ONE_CHAT_APP_URL,
+  appBasePattern: process.env.ONE_CHAT_APP_BASE,
+  portStart,
+  portEnd,
+  legacyWorkspaceRoot,
 })
-sampleApp.on('exit', (code) => {
-  if (code && code !== 0) console.error(`[one-chat] sample app exited with code ${code}`)
-})
+await registry.init()
 
 const allowedOrigins = resolveAllowedOriginsFromEnv()
 const cspPolicy = devCspPolicy(allowedOrigins)
-
 const runtime = await createOneChatRuntime({
-  workspaceRoot: sampleAppRoot,
+  resolveApp(slug) {
+    const registered = registry.get(slug)
+    if (!registered) return undefined
+    return {
+      slug,
+      workspaceRoot: registry.rootFor(slug),
+      appBaseUrl: registry.urlFor(registered),
+    }
+  },
   allowedOrigins,
   sessionRoot,
-  appBaseUrl: sampleAppUrl,
 })
+registerAppRoutes(runtime.app, registry)
 
 const apiAddress = await runtime.app.listen({ port: 0, host: '127.0.0.1' })
 const apiTarget = `http://127.0.0.1:${new URL(apiAddress).port}`
@@ -66,7 +79,9 @@ const vite = await createViteServer({
           next()
         })
         server.middlewares.use(async (req, res, next) => {
-          if (req.method !== 'GET' || !req.url || !(req.url === '/' || req.url.startsWith('/?'))) {
+          const pathname = req.url?.split('?', 1)[0]
+          const isAppRoute = pathname === '/' || pathname === '/new' || /^\/apps\/[^/]+\/?$/.test(pathname ?? '')
+          if (req.method !== 'GET' || !req.url || !isAppRoute) {
             next()
             return
           }
@@ -76,8 +91,7 @@ const vite = await createViteServer({
             '  <head>',
             '    <meta charset="UTF-8" />',
             '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
-            `    <script>window.__ONE_CHAT_BASE_URL__ = ${JSON.stringify(sampleAppUrl)}</script>`,
-            '    <title>Your app</title>',
+            '    <title>Your apps</title>',
             '  </head>',
             '  <body>',
             '    <div id="root"></div>',
@@ -120,14 +134,14 @@ const vite = await createViteServer({
 
 await vite.listen()
 runtime.app.log.info(`one-chat front  http://${publicHost}:${frontPort}/`)
-runtime.app.log.info(`one-chat app    ${sampleAppUrl}`)
+runtime.app.log.info(`one-chat apps   ${appsRoot} (${registry.list().length})`)
 runtime.app.log.info(`one-chat api    ${apiAddress}`)
 
 let shutdownPromise: Promise<void> | undefined
 function shutdown(signal: NodeJS.Signals): Promise<void> {
   shutdownPromise ??= (async () => {
     runtime.app.log.info({ signal }, 'one-chat-playground shutting down')
-    sampleApp.kill('SIGTERM')
+    await registry.close()
     await runtime.close()
     await vite.close()
   })()
