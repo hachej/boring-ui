@@ -10,8 +10,18 @@ import type { AskUserAnswerValue } from '../../../../plugins/ask-user/src/shared
  */
 export type QuestionCardState =
   | { readonly kind: 'pending'; readonly question: PendingQuestionView }
-  | { readonly kind: 'answered'; readonly values: Record<string, AskUserAnswerValue> }
+  | {
+      readonly kind: 'answered'
+      readonly values: Record<string, AskUserAnswerValue>
+      /** Present when the answer was given here, so option labels can be used. */
+      readonly question?: PendingQuestionView
+    }
   | { readonly kind: 'gone' }
+
+export interface AnsweredHere {
+  readonly values: Record<string, AskUserAnswerValue>
+  readonly question: PendingQuestionView
+}
 
 export interface ToolCallView {
   readonly toolCallId: string
@@ -57,12 +67,12 @@ export function resolveQuestionCardState(input: {
   readonly call: ToolCallView
   readonly pending: readonly PendingQuestionView[]
   /** Answers submitted in this page's lifetime, by tool call id. */
-  readonly justAnswered?: Readonly<Record<string, Record<string, AskUserAnswerValue>>>
+  readonly justAnswered?: Readonly<Record<string, AnsweredHere>>
 }): QuestionCardState {
   const question = input.pending.find((candidate) => candidate.toolCallId === input.call.toolCallId)
   if (question) return { kind: 'pending', question }
   const optimistic = input.justAnswered?.[input.call.toolCallId]
-  if (optimistic) return { kind: 'answered', values: optimistic }
+  if (optimistic) return { kind: 'answered', values: optimistic.values, question: optimistic.question }
   const parsed = parseAnsweredValues(input.call.output)
   if (parsed) return { kind: 'answered', values: parsed }
   return { kind: 'gone' }

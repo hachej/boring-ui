@@ -44,7 +44,7 @@ export function QuestionCard({
   if (state.kind === 'answered') {
     return (
       <p className={`${CARD_CLASS} text-muted-foreground`} data-testid="one-chat-question-answered">
-        You said: {describeAnswer(state.values)}
+        You said: {describeAnswer(state.values, state.question)}
       </p>
     )
   }

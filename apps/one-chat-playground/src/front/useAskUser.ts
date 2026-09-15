@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { PendingQuestionView } from '../server/askUser'
 import type { AskUserAnswerValue } from '../../../../plugins/ask-user/src/shared/types'
+import type { AnsweredHere } from './askUserCard'
 
 const PENDING_URL = '/api/v1/questions/pending'
 const COMMANDS_URL = '/api/v1/questions/commands'
@@ -9,7 +10,7 @@ const POLL_MS = 700
 
 export interface AskUserState {
   readonly pending: readonly PendingQuestionView[]
-  readonly justAnswered: Readonly<Record<string, Record<string, AskUserAnswerValue>>>
+  readonly justAnswered: Readonly<Record<string, AnsweredHere>>
   readonly submitting: string | null
   submit(question: PendingQuestionView, values: Record<string, AskUserAnswerValue>): Promise<void>
 }
@@ -22,7 +23,7 @@ export interface AskUserState {
  */
 export function useAskUser(): AskUserState {
   const [pending, setPending] = useState<readonly PendingQuestionView[]>([])
-  const [justAnswered, setJustAnswered] = useState<Record<string, Record<string, AskUserAnswerValue>>>({})
+  const [justAnswered, setJustAnswered] = useState<Record<string, AnsweredHere>>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
   const alive = useRef(true)
 
@@ -65,7 +66,7 @@ export function useAskUser(): AskUserState {
       })
       if (!response.ok) throw new Error(`answer rejected (${response.status})`)
       if (question.toolCallId) {
-        setJustAnswered((current) => ({ ...current, [question.toolCallId as string]: values }))
+        setJustAnswered((current) => ({ ...current, [question.toolCallId as string]: { values, question } }))
       }
       setPending((current) => current.filter((candidate) => candidate.questionId !== question.questionId))
     } finally {

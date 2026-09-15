@@ -41,9 +41,9 @@ describe('the question card state', () => {
     const state = resolveQuestionCardState({
       call,
       pending: [],
-      justAnswered: { 'call-1': { choice: 'delete' } },
+      justAnswered: { 'call-1': { values: { choice: 'delete' }, question } },
     })
-    expect(state).toEqual({ kind: 'answered', values: { choice: 'delete' } })
+    expect(state).toEqual({ kind: 'answered', values: { choice: 'delete' }, question })
   })
 
   test('recovers the answer from the tool result after a reload', () => {
