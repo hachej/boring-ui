@@ -4,23 +4,22 @@ Bead: `factory-plugin-owner-runtime-identity-prefix-8pdn.2`
 
 ## Result
 
-A real Chromium page rendered `WorkspaceAgentFront` against a real listening `createWorkspaceAgentServer` at `/owners/alice/workspace`. The app/runtime plugin registered `owner-runtime-pane` and an `owner.runtime` surface resolver. A server plugin route used its injected instance bridge through `createWorkspaceUiCommands(ctx.bridge).openSurface`, whose sole dispatch is `UiBridge.postCommand`.
+A real Chromium page rendered `WorkspaceAgentFront` against a listening, prefixed `createWorkspaceAgentServer`. The proof records every server polling drain and every command sequence ID delivered in browser responses. The granted `owner.runtime` command's sequence ID was delivered exactly once and mounted exactly one pane; all delivered IDs were unique. Unknown and ungranted commands produced safe resolver misses without mounting panes.
 
-The browser used authenticated `fetch` polling because an Authorization header was configured. Every observed command request carried `Bearer pane-proof`, used the prefixed URL, and had no token query parameter. The granted command mounted the pane once. Unknown and ungranted surfaces logged safe resolver misses and did not create another pane. `WorkspaceAgentFront` remained the only drain owner; its ChatPanelHost receives `bridgeEndpoint=null`, preventing duplicate chat-host dispatch.
+The page also emitted a real workspace agent-data/chat-display event containing a command-shaped decoy. Browser instrumentation showed that it neither entered command transport nor opened a pane, behaviorally proving display events cannot dispatch commands.
 
-## Evidence
+Authenticated requests used only `/owners/alice/workspace`, carried `Bearer pane-proof`, and contained no query token. Server shutdown removes its temporary workspace on normal close, signals, listen failure, uncaught exception, and unhandled rejection.
 
-- `browser-proof/results/plugin-pane-open.png` — final granted pane.
-- `browser-proof/results/owner-plugin-pane-*/trace.zip` — Playwright trace with request and assertion timeline.
-- `browser-proof/results/owner-plugin-pane-*/video.webm` — browser recording.
-- Playwright result: `1 passed (32.3s)` under a bounded 90-second shell timeout.
+## Reproduction
 
-## Commands
+`timeout 420s docs/issues/owner-runtime-identity-prefix/browser-proof/run-proof.sh`
 
-- `timeout 90s pnpm exec playwright test --config docs/issues/owner-runtime-identity-prefix/browser-proof/playwright.config.ts` — PASS, 1/1.
-- `pnpm --filter @hachej/boring-workspace typecheck` — PASS.
-- `pnpm --filter @hachej/boring-ask-user test -- --runInBand` — PASS, 21 files / 193 tests; one existing skipped test.
-- `pnpm --filter workspace-playground exec tsx scripts/bridge-e2e.ts` — PASS, 11/11 checks.
-- `pnpm --filter workspace-playground smoke:bridge` — bounded command timed out during dependency declaration builds before smoke execution; the exact smoke script was then run directly after built artifacts were available and passed 11/11.
+The wrapper builds the required workspace dependency graph from a clean checkout, then runs one bounded Playwright test. Generated JSON, trace, video, and screenshot files live only under ignored `browser-proof/.artifacts/`. No generated browser evidence is tracked.
 
-No production defect was observed, so this slice changes proof infrastructure and evidence only. Runtime/identity slices were not started.
+## Validation
+
+- Browser/server proof: 1/1 passed in 24.7s after package build.
+- ask-user: 21 files / 193 tests passed; one existing skipped test.
+- bridge E2E: 11/11 checks passed.
+- Focused proof TypeScript check: passed.
+- Post-run: no proof server/browser processes, temporary `owner-pane-proof-*` directories, or generated tracked changes remained.

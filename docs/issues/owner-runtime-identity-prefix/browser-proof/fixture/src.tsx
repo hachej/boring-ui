@@ -2,6 +2,7 @@ import React, { useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { emitAgentData } from "@hachej/boring-workspace/events"
 import "@hachej/boring-workspace/globals.css"
 import "@hachej/boring-agent/front/styles.css"
 
@@ -11,6 +12,7 @@ const AUTHORIZATION = "Bearer pane-proof"
 declare global {
   interface Window {
     paneMounts?: number
+    emitProofChatDisplayEvent?: () => void
   }
 }
 
@@ -20,6 +22,12 @@ function OwnerPane({ params }: { params?: { target?: string } }) {
   }, [])
   return <section data-testid="owner-pane">Owner plugin pane: {params?.target}</section>
 }
+
+window.emitProofChatDisplayEvent = () => emitAgentData({
+  type: "text-delta",
+  delta: "display-only proof event",
+  uiCommand: { kind: "openSurface", params: { kind: "owner.runtime", target: "granted:must-not-open" } },
+})
 
 const ownerPlugin = definePlugin({
   id: "owner-runtime-plugin",

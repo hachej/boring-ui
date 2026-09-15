@@ -1,9 +1,9 @@
 # Slice 2 real browser/server proof
 
-Runs a real prefixed `createWorkspaceAgentServer` and a Chromium browser. The app plugin registers a pane and `owner.runtime` resolver. The server plugin receives an authenticated proof request and uses its injected, instance-bound bridge via `createWorkspaceUiCommands(ctx.bridge).openSurface`.
+Runs a real prefixed `createWorkspaceAgentServer` and Chromium browser. The command builds the required package dependency graph first, so it works from a clean checkout.
 
 ```sh
-pnpm exec playwright test --config docs/issues/owner-runtime-identity-prefix/browser-proof/playwright.config.ts
+timeout 420s docs/issues/owner-runtime-identity-prefix/browser-proof/run-proof.sh
 ```
 
-The test asserts authenticated header polling, token-free URLs, prefixed-only transport, exactly one pane mount, safe unknown/ungranted resolution, and no ChatPanelHost duplicate command drain. Trace, video, screenshot, and JSON output are written to `results/`.
+The test asserts authenticated, prefixed, token-free polling; records server transport drains and browser-delivered command sequence IDs; and requires the granted command to be delivered exactly once. It also emits a command-shaped chat display event and behaviorally verifies that it cannot dispatch. Unknown/ungranted resolution remains safe. Generated trace, video, screenshot, and JSON are isolated under ignored `.artifacts/`; running proof does not modify tracked evidence. Server teardown removes its temporary workspace on normal closure, signals, and fatal failures.

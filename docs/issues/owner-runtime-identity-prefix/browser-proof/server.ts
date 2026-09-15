@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
@@ -9,6 +9,8 @@ const PREFIX = "/owners/alice/workspace"
 const AUTHORIZATION = "Bearer pane-proof"
 const workspaceRoot = await mkdtemp(join(tmpdir(), "owner-pane-proof-"))
 let postCount = 0
+let drainCount = 0
+let deliveredSeqs: number[] = []
 
 const app = await createWorkspaceAgentServer({
   workspaceRoot,
@@ -33,7 +35,7 @@ const app = await createWorkspaceAgentServer({
       })
       routes.get("/proof/stats", async (request, reply) => {
         if (request.headers.authorization !== AUTHORIZATION) return reply.code(401).send({ ok: false })
-        return { postCount }
+        return { postCount, drainCount, deliveredSeqs }
       })
     },
   })],
@@ -45,7 +47,33 @@ app.addHook("onRequest", async (request, reply) => {
     return reply.code(401).send({ error: "unauthorized" })
   }
 })
+app.addHook("onSend", async (request, _reply, payload) => {
+  if (request.url.startsWith(`${PREFIX}/api/v1/ui/commands/next?poll=true`) && typeof payload === "string") {
+    drainCount += 1
+    try {
+      const batch = JSON.parse(payload) as Array<{ seq?: unknown }>
+      deliveredSeqs.push(...batch.flatMap(({ seq }) => typeof seq === "number" ? [seq] : []))
+    } catch { /* An invalid response will fail the browser assertion. */ }
+  }
+})
 
-await app.listen({ host: "127.0.0.1", port: 5470 })
-console.log("owner pane proof server ready")
-for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => void app.close().finally(() => process.exit(0)))
+let shuttingDown = false
+async function shutdown(exitCode?: number): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  try { await app.close() } finally {
+    await rm(workspaceRoot, { recursive: true, force: true })
+    if (exitCode !== undefined) process.exit(exitCode)
+  }
+}
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => void shutdown(0))
+process.once("uncaughtException", (error) => { console.error(error); void shutdown(1) })
+process.once("unhandledRejection", (error) => { console.error(error); void shutdown(1) })
+
+try {
+  await app.listen({ host: "127.0.0.1", port: 5470 })
+  console.log(`owner pane proof server ready workspaceRoot=${workspaceRoot}`)
+} catch (error) {
+  console.error(error)
+  await shutdown(1)
+}
