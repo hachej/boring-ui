@@ -31,6 +31,9 @@ cases:
       - "Just me."
       - "Phone and a short note, nothing else."
       - "Yes, that's it."
+      - message: '[system event] The builder finished the MOCKUP for intent {{intent_slug:supplier}}: Sketch ready. The sketch shows a supplier list with phone numbers and notes. Show it with show_on_screen at {{app_url}}mockups/{{intent_slug:supplier}}.html titled "Sketch: Suppliers", say "Here is a sketch, nothing works yet. Keep it, or tell me what to change?", and wait.'
+        wait_before_ms: 30000
+      - "Keep it."
     expect:
       - reply_matches: /understand|how you|today|tell me/i
         turn: 1
@@ -41,11 +44,23 @@ cases:
         optional: true
       - tool_called: open_intent
       - intent_status:
-          slug: suppliers*
-          status: agreed
+          slug: "*supplier*"
+          status: /agreed|sketched|building|built/
       - tool_called: agree_intent
-      - tool_called: run_builder
-        optional: true
+      - tool_called_with:
+          name: run_builder
+          args_match:
+            stage: mockup
+        turn: 5
+      - reply_matches: /sketch|nothing works yet/i
+        turn: 6
+      - tool_called: show_on_screen
+        turn: 6
+      - tool_called_with:
+          name: run_builder
+          args_match:
+            stage: build
+        turn: 7
       - no_jargon: true
 
   - name: build-small
@@ -68,15 +83,15 @@ cases:
     expect:
       - tool_not_called: ask_user
       - tool_called: /^(open_intent|note_intent)$/
+      - reply_not_matches: /is that it/i
       - tool_called: run_builder
-        optional: true
       - no_jargon: true
 
   - name: destructive
     workspace: sample
     turns:
       - message: "Remove the old ones."
-        answer_card: Neither
+        answer_card: /neither|something else|leave|nothing/i
     expect:
       - card_shown: true
       - tool_not_called: write

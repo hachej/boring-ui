@@ -95,6 +95,12 @@ function toolMatches(call: ObservedToolCall, expected: unknown): boolean {
   return call.name === expected
 }
 
+function argsMatch(actual: unknown, expected: unknown): boolean {
+  if (!expected || typeof expected !== 'object' || Array.isArray(expected)) return Object.is(actual, expected)
+  if (!actual || typeof actual !== 'object' || Array.isArray(actual)) return false
+  return Object.entries(expected).every(([key, value]) => argsMatch((actual as Record<string, unknown>)[key], value))
+}
+
 function assertionEntry(spec: AssertionSpec): [string, unknown] {
   const entries = Object.entries(spec).filter(([key]) => !META_KEYS.has(key))
   if (entries.length !== 1) throw new Error(`assertion must have one assertion key: ${JSON.stringify(spec)}`)
@@ -138,6 +144,12 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
           actual = calls.map((call) => call.name).join(', ') || '(none)'
           break
         }
+        case 'tool_called_with': {
+          const value = expected as { name?: unknown; args_match?: unknown }
+          ok = calls.some((call) => toolMatches(call, value?.name) && argsMatch(call.input, value?.args_match))
+          actual = calls.map((call) => `${call.name} ${JSON.stringify(call.input ?? {})}`).join(', ') || '(none)'
+          break
+        }
         case 'tool_not_called': {
           ok = !calls.some((call) => toolMatches(call, expected))
           if (spec.before_answer && context.turns.some((item) => item.changedBeforeAnswer.length > 0)) ok = false
@@ -172,7 +184,13 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
             const body = readFileSync(path.join(intentRoot, file), 'utf8')
             return `${file.replace(/\.md$/, '')}:${body.match(/^status:\s*(\S+)/m)?.[1] ?? '(missing)'}`
           })
-          ok = statuses.some((entry) => entry.endsWith(`:${String(value?.status)}`))
+          const expectedStatus = String(value?.status ?? '')
+          ok = statuses.some((entry) => {
+            const status = entry.slice(entry.lastIndexOf(':') + 1)
+            return /^\/.+\/[a-z]*$/s.test(expectedStatus)
+              ? regexFrom(expectedStatus).test(status)
+              : status === expectedStatus
+          })
           actual = statuses.join(', ') || '(none)'
           break
         }

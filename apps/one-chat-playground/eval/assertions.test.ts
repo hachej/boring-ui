@@ -37,16 +37,31 @@ describe('evaluateAssertions', () => {
       { reply_matches: '/members/i' },
       { reply_not_matches: '/cannot see/i' },
       { tool_called: '/count/' },
+      { tool_called_with: { name: 'count_items', args_match: {} } },
       { tool_not_called: 'write', before_answer: true },
       { file_exists: '.pi/extensions/*.ts' },
       { file_contains: { path: 'agent/instructions.md', regex: '/members/i' } },
       { file_not_contains: { path: 'agent/instructions.md', regex: '/clients only/i' } },
-      { intent_status: { slug: 'suppliers*', status: 'agreed' } },
+      { intent_status: { slug: '*supplier*', status: '/agreed|sketched/' } },
       { card_shown: true },
       { no_jargon: true },
     ], fixture())
 
     expect(results.every((result) => result.ok)).toBe(true)
+  })
+
+  it('matches a tool by name and a subset of nested arguments', () => {
+    const context = fixture()
+    const [result] = evaluateAssertions([{
+      tool_called_with: { name: 'run_builder', args_match: { stage: 'mockup' } },
+    }], {
+      ...context,
+      turns: [{
+        ...context.turns[0]!,
+        toolCalls: [{ name: 'run_builder', input: { slug: 'suppliers', stage: 'mockup' } }],
+      }],
+    })
+    expect(result?.ok).toBe(true)
   })
 
   it('keeps failed optional assertions visible without changing their result', () => {

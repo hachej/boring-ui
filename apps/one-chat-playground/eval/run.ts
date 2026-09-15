@@ -27,7 +27,10 @@ const CASES_PATH = path.join(APP_ROOT, 'eval', 'cases.yaml')
 const WORKSPACES_ROOT = path.join(APP_ROOT, '.eval-workspaces')
 const REPORTS_ROOT = path.join(APP_ROOT, 'eval', 'reports')
 const SESSION_ROOT = '/var/tmp/one-chat-eval/sessions'
-const API_ROOT = 'http://127.0.0.1:5360'
+const FRONT_PORT = Number(process.env.ONE_CHAT_PORT ?? 5360)
+const APP_PORT = Number(process.env.SAMPLE_APP_PORT ?? 5361)
+const API_ROOT = `http://127.0.0.1:${FRONT_PORT}`
+const APP_URL = process.env.ONE_CHAT_APP_URL ?? `http://127.0.0.1:${APP_PORT}/`
 const TURN_TIMEOUT_MS = 180_000
 
 interface SeedFile {
@@ -38,6 +41,8 @@ interface SeedFile {
 interface EvalTurn {
   readonly message: string
   readonly answer_card?: string
+  /** Model compaction and other asynchronous handoffs may still be settling. */
+  readonly wait_before_ms?: number
 }
 
 interface EvalCase {
@@ -99,6 +104,11 @@ interface CaseReport {
 let activeHost: ChildProcess | undefined
 let shuttingDown = false
 
+function regexFrom(value: string): RegExp {
+  const delimited = value.match(/^\/(.*)\/([a-z]*)$/s)
+  return delimited ? new RegExp(delimited[1], delimited[2]) : new RegExp(value)
+}
+
 function parseArgs(argv: readonly string[]): { caseName?: string; keep: boolean } {
   let caseName: string | undefined
   let keep = false
@@ -132,7 +142,18 @@ function loadCases(): EvalCase[] {
 }
 
 function normalizedTurn(turn: string | EvalTurn): EvalTurn {
-  return typeof turn === 'string' ? { message: turn } : turn
+  const normalized = typeof turn === 'string' ? { message: turn } : turn
+  const message = normalized.message
+    .replaceAll('{{app_url}}', APP_URL)
+    .replace(/\{\{intent_slug:([^}]+)\}\}/g, (_match, needle: string) => {
+      const intentRoot = currentWorkspace && path.join(currentWorkspace, 'agent', 'intents')
+      const candidate = intentRoot && existsSync(intentRoot)
+        ? readdirSync(intentRoot).find((file) => file.endsWith('.md') && file.toLowerCase().includes(needle.toLowerCase()))
+        : undefined
+      if (!candidate) throw new Error(`no intent slug contains ${JSON.stringify(needle)}`)
+      return candidate.slice(0, -3)
+    })
+  return { ...normalized, message }
 }
 
 function safeCaseName(name: string): string {
@@ -217,8 +238,9 @@ async function startHost(workspaceRoot: string): Promise<{ host: ChildProcess; l
       BORING_AGENT_DEFAULT_MODEL_PROVIDER: 'openai-codex',
       BORING_AGENT_DEFAULT_MODEL_ID: 'gpt-5.5',
       BORING_AGENT_SESSION_ROOT: SESSION_ROOT,
-      ONE_CHAT_PORT: '5360',
-      SAMPLE_APP_PORT: '5361',
+      ONE_CHAT_PORT: String(FRONT_PORT),
+      SAMPLE_APP_PORT: String(APP_PORT),
+      ONE_CHAT_APP_URL: APP_URL,
       ONE_CHAT_WORKSPACE_ROOT: workspaceRoot,
       HOST: '127.0.0.1',
       TMPDIR: '/var/tmp',
@@ -348,7 +370,10 @@ function answerValues(question: PendingQuestion, optionLabel: string): Record<st
   const values: Record<string, string> = {}
   for (const field of fields) {
     if (!field.name) throw new Error(`question ${question.questionId} has an unnamed field`)
-    const option = field.options?.find((candidate) => candidate.label?.toLowerCase() === optionLabel.toLowerCase())
+    const optionPattern = /^\/.+\/[a-z]*$/s.test(optionLabel) ? regexFrom(optionLabel) : undefined
+    const option = field.options?.find((candidate) => optionPattern
+      ? optionPattern.test(candidate.label ?? '')
+      : candidate.label?.toLowerCase() === optionLabel.toLowerCase())
     if (field.options?.length && !option) {
       throw new Error(`answer option ${JSON.stringify(optionLabel)} is not in ${field.options.map((item) => item.label).join(', ')}`)
     }
@@ -464,7 +489,11 @@ async function runCase(candidate: EvalCase, keep: boolean): Promise<CaseReport> 
       body: JSON.stringify({}),
     })
     if (!created.sessionId) throw new Error('create session response did not include sessionId')
-    for (const rawTurn of candidate.turns) observations.push(await runTurn(created.sessionId, normalizedTurn(rawTurn)))
+    for (const rawTurn of candidate.turns) {
+      const turn = normalizedTurn(rawTurn)
+      if (turn.wait_before_ms) await new Promise((resolve) => setTimeout(resolve, turn.wait_before_ms))
+      observations.push(await runTurn(created.sessionId, turn))
+    }
     const assertions = evaluateAssertions(candidate.expect, { workspaceRoot: prepared.root, turns: observations })
     const passed = assertions.every((result) => result.ok || result.optional)
     return {
