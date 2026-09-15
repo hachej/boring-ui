@@ -28,13 +28,31 @@
 /* Chat left, screen right. One column under a phone width. */
 .one-chat-shell {
   display: grid;
-  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  grid-template-columns: var(--one-chat-chat-width, 400px) 6px minmax(0, 1fr);
   height: 100%;
 }
+
+/* The drag handle: a hairline that widens on hover and while dragging. */
+.one-chat-resizer {
+  cursor: col-resize;
+  background: var(--color-border);
+  transition: background-color 120ms ease;
+  touch-action: none;
+}
+.one-chat-resizer:hover,
+.one-chat-resizer:focus-visible,
+.one-chat-shell[data-resizing] .one-chat-resizer {
+  background: var(--boring-accent, var(--color-muted-foreground));
+  outline: none;
+}
+/* Iframes swallow pointer events; disable them for the stage while dragging. */
+.one-chat-shell[data-resizing] { cursor: col-resize; user-select: none; }
+.one-chat-shell[data-resizing] iframe { pointer-events: none; }
 
 @media (max-width: 720px) {
   .one-chat-shell {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 45vh) minmax(0, 1fr);
   }
+  .one-chat-resizer { display: none; }
 }

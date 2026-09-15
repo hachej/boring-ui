@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Resizer, useChatWidth } from './Resizer'
 import { ChatPanel as PiChatPanel } from '@hachej/boring-agent/front'
 
 import { Stage } from './Stage'
@@ -19,6 +20,7 @@ declare global {
  */
 export function App() {
   const stage = useStage()
+  const chatWidth = useChatWidth()
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionError, setSessionError] = useState<string | null>(null)
   const baseUrl = window.__ONE_CHAT_BASE_URL__ ?? 'http://127.0.0.1:5321/'
@@ -38,9 +40,14 @@ export function App() {
   }, [])
 
   return (
-    <div className="one-chat-shell" data-testid="one-chat-shell">
+    <div
+      className="one-chat-shell"
+      data-testid="one-chat-shell"
+      data-resizing={chatWidth.resizing ? "" : undefined}
+      style={{ ["--one-chat-chat-width" as string]: `${chatWidth.width}px` }}
+    >
       <div
-        className="flex min-h-0 min-w-0 flex-col border-r border-border/60 bg-background max-[720px]:border-r-0 max-[720px]:border-b"
+        className="flex min-h-0 min-w-0 flex-col bg-background max-[720px]:border-b max-[720px]:border-border/60"
         data-testid="one-chat-chat"
       >
         {sessionError ? (
@@ -73,6 +80,7 @@ export function App() {
           />
         ) : null}
       </div>
+      <Resizer width={chatWidth.width} onChange={chatWidth.apply} onResizingChange={chatWidth.setResizing} />
       <Stage baseUrl={baseUrl} sheet={stage.sheet} onBackToApp={stage.clearSheet} />
     </div>
   )
