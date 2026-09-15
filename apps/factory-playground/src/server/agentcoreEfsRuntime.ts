@@ -89,6 +89,12 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
       if (lease.status === 'create-ambiguous') throw new Error(`AgentCore create outcome is ambiguous (${lease.idempotencyKey}); operator reconciliation required`)
       const fence = fenceOf(lease)
       const lifecycle = new AbortController()
+      const renewTimer = setInterval(() => {
+        void options.handleStore.renew(fence, leaseForMs).then((renewed) => {
+          if (!renewed) lifecycle.abort(new Error('AgentCore session ownership fence was lost'))
+        }, (error) => lifecycle.abort(error))
+      }, Math.max(1, Math.floor(leaseForMs / 3)))
+      renewTimer.unref()
       let handle = lease.handle
       try {
         if (handle) {
@@ -114,21 +120,27 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
           placement: 'remote',
           capabilities: ['exec', 'persistent-fs'],
           runtimeContext,
-          exec: (command: string, execOptions?: ExecOptions) => options.agentCore.exec({
+          exec: (command: string, execOptions?: ExecOptions) => {
+            const cwd = execOptions?.cwd ?? runtimeRoot
+            if (cwd !== runtimeRoot && !cwd.startsWith(`${runtimeRoot}/`)) {
+              throw new Error('AgentCore exec cwd escaped authorized EFS namespace')
+            }
+            return options.agentCore.exec({
             handle: handle!,
             command,
-            cwd: execOptions?.cwd ?? runtimeRoot,
+            cwd,
             options: {
               ...execOptions,
               signal: execOptions?.signal
                 ? AbortSignal.any([execOptions.signal, lifecycle.signal])
                 : lifecycle.signal,
             },
-          }),
+          })},
         }
         let disposed = false
-        return { workspace, sandbox, async dispose() { if (disposed) return; disposed = true; lifecycle.abort(); await disposeNodeWorkspace(workspace); await options.handleStore.release(fence) } }
+        return { workspace, sandbox, async dispose() { if (disposed) return; disposed = true; clearInterval(renewTimer); lifecycle.abort(); await disposeNodeWorkspace(workspace); await options.handleStore.release(fence) } }
       } catch (error) {
+        clearInterval(renewTimer)
         lifecycle.abort()
         await options.handleStore.release(fence).catch(() => false)
         throw error
