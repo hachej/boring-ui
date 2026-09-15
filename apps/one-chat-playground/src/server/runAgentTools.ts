@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 
 import type {
   AgentGateway,
@@ -6,12 +8,64 @@ import type {
   AuthorizedAgentScope,
 } from '@hachej/boring-agent/shared'
 
-import { assertValidSlug, noteIntent, readIntent, setIntentStatus, systemClock, type Clock } from './memoryFiles.js'
+import {
+  assertValidSlug,
+  noteIntent,
+  readIntent,
+  setIntentStatus,
+  systemClock,
+  type Clock,
+  type IntentFile,
+} from './memoryFiles.js'
 import type { SessionTracker } from './reloadTools.js'
 import { formatSystemEvent } from './systemEvents.js'
 
 export const BUILDER_AGENT_TYPE_ID = 'builder'
 export const DOCUMENTER_AGENT_TYPE_ID = 'documenter'
+export const BUILDER_STAGES = ['mockup', 'build'] as const
+export type BuilderStage = (typeof BUILDER_STAGES)[number]
+
+const NEW_SURFACE_PATTERN = /\b(?:app|application|screen|page|dashboard|view|portal|workspace|tracker|list|track|manage|organize)\b/i
+const BUILT_HISTORY_PATTERN = /\bBuilder(?: build)?:/i
+
+/** Default omitted stages without making callers reproduce intent-history rules. */
+export function defaultBuilderStage(intent: Pick<IntentFile, 'status' | 'body' | 'agreement'>): BuilderStage {
+  const hasBuiltHistory = intent.status === 'built'
+    || intent.status === 'kept'
+    || BUILT_HISTORY_PATTERN.test(intent.body)
+  return !hasBuiltHistory && NEW_SURFACE_PATTERN.test(intent.agreement ?? '') ? 'mockup' : 'build'
+}
+
+function humanIntentTitle(slug: string): string {
+  const words = slug.replace(/-/g, ' ')
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`
+}
+
+function mockupUrl(appBaseUrl: string | undefined, slug: string): string {
+  const relative = `mockups/${slug}.html`
+  return appBaseUrl ? new URL(relative, appBaseUrl).href : `/${relative}`
+}
+
+async function verifyMockup(workspaceRoot: string, slug: string): Promise<void> {
+  const relative = path.posix.join('public', 'mockups', `${slug}.html`)
+  let body: string
+  try {
+    body = await readFile(path.join(workspaceRoot, relative), 'utf8')
+  } catch {
+    throw new Error(`${relative} was not created`)
+  }
+  for (const required of [/<html(?:\s|>)/i, /<\/html>/i, /<head(?:\s|>)/i, /<\/head>/i, /<body(?:\s|>)/i, /<\/body>/i]) {
+    if (!required.test(body)) throw new Error(`${relative} is not a complete HTML page`)
+  }
+}
+
+function sketchSummary(summary: string): string {
+  if (/^Sketch ready[.!]?\s*$/i.test(summary)) {
+    return 'Sketch ready. The agreed screen is shown with realistic example data.'
+  }
+  if (/^Sketch ready\b/i.test(summary)) return summary
+  return `Sketch ready. ${summary || 'The agreed screen is shown with realistic example data.'}`
+}
 
 function text(body: string, isError = false): Awaited<ReturnType<AgentTool['execute']>> {
   return { content: [{ type: 'text', text: body }], ...(isError ? { isError: true } : {}) }
@@ -128,6 +182,8 @@ export function createRunAgentTools(options: {
   readonly scope: AuthorizedAgentScope
   readonly getGateway: () => AgentGateway | undefined
   readonly sessions: SessionTracker
+  /** The browser-reachable app URL also given to the stage tools. */
+  readonly appBaseUrl?: string
   readonly now?: Clock
   readonly log?: (message: string) => void
 }): AgentTool[] {
@@ -136,10 +192,17 @@ export function createRunAgentTools(options: {
 
   const runBuilder: AgentTool = {
     name: 'run_builder',
-    description: 'Start a fresh builder for an agreed intent. It works separately and this call returns as soon as it has started. Only one build can run at a time.',
+    description: 'Start a fresh builder for an agreed intent. Choose "mockup" for one static sketch or "build" for the working app. If omitted, a never-built new app or screen is sketched first; other changes build immediately. It returns as soon as it starts, and only one builder can run at a time.',
     parameters: {
       type: 'object',
-      properties: { slug: SLUG_PARAM },
+      properties: {
+        slug: SLUG_PARAM,
+        stage: {
+          type: 'string',
+          enum: [...BUILDER_STAGES],
+          description: 'Use "mockup" for the static sketch and "build" for the working change.',
+        },
+      },
       required: ['slug'],
       additionalProperties: false,
     },
@@ -147,25 +210,67 @@ export function createRunAgentTools(options: {
       try {
         assertValidSlug(params.slug)
         const slug = params.slug
-        if (builderRunning) return text('a build is already running')
+        if (builderRunning) return text('a builder is already running')
         const gateway = options.getGateway()
         if (!gateway) return text('The builder is not ready yet.', true)
         const intent = await readIntent(options.workspaceRoot, slug)
         if (!intent?.agreement) return text(`Intent ${slug} must be agreed before building.`, true)
+        if (params.stage !== undefined && !BUILDER_STAGES.includes(params.stage as BuilderStage)) {
+          return text(`Stage must be one of: ${BUILDER_STAGES.join(', ')}.`, true)
+        }
+        const stage = (params.stage as BuilderStage | undefined) ?? defaultBuilderStage(intent)
+        const mockupRelativePath = `public/mockups/${slug}.html`
 
         builderRunning = true
         try {
-          await setIntentStatus(options.workspaceRoot, slug, 'building')
+          if (stage === 'build') await setIntentStatus(options.workspaceRoot, slug, 'building')
           const run = await startFreshRun({
             gateway,
             scope: options.scope,
             agentTypeId: BUILDER_AGENT_TYPE_ID,
-            title: `Build ${slug}`,
-            prompt: `Build intent ${slug}`,
+            title: `${stage === 'mockup' ? 'Sketch' : 'Build'} ${slug}`,
+            prompt: stage === 'mockup'
+              ? `Create the MOCKUP for intent ${slug}. Write only ${mockupRelativePath}.`
+              : `BUILD intent ${slug}. Match the approved sketch at ${mockupRelativePath} when it exists.`,
           })
           void run.completion.then(async ({ summary, status }) => {
-            const finalSummary = summary || `could not, because the builder session ended with ${status}`
-            await noteIntent(options.workspaceRoot, slug, `Builder: ${finalSummary}`, now)
+            let finalSummary = summary || `could not, because the builder session ended with ${status}`
+            if (stage === 'mockup') {
+              try {
+                await verifyMockup(options.workspaceRoot, slug)
+              } catch (error) {
+                finalSummary = `could not, because ${error instanceof Error ? error.message : String(error)}`
+                await noteIntent(options.workspaceRoot, slug, `Builder mockup: ${finalSummary}`, now)
+                await setIntentStatus(options.workspaceRoot, slug, 'agreed')
+                await postToColleague({
+                  gateway,
+                  scope: options.scope,
+                  sessions: options.sessions,
+                  prompt: `[system event] The builder could not finish the sketch for intent ${slug}: ${finalSummary}. Tell the user plainly and offer to try the sketch again.`,
+                  log: options.log,
+                })
+                return
+              }
+              finalSummary = sketchSummary(finalSummary)
+              await noteIntent(options.workspaceRoot, slug, `Builder mockup: ${finalSummary}`, now)
+              await setIntentStatus(options.workspaceRoot, slug, 'sketched')
+              await postToColleague({
+                gateway,
+                scope: options.scope,
+                sessions: options.sessions,
+                prompt: formatSystemEvent({
+                  kind: 'mockup-finished',
+                  slug,
+                  summary: finalSummary,
+                  url: mockupUrl(options.appBaseUrl, slug),
+                  title: `Sketch: ${humanIntentTitle(slug)}`,
+                }),
+                log: options.log,
+              })
+              return
+            }
+
+            await noteIntent(options.workspaceRoot, slug, `Builder build: ${finalSummary}`, now)
             await setIntentStatus(options.workspaceRoot, slug, 'built')
             await postToColleague({
               gateway,
@@ -179,7 +284,7 @@ export function createRunAgentTools(options: {
           }).finally(() => {
             builderRunning = false
           })
-          return text('started')
+          return text(`started ${stage}`)
         } catch (error) {
           builderRunning = false
           throw error

@@ -6,7 +6,7 @@ import type { AgentGateway, AgentSessionConnection, AgentTool, AuthorizedAgentSc
 
 import { agreeIntent, openIntent, readIntent } from '../memoryFiles'
 import { createSessionTracker } from '../reloadTools'
-import { createRunAgentTools } from '../runAgentTools'
+import { createRunAgentTools, defaultBuilderStage } from '../runAgentTools'
 
 function resultText(result: Awaited<ReturnType<AgentTool['execute']>>): string {
   return result.content.map((part) => 'text' in part ? part.text : '').join('')
@@ -71,20 +71,51 @@ describe('fresh agent run tools', () => {
 
     const tools = createRunAgentTools({ workspaceRoot: root, scope, getGateway: () => gateway, sessions: tracker })
     const runBuilder = tools.find((tool) => tool.name === 'run_builder')!
-    const first = await runBuilder.execute({ slug: 'suppliers' }, { sessionId: 'live-colleague' } as never)
-    expect(resultText(first)).toBe('started')
+    const first = await runBuilder.execute({ slug: 'suppliers', stage: 'build' }, { sessionId: 'live-colleague' } as never)
+    expect(resultText(first)).toBe('started build')
     expect((await readIntent(root, 'suppliers'))?.status).toBe('building')
 
-    const second = await runBuilder.execute({ slug: 'suppliers' }, { sessionId: 'live-colleague' } as never)
-    expect(resultText(second)).toBe('a build is already running')
+    const second = await runBuilder.execute({ slug: 'suppliers', stage: 'mockup' }, { sessionId: 'live-colleague' } as never)
+    expect(resultText(second)).toBe('a builder is already running')
 
     releaseBuilder()
     await poll(async () => (await readIntent(root, 'suppliers'))?.status === 'built')
     const intent = await readIntent(root, 'suppliers')
-    expect(intent?.body).toContain('Builder: Suppliers can now be listed.')
-    expect(prompts).toContainEqual({ agentTypeId: 'builder', content: 'Build intent suppliers' })
+    expect(intent?.body).toContain('Builder build: Suppliers can now be listed.')
+    expect(prompts).toContainEqual({
+      agentTypeId: 'builder',
+      content: 'BUILD intent suppliers. Match the approved sketch at public/mockups/suppliers.html when it exists.',
+    })
     expect(prompts.find((entry) => entry.agentTypeId === 'default')?.content).toBe(
       '[system event] The builder finished intent suppliers: Suppliers can now be listed. Tell the user in one or two sentences and offer to show it.',
     )
+  })
+
+  test('defaults new surfaces to mockup until an intent has build history', () => {
+    expect(defaultBuilderStage({
+      status: 'agreed',
+      body: '',
+      agreement: 'A new supplier list on one page.',
+    })).toBe('mockup')
+    expect(defaultBuilderStage({
+      status: 'sketched',
+      body: 'The sketch was accepted.',
+      agreement: 'A new supplier list on one page.',
+    })).toBe('mockup')
+    expect(defaultBuilderStage({
+      status: 'agreed',
+      body: '- 2026-09-15 10:00 — Builder build: Suppliers can now be listed.',
+      agreement: 'A new supplier list on one page.',
+    })).toBe('build')
+    expect(defaultBuilderStage({
+      status: 'kept',
+      body: '',
+      agreement: 'A new supplier list on one page.',
+    })).toBe('build')
+    expect(defaultBuilderStage({
+      status: 'agreed',
+      body: '',
+      agreement: 'Make the add button red.',
+    })).toBe('build')
   })
 })

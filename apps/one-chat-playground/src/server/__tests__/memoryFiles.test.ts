@@ -112,6 +112,8 @@ describe('set_intent_status', () => {
     const root = await tmpWorkspace()
     await openIntent(root, 'crm', 'opened', at('2026-09-15T09:00:00Z'))
     await agreeIntent(root, 'crm', 'AGREEMENT', at('2026-09-15T09:30:00Z'))
+    const sketched = await setIntentStatus(root, 'crm', 'sketched')
+    expect(sketched.status).toBe('sketched')
     const building = await setIntentStatus(root, 'crm', 'building')
     expect(building.status).toBe('building')
     const intent = await setIntentStatus(root, 'crm', 'built')

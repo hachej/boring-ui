@@ -74,6 +74,7 @@ describe('memory tools', () => {
     const { root, call } = await fixture()
     await call('open_intent', { slug: 'crm', text: 'x' })
     expect((await call('set_intent_status', { slug: 'crm', status: 'shipped' })).isError).toBe(true)
+    expect((await call('set_intent_status', { slug: 'crm', status: 'sketched' })).body).toContain('crm is now sketched')
     expect((await call('set_intent_status', { slug: 'crm', status: 'building' })).body).toContain('crm is now building')
     expect((await call('set_intent_status', { slug: 'crm', status: 'built' })).body).toContain('crm is now built')
     expect((await readIntent(root, 'crm'))?.status).toBe('built')

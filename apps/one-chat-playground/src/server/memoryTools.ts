@@ -129,7 +129,7 @@ export function createMemoryTools(options: {
 
   const status: AgentTool = {
     name: 'set_intent_status',
-    description: `Move a track along: ${INTENT_STATUSES.join(', ')}. Use "building" while a builder works, "built" when it finishes, and "undone" if the change was taken back.`,
+    description: `Move a track along: ${INTENT_STATUSES.join(', ')}. Use "sketched" when its static sketch is ready, "building" while the real app is being built, "built" when it finishes, and "undone" if the change was taken back.`,
     parameters: {
       type: 'object',
       properties: {

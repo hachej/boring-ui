@@ -162,6 +162,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     scope,
     getGateway: () => createdHost?.gateway,
     sessions,
+    appBaseUrl: options.appBaseUrl,
     log,
   })
 

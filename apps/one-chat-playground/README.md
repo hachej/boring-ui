@@ -31,7 +31,7 @@ screen: `show_on_screen({url, title})` raises one sheet over the app,
 Three plain Markdown files in the user's app, and nothing else:
 
 - `agent/intents/<slug>.md` — one track of work. First line `status:
-  proposed|agreed|building|built|kept|undone`, then timestamped entries, then a
+  proposed|agreed|sketched|building|built|kept|undone`, then timestamped entries, then a
   `## What we agreed` section once the user has said yes.
 - `docs/CHANGES.md` — append-only, one line per kept change or undo.
 - `docs/PRODUCT.md` — what the app is today, rewritten in place.
@@ -47,11 +47,14 @@ them changes, never per turn.
 
 The user speaks only with the pinned `default` colleague. Once an intent is
 agreed, the host compacts that conversation and `run_builder` starts a fresh
-`builder` session in the same workspace. Only one builder may run at a time.
-At agent-end the host records the builder's final text, marks the intent
-`built`, and prompts the live colleague to announce it naturally. The
-colleague starts a fresh `documenter` to update `docs/CHANGES.md` and
-`docs/PRODUCT.md`. Neither child's transcript is shown to the user.
+`builder` session in the same workspace. A `mockup` stage writes one static
+page under `public/mockups/` and marks the intent `sketched`; after the user
+keeps it, the `build` stage matches that sketch and marks the intent `built`.
+Small tweaks can go straight to `build`. Only one builder may run at a time.
+At agent-end the host records the builder's final text and prompts the live
+colleague. Completed builds start a fresh `documenter` to update
+`docs/CHANGES.md` and `docs/PRODUCT.md`. Neither child's transcript is shown
+to the user.
 
 ## Asking the user
 
