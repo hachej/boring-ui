@@ -92,6 +92,7 @@ import {
 } from './addressedAgentRuntimeScope.js'
 import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
 import { registerCoreAgentHostEnvironmentRoutes } from './coreAgentHostEnvironmentRoutes.js'
+import { resolveCanonicalAgentAccess } from './canonicalAgentAccess.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
@@ -1849,24 +1850,15 @@ export async function createCoreWorkspaceAgentServer(
     ...(credentialOptions ? { credentials: credentialOptions } : {}),
     ...(options.workspaceAgentAccessMode === 'enforce'
       ? {
-          resolveAgentAccess: async ({ verifiedClaim, agentTypeId, operation }) => {
-            const workspaceId = scopeAuthority.resolveWorkspaceId(verifiedClaim)
-            const seat = (await workspaceStore.listAgentSeats(workspaceId))
-              .find((candidate) => candidate.agentTypeId === agentTypeId)
-            if (!seat) return { state: 'not-available' as const, reason: 'not-seated' as const }
-            const entitlement = options.resolveAgentEntitlement
-              ? await options.resolveAgentEntitlement({
-                  workspaceId,
-                  userId: verifiedClaim.authSubjectId,
-                  agentTypeId,
-                  operation,
-                })
-              : { state: 'allowed' as const }
-            // Entitlement is policy only. Identity always comes from the persisted WorkspaceAgentSeat.
-            return entitlement.state === 'allowed'
-              ? { state: 'allowed' as const, seatId: seat.seatId }
-              : entitlement
-          },
+          resolveAgentAccess: async ({ verifiedClaim, agentTypeId, operation }) =>
+            await resolveCanonicalAgentAccess({
+              workspaceStore,
+              workspaceId: scopeAuthority.resolveWorkspaceId(verifiedClaim),
+              userId: verifiedClaim.authSubjectId,
+              agentTypeId,
+              operation,
+              resolveAgentEntitlement: options.resolveAgentEntitlement,
+            }),
         }
       : {}),
     runtimeModeAdapter: hostRuntimeModeAdapter,
