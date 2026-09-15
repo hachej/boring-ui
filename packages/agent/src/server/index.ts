@@ -242,12 +242,16 @@ export type {
 } from './agent-host/fleetCompiler'
 export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
 export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
+export { createAcceptedWorkContext, projectAgentRequestRunId } from './agent-host/acceptedWork'
 export {
   createEnvironmentProvisioningFingerprint,
   createResolvedRuntimeScopeIdentity,
 } from './agent-host/runtimeScopeIdentity'
 export { DEFAULT_AGENT_TYPE_ID } from './agent-host/types'
 export type {
+  AcceptedWorkContext,
+  RunId,
+  VerifiedSeatParticipation,
   AgentEffectAdmission,
   AgentFleetCompiler,
   AgentGatewayEffect,

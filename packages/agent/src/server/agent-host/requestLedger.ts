@@ -1,5 +1,7 @@
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+import { cloneFrozenAcceptedWork, createAcceptedWorkContext, projectAgentRequestRunId } from './acceptedWork'
 import type {
+  AcceptedWorkContext,
   AgentRequestFailure,
   AgentRequestKey,
   AgentRequestLedger,
@@ -46,21 +48,37 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   readonly durability = 'in-memory' as const
   private readonly records = new Map<string, AgentRequestLedgerRecord>()
 
-  async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult> {
+  async prepare(
+    key: AgentRequestKey,
+    digest: string,
+    acceptedWork?: AcceptedWorkContext,
+  ): Promise<AgentRequestLedgerPrepareResult> {
     validateTarget(key)
+    const agentTypeId = key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId
+    const frozenContext = cloneFrozenAcceptedWork(acceptedWork ?? createAcceptedWorkContext({
+      key, admittedAgentTypeId: agentTypeId,
+    }))
+    if (projectAgentRequestRunId(key) !== frozenContext.identity.runId) conflict()
     const id = keyString(key)
     const existing = this.records.get(id)
     if (existing) {
       if (existing.digest !== digest) conflict()
       if (existing.state === 'pending-admission' && existing.retryable) {
-        const record: AgentRequestLedgerRecord = { key, digest, state: 'pending-admission', updatedAt: Date.now() }
+        const record: AgentRequestLedgerRecord = {
+          key: existing.key,
+          acceptedWork: existing.acceptedWork,
+          digest,
+          state: 'pending-admission',
+          updatedAt: Date.now(),
+        }
         this.records.set(id, record)
         return { ownership: 'reclaimed', record }
       }
       return { ownership: 'existing', record: existing }
     }
     const record: AgentRequestLedgerRecord = {
-      key,
+      key: structuredClone(key),
+      acceptedWork: frozenContext,
       digest,
       state: 'pending-admission',
       updatedAt: Date.now(),
@@ -86,7 +104,7 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   async beginEffect(key: AgentRequestKey): Promise<void> {
     this.transition(key, 'begin effect', (record) => {
       if (record.state !== 'admission-accepted') invalidTransition(record, 'begin effect')
-      return { key: record.key, digest: record.digest, state: 'in-flight', updatedAt: Date.now() }
+      return { ...record, state: 'in-flight', updatedAt: Date.now() }
     })
   }
 
@@ -98,14 +116,14 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
           || record.state === 'in-flight'
         : record.state === 'in-flight'
       if (!allowed) invalidTransition(record, 'reject')
-      return { key: record.key, digest: record.digest, state: 'rejected', failure, updatedAt: Date.now() }
+      return { ...record, state: 'rejected', failure, updatedAt: Date.now() }
     })
   }
 
   async complete(key: AgentRequestKey, receipt: import('../../shared/index').JsonValue): Promise<void> {
     this.transition(key, 'complete', (record) => {
       if (record.state !== 'in-flight') invalidTransition(record, 'complete')
-      return { key: record.key, digest: record.digest, state: 'completed', receipt, updatedAt: Date.now() }
+      return { ...record, state: 'completed', receipt, updatedAt: Date.now() }
     })
   }
 
@@ -115,7 +133,7 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   ): Promise<void> {
     this.transition(key, 'mark outcome unknown', (record) => {
       if (record.state !== 'in-flight') invalidTransition(record, 'mark outcome unknown')
-      return { key: record.key, digest: record.digest, state: 'outcome-unknown', error, updatedAt: Date.now() }
+      return { ...record, state: 'outcome-unknown', error, updatedAt: Date.now() }
     })
   }
 

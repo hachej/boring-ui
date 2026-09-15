@@ -9,6 +9,7 @@ import { Worker } from 'node:worker_threads'
 import { build } from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
+import { createAcceptedWorkContext, projectAgentRequestRunId } from '../acceptedWork'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type { AgentRequestKey, AgentRequestLedger } from '../types'
@@ -183,6 +184,69 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
     } finally {
       await ledger.close?.()
     }
+  })
+})
+
+describe.each<{ name: string; create(): AgentRequestLedger }>([
+  { name: 'in-memory', create: () => new InMemoryAgentRequestLedger() },
+  { name: 'SQLite', create: () => new SqliteAgentRequestLedger(join(tmpdir(), `accepted-work-${randomUUID()}.sqlite`)) },
+])('$name accepted work conformance', ({ create }) => {
+  it('retains one frozen context through retries and every transition', async () => {
+    const ledger = create()
+    try {
+      const context = createAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha', seat: { seatId: 'seat-a' } })
+      await ledger.prepare(key, 'digest', context)
+      const assertContext = async () => {
+        const retained = (await ledger.read(key))!.acceptedWork
+        expect(retained).toEqual(context)
+        expect(Object.isFrozen(retained)).toBe(true)
+        expect(Object.isFrozen(retained.identity.requestKey.target)).toBe(true)
+        expect(() => { (retained.identity.agent as { agentTypeId: string }).agentTypeId = 'forged' }).toThrow()
+      }
+      await assertContext()
+      await ledger.markAdmissionRetryable(key)
+      await ledger.prepare(key, 'digest', context)
+      await assertContext()
+      await ledger.acceptAdmission(key, 'provenance-only')
+      await assertContext()
+      await ledger.beginEffect(key)
+      await assertContext()
+      await ledger.complete(key, { ok: true })
+      await assertContext()
+    } finally { await ledger.close?.() }
+  })
+
+  it('rejects forged context and collision-prone key-part substitutions', async () => {
+    const ledger = create()
+    try {
+      const context = createAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha' })
+      const forged = structuredClone(context)
+      ;(forged.identity as { runId: string }).runId = 'forged'
+      await expect(ledger.prepare(key, 'digest', forged)).rejects.toThrow('invalid accepted work identity projection')
+
+      const left = { ...key, workspaceScopeId: 'a|b', authSubjectId: 'c' }
+      const right = { ...key, workspaceScopeId: 'a', authSubjectId: 'b|c' }
+      expect(projectAgentRequestRunId(left)).not.toBe(projectAgentRequestRunId(right))
+      await ledger.prepare(left, 'left', createAcceptedWorkContext({ key: left, admittedAgentTypeId: 'alpha' }))
+      await ledger.prepare(right, 'right', createAcceptedWorkContext({ key: right, admittedAgentTypeId: 'alpha' }))
+      expect((await ledger.read(left))?.digest).toBe('left')
+      expect((await ledger.read(right))?.digest).toBe('right')
+    } finally { await ledger.close?.() }
+  })
+
+  it('keeps Agent identity independent of optional Seat participation', async () => {
+    const ledger = create()
+    try {
+      const standalone = { ...key, requestId: 'standalone' }
+      const seatA = { ...key, requestId: 'seat-a' }
+      const seatB = { ...key, requestId: 'seat-b' }
+      await ledger.prepare(standalone, 'a', createAcceptedWorkContext({ key: standalone, admittedAgentTypeId: 'alpha' }))
+      await ledger.prepare(seatA, 'b', createAcceptedWorkContext({ key: seatA, admittedAgentTypeId: 'alpha', seat: { seatId: 'one' } }))
+      await ledger.prepare(seatB, 'c', createAcceptedWorkContext({ key: seatB, admittedAgentTypeId: 'alpha', seat: { seatId: 'two' } }))
+      expect((await ledger.read(standalone))?.acceptedWork.identity.participation).toBeUndefined()
+      expect((await ledger.read(seatA))?.acceptedWork.identity).toMatchObject({ agent: { agentTypeId: 'alpha' }, participation: { seatId: 'one' } })
+      expect((await ledger.read(seatB))?.acceptedWork.identity).toMatchObject({ agent: { agentTypeId: 'alpha' }, participation: { seatId: 'two' } })
+    } finally { await ledger.close?.() }
   })
 })
 
