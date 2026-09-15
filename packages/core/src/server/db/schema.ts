@@ -258,6 +258,30 @@ export const workspaceRuntimeResources = pgTable(
   ],
 )
 
+export const fencedSandboxHandles = pgTable(
+  'fenced_sandbox_handles',
+  {
+    hostScope: text('host_scope').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    provider: text('provider').notNull(),
+    mode: text('mode').notNull(),
+    generation: integer('generation').notNull().default(0),
+    leaseOwner: text('lease_owner'),
+    leaseToken: uuid('lease_token'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    encryptedHandle: bytea('encrypted_handle'),
+    encryptionNonce: bytea('encryption_nonce'),
+    encryptionAuthTag: bytea('encryption_auth_tag'),
+    encryptionVersion: integer('encryption_version'),
+    handleVersion: integer('handle_version'),
+    cleanupOutcome: text('cleanup_outcome'),
+    cleanupDetail: text('cleanup_detail'),
+    cleanupRecordedAt: timestamp('cleanup_recorded_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.hostScope, table.workspaceId, table.provider, table.mode] })],
+)
+
 export const workspaceRuntimeResourcesRelations = relations(
   workspaceRuntimeResources,
   ({ one }) => ({

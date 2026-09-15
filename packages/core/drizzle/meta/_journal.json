@@ -204,6 +204,13 @@
       "when": 1788566400000,
       "tag": "0028_invite_idempotency_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789344000000,
+      "tag": "0029_fenced_sandbox_handles",
+      "breakpoints": true
     }
   ]
 }
