@@ -26,3 +26,5 @@ screen: `show_on_screen({url, title})` raises one sheet over the app,
 
 Out of scope in this cut: sandboxing (the agent runs in `direct` mode on the
 host), the Keep loop, git hiding, auth, and any workspace/Dockview shell.
+
+The standard app a user's agent builds on lives in `template-app/` (TanStack Start + SQLite/Drizzle + shadcn; `bash template-app/verify.sh`).
