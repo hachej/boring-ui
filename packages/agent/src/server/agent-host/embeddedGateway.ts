@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { createGatewayAcceptedWorkContext } from './acceptedWork'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
@@ -289,14 +290,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     operation: AgentAccessOperation,
-  ): Promise<void> {
-    if (this.runtime.assertAgentAccess) {
-      await this.runtime.assertAgentAccess(agentTypeId, scope, claim, operation)
-      return
+  ): Promise<import('../../shared/index').AgentAccessDecision> {
+    if (this.runtime.resolveAgentAccess) {
+      const decision = await this.resolveAgentAccess(agentTypeId, scope, claim, operation)
+      this.throwForAgentAccessDecision(decision)
+      return decision
     }
-    this.throwForAgentAccessDecision(
-      await this.resolveAgentAccess(agentTypeId, scope, claim, operation),
-    )
+    await this.runtime.assertAgentAccess?.(agentTypeId, scope, claim, operation)
+    return { state: 'allowed' }
   }
 
   async authorizeAgentAccess(input: {
@@ -829,9 +830,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         : 'session.mutate'
     const reauthorize = async () => {
       const currentClaim = await this.verify(scope)
-      await this.assertAgentAccess(agentTypeId, scope, currentClaim, accessOperation)
+      return await this.assertAgentAccess(agentTypeId, scope, currentClaim, accessOperation)
     }
-    await reauthorize()
+    const admissionAccess = await reauthorize()
     const {
       duplicateReceipt = false,
       serialize,
@@ -849,7 +850,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
       requestId,
     }
     const digest = canonicalDigest(payload)
-    const prepared = await this.runtime.ledger.prepare(key, digest)
+    const acceptedWork = createGatewayAcceptedWorkContext({
+      key,
+      admittedAgentTypeId: agentTypeId,
+      ...(admissionAccess.state === 'allowed' && admissionAccess.seatId
+        ? { seat: { seatId: admissionAccess.seatId } }
+        : {}),
+    })
+    const prepared = await this.runtime.ledger.prepare(key, digest, acceptedWork)
     const reauthorizeOrReject = async () => {
       try {
         await reauthorize()

@@ -1,9 +1,11 @@
 import { createRequire } from 'node:module'
 import type { DatabaseSync } from 'node:sqlite'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+import { cloneFrozenAcceptedWork, createGatewayAcceptedWorkContext, projectAgentRequestRunId } from './acceptedWork'
 
 const require = createRequire(import.meta.url)
 import type {
+  AcceptedWorkContext,
   AgentRequestFailure,
   AgentRequestKey,
   AgentRequestLedger,
@@ -26,6 +28,15 @@ function keyString(key: AgentRequestKey): string {
 
 function conflict(message: string): never {
   throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, message)
+}
+
+function safeBase(record: AgentRequestLedgerRecord, updatedAt: number) {
+  return {
+    key: record.key,
+    acceptedWork: record.acceptedWork,
+    digest: record.digest,
+    updatedAt,
+  }
 }
 
 function validateTarget(key: AgentRequestKey): void {
@@ -79,10 +90,19 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         pruned_at INTEGER NOT NULL
       );
     `)
+    this.migrateLegacyAcceptedWork()
   }
 
-  async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult> {
+  async prepare(
+    key: AgentRequestKey,
+    digest: string,
+    acceptedWork: AcceptedWorkContext,
+  ): Promise<AgentRequestLedgerPrepareResult> {
     validateTarget(key)
+    const frozenContext = cloneFrozenAcceptedWork(acceptedWork)
+    if (projectAgentRequestRunId(key) !== frozenContext.identity.runId) {
+      throw new TypeError('accepted work does not match request key')
+    }
     return this.immediateTransaction(() => {
       const now = this.now()
       this.pruneExpiredTerminalRows(now)
@@ -93,7 +113,8 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         return { ownership: 'existing', record: tombstone.record }
       }
       const record: AgentRequestLedgerRecord = {
-        key,
+        key: structuredClone(key),
+        acceptedWork: frozenContext,
         digest,
         state: 'pending-admission',
         updatedAt: now,
@@ -109,11 +130,18 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         conflict('requestId was already used with a different payload')
       }
       if (current.state === 'pending-admission' && current.retryable) {
+        const reclaimed: AgentRequestLedgerRecord = {
+          key: current.key,
+          acceptedWork: current.acceptedWork,
+          digest,
+          state: 'pending-admission',
+          updatedAt: now,
+        }
         const claimed = this.database.prepare(`
           UPDATE agent_request_ledger SET record_json = ?, updated_at = ?
           WHERE request_key = ? AND digest = ? AND state = 'pending-admission' AND record_json = ?
-        `).run(JSON.stringify(record), record.updatedAt, id, digest, JSON.stringify(current))
-        if (claimed.changes === 1) return { ownership: 'reclaimed', record }
+        `).run(JSON.stringify(reclaimed), reclaimed.updatedAt, id, digest, JSON.stringify(current))
+        if (claimed.changes === 1) return { ownership: 'reclaimed', record: reclaimed }
         const winner = this.readActiveSync(key)
         if (!winner) conflict('request ledger ownership claim was not persisted')
         return { ownership: 'existing', record: winner }
@@ -125,23 +153,21 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
     this.transition(key, ['pending-admission'], (record) => {
       if (record.state !== 'pending-admission' || record.retryable) conflict('request admission is already retryable')
-      return { ...record, retryable: true, updatedAt: this.now() }
+      return { ...safeBase(record, this.now()), state: 'pending-admission', retryable: true }
     })
   }
 
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
     this.transition(key, ['pending-admission'], (record) => {
       if (record.state !== 'pending-admission' || record.retryable) conflict('request admission must be claimed before accepting')
-      return { ...record, state: 'admission-accepted', admissionReceipt, updatedAt: this.now() }
+      return { ...safeBase(record, this.now()), state: 'admission-accepted', admissionReceipt }
     })
   }
 
   async beginEffect(key: AgentRequestKey): Promise<void> {
     this.transition(key, ['admission-accepted'], (record) => ({
-      key: record.key,
-      digest: record.digest,
+      ...safeBase(record, this.now()),
       state: 'in-flight',
-      updatedAt: this.now(),
     }))
   }
 
@@ -150,21 +176,17 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       ...(failure.kind === 'gateway' ? ['pending-admission', 'admission-accepted'] as const : []),
       'in-flight',
     ], (record) => ({
-      key: record.key,
-      digest: record.digest,
+      ...safeBase(record, this.now()),
       state: 'rejected',
       failure,
-      updatedAt: this.now(),
     }))
   }
 
   async complete(key: AgentRequestKey, receipt: import('../../shared/index').JsonValue): Promise<void> {
     this.transition(key, ['in-flight'], (record) => ({
-      key: record.key,
-      digest: record.digest,
+      ...safeBase(record, this.now()),
       state: 'completed',
       receipt,
-      updatedAt: this.now(),
     }))
   }
 
@@ -173,11 +195,9 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     error: import('../../shared/index').AgentGatewayErrorDTO,
   ): Promise<void> {
     this.transition(key, ['in-flight'], (record) => ({
-      key: record.key,
-      digest: record.digest,
+      ...safeBase(record, this.now()),
       state: 'outcome-unknown',
       error,
-      updatedAt: this.now(),
     }))
   }
 
@@ -189,6 +209,31 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     this.database.close()
   }
 
+  private migrateLegacyAcceptedWork(): void {
+    this.immediateTransaction(() => {
+      const active = this.database.prepare('SELECT request_key, record_json FROM agent_request_ledger').all() as Array<{ request_key: string; record_json: string }>
+      for (const row of active) {
+        const record = JSON.parse(row.record_json) as Record<string, unknown> & { key: AgentRequestKey }
+        if (record.acceptedWork === undefined) {
+          const agentTypeId = record.key.target.kind === 'agent' ? record.key.target.agentTypeId : record.key.target.ref.agentTypeId
+          record.acceptedWork = createGatewayAcceptedWorkContext({ key: record.key, admittedAgentTypeId: agentTypeId })
+          this.database.prepare('UPDATE agent_request_ledger SET record_json = ? WHERE request_key = ? AND record_json = ?')
+            .run(JSON.stringify(record), row.request_key, row.record_json)
+        } else cloneFrozenAcceptedWork(record.acceptedWork)
+      }
+      const tombstones = this.database.prepare('SELECT request_key, key_json FROM agent_request_tombstones').all() as Array<{ request_key: string; key_json: string }>
+      for (const row of tombstones) {
+        const decoded = JSON.parse(row.key_json) as AgentRequestKey | { key: AgentRequestKey; acceptedWork?: unknown }
+        const key = 'key' in decoded ? decoded.key : decoded
+        const existing = 'key' in decoded ? decoded.acceptedWork : undefined
+        const agentTypeId = key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId
+        const acceptedWork = existing === undefined ? createGatewayAcceptedWorkContext({ key, admittedAgentTypeId: agentTypeId }) : cloneFrozenAcceptedWork(existing)
+        const migrated = JSON.stringify({ key, acceptedWork })
+        if (migrated !== row.key_json) this.database.prepare('UPDATE agent_request_tombstones SET key_json = ? WHERE request_key = ? AND key_json = ?').run(migrated, row.request_key, row.key_json)
+      }
+    })
+  }
+
   private readSync(key: AgentRequestKey): AgentRequestLedgerRecord | undefined {
     return this.readActiveSync(key) ?? this.readTombstoneSync(key)?.record
   }
@@ -197,7 +242,9 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     const row = this.database.prepare(`
       SELECT record_json FROM agent_request_ledger WHERE request_key = ?
     `).get(keyString(key)) as { record_json: string } | undefined
-    return row ? JSON.parse(row.record_json) as AgentRequestLedgerRecord : undefined
+    if (!row) return undefined
+    const record = JSON.parse(row.record_json) as AgentRequestLedgerRecord
+    return { ...record, acceptedWork: cloneFrozenAcceptedWork(record.acceptedWork) }
   }
 
   private readTombstoneSync(key: AgentRequestKey): {
@@ -208,10 +255,12 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       SELECT digest, key_json, pruned_at FROM agent_request_tombstones WHERE request_key = ?
     `).get(keyString(key)) as { digest: string; key_json: string; pruned_at: number } | undefined
     if (!row) return undefined
+    const retained = JSON.parse(row.key_json) as Pick<AgentRequestLedgerRecord, 'key' | 'acceptedWork'>
     return {
       digest: row.digest,
       record: {
-        key: JSON.parse(row.key_json) as AgentRequestKey,
+        key: retained.key,
+        acceptedWork: cloneFrozenAcceptedWork(retained.acceptedWork),
         digest: row.digest,
         state: 'outcome-unknown',
         error: {
@@ -229,7 +278,10 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     const placeholders = TERMINAL_STATES.map(() => '?').join(', ')
     this.database.prepare(`
       INSERT OR IGNORE INTO agent_request_tombstones (request_key, digest, key_json, pruned_at)
-      SELECT request_key, digest, json_extract(record_json, '$.key'), ?
+      SELECT request_key, digest, json_object(
+        'key', json_extract(record_json, '$.key'),
+        'acceptedWork', json_extract(record_json, '$.acceptedWork')
+      ), ?
       FROM agent_request_ledger
       WHERE state IN (${placeholders}) AND updated_at < ?
     `).run(now, ...TERMINAL_STATES, cutoff)

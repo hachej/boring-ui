@@ -17,11 +17,13 @@ import {
   type QueuedUserMessage,
   type VerifiedAgentScopeClaim,
 } from '../../../../shared/index'
+import { createGatewayAcceptedWorkContext } from '../../acceptedWork'
 import {
   gatewayConformance,
   type GatewayConformanceFixture,
 } from '../gatewayConformance'
 import type {
+  AcceptedWorkContext,
   AgentRequestFailure,
   AgentRequestKey,
   AgentRequestLedger,
@@ -41,8 +43,16 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
   private readonly records = new Map<string, AgentRequestLedgerRecord>()
   private clock = 0
 
-  async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult> {
+  async prepare(
+    key: AgentRequestKey,
+    digest: string,
+    acceptedWork?: AcceptedWorkContext,
+  ): Promise<AgentRequestLedgerPrepareResult> {
     this.validateTarget(key)
+    const context = acceptedWork ?? createGatewayAcceptedWorkContext({
+      key,
+      admittedAgentTypeId: key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId,
+    })
     const identity = keyIdentity(key)
     const current = this.records.get(identity)
     if (current !== undefined) {
@@ -50,7 +60,9 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with a different payload')
       }
       if (current.state === 'pending-admission' && current.retryable) {
-        const record: AgentRequestLedgerRecord = { key, digest, state: 'pending-admission', updatedAt: this.tick() }
+        const record: AgentRequestLedgerRecord = {
+          key, acceptedWork: context, digest, state: 'pending-admission', updatedAt: this.tick(),
+        }
         this.write(key, record)
         return { ownership: 'reclaimed', record }
       }
@@ -59,6 +71,7 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
     const record: AgentRequestLedgerRecord = {
       state: 'pending-admission',
       key,
+      acceptedWork: context,
       digest,
       updatedAt: this.tick(),
     }
@@ -162,7 +175,10 @@ const outcomeUnknown: AgentGatewayErrorDTO = {
 }
 
 async function advanceToInFlight(ledger: AgentRequestLedger, key: AgentRequestKey): Promise<void> {
-  await ledger.prepare(key, 'digest-a')
+  await ledger.prepare(key, 'digest-a', createGatewayAcceptedWorkContext({
+    key,
+    admittedAgentTypeId: key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId,
+  }))
   await ledger.acceptAdmission(key, 'admission-a')
   await ledger.beginEffect(key)
 }

@@ -1,4 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads'
+import { createGatewayAcceptedWorkContext } from '../../acceptedWork'
 import { SqliteAgentRequestLedger } from '../../sqliteRequestLedger'
 import type { AgentRequestKey, AgentRequestLedgerPrepareResult } from '../../types'
 
@@ -23,7 +24,7 @@ try {
   Atomics.notify(sync, 0)
   Atomics.wait(sync, 1, 0)
 
-  const claim = await ledger.prepare(input.key, input.digest)
+  const claim = await ledger.prepare(input.key, input.digest, createGatewayAcceptedWorkContext({ key: input.key, admittedAgentTypeId: input.key.target.kind === 'agent' ? input.key.target.agentTypeId : input.key.target.ref.agentTypeId }))
   let effectStarted = false
   if (claim.ownership === 'reclaimed') {
     await ledger.acceptAdmission(input.key, 'parallel-admission')

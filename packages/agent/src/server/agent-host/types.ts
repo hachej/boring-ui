@@ -39,18 +39,22 @@ import type { CredentialVaultPersistenceV2 } from '../credentials/vault'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
-export type AgentGatewayEffect =
-  | 'session.create'
-  | 'session.rename'
-  | 'session.archive'
-  | 'session.delete'
-  | 'session.prompt'
-  | 'session.followup'
-  | 'session.interrupt'
-  | 'session.stop'
-  | 'session.queue.clear'
-  | 'agent.reload'
-  | 'session.command.execute'
+/** Single runtime and type-level source of truth for gateway operations persisted in request keys. */
+export const AGENT_GATEWAY_EFFECTS = [
+  'session.create',
+  'session.rename',
+  'session.archive',
+  'session.delete',
+  'session.prompt',
+  'session.followup',
+  'session.interrupt',
+  'session.stop',
+  'session.queue.clear',
+  'agent.reload',
+  'session.command.execute',
+] as const
+
+export type AgentGatewayEffect = typeof AGENT_GATEWAY_EFFECTS[number]
 
 export type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }
@@ -62,6 +66,30 @@ export interface AgentRequestKey {
   readonly operation: AgentGatewayEffect
   readonly target: AgentRequestTarget
   readonly requestId: string
+}
+
+export type RunId = string
+
+export interface VerifiedSeatParticipation {
+  readonly seatId: string
+}
+
+/** Admission-time identity and provenance reference; never a live authorization grant. */
+export interface AcceptedWorkContext {
+  readonly version: 1
+  readonly identity: {
+    readonly runId: RunId
+    readonly requestKey: AgentRequestKey
+    readonly agent: { readonly agentTypeId: string }
+    readonly participation?: VerifiedSeatParticipation
+  }
+  readonly operation: AgentGatewayEffect
+  readonly target: AgentRequestTarget
+  readonly authority: {
+    readonly workspaceScopeId: string
+    readonly authSubjectId: string
+  }
+  readonly delegation: { readonly lineage: readonly RunId[] }
 }
 
 export interface AgentStableServiceErrorDTO {
@@ -79,6 +107,7 @@ export type AgentRequestFailure =
 
 export interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
+  readonly acceptedWork: AcceptedWorkContext
   readonly digest: string
   readonly updatedAt: number
 }
@@ -91,6 +120,7 @@ export type AgentRequestLedgerRecord =
     })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'admission-accepted'
+      /** Append-only admission provenance, separate from current authority. */
       readonly admissionReceipt: string
     })
   | (AgentRequestLedgerRecordBase & { readonly state: 'in-flight' })
@@ -111,7 +141,11 @@ export interface AgentRequestLedger {
   /** Direct production projections require transactional durable ownership. */
   readonly durability: 'durable-transactional' | 'in-memory'
   /** Atomically create or reclaim explicitly retryable admission across all store users. */
-  prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult>
+  prepare(
+    key: AgentRequestKey,
+    digest: string,
+    acceptedWork: AcceptedWorkContext,
+  ): Promise<AgentRequestLedgerPrepareResult>
   /** Release only a pending claim whose owner has stopped before any effect. */
   markAdmissionRetryable(key: AgentRequestKey): Promise<void>
   /** All transitions are compare-and-swap against the exact allowed prior state. */

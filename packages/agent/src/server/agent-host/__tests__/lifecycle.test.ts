@@ -188,10 +188,10 @@ describe('Agent Host lifecycle', () => {
     const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'admitted' }))
     const ledger: AgentRequestLedger = {
       durability: 'in-memory',
-      async prepare(key, digest) {
+      async prepare(key, digest, acceptedWork) {
         prepareStarted.resolve()
         await releasePrepare.promise
-        return await base.prepare(key, digest)
+        return await base.prepare(key, digest, acceptedWork)
       },
       markAdmissionRetryable: (key) => base.markAdmissionRetryable(key),
       acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),

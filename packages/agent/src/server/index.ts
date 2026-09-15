@@ -242,6 +242,7 @@ export type {
 } from './agent-host/fleetCompiler'
 export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
 export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
+export { projectAgentRequestRunId } from './agent-host/acceptedWork'
 export {
   createEnvironmentProvisioningFingerprint,
   createResolvedRuntimeScopeIdentity,
