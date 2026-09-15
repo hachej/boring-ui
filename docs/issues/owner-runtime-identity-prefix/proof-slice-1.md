@@ -27,6 +27,15 @@ Real-listening composed-server proof (current slice-1 correction revision):
 - Combined focused suite: 66 passed; one pre-existing/environmental fixture failed because `@hachej/boring-workspace/dist/server.js` has not been built in this worktree.
 - Prefix validation is shared by the composed server and runtimeProjection broker through `server/routePrefix.ts`, removing the duplicate normalizers.
 
+Ask-user T9/T10 bridge smoke correction (current head):
+
+- Runtime bridge call and refresh tokens now preserve a signed `onBehalfOf` human principal. The local smoke runtime uses the same trusted `local` owner identity as `createLocalCliBridgeAuthPolicy`; ask-user's existing exact-owner checks remain unchanged.
+- T9 logs the final HTTP status, bridge error code, and question id. If no matching pending question exists, it aborts and drains the request before throwing, so T10 cannot run against an absent question.
+- `pnpm --filter @hachej/boring-ask-user test -- src/server/__tests__/askUserBridgeHandlers.test.ts` — 21 files passed, 193 tests passed, 1 file/test skipped. Focused coverage additionally proves the matched local owner succeeds while a different principal and the local principal reading an anonymous question receive `BRIDGE_RESOURCE_SCOPE_DENIED`.
+- `cd packages/workspace && pnpm exec vitest run src/server/workspaceBridge/__tests__/runtimeToken.test.ts --no-file-parallelism` — 6 passed; verifies signed owner identity reaches `actor.onBehalfOf`.
+- `pnpm --filter workspace-playground smoke:bridge` under a 600-second outer bound — exited cleanly with `11/11 checks passed`; T9 reported `status=200 error=none`, and T10 reported `answer.status=200 result=answered`. No bridge child/server process remained.
+- Workspace, ask-user, and workspace-playground typechecks passed. `git diff --check` passed.
+
 Abstraction review remains pending until review is rerun against the new head; this document does not claim merge readiness.
 - After building `@hachej/boring-agent`, `pnpm --dir packages/workspace typecheck` passed.
 - `pnpm --dir packages/workspace test` ran 2,327 tests: 2,313 passed, 11 skipped, and 3 failed (missing unbuilt Workspace dist fixture; existing late-route-init rejection behavior; unrelated async fleet UI timing). The new real-listener test passed in the package run.

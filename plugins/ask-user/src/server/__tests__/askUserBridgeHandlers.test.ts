@@ -196,10 +196,29 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
         return pending!
       })
 
+      const denied = await registry.call(
+        { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1", questionId: question.questionId } },
+        browserContext("someone-else", [ASK_USER_BRIDGE_CAPABILITIES.pending]),
+      )
+      expect(denied).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+
       const client = createQuestionsClient({ headers: { "x-boring-workspace-id": "workspace-1" } })
       await expect(client.pending("s1", undefined, question.questionId)).resolves.toMatchObject({ questionId: question.questionId })
       await expect(client.submit(question, { answer: "continue" })).resolves.toMatchObject({ status: "answered" })
       await expect(awaitingAnswer).resolves.toMatchObject({ status: "answered", answer: { values: { answer: "continue" } } })
+
+      const anonymous = await runtime.ask({
+        sessionId: "anonymous-session",
+        schema,
+        blocking: false,
+        workspaceId: "workspace-1",
+      })
+      if (anonymous.status !== "pending") throw new Error("expected anonymous pending question")
+      const anonymousDenied = await registry.call(
+        { op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "anonymous-session", questionId: anonymous.questionId } },
+        { ...browserContext("local", [ASK_USER_BRIDGE_CAPABILITIES.pending]), sessionId: "anonymous-session" },
+      )
+      expect(anonymousDenied).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
     } finally {
       await app.close()
     }

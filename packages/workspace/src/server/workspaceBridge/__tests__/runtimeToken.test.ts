@@ -35,7 +35,7 @@ function mint(overrides: Partial<Parameters<typeof mintWorkspaceBridgeRuntimeTok
 
 describe("WorkspaceBridge runtime token primitives", () => {
   it("mints and verifies a scoped runtime token", () => {
-    const token = mint()
+    const token = mint({ onBehalfOf: { id: "owner-1", label: "user:owner-1" } })
     const verified = verifyWorkspaceBridgeRuntimeToken(token, {
       secret: SECRET,
       nowMs: NOW + 1_000,
@@ -47,6 +47,7 @@ describe("WorkspaceBridge runtime token primitives", () => {
       workspaceId: "workspace-1",
       sessionId: "session-1",
       runtimeId: "runtime-1",
+      onBehalfOf: { id: "owner-1", label: "user:owner-1" },
       jti: "jti-1",
     })
     expect(verified.authContext).toMatchObject({
@@ -57,7 +58,7 @@ describe("WorkspaceBridge runtime token primitives", () => {
       actor: {
         actorKind: "agent",
         performedBy: { label: "runtime:runtime-1", id: "runtime-1" },
-        onBehalfOf: { label: "session:session-1" },
+        onBehalfOf: { id: "owner-1", label: "user:owner-1" },
       },
     })
   })

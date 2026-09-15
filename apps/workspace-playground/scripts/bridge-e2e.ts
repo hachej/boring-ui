@@ -219,23 +219,35 @@ async function main() {
         sessionId: 's1',
         capabilities: [ASK_USER_BRIDGE_CAPABILITIES.request],
         runtimeId: 'ask-user-e2e-runtime',
+        onBehalfOf: { id: 'local', label: 'local-cli:user' },
       })
       const askClient = new WorkspaceBridgeClient({ url, token, fetch })
+      const requestAbort = new AbortController()
       const requestPromise = askClient.call<any>(ASK_USER_BRIDGE_OPS.request, {
         sessionId: 's1',
         title: 'Bridge question',
         schema: { wireVersion: 1, fields: [{ type: 'text', name: 'answer', label: 'Answer', required: true }] },
         timeoutMs: 60_000,
-      }, { requestId: 'ask-user-e2e-request', timeoutMs: 65_000 })
+      }, { requestId: 'ask-user-e2e-request', timeoutMs: 65_000, signal: requestAbort.signal })
 
       let pending: any = null
+      let pendingStatus = 0
+      let pendingError = 'none'
       for (let i = 0; i < 40; i++) {
         const r = await post({ op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: 's1' } }, { 'x-boring-session-id': 's1' })
+        pendingStatus = r.status
+        pendingError = r.json.error?.code ?? 'none'
         pending = r.json.output?.pending ?? null
         if (pending?.questionId) break
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
-      check('T9 ask-user pending via plugin bridge', pending?.title === 'Bridge question' && typeof pending?.answerToken === 'string', `questionId=${pending?.questionId ?? 'none'}`)
+      const hasPending = pending?.title === 'Bridge question' && typeof pending?.answerToken === 'string'
+      check('T9 ask-user pending via plugin bridge', hasPending, `status=${pendingStatus} error=${pendingError} questionId=${pending?.questionId ?? 'none'}`)
+      if (!hasPending) {
+        requestAbort.abort()
+        await requestPromise.catch(() => undefined)
+        throw new Error(`[bridge-e2e] T9 failed; aborting T10 (status=${pendingStatus} error=${pendingError})`)
+      }
 
       const answer = await post({
         op: ASK_USER_BRIDGE_OPS.answer,
