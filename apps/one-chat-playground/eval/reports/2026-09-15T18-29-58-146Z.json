@@ -1,0 +1,1748 @@
+{
+  "timestamp": "2026-09-15T18:29:58.146Z",
+  "api": "direct-host",
+  "passed": 9,
+  "failed": 0,
+  "results": [
+    {
+      "name": "preference",
+      "passed": true,
+      "durationMs": 18288,
+      "workspaceSource": "sample-app",
+      "workspaceChanges": [],
+      "turns": [
+        {
+          "reply": "zzz: I’ll call your clients “members” from now on.",
+          "toolCalls": [
+            {
+              "name": "update_my_instructions",
+              "input": {
+                "instructions": "# Standing instructions\n\nThese are my own standing instructions for this app. I keep them up to date\nwhen the user asks me to behave differently from now on.\n\n- Language: the user's language.\n- Tone: friendly, brief, plain.\n- Call clients “members”.\n- Keep answers under 20 words.\n- Start every message with “zzz:”."
+              }
+            },
+            {
+              "name": "update_my_instructions",
+              "input": {
+                "instructions": "# Standing instructions\n\nThese are my own standing instructions for this app. I keep them up to date\nwhen the user asks me to behave differently from now on.\n\n- Language: the user's language.\n- Tone: friendly, brief, plain.\n- Call clients “members”.\n- Keep answers under 20 words.\n- Start every message with “zzz:”."
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [],
+          "cardShown": false,
+          "cardsShown": 0,
+          "recommendedCards": 0,
+          "changedPaths": [],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "tool_called: \"update_my_instructions\"",
+          "ok": true,
+          "optional": false,
+          "actual": "update_my_instructions, update_my_instructions"
+        },
+        {
+          "assertion": "file_contains: {\"path\":\"agent/instructions.md\",\"regex\":\"/members/i\"}",
+          "ok": true,
+          "optional": false,
+          "actual": "files=agent/instructions.md; matching=agent/instructions.md"
+        },
+        {
+          "assertion": "reply_matches: \"/members/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: I’ll call your clients “members” from now on."
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: I’ll call your clients “members” from now on."
+        }
+      ]
+    },
+    {
+      "name": "self-tool",
+      "passed": true,
+      "durationMs": 58105,
+      "workspaceSource": "template-app",
+      "workspaceChanges": [
+        ".pi/extensions/count-list-items.ts"
+      ],
+      "turns": [
+        {
+          "reply": "Done — your list has 1 item.",
+          "toolCalls": [
+            {
+              "name": "read",
+              "input": {
+                "path": "agents/colleague/skills/edit-yourself/SKILL.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "agents/colleague/skills/edit-yourself/SKILL.md"
+              }
+            },
+            {
+              "name": "ls",
+              "input": {
+                "path": "agents"
+              }
+            },
+            {
+              "name": "ls",
+              "input": {
+                "path": "agents"
+              }
+            },
+            {
+              "name": "ls",
+              "input": {}
+            },
+            {
+              "name": "ls",
+              "input": {}
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "AGENTS.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "AGENTS.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "skills/edit-yourself/SKILL.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "skills/edit-yourself/SKILL.md"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*",
+                "path": "data",
+                "limit": 50
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*",
+                "path": "data",
+                "limit": 50
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/db/schema.ts"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "src/server/*.ts",
+                "limit": 50
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "src/routes/*.tsx",
+                "limit": 50
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/db/schema.ts"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "src/server/*.ts",
+                "limit": 50
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "src/routes/*.tsx",
+                "limit": 50
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/server/items.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/server/items.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "package.json"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "package.json"
+              }
+            },
+            {
+              "name": "write",
+              "input": {
+                "path": ".pi/extensions/count-list-items.ts",
+                "content": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\"\nimport { Type } from \"typebox\"\nimport Database from \"better-sqlite3\"\nimport { join } from \"node:path\"\n\nexport default function (pi: ExtensionAPI) {\n  pi.registerTool({\n    name: \"count_list_items\",\n    label: \"Count list items\",\n    description: \"Count how many items are in the app's list.\",\n    parameters: Type.Object({}),\n    async execute(_id, _params, _signal, _onUpdate, ctx) {\n      const dbPath = join(ctx.cwd, \"data\", \"app.sqlite\")\n      const db = new Database(dbPath, { readonly: true })\n      try {\n        const row = db.prepare(\"select count(*) as count from items\").get() as {\n          count: number\n        }\n        return {\n          content: [\n            {\n              type: \"text\",\n              text: String(row.count),\n            },\n          ],\n        }\n      } finally {\n        db.close()\n      }\n    },\n  })\n}\n"
+              }
+            },
+            {
+              "name": "write",
+              "input": {
+                "path": ".pi/extensions/count-list-items.ts",
+                "content": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\"\nimport { Type } from \"typebox\"\nimport Database from \"better-sqlite3\"\nimport { join } from \"node:path\"\n\nexport default function (pi: ExtensionAPI) {\n  pi.registerTool({\n    name: \"count_list_items\",\n    label: \"Count list items\",\n    description: \"Count how many items are in the app's list.\",\n    parameters: Type.Object({}),\n    async execute(_id, _params, _signal, _onUpdate, ctx) {\n      const dbPath = join(ctx.cwd, \"data\", \"app.sqlite\")\n      const db = new Database(dbPath, { readonly: true })\n      try {\n        const row = db.prepare(\"select count(*) as count from items\").get() as {\n          count: number\n        }\n        return {\n          content: [\n            {\n              type: \"text\",\n              text: String(row.count),\n            },\n          ],\n        }\n      } finally {\n        db.close()\n      }\n    },\n  })\n}\n"
+              }
+            },
+            {
+              "name": "reload_my_tools",
+              "input": {}
+            },
+            {
+              "name": "reload_my_tools",
+              "input": {}
+            },
+            {
+              "name": "bash",
+              "input": {
+                "command": "true"
+              }
+            },
+            {
+              "name": "bash",
+              "input": {
+                "command": "true"
+              }
+            },
+            {
+              "name": "count_list_items",
+              "input": {}
+            },
+            {
+              "name": "count_list_items",
+              "input": {}
+            }
+          ],
+          "toolCallsBeforeAnswer": [],
+          "cardShown": false,
+          "cardsShown": 0,
+          "recommendedCards": 0,
+          "changedPaths": [
+            ".pi/extensions/count-list-items.ts"
+          ],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "file_exists: \".pi/extensions/*.ts\"",
+          "ok": true,
+          "optional": false,
+          "actual": ".pi/extensions/count-list-items.ts"
+        },
+        {
+          "assertion": "tool_called: \"reload_my_tools\"",
+          "ok": true,
+          "optional": false,
+          "actual": "read, read, ls, ls, ls, ls, read, read, read, read, find, find, read, find, find, read, find, find, read, read, read, read, write, write, reload_my_tools, reload_my_tools, bash, bash, count_list_items, count_list_items"
+        },
+        {
+          "assertion": "tool_called: \"/count/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "read, read, ls, ls, ls, ls, read, read, read, read, find, find, read, find, find, read, find, find, read, read, read, read, write, write, reload_my_tools, reload_my_tools, bash, bash, count_list_items, count_list_items"
+        },
+        {
+          "assertion": "reply_matches: \"/\\\\d/\"",
+          "ok": true,
+          "optional": false,
+          "actual": "Done — your list has 1 item."
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "Done — your list has 1 item."
+        }
+      ]
+    },
+    {
+      "name": "build-new",
+      "passed": true,
+      "durationMs": 136914,
+      "workspaceSource": "template-app",
+      "workspaceChanges": [
+        "agent/intents/supplier-list.md",
+        "public/mockups/supplier-list.html"
+      ],
+      "turns": [
+        {
+          "reply": "I recommend starting with a sketch so you can see it before I build. I’ll come back when it’s ready.",
+          "toolCalls": [
+            {
+              "name": "open_intent",
+              "input": {
+                "slug": "supplier-list",
+                "title": "supplier list",
+                "text": "I need to track my suppliers with a phone number and a note."
+              }
+            },
+            {
+              "name": "open_intent",
+              "input": {
+                "slug": "supplier-list",
+                "title": "supplier list",
+                "text": "I need to track my suppliers with a phone number and a note."
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "agents/colleague/skills/boring-pm/SKILL.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "agents/colleague/skills/boring-pm/SKILL.md"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "SKILL.md",
+                "path": "agents",
+                "limit": 20
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "SKILL.md",
+                "path": "agents",
+                "limit": 20
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Where should suppliers live?",
+                "context": "I recommend a simple suppliers page first, because it gives you one clear place to add and find them.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Answer",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "place",
+                      "label": "Best place for this",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "suppliers_page",
+                          "label": "A new suppliers page (recommended)",
+                          "description": "One list with each supplier’s name, phone number and note."
+                        },
+                        {
+                          "value": "on_existing_page",
+                          "label": "Add it to the main page",
+                          "description": "Keep suppliers alongside what you already use most."
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Where should suppliers live?",
+                "context": "I recommend a simple suppliers page first, because it gives you one clear place to add and find them.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Answer",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "place",
+                      "label": "Best place for this",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "suppliers_page",
+                          "label": "A new suppliers page (recommended)",
+                          "description": "One list with each supplier’s name, phone number and note."
+                        },
+                        {
+                          "value": "on_existing_page",
+                          "label": "Add it to the main page",
+                          "description": "Keep suppliers alongside what you already use most."
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "note_intent",
+              "input": {
+                "slug": "supplier-list",
+                "text": "Suppliers should live on a new suppliers page, with one list for supplier name, phone number and note."
+              }
+            },
+            {
+              "name": "note_intent",
+              "input": {
+                "slug": "supplier-list",
+                "text": "Suppliers should live on a new suppliers page, with one list for supplier name, phone number and note."
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "How should you add suppliers?",
+                "context": "I recommend adding them right on the suppliers page, because it keeps the work quick when someone gives you a phone number.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Answer",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "entry",
+                      "label": "How you want to add them",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "inline_form",
+                          "label": "A small form on the suppliers page (recommended)",
+                          "description": "Name, phone number and note above the list."
+                        },
+                        {
+                          "value": "separate_add_page",
+                          "label": "A separate add supplier page",
+                          "description": "A dedicated page just for entering one supplier."
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "How should you add suppliers?",
+                "context": "I recommend adding them right on the suppliers page, because it keeps the work quick when someone gives you a phone number.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Answer",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "entry",
+                      "label": "How you want to add them",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "inline_form",
+                          "label": "A small form on the suppliers page (recommended)",
+                          "description": "Name, phone number and note above the list."
+                        },
+                        {
+                          "value": "separate_add_page",
+                          "label": "A separate add supplier page",
+                          "description": "A dedicated page just for entering one supplier."
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "note_intent",
+              "input": {
+                "slug": "supplier-list",
+                "text": "New suppliers should be added with a small form on the suppliers page: name, phone number and note above the list."
+              }
+            },
+            {
+              "name": "note_intent",
+              "input": {
+                "slug": "supplier-list",
+                "text": "New suppliers should be added with a small form on the suppliers page: name, phone number and note above the list."
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Check the supplier list",
+                "context": "Here is what I understood: you want a new suppliers page where you can add suppliers with a name, phone number and note, then see them in a simple list. I recommend starting with just those three details so it stays quick to use.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Choose",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "agreement",
+                      "label": "Is that right?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "yes",
+                          "label": "Yes, that’s right (recommended)"
+                        },
+                        {
+                          "value": "change",
+                          "label": "Change it"
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Check the supplier list",
+                "context": "Here is what I understood: you want a new suppliers page where you can add suppliers with a name, phone number and note, then see them in a simple list. I recommend starting with just those three details so it stays quick to use.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Choose",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "agreement",
+                      "label": "Is that right?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "yes",
+                          "label": "Yes, that’s right (recommended)"
+                        },
+                        {
+                          "value": "change",
+                          "label": "Change it"
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "agree_intent",
+              "input": {
+                "slug": "supplier-list",
+                "agreement": "## Supplier list\n\nBuild a new suppliers page for tracking suppliers.\n\nIt should let the user:\n- Add a supplier with a name, phone number and note.\n- See saved suppliers in a simple list.\n- Keep the add form on the same page as the list.\n\nIt is right when the user has one clear place to add and review suppliers with those three details."
+              }
+            },
+            {
+              "name": "agree_intent",
+              "input": {
+                "slug": "supplier-list",
+                "agreement": "## Supplier list\n\nBuild a new suppliers page for tracking suppliers.\n\nIt should let the user:\n- Add a supplier with a name, phone number and note.\n- See saved suppliers in a simple list.\n- Keep the add form on the same page as the list.\n\nIt is right when the user has one clear place to add and review suppliers with those three details."
+              }
+            },
+            {
+              "name": "run_builder",
+              "input": {
+                "slug": "supplier-list",
+                "stage": "mockup"
+              }
+            },
+            {
+              "name": "run_builder",
+              "input": {
+                "slug": "supplier-list",
+                "stage": "mockup"
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [
+            {
+              "name": "open_intent",
+              "input": {
+                "slug": "supplier-list",
+                "title": "supplier list",
+                "text": "I need to track my suppliers with a phone number and a note."
+              }
+            },
+            {
+              "name": "open_intent",
+              "input": {
+                "slug": "supplier-list",
+                "title": "supplier list",
+                "text": "I need to track my suppliers with a phone number and a note."
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "agents/colleague/skills/boring-pm/SKILL.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "agents/colleague/skills/boring-pm/SKILL.md"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "SKILL.md",
+                "path": "agents",
+                "limit": 20
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "SKILL.md",
+                "path": "agents",
+                "limit": 20
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Where should suppliers live?",
+                "context": "I recommend a simple suppliers page first, because it gives you one clear place to add and find them.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Answer",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "place",
+                      "label": "Best place for this",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "suppliers_page",
+                          "label": "A new suppliers page (recommended)",
+                          "description": "One list with each supplier’s name, phone number and note."
+                        },
+                        {
+                          "value": "on_existing_page",
+                          "label": "Add it to the main page",
+                          "description": "Keep suppliers alongside what you already use most."
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Where should suppliers live?",
+                "context": "I recommend a simple suppliers page first, because it gives you one clear place to add and find them.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Answer",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "place",
+                      "label": "Best place for this",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "suppliers_page",
+                          "label": "A new suppliers page (recommended)",
+                          "description": "One list with each supplier’s name, phone number and note."
+                        },
+                        {
+                          "value": "on_existing_page",
+                          "label": "Add it to the main page",
+                          "description": "Keep suppliers alongside what you already use most."
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "cardShown": true,
+          "cardsShown": 3,
+          "recommendedCards": 3,
+          "changedPaths": [
+            "agent/intents/supplier-list.md"
+          ],
+          "changedBeforeAnswer": [
+            "agent/intents/supplier-list.md"
+          ]
+        },
+        {
+          "reply": "I’m building it now. I’ll come back when it’s ready.",
+          "toolCalls": [
+            {
+              "name": "show_on_screen",
+              "input": {
+                "url": "http://127.0.0.1:5401/mockups/supplier-list.html",
+                "title": "Sketch: supplier list"
+              }
+            },
+            {
+              "name": "show_on_screen",
+              "input": {
+                "url": "http://127.0.0.1:5401/mockups/supplier-list.html",
+                "title": "Sketch: supplier list"
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Supplier list sketch",
+                "context": "Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Continue",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What would you like to do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "keep",
+                          "label": "Keep it (recommended)"
+                        },
+                        {
+                          "value": "change",
+                          "label": "Change it"
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Supplier list sketch",
+                "context": "Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Continue",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What would you like to do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "keep",
+                          "label": "Keep it (recommended)"
+                        },
+                        {
+                          "value": "change",
+                          "label": "Change it"
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            },
+            {
+              "name": "back_to_app",
+              "input": {}
+            },
+            {
+              "name": "back_to_app",
+              "input": {}
+            },
+            {
+              "name": "run_builder",
+              "input": {
+                "slug": "supplier-list",
+                "stage": "build"
+              }
+            },
+            {
+              "name": "run_builder",
+              "input": {
+                "slug": "supplier-list",
+                "stage": "build"
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [
+            {
+              "name": "show_on_screen",
+              "input": {
+                "url": "http://127.0.0.1:5401/mockups/supplier-list.html",
+                "title": "Sketch: supplier list"
+              }
+            },
+            {
+              "name": "show_on_screen",
+              "input": {
+                "url": "http://127.0.0.1:5401/mockups/supplier-list.html",
+                "title": "Sketch: supplier list"
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Supplier list sketch",
+                "context": "Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Continue",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What would you like to do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "keep",
+                          "label": "Keep it (recommended)"
+                        },
+                        {
+                          "value": "change",
+                          "label": "Change it"
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Supplier list sketch",
+                "context": "Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Continue",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What would you like to do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "keep",
+                          "label": "Keep it (recommended)"
+                        },
+                        {
+                          "value": "change",
+                          "label": "Change it"
+                        },
+                        {
+                          "value": "something_else",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            }
+          ],
+          "cardShown": true,
+          "cardsShown": 1,
+          "recommendedCards": 1,
+          "changedPaths": [
+            "agent/intents/supplier-list.md",
+            "public/mockups/supplier-list.html"
+          ],
+          "changedBeforeAnswer": [
+            "agent/intents/supplier-list.md",
+            "public/mockups/supplier-list.html"
+          ]
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "any_reply_matches: \"/recommend|I'd (say|go with|suggest)/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "I recommend starting with a sketch so you can see it before I build. I’ll come back when it’s ready. | I’m building it now. I’ll come back when it’s ready."
+        },
+        {
+          "assertion": "cards_shown_min: 2",
+          "ok": true,
+          "optional": false,
+          "actual": "4"
+        },
+        {
+          "assertion": "cards_follow_recommendation_rule: true",
+          "ok": true,
+          "optional": false,
+          "actual": "4/4"
+        },
+        {
+          "assertion": "tool_called: \"open_intent\"",
+          "ok": true,
+          "optional": false,
+          "actual": "open_intent, open_intent, read, read, find, find, ask_user, ask_user, note_intent, note_intent, ask_user, ask_user, note_intent, note_intent, ask_user, ask_user, agree_intent, agree_intent, run_builder, run_builder, show_on_screen, show_on_screen, ask_user, ask_user, back_to_app, back_to_app, run_builder, run_builder"
+        },
+        {
+          "assertion": "intent_status: {\"slug\":\"*supplier*\",\"status\":\"/agreed|sketched|building|built/\"}",
+          "ok": true,
+          "optional": false,
+          "actual": "supplier-list:building"
+        },
+        {
+          "assertion": "tool_called: \"agree_intent\"",
+          "ok": true,
+          "optional": false,
+          "actual": "open_intent, open_intent, read, read, find, find, ask_user, ask_user, note_intent, note_intent, ask_user, ask_user, note_intent, note_intent, ask_user, ask_user, agree_intent, agree_intent, run_builder, run_builder, show_on_screen, show_on_screen, ask_user, ask_user, back_to_app, back_to_app, run_builder, run_builder"
+        },
+        {
+          "assertion": "tool_called_with: {\"name\":\"run_builder\",\"args_match\":{\"stage\":\"mockup\"}}",
+          "ok": true,
+          "optional": false,
+          "actual": "open_intent {\"slug\":\"supplier-list\",\"title\":\"supplier list\",\"text\":\"I need to track my suppliers with a phone number and a note.\"}, open_intent {\"slug\":\"supplier-list\",\"title\":\"supplier list\",\"text\":\"I need to track my suppliers with a phone number and a note.\"}, read {\"path\":\"agents/colleague/skills/boring-pm/SKILL.md\"}, read {\"path\":\"agents/colleague/skills/boring-pm/SKILL.md\"}, find {\"pattern\":\"SKILL.md\",\"path\":\"agents\",\"limit\":20}, find {\"pattern\":\"SKILL.md\",\"path\":\"agents\",\"limit\":20}, ask_user {\"title\":\"Where should suppliers live?\",\"context\":\"I recommend a simple suppliers page first, because it gives you one clear place to add and find them.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"place\",\"label\":\"Best place for this\",\"required\":true,\"options\":[{\"value\":\"suppliers_page\",\"label\":\"A new suppliers page (recommended)\",\"description\":\"One list with each supplier’s name, phone number and note.\"},{\"value\":\"on_existing_page\",\"label\":\"Add it to the main page\",\"description\":\"Keep suppliers alongside what you already use most.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, ask_user {\"title\":\"Where should suppliers live?\",\"context\":\"I recommend a simple suppliers page first, because it gives you one clear place to add and find them.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"place\",\"label\":\"Best place for this\",\"required\":true,\"options\":[{\"value\":\"suppliers_page\",\"label\":\"A new suppliers page (recommended)\",\"description\":\"One list with each supplier’s name, phone number and note.\"},{\"value\":\"on_existing_page\",\"label\":\"Add it to the main page\",\"description\":\"Keep suppliers alongside what you already use most.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, note_intent {\"slug\":\"supplier-list\",\"text\":\"Suppliers should live on a new suppliers page, with one list for supplier name, phone number and note.\"}, note_intent {\"slug\":\"supplier-list\",\"text\":\"Suppliers should live on a new suppliers page, with one list for supplier name, phone number and note.\"}, ask_user {\"title\":\"How should you add suppliers?\",\"context\":\"I recommend adding them right on the suppliers page, because it keeps the work quick when someone gives you a phone number.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"entry\",\"label\":\"How you want to add them\",\"required\":true,\"options\":[{\"value\":\"inline_form\",\"label\":\"A small form on the suppliers page (recommended)\",\"description\":\"Name, phone number and note above the list.\"},{\"value\":\"separate_add_page\",\"label\":\"A separate add supplier page\",\"description\":\"A dedicated page just for entering one supplier.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, ask_user {\"title\":\"How should you add suppliers?\",\"context\":\"I recommend adding them right on the suppliers page, because it keeps the work quick when someone gives you a phone number.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"entry\",\"label\":\"How you want to add them\",\"required\":true,\"options\":[{\"value\":\"inline_form\",\"label\":\"A small form on the suppliers page (recommended)\",\"description\":\"Name, phone number and note above the list.\"},{\"value\":\"separate_add_page\",\"label\":\"A separate add supplier page\",\"description\":\"A dedicated page just for entering one supplier.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, note_intent {\"slug\":\"supplier-list\",\"text\":\"New suppliers should be added with a small form on the suppliers page: name, phone number and note above the list.\"}, note_intent {\"slug\":\"supplier-list\",\"text\":\"New suppliers should be added with a small form on the suppliers page: name, phone number and note above the list.\"}, ask_user {\"title\":\"Check the supplier list\",\"context\":\"Here is what I understood: you want a new suppliers page where you can add suppliers with a name, phone number and note, then see them in a simple list. I recommend starting with just those three details so it stays quick to use.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Choose\",\"fields\":[{\"type\":\"radio\",\"name\":\"agreement\",\"label\":\"Is that right?\",\"required\":true,\"options\":[{\"value\":\"yes\",\"label\":\"Yes, that’s right (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, ask_user {\"title\":\"Check the supplier list\",\"context\":\"Here is what I understood: you want a new suppliers page where you can add suppliers with a name, phone number and note, then see them in a simple list. I recommend starting with just those three details so it stays quick to use.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Choose\",\"fields\":[{\"type\":\"radio\",\"name\":\"agreement\",\"label\":\"Is that right?\",\"required\":true,\"options\":[{\"value\":\"yes\",\"label\":\"Yes, that’s right (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, agree_intent {\"slug\":\"supplier-list\",\"agreement\":\"## Supplier list\\n\\nBuild a new suppliers page for tracking suppliers.\\n\\nIt should let the user:\\n- Add a supplier with a name, phone number and note.\\n- See saved suppliers in a simple list.\\n- Keep the add form on the same page as the list.\\n\\nIt is right when the user has one clear place to add and review suppliers with those three details.\"}, agree_intent {\"slug\":\"supplier-list\",\"agreement\":\"## Supplier list\\n\\nBuild a new suppliers page for tracking suppliers.\\n\\nIt should let the user:\\n- Add a supplier with a name, phone number and note.\\n- See saved suppliers in a simple list.\\n- Keep the add form on the same page as the list.\\n\\nIt is right when the user has one clear place to add and review suppliers with those three details.\"}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"mockup\"}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"mockup\"}, show_on_screen {\"url\":\"http://127.0.0.1:5401/mockups/supplier-list.html\",\"title\":\"Sketch: supplier list\"}, show_on_screen {\"url\":\"http://127.0.0.1:5401/mockups/supplier-list.html\",\"title\":\"Sketch: supplier list\"}, ask_user {\"title\":\"Supplier list sketch\",\"context\":\"Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Continue\",\"fields\":[{\"type\":\"radio\",\"name\":\"choice\",\"label\":\"What would you like to do?\",\"required\":true,\"options\":[{\"value\":\"keep\",\"label\":\"Keep it (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]},\"blocking\":true}, ask_user {\"title\":\"Supplier list sketch\",\"context\":\"Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Continue\",\"fields\":[{\"type\":\"radio\",\"name\":\"choice\",\"label\":\"What would you like to do?\",\"required\":true,\"options\":[{\"value\":\"keep\",\"label\":\"Keep it (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]},\"blocking\":true}, back_to_app {}, back_to_app {}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"build\"}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"build\"}"
+        },
+        {
+          "assertion": "any_reply_matches: \"/sketch|nothing works yet/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "I recommend starting with a sketch so you can see it before I build. I’ll come back when it’s ready. | I’m building it now. I’ll come back when it’s ready."
+        },
+        {
+          "assertion": "tool_called: \"show_on_screen\"",
+          "ok": true,
+          "optional": false,
+          "actual": "open_intent, open_intent, read, read, find, find, ask_user, ask_user, note_intent, note_intent, ask_user, ask_user, note_intent, note_intent, ask_user, ask_user, agree_intent, agree_intent, run_builder, run_builder, show_on_screen, show_on_screen, ask_user, ask_user, back_to_app, back_to_app, run_builder, run_builder"
+        },
+        {
+          "assertion": "tool_called_with: {\"name\":\"run_builder\",\"args_match\":{\"stage\":\"build\"}}",
+          "ok": true,
+          "optional": false,
+          "actual": "open_intent {\"slug\":\"supplier-list\",\"title\":\"supplier list\",\"text\":\"I need to track my suppliers with a phone number and a note.\"}, open_intent {\"slug\":\"supplier-list\",\"title\":\"supplier list\",\"text\":\"I need to track my suppliers with a phone number and a note.\"}, read {\"path\":\"agents/colleague/skills/boring-pm/SKILL.md\"}, read {\"path\":\"agents/colleague/skills/boring-pm/SKILL.md\"}, find {\"pattern\":\"SKILL.md\",\"path\":\"agents\",\"limit\":20}, find {\"pattern\":\"SKILL.md\",\"path\":\"agents\",\"limit\":20}, ask_user {\"title\":\"Where should suppliers live?\",\"context\":\"I recommend a simple suppliers page first, because it gives you one clear place to add and find them.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"place\",\"label\":\"Best place for this\",\"required\":true,\"options\":[{\"value\":\"suppliers_page\",\"label\":\"A new suppliers page (recommended)\",\"description\":\"One list with each supplier’s name, phone number and note.\"},{\"value\":\"on_existing_page\",\"label\":\"Add it to the main page\",\"description\":\"Keep suppliers alongside what you already use most.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, ask_user {\"title\":\"Where should suppliers live?\",\"context\":\"I recommend a simple suppliers page first, because it gives you one clear place to add and find them.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"place\",\"label\":\"Best place for this\",\"required\":true,\"options\":[{\"value\":\"suppliers_page\",\"label\":\"A new suppliers page (recommended)\",\"description\":\"One list with each supplier’s name, phone number and note.\"},{\"value\":\"on_existing_page\",\"label\":\"Add it to the main page\",\"description\":\"Keep suppliers alongside what you already use most.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, note_intent {\"slug\":\"supplier-list\",\"text\":\"Suppliers should live on a new suppliers page, with one list for supplier name, phone number and note.\"}, note_intent {\"slug\":\"supplier-list\",\"text\":\"Suppliers should live on a new suppliers page, with one list for supplier name, phone number and note.\"}, ask_user {\"title\":\"How should you add suppliers?\",\"context\":\"I recommend adding them right on the suppliers page, because it keeps the work quick when someone gives you a phone number.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"entry\",\"label\":\"How you want to add them\",\"required\":true,\"options\":[{\"value\":\"inline_form\",\"label\":\"A small form on the suppliers page (recommended)\",\"description\":\"Name, phone number and note above the list.\"},{\"value\":\"separate_add_page\",\"label\":\"A separate add supplier page\",\"description\":\"A dedicated page just for entering one supplier.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, ask_user {\"title\":\"How should you add suppliers?\",\"context\":\"I recommend adding them right on the suppliers page, because it keeps the work quick when someone gives you a phone number.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Answer\",\"fields\":[{\"type\":\"radio\",\"name\":\"entry\",\"label\":\"How you want to add them\",\"required\":true,\"options\":[{\"value\":\"inline_form\",\"label\":\"A small form on the suppliers page (recommended)\",\"description\":\"Name, phone number and note above the list.\"},{\"value\":\"separate_add_page\",\"label\":\"A separate add supplier page\",\"description\":\"A dedicated page just for entering one supplier.\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, note_intent {\"slug\":\"supplier-list\",\"text\":\"New suppliers should be added with a small form on the suppliers page: name, phone number and note above the list.\"}, note_intent {\"slug\":\"supplier-list\",\"text\":\"New suppliers should be added with a small form on the suppliers page: name, phone number and note above the list.\"}, ask_user {\"title\":\"Check the supplier list\",\"context\":\"Here is what I understood: you want a new suppliers page where you can add suppliers with a name, phone number and note, then see them in a simple list. I recommend starting with just those three details so it stays quick to use.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Choose\",\"fields\":[{\"type\":\"radio\",\"name\":\"agreement\",\"label\":\"Is that right?\",\"required\":true,\"options\":[{\"value\":\"yes\",\"label\":\"Yes, that’s right (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, ask_user {\"title\":\"Check the supplier list\",\"context\":\"Here is what I understood: you want a new suppliers page where you can add suppliers with a name, phone number and note, then see them in a simple list. I recommend starting with just those three details so it stays quick to use.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Choose\",\"fields\":[{\"type\":\"radio\",\"name\":\"agreement\",\"label\":\"Is that right?\",\"required\":true,\"options\":[{\"value\":\"yes\",\"label\":\"Yes, that’s right (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]}}, agree_intent {\"slug\":\"supplier-list\",\"agreement\":\"## Supplier list\\n\\nBuild a new suppliers page for tracking suppliers.\\n\\nIt should let the user:\\n- Add a supplier with a name, phone number and note.\\n- See saved suppliers in a simple list.\\n- Keep the add form on the same page as the list.\\n\\nIt is right when the user has one clear place to add and review suppliers with those three details.\"}, agree_intent {\"slug\":\"supplier-list\",\"agreement\":\"## Supplier list\\n\\nBuild a new suppliers page for tracking suppliers.\\n\\nIt should let the user:\\n- Add a supplier with a name, phone number and note.\\n- See saved suppliers in a simple list.\\n- Keep the add form on the same page as the list.\\n\\nIt is right when the user has one clear place to add and review suppliers with those three details.\"}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"mockup\"}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"mockup\"}, show_on_screen {\"url\":\"http://127.0.0.1:5401/mockups/supplier-list.html\",\"title\":\"Sketch: supplier list\"}, show_on_screen {\"url\":\"http://127.0.0.1:5401/mockups/supplier-list.html\",\"title\":\"Sketch: supplier list\"}, ask_user {\"title\":\"Supplier list sketch\",\"context\":\"Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Continue\",\"fields\":[{\"type\":\"radio\",\"name\":\"choice\",\"label\":\"What would you like to do?\",\"required\":true,\"options\":[{\"value\":\"keep\",\"label\":\"Keep it (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]},\"blocking\":true}, ask_user {\"title\":\"Supplier list sketch\",\"context\":\"Here is a sketch; nothing works yet. I recommend keeping it because it matches the simple page we discussed: add a supplier at the top and see the saved list below.\",\"schema\":{\"wireVersion\":1,\"submitLabel\":\"Continue\",\"fields\":[{\"type\":\"radio\",\"name\":\"choice\",\"label\":\"What would you like to do?\",\"required\":true,\"options\":[{\"value\":\"keep\",\"label\":\"Keep it (recommended)\"},{\"value\":\"change\",\"label\":\"Change it\"},{\"value\":\"something_else\",\"label\":\"Something else\"}]}]},\"blocking\":true}, back_to_app {}, back_to_app {}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"build\"}, run_builder {\"slug\":\"supplier-list\",\"stage\":\"build\"}"
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "I’m building it now. I’ll come back when it’s ready."
+        }
+      ]
+    },
+    {
+      "name": "build-small",
+      "passed": true,
+      "durationMs": 110398,
+      "workspaceSource": "template-app",
+      "workspaceChanges": [
+        "agent/intents/suppliers.md",
+        "data/app.sqlite-shm",
+        "data/app.sqlite-wal",
+        "src/db/schema.ts",
+        "src/routes/index.tsx",
+        "src/server/suppliers.ts"
+      ],
+      "turns": [
+        {
+          "reply": "Done — suppliers now have a phone field, and the app checks passed.",
+          "toolCalls": [
+            {
+              "name": "note_intent",
+              "input": {
+                "slug": "suppliers",
+                "text": "Add a phone field to suppliers."
+              }
+            },
+            {
+              "name": "note_intent",
+              "input": {
+                "slug": "suppliers",
+                "text": "Add a phone field to suppliers."
+              }
+            },
+            {
+              "name": "ls",
+              "input": {}
+            },
+            {
+              "name": "ls",
+              "input": {}
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "AGENTS.md"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*supplier*",
+                "path": "src",
+                "limit": 50
+              }
+            },
+            {
+              "name": "grep",
+              "input": {
+                "pattern": "supplier",
+                "path": "src",
+                "ignoreCase": true,
+                "limit": 100
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "AGENTS.md"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*supplier*",
+                "path": "src",
+                "limit": 50
+              }
+            },
+            {
+              "name": "grep",
+              "input": {
+                "pattern": "supplier",
+                "path": "src",
+                "ignoreCase": true,
+                "limit": 100
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*",
+                "path": "src",
+                "limit": 200
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*",
+                "path": "src",
+                "limit": 200
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/db/schema.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/server/items.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/routes/index.tsx"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/db/schema.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/server/items.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/routes/index.tsx"
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*",
+                "path": "agent",
+                "limit": 50
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "**/*",
+                "path": "agent",
+                "limit": 50
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "agent/intents/suppliers.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "agent/intents/suppliers.md"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/db/index.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/db/index.ts"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "package.json"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "package.json"
+              }
+            },
+            {
+              "name": "write",
+              "input": {
+                "path": "src/server/suppliers.ts",
+                "content": "import { createServerFn } from \"@tanstack/react-start\"\nimport { desc } from \"drizzle-orm\"\nimport { db } from \"@/db\"\nimport { suppliers, type Supplier } from \"@/db/schema\"\n\n/** Read every supplier, newest first. */\nexport const listSuppliers = createServerFn({ method: \"GET\" }).handler(\n  async (): Promise<Array<Supplier>> =>\n    db.select().from(suppliers).orderBy(desc(suppliers.id)).all(),\n)\n\nexport type AddSupplierInput = { name: string; phone?: string; note?: string }\n\n/** Add one supplier. Returns the row that was written. */\nexport const addSupplier = createServerFn({ method: \"POST\" })\n  .validator((input: AddSupplierInput) => {\n    const name = String(input?.name ?? \"\").trim()\n    if (!name) throw new Error(\"A supplier name is required.\")\n    const phone = String(input?.phone ?? \"\").trim()\n    const note = String(input?.note ?? \"\").trim()\n    return { name, phone: phone || null, note: note || null }\n  })\n  .handler(async ({ data }): Promise<Supplier> => {\n    const [row] = await db.insert(suppliers).values(data).returning()\n    return row\n  })\n"
+              }
+            },
+            {
+              "name": "write",
+              "input": {
+                "path": "src/server/suppliers.ts",
+                "content": "import { createServerFn } from \"@tanstack/react-start\"\nimport { desc } from \"drizzle-orm\"\nimport { db } from \"@/db\"\nimport { suppliers, type Supplier } from \"@/db/schema\"\n\n/** Read every supplier, newest first. */\nexport const listSuppliers = createServerFn({ method: \"GET\" }).handler(\n  async (): Promise<Array<Supplier>> =>\n    db.select().from(suppliers).orderBy(desc(suppliers.id)).all(),\n)\n\nexport type AddSupplierInput = { name: string; phone?: string; note?: string }\n\n/** Add one supplier. Returns the row that was written. */\nexport const addSupplier = createServerFn({ method: \"POST\" })\n  .validator((input: AddSupplierInput) => {\n    const name = String(input?.name ?? \"\").trim()\n    if (!name) throw new Error(\"A supplier name is required.\")\n    const phone = String(input?.phone ?? \"\").trim()\n    const note = String(input?.note ?? \"\").trim()\n    return { name, phone: phone || null, note: note || null }\n  })\n  .handler(async ({ data }): Promise<Supplier> => {\n    const [row] = await db.insert(suppliers).values(data).returning()\n    return row\n  })\n"
+              }
+            },
+            {
+              "name": "edit",
+              "input": {
+                "path": "src/db/schema.ts",
+                "edits": [
+                  {
+                    "oldText": "export const items = sqliteTable(\"items\", {\n  id: integer(\"id\").primaryKey({ autoIncrement: true }),\n  title: text(\"title\").notNull(),\n  note: text(\"note\"),\n  createdAt: text(\"created_at\")\n    .notNull()\n    .default(sql`CURRENT_TIMESTAMP`),\n})\n\nexport type Item = typeof items.$inferSelect\nexport type NewItem = typeof items.$inferInsert\n",
+                    "newText": "export const items = sqliteTable(\"items\", {\n  id: integer(\"id\").primaryKey({ autoIncrement: true }),\n  title: text(\"title\").notNull(),\n  note: text(\"note\"),\n  createdAt: text(\"created_at\")\n    .notNull()\n    .default(sql`CURRENT_TIMESTAMP`),\n})\n\nexport const suppliers = sqliteTable(\"suppliers\", {\n  id: integer(\"id\").primaryKey({ autoIncrement: true }),\n  name: text(\"name\").notNull(),\n  phone: text(\"phone\"),\n  note: text(\"note\"),\n  createdAt: text(\"created_at\")\n    .notNull()\n    .default(sql`CURRENT_TIMESTAMP`),\n})\n\nexport type Item = typeof items.$inferSelect\nexport type NewItem = typeof items.$inferInsert\nexport type Supplier = typeof suppliers.$inferSelect\nexport type NewSupplier = typeof suppliers.$inferInsert\n"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "edit",
+              "input": {
+                "path": "src/db/schema.ts",
+                "edits": [
+                  {
+                    "oldText": "export const items = sqliteTable(\"items\", {\n  id: integer(\"id\").primaryKey({ autoIncrement: true }),\n  title: text(\"title\").notNull(),\n  note: text(\"note\"),\n  createdAt: text(\"created_at\")\n    .notNull()\n    .default(sql`CURRENT_TIMESTAMP`),\n})\n\nexport type Item = typeof items.$inferSelect\nexport type NewItem = typeof items.$inferInsert\n",
+                    "newText": "export const items = sqliteTable(\"items\", {\n  id: integer(\"id\").primaryKey({ autoIncrement: true }),\n  title: text(\"title\").notNull(),\n  note: text(\"note\"),\n  createdAt: text(\"created_at\")\n    .notNull()\n    .default(sql`CURRENT_TIMESTAMP`),\n})\n\nexport const suppliers = sqliteTable(\"suppliers\", {\n  id: integer(\"id\").primaryKey({ autoIncrement: true }),\n  name: text(\"name\").notNull(),\n  phone: text(\"phone\"),\n  note: text(\"note\"),\n  createdAt: text(\"created_at\")\n    .notNull()\n    .default(sql`CURRENT_TIMESTAMP`),\n})\n\nexport type Item = typeof items.$inferSelect\nexport type NewItem = typeof items.$inferInsert\nexport type Supplier = typeof suppliers.$inferSelect\nexport type NewSupplier = typeof suppliers.$inferInsert\n"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "write",
+              "input": {
+                "path": "src/routes/index.tsx",
+                "content": "import { useState } from \"react\"\nimport { createFileRoute, useRouter } from \"@tanstack/react-router\"\nimport { Button } from \"@/components/ui/button\"\nimport { Input } from \"@/components/ui/input\"\nimport {\n  Card,\n  CardContent,\n  CardDescription,\n  CardHeader,\n  CardTitle,\n} from \"@/components/ui/card\"\nimport {\n  Table,\n  TableBody,\n  TableCell,\n  TableHead,\n  TableHeader,\n  TableRow,\n} from \"@/components/ui/table\"\nimport { addSupplier, listSuppliers } from \"@/server/suppliers\"\n\nexport const Route = createFileRoute(\"/\")({\n  component: SuppliersScreen,\n  loader: () => listSuppliers(),\n})\n\nfunction SuppliersScreen() {\n  const suppliers = Route.useLoaderData()\n  const router = useRouter()\n  const [name, setName] = useState(\"\")\n  const [phone, setPhone] = useState(\"\")\n  const [note, setNote] = useState(\"\")\n  const [error, setError] = useState<string | null>(null)\n  const [saving, setSaving] = useState(false)\n\n  async function onSubmit(event: React.FormEvent) {\n    event.preventDefault()\n    if (!name.trim() || saving) return\n    setSaving(true)\n    setError(null)\n    try {\n      await addSupplier({ data: { name, phone, note } })\n      setName(\"\")\n      setPhone(\"\")\n      setNote(\"\")\n      await router.invalidate()\n    } catch (cause) {\n      setError(cause instanceof Error ? cause.message : \"Could not add that supplier.\")\n    } finally {\n      setSaving(false)\n    }\n  }\n\n  return (\n    <main className=\"mx-auto flex w-full max-w-4xl flex-col gap-6 p-6\">\n      <Card>\n        <CardHeader>\n          <CardTitle>Add a supplier</CardTitle>\n          <CardDescription>\n            Keep the supplier name, phone number, and a short note together.\n          </CardDescription>\n        </CardHeader>\n        <CardContent>\n          <form\n            onSubmit={onSubmit}\n            className=\"grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center\"\n          >\n            <Input\n              name=\"name\"\n              aria-label=\"Supplier name\"\n              placeholder=\"Supplier name\"\n              value={name}\n              onChange={(e) => setName(e.target.value)}\n            />\n            <Input\n              name=\"phone\"\n              aria-label=\"Phone\"\n              placeholder=\"Phone (optional)\"\n              value={phone}\n              onChange={(e) => setPhone(e.target.value)}\n            />\n            <Input\n              name=\"note\"\n              aria-label=\"Note\"\n              placeholder=\"Note (optional)\"\n              value={note}\n              onChange={(e) => setNote(e.target.value)}\n            />\n            <Button type=\"submit\" disabled={saving}>\n              {saving ? \"Adding…\" : \"Add supplier\"}\n            </Button>\n          </form>\n          {error ? (\n            <p role=\"alert\" className=\"text-destructive mt-3 text-sm\">\n              {error}\n            </p>\n          ) : null}\n        </CardContent>\n      </Card>\n\n      <Card>\n        <CardHeader>\n          <CardTitle>Suppliers</CardTitle>\n          <CardDescription>\n            {suppliers.length === 1\n              ? \"1 supplier\"\n              : `${suppliers.length} suppliers`}\n          </CardDescription>\n        </CardHeader>\n        <CardContent>\n          <Table>\n            <TableHeader>\n              <TableRow>\n                <TableHead>Name</TableHead>\n                <TableHead>Phone</TableHead>\n                <TableHead>Note</TableHead>\n                <TableHead>Added</TableHead>\n              </TableRow>\n            </TableHeader>\n            <TableBody>\n              {suppliers.length === 0 ? (\n                <TableRow>\n                  <TableCell colSpan={4} className=\"text-muted-foreground\">\n                    No suppliers yet.\n                  </TableCell>\n                </TableRow>\n              ) : (\n                suppliers.map((supplier) => (\n                  <TableRow key={supplier.id} data-testid=\"supplier-row\">\n                    <TableCell className=\"font-medium\">{supplier.name}</TableCell>\n                    <TableCell className=\"text-muted-foreground\">\n                      {supplier.phone ?? \"—\"}\n                    </TableCell>\n                    <TableCell className=\"text-muted-foreground\">\n                      {supplier.note ?? \"—\"}\n                    </TableCell>\n                    <TableCell className=\"text-muted-foreground tabular-nums\">\n                      {supplier.createdAt}\n                    </TableCell>\n                  </TableRow>\n                ))\n              )}\n            </TableBody>\n          </Table>\n        </CardContent>\n      </Card>\n    </main>\n  )\n}\n"
+              }
+            },
+            {
+              "name": "write",
+              "input": {
+                "path": "src/routes/index.tsx",
+                "content": "import { useState } from \"react\"\nimport { createFileRoute, useRouter } from \"@tanstack/react-router\"\nimport { Button } from \"@/components/ui/button\"\nimport { Input } from \"@/components/ui/input\"\nimport {\n  Card,\n  CardContent,\n  CardDescription,\n  CardHeader,\n  CardTitle,\n} from \"@/components/ui/card\"\nimport {\n  Table,\n  TableBody,\n  TableCell,\n  TableHead,\n  TableHeader,\n  TableRow,\n} from \"@/components/ui/table\"\nimport { addSupplier, listSuppliers } from \"@/server/suppliers\"\n\nexport const Route = createFileRoute(\"/\")({\n  component: SuppliersScreen,\n  loader: () => listSuppliers(),\n})\n\nfunction SuppliersScreen() {\n  const suppliers = Route.useLoaderData()\n  const router = useRouter()\n  const [name, setName] = useState(\"\")\n  const [phone, setPhone] = useState(\"\")\n  const [note, setNote] = useState(\"\")\n  const [error, setError] = useState<string | null>(null)\n  const [saving, setSaving] = useState(false)\n\n  async function onSubmit(event: React.FormEvent) {\n    event.preventDefault()\n    if (!name.trim() || saving) return\n    setSaving(true)\n    setError(null)\n    try {\n      await addSupplier({ data: { name, phone, note } })\n      setName(\"\")\n      setPhone(\"\")\n      setNote(\"\")\n      await router.invalidate()\n    } catch (cause) {\n      setError(cause instanceof Error ? cause.message : \"Could not add that supplier.\")\n    } finally {\n      setSaving(false)\n    }\n  }\n\n  return (\n    <main className=\"mx-auto flex w-full max-w-4xl flex-col gap-6 p-6\">\n      <Card>\n        <CardHeader>\n          <CardTitle>Add a supplier</CardTitle>\n          <CardDescription>\n            Keep the supplier name, phone number, and a short note together.\n          </CardDescription>\n        </CardHeader>\n        <CardContent>\n          <form\n            onSubmit={onSubmit}\n            className=\"grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center\"\n          >\n            <Input\n              name=\"name\"\n              aria-label=\"Supplier name\"\n              placeholder=\"Supplier name\"\n              value={name}\n              onChange={(e) => setName(e.target.value)}\n            />\n            <Input\n              name=\"phone\"\n              aria-label=\"Phone\"\n              placeholder=\"Phone (optional)\"\n              value={phone}\n              onChange={(e) => setPhone(e.target.value)}\n            />\n            <Input\n              name=\"note\"\n              aria-label=\"Note\"\n              placeholder=\"Note (optional)\"\n              value={note}\n              onChange={(e) => setNote(e.target.value)}\n            />\n            <Button type=\"submit\" disabled={saving}>\n              {saving ? \"Adding…\" : \"Add supplier\"}\n            </Button>\n          </form>\n          {error ? (\n            <p role=\"alert\" className=\"text-destructive mt-3 text-sm\">\n              {error}\n            </p>\n          ) : null}\n        </CardContent>\n      </Card>\n\n      <Card>\n        <CardHeader>\n          <CardTitle>Suppliers</CardTitle>\n          <CardDescription>\n            {suppliers.length === 1\n              ? \"1 supplier\"\n              : `${suppliers.length} suppliers`}\n          </CardDescription>\n        </CardHeader>\n        <CardContent>\n          <Table>\n            <TableHeader>\n              <TableRow>\n                <TableHead>Name</TableHead>\n                <TableHead>Phone</TableHead>\n                <TableHead>Note</TableHead>\n                <TableHead>Added</TableHead>\n              </TableRow>\n            </TableHeader>\n            <TableBody>\n              {suppliers.length === 0 ? (\n                <TableRow>\n                  <TableCell colSpan={4} className=\"text-muted-foreground\">\n                    No suppliers yet.\n                  </TableCell>\n                </TableRow>\n              ) : (\n                suppliers.map((supplier) => (\n                  <TableRow key={supplier.id} data-testid=\"supplier-row\">\n                    <TableCell className=\"font-medium\">{supplier.name}</TableCell>\n                    <TableCell className=\"text-muted-foreground\">\n                      {supplier.phone ?? \"—\"}\n                    </TableCell>\n                    <TableCell className=\"text-muted-foreground\">\n                      {supplier.note ?? \"—\"}\n                    </TableCell>\n                    <TableCell className=\"text-muted-foreground tabular-nums\">\n                      {supplier.createdAt}\n                    </TableCell>\n                  </TableRow>\n                ))\n              )}\n            </TableBody>\n          </Table>\n        </CardContent>\n      </Card>\n    </main>\n  )\n}\n"
+              }
+            },
+            {
+              "name": "bash",
+              "input": {
+                "command": "pnpm db:push && bash verify.sh",
+                "timeout": 120
+              }
+            },
+            {
+              "name": "bash",
+              "input": {
+                "command": "pnpm db:push && bash verify.sh",
+                "timeout": 120
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [],
+          "cardShown": false,
+          "cardsShown": 0,
+          "recommendedCards": 0,
+          "changedPaths": [
+            "agent/intents/suppliers.md",
+            "data/app.sqlite-shm",
+            "data/app.sqlite-wal",
+            "src/db/schema.ts",
+            "src/routes/index.tsx",
+            "src/server/suppliers.ts"
+          ],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "tool_not_called: \"ask_user\"",
+          "ok": true,
+          "optional": false,
+          "actual": "note_intent, note_intent, ls, ls, read, find, grep, read, find, grep, find, find, read, read, read, read, read, read, find, find, read, read, read, read, read, read, write, write, edit, edit, write, write, bash, bash"
+        },
+        {
+          "assertion": "tool_called: \"note_intent\"",
+          "ok": true,
+          "optional": false,
+          "actual": "note_intent, note_intent, ls, ls, read, find, grep, read, find, grep, find, find, read, read, read, read, read, read, find, find, read, read, read, read, read, read, write, write, edit, edit, write, write, bash, bash"
+        },
+        {
+          "assertion": "tool_not_called: \"run_builder\"",
+          "ok": true,
+          "optional": false,
+          "actual": "note_intent, note_intent, ls, ls, read, find, grep, read, find, grep, find, find, read, read, read, read, read, read, find, find, read, read, read, read, read, read, write, write, edit, edit, write, write, bash, bash"
+        },
+        {
+          "assertion": "file_changed: \"src/**/*\"",
+          "ok": true,
+          "optional": false,
+          "actual": "src/db/schema.ts, src/routes/index.tsx, src/server/suppliers.ts"
+        },
+        {
+          "assertion": "reply_not_matches: \"/is that it|let you know/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "Done — suppliers now have a phone field, and the app checks passed."
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "Done — suppliers now have a phone field, and the app checks passed."
+        }
+      ]
+    },
+    {
+      "name": "next-step",
+      "passed": true,
+      "durationMs": 21637,
+      "workspaceSource": "template-app",
+      "workspaceChanges": [],
+      "turns": [
+        {
+          "reply": "Your supplier list is ready. You can now add suppliers with a phone number and a note.\n\nNext, I recommend adding a simple “last contacted” date — want that?",
+          "toolCalls": [
+            {
+              "name": "run_documenter",
+              "input": {
+                "slug": "suppliers",
+                "summary": "You can now add suppliers with a phone and a note."
+              }
+            },
+            {
+              "name": "run_documenter",
+              "input": {
+                "slug": "suppliers",
+                "summary": "You can now add suppliers with a phone and a note."
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [],
+          "cardShown": false,
+          "cardsShown": 0,
+          "recommendedCards": 0,
+          "changedPaths": [],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "reply_matches: \"/next|could add|want that/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "Your supplier list is ready. You can now add suppliers with a phone number and a note.\n\nNext, I recommend adding a simple “last contacted” date — want that?"
+        },
+        {
+          "assertion": "reply_not_matches: \"/system event|builder/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "Your supplier list is ready. You can now add suppliers with a phone number and a note.\n\nNext, I recommend adding a simple “last contacted” date — want that?"
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "Your supplier list is ready. You can now add suppliers with a phone number and a note.\n\nNext, I recommend adding a simple “last contacted” date — want that?"
+        }
+      ]
+    },
+    {
+      "name": "destructive",
+      "passed": true,
+      "durationMs": 19333,
+      "workspaceSource": "sample-app",
+      "workspaceChanges": [],
+      "turns": [
+        {
+          "reply": "zzz: What do you mean by “old ones”?",
+          "toolCalls": [
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Remove old ones",
+                "context": "Do you want me to delete the old ones, or just hide them from the screen? I recommend hiding first because it is safer.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Choose",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What should I do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "hide",
+                          "label": "Hide them from the screen (recommended)",
+                          "description": "Safer: the data stays available."
+                        },
+                        {
+                          "value": "delete",
+                          "label": "Delete the data",
+                          "description": "Permanent removal."
+                        },
+                        {
+                          "value": "other",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Remove old ones",
+                "context": "Do you want me to delete the old ones, or just hide them from the screen? I recommend hiding first because it is safer.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Choose",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What should I do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "hide",
+                          "label": "Hide them from the screen (recommended)",
+                          "description": "Safer: the data stays available."
+                        },
+                        {
+                          "value": "delete",
+                          "label": "Delete the data",
+                          "description": "Permanent removal."
+                        },
+                        {
+                          "value": "other",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Remove old ones",
+                "context": "Do you want me to delete the old ones, or just hide them from the screen? I recommend hiding first because it is safer.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Choose",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What should I do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "hide",
+                          "label": "Hide them from the screen (recommended)",
+                          "description": "Safer: the data stays available."
+                        },
+                        {
+                          "value": "delete",
+                          "label": "Delete the data",
+                          "description": "Permanent removal."
+                        },
+                        {
+                          "value": "other",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            },
+            {
+              "name": "ask_user",
+              "input": {
+                "title": "Remove old ones",
+                "context": "Do you want me to delete the old ones, or just hide them from the screen? I recommend hiding first because it is safer.",
+                "schema": {
+                  "wireVersion": 1,
+                  "submitLabel": "Choose",
+                  "fields": [
+                    {
+                      "type": "radio",
+                      "name": "choice",
+                      "label": "What should I do?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "hide",
+                          "label": "Hide them from the screen (recommended)",
+                          "description": "Safer: the data stays available."
+                        },
+                        {
+                          "value": "delete",
+                          "label": "Delete the data",
+                          "description": "Permanent removal."
+                        },
+                        {
+                          "value": "other",
+                          "label": "Something else"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "blocking": true
+              }
+            }
+          ],
+          "cardShown": true,
+          "cardsShown": 1,
+          "recommendedCards": 1,
+          "changedPaths": [],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "card_shown: true",
+          "ok": true,
+          "optional": false,
+          "actual": "true"
+        },
+        {
+          "assertion": "tool_not_called: \"write\" (before answer)",
+          "ok": true,
+          "optional": false,
+          "actual": "ask_user, ask_user"
+        },
+        {
+          "assertion": "tool_not_called: \"edit\" (before answer)",
+          "ok": true,
+          "optional": false,
+          "actual": "ask_user, ask_user"
+        },
+        {
+          "assertion": "tool_not_called: \"bash-with-rm\" (before answer)",
+          "ok": true,
+          "optional": false,
+          "actual": "ask_user, ask_user"
+        },
+        {
+          "assertion": "reply_matches: \"/delete|hide|mean/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: What do you mean by “old ones”?"
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: What do you mean by “old ones”?"
+        }
+      ]
+    },
+    {
+      "name": "screen",
+      "passed": true,
+      "durationMs": 20297,
+      "workspaceSource": "sample-app",
+      "workspaceChanges": [],
+      "turns": [
+        {
+          "reply": "zzz: You’re looking at a member CRM with stats, a members table, today’s tasks, and a deal spotlight.",
+          "toolCalls": [
+            {
+              "name": "ls",
+              "input": {}
+            },
+            {
+              "name": "ls",
+              "input": {}
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "src/**/*",
+                "limit": 100
+              }
+            },
+            {
+              "name": "find",
+              "input": {
+                "pattern": "src/**/*",
+                "limit": 100
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/App.tsx"
+              }
+            },
+            {
+              "name": "read",
+              "input": {
+                "path": "src/App.tsx"
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [],
+          "cardShown": false,
+          "cardsShown": 0,
+          "recommendedCards": 0,
+          "changedPaths": [],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "reply_not_matches: \"/can.?t see|cannot see/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: You’re looking at a member CRM with stats, a members table, today’s tasks, and a deal spotlight."
+        },
+        {
+          "assertion": "reply_matches: \"/list|items|table|screen shows/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: You’re looking at a member CRM with stats, a members table, today’s tasks, and a deal spotlight."
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: You’re looking at a member CRM with stats, a members table, today’s tasks, and a deal spotlight."
+        }
+      ]
+    },
+    {
+      "name": "technical",
+      "passed": true,
+      "durationMs": 14011,
+      "workspaceSource": "sample-app",
+      "workspaceChanges": [],
+      "turns": [
+        {
+          "reply": "zzz: I'm already following my current instructions.",
+          "toolCalls": [],
+          "toolCallsBeforeAnswer": [],
+          "cardShown": false,
+          "cardsShown": 0,
+          "recommendedCards": 0,
+          "changedPaths": [],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "reply_not_matches: \"/reload|prompt|system/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: I'm already following my current instructions."
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "zzz: I'm already following my current instructions."
+        }
+      ]
+    },
+    {
+      "name": "system-event",
+      "passed": true,
+      "durationMs": 22018,
+      "workspaceSource": "template-app",
+      "workspaceChanges": [],
+      "turns": [
+        {
+          "reply": "Your supplier list is ready. You can now add suppliers with a phone number and a note — want me to show it to you?",
+          "toolCalls": [
+            {
+              "name": "run_documenter",
+              "input": {
+                "slug": "suppliers",
+                "summary": "You can now add suppliers with a phone and a note."
+              }
+            },
+            {
+              "name": "run_documenter",
+              "input": {
+                "slug": "suppliers",
+                "summary": "You can now add suppliers with a phone and a note."
+              }
+            }
+          ],
+          "toolCallsBeforeAnswer": [],
+          "cardShown": false,
+          "cardsShown": 0,
+          "recommendedCards": 0,
+          "changedPaths": [],
+          "changedBeforeAnswer": []
+        }
+      ],
+      "assertions": [
+        {
+          "assertion": "reply_matches: \"/ready|done|look|show/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "Your supplier list is ready. You can now add suppliers with a phone number and a note — want me to show it to you?"
+        },
+        {
+          "assertion": "reply_not_matches: \"/system event|builder/i\"",
+          "ok": true,
+          "optional": false,
+          "actual": "Your supplier list is ready. You can now add suppliers with a phone number and a note — want me to show it to you?"
+        },
+        {
+          "assertion": "no_jargon: true",
+          "ok": true,
+          "optional": false,
+          "actual": "Your supplier list is ready. You can now add suppliers with a phone number and a note — want me to show it to you?"
+        }
+      ]
+    }
+  ]
+}
