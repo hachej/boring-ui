@@ -4,3 +4,5 @@
 .boring-agent/
 test-results/
 playwright-report/
+# Scratch copy of sample-app used to drive the app without touching the template.
+.test-workspace/

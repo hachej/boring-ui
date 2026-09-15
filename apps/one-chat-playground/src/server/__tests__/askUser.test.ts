@@ -158,6 +158,29 @@ describe('the inline question', () => {
     void turn.catch(() => undefined)
   })
 
+  test('answers a conversation whose id was minted at runtime, not the pinned default', async () => {
+    // The browser resolves a real session id on first load; nothing in the
+    // answer path may assume the placeholder the host was configured with.
+    const { app, askUser, submit } = await fixture()
+    const live = 'f657de4d-e30d-4140-8366-683f94af1147'
+    const turn = askUser.tool.execute(QUESTION, {
+      toolCallId: 'call-live',
+      abortSignal: new AbortController().signal,
+      sessionId: live,
+      userId: 'trusted-local',
+    })
+    const deadline = Date.now() + 5000
+    let question: PendingQuestionView | undefined
+    while (Date.now() < deadline && !question) {
+      const response = await app.inject({ method: 'GET', url: PENDING_QUESTIONS_ROUTE })
+      question = (response.json() as { questions: PendingQuestionView[] }).questions[0]
+      if (!question) await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(question?.sessionId).toBe(live)
+    expect((await submit(question!, { choice: 'delete' })).statusCode).toBe(200)
+    expect((await turn).content[0]?.text).toContain('User answered')
+  })
+
   test('tells the model plainly when the question is malformed', async () => {
     const { askUser } = await fixture()
     const result = await askUser.tool.execute(

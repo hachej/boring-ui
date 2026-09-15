@@ -32,6 +32,14 @@ export interface OneChatAskUser {
   registerRoutes(app: FastifyInstance): Promise<void>
 }
 
+function sessionIdOf(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object' || !('params' in body)) return undefined
+  const params = (body as { params?: unknown }).params
+  if (!params || typeof params !== 'object' || !('sessionId' in params)) return undefined
+  const sessionId = (params as { sessionId?: unknown }).sessionId
+  return typeof sessionId === 'string' ? sessionId : undefined
+}
+
 function toView(question: AskUserQuestion): PendingQuestionView {
   return {
     questionId: question.questionId,
@@ -78,7 +86,10 @@ export function createAskUser(options: {
         params as Record<string, unknown>,
         ctx.abortSignal,
         ctx.sessionId ?? options.defaultSessionId,
-        ctx.userId ?? LOCAL_PRINCIPAL,
+        // Always the local principal, never the host's internal auth subject:
+        // the person who answers in the browser is the person who was asked,
+        // and the two must agree or the plugin refuses the answer.
+        LOCAL_PRINCIPAL,
         { agentTypeId: options.agentTypeId, workspaceId: ctx.workspaceId, userId: ctx.userId },
       )
     },
@@ -98,7 +109,15 @@ export function createAskUser(options: {
       await app.register(questionsRoutes, {
         store,
         runtime,
-        getAuthContext: () => ({ sessionId: options.defaultSessionId, principalId: LOCAL_PRINCIPAL }),
+        // One local browser, one pinned conversation whose id is minted at
+        // runtime: there is no separate session to cross-check the command
+        // against. Take the id the command carries — the bridge still refuses
+        // it unless it matches the question's own, and the per-question answer
+        // token remains the real guard.
+        getAuthContext: (request) => ({
+          sessionId: sessionIdOf(request.body) ?? options.defaultSessionId,
+          principalId: LOCAL_PRINCIPAL,
+        }),
       })
     },
   }
