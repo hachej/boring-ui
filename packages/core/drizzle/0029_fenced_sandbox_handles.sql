@@ -18,14 +18,20 @@ CREATE TABLE IF NOT EXISTS "fenced_sandbox_handles" (
   "cleanup_recorded_at" timestamptz,
   "updated_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("host_scope", "workspace_id", "provider", "mode"),
-  CONSTRAINT "fenced_sandbox_handles_cleanup_check"
-    CHECK ("cleanup_outcome" IS NULL OR "cleanup_outcome" IN ('succeeded', 'failed', 'ambiguous')),
+  CONSTRAINT "fenced_sandbox_handles_lease_check" CHECK (
+    ("lease_owner" IS NULL AND "lease_token" IS NULL AND "lease_expires_at" IS NULL)
+    OR ("lease_owner" IS NOT NULL AND "lease_token" IS NOT NULL AND "lease_expires_at" IS NOT NULL)
+  ),
+  CONSTRAINT "fenced_sandbox_handles_cleanup_check" CHECK (
+    ("cleanup_outcome" IS NULL AND "cleanup_detail" IS NULL AND "cleanup_recorded_at" IS NULL)
+    OR ("cleanup_outcome" IN ('succeeded', 'failed', 'ambiguous') AND "cleanup_recorded_at" IS NOT NULL)
+  ),
   CONSTRAINT "fenced_sandbox_handles_encryption_check" CHECK (
-    ("encrypted_handle" IS NULL AND "encryption_nonce" IS NULL AND "encryption_auth_tag" IS NULL AND "encryption_version" IS NULL)
-    OR ("encrypted_handle" IS NOT NULL AND "encryption_nonce" IS NOT NULL AND "encryption_auth_tag" IS NOT NULL AND "encryption_version" IS NOT NULL)
+    ("encrypted_handle" IS NULL AND "encryption_nonce" IS NULL AND "encryption_auth_tag" IS NULL AND "encryption_version" IS NULL AND "handle_version" IS NULL)
+    OR ("encrypted_handle" IS NOT NULL AND "encryption_nonce" IS NOT NULL AND "encryption_auth_tag" IS NOT NULL AND "encryption_version" IS NOT NULL AND "handle_version" IS NOT NULL)
   )
 );
 
--- Every adapter operation executes in a transaction and locks the discriminator row
--- with SELECT ... FOR UPDATE before comparing generation/token/expiry. Cleanup fields
--- are updated before successful deletion in the same transaction; failures/debt remain.
+-- Claim locks the discriminator row with SELECT ... FOR UPDATE. Every mutation uses
+-- conditional generation/token/expiry SQL. Cleanup fields are updated before successful
+-- deletion in the same transaction; failures/debt remain durable.

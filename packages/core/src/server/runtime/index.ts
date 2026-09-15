@@ -10,6 +10,7 @@ export {
   InMemorySandboxHandleBackend,
   createSandboxHandleCipher,
 } from './FencedSandboxHandleStore.js'
+export { PostgresFencedSandboxHandleStore } from './PostgresFencedSandboxHandleStore.js'
 export type {
   EncryptedSandboxHandle,
   FencedSandboxHandleStore,

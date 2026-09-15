@@ -54,9 +54,11 @@ describe('CoreFencedSandboxHandleStore', () => {
     const one = (await store.claim({ key, leaseOwner: 'one', leaseForMs: 100 }))!
     const two = (await store.claim({ key: other, leaseOwner: 'two', leaseForMs: 100 }))!
     expect(one.leaseToken).not.toBe(two.leaseToken)
-    const encrypted = f.cipher.encrypt(key, one.generation, bytes('secret-handle'))
+    const encrypted = f.cipher.encrypt(key, one.generation, 3, bytes('secret-handle'))
     expect(Buffer.from(encrypted.ciphertext).includes(Buffer.from('secret-handle'))).toBe(false)
-    expect(() => f.cipher.decrypt(other, one.generation, encrypted)).toThrow()
+    expect(() => f.cipher.decrypt(other, one.generation, 3, encrypted)).toThrow()
+    expect(() => f.cipher.decrypt(key, one.generation + 1, 3, encrypted)).toThrow()
+    expect(() => f.cipher.decrypt(key, one.generation, 4, encrypted)).toThrow()
   })
 
   it('requires explicit successful reconciliation and never models EFS data', async () => {

@@ -265,7 +265,7 @@ export const fencedSandboxHandles = pgTable(
     workspaceId: text('workspace_id').notNull(),
     provider: text('provider').notNull(),
     mode: text('mode').notNull(),
-    generation: integer('generation').notNull().default(0),
+    generation: bigint('generation', { mode: 'number' }).notNull().default(0),
     leaseOwner: text('lease_owner'),
     leaseToken: uuid('lease_token'),
     leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
@@ -279,7 +279,21 @@ export const fencedSandboxHandles = pgTable(
     cleanupRecordedAt: timestamp('cleanup_recorded_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.hostScope, table.workspaceId, table.provider, table.mode] })],
+  (table) => [
+    primaryKey({ columns: [table.hostScope, table.workspaceId, table.provider, table.mode] }),
+    check(
+      'fenced_sandbox_handles_lease_check',
+      sql`(${table.leaseOwner} IS NULL AND ${table.leaseToken} IS NULL AND ${table.leaseExpiresAt} IS NULL) OR (${table.leaseOwner} IS NOT NULL AND ${table.leaseToken} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)`,
+    ),
+    check(
+      'fenced_sandbox_handles_cleanup_check',
+      sql`(${table.cleanupOutcome} IS NULL AND ${table.cleanupDetail} IS NULL AND ${table.cleanupRecordedAt} IS NULL) OR (${table.cleanupOutcome} IN ('succeeded', 'failed', 'ambiguous') AND ${table.cleanupRecordedAt} IS NOT NULL)`,
+    ),
+    check(
+      'fenced_sandbox_handles_encryption_check',
+      sql`(${table.encryptedHandle} IS NULL AND ${table.encryptionNonce} IS NULL AND ${table.encryptionAuthTag} IS NULL AND ${table.encryptionVersion} IS NULL AND ${table.handleVersion} IS NULL) OR (${table.encryptedHandle} IS NOT NULL AND ${table.encryptionNonce} IS NOT NULL AND ${table.encryptionAuthTag} IS NOT NULL AND ${table.encryptionVersion} IS NOT NULL AND ${table.handleVersion} IS NOT NULL)`,
+    ),
+  ],
 )
 
 export const workspaceRuntimeResourcesRelations = relations(

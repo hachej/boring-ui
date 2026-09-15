@@ -55,28 +55,50 @@ export interface EncryptedSandboxHandle {
 }
 
 export interface SandboxHandleCipher {
-  encrypt(key: SandboxHandleKey, generation: number, plaintext: Uint8Array): EncryptedSandboxHandle
-  decrypt(key: SandboxHandleKey, generation: number, payload: EncryptedSandboxHandle): Uint8Array
+  encrypt(
+    key: SandboxHandleKey,
+    generation: number,
+    handleVersion: number,
+    plaintext: Uint8Array,
+  ): EncryptedSandboxHandle
+  decrypt(
+    key: SandboxHandleKey,
+    generation: number,
+    handleVersion: number,
+    payload: EncryptedSandboxHandle,
+  ): Uint8Array
 }
 
-/** AES-GCM binds ciphertext to its complete ownership discriminator and generation. */
+/** AES-GCM binds ciphertext to its ownership discriminator, generation, and format versions. */
 export function createSandboxHandleCipher(keyMaterial: Uint8Array): SandboxHandleCipher {
   if (keyMaterial.byteLength !== 32) throw new Error('sandbox handle encryption key must be 32 bytes')
-  const aad = (key: SandboxHandleKey, generation: number) => Buffer.from(JSON.stringify([
-    key.hostScope, key.workspaceId, key.provider, key.mode, generation,
+  const aad = (
+    key: SandboxHandleKey,
+    generation: number,
+    handleVersion: number,
+    encryptionVersion: EncryptedSandboxHandle['encryptionVersion'],
+  ) => Buffer.from(JSON.stringify([
+    key.hostScope,
+    key.workspaceId,
+    key.provider,
+    key.mode,
+    generation,
+    handleVersion,
+    encryptionVersion,
   ]))
   return {
-    encrypt(key, generation, plaintext) {
+    encrypt(key, generation, handleVersion, plaintext) {
       const nonce = randomBytes(12)
+      const encryptionVersion = 1
       const cipher = createCipheriv('aes-256-gcm', keyMaterial, nonce)
-      cipher.setAAD(aad(key, generation))
+      cipher.setAAD(aad(key, generation, handleVersion, encryptionVersion))
       const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()])
-      return { ciphertext, nonce, authTag: cipher.getAuthTag(), encryptionVersion: 1 }
+      return { ciphertext, nonce, authTag: cipher.getAuthTag(), encryptionVersion }
     },
-    decrypt(key, generation, payload) {
+    decrypt(key, generation, handleVersion, payload) {
       if (payload.encryptionVersion !== 1) throw new Error('unsupported sandbox handle encryption version')
       const decipher = createDecipheriv('aes-256-gcm', keyMaterial, payload.nonce)
-      decipher.setAAD(aad(key, generation))
+      decipher.setAAD(aad(key, generation, handleVersion, payload.encryptionVersion))
       decipher.setAuthTag(Buffer.from(payload.authTag))
       return Buffer.concat([decipher.update(payload.ciphertext), decipher.final()])
     },
@@ -110,20 +132,20 @@ export class CoreFencedSandboxHandleStore implements FencedSandboxHandleStore {
   private view(row: DurableRow): SandboxHandleLease {
     return { key: { hostScope: row.hostScope, workspaceId: row.workspaceId, provider: row.provider, mode: row.mode }, generation: row.generation,
       leaseOwner: row.leaseOwner ?? '', leaseToken: row.leaseToken ?? '', leaseExpiresAt: new Date(row.leaseExpiresAt ?? 0).toISOString(),
-      handle: row.payload ? this.cipher.decrypt(row, row.generation, row.payload) : null, handleVersion: row.handleVersion, cleanup: row.cleanup }
+      handle: row.payload ? this.cipher.decrypt(row, row.generation, row.handleVersion!, row.payload) : null, handleVersion: row.handleVersion, cleanup: row.cleanup }
   }
   async claim(input: SandboxHandleClaim) { return this.backend.transaction(() => {
     const id = this.id(input.key); let row = this.backend.rows.get(id)
     if (row?.leaseExpiresAt && row.leaseExpiresAt > this.now()) return null
     const generation = (row?.generation ?? 0) + 1
     row = { ...(row ?? input.key), generation, leaseOwner: input.leaseOwner, leaseToken: randomUUID(), leaseExpiresAt: this.now() + input.leaseForMs,
-      payload: row?.payload ? this.cipher.encrypt(input.key, generation, this.cipher.decrypt(input.key, row.generation, row.payload)) : null,
+      payload: row?.payload ? this.cipher.encrypt(input.key, generation, row.handleVersion!, this.cipher.decrypt(input.key, row.generation, row.handleVersion!, row.payload)) : null,
       handleVersion: row?.handleVersion ?? null, cleanup: row?.cleanup ?? null }
     this.backend.rows.set(id, row); return this.view(row)
   }) }
   private current(fence: SandboxHandleFence) { const row = this.backend.rows.get(this.id(fence.key)); return row?.generation === fence.generation && row.leaseToken === fence.leaseToken ? row : null }
   async renew(fence: SandboxHandleFence, leaseForMs: number) { return this.backend.transaction(() => { const row = this.current(fence); if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return null; row.leaseExpiresAt = this.now() + leaseForMs; return this.view(row) }) }
-  async update(fence: SandboxHandleFence, handle: Uint8Array, handleVersion: number) { return this.backend.transaction(() => { const row = this.current(fence); if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return null; row.payload = this.cipher.encrypt(row, row.generation, handle); row.handleVersion = handleVersion; return this.view(row) }) }
+  async update(fence: SandboxHandleFence, handle: Uint8Array, handleVersion: number) { return this.backend.transaction(() => { const row = this.current(fence); if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return null; row.payload = this.cipher.encrypt(row, row.generation, handleVersion, handle); row.handleVersion = handleVersion; return this.view(row) }) }
   async release(fence: SandboxHandleFence) { return this.backend.transaction(() => { const row = this.current(fence); if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return false; row.leaseOwner = row.leaseToken = null; row.leaseExpiresAt = null; return true }) }
   async delete(fence: SandboxHandleFence, cleanup: SandboxCleanupOutcome) { return this.backend.transaction(() => { const row = this.current(fence); if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return false; row.cleanup = cleanup; if (cleanup.outcome !== 'succeeded') return false; return this.backend.rows.delete(this.id(fence.key)) }) }
   async reconcileDelete(key: SandboxHandleKey, cleanup: SandboxCleanupOutcome) { return this.backend.transaction(() => { const row = this.backend.rows.get(this.id(key)); if (!row) return false; row.cleanup = cleanup; if (cleanup.outcome !== 'succeeded') return false; return this.backend.rows.delete(this.id(key)) }) }
