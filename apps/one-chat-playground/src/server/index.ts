@@ -22,7 +22,7 @@ const sampleAppPort = Number(process.env.SAMPLE_APP_PORT ?? 5321)
 // Host the browser uses to reach this machine (a Tailscale IP, a hostname).
 // Defaults to loopback for local use; the app iframe must be reachable from the viewer.
 const publicHost = process.env.ONE_CHAT_PUBLIC_HOST ?? '127.0.0.1'
-const sampleAppUrl = `http://${publicHost}:${sampleAppPort}/`
+const sampleAppUrl = process.env.ONE_CHAT_APP_URL ?? `http://${publicHost}:${sampleAppPort}/`
 const sessionRoot = path.resolve(
   process.env.BORING_AGENT_SESSION_ROOT ?? path.join(appRoot, '.boring-agent', 'sessions'),
 )
