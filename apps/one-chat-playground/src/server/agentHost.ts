@@ -19,6 +19,7 @@ import type {
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
 import { createInstructionsLoader } from './instructionsFile.js'
 import { createInstructionsTools } from './instructionsTool.js'
+import { createReloadTool, createSessionTracker, trackSessions, watchExtensions } from './reloadTools.js'
 import { createStageBus, registerStageRoutes, type StageBus } from './stageBus.js'
 import { createStageTools } from './stageTools.js'
 
@@ -99,10 +100,21 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
   const allowedOrigins = options.allowedOrigins ?? resolveAllowedOriginsFromEnv()
   const stageTools = createStageTools({ bus: stage, allowedOrigins })
   const instructionsTools = createInstructionsTools({ workspaceRoot })
+  let hostApp: FastifyInstance | undefined
+  const sessions = createSessionTracker()
+  const reloadOptions = {
+    agentTypeId: ONE_CHAT_AGENT_TYPE_ID,
+    getApp: () => hostApp,
+    sessions,
+    log: (message: string) => hostApp?.log.info(message),
+  }
+  const reloadTool = createReloadTool(reloadOptions)
   const basePrompt = await readSystemPrompt(options.systemPromptPath)
   const instructions = createInstructionsLoader({ workspaceRoot, basePrompt })
 
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
+  hostApp = app
+  const stopWatchingExtensions = watchExtensions({ ...reloadOptions, workspaceRoot })
   const startedAt = Date.now()
   const created = await createAgentHost({
     agents: [{
@@ -133,7 +145,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         physicalBindingIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
         resourceInputDigest: JSON.stringify(['one-chat-playground', modeAdapter.id, workspaceRoot]),
         sessionNamespace: 'one-chat-playground',
-        extraTools: [...stageTools, ...instructionsTools],
+        extraTools: trackSessions([...stageTools, ...instructionsTools, reloadTool], sessions),
         loadSystemPromptAppend: () => instructions.load(),
       }
     },
@@ -159,7 +171,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
       defaultSessionId: ONE_CHAT_SESSION_ID,
     }))
   } catch (error) {
-    await closeRuntime(created, app, () => instructions.close()).catch(() => {})
+    await closeRuntime(created, app, () => { instructions.close(); stopWatchingExtensions() }).catch(() => {})
     throw error
   }
 
@@ -171,7 +183,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     scope,
     stage,
     close() {
-      closePromise ??= closeRuntime(created, app, () => instructions.close())
+      closePromise ??= closeRuntime(created, app, () => { instructions.close(); stopWatchingExtensions() })
       return closePromise
     },
   }
