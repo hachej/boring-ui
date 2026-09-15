@@ -134,8 +134,10 @@ test('core enforces workspace Seats before product entitlement policy', async ()
     appId: 'boring-ui-v2-test',
     defaultAgentTypeId: 'default',
   }))
-  mocks.hasAgentSeat.mockImplementation(async (_workspaceId, agentTypeId) => agentTypeId === 'default')
-  const resolveAgentEntitlement = vi.fn(async () => ({ state: 'allowed' as const, seatId: 'seat-default' }))
+  mocks.listAgentSeats.mockResolvedValue([{
+    seatId: 'persisted-seat-default', agentTypeId: 'default', createdAt: '2026-01-01T00:00:00.000Z',
+  }])
+  const resolveAgentEntitlement = vi.fn(async () => ({ state: 'allowed' as const, seatId: 'forged-policy-seat' }))
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
@@ -161,8 +163,8 @@ test('core enforces workspace Seats before product entitlement policy', async ()
       verifiedClaim,
       agentTypeId: 'default',
       operation: 'session.create',
-    })).resolves.toEqual({ state: 'allowed', seatId: 'seat-default' })
-    expect(mocks.hasAgentSeat).toHaveBeenCalledWith('workspace-a', 'default')
+    })).resolves.toEqual({ state: 'allowed', seatId: 'persisted-seat-default' })
+    expect(mocks.listAgentSeats).toHaveBeenCalledWith('workspace-a')
     expect(resolveAgentEntitlement).toHaveBeenCalledWith({
       workspaceId: 'workspace-a',
       userId: 'user-a',

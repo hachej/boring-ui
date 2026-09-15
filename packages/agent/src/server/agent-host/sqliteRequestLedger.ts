@@ -81,18 +81,16 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         pruned_at INTEGER NOT NULL
       );
     `)
+    this.migrateLegacyAcceptedWork()
   }
 
   async prepare(
     key: AgentRequestKey,
     digest: string,
-    acceptedWork?: AcceptedWorkContext,
+    acceptedWork: AcceptedWorkContext,
   ): Promise<AgentRequestLedgerPrepareResult> {
     validateTarget(key)
-    const agentTypeId = key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId
-    const frozenContext = cloneFrozenAcceptedWork(acceptedWork ?? createAcceptedWorkContext({
-      key, admittedAgentTypeId: agentTypeId,
-    }))
+    const frozenContext = cloneFrozenAcceptedWork(acceptedWork)
     if (projectAgentRequestRunId(key) !== frozenContext.identity.runId) {
       throw new TypeError('accepted work does not match request key')
     }
@@ -204,6 +202,31 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
 
   close(): void {
     this.database.close()
+  }
+
+  private migrateLegacyAcceptedWork(): void {
+    this.immediateTransaction(() => {
+      const active = this.database.prepare('SELECT request_key, record_json FROM agent_request_ledger').all() as Array<{ request_key: string; record_json: string }>
+      for (const row of active) {
+        const record = JSON.parse(row.record_json) as Record<string, unknown> & { key: AgentRequestKey }
+        if (record.acceptedWork === undefined) {
+          const agentTypeId = record.key.target.kind === 'agent' ? record.key.target.agentTypeId : record.key.target.ref.agentTypeId
+          record.acceptedWork = createAcceptedWorkContext({ key: record.key, admittedAgentTypeId: agentTypeId })
+          this.database.prepare('UPDATE agent_request_ledger SET record_json = ? WHERE request_key = ? AND record_json = ?')
+            .run(JSON.stringify(record), row.request_key, row.record_json)
+        } else cloneFrozenAcceptedWork(record.acceptedWork)
+      }
+      const tombstones = this.database.prepare('SELECT request_key, key_json FROM agent_request_tombstones').all() as Array<{ request_key: string; key_json: string }>
+      for (const row of tombstones) {
+        const decoded = JSON.parse(row.key_json) as AgentRequestKey | { key: AgentRequestKey; acceptedWork?: unknown }
+        const key = 'key' in decoded ? decoded.key : decoded
+        const existing = 'key' in decoded ? decoded.acceptedWork : undefined
+        const agentTypeId = key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId
+        const acceptedWork = existing === undefined ? createAcceptedWorkContext({ key, admittedAgentTypeId: agentTypeId }) : cloneFrozenAcceptedWork(existing)
+        const migrated = JSON.stringify({ key, acceptedWork })
+        if (migrated !== row.key_json) this.database.prepare('UPDATE agent_request_tombstones SET key_json = ? WHERE request_key = ? AND key_json = ?').run(migrated, row.request_key, row.key_json)
+      }
+    })
   }
 
   private readSync(key: AgentRequestKey): AgentRequestLedgerRecord | undefined {

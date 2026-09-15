@@ -1851,9 +1851,10 @@ export async function createCoreWorkspaceAgentServer(
       ? {
           resolveAgentAccess: async ({ verifiedClaim, agentTypeId, operation }) => {
             const workspaceId = scopeAuthority.resolveWorkspaceId(verifiedClaim)
-            const seated = await workspaceStore.hasAgentSeat(workspaceId, agentTypeId)
-            if (!seated) return { state: 'not-available' as const, reason: 'not-seated' as const }
-            return options.resolveAgentEntitlement
+            const seat = (await workspaceStore.listAgentSeats(workspaceId))
+              .find((candidate) => candidate.agentTypeId === agentTypeId)
+            if (!seat) return { state: 'not-available' as const, reason: 'not-seated' as const }
+            const entitlement = options.resolveAgentEntitlement
               ? await options.resolveAgentEntitlement({
                   workspaceId,
                   userId: verifiedClaim.authSubjectId,
@@ -1861,6 +1862,10 @@ export async function createCoreWorkspaceAgentServer(
                   operation,
                 })
               : { state: 'allowed' as const }
+            // Entitlement is policy only. Identity always comes from the persisted WorkspaceAgentSeat.
+            return entitlement.state === 'allowed'
+              ? { state: 'allowed' as const, seatId: seat.seatId }
+              : entitlement
           },
         }
       : {}),

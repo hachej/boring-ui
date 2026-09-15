@@ -140,7 +140,7 @@ export interface AgentRequestLedger {
   prepare(
     key: AgentRequestKey,
     digest: string,
-    acceptedWork?: AcceptedWorkContext,
+    acceptedWork: AcceptedWorkContext,
   ): Promise<AgentRequestLedgerPrepareResult>
   /** Release only a pending claim whose owner has stopped before any effect. */
   markAdmissionRetryable(key: AgentRequestKey): Promise<void>

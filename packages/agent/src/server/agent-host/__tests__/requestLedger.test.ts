@@ -30,6 +30,11 @@ const key: AgentRequestKey = {
   requestId: 'request-a',
 }
 
+function acceptedFor(requestKey: AgentRequestKey) {
+  const agentTypeId = requestKey.target.kind === 'agent' ? requestKey.target.agentTypeId : requestKey.target.ref.agentTypeId
+  return createAcceptedWorkContext({ key: requestKey, admittedAgentTypeId: agentTypeId })
+}
+
 interface ParallelClaimResult {
   claim: Awaited<ReturnType<AgentRequestLedger['prepare']>>
   effectStarted: boolean
@@ -100,26 +105,26 @@ describe('InMemoryAgentRequestLedger', () => {
   it('implements pending → accepted → in-flight → completed and acknowledgement replay', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     const [first, retry] = await Promise.all([
-      ledger.prepare(key, 'digest-a'),
-      ledger.prepare(key, 'digest-a'),
+      ledger.prepare(key, 'digest-a', acceptedFor(key)),
+      ledger.prepare(key, 'digest-a', acceptedFor(key)),
     ])
     expect(first).toMatchObject({ ownership: 'created', record: { state: 'pending-admission' } })
     expect(retry).toMatchObject({ ownership: 'existing', record: first.record })
     await ledger.acceptAdmission(key, 'admission-a')
     await ledger.beginEffect(key)
     await ledger.complete(key, { accepted: true })
-    expect(await ledger.prepare(key, 'digest-a')).toMatchObject({
+    expect(await ledger.prepare(key, 'digest-a', acceptedFor(key))).toMatchObject({
       ownership: 'existing',
       record: { state: 'completed', receipt: { accepted: true } },
     })
-    await expect(ledger.prepare(key, 'digest-b')).rejects.toMatchObject({
+    await expect(ledger.prepare(key, 'digest-b', acceptedFor(key))).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
     })
   })
 
   it('retains stable strong rejection', async () => {
     const ledger = new InMemoryAgentRequestLedger()
-    await ledger.prepare(key, 'digest-a')
+    await ledger.prepare(key, 'digest-a', acceptedFor(key))
     expect((await ledger.read(key))?.state).toBe('pending-admission')
     await ledger.reject(key, {
       kind: 'gateway',
@@ -130,7 +135,7 @@ describe('InMemoryAgentRequestLedger', () => {
 
   it('permits outcome-unknown only from in-flight', async () => {
     const ledger = new InMemoryAgentRequestLedger()
-    await ledger.prepare(key, 'digest-a')
+    await ledger.prepare(key, 'digest-a', acceptedFor(key))
     await expect(ledger.markOutcomeUnknown(key, {
       code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
       message: 'unknown',
@@ -152,17 +157,17 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
   it('retains the digest and elects one retry owner before allowing admission', async () => {
     const ledger = create()
     try {
-      await ledger.prepare(key, 'digest-a')
+      await ledger.prepare(key, 'digest-a', acceptedFor(key))
       await ledger.markAdmissionRetryable(key)
-      await expect(ledger.prepare(key, 'digest-b')).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      await expect(ledger.prepare(key, 'digest-b', acceptedFor(key))).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
       await expect(ledger.acceptAdmission(key, 'unclaimed')).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
-      const claims = await Promise.all([ledger.prepare(key, 'digest-a'), ledger.prepare(key, 'digest-a')])
+      const claims = await Promise.all([ledger.prepare(key, 'digest-a', acceptedFor(key)), ledger.prepare(key, 'digest-a', acceptedFor(key))])
       expect(claims.map(({ ownership }) => ownership)).toEqual(['reclaimed', 'existing'])
       expect(claims[0]?.record).not.toHaveProperty('retryable')
       await ledger.acceptAdmission(key, 'admitted')
       await ledger.beginEffect(key)
       await ledger.complete(key, { accepted: true })
-      await expect(ledger.prepare(key, 'digest-a')).resolves.toMatchObject({
+      await expect(ledger.prepare(key, 'digest-a', acceptedFor(key))).resolves.toMatchObject({
         ownership: 'existing', record: { state: 'completed', receipt: { accepted: true } },
       })
     } finally {
@@ -173,14 +178,14 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
   it('does not release accepted, in-flight, or unknown effects for another attempt', async () => {
     const ledger = create()
     try {
-      await ledger.prepare(key, 'digest-a')
+      await ledger.prepare(key, 'digest-a', acceptedFor(key))
       await ledger.acceptAdmission(key, 'admitted')
       await expect(ledger.markAdmissionRetryable(key)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
       await ledger.beginEffect(key)
       await expect(ledger.markAdmissionRetryable(key)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
       await ledger.markOutcomeUnknown(key, { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN, message: 'unknown' })
       await expect(ledger.markAdmissionRetryable(key)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
-      await expect(ledger.prepare(key, 'digest-a')).resolves.toMatchObject({ ownership: 'existing', record: { state: 'outcome-unknown' } })
+      await expect(ledger.prepare(key, 'digest-a', acceptedFor(key))).resolves.toMatchObject({ ownership: 'existing', record: { state: 'outcome-unknown' } })
     } finally {
       await ledger.close?.()
     }
@@ -222,7 +227,7 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
       const context = createAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha' })
       const forged = structuredClone(context)
       ;(forged.identity as { runId: string }).runId = 'forged'
-      await expect(ledger.prepare(key, 'digest', forged)).rejects.toThrow('invalid accepted work identity projection')
+      await expect(ledger.prepare(key, 'digest', forged)).rejects.toThrow('invalid accepted work redundant projection')
 
       const left = { ...key, workspaceScopeId: 'a|b', authSubjectId: 'c' }
       const right = { ...key, workspaceScopeId: 'a', authSubjectId: 'b|c' }
@@ -254,7 +259,7 @@ describe('SqliteAgentRequestLedger', () => {
   it('atomically elects one retry owner across concurrent connections and starts only its effect', async () => {
     const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
     const setup = new SqliteAgentRequestLedger(path)
-    await setup.prepare(key, 'digest-a')
+    await setup.prepare(key, 'digest-a', acceptedFor(key))
     await setup.markAdmissionRetryable(key)
     setup.close()
 
@@ -277,11 +282,11 @@ describe('SqliteAgentRequestLedger', () => {
     owner.close()
 
     const reopened = new SqliteAgentRequestLedger(path)
-    await expect(reopened.prepare(key, 'digest-a')).resolves.toMatchObject({
+    await expect(reopened.prepare(key, 'digest-a', acceptedFor(key))).resolves.toMatchObject({
       ownership: 'existing',
       record: { state: 'completed', receipt: { accepted: true } },
     })
-    await expect(reopened.prepare(key, 'digest-b')).rejects.toMatchObject({
+    await expect(reopened.prepare(key, 'digest-b', acceptedFor(key))).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
     })
     reopened.close()
@@ -293,7 +298,7 @@ describe('SqliteAgentRequestLedger', () => {
       const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
       const initial = new SqliteAgentRequestLedger(path)
       try {
-        await initial.prepare(key, 'digest-a')
+        await initial.prepare(key, 'digest-a', acceptedFor(key))
         if (state === 'rejected') {
           await initial.reject(key, {
             kind: 'gateway',
@@ -312,8 +317,8 @@ describe('SqliteAgentRequestLedger', () => {
       }
       const reopened = new SqliteAgentRequestLedger(path)
       try {
-        await expect(reopened.prepare(key, 'digest-a')).resolves.toMatchObject({ ownership: 'existing', record: { state } })
-        await expect(reopened.prepare(key, 'digest-b')).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+        await expect(reopened.prepare(key, 'digest-a', acceptedFor(key))).resolves.toMatchObject({ ownership: 'existing', record: { state } })
+        await expect(reopened.prepare(key, 'digest-b', acceptedFor(key))).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
       } finally {
         reopened.close()
         rmSync(path, { force: true })
@@ -339,7 +344,7 @@ describe('SqliteAgentRequestLedger', () => {
 
     for (const state of states) {
       const stateKey = keyed(state)
-      await ledger.prepare(stateKey, `digest-${state}`)
+      await ledger.prepare(stateKey, `digest-${state}`, acceptedFor(stateKey))
       if (state === 'rejected') {
         await ledger.reject(stateKey, {
           kind: 'gateway',
@@ -361,34 +366,34 @@ describe('SqliteAgentRequestLedger', () => {
     const count = (table: string) => (inspect.prepare(`SELECT count(*) AS count FROM ${table}`).get() as { count: number }).count
 
     now = MIN_REQUEST_RETENTION_MS
-    await ledger.prepare(keyed('boundary-trigger'), 'digest-boundary')
+    await ledger.prepare(keyed('boundary-trigger'), 'digest-boundary', acceptedFor(keyed('boundary-trigger')))
     expect(count('agent_request_ledger')).toBe(7)
     expect(count('agent_request_tombstones')).toBe(0)
 
     now += 1
-    await ledger.prepare(keyed('expired-trigger'), 'digest-expired')
+    await ledger.prepare(keyed('expired-trigger'), 'digest-expired', acceptedFor(keyed('expired-trigger')))
     expect(count('agent_request_ledger')).toBe(5)
     expect(count('agent_request_tombstones')).toBe(3)
     for (const state of ['pending-admission', 'admission-accepted', 'in-flight'] as const) {
-      await expect(ledger.prepare(keyed(state), `digest-${state}`)).resolves.toMatchObject({
+      await expect(ledger.prepare(keyed(state), `digest-${state}`, acceptedFor(keyed(state)))).resolves.toMatchObject({
         ownership: 'existing', record: { state },
       })
     }
-    await expect(ledger.prepare(keyed('completed'), 'digest-completed')).resolves.toMatchObject({
+    await expect(ledger.prepare(keyed('completed'), 'digest-completed', acceptedFor(keyed('completed')))).resolves.toMatchObject({
       ownership: 'existing',
       record: {
         state: 'outcome-unknown',
         error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
       },
     })
-    await expect(ledger.prepare(keyed('completed'), 'changed-digest')).rejects.toMatchObject({
+    await expect(ledger.prepare(keyed('completed'), 'changed-digest', acceptedFor(keyed('completed')))).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
     })
     inspect.close()
     ledger.close()
 
     const reopened = new SqliteAgentRequestLedger(path, { retentionMs: MIN_REQUEST_RETENTION_MS, now: () => now })
-    await expect(reopened.prepare(keyed('completed'), 'digest-completed')).resolves.toMatchObject({
+    await expect(reopened.prepare(keyed('completed'), 'digest-completed', acceptedFor(keyed('completed')))).resolves.toMatchObject({
       ownership: 'existing', record: { state: 'outcome-unknown' },
     })
     reopened.close()
@@ -402,7 +407,10 @@ describe('SqliteAgentRequestLedger', () => {
     await expect(ledger.prepare({
       ...key,
       target: { kind: 'session', ref: { agentTypeId: 'alpha', sessionId: 'session-a' } },
-    }, 'digest-a')).rejects.toThrow('request ledger effect/target mismatch')
+    }, 'digest-a', acceptedFor({
+      ...key,
+      target: { kind: 'session', ref: { agentTypeId: 'alpha', sessionId: 'session-a' } },
+    }))).rejects.toThrow('request ledger effect/target mismatch')
     ledger.close()
   })
 })

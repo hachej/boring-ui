@@ -1,5 +1,5 @@
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
-import { cloneFrozenAcceptedWork, createAcceptedWorkContext, projectAgentRequestRunId } from './acceptedWork'
+import { cloneFrozenAcceptedWork, projectAgentRequestRunId } from './acceptedWork'
 import type {
   AcceptedWorkContext,
   AgentRequestFailure,
@@ -51,13 +51,10 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   async prepare(
     key: AgentRequestKey,
     digest: string,
-    acceptedWork?: AcceptedWorkContext,
+    acceptedWork: AcceptedWorkContext,
   ): Promise<AgentRequestLedgerPrepareResult> {
     validateTarget(key)
-    const agentTypeId = key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId
-    const frozenContext = cloneFrozenAcceptedWork(acceptedWork ?? createAcceptedWorkContext({
-      key, admittedAgentTypeId: agentTypeId,
-    }))
+    const frozenContext = cloneFrozenAcceptedWork(acceptedWork)
     if (projectAgentRequestRunId(key) !== frozenContext.identity.runId) conflict()
     const id = keyString(key)
     const existing = this.records.get(id)

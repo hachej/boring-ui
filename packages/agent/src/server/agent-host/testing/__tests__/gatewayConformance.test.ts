@@ -175,7 +175,10 @@ const outcomeUnknown: AgentGatewayErrorDTO = {
 }
 
 async function advanceToInFlight(ledger: AgentRequestLedger, key: AgentRequestKey): Promise<void> {
-  await ledger.prepare(key, 'digest-a')
+  await ledger.prepare(key, 'digest-a', createAcceptedWorkContext({
+    key,
+    admittedAgentTypeId: key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId,
+  }))
   await ledger.acceptAdmission(key, 'admission-a')
   await ledger.beginEffect(key)
 }
