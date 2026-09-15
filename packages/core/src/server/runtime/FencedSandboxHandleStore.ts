@@ -89,10 +89,6 @@ export interface SandboxOperatorEvidence {
   recordedAt: string
 }
 
-export interface SandboxAdminReconciliationPolicy {
-  allowActiveLease?: boolean
-}
-
 export type SandboxHandleAuditAction =
   | 'reconcile-create-absent'
   | 'reconcile-create-refused-active-lease'
@@ -111,15 +107,28 @@ export interface FencedSandboxHandleAdmin {
   reconcileCreateAbsent(
     key: SandboxHandleKey,
     evidence: SandboxOperatorEvidence,
-    policy?: SandboxAdminReconciliationPolicy,
   ): Promise<boolean>
   reconcileDelete(
     key: SandboxHandleKey,
     cleanup: SandboxCleanupOutcome,
     evidence: SandboxOperatorEvidence,
-    policy?: SandboxAdminReconciliationPolicy,
   ): Promise<boolean>
   listAudit(key: SandboxHandleKey): Promise<SandboxHandleAuditRecord[]>
+}
+
+/** Exceptional host-only capability. Force operations require current generation evidence. */
+export interface FencedSandboxHandleForceAdmin {
+  forceReconcileCreateAbsent(
+    key: SandboxHandleKey,
+    expectedGeneration: number,
+    evidence: SandboxOperatorEvidence,
+  ): Promise<boolean>
+  forceReconcileDelete(
+    key: SandboxHandleKey,
+    expectedGeneration: number,
+    cleanup: SandboxCleanupOutcome,
+    evidence: SandboxOperatorEvidence,
+  ): Promise<boolean>
 }
 
 export interface EncryptedSandboxHandle {
@@ -225,6 +234,12 @@ function assertLeaseForMs(value: number): void {
 function assertHandleVersion(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error('handleVersion must be a non-negative safe integer')
+  }
+}
+
+function assertExpectedGeneration(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error('expectedGeneration must be a positive safe integer')
   }
 }
 
@@ -458,13 +473,12 @@ export class CoreFencedSandboxHandleAdmin implements FencedSandboxHandleAdmin {
   async reconcileCreateAbsent(
     key: SandboxHandleKey,
     evidence: SandboxOperatorEvidence,
-    policy: SandboxAdminReconciliationPolicy = {},
   ): Promise<boolean> {
     assertEvidence(evidence)
     return this.backend.transaction(() => {
       const row = this.backend.rows.get(keyOf(key))
       if (!row || row.createAttempt?.state !== 'started') return false
-      if (row.leaseExpiresAt !== null && row.leaseExpiresAt > this.now() && !policy.allowActiveLease) {
+      if (row.leaseExpiresAt !== null && row.leaseExpiresAt > this.now()) {
         this.audit(row, 'reconcile-create-refused-active-lease', evidence)
         return false
       }
@@ -481,14 +495,13 @@ export class CoreFencedSandboxHandleAdmin implements FencedSandboxHandleAdmin {
     key: SandboxHandleKey,
     cleanup: SandboxCleanupOutcome,
     evidence: SandboxOperatorEvidence,
-    policy: SandboxAdminReconciliationPolicy = {},
   ): Promise<boolean> {
     assertEvidence(evidence)
     assertTimestamp(cleanup.recordedAt, 'cleanup.recordedAt')
     return this.backend.transaction(() => {
       const row = this.backend.rows.get(keyOf(key))
       if (!row) return false
-      if (row.leaseExpiresAt !== null && row.leaseExpiresAt > this.now() && !policy.allowActiveLease) {
+      if (row.leaseExpiresAt !== null && row.leaseExpiresAt > this.now()) {
         this.audit(row, 'reconcile-delete-refused-active-lease', evidence)
         return false
       }
@@ -508,5 +521,68 @@ export class CoreFencedSandboxHandleAdmin implements FencedSandboxHandleAdmin {
 
   async listAudit(key: SandboxHandleKey): Promise<SandboxHandleAuditRecord[]> {
     return this.backend.transaction(() => this.backend.audits.filter((record) => keyOf(record.key) === keyOf(key)))
+  }
+}
+
+export class CoreFencedSandboxHandleForceAdmin implements FencedSandboxHandleForceAdmin {
+  constructor(
+    private readonly backend: InMemorySandboxHandleBackend,
+    private readonly now = () => Date.now(),
+  ) {}
+
+  private audit(
+    row: DurableRow,
+    action: SandboxHandleAuditAction,
+    evidence: SandboxOperatorEvidence,
+  ): void {
+    if (this.backend.audits.some((record) => record.auditId === evidence.auditId)) {
+      throw new Error('operator evidence auditId already exists')
+    }
+    this.backend.audits.push({ ...evidence, key: copyKey(row), generation: row.generation, action })
+  }
+
+  async forceReconcileCreateAbsent(
+    key: SandboxHandleKey,
+    expectedGeneration: number,
+    evidence: SandboxOperatorEvidence,
+  ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
+    assertEvidence(evidence)
+    return this.backend.transaction(() => {
+      const row = this.backend.rows.get(keyOf(key))
+      if (!row || row.generation !== expectedGeneration || row.createAttempt?.state !== 'started') return false
+      this.audit(row, 'reconcile-create-absent', evidence)
+      row.createAttempt = null
+      row.leaseOwner = null
+      row.leaseToken = null
+      row.leaseExpiresAt = null
+      return true
+    })
+  }
+
+  async forceReconcileDelete(
+    key: SandboxHandleKey,
+    expectedGeneration: number,
+    cleanup: SandboxCleanupOutcome,
+    evidence: SandboxOperatorEvidence,
+  ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
+    assertEvidence(evidence)
+    assertTimestamp(cleanup.recordedAt, 'cleanup.recordedAt')
+    return this.backend.transaction(() => {
+      const row = this.backend.rows.get(keyOf(key))
+      if (!row || row.generation !== expectedGeneration) return false
+      this.audit(row, 'reconcile-delete', evidence)
+      row.cleanup = cleanup
+      if (cleanup.outcome !== 'succeeded') return false
+      row.leaseOwner = null
+      row.leaseToken = null
+      row.leaseExpiresAt = null
+      row.payload = null
+      row.handleVersion = null
+      row.createAttempt = null
+      row.tombstonedAt = this.now()
+      return true
+    })
   }
 }

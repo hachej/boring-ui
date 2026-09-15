@@ -11,10 +11,9 @@ import { fileURLToPath } from "node:url"
 // shipped with `@import "./chatFirst/chatFirstPublicShell.css"` but the file
 // wasn't copied into dist, so consumers' bundlers failed to resolve it.
 //
-// Intentionally dts-agnostic: type declarations are built conditionally (the
-// Docker image skips them via `tsup --no-dts` for speed), so this guard checks
-// only the runtime artifacts (JS + CSS) and therefore runs identically in
-// `pnpm build` and the Docker build path.
+// Normal package builds must emit every `exports.types` target. The only
+// declaration-free build is the explicit Docker path, which calls this script
+// with --runtime-only after both serialized tsup configs have completed.
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -30,17 +29,18 @@ async function exists(rel) {
   }
 }
 
-// Collect every runtime artifact referenced by package.json#exports.
-// - a string value that is a .css file (e.g. "./theme.css")
-// - the `import` condition of an object value (the .js entry)
-// `types` (.d.ts) is skipped on purpose — see header.
+const runtimeOnly = process.argv.includes("--runtime-only")
+
+// Collect every artifact referenced by package.json#exports. Normal builds
+// include `types`; the explicit Docker runtime-only check includes JS + CSS.
 function collectRequiredFiles(exportsField) {
   const required = new Set()
   for (const value of Object.values(exportsField)) {
     if (typeof value === "string") {
       if (value.endsWith(".css")) required.add(value)
-    } else if (value && typeof value === "object" && typeof value.import === "string") {
-      required.add(value.import)
+    } else if (value && typeof value === "object") {
+      if (typeof value.import === "string") required.add(value.import)
+      if (!runtimeOnly && typeof value.types === "string") required.add(value.types)
     }
   }
   return [...required].map((p) => p.replace(/^\.\//, ""))
@@ -111,6 +111,6 @@ if (importMisses.length > 0) {
 }
 
 console.log(
-  `assert-build-artifacts: all ${requiredFiles.length} exported artifact(s) present, ` +
+  `assert-build-artifacts: all ${requiredFiles.length} ${runtimeOnly ? "runtime " : ""}exported artifact(s) present, ` +
     `${cssSeen.size} stylesheet(s) with resolvable @imports`,
 )

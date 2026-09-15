@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { and, asc, eq, gt, isNull, or, sql } from 'drizzle-orm'
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
-
+import type { Database } from '../db/connection.js'
 import { fencedSandboxHandleAudit, fencedSandboxHandles } from '../db/schema.js'
 import type {
   EncryptedSandboxHandle,
   FencedSandboxHandleAdmin,
+  FencedSandboxHandleForceAdmin,
   FencedSandboxHandleStore,
-  SandboxAdminReconciliationPolicy,
   SandboxCleanupOutcome,
   SandboxCreateAttemptResult,
   SandboxHandleAuditAction,
@@ -60,6 +59,12 @@ function assertLeaseForMs(value: number): void {
 function assertHandleVersion(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error('handleVersion must be a non-negative safe integer')
+  }
+}
+
+function assertExpectedGeneration(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error('expectedGeneration must be a positive safe integer')
   }
 }
 
@@ -164,7 +169,7 @@ function ambiguousFromRow(row: HandleRow): SandboxHandleClaimResult {
 /** Production provider-facing adapter for application-owned disposable sandbox handles. */
 export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStore {
   constructor(
-    private readonly db: PostgresJsDatabase,
+    private readonly db: Database,
     private readonly cipher: SandboxHandleCipher,
   ) {}
 
@@ -395,7 +400,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
 
 /** Explicit host-only administrator. Construct separately from the provider-facing store. */
 export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmin {
-  constructor(private readonly db: PostgresJsDatabase) {}
+  constructor(private readonly db: Database) {}
 
   async inspect(key: SandboxHandleKey): Promise<SandboxHandleInspection | null> {
     const rows = await this.db.select().from(fencedSandboxHandles).where(keyPredicate(key)).limit(1)
@@ -403,7 +408,7 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
   }
 
   private async recordAudit(
-    tx: Parameters<Parameters<PostgresJsDatabase['transaction']>[0]>[0],
+    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
     row: HandleRow,
     action: SandboxHandleAuditAction,
     evidence: SandboxOperatorEvidence,
@@ -423,7 +428,6 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
   async reconcileCreateAbsent(
     key: SandboxHandleKey,
     evidence: SandboxOperatorEvidence,
-    policy: SandboxAdminReconciliationPolicy = {},
   ): Promise<boolean> {
     const evidenceAt = assertEvidence(evidence)
     return this.db.transaction(async (tx) => {
@@ -433,7 +437,7 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
       }).from(fencedSandboxHandles).where(keyPredicate(key)).for('update').limit(1)
       const selected = rows[0]
       if (!selected || selected.row.createAttemptState !== 'started') return false
-      if (selected.activeLease && !policy.allowActiveLease) {
+      if (selected.activeLease) {
         await this.recordAudit(tx, selected.row, 'reconcile-create-refused-active-lease', evidence, evidenceAt)
         return false
       }
@@ -457,7 +461,6 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
     key: SandboxHandleKey,
     cleanup: SandboxCleanupOutcome,
     evidence: SandboxOperatorEvidence,
-    policy: SandboxAdminReconciliationPolicy = {},
   ): Promise<boolean> {
     const evidenceAt = assertEvidence(evidence)
     const cleanupUpdate = cleanupValues(cleanup)
@@ -468,7 +471,7 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
       }).from(fencedSandboxHandles).where(keyPredicate(key)).for('update').limit(1)
       const selected = rows[0]
       if (!selected) return false
-      if (selected.activeLease && !policy.allowActiveLease) {
+      if (selected.activeLease) {
         await this.recordAudit(tx, selected.row, 'reconcile-delete-refused-active-lease', evidence, evidenceAt)
         return false
       }
@@ -515,5 +518,107 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
       generation: row.generation,
       action: row.action as SandboxHandleAuditAction,
     }))
+  }
+}
+
+/** Exceptional host-only administrator; never pass this capability to providers. */
+export class PostgresFencedSandboxHandleForceAdmin implements FencedSandboxHandleForceAdmin {
+  constructor(private readonly db: Database) {}
+
+  private async recordAudit(
+    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    row: HandleRow,
+    action: SandboxHandleAuditAction,
+    evidence: SandboxOperatorEvidence,
+    recordedAt: Date,
+  ): Promise<void> {
+    await tx.insert(fencedSandboxHandleAudit).values({
+      auditId: evidence.auditId,
+      ...copyKey(row),
+      generation: row.generation,
+      action,
+      operatorId: evidence.operatorId,
+      evidenceDetail: evidence.detail,
+      recordedAt,
+    })
+  }
+
+  async forceReconcileCreateAbsent(
+    key: SandboxHandleKey,
+    expectedGeneration: number,
+    evidence: SandboxOperatorEvidence,
+  ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
+    const evidenceAt = assertEvidence(evidence)
+    return this.db.transaction(async (tx) => {
+      const lockedGenerationPredicate = and(
+        keyPredicate(key),
+        eq(fencedSandboxHandles.generation, expectedGeneration),
+      )
+      const rows = await tx.select().from(fencedSandboxHandles)
+        .where(lockedGenerationPredicate)
+        .for('update')
+        .limit(1)
+      const row = rows[0]
+      if (!row || row.createAttemptState !== 'started') return false
+      await this.recordAudit(tx, row, 'reconcile-create-absent', evidence, evidenceAt)
+      const updated = await tx.update(fencedSandboxHandles).set({
+        leaseOwner: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        createAttemptIdempotencyKey: null,
+        createAttemptState: null,
+        createAttemptStartedAt: null,
+        createAttemptResolvedAt: null,
+        updatedAt: sql`clock_timestamp()`,
+      }).where(lockedGenerationPredicate)
+        .returning({ generation: fencedSandboxHandles.generation })
+      return updated.length === 1
+    })
+  }
+
+  async forceReconcileDelete(
+    key: SandboxHandleKey,
+    expectedGeneration: number,
+    cleanup: SandboxCleanupOutcome,
+    evidence: SandboxOperatorEvidence,
+  ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
+    const evidenceAt = assertEvidence(evidence)
+    const cleanupUpdate = cleanupValues(cleanup)
+    return this.db.transaction(async (tx) => {
+      const lockedGenerationPredicate = and(
+        keyPredicate(key),
+        eq(fencedSandboxHandles.generation, expectedGeneration),
+      )
+      const rows = await tx.select().from(fencedSandboxHandles)
+        .where(lockedGenerationPredicate)
+        .for('update')
+        .limit(1)
+      const row = rows[0]
+      if (!row) return false
+      await this.recordAudit(tx, row, 'reconcile-delete', evidence, evidenceAt)
+      const updated = await tx.update(fencedSandboxHandles).set(cleanup.outcome === 'succeeded'
+        ? {
+            ...cleanupUpdate,
+            leaseOwner: null,
+            leaseToken: null,
+            leaseExpiresAt: null,
+            encryptedHandle: null,
+            encryptionNonce: null,
+            encryptionAuthTag: null,
+            encryptionVersion: null,
+            handleVersion: null,
+            createAttemptIdempotencyKey: null,
+            createAttemptState: null,
+            createAttemptStartedAt: null,
+            createAttemptResolvedAt: null,
+            tombstonedAt: sql`clock_timestamp()`,
+          }
+        : cleanupUpdate)
+        .where(lockedGenerationPredicate)
+        .returning({ generation: fencedSandboxHandles.generation })
+      return updated.length === 1 && cleanup.outcome === 'succeeded'
+    })
   }
 }

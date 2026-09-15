@@ -12,6 +12,7 @@ import {
 } from '../FencedSandboxHandleStore.js'
 import {
   PostgresFencedSandboxHandleAdmin,
+  PostgresFencedSandboxHandleForceAdmin,
   PostgresFencedSandboxHandleStore,
 } from '../PostgresFencedSandboxHandleStore.js'
 
@@ -76,6 +77,7 @@ function stores() {
     a: new PostgresFencedSandboxHandleStore(drizzle(sqlA), cipher),
     b: new PostgresFencedSandboxHandleStore(drizzle(sqlB), cipher),
     admin: new PostgresFencedSandboxHandleAdmin(drizzle(sqlA)),
+    forceAdmin: new PostgresFencedSandboxHandleForceAdmin(drizzle(sqlA)),
   }
 }
 
@@ -199,6 +201,8 @@ describe('PostgresFencedSandboxHandleStore', () => {
     })
 
     // The provider accepted create(attempt.idempotencyKey), then this owner crashed.
+    expect(await admin.reconcileCreateAbsent(KEY, evidence('audit-create-active-refused'))).toBe(false)
+    expect((await admin.inspect(KEY))?.createAttempt?.state).toBe('started')
     await expireLease(sqlA)
     await expect(b.claim({ key: KEY, leaseOwner: 'replacement', leaseForMs: 10_000 })).resolves.toMatchObject({
       status: 'create-ambiguous',
@@ -267,8 +271,8 @@ describe('PostgresFencedSandboxHandleStore', () => {
     await expect(a.claim({ key: KEY, leaseOwner: 'replay-reader', leaseForMs: 10_000 })).rejects.toThrow()
   })
 
-  it('isolates discriminators and requires audited policy to reconcile an active lease', async () => {
-    const { a, b, admin } = stores()
+  it('isolates discriminators, always refuses ordinary active-lease reconciliation, and fences stale force evidence', async () => {
+    const { a, b, admin, forceAdmin } = stores()
     const lease = await claim(a)
     const otherKey = { ...KEY, provider: 'ecs', mode: 'ecs-local-efs' }
     const otherLease = await claim(b, otherKey, 'other-process')
@@ -279,15 +283,28 @@ describe('PostgresFencedSandboxHandleStore', () => {
       recordedAt: '2026-09-14T00:00:03.000Z',
     }, evidence('audit-refused'))).toBe(false)
     expect((await admin.inspect(KEY))?.tombstoned).toBe(false)
-    expect(await admin.reconcileDelete(KEY, {
+
+    await expireLease(sqlA)
+    const generationTwo = await claim(b, KEY, 'generation-two-process')
+    expect(generationTwo.generation).toBe(2)
+    expect(await forceAdmin.forceReconcileDelete(KEY, lease.generation, {
       outcome: 'succeeded',
-      detail: 'operator verified provider absence',
+      detail: 'stale generation-one provider evidence',
       recordedAt: '2026-09-14T00:00:03.000Z',
-    }, evidence('audit-authorized'), { allowActiveLease: true })).toBe(true)
+    }, evidence('stale-generation-one-evidence'))).toBe(false)
+    expect(await admin.inspect(KEY)).toMatchObject({ generation: 2, tombstoned: false })
+    expect((await admin.listAudit(KEY)).map((entry) => entry.auditId)).not.toContain('stale-generation-one-evidence')
+
+    expect(await forceAdmin.forceReconcileDelete(KEY, generationTwo.generation, {
+      outcome: 'succeeded',
+      detail: 'current generation-two provider evidence',
+      recordedAt: '2026-09-14T00:00:03.000Z',
+    }, evidence('current-generation-two-evidence'))).toBe(true)
     expect((await admin.listAudit(KEY)).map((entry) => entry.action)).toEqual([
       'reconcile-delete-refused-active-lease',
       'reconcile-delete',
     ])
+    expect(admin).not.toHaveProperty('forceReconcileDelete')
     expect(Object.keys(KEY)).not.toContain('efsPath')
   })
 })

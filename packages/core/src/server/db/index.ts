@@ -4,6 +4,7 @@ export { runMigrations } from './migrate.js'
 export type { RunMigrationsOptions } from './migrate.js'
 export {
   PostgresFencedSandboxHandleAdmin,
+  PostgresFencedSandboxHandleForceAdmin,
   PostgresFencedSandboxHandleStore,
 } from '../runtime/PostgresFencedSandboxHandleStore.js'
 export { createSandboxHandleCipher } from '../runtime/FencedSandboxHandleStore.js'

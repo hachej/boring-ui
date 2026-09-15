@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CoreFencedSandboxHandleAdmin,
+  CoreFencedSandboxHandleForceAdmin,
   CoreFencedSandboxHandleStore,
   InMemorySandboxHandleBackend,
   createSandboxHandleCipher,
@@ -31,6 +32,7 @@ function fixture() {
     tick(ms: number) { now += ms },
     store: () => new CoreFencedSandboxHandleStore(backend, cipher, () => now),
     admin: () => new CoreFencedSandboxHandleAdmin(backend, () => now),
+    forceAdmin: () => new CoreFencedSandboxHandleForceAdmin(backend, () => now),
   }
 }
 
@@ -95,6 +97,8 @@ describe('CoreFencedSandboxHandleStore', () => {
     })
 
     // Provider create succeeds here, but the process crashes before update(handle).
+    expect(await f.admin().reconcileCreateAbsent(key, evidence('audit-create-active-refused'))).toBe(false)
+    expect((await f.admin().inspect(key))?.createAttempt?.state).toBe('started')
     f.tick(11)
     const takeover = await f.store().claim({ key, leaseOwner: 'replacement', leaseForMs: 100 })
     expect(takeover).toMatchObject({
@@ -109,11 +113,13 @@ describe('CoreFencedSandboxHandleStore', () => {
     expect(await f.admin().reconcileCreateAbsent(key, evidence('audit-create'))).toBe(true)
     const replacement = await claim(f.store(), 'replacement')
     expect(replacement.generation).toBe(lease.generation + 1)
-    expect((await f.admin().listAudit(key))[0]).toMatchObject({
-      auditId: 'audit-create',
-      action: 'reconcile-create-absent',
-      operatorId: 'operator@example.test',
-    })
+    expect(await f.admin().listAudit(key)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        auditId: 'audit-create',
+        action: 'reconcile-create-absent',
+        operatorId: 'operator@example.test',
+      }),
+    ]))
   })
 
   it('records cleanup debt and tombstones successful deletion without resetting generation', async () => {
@@ -139,7 +145,7 @@ describe('CoreFencedSandboxHandleStore', () => {
     expect(() => f.cipher.decrypt(key, recreated.generation, 1, replay!)).toThrow()
   })
 
-  it('requires attributable admin evidence and refuses active-lease reconciliation by default', async () => {
+  it('always refuses ordinary active-lease reconciliation and fences stale force evidence', async () => {
     const f = fixture()
     const lease = await claim(f.store(), 'live-worker', 100)
     await expect(f.admin().reconcileDelete(key, cleanup('succeeded', '2026-09-14T00:00:01Z'), {
@@ -148,15 +154,28 @@ describe('CoreFencedSandboxHandleStore', () => {
     })).rejects.toThrow('auditId')
     expect(await f.admin().reconcileDelete(key, cleanup('succeeded', '2026-09-14T00:00:01Z'), evidence('audit-refused'))).toBe(false)
     expect((await f.admin().inspect(key))?.tombstoned).toBe(false)
-    expect(await f.admin().reconcileDelete(
+
+    f.tick(101)
+    const generationTwo = await claim(f.store(), 'next-live-worker', 100)
+    expect(generationTwo.generation).toBe(2)
+    expect(await f.forceAdmin().forceReconcileDelete(
       key,
+      lease.generation,
       cleanup('succeeded', '2026-09-14T00:00:01Z'),
-      evidence('audit-authorized'),
-      { allowActiveLease: true },
+      evidence('stale-generation-one-evidence'),
+    )).toBe(false)
+    expect(await f.admin().inspect(key)).toMatchObject({ generation: 2, tombstoned: false })
+    expect((await f.admin().listAudit(key)).map((record) => record.auditId)).not.toContain('stale-generation-one-evidence')
+
+    expect(await f.forceAdmin().forceReconcileDelete(
+      key,
+      generationTwo.generation,
+      cleanup('succeeded', '2026-09-14T00:00:01Z'),
+      evidence('current-generation-two-evidence'),
     )).toBe(true)
     expect((await f.admin().inspect(key))?.tombstoned).toBe(true)
     expect(f.store()).not.toHaveProperty('reconcileDelete')
+    expect(f.admin()).not.toHaveProperty('forceReconcileDelete')
     expect(Object.keys(key)).not.toContain('efsPath')
-    expect(lease.generation).toBe(1)
   })
 })

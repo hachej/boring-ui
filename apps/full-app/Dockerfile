@@ -31,12 +31,10 @@ COPY apps/full-app/ apps/full-app/
 # Build packages in dependency order.
 # ui and agent need dts so workspace's vite-plugin-dts can resolve their types.
 # workspace tsup skips dts (vite-plugin-dts covers the front entries instead).
-# tsup's onSuccess hook copies core's hand-authored CSS (theme.css, styles.css,
-# chatFirst/*) into dist, so this stays in sync with `pnpm build` automatically.
-# build:assert (dts-agnostic) then verifies every exported artifact + CSS @import
-# is present in dist, so a drift fails the image build instead of reaching prod.
-RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
-  && pnpm --filter @hachej/boring-core run build:assert
+# Core's explicit Docker build is the only no-DTS path. It serializes the main
+# and db entry builds, cleans dist only once, copies CSS, and validates runtime
+# exports without weakening the normal package build's declaration assertions.
+RUN pnpm --filter @hachej/boring-core run build:docker
 
 RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs

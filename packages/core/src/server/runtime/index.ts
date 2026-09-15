@@ -8,8 +8,8 @@ export type {
 export type {
   EncryptedSandboxHandle,
   FencedSandboxHandleAdmin,
+  FencedSandboxHandleForceAdmin,
   FencedSandboxHandleStore,
-  SandboxAdminReconciliationPolicy,
   SandboxCleanupOutcome,
   SandboxCreateAmbiguous,
   SandboxCreateAttemptResult,
