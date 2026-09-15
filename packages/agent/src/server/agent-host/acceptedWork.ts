@@ -4,8 +4,10 @@ import type {
   AgentRequestTarget,
   VerifiedSeatParticipation,
 } from './types'
+import { AGENT_GATEWAY_EFFECTS } from './types'
 
-const operations = new Set(['session.create', 'session.send', 'session.stop', 'session.queue.clear', 'agent.reload', 'session.command.execute'])
+const operations: ReadonlySet<string> = new Set(AGENT_GATEWAY_EFFECTS)
+const MAX_ID_LENGTH = 1_024
 
 /** Canonical, collision-safe projection. The complete request key is the run identity. */
 export function projectAgentRequestRunId(key: AgentRequestKey): string {
@@ -33,7 +35,7 @@ function object(value: unknown, keys: readonly string[], label: string): Record<
   return record
 }
 function text(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new TypeError(`invalid accepted work ${label}`)
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_ID_LENGTH) throw new TypeError(`invalid accepted work ${label}`)
   return value
 }
 function parseTarget(value: unknown): AgentRequestTarget {
@@ -61,21 +63,23 @@ export function parseAcceptedWorkContext(value: unknown): AcceptedWorkContext {
   const agent = object(identity.agent, ['agentTypeId'], 'identity.agent')
   const authority = object(root.authority, ['workspaceScopeId', 'authSubjectId'], 'authority')
   const delegation = object(root.delegation, ['lineage'], 'delegation')
-  if (!Array.isArray(delegation.lineage) || delegation.lineage.some((v) => typeof v !== 'string')) throw new TypeError('invalid accepted work delegation')
+  // Slice 8 has no verified lineage producer. Reject rather than persist speculative provenance.
+  if (!Array.isArray(delegation.lineage) || delegation.lineage.length !== 0) throw new TypeError('invalid accepted work delegation')
   const target = parseTarget(root.target)
   const participation = identity.participation === undefined ? undefined : object(identity.participation, ['seatId'], 'identity.participation')
   const expectedAgent = requestKey.target.kind === 'agent' ? requestKey.target.agentTypeId : requestKey.target.ref.agentTypeId
-  const canonical = createAcceptedWorkContext({ key: requestKey, admittedAgentTypeId: text(agent.agentTypeId, 'identity.agent.agentTypeId'), ...(participation ? { seat: { seatId: text(participation.seatId, 'identity.participation.seatId') } } : {}), lineage: delegation.lineage as string[] })
+  const canonical = createGatewayAcceptedWorkContext({ key: requestKey, admittedAgentTypeId: text(agent.agentTypeId, 'identity.agent.agentTypeId'), ...(participation ? { seat: { seatId: text(participation.seatId, 'identity.participation.seatId') } } : {}) })
   if (identity.runId !== canonical.identity.runId || root.operation !== canonical.operation || JSON.stringify(target) !== JSON.stringify(canonical.target) || authority.workspaceScopeId !== canonical.authority.workspaceScopeId || authority.authSubjectId !== canonical.authority.authSubjectId || expectedAgent !== canonical.identity.agent.agentTypeId) throw new TypeError('invalid accepted work redundant projection')
   return canonical
 }
 
 /** Trusted gateway constructor; this value records identity/provenance and is not authorization. */
-export function createAcceptedWorkContext(input: { readonly key: AgentRequestKey; readonly admittedAgentTypeId: string; readonly seat?: VerifiedSeatParticipation; readonly lineage?: readonly string[] }): AcceptedWorkContext {
+/** @internal Trusted gateway/storage migration construction funnel. Not part of the package API. */
+export function createGatewayAcceptedWorkContext(input: { readonly key: AgentRequestKey; readonly admittedAgentTypeId: string; readonly seat?: VerifiedSeatParticipation }): AcceptedWorkContext {
   const key = structuredClone(input.key)
   const expected = key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId
   if (input.admittedAgentTypeId !== expected) throw new TypeError('accepted work agent identity must match its request target')
-  return deepFreeze({ version: 1, identity: { runId: projectAgentRequestRunId(key), requestKey: key, agent: { agentTypeId: input.admittedAgentTypeId }, ...(input.seat ? { participation: structuredClone(input.seat) } : {}) }, operation: key.operation, target: structuredClone(key.target), authority: { workspaceScopeId: key.workspaceScopeId, authSubjectId: key.authSubjectId }, delegation: { lineage: [...(input.lineage ?? [])] } }) as AcceptedWorkContext
+  return deepFreeze({ version: 1, identity: { runId: projectAgentRequestRunId(key), requestKey: key, agent: { agentTypeId: input.admittedAgentTypeId }, ...(input.seat ? { participation: structuredClone(input.seat) } : {}) }, operation: key.operation, target: structuredClone(key.target), authority: { workspaceScopeId: key.workspaceScopeId, authSubjectId: key.authSubjectId }, delegation: { lineage: [] } }) as AcceptedWorkContext
 }
 
 export function cloneFrozenAcceptedWork(context: unknown): AcceptedWorkContext {

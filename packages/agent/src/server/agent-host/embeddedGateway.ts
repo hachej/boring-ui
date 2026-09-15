@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { createAcceptedWorkContext } from './acceptedWork'
+import { createGatewayAcceptedWorkContext } from './acceptedWork'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
@@ -850,7 +850,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       requestId,
     }
     const digest = canonicalDigest(payload)
-    const acceptedWork = createAcceptedWorkContext({
+    const acceptedWork = createGatewayAcceptedWorkContext({
       key,
       admittedAgentTypeId: agentTypeId,
       ...(admissionAccess.state === 'allowed' && admissionAccess.seatId

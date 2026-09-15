@@ -17,7 +17,7 @@ import {
   type QueuedUserMessage,
   type VerifiedAgentScopeClaim,
 } from '../../../../shared/index'
-import { createAcceptedWorkContext } from '../../acceptedWork'
+import { createGatewayAcceptedWorkContext } from '../../acceptedWork'
 import {
   gatewayConformance,
   type GatewayConformanceFixture,
@@ -49,7 +49,7 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
     acceptedWork?: AcceptedWorkContext,
   ): Promise<AgentRequestLedgerPrepareResult> {
     this.validateTarget(key)
-    const context = acceptedWork ?? createAcceptedWorkContext({
+    const context = acceptedWork ?? createGatewayAcceptedWorkContext({
       key,
       admittedAgentTypeId: key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId,
     })
@@ -175,7 +175,7 @@ const outcomeUnknown: AgentGatewayErrorDTO = {
 }
 
 async function advanceToInFlight(ledger: AgentRequestLedger, key: AgentRequestKey): Promise<void> {
-  await ledger.prepare(key, 'digest-a', createAcceptedWorkContext({
+  await ledger.prepare(key, 'digest-a', createGatewayAcceptedWorkContext({
     key,
     admittedAgentTypeId: key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId,
   }))

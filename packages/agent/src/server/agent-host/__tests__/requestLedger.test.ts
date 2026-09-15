@@ -9,10 +9,10 @@ import { Worker } from 'node:worker_threads'
 import { build } from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
-import { createAcceptedWorkContext, projectAgentRequestRunId } from '../acceptedWork'
+import { createGatewayAcceptedWorkContext, projectAgentRequestRunId } from '../acceptedWork'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
-import type { AgentRequestKey, AgentRequestLedger } from '../types'
+import { AGENT_GATEWAY_EFFECTS, type AgentRequestKey, type AgentRequestLedger } from '../types'
 
 const require = createRequire(import.meta.url)
 
@@ -32,7 +32,7 @@ const key: AgentRequestKey = {
 
 function acceptedFor(requestKey: AgentRequestKey) {
   const agentTypeId = requestKey.target.kind === 'agent' ? requestKey.target.agentTypeId : requestKey.target.ref.agentTypeId
-  return createAcceptedWorkContext({ key: requestKey, admittedAgentTypeId: agentTypeId })
+  return createGatewayAcceptedWorkContext({ key: requestKey, admittedAgentTypeId: agentTypeId })
 }
 
 interface ParallelClaimResult {
@@ -196,10 +196,49 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
   { name: 'in-memory', create: () => new InMemoryAgentRequestLedger() },
   { name: 'SQLite', create: () => new SqliteAgentRequestLedger(join(tmpdir(), `accepted-work-${randomUUID()}.sqlite`)) },
 ])('$name accepted work conformance', ({ create }) => {
+  it('accepts the exhaustive canonical operation schema and rejects invalid operations', async () => {
+    const ledger = create()
+    try {
+      for (const [index, operation] of AGENT_GATEWAY_EFFECTS.entries()) {
+        const target = operation === 'session.create' || operation === 'agent.reload'
+          ? { kind: 'agent' as const, agentTypeId: 'alpha' }
+          : { kind: 'session' as const, ref: { agentTypeId: 'alpha', sessionId: 'session-a' } }
+        const operationKey = { ...key, operation, target, requestId: `effect-${index}` }
+        await expect(ledger.prepare(operationKey, 'digest', acceptedFor(operationKey))).resolves.toMatchObject({ ownership: 'created' })
+      }
+      const invalidKey = { ...key, operation: 'session.send' as AgentRequestKey['operation'], target: { kind: 'session' as const, ref: { agentTypeId: 'alpha', sessionId: 'session-a' } } }
+      const validSessionKey = { ...invalidKey, operation: 'session.prompt' as const }
+      const invalid = structuredClone(acceptedFor(validSessionKey)) as any
+      invalid.identity.requestKey.operation = 'session.send'
+      invalid.operation = 'session.send'
+      await expect(ledger.prepare(invalidKey, 'digest', invalid)).rejects.toThrow('invalid accepted work operation')
+    } finally { await ledger.close?.() }
+  })
+
+  it('drops admission provenance from every post-admission state', async () => {
+    const ledger = create()
+    try {
+      const make = (requestId: string): AgentRequestKey => ({ ...key, requestId })
+      const start = async (requestKey: AgentRequestKey) => {
+        await ledger.prepare(requestKey, 'digest', acceptedFor(requestKey))
+        await ledger.acceptAdmission(requestKey, `bearer:${requestKey.requestId}`)
+        await ledger.beginEffect(requestKey)
+        expect(await ledger.read(requestKey)).not.toHaveProperty('admissionReceipt')
+      }
+      const completed = make('no-provenance-completed'); await start(completed); await ledger.complete(completed, { ok: true })
+      const rejected = make('no-provenance-rejected'); await start(rejected); await ledger.reject(rejected, { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, message: 'failed' } })
+      const unknown = make('no-provenance-unknown'); await start(unknown); await ledger.markOutcomeUnknown(unknown, { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN, message: 'unknown' })
+      for (const requestKey of [completed, rejected, unknown]) {
+        const record = await ledger.read(requestKey)
+        expect(record).not.toHaveProperty('admissionReceipt')
+        expect(JSON.stringify(record)).not.toContain('bearer:')
+      }
+    } finally { await ledger.close?.() }
+  })
   it('retains one frozen context through retries and every transition', async () => {
     const ledger = create()
     try {
-      const context = createAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha', seat: { seatId: 'seat-a' } })
+      const context = createGatewayAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha', seat: { seatId: 'seat-a' } })
       await ledger.prepare(key, 'digest', context)
       const assertContext = async () => {
         const retained = (await ledger.read(key))!.acceptedWork
@@ -224,7 +263,7 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
   it('rejects forged context and collision-prone key-part substitutions', async () => {
     const ledger = create()
     try {
-      const context = createAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha' })
+      const context = createGatewayAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha' })
       const forged = structuredClone(context)
       ;(forged.identity as { runId: string }).runId = 'forged'
       await expect(ledger.prepare(key, 'digest', forged)).rejects.toThrow('invalid accepted work redundant projection')
@@ -232,8 +271,8 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
       const left = { ...key, workspaceScopeId: 'a|b', authSubjectId: 'c' }
       const right = { ...key, workspaceScopeId: 'a', authSubjectId: 'b|c' }
       expect(projectAgentRequestRunId(left)).not.toBe(projectAgentRequestRunId(right))
-      await ledger.prepare(left, 'left', createAcceptedWorkContext({ key: left, admittedAgentTypeId: 'alpha' }))
-      await ledger.prepare(right, 'right', createAcceptedWorkContext({ key: right, admittedAgentTypeId: 'alpha' }))
+      await ledger.prepare(left, 'left', createGatewayAcceptedWorkContext({ key: left, admittedAgentTypeId: 'alpha' }))
+      await ledger.prepare(right, 'right', createGatewayAcceptedWorkContext({ key: right, admittedAgentTypeId: 'alpha' }))
       expect((await ledger.read(left))?.digest).toBe('left')
       expect((await ledger.read(right))?.digest).toBe('right')
     } finally { await ledger.close?.() }
@@ -245,9 +284,9 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
       const standalone = { ...key, requestId: 'standalone' }
       const seatA = { ...key, requestId: 'seat-a' }
       const seatB = { ...key, requestId: 'seat-b' }
-      await ledger.prepare(standalone, 'a', createAcceptedWorkContext({ key: standalone, admittedAgentTypeId: 'alpha' }))
-      await ledger.prepare(seatA, 'b', createAcceptedWorkContext({ key: seatA, admittedAgentTypeId: 'alpha', seat: { seatId: 'one' } }))
-      await ledger.prepare(seatB, 'c', createAcceptedWorkContext({ key: seatB, admittedAgentTypeId: 'alpha', seat: { seatId: 'two' } }))
+      await ledger.prepare(standalone, 'a', createGatewayAcceptedWorkContext({ key: standalone, admittedAgentTypeId: 'alpha' }))
+      await ledger.prepare(seatA, 'b', createGatewayAcceptedWorkContext({ key: seatA, admittedAgentTypeId: 'alpha', seat: { seatId: 'one' } }))
+      await ledger.prepare(seatB, 'c', createGatewayAcceptedWorkContext({ key: seatB, admittedAgentTypeId: 'alpha', seat: { seatId: 'two' } }))
       expect((await ledger.read(standalone))?.acceptedWork.identity.participation).toBeUndefined()
       expect((await ledger.read(seatA))?.acceptedWork.identity).toMatchObject({ agent: { agentTypeId: 'alpha' }, participation: { seatId: 'one' } })
       expect((await ledger.read(seatB))?.acceptedWork.identity).toMatchObject({ agent: { agentTypeId: 'alpha' }, participation: { seatId: 'two' } })

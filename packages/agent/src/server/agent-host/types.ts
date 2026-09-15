@@ -39,18 +39,24 @@ import type { CredentialVaultPersistenceV2 } from '../credentials/vault'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
-export type AgentGatewayEffect =
-  | 'session.create'
-  | 'session.rename'
-  | 'session.archive'
-  | 'session.delete'
-  | 'session.prompt'
-  | 'session.followup'
-  | 'session.interrupt'
-  | 'session.stop'
-  | 'session.queue.clear'
-  | 'agent.reload'
-  | 'session.command.execute'
+/** Single runtime and type-level source of truth for gateway operations persisted in request keys. */
+export const AGENT_GATEWAY_EFFECTS = [
+  'session.create',
+  'session.list',
+  'session.get',
+  'session.rename',
+  'session.archive',
+  'session.delete',
+  'session.prompt',
+  'session.followup',
+  'session.interrupt',
+  'session.stop',
+  'session.queue.clear',
+  'agent.reload',
+  'session.command.execute',
+] as const
+
+export type AgentGatewayEffect = typeof AGENT_GATEWAY_EFFECTS[number]
 
 export type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }
