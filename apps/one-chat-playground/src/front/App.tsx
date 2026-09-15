@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Resizer, useChatWidth } from './Resizer'
+import { Resizer, useChatSize, useIsMobile } from './Resizer'
 import { ChatPanel as PiChatPanel } from '@hachej/boring-agent/front'
 
 import { Stage } from './Stage'
@@ -20,7 +20,8 @@ declare global {
  */
 export function App() {
   const stage = useStage()
-  const chatWidth = useChatWidth()
+  const mobile = useIsMobile()
+  const chat = useChatSize(mobile)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionError, setSessionError] = useState<string | null>(null)
   const baseUrl = window.__ONE_CHAT_BASE_URL__ ?? 'http://127.0.0.1:5321/'
@@ -43,11 +44,15 @@ export function App() {
     <div
       className="one-chat-shell"
       data-testid="one-chat-shell"
-      data-resizing={chatWidth.resizing ? "" : undefined}
-      style={{ ["--one-chat-chat-width" as string]: `${chatWidth.width}px` }}
+      data-resizing={chat.resizing ? "" : undefined}
+      data-mobile={mobile ? "" : undefined}
+      style={{
+        ["--one-chat-chat-width" as string]: `${chat.width}px`,
+        ["--one-chat-chat-height" as string]: `${chat.height}px`,
+      }}
     >
       <div
-        className="flex min-h-0 min-w-0 flex-col bg-background max-[720px]:border-b max-[720px]:border-border/60"
+        className="one-chat-chat flex min-h-0 min-w-0 flex-col bg-background"
         data-testid="one-chat-chat"
       >
         {sessionError ? (
@@ -80,7 +85,13 @@ export function App() {
           />
         ) : null}
       </div>
-      <Resizer width={chatWidth.width} onChange={chatWidth.apply} onResizingChange={chatWidth.setResizing} />
+      <Resizer
+        size={chat.size}
+        orientation={mobile ? 'horizontal' : 'vertical'}
+        onChange={chat.apply}
+        onReset={chat.reset}
+        onResizingChange={chat.setResizing}
+      />
       <Stage baseUrl={baseUrl} sheet={stage.sheet} onBackToApp={stage.clearSheet} />
     </div>
   )

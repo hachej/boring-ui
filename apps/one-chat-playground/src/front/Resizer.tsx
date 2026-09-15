@@ -1,51 +1,105 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CHAT_WIDTH_DEFAULT, clampChatWidth, readStoredChatWidth, storeChatWidth } from './resize'
+import {
+  CHAT_WIDTH_DEFAULT,
+  clampChatHeight,
+  clampChatWidth,
+  readStoredChatHeight,
+  readStoredChatWidth,
+  storeChatHeight,
+  storeChatWidth,
+} from './resize'
+
+const MOBILE_QUERY = '(max-width: 720px)'
+
+/** True under the phone breakpoint; tracks the media query live. */
+export function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia(MOBILE_QUERY).matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY)
+    const onChange = () => setMobile(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return mobile
+}
 
 /**
- * Owns the chat-column width: exposes it as a CSS variable on the shell and
- * renders the drag handle. While dragging, the shell gets `data-resizing` so
- * the stage's iframes stop swallowing pointer events.
+ * Owns the chat size: width beside the app on wide screens, height as a bottom
+ * sheet on phones. Exposed as CSS variables on the shell. While dragging, the
+ * shell gets `data-resizing` so the stage's iframes stop swallowing the pointer.
  */
-export function useChatWidth() {
+export function useChatSize(mobile: boolean) {
   const [width, setWidth] = useState(() =>
     typeof window === 'undefined' ? CHAT_WIDTH_DEFAULT : readStoredChatWidth(window.innerWidth),
   )
+  const [height, setHeight] = useState(() =>
+    typeof window === 'undefined' ? 320 : readStoredChatHeight(window.innerHeight),
+  )
   const [resizing, setResizing] = useState(false)
 
-  const apply = useCallback((next: number) => {
-    const clamped = clampChatWidth(next, window.innerWidth)
-    setWidth(clamped)
-    storeChatWidth(clamped)
-  }, [])
+  const apply = useCallback(
+    (next: number) => {
+      if (mobile) {
+        const clamped = clampChatHeight(next, window.innerHeight)
+        setHeight(clamped)
+        storeChatHeight(clamped)
+      } else {
+        const clamped = clampChatWidth(next, window.innerWidth)
+        setWidth(clamped)
+        storeChatWidth(clamped)
+      }
+    },
+    [mobile],
+  )
 
   useEffect(() => {
-    const onResize = () => setWidth((w) => clampChatWidth(w, window.innerWidth))
+    const onResize = () => {
+      setWidth((w) => clampChatWidth(w, window.innerWidth))
+      setHeight((h) => clampChatHeight(h, window.innerHeight))
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  return { width, resizing, setResizing, apply }
+  const reset = useCallback(() => {
+    apply(mobile ? Number.NaN : CHAT_WIDTH_DEFAULT)
+  }, [apply, mobile])
+
+  return { size: mobile ? height : width, width, height, resizing, setResizing, apply, reset }
 }
 
 interface ResizerProps {
-  width: number
-  onChange: (width: number) => void
+  /** Current chat size along the drag axis (width, or height on phones). */
+  size: number
+  orientation: 'vertical' | 'horizontal'
+  onChange: (size: number) => void
+  onReset: () => void
   onResizingChange: (resizing: boolean) => void
 }
 
-export function Resizer({ width, onChange, onResizingChange }: ResizerProps) {
-  const startRef = useRef<{ x: number; width: number } | null>(null)
+/**
+ * The drag handle. Vertical orientation separates chat (left) from app
+ * (right); horizontal separates app (top) from the chat sheet (bottom), so
+ * dragging up makes the chat taller.
+ */
+export function Resizer({ size, orientation, onChange, onReset, onResizingChange }: ResizerProps) {
+  const startRef = useRef<{ pos: number; size: number } | null>(null)
+  const horizontal = orientation === 'horizontal'
+  const pos = (e: React.PointerEvent) => (horizontal ? e.clientY : e.clientX)
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
-    startRef.current = { x: event.clientX, width }
+    startRef.current = { pos: pos(event), size }
     onResizingChange(true)
   }
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const start = startRef.current
     if (!start) return
-    onChange(start.width + (event.clientX - start.x))
+    const delta = pos(event) - start.pos
+    onChange(horizontal ? start.size - delta : start.size + delta)
   }
   const end = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!startRef.current) return
@@ -55,8 +109,10 @@ export function Resizer({ width, onChange, onResizingChange }: ResizerProps) {
   }
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 64 : 16
-    if (event.key === 'ArrowLeft') onChange(width - step)
-    else if (event.key === 'ArrowRight') onChange(width + step)
+    const grow = horizontal ? 'ArrowUp' : 'ArrowRight'
+    const shrink = horizontal ? 'ArrowDown' : 'ArrowLeft'
+    if (event.key === shrink) onChange(size - step)
+    else if (event.key === grow) onChange(size + step)
     else if (event.key === 'Home') onChange(0)
     else if (event.key === 'End') onChange(Number.MAX_SAFE_INTEGER)
     else return
@@ -67,17 +123,17 @@ export function Resizer({ width, onChange, onResizingChange }: ResizerProps) {
     <div
       className="one-chat-resizer"
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={orientation}
       aria-label="Resize chat"
-      aria-valuenow={width}
+      aria-valuenow={size}
       tabIndex={0}
-      title="Drag to resize. Double-click to reset."
+      title="Drag to resize. Double-tap to reset."
       data-testid="one-chat-resizer"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
-      onDoubleClick={() => onChange(CHAT_WIDTH_DEFAULT)}
+      onDoubleClick={onReset}
       onKeyDown={onKeyDown}
     />
   )

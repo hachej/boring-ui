@@ -30,6 +30,7 @@
   display: grid;
   grid-template-columns: var(--one-chat-chat-width, 400px) 6px minmax(0, 1fr);
   height: 100%;
+  height: 100dvh;
 }
 
 /* The drag handle: a hairline that widens on hover and while dragging. */
@@ -48,11 +49,37 @@
 /* Iframes swallow pointer events; disable them for the stage while dragging. */
 .one-chat-shell[data-resizing] { cursor: col-resize; user-select: none; }
 .one-chat-shell[data-resizing] iframe { pointer-events: none; }
+.one-chat-shell[data-mobile] .one-chat-resizer { cursor: row-resize; }
+.one-chat-shell[data-mobile][data-resizing] { cursor: row-resize; }
 
+/* Phones: the app on top, the chat as a resizable bottom sheet (thumbs reach it). */
 @media (max-width: 720px) {
   .one-chat-shell {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 45vh) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 10px var(--one-chat-chat-height, 42vh);
   }
-  .one-chat-resizer { display: none; }
+  .one-chat-shell > .one-chat-chat { order: 3; }
+  .one-chat-shell > .one-chat-resizer { order: 2; }
+  .one-chat-shell > [data-testid="one-chat-stage"] { order: 1; }
+  .one-chat-resizer {
+    position: relative;
+    background: var(--color-background);
+    border-top: 1px solid var(--color-border);
+  }
+  /* A grab pill, like a phone sheet. */
+  .one-chat-resizer::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 3px;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border);
+    transform: translateX(-50%);
+  }
+  .one-chat-resizer:hover::after,
+  .one-chat-shell[data-resizing] .one-chat-resizer::after {
+    background: var(--boring-accent, var(--color-muted-foreground));
+  }
 }

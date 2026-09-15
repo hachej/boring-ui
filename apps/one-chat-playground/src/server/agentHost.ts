@@ -17,6 +17,8 @@ import type {
 } from '@hachej/boring-agent/shared'
 
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
+import { createInstructionsLoader } from './instructionsFile.js'
+import { createInstructionsTools } from './instructionsTool.js'
 import { createStageBus, registerStageRoutes, type StageBus } from './stageBus.js'
 import { createStageTools } from './stageTools.js'
 
@@ -72,8 +74,9 @@ async function readSystemPrompt(promptPath: string | undefined): Promise<string 
   return body || undefined
 }
 
-async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance): Promise<void> {
+async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance, onClose?: () => void): Promise<void> {
   let firstError: unknown
+  onClose?.()
   for (const operation of [() => app.close(), () => created.host.close()]) {
     try {
       await operation()
@@ -95,7 +98,9 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
   const stage = createStageBus()
   const allowedOrigins = options.allowedOrigins ?? resolveAllowedOriginsFromEnv()
   const stageTools = createStageTools({ bus: stage, allowedOrigins })
-  const systemPromptAppend = await readSystemPrompt(options.systemPromptPath)
+  const instructionsTools = createInstructionsTools({ workspaceRoot })
+  const basePrompt = await readSystemPrompt(options.systemPromptPath)
+  const instructions = createInstructionsLoader({ workspaceRoot, basePrompt })
 
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   const startedAt = Date.now()
@@ -128,8 +133,8 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         physicalBindingIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
         resourceInputDigest: JSON.stringify(['one-chat-playground', modeAdapter.id, workspaceRoot]),
         sessionNamespace: 'one-chat-playground',
-        extraTools: stageTools,
-        ...(systemPromptAppend ? { systemPromptAppend } : {}),
+        extraTools: [...stageTools, ...instructionsTools],
+        loadSystemPromptAppend: () => instructions.load(),
       }
     },
   })
@@ -154,7 +159,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
       defaultSessionId: ONE_CHAT_SESSION_ID,
     }))
   } catch (error) {
-    await closeRuntime(created, app).catch(() => {})
+    await closeRuntime(created, app, () => instructions.close()).catch(() => {})
     throw error
   }
 
@@ -166,7 +171,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     scope,
     stage,
     close() {
-      closePromise ??= closeRuntime(created, app)
+      closePromise ??= closeRuntime(created, app, () => instructions.close())
       return closePromise
     },
   }
