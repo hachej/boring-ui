@@ -222,13 +222,16 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
       if (priorPayload !== null && row.handleState === null) {
         throw new Error('fenced sandbox handle has incomplete publication state')
       }
-      const priorPublishedPayload = row.handleState === 'published' ? priorPayload : null
-      const nextPayload = priorPublishedPayload
+      const cleanupDebt = row.cleanupOutcome === 'failed' || row.cleanupOutcome === 'ambiguous'
+      const priorClaimablePayload = row.handleState === 'published' || (row.handleState === 'pending-validation' && cleanupDebt)
+        ? priorPayload
+        : null
+      const nextPayload = priorClaimablePayload
         ? this.cipher.encrypt(
             input.key,
             generation,
             row.handleVersion!,
-            this.cipher.decrypt(input.key, row.generation, row.handleVersion!, priorPublishedPayload),
+            this.cipher.decrypt(input.key, row.generation, row.handleVersion!, priorClaimablePayload),
           )
         : null
       const leaseToken = randomUUID()
@@ -247,7 +250,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
           encryptionVersion: nextPayload?.encryptionVersion ?? null,
           handleVersion: nextPayload ? row.handleVersion : null,
           handleState: nextPayload ? row.handleState : null,
-          ...(recreated || abandonedUnpublishedHandle
+          ...(recreated || (abandonedUnpublishedHandle && !cleanupDebt)
             ? {
                 createAttemptIdempotencyKey: null,
                 createAttemptState: null,
@@ -368,6 +371,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
       .where(and(
         fencePredicate(fence),
         eq(fencedSandboxHandles.handleState, 'pending-validation'),
+        isNull(fencedSandboxHandles.cleanupOutcome),
       ))
       .returning({ generation: fencedSandboxHandles.generation })
     return rows.length === 1

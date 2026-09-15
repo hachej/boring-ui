@@ -16,7 +16,7 @@ import type {
   SandboxHandleKey,
   SandboxHandleLease,
 } from '@hachej/boring-core/server'
-import { providerPairConformance } from '../../../../packages/boring-sandbox/src/providers/__tests__/conformance/providerPair'
+import { providerPairConformance } from '@hachej/boring-sandbox/test/provider-pair-conformance'
 import type { AgentCoreDeleteResult, AgentCoreRuntimeClient } from './agentcoreEfsRuntime'
 import {
   createAgentCoreRemoteEfsProvider,

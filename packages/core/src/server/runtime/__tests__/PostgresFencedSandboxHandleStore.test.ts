@@ -258,63 +258,50 @@ describe('PostgresFencedSandboxHandleStore', () => {
     expect((await admin.listAudit(KEY)).map((entry) => entry.auditId)).not.toContain('stale-gen-one-delete')
   })
 
-  it('does not publish or delete an unpublished pending handle after delayed-delete takeover', async () => {
+  it.each(['failed', 'ambiguous'] as const)('preserves %s pending-delete debt across takeover for fenced successor cleanup', async (outcome) => {
     const { a, b, admin } = stores()
     const pending = await claim(a, KEY, 'deleting-owner')
-    const pendingAttempt = await a.beginCreate(fence(pending))
-    expect(pendingAttempt?.status).toBe('started')
+    await a.beginCreate(fence(pending))
     expect(await a.update(fence(pending), bytes('pending-provider-session'), 1)).toBe(true)
-    expect(await admin.inspect(KEY)).toMatchObject({
-      generation: 1,
-      hasHandle: true,
-      handleState: 'pending-validation',
-      createAttempt: { state: 'completed' },
-    })
-
-    let releaseProviderDelete!: () => void
-    const providerDeleteBarrier = new Promise<void>((resolve) => { releaseProviderDelete = resolve })
-    const delayedDelete = (async () => {
-      await providerDeleteBarrier
-      return a.delete(fence(pending), {
-        outcome: 'succeeded',
-        detail: 'provider delayed delete completed after successor takeover',
-        recordedAt: '2026-09-14T00:00:05.000Z',
-      })
-    })()
+    expect(await a.delete(fence(pending), {
+      outcome,
+      detail: `${outcome} provider delete receipt`,
+      recordedAt: '2026-09-14T00:00:05.000Z',
+    })).toBe(false)
 
     await expireLease(sqlA)
     const successor = await claim(b, KEY, 'successor-owner')
     expect(successor.generation).toBe(2)
-    expect(successor.handle).toBeNull()
-    expect(successor.handleState).toBeNull()
+    expect(text(successor.handle)).toBe('pending-provider-session')
+    expect(successor.handleState).toBe('pending-validation')
+    expect(successor.cleanup).toMatchObject({ outcome, detail: `${outcome} provider delete receipt` })
+
+    await expect(a.delete(fence(pending), {
+      outcome: 'succeeded',
+      detail: 'stale owner delayed delete must not tombstone successor generation',
+      recordedAt: '2026-09-14T00:00:06.000Z',
+    })).resolves.toBe(false)
     await expect(b.publish(fence(successor))).resolves.toBe(false)
+    await expect(b.beginCreate(fence(successor))).rejects.toThrow('sandbox handle already exists')
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 2,
+      hasHandle: true,
+      handleState: 'pending-validation',
+      cleanup: { outcome },
+      tombstoned: false,
+    })
+
+    expect(await b.delete(fence(successor), {
+      outcome: 'succeeded',
+      detail: 'successor retried provider delete under current fence',
+      recordedAt: '2026-09-14T00:00:07.000Z',
+    })).toBe(true)
     expect(await admin.inspect(KEY)).toMatchObject({
       generation: 2,
       hasHandle: false,
       handleState: null,
-      createAttempt: null,
-      tombstoned: false,
-    })
-
-    releaseProviderDelete()
-    await expect(delayedDelete).resolves.toBe(false)
-    expect(await admin.inspect(KEY)).toMatchObject({
-      generation: 2,
-      hasHandle: false,
-      cleanup: null,
-      tombstoned: false,
-    })
-
-    const successorAttempt = await b.beginCreate(fence(successor))
-    expect(successorAttempt?.status).toBe('started')
-    expect(await b.update(fence(successor), bytes('successor-provider-session'), 2)).toBe(true)
-    expect(await b.publish(fence(successor))).toBe(true)
-    expect(await admin.inspect(KEY)).toMatchObject({
-      generation: 2,
-      hasHandle: true,
-      handleState: 'published',
-      handleVersion: 2,
-      tombstoned: false,
+      cleanup: { outcome: 'succeeded' },
+      tombstoned: true,
     })
   })
 
