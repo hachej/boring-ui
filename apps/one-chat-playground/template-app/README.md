@@ -24,10 +24,11 @@ pnpm dev            # PORT (default 5340) and HOST are respected
 
 ## Rules
 
-shadcn components only. Drizzle only. Schema changes are **additive**: new
-tables, nullable columns, safe defaults — never drop, rename or retype. Never
-edit rows by hand. Never touch config, dependencies or the dev server. Agent
-guidance lives in `agent/instructions.md` and `skills/`.
+`AGENTS.md` is the one-screen builder contract and wins over skill advice:
+shadcn components only, Drizzle only, additive schema changes, and no manual
+data/config/dependency/server edits. App-specific assistant guidance lives in
+`agent/instructions.md`; `skills/` keeps the separate add-tool guide plus the
+vendored craft skills and their third-party licenses.
 
 ## verify
 
