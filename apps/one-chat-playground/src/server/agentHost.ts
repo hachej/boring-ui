@@ -19,6 +19,7 @@ import type {
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
 import { createInstructionsLoader } from './instructionsFile.js'
 import { createInstructionsTools } from './instructionsTool.js'
+import { createMemoryTools } from './memoryTools.js'
 import { createReloadTool, createSessionTracker, trackSessions, watchExtensions } from './reloadTools.js'
 import { createStageBus, registerStageRoutes, type StageBus } from './stageBus.js'
 import { createStageTools } from './stageTools.js'
@@ -100,6 +101,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
   const allowedOrigins = options.allowedOrigins ?? resolveAllowedOriginsFromEnv()
   const stageTools = createStageTools({ bus: stage, allowedOrigins })
   const instructionsTools = createInstructionsTools({ workspaceRoot })
+  const memoryTools = createMemoryTools({ workspaceRoot })
   let hostApp: FastifyInstance | undefined
   const sessions = createSessionTracker()
   const reloadOptions = {
@@ -145,7 +147,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         physicalBindingIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
         resourceInputDigest: JSON.stringify(['one-chat-playground', modeAdapter.id, workspaceRoot]),
         sessionNamespace: 'one-chat-playground',
-        extraTools: trackSessions([...stageTools, ...instructionsTools, reloadTool], sessions),
+        extraTools: trackSessions([...stageTools, ...instructionsTools, ...memoryTools, reloadTool], sessions),
         loadSystemPromptAppend: () => instructions.load(),
       }
     },

@@ -13,7 +13,9 @@ import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const repoRoot = path.resolve(appRoot, '../..')
 const agentSourceRoot = path.resolve(repoRoot, 'packages/agent/src')
-const sampleAppRoot = path.join(appRoot, 'sample-app')
+// The user's app. Overridable so a second instance can run against a copy
+// without touching the one a live session is using.
+const sampleAppRoot = path.resolve(process.env.ONE_CHAT_WORKSPACE_ROOT ?? path.join(appRoot, 'sample-app'))
 
 const frontPort = Number(process.env.ONE_CHAT_PORT ?? 5320)
 const sampleAppPort = Number(process.env.SAMPLE_APP_PORT ?? 5321)
