@@ -97,7 +97,7 @@ describe('CoreFencedSandboxHandleStore', () => {
     })
 
     // Provider create succeeds here, but the process crashes before update(handle).
-    expect(await f.admin().reconcileCreateAbsent(key, evidence('audit-create-active-refused'))).toBe(false)
+    expect(await f.admin().reconcileCreateAbsent(key, lease.generation, evidence('audit-create-active-refused'))).toBe(false)
     expect((await f.admin().inspect(key))?.createAttempt?.state).toBe('started')
     f.tick(11)
     const takeover = await f.store().claim({ key, leaseOwner: 'replacement', leaseForMs: 100 })
@@ -110,7 +110,7 @@ describe('CoreFencedSandboxHandleStore', () => {
     expect(takeover).not.toHaveProperty('handle')
     expect(await f.store().beginCreate(fence(lease))).toBeNull()
 
-    expect(await f.admin().reconcileCreateAbsent(key, evidence('audit-create'))).toBe(true)
+    expect(await f.admin().reconcileCreateAbsent(key, lease.generation, evidence('audit-create'))).toBe(true)
     const replacement = await claim(f.store(), 'replacement')
     expect(replacement.generation).toBe(lease.generation + 1)
     expect(await f.admin().listAudit(key)).toEqual(expect.arrayContaining([
@@ -120,6 +120,46 @@ describe('CoreFencedSandboxHandleStore', () => {
         operatorId: 'operator@example.test',
       }),
     ]))
+  })
+
+  it('does not let stale ordinary create reconciliation clear a newer create attempt or audit', async () => {
+    const f = fixture()
+    const first = await claim(f.store(), 'first', 10)
+    await f.store().beginCreate(fence(first))
+    f.tick(11)
+    expect(await f.admin().reconcileCreateAbsent(key, first.generation, evidence('release-gen-one'))).toBe(true)
+
+    const second = await claim(f.store(), 'second', 10)
+    expect(second.generation).toBe(2)
+    const secondAttempt = await f.store().beginCreate(fence(second))
+    expect(secondAttempt?.status).toBe('started')
+    f.tick(11)
+
+    expect(await f.admin().reconcileCreateAbsent(key, first.generation, evidence('stale-gen-one-create'))).toBe(false)
+    expect((await f.admin().inspect(key))?.createAttempt).toMatchObject({
+      state: 'started',
+      idempotencyKey: secondAttempt?.idempotencyKey,
+    })
+    expect((await f.admin().listAudit(key)).map((record) => record.auditId)).not.toContain('stale-gen-one-create')
+  })
+
+  it('does not let stale ordinary delete reconciliation tombstone a newer handle or audit', async () => {
+    const f = fixture()
+    const first = await claim(f.store(), 'first', 10)
+    await createHandle(f.store(), first)
+    f.tick(11)
+    const second = await claim(f.store(), 'second', 10)
+    expect(text(second.handle)).toBe('opaque-provider-handle')
+    await f.store().release(fence(second))
+
+    expect(await f.admin().reconcileDelete(
+      key,
+      first.generation,
+      cleanup('succeeded', '2026-09-14T00:00:03Z'),
+      evidence('stale-gen-one-delete'),
+    )).toBe(false)
+    expect(await f.admin().inspect(key)).toMatchObject({ generation: 2, tombstoned: false, hasHandle: true })
+    expect((await f.admin().listAudit(key)).map((record) => record.auditId)).not.toContain('stale-gen-one-delete')
   })
 
   it('records cleanup debt and tombstones successful deletion without resetting generation', async () => {
@@ -148,11 +188,11 @@ describe('CoreFencedSandboxHandleStore', () => {
   it('always refuses ordinary active-lease reconciliation and fences stale force evidence', async () => {
     const f = fixture()
     const lease = await claim(f.store(), 'live-worker', 100)
-    await expect(f.admin().reconcileDelete(key, cleanup('succeeded', '2026-09-14T00:00:01Z'), {
+    await expect(f.admin().reconcileDelete(key, lease.generation, cleanup('succeeded', '2026-09-14T00:00:01Z'), {
       ...evidence(''),
       auditId: '',
     })).rejects.toThrow('auditId')
-    expect(await f.admin().reconcileDelete(key, cleanup('succeeded', '2026-09-14T00:00:01Z'), evidence('audit-refused'))).toBe(false)
+    expect(await f.admin().reconcileDelete(key, lease.generation, cleanup('succeeded', '2026-09-14T00:00:01Z'), evidence('audit-refused'))).toBe(false)
     expect((await f.admin().inspect(key))?.tombstoned).toBe(false)
 
     f.tick(101)

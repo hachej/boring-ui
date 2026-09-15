@@ -106,10 +106,12 @@ export interface FencedSandboxHandleAdmin {
   inspect(key: SandboxHandleKey): Promise<SandboxHandleInspection | null>
   reconcileCreateAbsent(
     key: SandboxHandleKey,
+    expectedGeneration: number,
     evidence: SandboxOperatorEvidence,
   ): Promise<boolean>
   reconcileDelete(
     key: SandboxHandleKey,
+    expectedGeneration: number,
     cleanup: SandboxCleanupOutcome,
     evidence: SandboxOperatorEvidence,
   ): Promise<boolean>
@@ -472,12 +474,14 @@ export class CoreFencedSandboxHandleAdmin implements FencedSandboxHandleAdmin {
 
   async reconcileCreateAbsent(
     key: SandboxHandleKey,
+    expectedGeneration: number,
     evidence: SandboxOperatorEvidence,
   ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
     assertEvidence(evidence)
     return this.backend.transaction(() => {
       const row = this.backend.rows.get(keyOf(key))
-      if (!row || row.createAttempt?.state !== 'started') return false
+      if (!row || row.generation !== expectedGeneration || row.createAttempt?.state !== 'started') return false
       if (row.leaseExpiresAt !== null && row.leaseExpiresAt > this.now()) {
         this.audit(row, 'reconcile-create-refused-active-lease', evidence)
         return false
@@ -493,14 +497,16 @@ export class CoreFencedSandboxHandleAdmin implements FencedSandboxHandleAdmin {
 
   async reconcileDelete(
     key: SandboxHandleKey,
+    expectedGeneration: number,
     cleanup: SandboxCleanupOutcome,
     evidence: SandboxOperatorEvidence,
   ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
     assertEvidence(evidence)
     assertTimestamp(cleanup.recordedAt, 'cleanup.recordedAt')
     return this.backend.transaction(() => {
       const row = this.backend.rows.get(keyOf(key))
-      if (!row) return false
+      if (!row || row.generation !== expectedGeneration) return false
       if (row.leaseExpiresAt !== null && row.leaseExpiresAt > this.now()) {
         this.audit(row, 'reconcile-delete-refused-active-lease', evidence)
         return false

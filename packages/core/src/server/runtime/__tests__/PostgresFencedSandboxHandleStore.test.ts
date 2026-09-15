@@ -201,7 +201,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     })
 
     // The provider accepted create(attempt.idempotencyKey), then this owner crashed.
-    expect(await admin.reconcileCreateAbsent(KEY, evidence('audit-create-active-refused'))).toBe(false)
+    expect(await admin.reconcileCreateAbsent(KEY, lease.generation, evidence('audit-create-active-refused'))).toBe(false)
     expect((await admin.inspect(KEY))?.createAttempt?.state).toBe('started')
     await expireLease(sqlA)
     await expect(b.claim({ key: KEY, leaseOwner: 'replacement', leaseForMs: 10_000 })).resolves.toMatchObject({
@@ -209,9 +209,49 @@ describe('PostgresFencedSandboxHandleStore', () => {
       idempotencyKey: attempt?.idempotencyKey,
       generation: lease.generation,
     })
-    expect(await admin.reconcileCreateAbsent(KEY, evidence('audit-create-absent'))).toBe(true)
+    expect(await admin.reconcileCreateAbsent(KEY, lease.generation, evidence('audit-create-absent'))).toBe(true)
     const replacement = await claim(b, KEY, 'replacement')
     expect(replacement.generation).toBe(lease.generation + 1)
+  })
+
+  it('does not let stale ordinary create reconciliation clear a newer create attempt or audit', async () => {
+    const { a, b, admin } = stores()
+    const first = await claim(a, KEY, 'first-process')
+    const firstAttempt = await a.beginCreate(fence(first))
+    expect(firstAttempt?.status).toBe('started')
+    await expireLease(sqlA)
+    expect(await admin.reconcileCreateAbsent(KEY, first.generation, evidence('release-gen-one'))).toBe(true)
+
+    const second = await claim(b, KEY, 'second-process')
+    expect(second.generation).toBe(2)
+    const secondAttempt = await b.beginCreate(fence(second))
+    expect(secondAttempt?.status).toBe('started')
+    await expireLease(sqlA)
+
+    expect(await admin.reconcileCreateAbsent(KEY, first.generation, evidence('stale-gen-one-create'))).toBe(false)
+    expect((await admin.inspect(KEY))?.createAttempt).toMatchObject({
+      state: 'started',
+      idempotencyKey: secondAttempt?.idempotencyKey,
+    })
+    expect((await admin.listAudit(KEY)).map((entry) => entry.auditId)).not.toContain('stale-gen-one-create')
+  })
+
+  it('does not let stale ordinary delete reconciliation tombstone a newer handle or audit', async () => {
+    const { a, b, admin } = stores()
+    const first = await claim(a, KEY, 'first-process')
+    await a.beginCreate(fence(first))
+    await a.update(fence(first), bytes(SECRET), 1)
+    await expireLease(sqlA)
+    const second = await claim(b, KEY, 'second-process')
+    expect(text(second.handle)).toBe(SECRET)
+    await b.release(fence(second))
+
+    expect(await admin.reconcileDelete(KEY, first.generation, {
+      outcome: 'succeeded',
+      recordedAt: '2026-09-14T00:00:03.000Z',
+    }, evidence('stale-gen-one-delete'))).toBe(false)
+    expect(await admin.inspect(KEY)).toMatchObject({ generation: 2, tombstoned: false, hasHandle: true })
+    expect((await admin.listAudit(KEY)).map((entry) => entry.auditId)).not.toContain('stale-gen-one-delete')
   })
 
   it('tombstones deletion, preserves receipt/generation, and rejects old ciphertext replay after recreation', async () => {
@@ -278,7 +318,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     const otherLease = await claim(b, otherKey, 'other-process')
     expect(otherLease.leaseToken).not.toBe(lease.leaseToken)
 
-    expect(await admin.reconcileDelete(KEY, {
+    expect(await admin.reconcileDelete(KEY, lease.generation, {
       outcome: 'succeeded',
       recordedAt: '2026-09-14T00:00:03.000Z',
     }, evidence('audit-refused'))).toBe(false)

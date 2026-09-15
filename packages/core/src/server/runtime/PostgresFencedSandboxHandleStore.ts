@@ -427,14 +427,20 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
 
   async reconcileCreateAbsent(
     key: SandboxHandleKey,
+    expectedGeneration: number,
     evidence: SandboxOperatorEvidence,
   ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
     const evidenceAt = assertEvidence(evidence)
+    const lockedGenerationPredicate = and(
+      keyPredicate(key),
+      eq(fencedSandboxHandles.generation, expectedGeneration),
+    )
     return this.db.transaction(async (tx) => {
       const rows = await tx.select({
         row: fencedSandboxHandles,
         activeLease: sql<boolean>`${fencedSandboxHandles.leaseExpiresAt} > clock_timestamp()`,
-      }).from(fencedSandboxHandles).where(keyPredicate(key)).for('update').limit(1)
+      }).from(fencedSandboxHandles).where(lockedGenerationPredicate).for('update').limit(1)
       const selected = rows[0]
       if (!selected || selected.row.createAttemptState !== 'started') return false
       if (selected.activeLease) {
@@ -451,7 +457,7 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
         createAttemptStartedAt: null,
         createAttemptResolvedAt: null,
         updatedAt: sql`clock_timestamp()`,
-      }).where(and(keyPredicate(key), eq(fencedSandboxHandles.generation, selected.row.generation)))
+      }).where(lockedGenerationPredicate)
         .returning({ generation: fencedSandboxHandles.generation })
       return updated.length === 1
     })
@@ -459,16 +465,22 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
 
   async reconcileDelete(
     key: SandboxHandleKey,
+    expectedGeneration: number,
     cleanup: SandboxCleanupOutcome,
     evidence: SandboxOperatorEvidence,
   ): Promise<boolean> {
+    assertExpectedGeneration(expectedGeneration)
     const evidenceAt = assertEvidence(evidence)
     const cleanupUpdate = cleanupValues(cleanup)
+    const lockedGenerationPredicate = and(
+      keyPredicate(key),
+      eq(fencedSandboxHandles.generation, expectedGeneration),
+    )
     return this.db.transaction(async (tx) => {
       const rows = await tx.select({
         row: fencedSandboxHandles,
         activeLease: sql<boolean>`${fencedSandboxHandles.leaseExpiresAt} > clock_timestamp()`,
-      }).from(fencedSandboxHandles).where(keyPredicate(key)).for('update').limit(1)
+      }).from(fencedSandboxHandles).where(lockedGenerationPredicate).for('update').limit(1)
       const selected = rows[0]
       if (!selected) return false
       if (selected.activeLease) {
@@ -494,7 +506,7 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
             tombstonedAt: sql`clock_timestamp()`,
           }
         : cleanupUpdate)
-        .where(and(keyPredicate(key), eq(fencedSandboxHandles.generation, selected.row.generation)))
+        .where(lockedGenerationPredicate)
         .returning({ generation: fencedSandboxHandles.generation })
       return updated.length === 1 && cleanup.outcome === 'succeeded'
     })
