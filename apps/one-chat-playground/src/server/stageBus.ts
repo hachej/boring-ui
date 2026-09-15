@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import type { StageEvent } from '../shared/stage.js'
 
 export const STAGE_STREAM_ROUTE = '/api/one-chat/stage/stream'
+export const STAGE_CLEAR_ROUTE = '/api/one-chat/stage/clear'
 
 /**
  * One in-process fan-out from the agent tools to every open browser tab.
@@ -62,5 +63,12 @@ export function registerStageRoutes(app: FastifyInstance, bus: StageBus): void {
       clearInterval(heartbeat)
       unsubscribe()
     })
+  })
+
+  // "Back to my app" goes through the bus rather than local state so every open
+  // tab agrees on what is on screen.
+  app.post(STAGE_CLEAR_ROUTE, async () => {
+    bus.emit({ type: 'stage.clear' })
+    return { ok: true }
   })
 }

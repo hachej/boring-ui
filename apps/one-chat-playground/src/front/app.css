@@ -1,0 +1,26 @@
+@import 'tailwindcss';
+
+/* Standard boring theme (light + dark --boring-* values + shadcn bridge). */
+@import '@hachej/boring-ui-kit/tokens.css' layer(base);
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+/* Chat left, screen right. One column under a phone width. */
+.one-chat-shell {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  height: 100%;
+  background: var(--background);
+}
+
+@media (max-width: 720px) {
+  .one-chat-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 45vh) minmax(0, 1fr);
+  }
+}

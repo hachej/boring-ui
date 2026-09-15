@@ -1,0 +1,6 @@
+# Playwright screenshots and other local proof artifacts.
+.artifacts/
+# Pi session transcripts are mutable host data, not source.
+.boring-agent/
+test-results/
+playwright-report/

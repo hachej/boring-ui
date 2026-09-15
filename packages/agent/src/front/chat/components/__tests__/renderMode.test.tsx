@@ -38,7 +38,7 @@ const noisyTurn: BoringChatMessage = {
   id: 'assistant-1',
   role: 'assistant',
   parts: [
-    { type: 'reasoning', text: 'Let me look at the client list first.', state: 'done' },
+    { type: 'reasoning', id: 'reason-1', text: 'Let me look at the client list first.', state: 'done' },
     { type: 'tool-call', id: 'call-read', toolName: 'read', state: 'output-available', input: { path: 'src/App.tsx' } },
     { type: 'tool-call', id: 'call-edit', toolName: 'edit', state: 'output-available', input: { path: 'src/App.tsx' } },
     { type: 'text', text: 'Done — your client list now shows the last contact date.' },
