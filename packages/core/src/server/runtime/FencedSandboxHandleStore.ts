@@ -13,6 +13,8 @@ export interface SandboxCleanupOutcome {
   recordedAt: string
 }
 
+export type SandboxHandlePublicationState = 'pending-validation' | 'published'
+
 export interface SandboxHandleLease {
   status: 'claimed'
   key: SandboxHandleKey
@@ -22,6 +24,7 @@ export interface SandboxHandleLease {
   leaseExpiresAt: string
   handle: Uint8Array | null
   handleVersion: number | null
+  handleState: SandboxHandlePublicationState | null
   cleanup: SandboxCleanupOutcome | null
 }
 
@@ -59,8 +62,11 @@ export interface SandboxHandleFence {
 export interface FencedSandboxHandleStore {
   claim(input: SandboxHandleClaim): Promise<SandboxHandleClaimResult>
   beginCreate(fence: SandboxHandleFence): Promise<SandboxCreateAttemptResult>
-  renew(fence: SandboxHandleFence, leaseForMs: number): Promise<boolean>
+  /** Returns the database-confirmed deadline, or null when the fence is no longer current. */
+  renew(fence: SandboxHandleFence, leaseForMs: number): Promise<string | null>
+  /** Persists a newly created handle as unpublished until publish() validates it. */
   update(fence: SandboxHandleFence, handle: Uint8Array, handleVersion: number): Promise<boolean>
+  publish(fence: SandboxHandleFence): Promise<boolean>
   release(fence: SandboxHandleFence): Promise<boolean>
   delete(fence: SandboxHandleFence, cleanup: SandboxCleanupOutcome): Promise<boolean>
 }
@@ -72,6 +78,7 @@ export interface SandboxHandleInspection {
   leaseExpiresAt: string | null
   hasHandle: boolean
   handleVersion: number | null
+  handleState: SandboxHandlePublicationState | null
   cleanup: SandboxCleanupOutcome | null
   tombstoned: boolean
   createAttempt: {
@@ -198,6 +205,7 @@ interface DurableRow extends SandboxHandleKey {
   leaseExpiresAt: number | null
   payload: EncryptedSandboxHandle | null
   handleVersion: number | null
+  handleState: SandboxHandlePublicationState | null
   createAttempt: {
     idempotencyKey: string
     state: 'started' | 'completed'
@@ -260,6 +268,7 @@ function inspection(row: DurableRow): SandboxHandleInspection {
     leaseExpiresAt: row.leaseExpiresAt === null ? null : new Date(row.leaseExpiresAt).toISOString(),
     hasHandle: row.payload !== null,
     handleVersion: row.handleVersion,
+    handleState: row.handleState,
     cleanup: row.cleanup,
     tombstoned: row.tombstonedAt !== null,
     createAttempt: row.createAttempt && {
@@ -305,6 +314,7 @@ export class CoreFencedSandboxHandleStore implements FencedSandboxHandleStore {
         ? this.cipher.decrypt(row, row.generation, row.handleVersion!, row.payload)
         : null,
       handleVersion: row.handleVersion,
+      handleState: row.handleState,
       cleanup: row.cleanup,
     }
   }
@@ -349,6 +359,7 @@ export class CoreFencedSandboxHandleStore implements FencedSandboxHandleStore {
         leaseExpiresAt: this.now() + input.leaseForMs,
         payload,
         handleVersion: row?.handleVersion ?? null,
+        handleState: wasTombstoned ? null : row?.handleState ?? null,
         createAttempt: wasTombstoned ? null : row?.createAttempt ?? null,
         cleanup: wasTombstoned ? null : row?.cleanup ?? null,
         tombstonedAt: null,
@@ -386,13 +397,13 @@ export class CoreFencedSandboxHandleStore implements FencedSandboxHandleStore {
     })
   }
 
-  async renew(fence: SandboxHandleFence, leaseForMs: number): Promise<boolean> {
+  async renew(fence: SandboxHandleFence, leaseForMs: number): Promise<string | null> {
     assertLeaseForMs(leaseForMs)
     return this.backend.transaction(() => {
       const row = this.current(fence)
-      if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return false
+      if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return null
       row.leaseExpiresAt = this.now() + leaseForMs
-      return true
+      return new Date(row.leaseExpiresAt).toISOString()
     })
   }
 
@@ -410,10 +421,21 @@ export class CoreFencedSandboxHandleStore implements FencedSandboxHandleStore {
       }
       row.payload = this.cipher.encrypt(row, row.generation, handleVersion, handle)
       row.handleVersion = handleVersion
+      row.handleState = 'pending-validation'
       if (row.createAttempt?.state === 'started') {
         row.createAttempt.state = 'completed'
         row.createAttempt.resolvedAt = this.now()
       }
+      return true
+    })
+  }
+
+  async publish(fence: SandboxHandleFence): Promise<boolean> {
+    return this.backend.transaction(() => {
+      const row = this.current(fence)
+      if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return false
+      if (!row.payload || row.handleState !== 'pending-validation') return false
+      row.handleState = 'published'
       return true
     })
   }
@@ -441,6 +463,7 @@ export class CoreFencedSandboxHandleStore implements FencedSandboxHandleStore {
       row.leaseExpiresAt = null
       row.payload = null
       row.handleVersion = null
+      row.handleState = null
       row.createAttempt = null
       row.tombstonedAt = this.now()
       return true
@@ -519,6 +542,7 @@ export class CoreFencedSandboxHandleAdmin implements FencedSandboxHandleAdmin {
       row.leaseExpiresAt = null
       row.payload = null
       row.handleVersion = null
+      row.handleState = null
       row.createAttempt = null
       row.tombstonedAt = this.now()
       return true
@@ -586,6 +610,7 @@ export class CoreFencedSandboxHandleForceAdmin implements FencedSandboxHandleFor
       row.leaseExpiresAt = null
       row.payload = null
       row.handleVersion = null
+      row.handleState = null
       row.createAttempt = null
       row.tombstonedAt = this.now()
       return true

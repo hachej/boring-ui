@@ -13,6 +13,7 @@ CREATE TABLE "fenced_sandbox_handles" (
   "encryption_auth_tag" bytea,
   "encryption_version" integer,
   "handle_version" integer,
+  "handle_state" text,
   "create_attempt_idempotency_key" uuid,
   "create_attempt_state" text,
   "create_attempt_started_at" timestamptz,
@@ -32,8 +33,8 @@ CREATE TABLE "fenced_sandbox_handles" (
     OR ("cleanup_outcome" IN ('succeeded', 'failed', 'ambiguous') AND "cleanup_recorded_at" IS NOT NULL)
   ),
   CONSTRAINT "fenced_sandbox_handles_encryption_check" CHECK (
-    ("encrypted_handle" IS NULL AND "encryption_nonce" IS NULL AND "encryption_auth_tag" IS NULL AND "encryption_version" IS NULL AND "handle_version" IS NULL)
-    OR ("encrypted_handle" IS NOT NULL AND "encryption_nonce" IS NOT NULL AND "encryption_auth_tag" IS NOT NULL AND "encryption_version" IS NOT NULL AND "handle_version" IS NOT NULL)
+    ("encrypted_handle" IS NULL AND "encryption_nonce" IS NULL AND "encryption_auth_tag" IS NULL AND "encryption_version" IS NULL AND "handle_version" IS NULL AND "handle_state" IS NULL)
+    OR ("encrypted_handle" IS NOT NULL AND "encryption_nonce" IS NOT NULL AND "encryption_auth_tag" IS NOT NULL AND "encryption_version" IS NOT NULL AND "handle_version" IS NOT NULL AND "handle_state" IN ('pending-validation', 'published'))
   ),
   CONSTRAINT "fenced_sandbox_handles_create_attempt_check" CHECK (
     ("create_attempt_idempotency_key" IS NULL AND "create_attempt_state" IS NULL AND "create_attempt_started_at" IS NULL AND "create_attempt_resolved_at" IS NULL)

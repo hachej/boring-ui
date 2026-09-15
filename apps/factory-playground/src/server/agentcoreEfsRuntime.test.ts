@@ -8,7 +8,7 @@ import {
   createDatabase,
   createSandboxHandleCipher,
   runMigrations,
-} from '@hachej/boring-core/server'
+} from '@hachej/boring-core/server/db'
 import type {
   FencedSandboxHandleStore,
   SandboxCleanupOutcome,
@@ -16,8 +16,14 @@ import type {
   SandboxHandleKey,
   SandboxHandleLease,
 } from '@hachej/boring-core/server'
+import { providerPairConformance } from '../../../../packages/boring-sandbox/src/providers/__tests__/conformance/providerPair'
 import type { AgentCoreDeleteResult, AgentCoreRuntimeClient } from './agentcoreEfsRuntime'
-import { createAgentCoreRemoteEfsRuntimeMode, createEcsLocalEfsRuntimeMode } from './agentcoreEfsRuntime'
+import {
+  createAgentCoreRemoteEfsProvider,
+  createAgentCoreRemoteEfsRuntimeMode,
+  createEcsLocalEfsProvider,
+  createEcsLocalEfsRuntimeMode,
+} from './agentcoreEfsRuntime'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -30,7 +36,9 @@ interface Row {
   owner: string | null
   generation: number
   token: string
+  expiresAt: number
   creating: boolean
+  handleState: 'pending-validation' | 'published' | null
   cleanup: SandboxCleanupOutcome | null
 }
 
@@ -50,7 +58,7 @@ class Store implements FencedSandboxHandleStore {
     const id = keyOf(key)
     let row = this.rows.get(id)
     if (!row) {
-      row = { key, handle: null, owner: null, generation: 0, token: '', creating: false, cleanup: null }
+      row = { key, handle: null, owner: null, generation: 0, token: '', expiresAt: 0, creating: false, handleState: null, cleanup: null }
       this.rows.set(id, row)
     }
     return row
@@ -59,22 +67,24 @@ class Store implements FencedSandboxHandleStore {
   async claim(input: { key: SandboxHandleKey; leaseOwner: string; leaseForMs: number }) {
     this.claims++
     const row = this.row(input.key)
-    if (row.owner) return null
+    if (row.owner && row.expiresAt > Date.now()) return null
     if (row.creating) {
       return { status: 'create-ambiguous' as const, key: input.key, generation: row.generation, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
     }
     row.owner = input.leaseOwner
     row.generation++
     row.token = `t${row.generation}`
+    row.expiresAt = Date.now() + input.leaseForMs
     return {
       status: 'claimed' as const,
       key: input.key,
       generation: row.generation,
       leaseOwner: input.leaseOwner,
       leaseToken: row.token,
-      leaseExpiresAt: new Date(Date.now() + input.leaseForMs).toISOString(),
+      leaseExpiresAt: new Date(row.expiresAt).toISOString(),
       handle: row.handle,
       handleVersion: row.handle ? 1 : null,
+      handleState: row.handleState,
       cleanup: row.cleanup,
     } satisfies SandboxHandleLease
   }
@@ -86,7 +96,7 @@ class Store implements FencedSandboxHandleStore {
     return { status: 'started' as const, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
   }
 
-  async renew(fence: SandboxHandleFence) {
+  async renew(fence: SandboxHandleFence, leaseForMs: number) {
     this.renewCalls++
     this.concurrentRenews++
     this.maxConcurrentRenews = Math.max(this.maxConcurrentRenews, this.concurrentRenews)
@@ -94,7 +104,9 @@ class Store implements FencedSandboxHandleStore {
       await this.renewGate
       const current = this.row(fence.key)
       if (!this.renewResult && current.token === fence.leaseToken) current.token = 'lost-fence'
-      return current.token === fence.leaseToken && this.renewResult
+      if (current.token !== fence.leaseToken || !this.renewResult || current.expiresAt <= Date.now()) return null
+      current.expiresAt = Date.now() + leaseForMs
+      return new Date(current.expiresAt).toISOString()
     } finally {
       this.concurrentRenews--
     }
@@ -104,7 +116,15 @@ class Store implements FencedSandboxHandleStore {
     const row = this.row(fence.key)
     if (this.failUpdate || row.token !== fence.leaseToken) return false
     row.handle = handle
+    row.handleState = 'pending-validation'
     row.creating = false
+    return true
+  }
+
+  async publish(fence: SandboxHandleFence) {
+    const row = this.row(fence.key)
+    if (row.token !== fence.leaseToken || row.expiresAt <= Date.now() || row.handleState !== 'pending-validation') return false
+    row.handleState = 'published'
     return true
   }
 
@@ -115,17 +135,18 @@ class Store implements FencedSandboxHandleStore {
       throw new Error('release failed')
     }
     const row = this.row(fence.key)
-    if (row.token !== fence.leaseToken) return false
+    if (row.token !== fence.leaseToken || row.expiresAt <= Date.now()) return false
     row.owner = null
     return true
   }
 
   async delete(fence: SandboxHandleFence, cleanup: SandboxCleanupOutcome) {
     const row = this.row(fence.key)
-    if (row.token !== fence.leaseToken) return false
+    if (row.token !== fence.leaseToken || row.expiresAt <= Date.now()) return false
     row.cleanup = cleanup
     if (cleanup.outcome !== 'succeeded') return false
     row.handle = null
+    row.handleState = null
     row.creating = false
     row.owner = null
     return true
@@ -207,6 +228,27 @@ async function fixture(workspace = 'ws', overrides: {
 afterEach(async () => {
   vi.useRealTimers()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
+
+providerPairConformance('factory:ecs-local-efs wrapper', async () => {
+  const f = await fixture()
+  return {
+    provider: createEcsLocalEfsProvider({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+    }),
+    context: f.context,
+  }
+})
+
+providerPairConformance('factory:agentcore-remote-efs wrapper', async () => {
+  const f = await fixture()
+  return {
+    provider: createAgentCoreRemoteEfsProvider({
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: f.root, runtimeRoot: '/runtime',
+      handleStore: f.store, agentCore: f.remote.value, leaseOwner: 'host-1',
+    }),
+    context: f.context,
+  }
 })
 
 describe('application-owned shared-EFS runtime modes', () => {
@@ -315,6 +357,21 @@ describe('application-owned shared-EFS runtime modes', () => {
     await expect(pair.disposeRuntime?.()).rejects.toThrow(/fence/)
   })
 
+  it('hard-stops at the confirmed deadline while a serialized renewal is stalled', async () => {
+    const f = await fixture('ws', { leaseForMs: 60 })
+    const pair = await f.adapter.create(f.context)
+    let releaseRenew!: () => void
+    f.store.renewGate = new Promise<void>((resolve) => { releaseRenew = resolve })
+
+    const execution = pair.sandbox.exec('cat proof')
+    await vi.waitFor(() => expect(f.store.concurrentRenews).toBe(1))
+    await expect(execution).rejects.toThrow(/fence was lost/)
+    expect(f.remote.stats().execs).toBe(0)
+
+    releaseRenew()
+    await expect(pair.disposeRuntime?.()).rejects.toThrow(/fence/)
+  })
+
   it('drains an in-flight execution before release and refuses calls once disposal starts', async () => {
     const f = await fixture()
     const pair = await f.adapter.create(f.context)
@@ -340,6 +397,65 @@ describe('application-owned shared-EFS runtime modes', () => {
     expect(store.releases).toBe(1)
     await expect(pair.disposeRuntime!()).resolves.toBeUndefined()
     expect(store.releases).toBe(2)
+  })
+
+  it('never resumes pending state and an expired slow delete cannot delete a successor-published session', async () => {
+    const store = new Store()
+    const root = await mkdtemp(join(tmpdir(), 'agentcore-delete-race-'))
+    roots.push(root)
+    const hostRoot = join(root, 'tenant', 'ws')
+    await mkdir(hostRoot, { recursive: true })
+    const sessions = new Map<string, string>()
+    const deletedHandles: string[] = []
+    let creates = 0
+    let resumes = 0
+    let deletes = 0
+    let releaseFirstDelete!: () => void
+    const firstDeleteGate = new Promise<void>((resolve) => { releaseFirstDelete = resolve })
+    const remote: AgentCoreRuntimeClient = {
+      async createSession({ runtimeCwd }) {
+        creates++
+        const id = `delete-race-session-${creates}`
+        sessions.set(id, runtimeCwd)
+        return {
+          handle: encoder.encode(id),
+          runtimeCwd: creates === 1 ? `${runtimeCwd}/invalid` : runtimeCwd,
+        }
+      },
+      async resumeSession() {
+        resumes++
+        throw new Error('pending handles must never be resumed')
+      },
+      async exec({ handle }) {
+        if (!sessions.has(decoder.decode(handle))) throw new Error('session was deleted')
+        return { exitCode: 0, stdout: encoder.encode('ok'), stderr: encoder.encode(''), truncated: false, durationMs: 1 }
+      },
+      async deleteSession({ handle }) {
+        deletes++
+        const id = decoder.decode(handle)
+        if (deletes === 1) await firstDeleteGate
+        sessions.delete(id)
+        deletedHandles.push(id)
+      },
+    }
+    const options = {
+      hostScope: 'app', tenantId: 'tenant', accessPointRoot: root, runtimeRoot: '/runtime',
+      handleStore: store, agentCore: remote, leaseForMs: 90,
+    }
+    const context = { workspaceId: 'ws', workspaceRoot: hostRoot, sessionId: 's' }
+    const predecessor = createAgentCoreRemoteEfsRuntimeMode({ ...options, leaseOwner: 'predecessor' })
+    await expect(predecessor.create(context)).rejects.toThrow(/cleanup ambiguous/)
+
+    const successor = createAgentCoreRemoteEfsRuntimeMode({ ...options, leaseOwner: 'successor' })
+    await expect(successor.create(context)).rejects.toThrow(/pending session was resolved/)
+    const published = await successor.create(context)
+    expect({ creates, resumes, deletes }).toEqual({ creates: 2, resumes: 0, deletes: 2 })
+
+    releaseFirstDelete()
+    await vi.waitFor(() => expect(deletedHandles).toContain('delete-race-session-1'))
+    await expect(published.sandbox.exec('still-alive')).resolves.toMatchObject({ exitCode: 0 })
+    expect(sessions.has('delete-race-session-2')).toBe(true)
+    await published.disposeRuntime?.()
   })
 
   it.each([
@@ -411,12 +527,13 @@ describe('application-owned shared-EFS runtime modes', () => {
     expect([...f.store.rows.values()][0]!.handle).not.toBeNull()
   })
 
-  it('cleans up a created session when durable handle publication loses its fence', async () => {
+  it('does not delete without a durable pending handle when persistence loses its fence', async () => {
     const store = new Store()
     store.failUpdate = true
     const f = await fixture('ws', { store })
     await expect(f.adapter.create(f.context)).rejects.toThrow(/fence/)
-    expect(f.remote.stats().deletes).toBe(1)
+    expect(f.remote.stats().deletes).toBe(0)
+    expect([...store.rows.values()][0]!.creating).toBe(true)
   })
 
   it('reconstructs the real Postgres store, adapter, and client across a host restart', async () => {
@@ -475,6 +592,79 @@ describe('application-owned shared-EFS runtime modes', () => {
       await connectionB.sql.end()
     }
   })
+
+  it('blocks a stale exec after a delayed renewal and real Postgres takeover', async () => {
+    const databaseUrl = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
+    await runMigrations({ databaseUrl } as never)
+    const root = await mkdtemp(join(tmpdir(), 'agentcore-postgres-takeover-'))
+    roots.push(root)
+    const hostRoot = join(root, 'tenant', 'takeover-ws')
+    await mkdir(hostRoot, { recursive: true })
+    const hostScope = `agentcore-takeover-${process.pid}-${crypto.randomUUID()}`
+    const cipher = createSandboxHandleCipher(randomBytes(32))
+    const connectionA = createDatabase({ databaseUrl } as never)
+    const connectionB = createDatabase({ databaseUrl } as never)
+    let delayRenewal = false
+    let releaseRenewal!: () => void
+    const renewalGate = new Promise<void>((resolve) => { releaseRenewal = resolve })
+    let staleExecs = 0
+    const sessions = new Map<string, string>()
+    const runtimeRoot = '/runtime/tenant/takeover-ws'
+    const makeClient = (stale = false): AgentCoreRuntimeClient => ({
+      async createSession({ runtimeCwd }) {
+        const handle = encoder.encode(`takeover-session-${sessions.size + 1}`)
+        sessions.set(decoder.decode(handle), runtimeCwd)
+        return { handle, runtimeCwd }
+      },
+      async resumeSession({ handle }) {
+        return { runtimeCwd: sessions.get(decoder.decode(handle))! }
+      },
+      async exec() {
+        if (stale) staleExecs++
+        return { exitCode: 0, stdout: encoder.encode(''), stderr: encoder.encode(''), truncated: false, durationMs: 1 }
+      },
+      async deleteSession() {},
+    })
+    const postgresA = new PostgresFencedSandboxHandleStore(connectionA.db, cipher)
+    const delayedStore: FencedSandboxHandleStore = {
+      claim: (input) => postgresA.claim(input),
+      beginCreate: (fence) => postgresA.beginCreate(fence),
+      async renew(fence, leaseForMs) {
+        if (delayRenewal) await renewalGate
+        return await postgresA.renew(fence, leaseForMs)
+      },
+      update: (fence, handle, version) => postgresA.update(fence, handle, version),
+      publish: (fence) => postgresA.publish(fence),
+      release: (fence) => postgresA.release(fence),
+      delete: (fence, cleanup) => postgresA.delete(fence, cleanup),
+    }
+    const context = { workspaceId: 'takeover-ws', workspaceRoot: hostRoot, sessionId: 'session' }
+    try {
+      const oldAdapter = createAgentCoreRemoteEfsRuntimeMode({
+        hostScope, tenantId: 'tenant', accessPointRoot: root, runtimeRoot: '/runtime',
+        handleStore: delayedStore, agentCore: makeClient(true), leaseOwner: 'old-process', leaseForMs: 150,
+      })
+      const oldPair = await oldAdapter.create(context)
+      delayRenewal = true
+      const staleExecution = oldPair.sandbox.exec('must-not-run')
+      await expect(staleExecution).rejects.toThrow(/fence was lost/)
+      expect(staleExecs).toBe(0)
+
+      const successorAdapter = createAgentCoreRemoteEfsRuntimeMode({
+        hostScope, tenantId: 'tenant', accessPointRoot: root, runtimeRoot: '/runtime',
+        handleStore: new PostgresFencedSandboxHandleStore(connectionB.db, cipher),
+        agentCore: makeClient(), leaseOwner: 'successor-process', leaseForMs: 1_000,
+      })
+      const successor = await successorAdapter.create(context)
+      releaseRenewal()
+      await expect(oldPair.disposeRuntime?.()).rejects.toThrow(/fence/)
+      await successor.disposeRuntime?.()
+    } finally {
+      releaseRenewal()
+      await connectionB.sql`DELETE FROM fenced_sandbox_handles WHERE host_scope = ${hostScope}`
+      await Promise.all([connectionA.sql.end(), connectionB.sql.end()])
+    }
+  }, 10_000)
 
   it('allows distinct workspace keys to acquire independently while rejecting one key twice', async () => {
     const store = new Store()

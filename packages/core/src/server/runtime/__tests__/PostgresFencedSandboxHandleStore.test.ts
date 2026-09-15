@@ -148,6 +148,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     const attempt = await a.beginCreate(fence(oldLease))
     expect(attempt?.status).toBe('started')
     await a.update(fence(oldLease), bytes(SECRET), 7)
+    await a.publish(fence(oldLease))
 
     const [raw] = await sqlA<{
       encrypted_handle: Uint8Array
@@ -157,9 +158,10 @@ describe('PostgresFencedSandboxHandleStore', () => {
       handle_version: number
       create_attempt_idempotency_key: string
       create_attempt_state: string
+      handle_state: string
     }[]>`
       SELECT encrypted_handle, encryption_nonce, encryption_auth_tag, encryption_version,
-             handle_version, create_attempt_idempotency_key, create_attempt_state
+             handle_version, handle_state, create_attempt_idempotency_key, create_attempt_state
       FROM fenced_sandbox_handles
       WHERE host_scope = ${KEY.hostScope}
         AND workspace_id = ${KEY.workspaceId}
@@ -171,6 +173,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
       handle_version: 7,
       create_attempt_idempotency_key: attempt?.idempotencyKey,
       create_attempt_state: 'completed',
+      handle_state: 'published',
     })
     expect(Buffer.from(raw!.encrypted_handle).includes(Buffer.from(SECRET))).toBe(false)
     expect(raw!.encryption_nonce).toHaveLength(12)
@@ -181,7 +184,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     const nextLease = await claim(restarted, KEY, 'new-process')
     expect(nextLease.generation).toBe(oldLease.generation + 1)
     expect(text(nextLease.handle)).toBe(SECRET)
-    await expect(a.renew(fence(oldLease), 10_000)).resolves.toBe(false)
+    await expect(a.renew(fence(oldLease), 10_000)).resolves.toBeNull()
     await expect(a.update(fence(oldLease), bytes('stale-write'), 2)).resolves.toBe(false)
     await expect(a.release(fence(oldLease))).resolves.toBe(false)
     await expect(a.delete(fence(oldLease), {
@@ -241,6 +244,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     const first = await claim(a, KEY, 'first-process')
     await a.beginCreate(fence(first))
     await a.update(fence(first), bytes(SECRET), 1)
+    await a.publish(fence(first))
     await expireLease(sqlA)
     const second = await claim(b, KEY, 'second-process')
     expect(text(second.handle)).toBe(SECRET)
@@ -259,6 +263,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     const lease = await claim(a)
     await a.beginCreate(fence(lease))
     await a.update(fence(lease), bytes(SECRET), 4)
+    await a.publish(fence(lease))
     const [old] = await sqlA<{
       encrypted_handle: Uint8Array
       encryption_nonce: Uint8Array

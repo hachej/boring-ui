@@ -86,6 +86,7 @@ describe('0029 fenced sandbox handles migration', () => {
         new TextEncoder().encode('fenced-handle'),
         1,
       )).toBe(true)
+      expect(await deployed.publish({ key, generation: first.generation, leaseToken: first.leaseToken })).toBe(true)
       expect(await deployed.release({ key, generation: first.generation, leaseToken: first.leaseToken })).toBe(true)
 
       const beforeRollback = await client<{ generation: number; encrypted_handle: Uint8Array; updated_at: Date }[]>`

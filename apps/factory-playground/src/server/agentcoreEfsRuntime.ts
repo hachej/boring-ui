@@ -25,7 +25,7 @@ export interface AgentCoreRuntimeClient {
   resumeSession(input: { handle: Uint8Array; signal: AbortSignal }): Promise<{ runtimeCwd: string }>
   exec(input: { handle: Uint8Array; command: string; cwd: string; options?: ExecOptions }): ReturnType<Sandbox['exec']>
   /** A thrown transport error is conservatively treated as an ambiguous delete outcome. */
-  deleteSession(input: { handle: Uint8Array }): Promise<void | AgentCoreDeleteResult>
+  deleteSession(input: { handle: Uint8Array; signal: AbortSignal }): Promise<void | AgentCoreDeleteResult>
 }
 
 export interface SharedEfsRuntimeOptions {
@@ -137,11 +137,11 @@ function abortError(signal: AbortSignal, fallback: string): Error {
   return signal.reason instanceof Error ? signal.reason : new Error(fallback)
 }
 
-export function createEcsLocalEfsRuntimeMode(
+export function createEcsLocalEfsProvider(
   options: Omit<SharedEfsRuntimeOptions, 'handleStore' | 'agentCore' | 'leaseOwner'>,
-): RuntimeModeAdapter {
+): SandboxProviderV1 {
   const direct = createDirectSandboxProvider()
-  const provider: SandboxProviderV1 = {
+  return {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: ECS_LOCAL_EFS_MODE as SandboxProviderV1['providerId'],
     capabilities: direct.capabilities,
@@ -154,9 +154,14 @@ export function createEcsLocalEfsRuntimeMode(
     },
     async close() { await direct.close?.() },
   }
+}
+
+export function createEcsLocalEfsRuntimeMode(
+  options: Omit<SharedEfsRuntimeOptions, 'handleStore' | 'agentCore' | 'leaseOwner'>,
+): RuntimeModeAdapter {
   return createProviderRuntimeModeAdapter({
     id: ECS_LOCAL_EFS_MODE,
-    provider,
+    provider: createEcsLocalEfsProvider(options),
     preflight: (context) => preflightEfs(options, context),
     runtimeHost: sandboxRuntimeHostOperations,
     workspaceFsCapability: 'strong',
@@ -167,9 +172,9 @@ export function createEcsLocalEfsRuntimeMode(
 }
 
 /** Creates the atomic Workspace/Sandbox pair; no builtin mode registry or auto detection is modified. */
-export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOptions): RuntimeModeAdapter {
+export function createAgentCoreRemoteEfsProvider(options: SharedEfsRuntimeOptions): SandboxProviderV1 {
   const leaseForMs = options.leaseForMs ?? 60_000
-  const provider: SandboxProviderV1 = {
+  return {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: AGENTCORE_PROVIDER as SandboxProviderV1['providerId'],
     capabilities: {
@@ -192,60 +197,118 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
       const lifecycle = new AbortController()
       let state: 'active' | 'disposing' | 'disposed' = 'active'
       let fenceLost = false
+      let confirmedLeaseDeadlineMs = Date.parse(lease.leaseExpiresAt)
+      if (!Number.isFinite(confirmedLeaseDeadlineMs)) throw new Error('AgentCore lease has an invalid deadline')
       let renewTimer: NodeJS.Timeout | undefined
+      let deadlineTimer: NodeJS.Timeout | undefined
       let renewTail = Promise.resolve()
       let disposalPromise: Promise<void> | undefined
       const inFlight = new Set<Promise<unknown>>()
+      const minimumLeaseValidityMs = Math.max(1, Math.floor(leaseForMs / 3))
 
-      const stopRenewal = () => {
+      const stopPeriodicRenewal = () => {
         if (renewTimer) clearTimeout(renewTimer)
         renewTimer = undefined
+      }
+      const stopTimers = () => {
+        stopPeriodicRenewal()
+        if (deadlineTimer) clearTimeout(deadlineTimer)
+        deadlineTimer = undefined
       }
       const loseFence = (cause?: unknown) => {
         if (fenceLost) return
         fenceLost = true
-        stopRenewal()
+        stopTimers()
         lifecycle.abort(new Error('AgentCore session ownership fence was lost', { cause }))
+      }
+      const armDeadline = () => {
+        if (deadlineTimer) clearTimeout(deadlineTimer)
+        const remaining = confirmedLeaseDeadlineMs - Date.now()
+        if (remaining <= 0) {
+          loseFence(new Error('AgentCore session lease deadline was reached'))
+          return
+        }
+        deadlineTimer = setTimeout(() => {
+          deadlineTimer = undefined
+          loseFence(new Error('AgentCore session lease deadline was reached'))
+        }, remaining)
+        deadlineTimer.unref()
+      }
+      armDeadline()
+      const raceLifecycleAbort = async <T>(operation: Promise<T>): Promise<T> => {
+        let rejectAbort!: (error: Error) => void
+        const onAbort = () => rejectAbort(abortError(lifecycle.signal, 'AgentCore session ownership fence was lost'))
+        try {
+          const aborted = new Promise<never>((_, reject) => { rejectAbort = reject })
+          lifecycle.signal.addEventListener('abort', onAbort, { once: true })
+          return await Promise.race([operation, aborted])
+        } finally {
+          lifecycle.signal.removeEventListener('abort', onAbort)
+        }
       }
       const renewFence = (): Promise<void> => {
         const renewal = renewTail.then(async () => {
-          if (state !== 'active' || lifecycle.signal.aborted) throw abortError(lifecycle.signal, 'AgentCore runtime is not active')
-          let renewed: boolean
+          if (state !== 'active' || lifecycle.signal.aborted || Date.now() >= confirmedLeaseDeadlineMs) {
+            loseFence(new Error('AgentCore session lease deadline was reached'))
+            throw abortError(lifecycle.signal, 'AgentCore runtime is not active')
+          }
+          let renewedDeadline: string | null
           try {
-            renewed = await options.handleStore.renew(fence, leaseForMs)
+            renewedDeadline = await raceLifecycleAbort(options.handleStore.renew(fence, leaseForMs))
           } catch (error) {
             loseFence(error)
             throw abortError(lifecycle.signal, 'AgentCore session ownership fence was lost')
           }
-          if (!renewed) {
+          if (lifecycle.signal.aborted || !renewedDeadline) {
             loseFence()
             throw abortError(lifecycle.signal, 'AgentCore session ownership fence was lost')
           }
+          const nextDeadline = Date.parse(renewedDeadline)
+          if (!Number.isFinite(nextDeadline) || nextDeadline - Date.now() < minimumLeaseValidityMs) {
+            loseFence(new Error('AgentCore renewed lease has insufficient remaining validity'))
+            throw abortError(lifecycle.signal, 'AgentCore session ownership fence was lost')
+          }
+          confirmedLeaseDeadlineMs = nextDeadline
+          armDeadline()
         })
         renewTail = renewal.catch(() => undefined)
         return renewal
+      }
+      const authorizeRemoteSideEffect = async (): Promise<void> => {
+        await renewFence()
+        if (lifecycle.signal.aborted || Date.now() >= confirmedLeaseDeadlineMs
+            || confirmedLeaseDeadlineMs - Date.now() < minimumLeaseValidityMs) {
+          loseFence(new Error('AgentCore session lease deadline was reached'))
+          throw abortError(lifecycle.signal, 'AgentCore session ownership fence was lost')
+        }
       }
       const scheduleRenewal = () => {
         if (state !== 'active' || lifecycle.signal.aborted) return
         renewTimer = setTimeout(() => {
           renewTimer = undefined
           void renewFence().then(scheduleRenewal, () => undefined)
-        }, Math.max(1, Math.floor(leaseForMs / 3)))
+        }, minimumLeaseValidityMs)
         renewTimer.unref()
       }
       scheduleRenewal()
 
       let handle = lease.handle
-      let createdUnpublished = false
+      let createdUnpublished = lease.handleState === 'pending-validation'
       let cleanupStarted = false
-      let published = false
+      let published = lease.handleState === 'published'
 
       const cleanupUnpublished = async (reason: string): Promise<AgentCoreDeleteResult> => {
-        if (!handle) throw new Error('AgentCore unpublished cleanup has no durable handle')
+        if (!handle || !createdUnpublished) throw new Error('AgentCore unpublished cleanup has no durable pending handle')
         cleanupStarted = true
         let cleanup: AgentCoreDeleteResult
         try {
-          cleanup = await options.agentCore.deleteSession({ handle }) ?? { outcome: 'succeeded' }
+          await authorizeRemoteSideEffect()
+          // Cleanup is bounded by this confirmed lease. Do not keep extending
+          // ownership around a provider delete that may never settle.
+          stopPeriodicRenewal()
+          cleanup = await raceLifecycleAbort(
+            options.agentCore.deleteSession({ handle, signal: lifecycle.signal }),
+          ) ?? { outcome: 'succeeded' }
         } catch (error) {
           cleanup = { outcome: 'ambiguous', detail: errorDetail(error) }
         }
@@ -254,7 +317,9 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
           detail: [reason, cleanup.detail].filter(Boolean).join(': '),
           recordedAt: new Date().toISOString(),
         }
-        const deleted = await options.handleStore.delete(fence, durable).catch(() => false)
+        const deleted = lifecycle.signal.aborted
+          ? false
+          : await options.handleStore.delete(fence, durable).catch(() => false)
         if (cleanup.outcome !== 'succeeded') {
           await options.handleStore.release(fence).catch(() => false)
           throw new Error(`AgentCore unpublished session cleanup ${cleanup.outcome}: ${durable.detail}`)
@@ -264,41 +329,58 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
       }
 
       try {
+        if (handle && lease.handleState === null) {
+          throw new Error('AgentCore durable handle has no publication state; operator reconciliation required')
+        }
+        if (createdUnpublished) {
+          const retryingCleanupDebt = Boolean(lease.cleanup && lease.cleanup.outcome !== 'succeeded')
+          await cleanupUnpublished(retryingCleanupDebt
+            ? 'retry prior unpublished-session cleanup debt'
+            : 'reconcile predecessor pending-validation session')
+          throw new Error(retryingCleanupDebt
+            ? 'AgentCore cleanup debt was resolved; retry acquisition'
+            : 'AgentCore pending session was resolved; retry acquisition')
+        }
         if (lease.cleanup && lease.cleanup.outcome !== 'succeeded') {
-          if (!handle) throw new Error('AgentCore cleanup debt has no durable handle; operator reconciliation required')
-          await cleanupUnpublished('retry prior unpublished-session cleanup debt')
-          throw new Error('AgentCore cleanup debt was resolved; retry acquisition')
+          throw new Error('AgentCore published session unexpectedly has cleanup debt; operator reconciliation required')
         }
 
         if (handle) {
+          await authorizeRemoteSideEffect()
           const resumed = await options.agentCore.resumeSession({ handle, signal: lifecycle.signal })
           const reported = assertRemoteCwd(runtimeRoot, resumed.runtimeCwd, 'AgentCore resumed runtime cwd')
           if (reported !== runtimeRoot) throw new Error('AgentCore resumed runtime cwd does not match authorized EFS namespace')
-          // Resume is not publishable until a current fenced mutation verifies this owner.
           await renewFence()
         } else {
           const attempt = await options.handleStore.beginCreate(fence)
           if (!attempt || attempt.status !== 'started') throw new Error('AgentCore create could not acquire a durable idempotency key')
+          await authorizeRemoteSideEffect()
           const created = await options.agentCore.createSession({
             idempotencyKey: attempt.idempotencyKey,
             runtimeCwd: runtimeRoot,
             signal: lifecycle.signal,
           })
           handle = created.handle
-          createdUnpublished = true
 
-          // Persist the opaque handle before validating provider metadata so every
-          // later path/fence failure has durable, retryable cleanup material.
+          // The provider handle remains durably pending until metadata validation
+          // and a current fenced publication transition both succeed.
           if (!await options.handleStore.update(fence, handle, 1)) {
             loseFence()
             throw abortError(lifecycle.signal, 'AgentCore session handle lost its ownership fence')
           }
+          createdUnpublished = true
           const reported = assertRemoteCwd(runtimeRoot, created.runtimeCwd, 'AgentCore created runtime cwd')
           if (reported !== runtimeRoot) throw new Error('AgentCore created runtime cwd does not match authorized EFS namespace')
           await renewFence()
+          if (!await options.handleStore.publish(fence)) {
+            loseFence()
+            throw abortError(lifecycle.signal, 'AgentCore session publication lost its ownership fence')
+          }
+          createdUnpublished = false
+          published = true
         }
 
-        if (lifecycle.signal.aborted || state !== 'active' || fenceLost) {
+        if (lifecycle.signal.aborted || state !== 'active' || fenceLost || !published) {
           throw abortError(lifecycle.signal, 'AgentCore runtime is not active')
         }
         const runtimeContext = { runtimeCwd: runtimeRoot }
@@ -327,12 +409,16 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
               : lifecycle.signal
             if (signal.aborted) return Promise.reject(abortError(signal, 'AgentCore exec was aborted'))
 
-            const execution = Promise.resolve().then(() => options.agentCore.exec({
-              handle: handle!,
-              command,
-              cwd,
-              options: { ...execOptions, signal },
-            }))
+            const execution = Promise.resolve().then(async () => {
+              await authorizeRemoteSideEffect()
+              if (signal.aborted) throw abortError(signal, 'AgentCore exec was aborted')
+              return await options.agentCore.exec({
+                handle: handle!,
+                command,
+                cwd,
+                options: { ...execOptions, signal },
+              })
+            })
             inFlight.add(execution)
             void execution.finally(() => inFlight.delete(execution)).catch(() => undefined)
             return execution
@@ -343,7 +429,7 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
           if (state === 'disposed') return Promise.resolve()
           if (disposalPromise) return disposalPromise
           state = 'disposing'
-          stopRenewal()
+          stopTimers()
           lifecycle.abort(new Error('AgentCore runtime is disposing'))
           disposalPromise = (async () => {
             await Promise.allSettled([...inFlight])
@@ -360,25 +446,31 @@ export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOpt
         published = true
         return { workspace, sandbox, dispose }
       } catch (error) {
-        stopRenewal()
-        lifecycle.abort(error)
-        await renewTail
         if (createdUnpublished && !published && handle && !cleanupStarted) {
           try {
             await cleanupUnpublished(`pair publication failed: ${errorDetail(error)}`)
           } catch (cleanupError) {
+            stopTimers()
+            lifecycle.abort(error)
+            await renewTail
             throw new Error(errorDetail(cleanupError), { cause: error })
           }
-        } else if (!cleanupStarted) {
-          await options.handleStore.release(fence).catch(() => false)
         }
+        stopTimers()
+        lifecycle.abort(error)
+        await renewTail
+        if (!cleanupStarted) await options.handleStore.release(fence).catch(() => false)
         throw error
       }
     },
   }
+}
+
+/** Creates the remote runtime-mode adapter; no builtin mode registry or auto detection is modified. */
+export function createAgentCoreRemoteEfsRuntimeMode(options: SharedEfsRuntimeOptions): RuntimeModeAdapter {
   return createProviderRuntimeModeAdapter({
     id: AGENTCORE_REMOTE_EFS_MODE,
-    provider,
+    provider: createAgentCoreRemoteEfsProvider(options),
     preflight: (context) => preflightEfs(options, context),
     runtimeHost: sandboxRuntimeHostOperations,
     workspaceFsCapability: 'strong',

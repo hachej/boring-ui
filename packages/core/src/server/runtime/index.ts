@@ -5,17 +5,6 @@ export type {
   WorkspaceRuntimeStoreLike,
   WorkspaceSandboxHandleRecord,
 } from './WorkspaceRuntimeSandboxHandleStore.js'
-export {
-  CoreFencedSandboxHandleAdmin,
-  CoreFencedSandboxHandleStore,
-  InMemorySandboxHandleBackend,
-  createSandboxHandleCipher,
-} from './FencedSandboxHandleStore.js'
-export {
-  PostgresFencedSandboxHandleAdmin,
-  PostgresFencedSandboxHandleForceAdmin,
-  PostgresFencedSandboxHandleStore,
-} from './PostgresFencedSandboxHandleStore.js'
 export type {
   EncryptedSandboxHandle,
   FencedSandboxHandleAdmin,
@@ -34,5 +23,6 @@ export type {
   SandboxHandleInspection,
   SandboxHandleKey,
   SandboxHandleLease,
+  SandboxHandlePublicationState,
   SandboxOperatorEvidence,
 } from './FencedSandboxHandleStore.js'

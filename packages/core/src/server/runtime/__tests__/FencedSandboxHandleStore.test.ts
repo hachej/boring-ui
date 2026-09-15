@@ -45,7 +45,8 @@ async function claim(store: CoreFencedSandboxHandleStore, leaseOwner = 'worker',
 async function createHandle(store: CoreFencedSandboxHandleStore, lease: SandboxHandleLease, value = 'opaque-provider-handle') {
   const attempt = await store.beginCreate(fence(lease))
   expect(attempt?.status).toBe('started')
-  return store.update(fence(lease), bytes(value), 1)
+  expect(await store.update(fence(lease), bytes(value), 1)).toBe(true)
+  return store.publish(fence(lease))
 }
 
 describe('CoreFencedSandboxHandleStore', () => {
@@ -78,7 +79,7 @@ describe('CoreFencedSandboxHandleStore', () => {
     if (!result || result.status !== 'claimed') throw new Error('expected takeover')
     expect(result.generation).toBe(old.generation + 1)
     expect(text(result.handle)).toBe('opaque-provider-handle')
-    expect(await store.renew(fence(old), 10)).toBe(false)
+    expect(await store.renew(fence(old), 10)).toBeNull()
     expect(await store.update(fence(old), bytes('stale'), 2)).toBe(false)
     expect(await store.release(fence(old))).toBe(false)
     expect(await store.delete(fence(old), cleanup('succeeded', '2026-09-14T00:00:01Z'))).toBe(false)
