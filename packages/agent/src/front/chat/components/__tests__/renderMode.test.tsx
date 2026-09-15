@@ -129,15 +129,8 @@ describe('PiConversationSurface messages-only status line', () => {
     expect(screen.getByText('Done — your client list now shows the last contact date.')).toBeTruthy()
   })
 
-  test('shows one quiet working line while a turn streams', () => {
+  test('renders no working line in the transcript; the composer owns that status', () => {
     renderSurface('messages-only', true)
-    const working = document.querySelectorAll('[data-boring-agent-part="messages-only-working"]')
-    expect(working.length).toBe(1)
-    expect(working[0]?.textContent).toContain('Working on it')
-  })
-
-  test('hides the working line once the turn settles', () => {
-    renderSurface('messages-only', false)
     expect(document.querySelector('[data-boring-agent-part="messages-only-working"]')).toBeNull()
   })
 

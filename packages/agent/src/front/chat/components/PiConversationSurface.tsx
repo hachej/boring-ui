@@ -16,7 +16,7 @@ import {
 } from '../../primitives/conversation'
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
-import { MESSAGES_ONLY_WORKING_LABEL, type ChatRenderMode } from '../renderMode'
+import type { ChatRenderMode } from '../renderMode'
 import type { MessageMention, MessageMentionCatalog } from './MessageMentions'
 import { hasTerminalChatError } from './terminalChatErrors'
 
@@ -161,17 +161,6 @@ export function PiConversationSurface({
             messagesOnlyVisibleTools={messagesOnlyVisibleTools}
           />
         ))}
-        {renderMode === 'messages-only' && isStreaming ? (
-          <div
-            role="status"
-            aria-live="polite"
-            data-boring-agent-part="messages-only-working"
-            className="flex items-center gap-2 text-[13px] text-muted-foreground"
-          >
-            <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-muted-foreground/60 motion-reduce:animate-none" />
-            <span>{MESSAGES_ONLY_WORKING_LABEL}</span>
-          </div>
-        ) : null}
         <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} historyEmpty={historyEmpty} />
       </ConversationContent>
       <ConversationScrollButton />

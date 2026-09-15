@@ -9,4 +9,5 @@
  */
 export type ChatRenderMode = 'full' | 'messages-only'
 
+/** @deprecated The composer shows the working status; the transcript no longer duplicates it. */
 export const MESSAGES_ONLY_WORKING_LABEL = 'Working on it…'
