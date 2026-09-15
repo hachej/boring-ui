@@ -80,12 +80,22 @@ export function createReloadTool(options: ReloadOptions): AgentTool {
   return {
     name: 'reload_my_tools',
     description:
-      'Load the tools you just added or changed under .pi/extensions/ into this conversation, without any restart. Call it right after writing or editing an extension file, and confirm to the user only what the result reports.',
+      'Load the tools you just added or changed under .pi/extensions/ into this conversation, without any restart. Call it right after writing or editing an extension file. The load happens right after this call returns; your NEXT step in this same reply can already use the new tool. If the new tool is then missing, the file has an error: read it, fix it, reload again. Never claim a tool exists before you have used it or seen it listed.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     async execute(_params, ctx) {
       options.sessions.remember(ctx.sessionId)
-      const result = await requestReload(options, 'tool', ctx.sessionId)
-      return text(result.ok ? `Reloaded. ${result.summary}` : result.summary, !result.ok)
+      if (!ctx.sessionId) return text('No live conversation to reload.', true)
+      // Pi's reload swaps the extension runtime and invalidates the runner
+      // this very call is being delivered through. Awaiting it here would turn
+      // our own result into a stale-context error. So return first, reload a
+      // moment later, once nothing is in flight.
+      const sessionId = ctx.sessionId
+      setTimeout(() => {
+        void requestReload(options, 'tool', sessionId).then((result) => {
+          if (!result.ok) options.log?.(`deferred reload failed: ${result.summary}`)
+        })
+      }, 250)
+      return text('Reloading your tools now. Continue: your next step can use the new tool. If it is missing, the extension file has an error — fix it and reload again.')
     },
   }
 }
