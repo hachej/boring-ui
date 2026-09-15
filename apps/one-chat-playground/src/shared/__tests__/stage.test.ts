@@ -15,8 +15,12 @@ import {
 } from '../allowedOrigins.js'
 
 describe('stageReducer', () => {
-  it('starts with no sheet', () => {
-    expect(initialStageState).toEqual({ sheet: null, activity: null })
+  it('starts full while the app is empty', () => {
+    expect(initialStageState).toEqual({
+      sheet: null,
+      activity: null,
+      mobileChat: { mode: 'full', appReady: false, unseenAssistant: false, questionPending: false },
+    })
   })
 
   it('raises a sheet on stage.show', () => {
@@ -41,7 +45,10 @@ describe('stageReducer', () => {
 
   it('clears back to the base app', () => {
     const shown = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
-    expect(stageReducer(shown, { type: 'stage.clear' })).toEqual({ sheet: null, activity: null })
+    expect(stageReducer(shown, { type: 'stage.clear' })).toEqual({
+      ...initialStageState,
+      mobileChat: { ...initialStageState.mobileChat, mode: 'button' },
+    })
   })
 
   it('is referentially stable for no-op events', () => {
@@ -80,6 +87,45 @@ describe('stageReducer', () => {
     })
     expect(done.activity?.milestone).toBe('done')
     expect(stageReducer(done, { type: 'activity.clear' })).toEqual(initialStageState)
+  })
+
+  it('moves button → half → full, then a downward hide returns to button', () => {
+    const ready = stageReducer(initialStageState, { type: 'app.ready' })
+    expect(ready.mobileChat.mode).toBe('button')
+    const half = stageReducer(ready, { type: 'chat.open' })
+    expect(half.mobileChat.mode).toBe('half')
+    const full = stageReducer(half, { type: 'chat.expand' })
+    expect(full.mobileChat.mode).toBe('full')
+    expect(stageReducer(full, { type: 'chat.hide' }).mobileChat.mode).toBe('button')
+  })
+
+  it('collapses for stage.show and marks a new hidden assistant message unseen', () => {
+    const full = stageReducer(stageReducer(initialStageState, { type: 'app.ready' }), { type: 'chat.expand' })
+    const shown = stageReducer(full, { type: 'stage.show', url: 'http://localhost:9/sketch' })
+    expect(shown.mobileChat.mode).toBe('button')
+    const messaged = stageReducer(shown, { type: 'chat.assistant' })
+    expect(messaged.mobileChat.unseenAssistant).toBe(true)
+    expect(stageReducer(messaged, { type: 'chat.open' }).mobileChat).toMatchObject({
+      mode: 'half',
+      unseenAssistant: false,
+    })
+  })
+
+  it('keeps a pending question at least half open until it is answered', () => {
+    const button = stageReducer(initialStageState, { type: 'app.ready' })
+    const pending = stageReducer(button, { type: 'chat.question', pending: true })
+    expect(pending.mobileChat.mode).toBe('half')
+    expect(stageReducer(pending, { type: 'chat.hide' }).mobileChat.mode).toBe('half')
+    expect(stageReducer(pending, { type: 'stage.show', url: 'http://localhost:9/sketch' }).mobileChat.mode).toBe('half')
+    const answered = stageReducer(pending, { type: 'chat.question', pending: false })
+    expect(stageReducer(answered, { type: 'chat.hide' }).mobileChat.mode).toBe('button')
+  })
+
+  it('restores phone modes from history without letting Back hide a pending question', () => {
+    const ready = stageReducer(initialStageState, { type: 'app.ready' })
+    expect(stageReducer(ready, { type: 'chat.history', mode: 'full' }).mobileChat.mode).toBe('full')
+    const pending = stageReducer(ready, { type: 'chat.question', pending: true })
+    expect(stageReducer(pending, { type: 'chat.history', mode: 'button' }).mobileChat.mode).toBe('half')
   })
 
   it('ignores unknown events', () => {

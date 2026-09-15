@@ -43,9 +43,13 @@ export function QuestionCard({
   if (state.kind === 'gone') return null
   if (state.kind === 'answered') {
     return (
-      <p className={`${CARD_CLASS} text-muted-foreground`} data-testid="one-chat-question-answered">
-        You said: {describeAnswer(state.values, state.question)}
-      </p>
+      <div className={CARD_CLASS} data-testid="one-chat-question-answered">
+        {state.question?.title ? <p className="font-medium">{state.question.title}</p> : null}
+        {state.question?.context ? <p className="mt-1 text-muted-foreground">{state.question.context}</p> : null}
+        <p className={`${state.question?.title || state.question?.context ? 'mt-2 ' : ''}text-muted-foreground`}>
+          You said: {describeAnswer(state.values, state.question)}
+        </p>
+      </div>
     )
   }
   return <PendingCard question={state.question} submitting={submitting} onAnswer={onAnswer} />

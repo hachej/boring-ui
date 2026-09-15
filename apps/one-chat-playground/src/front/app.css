@@ -7,6 +7,40 @@
  * the agent front styles both use [data-theme="dark"]). */
 @custom-variant dark (&:is([data-theme="dark"], [data-theme="dark"] *));
 
+/* With no explicit data-theme, follow the OS while keeping the DOM unpinned. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --boring-background: oklch(0.145 0.004 285.823);
+    --boring-foreground: oklch(0.985 0 0);
+    --boring-card: oklch(0.145 0.004 285.823);
+    --boring-card-foreground: oklch(0.985 0 0);
+    --boring-popover: oklch(0.145 0.004 285.823);
+    --boring-popover-foreground: oklch(0.985 0 0);
+    --boring-primary: oklch(0.985 0 0);
+    --boring-primary-foreground: oklch(0.205 0.006 285.885);
+    --boring-secondary: oklch(0.269 0.006 285.885);
+    --boring-secondary-foreground: oklch(0.985 0 0);
+    --boring-muted: oklch(0.269 0.006 285.885);
+    --boring-muted-foreground: oklch(0.708 0.01 286.073);
+    --boring-accent: oklch(0.72 0.13 65);
+    --boring-accent-foreground: oklch(0.18 0.02 65);
+    --boring-accent-soft: oklch(0.28 0.04 65);
+    --boring-success: oklch(0.74 0.14 145);
+    --boring-success-foreground: oklch(0.12 0.004 285.823);
+    --boring-success-soft: oklch(0.22 0.04 145);
+    --boring-destructive: oklch(0.396 0.141 25.768);
+    --boring-destructive-foreground: oklch(0.985 0 0);
+    --boring-attention: oklch(0.8 0.11 75);
+    --boring-border: oklch(0.269 0.006 285.885);
+    --boring-input: oklch(0.269 0.006 285.885);
+    --boring-ring: oklch(0.72 0.13 65);
+    --boring-canvas: oklch(0.12 0.004 285.823);
+    --boring-surface-chat: oklch(0.165 0.004 285.823);
+    --boring-surface-workbench: oklch(0.165 0.004 285.823);
+    --boring-surface-workbench-left: oklch(0.195 0.004 285.823);
+  }
+}
+
 /* App-local Tailwind scan roots only. Agent classes ship precompiled via
  * @hachej/boring-agent/front/styles.css, imported from main.tsx. */
 @source "./**/*.{ts,tsx}";
@@ -56,12 +90,48 @@
   .one-chat-activity-dot { animation: none; }
 }
 
-/* Chat left, screen right. One column under a phone width. */
+/* Chat left, screen right. */
 .one-chat-shell {
   display: grid;
   grid-template-columns: var(--one-chat-chat-width, 400px) 6px minmax(0, 1fr);
   height: 100%;
   height: 100dvh;
+}
+
+/* One icon, no header bar. Its 40px target stays clear of transcript actions. */
+.one-chat-theme-toggle {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  z-index: 2;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--boring-radius-md);
+  background: transparent;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.one-chat-theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.one-chat-theme-toggle:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+.one-chat-theme-toggle:focus-visible,
+.one-chat-launcher:focus-visible {
+  outline: 2px solid var(--boring-ring);
+  outline-offset: 2px;
 }
 
 /* The drag handle: a hairline that widens on hover and while dragging. */
@@ -80,37 +150,117 @@
 /* Iframes swallow pointer events; disable them for the stage while dragging. */
 .one-chat-shell[data-resizing] { cursor: col-resize; user-select: none; }
 .one-chat-shell[data-resizing] iframe { pointer-events: none; }
-.one-chat-shell[data-mobile] .one-chat-resizer { cursor: row-resize; }
-.one-chat-shell[data-mobile][data-resizing] { cursor: row-resize; }
+.one-chat-mobile-sheet,
+.one-chat-launcher { display: none; }
 
-/* Phones: the app on top, the chat as a resizable bottom sheet (thumbs reach it). */
-@media (max-width: 720px) {
+/* Phones: the app owns the screen until the colleague is explicitly opened. */
+@media (max-width: 719px) {
   .one-chat-shell {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) 10px var(--one-chat-chat-height, 42vh);
+    position: fixed;
+    inset-inline: 0;
+    top: var(--one-chat-viewport-top, 0);
+    display: block;
+    width: 100%;
+    height: var(--one-chat-viewport-height, 100dvh);
+    overflow: hidden;
   }
-  .one-chat-shell > .one-chat-chat { order: 3; }
-  .one-chat-shell > .one-chat-resizer { order: 2; }
-  .one-chat-shell > [data-testid="one-chat-stage"] { order: 1; }
-  .one-chat-resizer {
-    position: relative;
+  .one-chat-shell > [data-testid="one-chat-stage"] {
+    position: absolute;
+    inset: 0;
+  }
+  .one-chat-mobile-sheet {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 3;
+    display: grid;
+    grid-template-rows: 44px minmax(0, 1fr);
+    height: 50%;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-block-end: 0;
+    border-radius: var(--boring-radius-xl) var(--boring-radius-xl) 0 0;
     background: var(--color-background);
-    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -12px 32px oklch(0 0 0 / 0.12);
   }
-  /* A grab pill, like a phone sheet. */
-  .one-chat-resizer::after {
+  .one-chat-shell[data-chat-mode="full"] .one-chat-mobile-sheet {
+    height: 100%;
+    border-inline: 0;
+    border-radius: 0;
+  }
+  .one-chat-shell[data-chat-mode="button"] .one-chat-mobile-sheet {
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(100%);
+  }
+  .one-chat-mobile-sheet > .one-chat-chat {
+    min-height: 0;
+    padding-block-end: env(safe-area-inset-bottom);
+  }
+  .one-chat-mobile-sheet > .one-chat-resizer {
+    position: relative;
+    cursor: row-resize;
+    border: 0;
+    border-block-end: 1px solid var(--color-border);
+    background: var(--color-background);
+  }
+  /* A compact visible pill inside a forgiving 44px touch target. */
+  .one-chat-mobile-sheet > .one-chat-resizer::after {
     content: "";
     position: absolute;
-    left: 50%;
-    top: 3px;
+    inset-inline-start: 50%;
+    top: 10px;
     width: 36px;
     height: 4px;
     border-radius: 2px;
     background: var(--color-border);
     transform: translateX(-50%);
   }
-  .one-chat-resizer:hover::after,
+  .one-chat-mobile-sheet > .one-chat-resizer:hover,
+  .one-chat-mobile-sheet > .one-chat-resizer:focus-visible,
+  .one-chat-shell[data-resizing] .one-chat-mobile-sheet > .one-chat-resizer {
+    background: var(--color-background);
+  }
+  .one-chat-mobile-sheet > .one-chat-resizer:hover::after,
   .one-chat-shell[data-resizing] .one-chat-resizer::after {
     background: var(--boring-accent, var(--color-muted-foreground));
   }
+  .one-chat-shell[data-resizing] { cursor: row-resize; }
+
+  .one-chat-launcher {
+    position: absolute;
+    inset-inline-end: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    z-index: 4;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: var(--boring-primary);
+    color: var(--boring-primary-foreground);
+    box-shadow: 0 8px 24px oklch(0 0 0 / 0.2);
+    cursor: pointer;
+  }
+  .one-chat-shell[data-chat-mode="button"] .one-chat-launcher { display: grid; }
+  .one-chat-launcher svg {
+    width: 23px;
+    height: 23px;
+    fill: currentColor;
+    stroke: none;
+  }
+  .one-chat-launcher-dot {
+    position: absolute;
+    inset-block-start: 1px;
+    inset-inline-end: 1px;
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--color-background);
+    border-radius: 999px;
+    background: var(--boring-attention);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .one-chat-theme-toggle { transition: none; }
 }

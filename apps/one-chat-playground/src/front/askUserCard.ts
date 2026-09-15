@@ -8,13 +8,15 @@ import type { AskUserAnswerValue } from '../../../../plugins/ask-user/src/shared
  * answer they gave, or the question is gone (cancelled, abandoned, from a
  * previous run) and the card should say nothing at all.
  */
+export type AnsweredQuestionView = Pick<PendingQuestionView, 'title' | 'context' | 'schema'>
+
 export type QuestionCardState =
   | { readonly kind: 'pending'; readonly question: PendingQuestionView }
   | {
       readonly kind: 'answered'
       readonly values: Record<string, AskUserAnswerValue>
-      /** Present when the answer was given here, so option labels can be used. */
-      readonly question?: PendingQuestionView
+      /** Recovered from the tool input after reload, so the question remains visible. */
+      readonly question?: AnsweredQuestionView
     }
   | { readonly kind: 'gone' }
 
@@ -26,6 +28,7 @@ export interface AnsweredHere {
 export interface ToolCallView {
   readonly toolCallId: string
   readonly state: string
+  readonly input?: unknown
   readonly output?: unknown
 }
 
@@ -63,6 +66,22 @@ export function parseAnsweredValues(output: unknown): Record<string, AskUserAnsw
   }
 }
 
+function questionFromToolInput(input: unknown): AnsweredQuestionView | undefined {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const raw = input as Record<string, unknown>
+  const title = typeof raw.title === 'string' ? raw.title.trim() : ''
+  const context = typeof raw.context === 'string' ? raw.context.trim() : ''
+  const schema = raw.schema && typeof raw.schema === 'object'
+    ? raw.schema as PendingQuestionView['schema']
+    : undefined
+  if (!title && !context && !schema) return undefined
+  return {
+    ...(title ? { title } : {}),
+    ...(context ? { context } : {}),
+    ...(schema ? { schema } : {}),
+  }
+}
+
 export function resolveQuestionCardState(input: {
   readonly call: ToolCallView
   readonly pending: readonly PendingQuestionView[]
@@ -74,19 +93,22 @@ export function resolveQuestionCardState(input: {
   const optimistic = input.justAnswered?.[input.call.toolCallId]
   if (optimistic) return { kind: 'answered', values: optimistic.values, question: optimistic.question }
   const parsed = parseAnsweredValues(input.call.output)
-  if (parsed) return { kind: 'answered', values: parsed }
+  if (parsed) return { kind: 'answered', values: parsed, question: questionFromToolInput(input.call.input) }
   return { kind: 'gone' }
 }
 
 /** "Delete them" rather than `{"choice":"delete"}`: the user never sees a payload. */
 export function describeAnswer(
   values: Record<string, AskUserAnswerValue>,
-  question?: PendingQuestionView,
+  question?: AnsweredQuestionView,
 ): string {
   const labelFor = (fieldName: string, value: AskUserAnswerValue): string => {
     const field = question?.schema?.fields.find((candidate) => candidate.name === fieldName)
     const options = field && 'options' in field ? field.options : undefined
-    const label = (raw: string) => options?.find((option) => option.value === raw)?.label ?? raw
+    const label = (raw: string) => {
+      const visible = options?.find((option) => option.value === raw)?.label ?? raw
+      return visible.replace(/\s*\(recommended\)\s*$/i, '')
+    }
     if (Array.isArray(value)) return value.map(label).join(', ')
     if (typeof value === 'boolean') return value ? 'Yes' : 'No'
     if (value === null || value === undefined) return '—'

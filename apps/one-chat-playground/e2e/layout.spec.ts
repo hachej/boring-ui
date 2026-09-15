@@ -24,14 +24,91 @@ test('one chat, one screen', async ({ page }) => {
 
   // No sheet until the agent raises one.
   await expect(page.getByTestId('one-chat-sheet')).toHaveCount(0)
+
+  const theme = page.getByTestId('one-chat-theme-toggle')
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme')
+  await expect(theme).toHaveAttribute('aria-label', 'Switch to dark theme')
+  await theme.click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(theme).toHaveAttribute('aria-label', 'Switch to light theme')
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 })
 
-test('stacks on a phone width', async ({ page }) => {
+test('phone chat snaps button → half → full, then swipes down to button', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
 
-  const chatBox = (await page.getByTestId('one-chat-chat').boundingBox())!
-  const stageBox = (await page.getByTestId('one-chat-stage').boundingBox())!
-  expect(chatBox.y).toBeLessThan(stageBox.y)
-  expect(Math.abs(chatBox.x - stageBox.x)).toBeLessThan(2)
+  const stage = page.getByTestId('one-chat-stage')
+  const launcher = page.getByTestId('one-chat-launcher')
+  const sheet = page.getByTestId('one-chat-mobile-sheet')
+  const handle = page.getByTestId('one-chat-resizer')
+
+  await expect(launcher).toBeVisible()
+  const stageBox = (await stage.boundingBox())!
+  expect(stageBox.width).toBeCloseTo(390, 0)
+  expect(stageBox.height).toBeCloseTo(844, 0)
+
+  await launcher.click()
+  await expect(sheet).not.toHaveAttribute('aria-hidden', 'true')
+  await page.goBack()
+  await expect(launcher).toBeVisible()
+
+  await launcher.click()
+  await expect(sheet).not.toHaveAttribute('aria-hidden', 'true')
+  let sheetBox = (await sheet.boundingBox())!
+  expect(sheetBox.height).toBeGreaterThan(400)
+  expect(sheetBox.height).toBeLessThan(445)
+
+  let handleBox = (await handle.boundingBox())!
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handleBox.x + handleBox.width / 2, 80, { steps: 6 })
+  await page.mouse.up()
+  sheetBox = (await sheet.boundingBox())!
+  expect(sheetBox.height).toBeGreaterThan(800)
+
+  handleBox = (await handle.boundingBox())!
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handleBox.x + handleBox.width / 2, 620, { steps: 8 })
+  await page.mouse.up()
+  await expect(launcher).toBeVisible()
+  await expect(sheet).toHaveAttribute('aria-hidden', 'true')
+})
+
+test('a pending question opens the phone chat to at least half', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route('**/api/v1/questions/pending', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        questions: [{
+          questionId: 'question-e2e',
+          sessionId: 'one-chat',
+          toolCallId: 'call-e2e',
+          title: 'Keep this sketch?',
+          answerToken: 'token-e2e',
+          createdAt: '2026-09-15T12:00:00.000Z',
+          schema: {
+            wireVersion: 1,
+            fields: [{
+              type: 'radio',
+              name: 'choice',
+              label: 'Choose one',
+              options: [
+                { value: 'keep', label: 'Keep it (recommended)' },
+                { value: 'change', label: 'Change it' },
+              ],
+            }],
+          },
+        }],
+      }),
+    })
+  })
+  await page.goto('/')
+
+  await expect(page.getByTestId('one-chat-mobile-sheet')).not.toHaveAttribute('aria-hidden', 'true')
+  const sheetBox = (await page.getByTestId('one-chat-mobile-sheet').boundingBox())!
+  expect(sheetBox.height).toBeGreaterThanOrEqual(400)
 })

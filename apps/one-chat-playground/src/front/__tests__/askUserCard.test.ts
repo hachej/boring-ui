@@ -51,11 +51,16 @@ describe('the question card state', () => {
       call: {
         ...call,
         state: 'output-available',
+        input: { title: question.title, schema: question.schema },
         output: [{ type: 'text', text: 'User answered: {"choice":"hide"}. Continue the conversation using this answer.' }],
       },
       pending: [],
     })
-    expect(state).toEqual({ kind: 'answered', values: { choice: 'hide' } })
+    expect(state).toEqual({
+      kind: 'answered',
+      values: { choice: 'hide' },
+      question: { title: question.title, schema: question.schema },
+    })
   })
 
   test('says nothing at all for a question that was cancelled or is from a previous run', () => {
@@ -86,6 +91,21 @@ describe('parseAnsweredValues', () => {
 describe('describeAnswer', () => {
   test('uses the option label, never the stored value', () => {
     expect(describeAnswer({ choice: 'delete' }, question)).toBe('Delete them for good')
+  })
+
+  test('strips the recommendation suffix only from the echoed answer', () => {
+    const recommended = {
+      ...question,
+      schema: {
+        ...question.schema!,
+        fields: [{
+          ...question.schema!.fields[0]!,
+          options: [{ value: 'delete', label: 'Delete them for good (recommended)' }],
+        }],
+      },
+    }
+    expect(describeAnswer({ choice: 'delete' }, recommended)).toBe('Delete them for good')
+    expect(recommended.schema.fields[0]!.options[0]!.label).toBe('Delete them for good (recommended)')
   })
 
   test('falls back to the plain value when the question is gone', () => {

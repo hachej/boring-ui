@@ -12,7 +12,12 @@ export default defineConfig({
   timeout: 60_000,
   workers: 1,
   fullyParallel: false,
-  use: { baseURL: `http://127.0.0.1:${FRONT_PORT}`, headless: true, viewport: { width: 1280, height: 800 } },
+  use: {
+    baseURL: `http://127.0.0.1:${FRONT_PORT}`,
+    headless: true,
+    viewport: { width: 1280, height: 800 },
+    colorScheme: 'light',
+  },
   webServer: {
     command: 'pnpm run dev:app',
     cwd: APP_DIR,

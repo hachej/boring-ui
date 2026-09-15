@@ -21,9 +21,12 @@ export interface StageBus {
 
 export function createStageBus(): StageBus {
   const listeners = new Set<(event: StageEvent) => void>()
+  let currentSheet: StageEvent | null = null
   let currentActivity: StageEvent | null = null
   return {
     emit(event) {
+      if (event.type === 'stage.show') currentSheet = event
+      else if (event.type === 'stage.clear') currentSheet = null
       if (event.type === 'activity.clear' || event.type === 'activity.done') currentActivity = null
       else if (event.type === 'activity.started' || event.type === 'activity.verifying') currentActivity = event
       for (const listener of [...listeners]) {
@@ -36,11 +39,12 @@ export function createStageBus(): StageBus {
     },
     subscribe(listener) {
       listeners.add(listener)
-      // Builder work outlives browser connections. Replay its latest milestone
-      // so a reload or SSE reconnect does not make active work disappear.
-      if (currentActivity) {
+      // Stage overlays and builder work outlive browser connections. Replay
+      // both so reload/reconnect cannot silently return to a stale screen.
+      for (const event of [currentSheet, currentActivity]) {
+        if (!event) continue
         try {
-          listener(currentActivity)
+          listener(event)
         } catch {
           // The normal emit path will tolerate this dead listener too.
         }

@@ -6,6 +6,8 @@ export interface StageProps {
   readonly sheet: StageSheet | null
   /** Optional local dismiss; the agent normally closes the sheet with back_to_app. */
   readonly onBackToApp?: () => void
+  /** The base iframe has content, so the phone can yield the screen to the app. */
+  readonly onBaseReady?: () => void
 }
 
 /**
@@ -13,7 +15,7 @@ export interface StageProps {
  * torn down, so closing a sheet returns the user to exactly the app state they
  * left — no reload, no lost scroll position.
  */
-export function Stage({ baseUrl, sheet, onBackToApp }: StageProps) {
+export function Stage({ baseUrl, sheet, onBackToApp, onBaseReady }: StageProps) {
   return (
     <div className="relative min-h-0 min-w-0 bg-muted/30" data-testid="one-chat-stage">
       <iframe
@@ -21,6 +23,7 @@ export function Stage({ baseUrl, sheet, onBackToApp }: StageProps) {
         title="Your app"
         data-testid="one-chat-base"
         className="absolute inset-0 size-full border-0 bg-background"
+        onLoad={onBaseReady}
       />
       {sheet ? (
         <div
@@ -34,7 +37,7 @@ export function Stage({ baseUrl, sheet, onBackToApp }: StageProps) {
             <button
               type="button"
               onClick={onBackToApp}
-              className="ml-auto h-8 rounded-md border border-border/60 px-3 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+              className="ml-auto min-h-11 rounded-md border border-border/60 px-3 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
               data-testid="one-chat-back"
             >
               Back to my app

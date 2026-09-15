@@ -17,6 +17,20 @@ describe('createStageBus', () => {
     expect(b).toHaveBeenCalledTimes(1)
   })
 
+  it('replays the current stage sheet after a reconnect until it is cleared', () => {
+    const bus = createStageBus()
+    const sheet = { type: 'stage.show' as const, url: 'http://localhost:1/sketch', title: 'Sketch' }
+    bus.emit(sheet)
+    const reconnected = vi.fn()
+    bus.subscribe(reconnected)
+    expect(reconnected).toHaveBeenCalledWith(sheet)
+
+    bus.emit({ type: 'stage.clear' })
+    const afterClear = vi.fn()
+    bus.subscribe(afterClear)
+    expect(afterClear).not.toHaveBeenCalled()
+  })
+
   it('replays active builder work after a reconnect but not a terminal milestone', () => {
     const bus = createStageBus()
     const activity = {

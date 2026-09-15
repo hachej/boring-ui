@@ -24,7 +24,8 @@ second instance can run without touching the one a live session is using.
 The agent works in `sample-app/` (a tiny Vite + React "Clients" page) and its
 edits appear live in the right-hand iframe via HMR. Two extra tools drive the
 screen: `show_on_screen({url, title})` raises one sheet over the app,
-`back_to_app()` drops it.
+`back_to_app()` drops it. On phones the app is full screen behind a floating
+colleague button; chat snaps to half or full height, and browser Back closes it.
 
 ## What the agent remembers
 
@@ -69,12 +70,22 @@ does not have. The card is opted in through `messagesOnlyVisibleTools` on
 message copy actions and replaces the generic composer working pill with its
 user-waiting activity strip; both package defaults remain unchanged.
 
-## Skills
+## Agent packages and skills
 
-`sample-app/.pi/skills/` ships with the app and is the only skill root the
-agent sees (ambient discovery stays off). It holds the Boring PM interview
-skill plus `ONE-CHAT.md`, which adapts the method to one chat. Check what
-loaded with `GET /api/v1/agents/default/skills`.
+Each seat is a package under `agents/<seat>/`: `package.json#boring.agent`
+owns its identity and `instructionsRef`, while the package's top-level `tools`
+array names trusted host capability groups. Startup rejects unknown groups.
+The colleague receives `intents`, `instructions`, `stage`, `ask_user`,
+`run_agents`, `reload`, and `compact`; the builder receives none; the
+documenter receives only the two `instructions` tools.
+
+Platform skills live under the owning package's `skills/`. The colleague also
+sees skills shipped in the user's workspace; ambient discovery stays off.
+Check what loaded with `GET /api/v1/agents/default/skills`.
+
+The desktop chat includes a 40px sun/moon control. An explicit choice is kept
+in local storage; with no choice, the page leaves `data-theme` unset and follows
+the system palette. Phones follow the system theme without showing the control.
 
 Out of scope in this cut: sandboxing (the agent runs in `direct` mode on the
 host), the Keep loop, git hiding, auth, and any workspace/Dockview shell.
