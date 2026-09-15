@@ -18,6 +18,7 @@ export const requiredExports = [
   "./providers/vercel-sandbox",
   "./providers/runsc",
   "./providers/remote-worker",
+  "./test/provider-pair-conformance",
 ];
 
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;

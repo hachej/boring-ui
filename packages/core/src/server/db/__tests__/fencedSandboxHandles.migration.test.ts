@@ -14,6 +14,7 @@ const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhos
 const migrationPath = (name: string) => fileURLToPath(new URL(`../../../../drizzle/${name}`, import.meta.url))
 const migration0028 = readFileSync(migrationPath('0028_invite_idempotency_claims.sql'), 'utf8')
 const migration0029 = readFileSync(migrationPath('0029_fenced_sandbox_handles.sql'), 'utf8')
+const migration0030 = readFileSync(migrationPath('0030_fenced_sandbox_handle_state.sql'), 'utf8')
 const runtimeResourcesDdl = readFileSync(migrationPath('0009_workspace_runtime_resources.sql'), 'utf8')
 
 let client: postgres.Sql
@@ -62,7 +63,29 @@ describe('0029 fenced sandbox handles migration', () => {
       // 0028 is the actual pre-0029 base revision used by the rollback cohort.
       await client.unsafe(migration0028)
       await client.unsafe(migration0029)
+      expect(migration0029).not.toContain('handle_state')
+      await client.unsafe(`
+        INSERT INTO fenced_sandbox_handles (
+          host_scope, workspace_id, provider, mode, generation,
+          encrypted_handle, encryption_nonce, encryption_auth_tag, encryption_version, handle_version
+        ) VALUES (
+          'legacy-scope', '${workspaceId}', 'vercel', 'ephemeral', 3,
+          '\\x01'::bytea, '\\x02'::bytea, '\\x03'::bytea, 1, 7
+        )
+      `)
+      await client.unsafe(migration0030)
       await client`INSERT INTO workspaces (id, app_id, name, created_by) VALUES (${workspaceId}, 'app', 'Rollback proof', ${randomUUID()})`
+
+      await expect(client.unsafe(`
+        INSERT INTO fenced_sandbox_handles (
+          host_scope, workspace_id, provider, mode, encrypted_handle, encryption_nonce,
+          encryption_auth_tag, encryption_version, handle_version
+        ) VALUES ('invalid-empty-state', '${workspaceId}', 'vercel', 'ephemeral', '\\x01'::bytea, '\\x02'::bytea, '\\x03'::bytea, 1, 1)
+      `)).rejects.toMatchObject({ code: '23514' })
+      const legacyBackfill = await client<{ handle_state: string }[]>`
+        SELECT handle_state FROM fenced_sandbox_handles WHERE host_scope = 'legacy-scope'
+      `
+      expect(legacyBackfill[0]?.handle_state).toBe('published')
 
       const db = drizzle(client)
       // This persistence path is byte-for-byte unchanged from the pre-0029 app revision.
@@ -86,6 +109,7 @@ describe('0029 fenced sandbox handles migration', () => {
         new TextEncoder().encode('fenced-handle'),
         1,
       )).toBe(true)
+      expect(await deployed.publish({ key, generation: first.generation, leaseToken: first.leaseToken })).toBe(true)
       expect(await deployed.release({ key, generation: first.generation, leaseToken: first.leaseToken })).toBe(true)
 
       const beforeRollback = await client<{ generation: number; encrypted_handle: Uint8Array; updated_at: Date }[]>`

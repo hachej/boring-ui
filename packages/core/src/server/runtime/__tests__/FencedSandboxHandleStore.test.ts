@@ -9,6 +9,7 @@ import {
   createSandboxHandleCipher,
   type SandboxHandleLease,
 } from '../FencedSandboxHandleStore.js'
+import { pendingTakeoverConformance } from './takeoverConformance.js'
 
 const key = { hostScope: 'tenant-1', workspaceId: 'ws-1', provider: 'aws', mode: 'agentcore-remote-efs' }
 const bytes = (value: string) => new TextEncoder().encode(value)
@@ -45,8 +46,19 @@ async function claim(store: CoreFencedSandboxHandleStore, leaseOwner = 'worker',
 async function createHandle(store: CoreFencedSandboxHandleStore, lease: SandboxHandleLease, value = 'opaque-provider-handle') {
   const attempt = await store.beginCreate(fence(lease))
   expect(attempt?.status).toBe('started')
-  return store.update(fence(lease), bytes(value), 1)
+  expect(await store.update(fence(lease), bytes(value), 1)).toBe(true)
+  return store.publish(fence(lease))
 }
+
+pendingTakeoverConformance('CoreFencedSandboxHandleStore', () => {
+  const f = fixture()
+  return {
+    key,
+    first: f.store(),
+    successor: f.store(),
+    async expire() { f.tick(10_001) },
+  }
+})
 
 describe('CoreFencedSandboxHandleStore', () => {
   it('serializes two-store claims and exposes secrets only from the successful claim', async () => {
@@ -78,7 +90,7 @@ describe('CoreFencedSandboxHandleStore', () => {
     if (!result || result.status !== 'claimed') throw new Error('expected takeover')
     expect(result.generation).toBe(old.generation + 1)
     expect(text(result.handle)).toBe('opaque-provider-handle')
-    expect(await store.renew(fence(old), 10)).toBe(false)
+    expect(await store.renew(fence(old), 10)).toBeNull()
     expect(await store.update(fence(old), bytes('stale'), 2)).toBe(false)
     expect(await store.release(fence(old))).toBe(false)
     expect(await store.delete(fence(old), cleanup('succeeded', '2026-09-14T00:00:01Z'))).toBe(false)
@@ -160,6 +172,23 @@ describe('CoreFencedSandboxHandleStore', () => {
     )).toBe(false)
     expect(await f.admin().inspect(key)).toMatchObject({ generation: 2, tombstoned: false, hasHandle: true })
     expect((await f.admin().listAudit(key)).map((record) => record.auditId)).not.toContain('stale-gen-one-delete')
+  })
+
+  it('refuses to publish after failed cleanup debt and carries pending handle through takeover', async () => {
+    const f = fixture()
+    const first = await claim(f.store(), 'first', 10)
+    await f.store().beginCreate(fence(first))
+    expect(await f.store().update(fence(first), bytes('pending-handle'), 1)).toBe(true)
+    expect(await f.store().delete(fence(first), cleanup('failed', '2026-09-14T00:00:01Z'))).toBe(false)
+    expect(await f.store().publish(fence(first))).toBe(false)
+
+    f.tick(11)
+    const takeover = await f.store().claim({ key, leaseOwner: 'takeover', leaseForMs: 100 })
+    if (!takeover || takeover.status !== 'claimed') throw new Error('expected takeover')
+    expect(text(takeover.handle)).toBe('pending-handle')
+    expect(takeover.handleState).toBe('pending-validation')
+    expect(takeover.cleanup?.outcome).toBe('failed')
+    expect(await f.store().publish(fence(takeover))).toBe(false)
   })
 
   it('records cleanup debt and tombstones successful deletion without resetting generation', async () => {

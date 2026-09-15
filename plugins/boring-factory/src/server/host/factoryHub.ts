@@ -9,6 +9,7 @@ import { FileAskUserStore } from '@hachej/boring-ask-user/server'
 import { claimLegacyAskUserQuestions } from './askUserLegacy'
 import type { AskUserQuestion } from '@hachej/boring-ask-user/shared'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
+import type { RuntimeModeAdapter } from '@hachej/boring-agent/server'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { createWorkspaceBeadsOperations } from '@hachej/boring-tasks/server'
 import { createFactorySandboxPlugin, getFactorySandboxSnapshotInfo, warmUpFactorySandboxSnapshot } from '../sandbox'
@@ -43,6 +44,8 @@ export interface CreateFactoryHostOptions {
   readonly provider?: string
   readonly appRoot?: string
   readonly logger?: boolean
+  /** Host-only runtime authority; never selected from browser or Agent input. */
+  readonly runtimeModeAdapter?: RuntimeModeAdapter
   /** Backwards-compatible one-shot intake, never a host identity. */
   readonly epicKey?: string
   readonly featureName?: string
@@ -689,7 +692,9 @@ export async function createFactoryHostedApp(options: CreateFactoryHostOptions):
     sessionId: deriveFactoryWorkspaceScopeId(),
     sessionRoot: env.BORING_AGENT_SESSION_ROOT,
     requestLedgerPath: resolve(options.stateRoot, 'request-ledger.sqlite'),
-    mode: 'direct',
+    ...(options.runtimeModeAdapter
+      ? { runtimeModeAdapter: options.runtimeModeAdapter }
+      : { mode: 'direct' as const }),
     logger: options.logger ?? true,
     readonlyWorkspacePaths: ['.agents'],
     agents: host.agents,

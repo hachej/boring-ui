@@ -110,6 +110,7 @@ export type {
   SandboxHandleInspection,
   SandboxHandleKey,
   SandboxHandleLease,
+  SandboxHandlePublicationState,
   SandboxOperatorEvidence,
 } from './runtime/index.js'
 

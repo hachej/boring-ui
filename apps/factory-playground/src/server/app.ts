@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createFactoryHostedApp } from '@hachej/boring-factory/server'
+import type { RuntimeModeAdapter } from '@hachej/boring-agent/server'
 
 export interface CreateFactoryPlaygroundOptions {
   readonly appRoot: string
@@ -8,6 +9,8 @@ export interface CreateFactoryPlaygroundOptions {
   readonly workspaceRoot?: string
   readonly logger?: boolean
   readonly env?: NodeJS.ProcessEnv
+  /** Production composition selects and injects runtime authority on the host. */
+  readonly runtimeModeAdapter?: RuntimeModeAdapter
 }
 
 export async function createFactoryPlayground(options: CreateFactoryPlaygroundOptions) {
@@ -30,5 +33,6 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     },
     provider: env.BORING_FACTORY_SANDBOX_PROVIDER,
     logger: options.logger,
+    runtimeModeAdapter: options.runtimeModeAdapter,
   })
 }
