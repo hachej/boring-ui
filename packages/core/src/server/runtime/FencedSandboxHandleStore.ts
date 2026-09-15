@@ -434,7 +434,7 @@ export class CoreFencedSandboxHandleStore implements FencedSandboxHandleStore {
     return this.backend.transaction(() => {
       const row = this.current(fence)
       if (!row?.leaseExpiresAt || row.leaseExpiresAt <= this.now()) return false
-      if (!row.payload || row.handleState !== 'pending-validation') return false
+      if (!row.payload || row.handleState !== 'pending-validation' || row.cleanup) return false
       row.handleState = 'published'
       return true
     })

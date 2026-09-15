@@ -142,6 +142,23 @@ describe('PostgresFencedSandboxHandleStore', () => {
     expect(inspection).not.toHaveProperty('handle')
   })
 
+  it('refuses to publish after failed cleanup debt and carries pending handle through takeover', async () => {
+    const { a, b } = stores()
+    const first = await claim(a, KEY, 'first-process', 100)
+    await a.beginCreate(fence(first))
+    expect(await a.update(fence(first), bytes('pending-handle'), 1)).toBe(true)
+    expect(await a.delete(fence(first), { outcome: 'failed', recordedAt: '2026-09-14T00:00:01.000Z' })).toBe(false)
+    expect(await a.publish(fence(first))).toBe(false)
+
+    await expireLease(sqlA)
+    const takeover = await b.claim({ key: KEY, leaseOwner: 'takeover-process', leaseForMs: 10_000 })
+    if (!takeover || takeover.status !== 'claimed') throw new Error('expected takeover')
+    expect(text(takeover.handle)).toBe('pending-handle')
+    expect(takeover.handleState).toBe('pending-validation')
+    expect(takeover.cleanup?.outcome).toBe('failed')
+    expect(await b.publish(fence(takeover))).toBe(false)
+  })
+
   it('survives restart encrypted at rest and fences stale mutations after expiry takeover', async () => {
     const { a, b } = stores()
     const oldLease = await claim(a, KEY, 'old-process')
@@ -353,7 +370,8 @@ describe('PostgresFencedSandboxHandleStore', () => {
           encryption_nonce = ${old!.encryption_nonce},
           encryption_auth_tag = ${old!.encryption_auth_tag},
           encryption_version = ${old!.encryption_version},
-          handle_version = ${old!.handle_version}
+          handle_version = ${old!.handle_version},
+          handle_state = 'published'
       WHERE host_scope = ${KEY.hostScope}
         AND workspace_id = ${KEY.workspaceId}
         AND provider = ${KEY.provider}

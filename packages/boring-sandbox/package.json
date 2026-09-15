@@ -65,7 +65,7 @@
     "./test/provider-pair-conformance": {
       "boring-source": "./src/test/providerPairConformance.ts",
       "types": "./dist/test/providerPairConformance.d.ts",
-      "import": "./src/test/providerPairConformance.ts"
+      "import": "./dist/test/providerPairConformance.js"
     }
   },
   "scripts": {

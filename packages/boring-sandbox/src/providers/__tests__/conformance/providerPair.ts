@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { createRequire } from 'node:module'
 
 import type {
   SandboxProviderCreateContextV1,
@@ -6,6 +6,8 @@ import type {
   WorkspaceSandboxPairV1,
 } from '../../../shared/providerV1'
 import { PROVIDER_CONTRACT_VERSION } from '../../../shared/providerMatrix'
+
+const require = createRequire(import.meta.url)
 
 export interface ProviderPairConformanceHarness {
   provider: SandboxProviderV1
@@ -24,6 +26,7 @@ export function providerPairConformance(
   make: () => Promise<ProviderPairConformanceHarness>,
   options: ProviderPairConformanceOptions = {},
 ): void {
+  const { afterEach, beforeEach, describe, expect, test } = require('vitest') as typeof import('vitest')
   const scopedDescribe = options.skip ? describe.skip : describe
   const title = options.skip && options.skipReason
     ? `[${targetId}] provider pair conformance (${options.skipReason})`
