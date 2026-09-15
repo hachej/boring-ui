@@ -92,6 +92,8 @@ class Store implements FencedSandboxHandleStore {
   async beginCreate(fence: SandboxHandleFence) {
     const row = this.row(fence.key)
     if (row.token !== fence.leaseToken) return null
+    if (row.handle) throw new Error('sandbox handle already exists')
+    if (row.creating) return { status: 'create-ambiguous' as const, key: fence.key, generation: row.generation, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
     row.creating = true
     return { status: 'started' as const, idempotencyKey: 'create-1', startedAt: new Date(0).toISOString() }
   }
@@ -252,6 +254,23 @@ providerPairConformance('factory:agentcore-remote-efs wrapper', async () => {
 })
 
 describe('application-owned shared-EFS runtime modes', () => {
+  it('fake handle store preserves pending takeover handles and blocks duplicate create', async () => {
+    const store = new Store()
+    const key: SandboxHandleKey = { hostScope: 'app', workspaceId: 'ws-pending', provider: 'agentcore', mode: 'remote' }
+    const first = await store.claim({ key, leaseOwner: 'first', leaseForMs: 1 })
+    if (!first || first.status !== 'claimed') throw new Error('expected first claim')
+    const firstFence = { key, generation: first.generation, leaseToken: first.leaseToken }
+    await store.beginCreate(firstFence)
+    expect(await store.update(firstFence, encoder.encode('pending'))).toBe(true)
+    store.row(key).expiresAt = Date.now() - 1
+
+    const successor = await store.claim({ key, leaseOwner: 'successor', leaseForMs: 1000 })
+    if (!successor || successor.status !== 'claimed') throw new Error('expected successor claim')
+    expect(decoder.decode(successor.handle!)).toBe('pending')
+    expect(successor.handleState).toBe('pending-validation')
+    await expect(store.beginCreate({ key, generation: successor.generation, leaseToken: successor.leaseToken })).rejects.toThrow('sandbox handle already exists')
+  })
+
   it('has local and remote conformance over one EFS namespace with a shared SHA-256', async () => {
     const f = await fixture()
     const bytes = randomBytes(64)

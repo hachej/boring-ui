@@ -15,6 +15,7 @@ import {
   PostgresFencedSandboxHandleForceAdmin,
   PostgresFencedSandboxHandleStore,
 } from '../PostgresFencedSandboxHandleStore.js'
+import { pendingTakeoverConformance } from './takeoverConformance.js'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const HOST_SCOPE = `fenced-postgres-${process.pid}`
@@ -120,6 +121,16 @@ afterAll(async () => {
 beforeEach(async () => {
   await sqlA`DELETE FROM fenced_sandbox_handle_audit WHERE host_scope = ${HOST_SCOPE}`
   await sqlA`DELETE FROM fenced_sandbox_handles WHERE host_scope = ${HOST_SCOPE}`
+})
+
+pendingTakeoverConformance('PostgresFencedSandboxHandleStore', () => {
+  const { a, b } = stores()
+  return {
+    key: KEY,
+    first: a,
+    successor: b,
+    expire: (key) => expireLease(sqlA, key),
+  }
 })
 
 describe('PostgresFencedSandboxHandleStore', () => {

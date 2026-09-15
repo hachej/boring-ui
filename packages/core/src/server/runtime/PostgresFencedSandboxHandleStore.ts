@@ -222,8 +222,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
       if (priorPayload !== null && row.handleState === null) {
         throw new Error('fenced sandbox handle has incomplete publication state')
       }
-      const cleanupDebt = row.cleanupOutcome === 'failed' || row.cleanupOutcome === 'ambiguous'
-      const priorClaimablePayload = row.handleState === 'published' || (row.handleState === 'pending-validation' && cleanupDebt)
+      const priorClaimablePayload = row.handleState === 'published' || row.handleState === 'pending-validation'
         ? priorPayload
         : null
       const nextPayload = priorClaimablePayload
@@ -236,7 +235,6 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
         : null
       const leaseToken = randomUUID()
       const recreated = row.tombstonedAt !== null
-      const abandonedUnpublishedHandle = priorPayload !== null && row.handleState === 'pending-validation'
       const updated = await tx
         .update(fencedSandboxHandles)
         .set({
@@ -250,7 +248,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
           encryptionVersion: nextPayload?.encryptionVersion ?? null,
           handleVersion: nextPayload ? row.handleVersion : null,
           handleState: nextPayload ? row.handleState : null,
-          ...(recreated || (abandonedUnpublishedHandle && !cleanupDebt)
+          ...(recreated
             ? {
                 createAttemptIdempotencyKey: null,
                 createAttemptState: null,

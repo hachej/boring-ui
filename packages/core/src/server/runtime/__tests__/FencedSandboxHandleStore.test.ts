@@ -9,6 +9,7 @@ import {
   createSandboxHandleCipher,
   type SandboxHandleLease,
 } from '../FencedSandboxHandleStore.js'
+import { pendingTakeoverConformance } from './takeoverConformance.js'
 
 const key = { hostScope: 'tenant-1', workspaceId: 'ws-1', provider: 'aws', mode: 'agentcore-remote-efs' }
 const bytes = (value: string) => new TextEncoder().encode(value)
@@ -48,6 +49,16 @@ async function createHandle(store: CoreFencedSandboxHandleStore, lease: SandboxH
   expect(await store.update(fence(lease), bytes(value), 1)).toBe(true)
   return store.publish(fence(lease))
 }
+
+pendingTakeoverConformance('CoreFencedSandboxHandleStore', () => {
+  const f = fixture()
+  return {
+    key,
+    first: f.store(),
+    successor: f.store(),
+    async expire() { f.tick(10_001) },
+  }
+})
 
 describe('CoreFencedSandboxHandleStore', () => {
   it('serializes two-store claims and exposes secrets only from the successful claim', async () => {
