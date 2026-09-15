@@ -23,9 +23,12 @@ function fixture(): AssertionContext {
     workspaceRoot,
     turns: [{
       reply: 'There are 4 members.',
-      toolCalls: [{ name: 'update_my_instructions' }, { name: 'count_items' }],
+      toolCalls: [{ name: 'update_my_instructions' }, { name: 'count_items', input: {} }],
       toolCallsBeforeAnswer: [{ name: 'ask_user' }],
       cardShown: true,
+      cardsShown: 2,
+      recommendedCards: 2,
+      changedPaths: ['src/routes/index.tsx'],
       changedBeforeAnswer: [],
     }],
   }
@@ -36,14 +39,18 @@ describe('evaluateAssertions', () => {
     const results = evaluateAssertions([
       { reply_matches: '/members/i' },
       { reply_not_matches: '/cannot see/i' },
+      { any_reply_matches: '/4 members/i' },
       { tool_called: '/count/' },
       { tool_called_with: { name: 'count_items', args_match: {} } },
       { tool_not_called: 'write', before_answer: true },
       { file_exists: '.pi/extensions/*.ts' },
+      { file_changed: 'src/**/*' },
       { file_contains: { path: 'agent/instructions.md', regex: '/members/i' } },
       { file_not_contains: { path: 'agent/instructions.md', regex: '/clients only/i' } },
       { intent_status: { slug: '*supplier*', status: '/agreed|sketched/' } },
       { card_shown: true },
+      { cards_shown_min: 2 },
+      { cards_follow_recommendation_rule: true },
       { no_jargon: true },
     ], fixture())
 

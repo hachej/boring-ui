@@ -522,6 +522,38 @@ describe('PiChatPanel sandbox shell', () => {
     expect(slot?.getAttribute('aria-hidden')).toBe('true')
   })
 
+  test('lets a host replace or hide the default working indicator without changing the default', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'streaming' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const { rerender } = render(
+      <PiChatPanel
+        agentTypeId="default"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        composerActivity={<div data-testid="host-activity">Building your tracker</div>}
+      />,
+    )
+
+    await screen.findByTestId('host-activity')
+    expect(screen.queryByTestId('chat-working')).toBeNull()
+
+    rerender(
+      <PiChatPanel
+        agentTypeId="default"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        composerActivity={null}
+      />,
+    )
+    expect(screen.queryByTestId('host-activity')).toBeNull()
+    expect(screen.queryByTestId('chat-working')).toBeNull()
+    expect(document.querySelector('[data-boring-agent-part="chat-working-slot"]')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
   test('surfaces a rejected run as one notice, re-appears after dismissal, and never reports a turn', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     // A canonical, non-billing ErrorCode — the seam is generic; the host decides the action.

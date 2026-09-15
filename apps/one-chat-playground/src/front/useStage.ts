@@ -4,10 +4,13 @@ import { initialStageState, parseStageEvent, stageReducer, type StageState } fro
 
 export const STAGE_STREAM_URL = '/api/one-chat/stage/stream'
 export const STAGE_CLEAR_URL = '/api/one-chat/stage/clear'
+export const ACTIVITY_CLEAR_URL = '/api/one-chat/activity/clear'
 
 export interface UseStageResult extends StageState {
   /** Dismiss the sheet. Goes through the server so every open tab agrees. */
   clearSheet: () => void
+  /** Clear a completed sketch/build once the colleague starts speaking. */
+  clearActivity: () => void
 }
 
 /** Subscribes the stage to the server's SSE channel. The reducer stays pure and tested. */
@@ -35,5 +38,10 @@ export function useStage(streamUrl: string = STAGE_STREAM_URL): UseStageResult {
     void fetch(STAGE_CLEAR_URL, { method: 'POST' }).catch(() => {})
   }, [])
 
-  return { ...state, clearSheet }
+  const clearActivity = useCallback(() => {
+    dispatch({ type: 'activity.clear' })
+    void fetch(ACTIVITY_CLEAR_URL, { method: 'POST' }).catch(() => {})
+  }, [])
+
+  return { ...state, clearSheet, clearActivity }
 }

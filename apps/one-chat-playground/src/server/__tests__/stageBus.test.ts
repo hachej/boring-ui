@@ -17,6 +17,27 @@ describe('createStageBus', () => {
     expect(b).toHaveBeenCalledTimes(1)
   })
 
+  it('replays active builder work after a reconnect but not a terminal milestone', () => {
+    const bus = createStageBus()
+    const activity = {
+      type: 'activity.started' as const,
+      slug: 'supplier-list',
+      label: 'supplier list',
+      stage: 'build' as const,
+      startedAt: '2026-09-15T12:00:00.000Z',
+    }
+    bus.emit(activity)
+
+    const reconnected = vi.fn()
+    bus.subscribe(reconnected)
+    expect(reconnected).toHaveBeenCalledWith(activity)
+
+    bus.emit({ ...activity, type: 'activity.done' })
+    const afterDone = vi.fn()
+    bus.subscribe(afterDone)
+    expect(afterDone).not.toHaveBeenCalled()
+  })
+
   it('stops delivering after unsubscribe', () => {
     const bus = createStageBus()
     const listener = vi.fn()

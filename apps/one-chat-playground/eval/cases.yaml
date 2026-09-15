@@ -26,22 +26,14 @@ cases:
   - name: build-new
     workspace: template
     turns:
-      - "I need to track my suppliers with a phone number and a note."
-      - "A spreadsheet."
-      - "Just me."
-      - "Phone and a short note, nothing else."
-      - "Yes, that's it."
-      - message: '[system event] The builder finished the MOCKUP for intent {{intent_slug:supplier}}: Sketch ready. The sketch shows a supplier list with phone numbers and notes. Show it with show_on_screen at {{app_url}}mockups/{{intent_slug:supplier}}.html titled "Sketch: Suppliers", say "Here is a sketch, nothing works yet. Keep it, or tell me what to change?", and wait.'
-        wait_before_ms: 30000
-      - "Keep it."
+      - message: "I need to track my suppliers with a phone number and a note."
+        answer_card: /recommended/i
+      - await_card: true
+        answer_card: /keep.*recommended/i
     expect:
-      - reply_matches: /understand|how you|today|tell me/i
-        turn: 1
-      - reply_matches: /\?/
-        turn: 1
-      - card_shown: true
-        turn: 1
-        optional: true
+      - any_reply_matches: /recommend|I'd (say|go with|suggest)/i
+      - cards_shown_min: 2
+      - cards_follow_recommendation_rule: true
       - tool_called: open_intent
       - intent_status:
           slug: "*supplier*"
@@ -51,16 +43,12 @@ cases:
           name: run_builder
           args_match:
             stage: mockup
-        turn: 5
-      - reply_matches: /sketch|nothing works yet/i
-        turn: 6
+      - any_reply_matches: /sketch|nothing works yet/i
       - tool_called: show_on_screen
-        turn: 6
       - tool_called_with:
           name: run_builder
           args_match:
             stage: build
-        turn: 7
       - no_jargon: true
 
   - name: build-small
@@ -82,9 +70,27 @@ cases:
       - "Add a phone field to suppliers."
     expect:
       - tool_not_called: ask_user
-      - tool_called: /^(open_intent|note_intent)$/
-      - reply_not_matches: /is that it/i
-      - tool_called: run_builder
+      - tool_called: note_intent
+      - tool_not_called: run_builder
+      - file_changed: src/**/*
+      - reply_not_matches: /is that it|let you know/i
+      - no_jargon: true
+
+  - name: next-step
+    workspace: template
+    seed:
+      - path: agent/intents/suppliers.md
+        content: |
+          status: building
+          opened: 2026-09-15T00:00:00.000Z
+
+          ## What we agreed
+          Track suppliers with a phone number and a note.
+    turns:
+      - "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user naturally what is ready."
+    expect:
+      - reply_matches: /next|could add|want that/i
+      - reply_not_matches: /system event|builder/i
       - no_jargon: true
 
   - name: destructive

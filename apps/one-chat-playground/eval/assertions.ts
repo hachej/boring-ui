@@ -11,6 +11,9 @@ export interface TurnObservation {
   readonly toolCalls: readonly ObservedToolCall[]
   readonly toolCallsBeforeAnswer: readonly ObservedToolCall[]
   readonly cardShown: boolean
+  readonly cardsShown: number
+  readonly recommendedCards: number
+  readonly changedPaths: readonly string[]
   readonly changedBeforeAnswer: readonly string[]
 }
 
@@ -139,6 +142,12 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
           actual = reply
           break
         }
+        case 'any_reply_matches': {
+          const replies = context.turns.map((item) => item.reply)
+          ok = replies.some((candidate) => regexFrom(expected).test(candidate))
+          actual = replies.join(' | ')
+          break
+        }
         case 'tool_called': {
           ok = calls.some((call) => toolMatches(call, expected))
           actual = calls.map((call) => call.name).join(', ') || '(none)'
@@ -161,6 +170,16 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
           const files = matchingFiles(context.workspaceRoot, String(expected))
           ok = files.length > 0
           actual = files.join(', ') || '(none)'
+          break
+        }
+        case 'file_changed': {
+          const matcher = globRegex(String(expected).replace(/^\.\//, ''))
+          const changed = spec.turn === undefined
+            ? context.turns.flatMap((item) => item.changedPaths)
+            : turn?.changedPaths ?? []
+          const matches = [...new Set(changed)].filter((file) => matcher.test(file))
+          ok = matches.length > 0
+          actual = matches.join(', ') || `(none; changed: ${[...new Set(changed)].join(', ') || 'none'})`
           break
         }
         case 'file_contains':
@@ -200,6 +219,25 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
             : turn?.cardShown === true
           ok = shown === expected
           actual = String(shown)
+          break
+        }
+        case 'cards_shown_min': {
+          const count = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.cardsShown, 0)
+            : turn?.cardsShown ?? 0
+          ok = typeof expected === 'number' && count >= expected
+          actual = String(count)
+          break
+        }
+        case 'cards_follow_recommendation_rule': {
+          const shown = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.cardsShown, 0)
+            : turn?.cardsShown ?? 0
+          const recommended = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.recommendedCards, 0)
+            : turn?.recommendedCards ?? 0
+          ok = expected === true && shown > 0 && recommended === shown
+          actual = `${recommended}/${shown}`
           break
         }
         case 'no_jargon': {

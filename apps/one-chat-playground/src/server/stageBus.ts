@@ -4,6 +4,7 @@ import type { StageEvent } from '../shared/stage.js'
 
 export const STAGE_STREAM_ROUTE = '/api/one-chat/stage/stream'
 export const STAGE_CLEAR_ROUTE = '/api/one-chat/stage/clear'
+export const ACTIVITY_CLEAR_ROUTE = '/api/one-chat/activity/clear'
 
 /**
  * One in-process fan-out from the agent tools to every open browser tab.
@@ -20,8 +21,11 @@ export interface StageBus {
 
 export function createStageBus(): StageBus {
   const listeners = new Set<(event: StageEvent) => void>()
+  let currentActivity: StageEvent | null = null
   return {
     emit(event) {
+      if (event.type === 'activity.clear' || event.type === 'activity.done') currentActivity = null
+      else if (event.type === 'activity.started' || event.type === 'activity.verifying') currentActivity = event
       for (const listener of [...listeners]) {
         try {
           listener(event)
@@ -32,6 +36,15 @@ export function createStageBus(): StageBus {
     },
     subscribe(listener) {
       listeners.add(listener)
+      // Builder work outlives browser connections. Replay its latest milestone
+      // so a reload or SSE reconnect does not make active work disappear.
+      if (currentActivity) {
+        try {
+          listener(currentActivity)
+        } catch {
+          // The normal emit path will tolerate this dead listener too.
+        }
+      }
       return () => {
         listeners.delete(listener)
       }
@@ -42,7 +55,7 @@ export function createStageBus(): StageBus {
   }
 }
 
-/** SSE endpoint the stage subscribes to. Text frames only; no reconnection state. */
+/** SSE endpoint the stage subscribes to. Text frames with current activity replay. */
 export function registerStageRoutes(app: FastifyInstance, bus: StageBus): void {
   app.get(STAGE_STREAM_ROUTE, (request, reply) => {
     reply.raw.writeHead(200, {
@@ -69,6 +82,13 @@ export function registerStageRoutes(app: FastifyInstance, bus: StageBus): void {
   // tab agrees on what is on screen.
   app.post(STAGE_CLEAR_ROUTE, async () => {
     bus.emit({ type: 'stage.clear' })
+    return { ok: true }
+  })
+
+  // The browser clears completed builder activity when the colleague starts
+  // speaking, and fans that clear to every open tab.
+  app.post(ACTIVITY_CLEAR_ROUTE, async () => {
+    bus.emit({ type: 'activity.clear' })
     return { ok: true }
   })
 }

@@ -172,6 +172,39 @@ describe('PiTimelineMessage', () => {
     expect(screen.queryByRole('button', { name: 'Copy message' })).toBeNull()
   })
 
+  test('hides the copy action only when a messages-only host opts in', () => {
+    const message: BoringChatMessage = {
+      id: 'a-consumer',
+      role: 'assistant',
+      status: 'done',
+      parts: [{ type: 'text', id: 'a-consumer:text', text: 'Ready.' }],
+    }
+    const { rerender } = render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        renderMode="messages-only"
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Copy message' })).toBeTruthy()
+
+    rerender(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        renderMode="messages-only"
+        messagesOnlyHideCopyActions
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Copy message' })).toBeNull()
+  })
+
   test('infers a code filename from the immediately preceding write tool', () => {
     const message: BoringChatMessage = {
       id: 'a-timestamp',

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Resizer, useChatSize, useIsMobile } from './Resizer'
 import { ChatPanel as PiChatPanel } from '@hachej/boring-agent/front'
 
+import { ActivityStrip } from './ActivityStrip'
 import { QuestionCard } from './QuestionCard'
 import { resolveQuestionCardState } from './askUserCard'
 import { useAskUser } from './useAskUser'
@@ -29,9 +30,30 @@ export function App() {
   const mobile = useIsMobile()
   const chat = useChatSize(mobile)
   const askUser = useAskUser()
+  const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null)
+  const activityRef = useRef(stage.activity)
+  activityRef.current = stage.activity
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionError, setSessionError] = useState<string | null>(null)
   const baseUrl = window.__ONE_CHAT_BASE_URL__ ?? 'http://127.0.0.1:5321/'
+
+  // Reconcile the custom activity after a reload. PiChatPanel broadcasts its
+  // hydrated busy state and supports an explicit replay request for late mounts.
+  useEffect(() => {
+    if (!sessionId) return
+    const handleStatus = (raw: Event) => {
+      const detail = (raw as CustomEvent<{ sessionId?: string; working?: boolean }>).detail
+      if (detail?.sessionId !== sessionId) return
+      if (detail.working && askUser.pending.length === 0) {
+        setThinkingStartedAt((current) => current ?? Date.now())
+      } else {
+        setThinkingStartedAt(null)
+      }
+    }
+    window.addEventListener('boring:chat-session-status', handleStatus)
+    window.dispatchEvent(new Event('boring:chat-session-status-request'))
+    return () => window.removeEventListener('boring:chat-session-status', handleStatus)
+  }, [askUser.pending.length, sessionId])
 
   // The agent's turn is blocked on the answer, so the composer is too: one
   // question at a time, answered where it was asked.
@@ -44,18 +66,67 @@ export function App() {
     [askUser.pending],
   )
 
+  const beginThinking = useCallback(() => setThinkingStartedAt(Date.now()), [])
+  const clearWaitingActivity = useCallback(() => {
+    setThinkingStartedAt(null)
+    const clearCompletedBuilder = () => {
+      if (activityRef.current?.milestone === 'done') stage.clearActivity()
+    }
+    clearCompletedBuilder()
+    // The activity and chat use sibling streams. Give a just-emitted completion
+    // frame a moment to arrive before deciding there is nothing to clear.
+    window.setTimeout(clearCompletedBuilder, 500)
+  }, [stage.clearActivity])
+  const onAgentData = useCallback((raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return
+    const event = raw as {
+      type?: unknown
+      role?: unknown
+      kind?: unknown
+      delta?: unknown
+      text?: unknown
+      toolName?: unknown
+      final?: { role?: unknown; parts?: readonly { type?: unknown; text?: unknown }[] }
+    }
+    if (event.type === 'tool-call' && event.toolName === 'ask_user') {
+      setThinkingStartedAt(null)
+      return
+    }
+    const assistantStartedWithText = event.type === 'message-start'
+      && event.role === 'assistant'
+      && typeof event.text === 'string'
+      && event.text.trim().length > 0
+    const assistantTextDelta = event.type === 'message-delta'
+      && event.kind === 'text'
+      && typeof event.delta === 'string'
+      && event.delta.trim().length > 0
+    const assistantTextFinished = event.type === 'message-part-end'
+      && event.kind === 'text'
+      && typeof event.text === 'string'
+      && event.text.trim().length > 0
+    const assistantMessageFinished = event.type === 'message-end'
+      && event.final?.role === 'assistant'
+      && event.final.parts?.some((part) => part.type === 'text' && typeof part.text === 'string' && part.text.trim())
+    if (assistantStartedWithText || assistantTextDelta || assistantTextFinished || assistantMessageFinished) {
+      clearWaitingActivity()
+    }
+  }, [clearWaitingActivity])
+
   const toolRenderers = useMemo(() => ({
     ask_user: Object.assign(
       (part: { toolCallId: string; state: string; output?: unknown }) => (
         <QuestionCard
           state={resolveQuestionCardState({ call: part, pending: askUser.pending, justAnswered: askUser.justAnswered })}
           submitting={askUser.submitting !== null}
-          onAnswer={(question, values) => void askUser.submit(question, values)}
+          onAnswer={(question, values) => {
+            beginThinking()
+            void askUser.submit(question, values).catch(() => setThinkingStartedAt(null))
+          }}
         />
       ),
       { presentation: 'inline' as const },
     ),
-  }), [askUser])
+  }), [askUser, beginThinking])
 
   useEffect(() => {
     let cancelled = false
@@ -96,6 +167,7 @@ export function App() {
             storageScope="one-chat"
             renderMode="messages-only"
             messagesOnlyVisibleTools={VISIBLE_TOOLS}
+            messagesOnlyHideCopyActions
             messagesOnlyHiddenUserPrefixes={HIDDEN_HOST_PROMPTS}
             toolRenderers={toolRenderers}
             composerBlockers={composerBlockers}
@@ -116,6 +188,15 @@ export function App() {
               description: 'Ask in your own words. Your app is on the right.',
             }}
             composerPlaceholder="Tell me what to change…"
+            composerActivity={stage.activity || thinkingStartedAt !== null
+              ? <ActivityStrip builder={stage.activity} thinkingStartedAt={thinkingStartedAt} />
+              : null}
+            onPromptSubmitStarted={beginThinking}
+            onData={onAgentData}
+            onTurnComplete={() => {
+              setThinkingStartedAt(null)
+              if (activityRef.current?.milestone === 'done') stage.clearActivity()
+            }}
             className="h-full"
           />
         ) : null}

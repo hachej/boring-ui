@@ -16,7 +16,7 @@ import {
 
 describe('stageReducer', () => {
   it('starts with no sheet', () => {
-    expect(initialStageState).toEqual({ sheet: null })
+    expect(initialStageState).toEqual({ sheet: null, activity: null })
   })
 
   it('raises a sheet on stage.show', () => {
@@ -41,7 +41,7 @@ describe('stageReducer', () => {
 
   it('clears back to the base app', () => {
     const shown = stageReducer(initialStageState, { type: 'stage.show', url: 'http://localhost:9/a', title: 'A' })
-    expect(stageReducer(shown, { type: 'stage.clear' })).toEqual({ sheet: null })
+    expect(stageReducer(shown, { type: 'stage.clear' })).toEqual({ sheet: null, activity: null })
   })
 
   it('is referentially stable for no-op events', () => {
@@ -52,6 +52,34 @@ describe('stageReducer', () => {
 
   it('ignores an empty url', () => {
     expect(stageReducer(initialStageState, { type: 'stage.show', url: '   ' })).toBe(initialStageState)
+  })
+
+  it('tracks builder milestones independently from the stage sheet', () => {
+    const started = stageReducer(initialStageState, {
+      type: 'activity.started',
+      slug: 'invoice-tracker',
+      label: 'invoice tracker',
+      stage: 'build',
+      startedAt: '2026-09-15T12:00:00.000Z',
+    })
+    expect(started.activity).toMatchObject({ milestone: 'started', stage: 'build' })
+    const verifying = stageReducer(started, {
+      type: 'activity.verifying',
+      slug: 'invoice-tracker',
+      label: 'invoice tracker',
+      stage: 'build',
+      startedAt: '2026-09-15T12:00:00.000Z',
+    })
+    expect(verifying.activity?.milestone).toBe('verifying')
+    const done = stageReducer(verifying, {
+      type: 'activity.done',
+      slug: 'invoice-tracker',
+      label: 'invoice tracker',
+      stage: 'build',
+      startedAt: '2026-09-15T12:00:00.000Z',
+    })
+    expect(done.activity?.milestone).toBe('done')
+    expect(stageReducer(done, { type: 'activity.clear' })).toEqual(initialStageState)
   })
 
   it('ignores unknown events', () => {
@@ -67,6 +95,22 @@ describe('parseStageEvent', () => {
       type: 'stage.show',
       url: 'http://localhost:1/',
       title: 'T',
+    })
+  })
+
+  it('accepts activity milestones', () => {
+    expect(parseStageEvent({
+      type: 'activity.done',
+      slug: 'invoice-tracker',
+      label: 'invoice tracker',
+      stage: 'build',
+      startedAt: '2026-09-15T12:00:00.000Z',
+    })).toEqual({
+      type: 'activity.done',
+      slug: 'invoice-tracker',
+      label: 'invoice tracker',
+      stage: 'build',
+      startedAt: '2026-09-15T12:00:00.000Z',
     })
   })
 

@@ -25,6 +25,37 @@
   body { background-color: var(--color-background); color: var(--color-foreground); }
 }
 
+/* One quiet line for work this person is actively waiting on. */
+.one-chat-activity {
+  display: inline-flex;
+  min-height: 24px;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-foreground);
+  font-size: 12px;
+  line-height: 20px;
+}
+.one-chat-activity-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--boring-accent, var(--color-foreground));
+  animation: one-chat-activity-pulse 1.2s ease-in-out infinite;
+}
+.one-chat-activity-time {
+  color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes one-chat-activity-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.88); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .one-chat-activity-dot { animation: none; }
+}
+
 /* Chat left, screen right. One column under a phone width. */
 .one-chat-shell {
   display: grid;

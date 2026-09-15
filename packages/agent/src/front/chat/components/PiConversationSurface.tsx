@@ -57,6 +57,8 @@ export interface PiConversationSurfaceProps {
   /** `messages-only` hides reasoning/tool parts and shows one quiet working line while streaming. */
   renderMode?: ChatRenderMode
   messagesOnlyVisibleTools?: readonly string[]
+  /** Hide per-message copy actions in `messages-only` mode. */
+  messagesOnlyHideCopyActions?: boolean
   /** Machine-authored user-message prefixes hidden only from this transcript. */
   messagesOnlyHiddenUserPrefixes?: readonly string[]
 }
@@ -82,6 +84,7 @@ export function PiConversationSurface({
   windowResetKey,
   renderMode = 'full',
   messagesOnlyVisibleTools,
+  messagesOnlyHideCopyActions = false,
   messagesOnlyHiddenUserPrefixes = [],
 }: PiConversationSurfaceProps) {
   const visibleMessages = renderMode === 'messages-only' && messagesOnlyHiddenUserPrefixes.length > 0
@@ -159,6 +162,7 @@ export function PiConversationSurface({
             onMentionActivate={onMentionActivate}
             renderMode={renderMode}
             messagesOnlyVisibleTools={messagesOnlyVisibleTools}
+            messagesOnlyHideCopyActions={messagesOnlyHideCopyActions}
           />
         ))}
         <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} historyEmpty={historyEmpty} />

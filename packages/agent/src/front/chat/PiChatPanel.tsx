@@ -168,6 +168,8 @@ export interface PiChatPanelProps<
    * back in when the call is itself something the user must see and act on.
    */
   messagesOnlyVisibleTools?: readonly string[]
+  /** Hide per-message copy actions in `messages-only` mode. Defaults to false. */
+  messagesOnlyHideCopyActions?: boolean
   /**
    * User-message prefixes omitted from the transcript in `messages-only` mode.
    * The messages remain in agent context; this only lets a host hide its own
@@ -181,6 +183,8 @@ export interface PiChatPanelProps<
   emptyState?: ChatPanelEmptyState
   emptyPlacement?: 'default' | 'hero'
   composerPlaceholder?: string
+  /** Replaces the composer's default streaming pill when supplied. Pass `null` to hide it. */
+  composerActivity?: ReactNode
   initialDraft?: string
   autoSubmitInitialDraft?: boolean
   onDraftRestored?: () => void
@@ -247,6 +251,7 @@ export function PiChatPanel<
   chrome = true,
   renderMode = 'full',
   messagesOnlyVisibleTools,
+  messagesOnlyHideCopyActions = false,
   messagesOnlyHiddenUserPrefixes,
   debug = false,
   showSessions,
@@ -255,6 +260,7 @@ export function PiChatPanel<
   emptyState,
   emptyPlacement = 'hero',
   composerPlaceholder,
+  composerActivity,
   initialDraft,
   autoSubmitInitialDraft = false,
   onDraftRestored,
@@ -1316,6 +1322,7 @@ export function PiChatPanel<
               chrome={chrome}
               pickerPlacement={emptyHero ? 'above-compact' : 'above'}
               isStreaming={isStreaming}
+              composerActivity={composerActivity}
               status={status}
               disabled={disabled}
               submitStatus={submitStatus}
@@ -1447,6 +1454,7 @@ export function PiChatPanel<
               windowResetKey={activeSessionId}
               renderMode={renderMode}
               messagesOnlyVisibleTools={messagesOnlyVisibleTools}
+              messagesOnlyHideCopyActions={messagesOnlyHideCopyActions}
               messagesOnlyHiddenUserPrefixes={messagesOnlyHiddenUserPrefixes}
             />
 

@@ -39,7 +39,9 @@ interface SeedFile {
 }
 
 interface EvalTurn {
-  readonly message: string
+  readonly message?: string
+  /** Wait for and answer a card raised by an asynchronous builder completion. */
+  readonly await_card?: boolean
   readonly answer_card?: string
   /** Model compaction and other asynchronous handoffs may still be settling. */
   readonly wait_before_ms?: number
@@ -143,8 +145,9 @@ function loadCases(): EvalCase[] {
 
 function normalizedTurn(turn: string | EvalTurn): EvalTurn {
   const normalized = typeof turn === 'string' ? { message: turn } : turn
+  if (!normalized.await_card && !normalized.message) throw new Error('eval turn needs a message or await_card')
   const message = normalized.message
-    .replaceAll('{{app_url}}', APP_URL)
+    ?.replaceAll('{{app_url}}', APP_URL)
     .replace(/\{\{intent_slug:([^}]+)\}\}/g, (_match, needle: string) => {
       const intentRoot = currentWorkspace && path.join(currentWorkspace, 'agent', 'intents')
       const candidate = intentRoot && existsSync(intentRoot)
@@ -153,7 +156,7 @@ function normalizedTurn(turn: string | EvalTurn): EvalTurn {
       if (!candidate) throw new Error(`no intent slug contains ${JSON.stringify(needle)}`)
       return candidate.slice(0, -3)
     })
-  return { ...normalized, message }
+  return { ...normalized, ...(message === undefined ? {} : { message }) }
 }
 
 function safeCaseName(name: string): string {
@@ -364,6 +367,16 @@ async function readPending(sessionId: string): Promise<PendingQuestion | undefin
   return result.questions?.find((question) => question.sessionId === sessionId)
 }
 
+function followsRecommendationRule(question: PendingQuestion): boolean {
+  const fields = question.schema?.fields ?? []
+  if (fields.length !== 1) return false
+  const options = fields[0]?.options ?? []
+  return options.length >= 3
+    && options.length <= 6
+    && /\(recommended\)/i.test(options[0]?.label ?? '')
+    && options.some((option) => /^something else$/i.test(option.label?.trim() ?? ''))
+}
+
 function answerValues(question: PendingQuestion, optionLabel: string): Record<string, string> {
   const fields = question.schema?.fields ?? []
   if (fields.length === 0) throw new Error(`question ${question.questionId} has no answer fields`)
@@ -406,20 +419,23 @@ async function runTurn(sessionId: string, turn: EvalTurn): Promise<TurnObservati
   collectTranscriptToolCalls(currentWorkspace!, priorCalls)
   const calls = new Map<string, ObservedToolCall>()
   const callsBeforeAnswer = new Map<string, ObservedToolCall>()
-  let cardShown = false
+  const cardIds = new Set<string>()
+  const recommendedCardIds = new Set<string>()
+  const answeredQuestionIds = new Set<string>()
   let changedBeforeAnswer: string[] = []
-  let answered = false
-  const requestId = randomUUID()
-  await requestJson(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/prompt`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      requestId,
-      clientNonce: requestId,
-      content: turn.message,
-      requireIdle: true,
-    }),
-  })
+  if (!turn.await_card) {
+    const requestId = randomUUID()
+    await requestJson(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/prompt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        requestId,
+        clientNonce: requestId,
+        content: turn.message,
+        requireIdle: true,
+      }),
+    })
+  }
 
   const deadline = Date.now() + TURN_TIMEOUT_MS
   while (Date.now() < deadline) {
@@ -438,17 +454,19 @@ async function runTurn(sessionId: string, turn: EvalTurn): Promise<TurnObservati
     collectToolCalls(state, calls, ignoredCalls)
     collectTranscriptToolCalls(currentWorkspace!, calls, ignoredCalls)
     if (pending) {
-      cardShown = true
-      if (!answered) {
+      cardIds.add(pending.questionId)
+      if (followsRecommendationRule(pending)) recommendedCardIds.add(pending.questionId)
+      if (answeredQuestionIds.size === 0) {
         for (const [id, call] of calls) callsBeforeAnswer.set(id, call)
         changedBeforeAnswer = changedPaths(beforeWorkspace, snapshotWorkspace(currentWorkspace!))
       }
       if (!turn.answer_card) {
         throw new Error(`turn raised a pending question (${pending.title ?? pending.questionId}) but has no answer_card`)
       }
-      if (!answered) {
+      if (!answeredQuestionIds.has(pending.questionId)) {
+        if (answeredQuestionIds.size >= 10) throw new Error('turn raised more than 10 question cards')
         await submitAnswer(pending, turn.answer_card)
-        answered = true
+        answeredQuestionIds.add(pending.questionId)
       }
     }
     if (state.status === 'error') throw new Error(`session entered error state: ${JSON.stringify(state.error)}`)
@@ -459,7 +477,10 @@ async function runTurn(sessionId: string, turn: EvalTurn): Promise<TurnObservati
         reply,
         toolCalls: [...calls.values()],
         toolCallsBeforeAnswer: [...callsBeforeAnswer.values()],
-        cardShown,
+        cardShown: cardIds.size > 0,
+        cardsShown: cardIds.size,
+        recommendedCards: recommendedCardIds.size,
+        changedPaths: changedPaths(beforeWorkspace, snapshotWorkspace(currentWorkspace!)),
         changedBeforeAnswer,
       }
     }

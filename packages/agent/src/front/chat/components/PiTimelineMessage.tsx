@@ -65,6 +65,8 @@ export interface PiTimelineMessageProps {
    * supplies its card through `toolRenderers`.
    */
   messagesOnlyVisibleTools?: readonly string[]
+  /** Hide the copy action when the host uses the consumer-facing messages-only view. */
+  messagesOnlyHideCopyActions?: boolean
 }
 
 export function PiTimelineMessage(props: PiTimelineMessageProps) {
@@ -75,7 +77,7 @@ export function PiTimelineMessage(props: PiTimelineMessageProps) {
   )
 }
 
-function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate, renderMode = 'full', messagesOnlyVisibleTools = EMPTY_VISIBLE_TOOLS }: PiTimelineMessageProps) {
+function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate, renderMode = 'full', messagesOnlyVisibleTools = EMPTY_VISIBLE_TOOLS, messagesOnlyHideCopyActions = false }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -221,7 +223,7 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           return null
         })}
       </MessageContent>
-      {isAssistant && (textParts.length > 0 || shouldReserveStreamingActions) ? (
+      {isAssistant && !(renderMode === 'messages-only' && messagesOnlyHideCopyActions) && (textParts.length > 0 || shouldReserveStreamingActions) ? (
         <MessageActionsBar
           text={textParts.map((part) => part.text).join('\n\n')}
           visible={!messageIsStreaming}

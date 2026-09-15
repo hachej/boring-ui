@@ -50,8 +50,9 @@ agreed, the host compacts that conversation and `run_builder` starts a fresh
 `builder` session in the same workspace. A `mockup` stage writes one static
 page under `public/mockups/` and marks the intent `sketched`; after the user
 keeps it, the `build` stage matches that sketch and marks the intent `built`.
-Small tweaks can go straight to `build`. Only one builder may run at a time.
-At agent-end the host records the builder's final text and prompts the live
+Moment-sized tweaks are edited directly in the live workspace and never start a
+builder. Work that needs real building is sketched first. Only one builder may
+run at a time. At agent-end the host records the builder's final text and prompts the live
 colleague. Completed builds start a fresh `documenter` to update
 `docs/CHANGES.md` and `docs/PRODUCT.md`. Neither child's transcript is shown
 to the user.
@@ -64,7 +65,9 @@ the composer is blocked until it is answered — no pane, no inbox. The server
 reuses the ask-user plugin's tool, runtime and file store by deep import; the
 plugin's published entry point is bound to the Workspace shell, which this app
 does not have. The card is opted in through `messagesOnlyVisibleTools` on
-`PiChatPanel`, which is empty for every other host.
+`PiChatPanel`, which is empty for every other host. This app also opts out of
+message copy actions and replaces the generic composer working pill with its
+user-waiting activity strip; both package defaults remain unchanged.
 
 ## Skills
 

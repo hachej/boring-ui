@@ -18,6 +18,7 @@ import {
   type IntentFile,
 } from './memoryFiles.js'
 import type { SessionTracker } from './reloadTools.js'
+import type { StageBus } from './stageBus.js'
 import { formatSystemEvent } from './systemEvents.js'
 
 export const BUILDER_AGENT_TYPE_ID = 'builder'
@@ -182,6 +183,8 @@ export function createRunAgentTools(options: {
   readonly scope: AuthorizedAgentScope
   readonly getGateway: () => AgentGateway | undefined
   readonly sessions: SessionTracker
+  /** User-visible sketch/build milestones. Documenter and maintenance work never emit here. */
+  readonly activityBus?: StageBus
   /** The browser-reachable app URL also given to the stage tools. */
   readonly appBaseUrl?: string
   readonly now?: Clock
@@ -220,10 +223,17 @@ export function createRunAgentTools(options: {
         }
         const stage = (params.stage as BuilderStage | undefined) ?? defaultBuilderStage(intent)
         const mockupRelativePath = `public/mockups/${slug}.html`
+        const activity = {
+          slug,
+          label: slug.replace(/-/g, ' '),
+          stage,
+          startedAt: new Date().toISOString(),
+        } as const
 
         builderRunning = true
         try {
           if (stage === 'build') await setIntentStatus(options.workspaceRoot, slug, 'building')
+          options.activityBus?.emit({ type: 'activity.started', ...activity })
           const run = await startFreshRun({
             gateway,
             scope: options.scope,
@@ -234,6 +244,7 @@ export function createRunAgentTools(options: {
               : `BUILD intent ${slug}. Match the approved sketch at ${mockupRelativePath} when it exists.`,
           })
           void run.completion.then(async ({ summary, status }) => {
+            options.activityBus?.emit({ type: 'activity.verifying', ...activity })
             let finalSummary = summary || `could not, because the builder session ended with ${status}`
             if (stage === 'mockup') {
               try {
@@ -242,6 +253,7 @@ export function createRunAgentTools(options: {
                 finalSummary = `could not, because ${error instanceof Error ? error.message : String(error)}`
                 await noteIntent(options.workspaceRoot, slug, `Builder mockup: ${finalSummary}`, now)
                 await setIntentStatus(options.workspaceRoot, slug, 'agreed')
+                options.activityBus?.emit({ type: 'activity.done', ...activity })
                 await postToColleague({
                   gateway,
                   scope: options.scope,
@@ -254,6 +266,7 @@ export function createRunAgentTools(options: {
               finalSummary = sketchSummary(finalSummary)
               await noteIntent(options.workspaceRoot, slug, `Builder mockup: ${finalSummary}`, now)
               await setIntentStatus(options.workspaceRoot, slug, 'sketched')
+              options.activityBus?.emit({ type: 'activity.done', ...activity })
               await postToColleague({
                 gateway,
                 scope: options.scope,
@@ -272,6 +285,7 @@ export function createRunAgentTools(options: {
 
             await noteIntent(options.workspaceRoot, slug, `Builder build: ${finalSummary}`, now)
             await setIntentStatus(options.workspaceRoot, slug, 'built')
+            options.activityBus?.emit({ type: 'activity.done', ...activity })
             await postToColleague({
               gateway,
               scope: options.scope,
@@ -280,12 +294,16 @@ export function createRunAgentTools(options: {
               log: options.log,
             })
           }).catch((error) => {
+            // No colleague turn will arrive to clear a terminal milestone on this
+            // path, so do not leave stale work visible indefinitely.
+            options.activityBus?.emit({ type: 'activity.clear' })
             options.log?.(`builder completion failed for ${slug}: ${String(error)}`)
           }).finally(() => {
             builderRunning = false
           })
           return text(`started ${stage}`)
         } catch (error) {
+          options.activityBus?.emit({ type: 'activity.done', ...activity })
           builderRunning = false
           throw error
         }
