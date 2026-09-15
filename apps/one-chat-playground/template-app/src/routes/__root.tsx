@@ -27,6 +27,15 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        {/* Anti-flash: a dev server regenerates the stylesheet after every save; keep the
+            page invisible until the stylesheet has applied (1.5s safety cap). */}
+        <style>{"html:not([data-css-ready]){visibility:hidden}"}</style>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){var d=document.documentElement;function r(){d.setAttribute('data-css-ready','')}var l=document.querySelector('link[rel=stylesheet]');if(!l||l.sheet){r();return}l.addEventListener('load',r);l.addEventListener('error',r);setTimeout(r,1500)})();",
+          }}
+        />
       </head>
       <body>
         {children}
