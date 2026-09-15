@@ -7,7 +7,10 @@ import { defineServerPlugin } from "@hachej/boring-workspace/server"
 
 const PREFIX = "/owners/alice/workspace"
 const AUTHORIZATION = "Bearer pane-proof"
-const workspaceRoot = await mkdtemp(join(tmpdir(), "owner-pane-proof-"))
+// The proof wrapper owns the run-scoped directory because it outlives Playwright's
+// forceful webServer teardown. The fallback keeps direct server invocations safe.
+const workspaceRoot = process.env.BORING_OWNER_PANE_PROOF_WORKSPACE_ROOT
+  ?? await mkdtemp(join(tmpdir(), "owner-pane-proof-"))
 let postCount = 0
 let drainCount = 0
 let deliveredSeqs: number[] = []

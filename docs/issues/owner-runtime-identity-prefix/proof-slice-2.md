@@ -8,7 +8,7 @@ A real Chromium page rendered `WorkspaceAgentFront` against a listening, prefixe
 
 The page also emitted a real workspace agent-data/chat-display event containing a command-shaped decoy. Browser instrumentation showed that it neither entered command transport nor opened a pane, behaviorally proving display events cannot dispatch commands.
 
-Authenticated requests used only `/owners/alice/workspace`, carried `Bearer pane-proof`, and contained no query token. Server shutdown removes its temporary workspace on normal close, signals, listen failure, uncaught exception, and unhandled rejection.
+Authenticated requests used only `/owners/alice/workspace`, carried `Bearer pane-proof`, and contained no query token. An outer harness now creates and owns the exact run-scoped workspace, terminates the Playwright process group with bounded TERM→KILL escalation, and removes the workspace after Playwright exits; server cleanup remains defense-in-depth.
 
 ## Reproduction
 
@@ -18,7 +18,8 @@ The wrapper builds the required workspace dependency graph from a clean checkout
 
 ## Validation
 
-- Browser/server proof: 1/1 passed in 24.7s after package build.
+- Browser/server proof: 1/1 passed twice after package build (23.8s and 29.1s); the second exact workspace `/tmp/owner-pane-proof-run.9CzJpr` was absent afterward.
+- Cleanup harness: normal completion, command failure, and forced SIGTERM passed; each exact run-scoped directory was absent and each recorded child PID was gone.
 - ask-user: 21 files / 193 tests passed; one existing skipped test.
 - bridge E2E: 11/11 checks passed.
 - Focused proof TypeScript check: passed.
