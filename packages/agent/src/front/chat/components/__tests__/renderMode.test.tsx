@@ -98,6 +98,37 @@ function renderSurface(renderMode: 'full' | 'messages-only', isStreaming: boolea
 }
 
 describe('PiConversationSurface messages-only status line', () => {
+  test('hides host control prompts by prefix without hiding ordinary user messages', () => {
+    const messages: BoringChatMessage[] = [
+      { id: 'user-system', role: 'user', parts: [{ type: 'text', text: '[system event] builder done' }] },
+      { id: 'user-person', role: 'user', parts: [{ type: 'text', text: 'show me' }] },
+      noisyTurn,
+    ]
+    render(
+      <PiConversationSurface
+        chrome={false}
+        emptyHero={false}
+        messages={messages}
+        emptyStateHydrating={false}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts
+        toolRenderers={{}}
+        runtimeNotices={[]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+        renderMode="messages-only"
+        messagesOnlyHiddenUserPrefixes={['[system event]']}
+      />,
+    )
+
+    expect(screen.queryByText('[system event] builder done')).toBeNull()
+    expect(screen.getByText('show me')).toBeTruthy()
+    expect(screen.getByText('Done — your client list now shows the last contact date.')).toBeTruthy()
+  })
+
   test('shows one quiet working line while a turn streams', () => {
     renderSurface('messages-only', true)
     const working = document.querySelectorAll('[data-boring-agent-part="messages-only-working"]')

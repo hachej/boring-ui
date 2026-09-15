@@ -12,6 +12,7 @@ import { useStage } from './useStage'
 const AGENT_TYPE_ID = 'default'
 /** The only tool the user sees: a question they have to answer. */
 const VISIBLE_TOOLS = ['ask_user'] as const
+const HIDDEN_HOST_PROMPTS = ['[system event]'] as const
 
 declare global {
   interface Window {
@@ -95,6 +96,7 @@ export function App() {
             storageScope="one-chat"
             renderMode="messages-only"
             messagesOnlyVisibleTools={VISIBLE_TOOLS}
+            messagesOnlyHiddenUserPrefixes={HIDDEN_HOST_PROMPTS}
             toolRenderers={toolRenderers}
             composerBlockers={composerBlockers}
             chrome={false}

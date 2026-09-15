@@ -57,6 +57,8 @@ export interface PiConversationSurfaceProps {
   /** `messages-only` hides reasoning/tool parts and shows one quiet working line while streaming. */
   renderMode?: ChatRenderMode
   messagesOnlyVisibleTools?: readonly string[]
+  /** Machine-authored user-message prefixes hidden only from this transcript. */
+  messagesOnlyHiddenUserPrefixes?: readonly string[]
 }
 
 export function PiConversationSurface({
@@ -80,10 +82,14 @@ export function PiConversationSurface({
   windowResetKey,
   renderMode = 'full',
   messagesOnlyVisibleTools,
+  messagesOnlyHiddenUserPrefixes = [],
 }: PiConversationSurfaceProps) {
-  const messageItems = buildMessageRenderItems(messages)
+  const visibleMessages = renderMode === 'messages-only' && messagesOnlyHiddenUserPrefixes.length > 0
+    ? messages.filter((message) => !isHiddenHostPrompt(message, messagesOnlyHiddenUserPrefixes))
+    : messages
+  const messageItems = buildMessageRenderItems(visibleMessages)
   const total = messageItems.length
-  const historyEmpty = messages.length === 0
+  const historyEmpty = visibleMessages.length === 0
   // A terminal error (history failed to load, no messages present) already
   // explains the empty transcript below via RuntimeNoticeMessages. Rendering
   // the "What should we work on?" hero or a loading skeleton next to it reads
@@ -118,10 +124,10 @@ export function PiConversationSurface({
         chrome ? 'max-w-3xl px-6 py-8' : 'max-w-[680px] px-4 py-4',
         emptyHero && 'py-4 text-center',
       )}>
-        {messages.length === 0 && emptyStateHydrating && !terminalError ? (
+        {historyEmpty && emptyStateHydrating && !terminalError ? (
           <ConversationHistoryLoadingState />
         ) : null}
-        {messages.length === 0 && !emptyStateHydrating && !terminalError ? (
+        {historyEmpty && !emptyStateHydrating && !terminalError ? (
           <ChatEmptyState
             eyebrow={emptyState?.eyebrow}
             title={emptyState?.title}
@@ -256,6 +262,13 @@ function TranscriptHistoryLoader({ olderCount, onLoadOlder }: { olderCount: numb
         Load {olderCount} older message{olderCount === 1 ? '' : 's'}
       </button>
     </div>
+  )
+}
+
+function isHiddenHostPrompt(message: BoringChatMessage, prefixes: readonly string[]): boolean {
+  if (message.role !== 'user') return false
+  return message.parts.some(
+    (part) => part.type === 'text' && prefixes.some((prefix) => part.text.startsWith(prefix)),
   )
 }
 

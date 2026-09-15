@@ -168,6 +168,12 @@ export interface PiChatPanelProps<
    * back in when the call is itself something the user must see and act on.
    */
   messagesOnlyVisibleTools?: readonly string[]
+  /**
+   * User-message prefixes omitted from the transcript in `messages-only` mode.
+   * The messages remain in agent context; this only lets a host hide its own
+   * machine-authored control prompts from the person using the chat.
+   */
+  messagesOnlyHiddenUserPrefixes?: readonly string[]
   debug?: boolean
   showSessions?: boolean
   hotReloadEnabled?: boolean
@@ -241,6 +247,7 @@ export function PiChatPanel<
   chrome = true,
   renderMode = 'full',
   messagesOnlyVisibleTools,
+  messagesOnlyHiddenUserPrefixes,
   debug = false,
   showSessions,
   hotReloadEnabled = true,
@@ -1440,6 +1447,7 @@ export function PiChatPanel<
               windowResetKey={activeSessionId}
               renderMode={renderMode}
               messagesOnlyVisibleTools={messagesOnlyVisibleTools}
+              messagesOnlyHiddenUserPrefixes={messagesOnlyHiddenUserPrefixes}
             />
 
             {composerSurface}
