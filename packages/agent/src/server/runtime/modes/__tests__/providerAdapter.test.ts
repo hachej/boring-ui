@@ -12,7 +12,10 @@ vi.mock('@hachej/boring-sandbox/providers/bwrap', async (importOriginal) => {
   }
 })
 
-import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import type {
+  SandboxProviderV1,
+  SandboxProvisioningOperationsV1,
+} from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
 import type { RuntimeBundle } from '../../mode'
 import { createProviderRuntimeModeAdapter } from '../providerAdapter'
@@ -88,19 +91,60 @@ function createPairProvider(options: {
   }
 }
 
-test('custom provider owns its runtime layout root without built-in mode casting', async () => {
+test('application-owned provider and mode IDs preserve EFS host/runtime root pairing', async () => {
+  const provider = createPairProvider({ dispose: vi.fn(async () => {}) })
+  const provisioning = {
+    mode: 'agentcore-remote-efs',
+    exec: vi.fn(async (_command, _args, opts) => ({ stdout: opts?.cwd })),
+    resolveInstallSource: vi.fn(async (source: string | URL) => String(source)),
+    workspaceFs: {
+      exists: vi.fn(async () => true),
+      rm: vi.fn(async () => {}),
+      mkdir: vi.fn(async () => {}),
+      writeText: vi.fn(async () => {}),
+      readText: vi.fn(async () => null),
+      copyFromHost: vi.fn(async () => {}),
+    },
+    getRuntimeCacheRoot: () => '/efs/runtime-cache',
+  } satisfies SandboxProvisioningOperationsV1
+  const customProvider = {
+    ...provider,
+    providerId: 'aws-agentcore',
+    resolveRuntimeRoot: () => '/efs/tenants/acme/workspaces/demo',
+    async create(context: Parameters<SandboxProviderV1['create']>[0]) {
+      const pair = await provider.create(context)
+      return {
+        ...pair,
+        workspace: {
+          ...pair.workspace,
+          root: '/efs/tenants/acme/workspaces/demo',
+          runtimeContext: { runtimeCwd: '/efs/tenants/acme/workspaces/demo' },
+        },
+        provisioning,
+      }
+    },
+  } satisfies SandboxProviderV1
   const adapter = createProviderRuntimeModeAdapter({
-    id: 'custom-provider',
-    provider: createPairProvider({ dispose: vi.fn(async () => {}) }),
+    id: 'agentcore-remote-efs',
+    provider: customProvider,
     runtimeHost: testRuntimeHostOperations,
-    workspaceFsCapability: 'best-effort',
-    bash: { kind: 'remote' },
+    workspaceFsCapability: 'strong',
+    storageRoot: () => '/mnt/efs/tenants/acme/workspaces/demo',
+    bash: { kind: 'remote', defaultPath: '/efs/tenants/acme/workspaces/demo' },
     filesystem: { kind: 'remote-workspace' },
   })
 
-  expect(adapter.id).toBe('custom-provider')
-  expect(adapter.getRuntimeLayoutRoot({ workspaceRoot: '/host', sessionId: 'session' }))
-    .toBe('/workspace')
+  const context = { workspaceRoot: '/mnt/efs/tenants/acme/workspaces/demo', sessionId: 'session' }
+  expect(adapter.id).toBe('agentcore-remote-efs')
+  expect(adapter.getRuntimeLayoutRoot(context)).toBe('/efs/tenants/acme/workspaces/demo')
+  const bundle = await adapter.create(context)
+  expect(bundle.storageRoot).toBe('/mnt/efs/tenants/acme/workspaces/demo')
+  expect(bundle.workspace.root).toBe('/efs/tenants/acme/workspaces/demo')
+  expect(bundle.provisioningAdapter?.mode).toBe('agentcore-remote-efs')
+  await expect(bundle.provisioningAdapter?.exec('pwd', [], {
+    cwd: adapter.getRuntimeLayoutRoot(context),
+  })).resolves.toEqual({ stdout: '/efs/tenants/acme/workspaces/demo' })
+  await bundle.disposeRuntime?.()
   await adapter.dispose?.()
 })
 

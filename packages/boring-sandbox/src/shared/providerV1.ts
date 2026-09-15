@@ -14,6 +14,7 @@ export type ExtractedSandboxProviderIdV1 =
   | "blaxel"
   | "vercel-sandbox"
   | "remote-worker";
+export type SandboxProviderIdV1 = ExtractedSandboxProviderIdV1 | (string & {});
 
 export type SandboxRuntimeModeIdV1 =
   | "direct"
@@ -22,10 +23,9 @@ export type SandboxRuntimeModeIdV1 =
   | "vercel-sandbox"
   | "remote-worker";
 
-export type SandboxProvisioningRuntimeModeIdV1 = Exclude<
-  SandboxRuntimeModeIdV1,
-  "remote-worker"
->;
+export type SandboxProvisioningRuntimeModeIdV1 =
+  | Exclude<SandboxRuntimeModeIdV1, "remote-worker">
+  | (string & {});
 
 export interface SandboxProviderCreateContextV1 {
   workspaceRoot: string;
@@ -125,7 +125,7 @@ export const DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 =
 
 export interface SandboxProviderV1 {
   readonly contractVersion: typeof PROVIDER_CONTRACT_VERSION;
-  readonly providerId: ExtractedSandboxProviderIdV1;
+  readonly providerId: SandboxProviderIdV1;
   readonly capabilities: ProviderCapabilities;
   resolveRuntimeRoot(context: SandboxProviderCreateContextV1): string;
   create(

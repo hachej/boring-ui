@@ -76,6 +76,7 @@ export type {
   DisposableSandboxProviderProfileV1,
   DisposableSandboxProviderV1,
   ExtractedSandboxProviderIdV1,
+  SandboxProviderIdV1,
   SandboxPairHealthV1,
   SandboxProviderCreateCleanupDebtV1,
   SandboxProviderCreateContextV1,

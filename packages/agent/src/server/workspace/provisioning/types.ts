@@ -58,7 +58,8 @@ export interface ResolveInstallSourceOpts {
 }
 
 export interface WorkspaceProvisioningAdapter {
-  mode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
+  /** Application-owned runtime ID; provisioning does not select builtin adapters. */
+  mode: string
 
   exec(command: string, args: string[], opts?: {
     cwd?: string
