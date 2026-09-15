@@ -17,7 +17,10 @@ const sampleAppRoot = path.join(appRoot, 'sample-app')
 
 const frontPort = Number(process.env.ONE_CHAT_PORT ?? 5320)
 const sampleAppPort = Number(process.env.SAMPLE_APP_PORT ?? 5321)
-const sampleAppUrl = `http://127.0.0.1:${sampleAppPort}/`
+// Host the browser uses to reach this machine (a Tailscale IP, a hostname).
+// Defaults to loopback for local use; the app iframe must be reachable from the viewer.
+const publicHost = process.env.ONE_CHAT_PUBLIC_HOST ?? '127.0.0.1'
+const sampleAppUrl = `http://${publicHost}:${sampleAppPort}/`
 const sessionRoot = path.resolve(
   process.env.BORING_AGENT_SESSION_ROOT ?? path.join(appRoot, '.boring-agent', 'sessions'),
 )
@@ -114,7 +117,7 @@ const vite = await createViteServer({
 })
 
 await vite.listen()
-runtime.app.log.info(`one-chat front  http://127.0.0.1:${frontPort}/`)
+runtime.app.log.info(`one-chat front  http://${publicHost}:${frontPort}/`)
 runtime.app.log.info(`one-chat app    ${sampleAppUrl}`)
 runtime.app.log.info(`one-chat api    ${apiAddress}`)
 

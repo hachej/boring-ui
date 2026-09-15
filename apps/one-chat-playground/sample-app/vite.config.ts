@@ -8,6 +8,6 @@ export default defineConfig({
   server: {
     port: Number(process.env.SAMPLE_APP_PORT ?? 5321),
     strictPort: true,
-    host: '127.0.0.1',
+    host: process.env.HOST ?? '127.0.0.1',
   },
 })

@@ -9,6 +9,10 @@ Run: `pnpm -C apps/one-chat-playground dev` (builds deps, then boots everything)
 Ports: front `5320` (`ONE_CHAT_PORT`), sample app `5321` (`SAMPLE_APP_PORT`);
 the agent API binds an ephemeral port behind the front's `/api` proxy.
 
+Remote viewing: set `HOST=0.0.0.0` and `ONE_CHAT_PUBLIC_HOST=<ip or hostname the browser uses>`
+plus `ONE_CHAT_ALLOWED_ORIGINS=http://<that host>:*` so the app iframe and the
+`show_on_screen` allowlist both use an address the viewer can reach.
+
 Env: a model must be configured — `BORING_AGENT_DEFAULT_MODEL` (e.g.
 `anthropic:claude-sonnet-4-5`) plus that provider's key (`ANTHROPIC_API_KEY`, …).
 `ONE_CHAT_ALLOWED_ORIGINS` extends the `show_on_screen` allowlist beyond
