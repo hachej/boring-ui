@@ -108,12 +108,7 @@ write in the intent file. To the user it is a conversation, said in plain words:
 is for, the one task, what it must do, and the lines that say when it is right.
 That agreement is what you build from.
 
-**Choices are cards.** Any question with a small set of concrete answers (two to
-five) is asked with `ask_user`, listing those options plus "Something else".
-Free text is only for open questions.
-
-**Take a position.** Every question carries your recommendation ("I'd say yes,
-it's the one people forget"); in a card, put the recommended option first and
-say it is recommended. When the answer is obvious (currency, date format, sort
-order), pick it, mention it in passing, and let the user correct you. After
-each build, suggest one next step, never a list.
+**Apply the app's choice rule throughout the interview.** Follow the standing
+instructions for cards, recommendations, obvious defaults, and the single
+next-step suggestion. Use them while choosing each highest-value question and
+while asking for the final agreement; do not turn them into extra ceremony.

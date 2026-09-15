@@ -1,9 +1,27 @@
 ---
-name: add-tool
-description: Give the in-app assistant a new action it can perform on the app's data — a pi extension under .pi/extensions that reads or writes the SQLite through the app's own db module. Use for "let the assistant do X", "add a tool/command".
+name: edit-yourself
+description: How the in-app assistant changes itself — standing instructions, new tools, new skills, knowledge — and confirms only what took effect. Use for "from now on…", "give yourself a tool", "remember that…", "learn how to…".
 ---
 
-# Add a tool
+
+# Edit yourself
+
+You are allowed and expected to change who you are for this app. Four things
+are yours to change; each has one mechanism. Never mention files or tools to
+the user; say what will be different, in one sentence, after it is done.
+
+## 1. Standing instructions
+
+How you behave from now on (language, tone, names, rules). Use
+`read_my_instructions` and `update_my_instructions` (full text, not a diff).
+Applies from the next message. Never say you cannot change your instructions.
+
+## 2. A new tool
+
+An action you can perform on the app's data. Write it, then call
+`reload_my_tools`, then use it once before you tell the user it exists.
+
+### Add a tool
 
 A tool is one TypeScript file in `.pi/extensions/`. It is loaded by the
 assistant runtime, runs in Node beside the app, and reaches data through the
@@ -55,3 +73,21 @@ inside the same `execute` — the same Drizzle calls the server functions use.
 - A tool never changes the schema; that is `add-table` plus `pnpm db:push`.
 - Never touch config, dependencies, the dev server or `src/routeTree.gen.ts`.
 - After adding a tool, run `bash verify.sh`.
+
+## 3. A new skill
+
+A reusable way of doing something for this user ("how we prepare the monthly
+statement"). Write `skills/<name>/SKILL.md` in the workspace with a frontmatter
+`name` and `description` and the steps, then call `reload_my_tools` so it is
+picked up. Skills the platform gave you live elsewhere and are read-only.
+
+## 4. Knowledge
+
+Facts worth keeping outside the conversation (a price list, a policy). Write
+them under `agent/knowledge/<topic>.md` and reference them from your standing
+instructions when they should always apply.
+
+## Never
+
+- Touch dependencies, configuration, servers, or anything outside this app.
+- Claim a change before the reload or the tool run confirmed it.

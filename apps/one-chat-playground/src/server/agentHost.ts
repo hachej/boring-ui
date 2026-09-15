@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import Fastify, { type FastifyInstance } from 'fastify'
 
@@ -38,6 +39,8 @@ export const ONE_CHAT_AUTH_SUBJECT_ID = 'trusted-local'
 export const ONE_CHAT_SESSION_ID = 'one-chat'
 /** Skills that ship with the user's app, vendored into the workspace. */
 export const SKILLS_RELATIVE_DIR = path.join('.pi', 'skills')
+/** Per-seat platform skills: apps/one-chat-playground/agents/<seat>/skills. */
+const agentsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../agents')
 
 export interface OneChatRuntimeOptions {
   /** The user's app. The agent's read/write/edit/bash all act here. */
@@ -162,6 +165,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     scope,
     getGateway: () => createdHost?.gateway,
     sessions,
+    activityBus: stage,
     appBaseUrl: options.appBaseUrl,
     log,
   })
@@ -225,11 +229,19 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         sessionNamespace: `one-chat-playground-${agentTypeId}`,
         // Every seat gets only the skills shipped in the user's app. The two
         // paths cover the tiny sample app and the standard template app.
+        // Platform skills ship with the agent definition (agents/<seat>/skills),
+        // fixed and versioned with the host. The workspace's own skills folder
+        // holds only what the colleague made for itself.
         pi: {
-          additionalSkillPaths: [
-            path.join(workspaceRoot, SKILLS_RELATIVE_DIR),
-            path.join(workspaceRoot, 'skills'),
-          ],
+          additionalSkillPaths: isColleague
+            ? [
+                path.join(agentsRoot, 'colleague', 'skills'),
+                path.join(workspaceRoot, SKILLS_RELATIVE_DIR),
+                path.join(workspaceRoot, 'skills'),
+              ]
+            : agentTypeId === BUILDER_AGENT_TYPE_ID
+              ? [path.join(agentsRoot, 'builder', 'skills')]
+              : [],
           ...(isColleague ? { extensionFactories: [createCompactCommandExtension(log)] } : {}),
         },
         ...(isColleague
