@@ -32,12 +32,12 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",
@@ -46,8 +46,8 @@
     "postgres": "^3.4.9",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
-    "typescript": "^6.0.3",
-    "vite": "^8.2.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "yaml": "^2.9.0"
   }
 }

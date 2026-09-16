@@ -87,10 +87,10 @@
     "@zxcvbn-ts/language-en": "^4.1.1",
     "better-auth": "^1.6.28",
     "drizzle-orm": "^0.45.2",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.3",
     "fastify-plugin": "^6.0.0",
     "isomorphic-dompurify": "^3.21.0",
-    "lucide-react": "^1.31.0",
+    "lucide-react": "^1.43.0",
     "nodemailer": "^9.1.1",
     "pino": "^10.3.1",
     "postgres": "^3.4.9",
@@ -115,7 +115,7 @@
     "react-dom": "^19.2.8",
     "tsup": "^8.4.0",
     "tsx": "^4.23.13",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   },
   "peerDependencies": {

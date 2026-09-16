@@ -16,12 +16,12 @@
   },
   "devDependencies": {
     "@antithesishq/bombadil": "0.7.2",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",
     "axe-core": "^4.13.0",
     "jpeg-js": "0.4.4",
     "tsx": "^4.23.13",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }
 }
