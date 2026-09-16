@@ -139,11 +139,49 @@ describe('fresh agent run tools', () => {
     expect(activityEvents).toEqual(['activity.started', 'activity.verifying', 'activity.done'])
     expect(prompts).toContainEqual({
       agentTypeId: 'builder',
-      content: 'BUILD intent suppliers. Match the approved sketch at public/mockups/suppliers.html when it exists.',
+      content: 'BUILD intent suppliers in this isolated candidate. Match public/mockups/suppliers.html when it exists and write one smoke check per agreement shall-line.',
     })
     expect(prompts.find((entry) => entry.agentTypeId === 'default')?.content).toBe(
-      '[system event] The builder finished intent suppliers: Suppliers can now be listed. Show the live app with show_on_screen({what: "app"}), then tell the user in one or two sentences and suggest exactly one useful next step.',
+      '[system event] The builder finished intent suppliers: Suppliers can now be listed. The verified preview is already on screen at "/" titled "Preview: supplier list". Say it is a preview where nothing is saved, then ask whether to keep it, change something, or leave it as it was.',
     )
+  })
+
+  test('shows a historical version from the lifecycle tool catalog', async () => {
+    const bundle = await workspaceFixture('one-chat-version-')
+    disposers.push(bundle.disposeRuntime ?? (async () => {}))
+    const activityBus = createStageBus()
+    const events: unknown[] = []
+    activityBus.subscribe((event) => events.push(event))
+    const tools = createRunAgentTools({
+      workspace: bundle.workspace,
+      scope: { workspaceScopeId: 'workspace', authSubjectId: 'user' } as AuthorizedAgentScope,
+      getGateway: () => { throw new Error('unused') },
+      sessions: createSessionTracker(),
+      activityBus,
+      lifecycle: {
+        showVersion: async () => ({
+          url: 'http://localhost:6101/',
+          title: 'Kept version abc123',
+          label: 'abc123 · suppliers',
+          commit: 'abc123',
+        }),
+      } as never,
+    })
+
+    const result = await tools.find((candidate) => candidate.name === 'show_version')!.execute(
+      { commit: 'abc123' },
+      {} as never,
+    )
+
+    expect(resultText(result)).toContain('Nothing you do there is saved')
+    expect(events).toContainEqual({
+      type: 'stage.show',
+      what: 'page',
+      url: 'http://localhost:6101/',
+      title: 'Previous version',
+      label: 'version',
+      versionLabel: 'abc123 · suppliers',
+    })
   })
 
   test('defaults new surfaces to mockup until an intent has build history', () => {

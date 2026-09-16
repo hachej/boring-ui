@@ -21,12 +21,10 @@ describe('screen tools', () => {
 
     await tool(tools, 'show_on_screen').execute({ what: 'page', url: 'http://localhost:6100/sketch', title: 'Sketch' }, {} as never)
     await tool(tools, 'back_to_app').execute({}, {} as never)
-    const previous = await tool(tools, 'show_previous_version').execute({}, {} as never)
     await tool(tools, 'clear_screen').execute({}, {} as never)
 
-    expect(previous.isError).toBe(true)
     expect(events).toEqual([
-      { type: 'stage.show', what: 'page', url: 'http://localhost:6100/sketch', title: 'Sketch' },
+      { type: 'stage.show', what: 'page', url: 'http://localhost:6100/sketch', title: 'Sketch', label: 'preview' },
       { type: 'stage.show', what: 'app', url: 'http://localhost:6100/', title: 'Your app' },
       { type: 'stage.clear' },
     ])

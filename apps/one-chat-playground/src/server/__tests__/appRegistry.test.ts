@@ -37,7 +37,7 @@ async function fixture() {
     runtimeModeAdapter,
     appUrlPattern: 'https://{slug}.apps.test:{port}/',
     portStart: 6100,
-    portEnd: 6102,
+    portEnd: 6105,
     isPortAvailable: async () => true,
     runCommand: async (_runtime, command, args) => {
       commands.push(`${command} ${args.join(' ')}`)
@@ -70,22 +70,33 @@ describe('app registry', () => {
     expect(first).toMatchObject({
       slug: 'client-portal',
       title: 'Client Portal',
-      port: 6100,
+      acceptedPort: 6100,
+      candidatePort: 6101,
     })
-    expect(second).toMatchObject({ slug: 'client-portal-2', port: 6101 })
+    expect(second).toMatchObject({ slug: 'client-portal-2', acceptedPort: 6102, candidatePort: 6103 })
     expect(registry.list().map((app) => app.slug)).toEqual(['client-portal', 'client-portal-2'])
     expect(commands).toEqual([
       'pnpm install --frozen-lockfile --config.minimum-release-age=0 --config.dangerously-allow-all-builds=true',
       'pnpm run db:push',
+      'git init -b main',
+      'git config user.name One Chat',
+      'git config user.email one-chat@local.invalid',
+      'git add -A',
+      'git commit -m Created Client Portal',
       'pnpm install --frozen-lockfile --config.minimum-release-age=0 --config.dangerously-allow-all-builds=true',
       'pnpm run db:push',
+      'git init -b main',
+      'git config user.name One Chat',
+      'git config user.email one-chat@local.invalid',
+      'git add -A',
+      'git commit -m Created Client Portal',
     ])
     await vi.waitFor(() => expect(started).toEqual(['client-portal', 'client-portal-2']))
     expect(registry.urlFor(first)).toBe('https://client-portal.apps.test:6100/')
     expect(JSON.parse(await readFile(path.join(appsRoot, 'apps.json'), 'utf8'))).toMatchObject({
       apps: [
-        { slug: 'client-portal', port: 6100 },
-        { slug: 'client-portal-2', port: 6101 },
+        { slug: 'client-portal', acceptedPort: 6100, candidatePort: 6101 },
+        { slug: 'client-portal-2', acceptedPort: 6102, candidatePort: 6103 },
       ],
     })
     expect(await readFile(path.join(appsRoot, 'client-portal', 'src', 'index.ts'), 'utf8')).toBe('export {}\n')
@@ -97,7 +108,7 @@ describe('app registry', () => {
     await registry.create('One')
     await registry.create('Two')
     await registry.create('Three')
-    await expect(registry.create('Four')).rejects.toThrow('No app port is available in 6100-6102')
+    await expect(registry.create('Four')).rejects.toThrow('No app port is available in 6100-6105')
   })
 
   test('discovers existing app folders through the workspace adapter', async () => {
@@ -118,7 +129,7 @@ describe('app registry', () => {
     registries.push(registry)
 
     await registry.init()
-    expect(registry.list()).toMatchObject([{ slug: 'julien-app', title: 'Julien App', port: 6150 }])
+    expect(registry.list()).toMatchObject([{ slug: 'julien-app', title: 'Julien App', acceptedPort: 6150, candidatePort: 6151 }])
   })
 
   test('migrates ONE_CHAT_WORKSPACE_ROOT through adapter template materialization', async () => {
@@ -142,7 +153,7 @@ describe('app registry', () => {
     registries.push(registry)
 
     await registry.init()
-    expect(registry.list()).toMatchObject([{ slug: 'default', title: 'Default', port: 6200 }])
+    expect(registry.list()).toMatchObject([{ slug: 'default', title: 'Default', acceptedPort: 6200, candidatePort: 6201 }])
     expect(await readFile(path.join(appsRoot, 'default', 'agent', 'instructions.md'), 'utf8')).toBe('Keep this app.\n')
   })
 
@@ -163,7 +174,8 @@ describe('app registry', () => {
 
     await registry.init()
     await expect(registry.create('Available')).resolves.toMatchObject({
-      port: 6251,
+      acceptedPort: 6251,
+      candidatePort: 6252,
     })
   })
 
@@ -177,7 +189,7 @@ describe('app registry', () => {
       runtimeModeAdapter,
       publicHost: '127.0.0.1',
       portStart: 6270,
-      portEnd: 6270,
+      portEnd: 6271,
       restartDelayMs: 1,
       isPortAvailable: async () => true,
       runCommand: async () => {},

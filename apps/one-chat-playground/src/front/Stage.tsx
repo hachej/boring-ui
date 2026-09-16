@@ -14,6 +14,13 @@ export function Stage({ screen, onReady }: StageProps) {
       data-screen-kind={screen.what}
       aria-label={screen.title}
     >
+      {screen.label ? (
+        <div className="one-chat-stage-label" data-testid="one-chat-stage-label" role="status">
+          {screen.label === 'preview'
+            ? 'Preview — nothing you do here is saved'
+            : `${screen.versionLabel ? `Previous version · ${screen.versionLabel}` : 'Previous version'} — nothing you do here is saved`}
+        </div>
+      ) : null}
       <iframe
         key={`${screen.what}:${screen.url}`}
         src={screen.url}

@@ -23,6 +23,22 @@ const HIDDEN_HOST_PROMPTS = ['[system event]'] as const
 export function App() {
   const mobile = useIsMobile()
   const apps = useApps()
+  const [undoing, setUndoing] = useState(false)
+  const [undoError, setUndoError] = useState<string | null>(null)
+  const undoLastChange = useCallback(async () => {
+    if (!apps.activeApp || undoing) return
+    setUndoing(true)
+    setUndoError(null)
+    try {
+      const response = await fetch(`/api/one-chat/apps/${encodeURIComponent(apps.activeApp.slug)}/undo`, { method: 'POST' })
+      const body = await response.json() as { message?: string }
+      if (!response.ok) throw new Error(body.message ?? 'That change could not be taken back.')
+    } catch (error) {
+      setUndoError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setUndoing(false)
+    }
+  }, [apps.activeApp, undoing])
 
   return (
     <div className="one-chat-root" data-mobile={mobile ? '' : undefined}>
@@ -37,11 +53,19 @@ export function App() {
         onOpenNew={() => apps.setOverlay('new')}
         onClose={apps.closeOverlay}
         onCreate={apps.create}
+        undoing={undoing}
+        onUndo={undoLastChange}
       />
       <main className="one-chat-workspace">
         {apps.loading ? <div className="one-chat-boot">Opening your apps…</div> : null}
         {!apps.loading && apps.activeApp ? (
-          <AppExperience key={`${apps.activeApp.slug}:${mobile ? 'phone' : 'desktop'}`} app={apps.activeApp} mobile={mobile} />
+          <AppExperience
+            key={`${apps.activeApp.slug}:${mobile ? 'phone' : 'desktop'}`}
+            app={apps.activeApp}
+            mobile={mobile}
+            undoing={undoing}
+            onUndo={undoLastChange}
+          />
         ) : null}
         {!apps.loading && !apps.activeApp ? (
           <div className="one-chat-no-app" data-testid="one-chat-no-app">
@@ -51,13 +75,23 @@ export function App() {
             <button type="button" onClick={() => apps.setOverlay('new')}>Create an app</button>
           </div>
         ) : null}
-        {apps.error ? <p className="one-chat-global-error" role="alert">{apps.error}</p> : null}
+        {apps.error || undoError ? <p className="one-chat-global-error" role="alert">{undoError ?? apps.error}</p> : null}
       </main>
     </div>
   )
 }
 
-function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly mobile: boolean }) {
+function AppExperience({
+  app,
+  mobile,
+  undoing,
+  onUndo,
+}: {
+  readonly app: OneChatAppView
+  readonly mobile: boolean
+  readonly undoing: boolean
+  readonly onUndo: () => void
+}) {
   const stage = useStage(app.slug, mobile)
   const chat = useChatSize(mobile)
   const askUser = useAskUser(app.slug)
@@ -212,8 +246,8 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
   const chatSurface = (
     <div ref={chatRootRef} className="one-chat-chat relative flex min-h-0 min-w-0 flex-col bg-background" data-testid="one-chat-chat">
       {!mobile && desktopPresence === 'column' ? (
-        stage.screen ? (
-          <div className="one-chat-header-controls">
+        <div className="one-chat-header-controls">
+          {stage.screen ? (
             <button
               type="button"
               className="one-chat-undock"
@@ -224,9 +258,18 @@ function AppExperience({ app, mobile }: { readonly app: OneChatAppView; readonly
             >
               <WindowChevronIcon />
             </button>
-            <ThemeToggle />
-          </div>
-        ) : <ThemeToggle />
+          ) : null}
+          <button
+            type="button"
+            className="one-chat-undo-button"
+            data-testid="one-chat-undo"
+            disabled={undoing}
+            onClick={onUndo}
+          >
+            {undoing ? 'Undoing…' : 'Undo last change'}
+          </button>
+          <ThemeToggle />
+        </div>
       ) : null}
       {sessionError ? <p className="m-4 text-[13px] text-muted-foreground" role="alert">{sessionError}</p> : null}
       {sessionId ? (

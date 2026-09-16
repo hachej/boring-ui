@@ -67,6 +67,8 @@ runtime = await createOneChatRuntime({
       slug,
       workspaceRoot: registry.rootFor(slug),
       appBaseUrl: registry.urlFor(registered),
+      candidateBaseUrl: registry.candidateUrlFor(registered),
+      lifecycle: registry.lifecycleFor(slug),
     }
   },
   allowedOrigins,
@@ -74,7 +76,18 @@ runtime = await createOneChatRuntime({
   runtimeModeAdapter,
   allowUnisolatedDirectTools: process.env.ONE_CHAT_ALLOW_UNISOLATED_DIRECT_TOOLS === '1',
 })
-registerAppRoutes(runtime.app, registry)
+registerAppRoutes(runtime.app, registry, {
+  onAcceptedShown(slug) {
+    const app = registry.get(slug)
+    if (!app) return
+    runtime?.stageForApp(slug).emit({
+      type: 'stage.show',
+      what: 'app',
+      url: registry.urlFor(app),
+      title: app.title,
+    })
+  },
+})
 
 const apiAddress = await runtime.app.listen({ port: 0, host: '127.0.0.1' })
 const apiTarget = `http://127.0.0.1:${new URL(apiAddress).port}`

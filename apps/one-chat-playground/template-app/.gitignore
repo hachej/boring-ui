@@ -1,4 +1,5 @@
 node_modules
+.npm/
 .DS_Store
 dist
 dist-ssr
@@ -18,3 +19,7 @@ todos.json
 data/
 .artifacts/
 drizzle/
+.one-chat/
+candidate/
+versions/
+agent/intents/

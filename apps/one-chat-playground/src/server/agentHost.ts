@@ -14,6 +14,7 @@ import {
 import type { AgentGateway, AgentScopeVerifier, AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
+import { withoutRuntimeCredentials, type AppLifecycle } from './appLifecycle.js'
 import { bindToolGroups, loadOneChatAgentPackages, type OneChatSeat } from './agentPackages.js'
 import { createAskUser, registerScopedAskUserRoutes, type OneChatAskUser } from './askUser.js'
 import { compactAfterAgreement, createCompactCommandExtension } from './compaction.js'
@@ -37,6 +38,8 @@ export interface OneChatRuntimeApp {
   readonly slug: string
   readonly workspaceRoot: string
   readonly appBaseUrl: string
+  readonly candidateBaseUrl?: string
+  readonly lifecycle?: AppLifecycle
 }
 
 export interface OneChatRuntimeOptions {
@@ -139,7 +142,11 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
   const agentPackages = await loadOneChatAgentPackages(options.agentsRoot ?? ONE_CHAT_AGENTS_ROOT)
   const modeAdapter = options.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter('direct')
   const allowedOrigins = options.allowedOrigins ?? resolveAllowedOriginsFromEnv()
+  type ScopeTarget =
+    | { readonly kind: 'accepted'; readonly appSlug: string }
+    | { readonly kind: 'candidate'; readonly appSlug: string; readonly intentSlug: string }
   const scopes = new Map<string, AuthorizedAgentScope>()
+  const scopeTargets = new WeakMap<AuthorizedAgentScope, ScopeTarget>()
   const resources = new Map<string, AppRuntimeResources>()
   let hostApp: FastifyInstance | undefined
   let createdHost: CreatedAgentHost | undefined
@@ -150,25 +157,32 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     return { ...resolved, workspaceRoot: path.resolve(resolved.workspaceRoot) }
   }
 
-  const scopeForApp = (slug: string): AuthorizedAgentScope => {
-    appDescriptor(slug)
-    let scope = scopes.get(slug)
+  const scopeForTarget = (target: ScopeTarget): AuthorizedAgentScope => {
+    appDescriptor(target.appSlug)
+    const key = target.kind === 'accepted' ? target.appSlug : `${target.appSlug}:candidate:${target.intentSlug}`
+    let scope = scopes.get(key)
     if (!scope) {
       scope = Object.freeze({
-        workspaceScopeId: scopeIdForApp(slug, defaultSlug),
+        workspaceScopeId: target.kind === 'accepted'
+          ? scopeIdForApp(target.appSlug, defaultSlug)
+          : `${scopeIdForApp(target.appSlug, defaultSlug)}:candidate:${target.intentSlug}`,
         authSubjectId: ONE_CHAT_AUTH_SUBJECT_ID,
       }) as AuthorizedAgentScope
-      scopes.set(slug, scope)
+      scopes.set(key, scope)
+      scopeTargets.set(scope, target)
     }
     return scope
   }
 
-  const slugForScope = (scope: AuthorizedAgentScope): string => {
-    for (const [slug, candidate] of scopes) {
-      if (candidate === scope) return slug
-    }
+  const scopeForApp = (slug: string): AuthorizedAgentScope => scopeForTarget({ kind: 'accepted', appSlug: slug })
+
+  const targetForScope = (scope: AuthorizedAgentScope): ScopeTarget => {
+    const target = scopeTargets.get(scope)
+    if (target) return target
     throw new Error('one-chat-playground scope denied')
   }
+
+  const slugForScope = (scope: AuthorizedAgentScope): string => targetForScope(scope).appSlug
 
   const verifier: AgentScopeVerifier = {
     async verify(candidate) {
@@ -245,6 +259,11 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
           sessions,
           activityBus: stage,
           appBaseUrl: app.appBaseUrl,
+          candidateBaseUrl: app.candidateBaseUrl,
+          lifecycle: app.lifecycle,
+          candidateScope(intentSlug) {
+            return scopeForTarget({ kind: 'candidate', appSlug: app.slug, intentSlug })
+          },
           log,
         })
         const availableToolGroups = {
@@ -257,6 +276,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
             bus: stage,
             allowedOrigins,
             appBaseUrl: app.appBaseUrl,
+            lifecycle: app.lifecycle,
           }),
           ask_user: [askUser.tool],
           run_agents: runAgentTools,
@@ -374,15 +394,24 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     sessionRoot: options.sessionRoot,
     ...(!options.sessionRoot ? { inMemoryRequestLedgerMode: 'development' as const } : {}),
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
-      const selected = resourcesForApp(slugForScope(authorizedScope))
+      const target = targetForScope(authorizedScope)
+      const selected = resourcesForApp(target.appSlug)
+      const workspaceRoot = target.kind === 'accepted'
+        ? selected.app.workspaceRoot
+        : selected.app.lifecycle?.candidateRoot(target.intentSlug)
+      if (!workspaceRoot) throw new Error(`Candidate ${target.kind === 'candidate' ? target.intentSlug : ''} is not prepared`)
       return {
-        placementIdentity: JSON.stringify([modeAdapter.id, selected.app.workspaceRoot]),
-        workspaceRoot: selected.app.workspaceRoot,
-        provisioningFingerprint: JSON.stringify([modeAdapter.id, selected.app.workspaceRoot]),
+        placementIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
+        workspaceRoot,
+        provisioningFingerprint: JSON.stringify([modeAdapter.id, workspaceRoot]),
+        ...(target.kind === 'candidate'
+          ? { transformRuntimeBundle: withoutRuntimeCredentials }
+          : {}),
       }
     },
     async resolveAuthorizedAgentRuntimeScope({ authorizedScope, agentTypeId }) {
-      const selected = resourcesForApp(slugForScope(authorizedScope))
+      const target = targetForScope(authorizedScope)
+      const selected = resourcesForApp(target.appSlug)
       const selectedWorkspace = await selected.getWorkspace()
       const isColleague = agentTypeId === ONE_CHAT_AGENT_TYPE_ID
       const seat: OneChatSeat = isColleague ? 'colleague' : agentTypeId === BUILDER_AGENT_TYPE_ID ? 'builder' : 'documenter'
@@ -391,17 +420,20 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
       const identity = [
         'one-chat-playground',
         selected.app.slug,
+        target.kind,
+        ...(target.kind === 'candidate' ? [target.intentSlug] : []),
         agentTypeId,
         agentPackage.definitionDigest,
         agentPackage.tools,
         modeAdapter.id,
-        selected.app.workspaceRoot,
+        target.kind === 'candidate' ? selected.app.lifecycle?.candidateRoot(target.intentSlug) : selected.app.workspaceRoot,
       ]
+      const targetRoot = target.kind === 'candidate' ? selected.app.lifecycle?.candidateRoot(target.intentSlug) : selected.app.workspaceRoot
       return {
         identity: JSON.stringify(identity),
-        physicalBindingIdentity: JSON.stringify([agentTypeId, modeAdapter.id, selected.app.workspaceRoot]),
+        physicalBindingIdentity: JSON.stringify([agentTypeId, modeAdapter.id, targetRoot]),
         resourceInputDigest: JSON.stringify(identity),
-        sessionNamespace: selected.app.slug === defaultSlug ? `one-chat-playground-${agentTypeId}` : `one-chat-playground-${selected.app.slug}-${agentTypeId}`,
+        sessionNamespace: `${selected.app.slug === defaultSlug ? 'one-chat-playground' : `one-chat-playground-${selected.app.slug}`}-${agentTypeId}${target.kind === 'candidate' ? `-candidate-${target.intentSlug}` : ''}`,
         pi: {
           // Never discover or import executable workspace code in the host.
           // One host-owned factory registers validated command manifests whose

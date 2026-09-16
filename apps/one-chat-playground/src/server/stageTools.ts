@@ -1,12 +1,14 @@
 import type { AgentTool } from '@hachej/boring-agent/shared'
 
 import { resolveStageUrl } from '../shared/allowedOrigins.js'
+import type { AppLifecycle } from './appLifecycle.js'
 import type { StageBus } from './stageBus.js'
 
 export interface StageToolsOptions {
   readonly bus: StageBus
   readonly allowedOrigins: readonly string[]
   readonly appBaseUrl?: string
+  readonly lifecycle?: AppLifecycle
 }
 
 function text(body: string, isError = false): Awaited<ReturnType<AgentTool['execute']>> {
@@ -50,7 +52,7 @@ export function createStageTools(options: StageToolsOptions): AgentTool[] {
       const resolution = resolveStageUrl(typeof params.url === 'string' ? params.url : '', options.allowedOrigins)
       if (!resolution.ok) return text(`Could not show that on screen: ${resolution.message}`, true)
       const title = typeof params.title === 'string' && params.title.trim() ? params.title.trim() : 'Preview'
-      options.bus.emit({ type: 'stage.show', what: 'page', url: resolution.url, title })
+      options.bus.emit({ type: 'stage.show', what: 'page', url: resolution.url, title, label: 'preview' })
       return text(`Showing "${title}" on the user's screen.`)
     },
   }
@@ -60,16 +62,8 @@ export function createStageTools(options: StageToolsOptions): AgentTool[] {
     description: 'Replace the current preview with the live app.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     async execute() {
+      await options.lifecycle?.backToApp()
       return showApp(options)
-    },
-  }
-
-  const showPreviousVersion: AgentTool = {
-    name: 'show_previous_version',
-    description: 'Reserved for showing an earlier kept version. Version history is not connected yet.',
-    parameters: { type: 'object', properties: {}, additionalProperties: false },
-    async execute() {
-      return text('Previous versions are not available yet.', true)
     },
   }
 
@@ -83,5 +77,5 @@ export function createStageTools(options: StageToolsOptions): AgentTool[] {
     },
   }
 
-  return [showOnScreen, backToApp, showPreviousVersion, clearScreen]
+  return [showOnScreen, backToApp, clearScreen]
 }

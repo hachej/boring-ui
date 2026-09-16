@@ -71,13 +71,14 @@ test('desktop creates an app, keeps chat full width, then reveals a bridge-drive
   await expect(page).toHaveURL(/\/new/)
   await page.getByTestId('one-chat-create-form').getByLabel('App name').fill('Client portal')
   await page.getByTestId('one-chat-create-form').getByRole('button', { name: 'Create' }).click()
-  await expect(page).toHaveURL(/\/apps\/client-portal(?:\?.*)?$/)
+  await expect(page).toHaveURL(/\/apps\/client-portal(?:\?.*)?$/, { timeout: 120_000 })
 
   const rail = page.getByTestId('one-chat-rail')
   const chat = page.getByTestId('one-chat-chat')
   await expect(rail).toBeVisible()
   await expect(page.getByRole('button', { name: 'Client portal' })).toBeVisible()
   await expect(chat).toBeVisible()
+  await expect(page.getByTestId('one-chat-undo')).toHaveText('Undo last change')
   await expect(page.getByTestId('one-chat-stage')).toHaveCount(0)
 
   const chatOnlyBox = (await chat.boundingBox())!
@@ -97,7 +98,8 @@ test('desktop creates an app, keeps chat full width, then reveals a bridge-drive
         type: 'stage.show',
         what: 'app',
         url: createdApp.url,
-        title: 'Client portal',
+        title: 'Preview: Client portal',
+        label: 'preview',
       })}\n\n`,
     })
   })
@@ -105,6 +107,8 @@ test('desktop creates an app, keeps chat full width, then reveals a bridge-drive
 
   const stage = page.getByTestId('one-chat-stage')
   await expect(stage).toBeVisible()
+  await expect(page.getByText('Preview — nothing you do here is saved')).toBeVisible()
+  await page.screenshot({ path: '.artifacts/preview-desktop.png' })
   await expect(page.getByTestId('one-chat-base')).toBeVisible()
   const bar = page.getByTestId('one-chat-bar')
   await expect(bar).toBeVisible()
@@ -267,6 +271,7 @@ test('phone top bar opens the app sheet, creates an app, and Back restores the p
   const dialog = sheet.getByRole('dialog', { name: 'Your apps' })
   await expect(dialog).toHaveAttribute('aria-modal', 'true')
   await expect(sheet.getByRole('button', { name: app.title })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('one-chat-phone-undo')).toHaveText('Undo last change')
   await expect(sheet.getByRole('button', { name: 'Close', exact: true })).toBeFocused()
   await page.screenshot({ path: '.artifacts/rail-phone-sheet.png' })
 
@@ -278,7 +283,7 @@ test('phone top bar opens the app sheet, creates an app, and Back restores the p
   await page.getByTestId('one-chat-app-sheet-layer').getByRole('button', { name: 'New app' }).click()
   await sheet.getByLabel('App name').fill('Pocket notes')
   await sheet.getByRole('button', { name: 'Create' }).click()
-  await expect(page).toHaveURL(/\/apps\/pocket-notes(?:\?.*)?$/)
+  await expect(page).toHaveURL(/\/apps\/pocket-notes(?:\?.*)?$/, { timeout: 120_000 })
   await expect(topBar).toContainText('Pocket notes')
 
   await page.goBack()
@@ -344,4 +349,25 @@ test('a pending question opens phone chat to at least half when a screen is visi
   await expect(page.getByTestId('one-chat-mobile-sheet')).not.toHaveAttribute('aria-hidden', 'true')
   const sheetBox = (await page.getByTestId('one-chat-mobile-sheet').boundingBox())!
   expect(sheetBox.height).toBeGreaterThanOrEqual(390)
+})
+
+test('phone preview is visibly labelled as unsaved', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const app = await firstApp(page)
+  await page.route('**/api/one-chat/stage/stream?app=*', async (route) => {
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: `data: ${JSON.stringify({
+        type: 'stage.show',
+        what: 'page',
+        url: app.url,
+        title: `Preview: ${app.title}`,
+        label: 'preview',
+      })}\n\n`,
+    })
+  })
+  await page.goto(`/apps/${app.slug}`)
+
+  await expect(page.getByText('Preview — nothing you do here is saved')).toBeVisible()
+  await page.screenshot({ path: '.artifacts/preview-phone.png' })
 })

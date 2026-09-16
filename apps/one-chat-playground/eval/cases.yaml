@@ -31,6 +31,9 @@ cases:
         answer_card: /recommended/i
       - await_card: true
         answer_card: /keep.*recommended/i
+      - await_card: true
+        answer_card: /keep.*recommended/i
+      - "Actually, undo that last change."
     expect:
       - any_reply_matches: /recommend|I'd (say|go with|suggest)/i
       - cards_shown_min: 2
@@ -38,18 +41,25 @@ cases:
       - tool_called: open_intent
       - intent_status:
           slug: "*supplier*"
-          status: /agreed|sketched|building|built/
+          status: /agreed|sketched|building|built|kept|undone/
       - tool_called: agree_intent
       - tool_called_with:
           name: run_builder
           args_match:
             stage: mockup
       - any_reply_matches: /sketch|nothing works yet/i
-      - tool_called: show_on_screen
       - tool_called_with:
           name: run_builder
           args_match:
             stage: build
+      - tool_input_matches:
+          name: ask_user
+          regex: /preview.*nothing.*saved/i
+      - tool_called: keep_change
+      - commit_message_contains: /One-Chat-Intent:.*supplier/i
+      - git_main_exists: true
+      - tool_called: undo_change
+      - any_reply_matches: /can.?t take that back without losing|hide the field/i
       - no_jargon: true
 
   - name: build-small
@@ -72,9 +82,11 @@ cases:
     expect:
       - tool_not_called: ask_user
       - tool_called: note_intent
-      - tool_not_called: run_builder
-      - file_changed: src/**/*
-      - reply_not_matches: /is that it|let you know/i
+      - tool_called_with:
+          name: run_builder
+          args_match:
+            stage: build
+      - reply_matches: /building|try|preview|come back/i
       - no_jargon: true
 
   - name: next-step
@@ -90,8 +102,8 @@ cases:
     turns:
       - "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user naturally what is ready."
     expect:
-      - reply_matches: /next|could add|want that/i
-      - reply_not_matches: /system event|builder/i
+      - reply_matches: /preview|nothing.*saved|keep|change|leave/i
+      - reply_not_matches: /system event|builder|git|commit|branch|worktree/i
       - no_jargon: true
 
   - name: destructive
@@ -140,6 +152,6 @@ cases:
     turns:
       - "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user in one or two sentences and offer to show it."
     expect:
-      - reply_matches: /ready|done|look|show/i
-      - reply_not_matches: /system event|builder/i
+      - reply_matches: /preview|nothing.*saved|keep|change|leave/i
+      - reply_not_matches: /system event|builder|git|commit|branch|worktree/i
       - no_jargon: true

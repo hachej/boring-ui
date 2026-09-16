@@ -19,5 +19,5 @@ export default defineConfig({
       sandboxSourceAlias,
     ],
   },
-  test: { environment: 'node', include: ['src/**/*.test.ts'] },
+  test: { environment: 'node', include: ['src/**/*.test.ts', 'eval/**/*.test.ts'] },
 })

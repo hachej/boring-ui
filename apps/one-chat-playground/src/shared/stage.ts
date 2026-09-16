@@ -6,6 +6,8 @@ export interface StageScreen {
   readonly what: StageScreenKind
   readonly url: string
   readonly title: string
+  readonly label?: 'preview' | 'version'
+  readonly versionLabel?: string
 }
 
 export type BuilderActivityStage = 'mockup' | 'build'
@@ -198,7 +200,14 @@ export interface StageState {
 }
 
 export type StageEvent =
-  | { readonly type: 'stage.show'; readonly what: StageScreenKind; readonly url: string; readonly title?: string }
+  | {
+      readonly type: 'stage.show'
+      readonly what: StageScreenKind
+      readonly url: string
+      readonly title?: string
+      readonly label?: 'preview' | 'version'
+      readonly versionLabel?: string
+    }
   | { readonly type: 'stage.clear' }
   | ({ readonly type: 'activity.started' } & Omit<BuilderActivity, 'milestone'>)
   | ({ readonly type: 'activity.verifying' | 'activity.done' } & Omit<BuilderActivity, 'milestone'>)
@@ -224,11 +233,19 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
       const url = event.url.trim()
       if (!url) return state
       const title = event.title?.trim() || (event.what === 'app' ? 'Your app' : 'Preview')
-      const screen = { what: event.what, url, title } as const
+      const screen = {
+        what: event.what,
+        url,
+        title,
+        ...(event.label ? { label: event.label } : {}),
+        ...(event.versionLabel?.trim() ? { versionLabel: event.versionLabel.trim() } : {}),
+      } as const
       if (
         state.screen?.what === screen.what
         && state.screen.url === screen.url
         && state.screen.title === screen.title
+        && state.screen.label === screen.label
+        && state.screen.versionLabel === screen.versionLabel
       ) return state
       return { ...state, screen }
     }
@@ -271,6 +288,8 @@ export function parseStageEvent(raw: unknown): StageEvent | null {
       what: candidate.what,
       url: candidate.url,
       ...(typeof candidate.title === 'string' ? { title: candidate.title } : {}),
+      ...((candidate.label === 'preview' || candidate.label === 'version') ? { label: candidate.label } : {}),
+      ...(typeof candidate.versionLabel === 'string' ? { versionLabel: candidate.versionLabel } : {}),
     }
   }
   if (

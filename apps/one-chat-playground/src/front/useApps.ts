@@ -4,8 +4,10 @@ export interface OneChatAppView {
   readonly slug: string
   readonly title: string
   readonly createdAt: string
-  readonly port: number
+  readonly acceptedPort: number
+  readonly candidatePort: number
   readonly url: string
+  readonly candidateUrl: string
 }
 
 export type AppOverlay = 'apps' | 'new' | null

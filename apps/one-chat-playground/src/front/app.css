@@ -289,6 +289,28 @@
   animation: one-chat-stage-enter 180ms cubic-bezier(.22, 1, .36, 1);
 }
 .one-chat-stage iframe { width: 100%; height: 100%; border: 0; background: var(--color-background); }
+.one-chat-stage-label {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+  box-shadow: 0 4px 18px color-mix(in srgb, black 14%, transparent);
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(10px);
+}
 @keyframes one-chat-stage-enter {
   from { opacity: 0; transform: translateX(14px); }
   to { opacity: 1; transform: translateX(0); }
@@ -305,6 +327,19 @@
   gap: 2px;
 }
 .one-chat-header-controls .one-chat-theme-toggle { position: static; }
+.one-chat-undo-button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--boring-radius-md);
+  background: var(--color-background);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.one-chat-undo-button:hover:not(:disabled) { background: var(--color-muted); color: var(--color-foreground); }
+.one-chat-undo-button:disabled { opacity: .55; cursor: default; }
 .one-chat-undock,
 .one-chat-bar-expand {
   position: relative;
@@ -770,7 +805,8 @@
   }
   .one-chat-app-list { display: grid; gap: 4px; padding: 8px 0 16px; }
   .one-chat-app-list-item,
-  .one-chat-sheet-new {
+  .one-chat-sheet-new,
+  .one-chat-sheet-undo {
     display: grid;
     grid-template-columns: 36px minmax(0, 1fr);
     min-height: 52px;
@@ -786,8 +822,11 @@
   }
   .one-chat-app-list-item[data-active] { background: var(--color-muted); }
   .one-chat-list-initial { width: 32px; height: 32px; }
-  .one-chat-sheet-new { width: 100%; border-block-start: 1px solid var(--color-border); border-radius: 0; }
+  .one-chat-sheet-new,
+  .one-chat-sheet-undo { width: 100%; border-block-start: 1px solid var(--color-border); border-radius: 0; }
+  .one-chat-sheet-undo:disabled { opacity: .55; }
   .one-chat-sheet-new svg,
+  .one-chat-sheet-undo svg,
   .one-chat-sheet-profile svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; }
   .one-chat-sheet-profile {
     display: grid;

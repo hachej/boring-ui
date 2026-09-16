@@ -6,13 +6,18 @@ export const APPS_ROUTE = '/api/one-chat/apps'
 
 export interface OneChatAppView extends OneChatApp {
   readonly url: string
+  readonly candidateUrl: string
 }
 
 function view(registry: AppRegistry, app: OneChatApp): OneChatAppView {
-  return { ...app, url: registry.urlFor(app) }
+  return { ...app, url: registry.urlFor(app), candidateUrl: registry.candidateUrlFor(app) }
 }
 
-export function registerAppRoutes(app: FastifyInstance, registry: AppRegistry): void {
+export function registerAppRoutes(
+  app: FastifyInstance,
+  registry: AppRegistry,
+  options: { readonly onAcceptedShown?: (slug: string) => void } = {},
+): void {
   app.get(APPS_ROUTE, async () => ({ apps: registry.list().map((entry) => view(registry, entry)) }))
 
   app.post(APPS_ROUTE, async (request, reply) => {
@@ -36,5 +41,16 @@ export function registerAppRoutes(app: FastifyInstance, registry: AppRegistry): 
     const found = registry.get(request.params.slug)
     if (!found) return reply.code(404).send({ error: 'app_not_found', message: 'App not found' })
     return view(registry, found)
+  })
+
+  app.post<{ Params: { slug: string } }>(`${APPS_ROUTE}/:slug/undo`, async (request, reply) => {
+    const found = registry.get(request.params.slug)
+    if (!found) return reply.code(404).send({ error: 'app_not_found', message: 'App not found' })
+    const result = await registry.lifecycleFor(found.slug).undoChange({
+      sessionId: 'shell-undo',
+      model: `${process.env.BORING_AGENT_DEFAULT_MODEL_PROVIDER ?? 'unknown'}/${process.env.BORING_AGENT_DEFAULT_MODEL_ID ?? 'unknown'}`,
+    })
+    if (result.ok) options.onAcceptedShown?.(found.slug)
+    return reply.code(result.ok ? 200 : 409).send(result)
   })
 }

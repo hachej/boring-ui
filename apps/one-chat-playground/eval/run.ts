@@ -33,7 +33,7 @@ const FRONT_PORT = Number(process.env.ONE_CHAT_PORT ?? 5430)
 const APP_PORT = Number(process.env.SAMPLE_APP_PORT ?? 5431)
 const API_ROOT = `http://127.0.0.1:${FRONT_PORT}`
 const APP_URL = process.env.ONE_CHAT_APP_URL ?? `http://127.0.0.1:${APP_PORT}/`
-const TURN_TIMEOUT_MS = 180_000
+const TURN_TIMEOUT_MS = Number(process.env.ONE_CHAT_EVAL_TURN_TIMEOUT_MS ?? 600_000)
 const RUNTIME_MODE = process.env.BORING_AGENT_MODE ?? 'direct'
 
 interface SeedFile {
@@ -195,6 +195,7 @@ function snapshotWorkspace(root: string): Map<string, string> {
   const visit = (directory: string, relative: string): void => {
     for (const entry of readdirSync(directory)) {
       if (entry === 'node_modules' || entry === '.git' || entry === '.vite') continue
+      if (!relative && (entry === 'candidate' || entry === 'versions' || entry === '.one-chat')) continue
       const childRelative = path.posix.join(relative, entry)
       const child = path.join(directory, entry)
       const stat = statSync(child)

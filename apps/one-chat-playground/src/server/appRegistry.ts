@@ -3,12 +3,18 @@ import path from 'node:path'
 
 import type { RuntimeBundle, RuntimeModeAdapter } from '@hachej/boring-agent/server'
 
+import { createAppLifecycle, type AppLifecycle } from './appLifecycle.js'
 import { createAppRegistryState } from './appRegistryState.js'
 
 export interface OneChatApp {
   readonly slug: string
   readonly title: string
   readonly createdAt: string
+  readonly acceptedPort: number
+  readonly candidatePort: number
+}
+
+export interface OneChatAppProcess extends OneChatApp {
   readonly port: number
 }
 
@@ -23,7 +29,8 @@ export interface AppRegistryOptions {
   readonly portEnd: number
   readonly legacyWorkspaceRoot?: string
   readonly runCommand?: (runtime: RuntimeBundle, command: string, args: readonly string[], signal?: AbortSignal) => Promise<void>
-  readonly runApp?: (runtime: RuntimeBundle, app: OneChatApp, signal: AbortSignal) => Promise<void>
+  readonly runApp?: (runtime: RuntimeBundle, app: OneChatAppProcess, signal: AbortSignal) => Promise<void>
+  readonly healthCheck?: (runtime: RuntimeBundle, port: number, signal?: AbortSignal) => Promise<void>
   readonly isPortAvailable?: (port: number) => Promise<boolean>
   readonly restartDelayMs?: number
   readonly logger?: Pick<Console, 'info' | 'error'>
@@ -36,22 +43,31 @@ export interface AppRegistry {
   get(slug: string): OneChatApp | undefined
   rootFor(slug: string): string
   urlFor(app: OneChatApp): string
+  candidateUrlFor(app: OneChatApp): string
+  lifecycleFor(slug: string): AppLifecycle
   create(title: string): Promise<OneChatApp>
   close(): Promise<void>
 }
 
-function isApp(value: unknown): value is OneChatApp {
-  if (!value || typeof value !== 'object') return false
+interface StoredApp extends Partial<OneChatApp> {
+  readonly port?: number
+}
+
+function parseStoredApp(value: unknown): StoredApp | undefined {
+  if (!value || typeof value !== 'object') return undefined
   const app = value as Record<string, unknown>
-  return (
-    typeof app.slug === 'string' &&
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(app.slug) &&
-    typeof app.title === 'string' &&
-    app.title.trim().length > 0 &&
-    typeof app.createdAt === 'string' &&
-    !Number.isNaN(Date.parse(app.createdAt)) &&
-    Number.isInteger(app.port)
-  )
+  if (
+    typeof app.slug !== 'string' ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(app.slug) ||
+    typeof app.title !== 'string' ||
+    !app.title.trim() ||
+    typeof app.createdAt !== 'string' ||
+    Number.isNaN(Date.parse(app.createdAt))
+  ) return undefined
+  const acceptedPort = Number.isInteger(app.acceptedPort) ? app.acceptedPort as number : Number.isInteger(app.port) ? app.port as number : undefined
+  if (acceptedPort === undefined) return undefined
+  const candidatePort = Number.isInteger(app.candidatePort) ? app.candidatePort as number : undefined
+  return { slug: app.slug, title: app.title, createdAt: app.createdAt, acceptedPort, candidatePort }
 }
 
 export function slugifyAppTitle(title: string): string {
@@ -64,15 +80,15 @@ export function slugifyAppTitle(title: string): string {
   return normalized || 'app'
 }
 
-function renderPattern(pattern: string, app: OneChatApp): string {
-  return pattern.replaceAll('{slug}', encodeURIComponent(app.slug)).replaceAll('{port}', String(app.port))
+function renderPattern(pattern: string, app: OneChatApp, port: number = app.acceptedPort): string {
+  return pattern.replaceAll('{slug}', encodeURIComponent(app.slug)).replaceAll('{port}', String(port))
 }
 
-function renderAppUrl(pattern: string, app: OneChatApp): string {
-  if (pattern.includes('{slug}') || pattern.includes('{port}')) return renderPattern(pattern, app)
+function renderAppUrl(pattern: string, app: OneChatApp, port: number = app.acceptedPort): string {
+  if (pattern.includes('{slug}') || pattern.includes('{port}')) return renderPattern(pattern, app, port)
   try {
     const url = new URL(pattern)
-    url.port = String(app.port)
+    url.port = String(port)
     return url.href
   } catch {
     return pattern
@@ -107,12 +123,21 @@ async function defaultRunCommand(runtime: RuntimeBundle, command: string, args: 
   }
 }
 
-async function defaultRunApp(runtime: RuntimeBundle, app: OneChatApp, signal: AbortSignal, appBasePattern?: string): Promise<void> {
+async function defaultRunApp(runtime: RuntimeBundle, app: OneChatAppProcess, signal: AbortSignal, appBasePattern?: string): Promise<void> {
   const args = ['node', 'node_modules/vite/bin/vite.js', 'dev']
-  if (appBasePattern) args.push('--base', renderPattern(appBasePattern, app))
-  const result = await runtime.sandbox.exec(args.map(shellQuote).join(' '), {
+  if (appBasePattern) args.push('--base', renderPattern(appBasePattern, app, app.port))
+  const launch = args.map(shellQuote).join(' ')
+  const command = runtime.sandbox.id === 'direct'
+    ? `${launch} & child=$!; cleanup() { trap - EXIT HUP INT TERM; kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; }; trap 'cleanup; exit 143' HUP INT TERM; trap cleanup EXIT; while kill -0 "$child" 2>/dev/null; do kill -0 "$ONE_CHAT_HOST_PID" 2>/dev/null || exit 0; sleep 1; done; wait "$child"; status=$?; trap - EXIT; exit "$status"`
+    : `exec ${launch}`
+  const result = await runtime.sandbox.exec(command, {
     cwd: runtime.workspace.root,
-    env: { PORT: String(app.port), SAMPLE_APP_PORT: String(app.port) },
+    env: {
+      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      PORT: String(app.port),
+      SAMPLE_APP_PORT: String(app.port),
+      ONE_CHAT_HOST_PID: String(process.pid),
+    },
     signal,
     maxOutputBytes: 256 * 1024,
   })
@@ -121,16 +146,40 @@ async function defaultRunApp(runtime: RuntimeBundle, app: OneChatApp, signal: Ab
   }
 }
 
+async function defaultHealthCheck(runtime: RuntimeBundle, port: number, signal?: AbortSignal): Promise<void> {
+  const script = "fetch(process.env.ONE_CHAT_HEALTH).then(async r=>{if(!r.ok)throw new Error('HTTP '+r.status);const b=await r.json();if(b.ok!==true)throw new Error('unhealthy response')})"
+  let last = ''
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (signal?.aborted) throw signal.reason
+    const result = await runtime.sandbox.exec(`node -e ${shellQuote(script)}`, {
+      cwd: runtime.workspace.root,
+      env: {
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+        ONE_CHAT_HEALTH: `http://127.0.0.1:${port}/health`,
+      },
+      signal,
+      timeoutMs: 2_000,
+      maxOutputBytes: 64 * 1024,
+    })
+    if (result.exitCode === 0) return
+    last = decode(result.stderr).trim()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`health check failed${last ? `: ${last.slice(-500)}` : ''}`)
+}
+
 export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
   const appsRoot = path.resolve(options.appsRoot)
   const state = createAppRegistryState(appsRoot)
   const logger = options.logger ?? console
   const runCommand = options.runCommand ?? defaultRunCommand
   const runApp = options.runApp ?? ((runtime, app, signal) => defaultRunApp(runtime, app, signal, options.appBasePattern))
+  const healthCheck = options.healthCheck ?? defaultHealthCheck
   const isPortAvailable = options.isPortAvailable ?? defaultPortAvailable
   const restartDelayMs = options.restartDelayMs ?? 1_000
   const apps = new Map<string, OneChatApp>()
   const runtimes = new Map<string, Promise<RuntimeBundle>>()
+  const lifecycles = new Map<string, AppLifecycle>()
   const appRuns = new Map<string, { controller: AbortController; done: Promise<void> }>()
   const restartTimers = new Map<string, NodeJS.Timeout>()
   let initialized = false
@@ -139,15 +188,23 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
   let provisioningController: AbortController | undefined
 
   const rootFor = (slug: string) => path.join(appsRoot, slug)
-  const urlFor = (app: OneChatApp) => renderAppUrl(options.appUrlPattern ?? `http://${options.publicHost}:{port}/`, app)
+  const urlFor = (app: OneChatApp) => renderAppUrl(options.appUrlPattern ?? `http://${options.publicHost}:{port}/`, app, app.acceptedPort)
+  const candidateUrlFor = (app: OneChatApp) => renderAppUrl(options.appUrlPattern ?? `http://${options.publicHost}:{port}/`, app, app.candidatePort)
   const persist = () => state.write({ apps: [...apps.values()] })
 
-  const nextPort = async () => {
-    const used = new Set([...apps.values()].map((app) => app.port))
+  const nextPort = async (alsoUsed: ReadonlySet<number> = new Set()) => {
+    const used = new Set([...apps.values()].flatMap((app) => [app.acceptedPort, app.candidatePort]))
+    for (const port of alsoUsed) used.add(port)
     for (let port = options.portStart; port <= options.portEnd; port += 1) {
       if (!used.has(port) && (await isPortAvailable(port))) return port
     }
     throw new Error(`No app port is available in ${options.portStart}-${options.portEnd}`)
+  }
+
+  const nextPortPair = async (): Promise<readonly [number, number]> => {
+    const acceptedPort = await nextPort()
+    const candidatePort = await nextPort(new Set([acceptedPort]))
+    return [acceptedPort, candidatePort]
   }
 
   const uniqueSlug = (title: string) => {
@@ -178,8 +235,9 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
   const start = (app: OneChatApp) => {
     if (closing || appRuns.has(app.slug)) return
     const controller = new AbortController()
+    const processApp: OneChatAppProcess = { ...app, port: app.acceptedPort }
     const done = acquireRuntime(app)
-      .then((runtime) => runApp(runtime, app, controller.signal))
+      .then((runtime) => runApp(runtime, processApp, controller.signal))
       .catch((error) => {
         if (!closing && !controller.signal.aborted) logger.error(`[one-chat] app ${app.slug} stopped: ${String(error)}`)
       })
@@ -196,6 +254,57 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     appRuns.set(app.slug, { controller, done })
   }
 
+  const stop = async (app: OneChatApp) => {
+    const timer = restartTimers.get(app.slug)
+    if (timer) clearTimeout(timer)
+    restartTimers.delete(app.slug)
+    const active = appRuns.get(app.slug)
+    if (!active) return
+    appRuns.delete(app.slug)
+    active.controller.abort(new Error('accepted app paused'))
+    await Promise.race([active.done.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 5_000))])
+  }
+
+  const lifecycleFor = (slug: string): AppLifecycle => {
+    const app = apps.get(slug)
+    if (!app) throw new Error(`Unknown one-chat app: ${slug}`)
+    let lifecycle = lifecycles.get(slug)
+    if (lifecycle) return lifecycle
+    lifecycle = createAppLifecycle({
+      app,
+      appRoot: rootFor(slug),
+      acceptedUrl: urlFor(app),
+      candidateUrl: candidateUrlFor(app),
+      runtimeModeAdapter: options.runtimeModeAdapter,
+      acquireAcceptedRuntime: () => acquireRuntime(app),
+      stopAccepted: () => stop(app),
+      startAccepted: () => start(app),
+      startPreview(runtime, port, signal) {
+        return runApp(runtime, { ...app, port }, signal)
+      },
+      health: healthCheck,
+      log(message) {
+        logger.error(`[one-chat] ${app.slug}: ${message}`)
+      },
+    })
+    lifecycles.set(slug, lifecycle)
+    return lifecycle
+  }
+
+  const ensureRepository = async (app: OneChatApp) => {
+    const runtime = await acquireRuntime(app)
+    const check = await runtime.sandbox.exec('git rev-parse --is-inside-work-tree', {
+      cwd: runtime.workspace.root,
+      maxOutputBytes: 64 * 1024,
+    })
+    if (check.exitCode === 0) return
+    await runCommand(runtime, 'git', ['init', '-b', 'main'])
+    await runCommand(runtime, 'git', ['config', 'user.name', 'One Chat'])
+    await runCommand(runtime, 'git', ['config', 'user.email', 'one-chat@local.invalid'])
+    await runCommand(runtime, 'git', ['add', '-A'])
+    await runCommand(runtime, 'git', ['commit', '-m', `Created ${app.title}`])
+  }
+
   const registerExistingFolders = async () => {
     const runtime = await options.runtimeModeAdapter.create({
       workspaceRoot: appsRoot,
@@ -210,6 +319,7 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
         } catch {
           continue
         }
+        const [acceptedPort, candidatePort] = await nextPortPair()
         apps.set(entry.name, {
           slug: entry.name,
           title:
@@ -220,7 +330,8 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
                   .map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1)}`)
                   .join(' '),
           createdAt: new Date().toISOString(),
-          port: await nextPort(),
+          acceptedPort,
+          candidatePort,
         })
       }
     } finally {
@@ -234,16 +345,35 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     let needsPersist = false
     const stored = await state.read()
     if (stored) {
-      if (!Array.isArray(stored.apps) || !stored.apps.every(isApp)) throw new Error('apps.json has an invalid shape')
+      if (!Array.isArray(stored.apps)) throw new Error('apps.json has an invalid shape')
+      const parsed = stored.apps.map(parseStoredApp)
+      if (parsed.some((app) => !app)) throw new Error('apps.json has an invalid shape')
       const ports = new Set<number>()
-      for (const app of stored.apps) {
-        if (apps.has(app.slug)) throw new Error(`apps.json repeats slug ${app.slug}`)
-        if (app.port < options.portStart || app.port > options.portEnd) {
-          throw new Error(`apps.json port ${app.port} is outside ${options.portStart}-${options.portEnd}`)
+      for (const storedApp of parsed as StoredApp[]) {
+        if (apps.has(storedApp.slug!)) throw new Error(`apps.json repeats slug ${storedApp.slug}`)
+        const acceptedPort = storedApp.acceptedPort!
+        if (acceptedPort < options.portStart || acceptedPort > options.portEnd) {
+          throw new Error(`apps.json port ${acceptedPort} is outside ${options.portStart}-${options.portEnd}`)
         }
-        if (ports.has(app.port)) throw new Error(`apps.json repeats port ${app.port}`)
-        ports.add(app.port)
-        apps.set(app.slug, Object.freeze({ ...app }))
+        if (ports.has(acceptedPort)) throw new Error(`apps.json repeats port ${acceptedPort}`)
+        ports.add(acceptedPort)
+        let candidatePort = storedApp.candidatePort
+        if (candidatePort === undefined) {
+          candidatePort = await nextPort(ports)
+          needsPersist = true
+        }
+        if (candidatePort < options.portStart || candidatePort > options.portEnd) {
+          throw new Error(`apps.json port ${candidatePort} is outside ${options.portStart}-${options.portEnd}`)
+        }
+        if (ports.has(candidatePort)) throw new Error(`apps.json repeats port ${candidatePort}`)
+        ports.add(candidatePort)
+        apps.set(storedApp.slug!, Object.freeze({
+          slug: storedApp.slug!,
+          title: storedApp.title!,
+          createdAt: storedApp.createdAt!,
+          acceptedPort,
+          candidatePort,
+        }))
       }
     } else {
       needsPersist = true
@@ -252,11 +382,13 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     if (options.legacyWorkspaceRoot && !apps.has('default')) {
       const legacyRoot = path.resolve(options.legacyWorkspaceRoot)
       if (legacyRoot !== appsRoot) {
+        const [acceptedPort, candidatePort] = await nextPortPair()
         const app: OneChatApp = Object.freeze({
           slug: 'default',
           title: 'Default',
           createdAt: new Date().toISOString(),
-          port: await nextPort(),
+          acceptedPort,
+          candidatePort,
         })
         await acquireRuntime(app, legacyRoot === rootFor(app.slug) ? undefined : legacyRoot)
         apps.set(app.slug, app)
@@ -266,7 +398,10 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
 
     await registerExistingFolders()
     for (const app of apps.values()) {
-      if (!(await isPortAvailable(app.port))) throw new Error(`App port ${app.port} for ${app.slug} is already in use`)
+      await ensureRepository(app)
+      for (const port of [app.acceptedPort, app.candidatePort]) {
+        if (!(await isPortAvailable(port))) throw new Error(`App port ${port} for ${app.slug} is already in use`)
+      }
     }
     if (needsPersist || apps.size > 0) await persist()
     initialized = true
@@ -281,11 +416,13 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     const operation = mutation.then(async () => {
       if (closing) throw new Error('The app registry is shutting down')
       if (!initialized) await init()
+      const [acceptedPort, candidatePort] = await nextPortPair()
       const app: OneChatApp = Object.freeze({
         slug: uniqueSlug(title),
         title,
         createdAt: new Date().toISOString(),
-        port: await nextPort(),
+        acceptedPort,
+        candidatePort,
       })
       const controller = new AbortController()
       provisioningController = controller
@@ -299,6 +436,11 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
           controller.signal,
         )
         await runCommand(runtime, 'pnpm', ['run', 'db:push'], controller.signal)
+        await runCommand(runtime, 'git', ['init', '-b', 'main'], controller.signal)
+        await runCommand(runtime, 'git', ['config', 'user.name', 'One Chat'], controller.signal)
+        await runCommand(runtime, 'git', ['config', 'user.email', 'one-chat@local.invalid'], controller.signal)
+        await runCommand(runtime, 'git', ['add', '-A'], controller.signal)
+        await runCommand(runtime, 'git', ['commit', '-m', `Created ${title}`], controller.signal)
         if (closing) throw new Error('The app registry is shutting down')
         apps.set(app.slug, app)
         await persist()
@@ -324,6 +466,8 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     await mutation.catch(() => undefined)
     for (const timer of restartTimers.values()) clearTimeout(timer)
     restartTimers.clear()
+    await Promise.allSettled([...lifecycles.values()].map((lifecycle) => lifecycle.close()))
+    lifecycles.clear()
     const active = [...appRuns.values()]
     for (const run of active) run.controller.abort(new Error('app registry is shutting down'))
     await Promise.race([Promise.allSettled(active.map((run) => run.done)), new Promise((resolve) => setTimeout(resolve, 5_000))])
@@ -342,6 +486,8 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     get: (slug) => apps.get(slug),
     rootFor,
     urlFor,
+    candidateUrlFor,
+    lifecycleFor,
     create,
     close,
   }

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 
@@ -159,6 +160,13 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
           actual = calls.map((call) => `${call.name} ${JSON.stringify(call.input ?? {})}`).join(', ') || '(none)'
           break
         }
+        case 'tool_input_matches': {
+          const value = expected as { name?: unknown; regex?: unknown }
+          const matcher = regexFrom(value?.regex)
+          ok = calls.some((call) => toolMatches(call, value?.name) && matcher.test(JSON.stringify(call.input ?? {})))
+          actual = calls.map((call) => `${call.name} ${JSON.stringify(call.input ?? {})}`).join(', ') || '(none)'
+          break
+        }
         case 'manifest_tool_called': {
           const manifests = matchingFiles(context.workspaceRoot, 'agent/tools/*.json')
           const names = manifests.flatMap((file) => {
@@ -204,6 +212,28 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
           const matches = files.filter((file) => matcher.test(readFileSync(path.join(context.workspaceRoot, file), 'utf8')))
           ok = kind === 'file_contains' ? matches.length > 0 : files.length > 0 && matches.length === 0
           actual = `files=${files.join(', ') || '(none)'}; matching=${matches.join(', ') || '(none)'}`
+          break
+        }
+        case 'commit_message_contains': {
+          let message = ''
+          try {
+            message = execFileSync('git', ['-C', context.workspaceRoot, 'log', '-1', '--format=%B'], {
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'ignore'],
+            })
+          } catch {
+            // The assertion below reports a missing commit without aborting the eval.
+          }
+          ok = regexFrom(expected).test(message)
+          actual = message.trim() || '(no commit message)'
+          break
+        }
+        case 'git_main_exists': {
+          const loose = path.join(context.workspaceRoot, '.git', 'refs', 'heads', 'main')
+          const packed = path.join(context.workspaceRoot, '.git', 'packed-refs')
+          const present = existsSync(loose) || (existsSync(packed) && /\srefs\/heads\/main$/m.test(readFileSync(packed, 'utf8')))
+          ok = expected === true && present
+          actual = String(present)
           break
         }
         case 'intent_status': {

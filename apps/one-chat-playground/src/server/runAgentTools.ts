@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { AgentGateway, AgentTool, AuthorizedAgentScope, Workspace } from '@hachej/boring-agent/shared'
 
 import { assertValidSlug, noteIntent, readIntent, setIntentStatus, systemClock, type Clock, type IntentFile } from './memoryFiles.js'
+import type { AppLifecycle } from './appLifecycle.js'
 import type { SessionTracker } from './reloadTools.js'
 import type { StageBus } from './stageBus.js'
 import { formatSystemEvent } from './systemEvents.js'
@@ -185,8 +186,11 @@ export function createRunAgentTools(options: {
   readonly sessions: SessionTracker
   /** User-visible sketch/build milestones. Documenter and maintenance work never emit here. */
   readonly activityBus?: StageBus
-  /** The browser-reachable app URL also given to the stage tools. */
+  /** Browser-reachable accepted and isolated candidate URLs. */
   readonly appBaseUrl?: string
+  readonly candidateBaseUrl?: string
+  readonly lifecycle?: AppLifecycle
+  readonly candidateScope?: (intentSlug: string) => AuthorizedAgentScope
   readonly now?: Clock
   readonly log?: (message: string) => void
 }): AgentTool[] {
@@ -196,7 +200,7 @@ export function createRunAgentTools(options: {
   const runBuilder: AgentTool = {
     name: 'run_builder',
     description:
-      'Start a fresh builder for an agreed intent. Choose "mockup" for one static sketch or "build" for the working app. If omitted, a never-built new app or screen is sketched first; other changes build immediately. It returns as soon as it starts, and only one builder can run at a time.',
+      'Start a fresh builder for an agreed intent in an isolated candidate. Choose "mockup" for one static sketch or "build" for the working app. It returns as soon as the builder starts. The host checks the candidate before the user can see it and makes at most three attempts.',
     parameters: {
       type: 'object',
       properties: {
@@ -210,7 +214,7 @@ export function createRunAgentTools(options: {
       required: ['slug'],
       additionalProperties: false,
     },
-    async execute(params) {
+    async execute(params, ctx) {
       try {
         assertValidSlug(params.slug)
         const slug = params.slug
@@ -230,89 +234,106 @@ export function createRunAgentTools(options: {
           stage,
           startedAt: new Date().toISOString(),
         } as const
+        let builderScope = options.scope
+        if (options.lifecycle) {
+          await options.lifecycle.prepareCandidate({
+            intentSlug: slug,
+            intentTitle: intent.title ?? humanIntentTitle(slug),
+            sessionId: ctx.sessionId ?? options.sessions.current() ?? 'unknown',
+            model: `${process.env.BORING_AGENT_DEFAULT_MODEL_PROVIDER ?? 'unknown'}/${process.env.BORING_AGENT_DEFAULT_MODEL_ID ?? 'unknown'}`,
+          })
+          builderScope = options.candidateScope?.(slug) ?? options.scope
+        }
 
         builderRunning = true
         try {
           if (stage === 'build') await setIntentStatus(options.workspace, slug, 'building')
           options.activityBus?.emit({ type: 'activity.started', ...activity })
-          const run = await startFreshRun({
-            gateway,
-            scope: options.scope,
-            agentTypeId: BUILDER_AGENT_TYPE_ID,
-            title: `${stage === 'mockup' ? 'Sketch' : 'Build'} ${slug}`,
-            prompt:
-              stage === 'mockup'
-                ? `Create the MOCKUP for intent ${slug}. Write only ${mockupRelativePath}.`
-                : `BUILD intent ${slug}. Match the approved sketch at ${mockupRelativePath} when it exists.`,
-          })
-          void run.completion
-            .then(async ({ summary, status }) => {
-              options.activityBus?.emit({
-                type: 'activity.verifying',
-                ...activity,
-              })
-              let finalSummary = summary || `could not, because the builder session ended with ${status}`
-              if (stage === 'mockup') {
-                try {
-                  await verifyMockup(options.workspace, slug)
-                } catch (error) {
-                  finalSummary = `could not, because ${error instanceof Error ? error.message : String(error)}`
-                  await noteIntent(options.workspace, slug, `Builder mockup: ${finalSummary}`, now)
-                  await setIntentStatus(options.workspace, slug, 'agreed')
-                  options.activityBus?.emit({
-                    type: 'activity.done',
-                    ...activity,
-                  })
-                  await postToColleague({
-                    gateway,
-                    scope: options.scope,
-                    sessions: options.sessions,
-                    prompt: `[system event] The builder could not finish the sketch for intent ${slug}: ${finalSummary}. Tell the user plainly and offer to try the sketch again.`,
-                    log: options.log,
-                  })
-                  return
-                }
-                finalSummary = sketchSummary(finalSummary)
-                await noteIntent(options.workspace, slug, `Builder mockup: ${finalSummary}`, now)
-                await setIntentStatus(options.workspace, slug, 'sketched')
-                options.activityBus?.emit({
-                  type: 'activity.done',
-                  ...activity,
-                })
-                await postToColleague({
-                  gateway,
-                  scope: options.scope,
-                  sessions: options.sessions,
-                  prompt: formatSystemEvent({
-                    kind: 'mockup-finished',
-                    slug,
-                    summary: finalSummary,
-                    url: mockupUrl(options.appBaseUrl, slug),
-                    title: `Sketch: ${intent.title ?? humanIntentTitle(slug)}`,
-                  }),
-                  log: options.log,
-                })
-                return
-              }
 
-              await noteIntent(options.workspace, slug, `Builder build: ${finalSummary}`, now)
-              await setIntentStatus(options.workspace, slug, 'built')
+          const attempt = async (number: number, priorFailure?: string): Promise<void> => {
+            const prompt = priorFailure
+              ? `FIX intent ${slug} in this isolated candidate. Attempt ${number} of 3. Verification failed: ${priorFailure}`
+              : stage === 'mockup'
+                ? `Create the MOCKUP for intent ${slug} in this isolated candidate. Write ${mockupRelativePath}.`
+                : `BUILD intent ${slug} in this isolated candidate. Match ${mockupRelativePath} when it exists and write one smoke check per agreement shall-line.`
+            try {
+              const run = await startFreshRun({
+              gateway,
+              scope: builderScope,
+              agentTypeId: BUILDER_AGENT_TYPE_ID,
+              title: `${stage === 'mockup' ? 'Sketch' : 'Build'} ${slug} (${number}/3)`,
+              prompt,
+            })
+            const completion = await run.completion
+            if (completion.status !== 'ok') throw new Error(completion.summary || `builder session ended with ${completion.status}`)
+              options.activityBus?.emit({ type: 'activity.verifying', ...activity })
+              const verified = options.lifecycle
+                ? await options.lifecycle.verifyCandidate(slug, stage)
+                : (stage === 'mockup'
+                    ? await verifyMockup(options.workspace, slug).then(() => ({ previewUrl: options.appBaseUrl ?? '/' }))
+                    : { previewUrl: options.appBaseUrl ?? '/' })
+              const finalSummary = stage === 'mockup' ? sketchSummary(completion.summary) : completion.summary
+              const previewUrl = stage === 'mockup'
+                ? mockupUrl(verified.previewUrl, slug)
+                : verified.previewUrl
+              options.activityBus?.emit({
+                type: 'stage.show',
+                what: 'page',
+                url: previewUrl,
+                title: stage === 'mockup' ? `Sketch: ${intent.title ?? humanIntentTitle(slug)}` : `Preview: ${intent.title ?? humanIntentTitle(slug)}`,
+                label: 'preview',
+              })
+              await noteIntent(options.workspace, slug, `Builder ${stage}: ${finalSummary}`, now)
+              await setIntentStatus(options.workspace, slug, stage === 'mockup' ? 'sketched' : 'built')
               options.activityBus?.emit({ type: 'activity.done', ...activity })
               await postToColleague({
                 gateway,
                 scope: options.scope,
                 sessions: options.sessions,
-                prompt: formatSystemEvent({
-                  kind: 'builder-finished',
-                  slug,
-                  summary: finalSummary,
-                }),
+                prompt: formatSystemEvent(stage === 'mockup'
+                  ? {
+                      kind: 'mockup-finished',
+                      slug,
+                      summary: finalSummary,
+                      url: previewUrl,
+                      title: `Sketch: ${intent.title ?? humanIntentTitle(slug)}`,
+                    }
+                  : {
+                      kind: 'builder-finished',
+                      slug,
+                      summary: finalSummary,
+                      url: previewUrl,
+                      title: `Preview: ${intent.title ?? humanIntentTitle(slug)}`,
+                    }),
+                log: options.log,
+              })
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error)
+              if (number < 3) {
+                options.log?.(`builder verification attempt ${number} failed for ${slug}: ${reason}`)
+                await attempt(number + 1, reason)
+                return
+              }
+              throw error
+            }
+          }
+
+          void attempt(1)
+            .catch(async (error) => {
+              const reason = error instanceof Error ? error.message : String(error)
+              const finalSummary = `could not, because ${reason.split('\n')[0]}`
+              await noteIntent(options.workspace, slug, `Builder ${stage}: ${finalSummary}`, now).catch(() => undefined)
+              await setIntentStatus(options.workspace, slug, 'agreed').catch(() => undefined)
+              options.activityBus?.emit({ type: 'activity.done', ...activity })
+              await postToColleague({
+                gateway,
+                scope: options.scope,
+                sessions: options.sessions,
+                prompt: `[system event] The builder could not finish intent ${slug}: ${finalSummary}. Tell the user plainly in one sentence.`,
                 log: options.log,
               })
             })
             .catch((error) => {
-              // No colleague turn will arrive to clear a terminal milestone on this
-              // path, so do not leave stale work visible indefinitely.
               options.activityBus?.emit({ type: 'activity.clear' })
               options.log?.(`builder completion failed for ${slug}: ${String(error)}`)
             })
@@ -374,5 +395,93 @@ export function createRunAgentTools(options: {
     },
   }
 
-  return [runBuilder, runDocumenter]
+  const lifecycleTool = (
+    name: string,
+    description: string,
+    parameters: AgentTool['parameters'],
+    run: (params: Record<string, unknown>, ctx: { sessionId?: string }) => Promise<{ ok: boolean; message: string; intentSlug?: string }>,
+  ): AgentTool => ({
+    name,
+    description,
+    parameters,
+    async execute(params, ctx) {
+      if (!options.lifecycle) return text('Change history is not available yet.', true)
+      try {
+        const result = await run(params, ctx)
+        if (result.ok && (name === 'keep_change' || name === 'discard_change' || name === 'undo_change') && options.appBaseUrl) {
+          options.activityBus?.emit({ type: 'stage.show', what: 'app', url: options.appBaseUrl, title: 'Your app' })
+        }
+        return text(result.message, !result.ok)
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error), true)
+      }
+    },
+  })
+
+  const keepChange = lifecycleTool(
+    'keep_change',
+    'Keep the verified preview as the accepted app. Call only after the user says keep.',
+    { type: 'object', properties: { slug: SLUG_PARAM }, required: ['slug'], additionalProperties: false },
+    async (params) => {
+      assertValidSlug(params.slug)
+      return options.lifecycle!.keepChange(params.slug)
+    },
+  )
+  const discardChange = lifecycleTool(
+    'discard_change',
+    'Leave the accepted app as it was and remove the current preview. Call when the user says leave it as it was.',
+    { type: 'object', properties: { slug: SLUG_PARAM }, required: ['slug'], additionalProperties: false },
+    async (params) => {
+      assertValidSlug(params.slug)
+      return options.lifecycle!.discardChange(params.slug)
+    },
+  )
+  const undoChange = lifecycleTool(
+    'undo_change',
+    'Take back a kept change without restoring or deleting user data. Omit slug to take back the last kept change.',
+    { type: 'object', properties: { slug: SLUG_PARAM }, additionalProperties: false },
+    async (params, ctx) => {
+      if (params.slug !== undefined) assertValidSlug(params.slug)
+      return options.lifecycle!.undoChange({
+        ...(typeof params.slug === 'string' ? { slug: params.slug } : {}),
+        sessionId: ctx.sessionId ?? options.sessions.current() ?? 'unknown',
+        model: `${process.env.BORING_AGENT_DEFAULT_MODEL_PROVIDER ?? 'unknown'}/${process.env.BORING_AGENT_DEFAULT_MODEL_ID ?? 'unknown'}`,
+      })
+    },
+  )
+  const showVersion: AgentTool = {
+    name: 'show_version',
+    description: 'Show a previous kept version read-only, using throwaway data. Choose a commit or intent name.',
+    parameters: {
+      type: 'object',
+      properties: {
+        commit: { type: 'string', description: 'The exact previous version identifier.' },
+        slug: SLUG_PARAM,
+      },
+      additionalProperties: false,
+    },
+    async execute(params) {
+      if (!options.lifecycle) return text('Previous versions are not available yet.', true)
+      try {
+        if (params.slug !== undefined) assertValidSlug(params.slug)
+        const preview = await options.lifecycle.showVersion({
+          ...(typeof params.commit === 'string' ? { commit: params.commit } : {}),
+          ...(typeof params.slug === 'string' ? { slug: params.slug } : {}),
+        })
+        options.activityBus?.emit({
+          type: 'stage.show',
+          what: 'page',
+          url: preview.url,
+          title: 'Previous version',
+          label: 'version',
+          versionLabel: preview.label,
+        })
+        return text('Showing that previous version. Nothing you do there is saved.')
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error), true)
+      }
+    },
+  }
+
+  return [runBuilder, runDocumenter, keepChange, discardChange, undoChange, showVersion]
 }

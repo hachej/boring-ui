@@ -13,6 +13,8 @@ interface AppRailProps {
   readonly onOpenNew: () => void
   readonly onClose: () => void
   readonly onCreate: (title: string) => Promise<unknown>
+  readonly undoing: boolean
+  readonly onUndo: () => void
 }
 
 function AppInitial({ app }: { app: OneChatAppView }) {
@@ -155,6 +157,15 @@ export function AppRail(props: AppRailProps) {
                   <button type="button" className="one-chat-sheet-new" onClick={props.onOpenNew}>
                     <PlusIcon /> <span>New app</span>
                   </button>
+                  <button
+                    type="button"
+                    className="one-chat-sheet-undo"
+                    data-testid="one-chat-phone-undo"
+                    disabled={props.undoing || !props.activeApp}
+                    onClick={props.onUndo}
+                  >
+                    <UndoIcon /> <span>{props.undoing ? 'Undoing…' : 'Undo last change'}</span>
+                  </button>
                   <div className="one-chat-sheet-profile">
                     <span className="one-chat-profile-avatar">Y</span>
                     <span><strong>Your profile</strong><small>Signed in</small></span>
@@ -211,6 +222,10 @@ function PlusIcon() {
 
 function ChevronIcon() {
   return <svg className="one-chat-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5" /></svg>
+}
+
+function UndoIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M5 12h8a6 6 0 1 1 0 12" /></svg>
 }
 
 function SignOutIcon() {

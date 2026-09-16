@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -19,11 +20,22 @@ function fixture(): AssertionContext {
   writeFileSync(path.join(workspaceRoot, 'agent', 'instructions.md'), 'Call clients members.\n')
   writeFileSync(path.join(workspaceRoot, 'agent', 'intents', 'suppliers-list.md'), 'status: agreed\n')
   writeFileSync(path.join(workspaceRoot, '.pi', 'extensions', 'count-items.ts'), 'export default {}\n')
+  execFileSync('git', ['init', '-b', 'main'], { cwd: workspaceRoot, stdio: 'ignore' })
+  execFileSync('git', ['add', '-A'], { cwd: workspaceRoot, stdio: 'ignore' })
+  execFileSync('git', [
+    '-c', 'user.name=One Chat Test',
+    '-c', 'user.email=one-chat-test@local.invalid',
+    'commit', '-m', 'Keep suppliers\n\nOne-Chat-Intent: suppliers-list',
+  ], { cwd: workspaceRoot, stdio: 'ignore' })
   return {
     workspaceRoot,
     turns: [{
       reply: 'There are 4 members.',
-      toolCalls: [{ name: 'update_my_instructions' }, { name: 'count_items', input: {} }],
+      toolCalls: [
+        { name: 'update_my_instructions' },
+        { name: 'count_items', input: {} },
+        { name: 'ask_user', input: { context: 'This is a preview — nothing here is saved.' } },
+      ],
       toolCallsBeforeAnswer: [{ name: 'ask_user' }],
       cardShown: true,
       cardsShown: 2,
@@ -42,11 +54,14 @@ describe('evaluateAssertions', () => {
       { any_reply_matches: '/4 members/i' },
       { tool_called: '/count/' },
       { tool_called_with: { name: 'count_items', args_match: {} } },
+      { tool_input_matches: { name: 'ask_user', regex: '/preview.*nothing.*saved/i' } },
       { tool_not_called: 'write', before_answer: true },
       { file_exists: '.pi/extensions/*.ts' },
       { file_changed: 'src/**/*' },
       { file_contains: { path: 'agent/instructions.md', regex: '/members/i' } },
       { file_not_contains: { path: 'agent/instructions.md', regex: '/clients only/i' } },
+      { commit_message_contains: '/One-Chat-Intent: suppliers-list/' },
+      { git_main_exists: true },
       { intent_status: { slug: '*supplier*', status: '/agreed|sketched/' } },
       { card_shown: true },
       { cards_shown_min: 2 },
