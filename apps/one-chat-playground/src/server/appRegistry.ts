@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { rename } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import path from 'node:path'
 
@@ -28,7 +30,13 @@ export interface AppRegistryOptions {
   readonly portStart: number
   readonly portEnd: number
   readonly legacyWorkspaceRoot?: string
-  readonly runCommand?: (runtime: RuntimeBundle, command: string, args: readonly string[], signal?: AbortSignal) => Promise<void>
+  readonly runCommand?: (
+    runtime: RuntimeBundle,
+    command: string,
+    args: readonly string[],
+    signal?: AbortSignal,
+    timeoutMs?: number,
+  ) => Promise<void>
   readonly runApp?: (runtime: RuntimeBundle, app: OneChatAppProcess, signal: AbortSignal) => Promise<void>
   readonly healthCheck?: (runtime: RuntimeBundle, port: number, signal?: AbortSignal) => Promise<void>
   readonly isPortAvailable?: (port: number) => Promise<boolean>
@@ -112,10 +120,17 @@ function decode(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes)
 }
 
-async function defaultRunCommand(runtime: RuntimeBundle, command: string, args: readonly string[], signal?: AbortSignal): Promise<void> {
+async function defaultRunCommand(
+  runtime: RuntimeBundle,
+  command: string,
+  args: readonly string[],
+  signal?: AbortSignal,
+  timeoutMs?: number,
+): Promise<void> {
   const result = await runtime.sandbox.exec([command, ...args].map(shellQuote).join(' '), {
     cwd: runtime.workspace.root,
     signal,
+    timeoutMs,
     maxOutputBytes: 10 * 1024 * 1024,
   })
   if (result.exitCode !== 0) {
@@ -317,6 +332,12 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
         if (entry.kind !== 'dir' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.name) || apps.has(entry.name)) continue
         try {
           if ((await runtime.workspace.stat(path.join(entry.name, 'package.json'))).kind !== 'file') continue
+          const repository = await runtime.sandbox.exec('git rev-parse --show-toplevel && git rev-parse --verify HEAD', {
+            cwd: path.join(runtime.workspace.root, entry.name),
+            maxOutputBytes: 64 * 1024,
+          })
+          const [repositoryRoot] = decode(repository.stdout).split('\n')
+          if (repository.exitCode !== 0 || path.resolve(repositoryRoot ?? '') !== path.resolve(runtime.workspace.root, entry.name)) continue
         } catch {
           continue
         }
@@ -428,13 +449,20 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
       const controller = new AbortController()
       provisioningController = controller
       let runtime: RuntimeBundle | undefined
+      const stagingRoot = path.join(appsRoot, `.provisioning-${app.slug}-${randomUUID()}`)
       try {
-        runtime = await acquireRuntime(app, path.resolve(options.templateRoot))
+        runtime = await options.runtimeModeAdapter.create({
+          workspaceRoot: stagingRoot,
+          workspaceId: `one-chat-app-provisioning:${app.slug}`,
+          sessionId: `one-chat-app-provisioning:${app.slug}`,
+          templatePath: path.resolve(options.templateRoot),
+        })
         await runCommand(
           runtime,
           'pnpm',
           ['install', '--frozen-lockfile', '--config.minimum-release-age=0'],
           controller.signal,
+          180_000,
         )
         await runCommand(runtime, 'pnpm', ['run', 'db:push'], controller.signal)
         await runCommand(runtime, 'git', ['init', '-b', 'main'], controller.signal)
@@ -443,6 +471,10 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
         await runCommand(runtime, 'git', ['add', '-A'], controller.signal)
         await runCommand(runtime, 'git', ['commit', '-m', `Created ${title}`], controller.signal)
         if (closing) throw new Error('The app registry is shutting down')
+        await runtime.disposeRuntime?.()
+        runtime = undefined
+        await rename(stagingRoot, rootFor(app.slug))
+        await acquireRuntime(app)
         apps.set(app.slug, app)
         await persist()
         start(app)

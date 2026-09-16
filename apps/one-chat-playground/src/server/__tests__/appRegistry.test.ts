@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -28,6 +29,7 @@ async function fixture() {
   await writeFile(path.join(templateRoot, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
   await writeFile(path.join(templateRoot, 'src', 'index.ts'), 'export {}\n')
   const commands: string[] = []
+  const commandTimeouts: Array<number | undefined> = []
   const started: string[] = []
   const runtimeModeAdapter = createSandboxRuntimeModeAdapter('direct')
   const registry = createAppRegistry({
@@ -39,8 +41,9 @@ async function fixture() {
     portStart: 6100,
     portEnd: 6105,
     isPortAvailable: async () => true,
-    runCommand: async (_runtime, command, args) => {
+    runCommand: async (_runtime, command, args, _signal, timeoutMs) => {
       commands.push(`${command} ${args.join(' ')}`)
+      commandTimeouts.push(timeoutMs)
     },
     runApp: async (_runtime, app, signal) => {
       started.push(app.slug)
@@ -54,6 +57,7 @@ async function fixture() {
     templateRoot,
     registry,
     commands,
+    commandTimeouts,
     started,
     runtimeModeAdapter,
   }
@@ -61,7 +65,7 @@ async function fixture() {
 
 describe('app registry', () => {
   test('materializes through the adapter, installs, pushes the database, lists, and persists', async () => {
-    const { appsRoot, registry, commands, started } = await fixture()
+    const { appsRoot, registry, commands, commandTimeouts, started } = await fixture()
     await registry.init()
 
     const first = await registry.create('Client Portal')
@@ -91,6 +95,7 @@ describe('app registry', () => {
       'git add -A',
       'git commit -m Created Client Portal',
     ])
+    expect(commandTimeouts.filter((timeout) => timeout !== undefined)).toEqual([180_000, 180_000])
     await vi.waitFor(() => expect(started).toEqual(['client-portal', 'client-portal-2']))
     expect(registry.urlFor(first)).toBe('https://client-portal.apps.test:6100/')
     expect(JSON.parse(await readFile(path.join(appsRoot, 'apps.json'), 'utf8'))).toMatchObject({
@@ -115,6 +120,15 @@ describe('app registry', () => {
     const { appsRoot, templateRoot, runtimeModeAdapter } = await fixture()
     await mkdir(path.join(appsRoot, 'julien-app'), { recursive: true })
     await writeFile(path.join(appsRoot, 'julien-app', 'package.json'), '{}\n')
+    execFileSync('git', ['init', '-b', 'main'], { cwd: path.join(appsRoot, 'julien-app'), stdio: 'ignore' })
+    execFileSync('git', ['-c', 'user.name=One Chat Test', '-c', 'user.email=test@invalid', 'add', '-A'], {
+      cwd: path.join(appsRoot, 'julien-app'),
+      stdio: 'ignore',
+    })
+    execFileSync('git', ['-c', 'user.name=One Chat Test', '-c', 'user.email=test@invalid', 'commit', '-m', 'Ready'], {
+      cwd: path.join(appsRoot, 'julien-app'),
+      stdio: 'ignore',
+    })
     const registry = createAppRegistry({
       appsRoot,
       templateRoot,
@@ -130,6 +144,47 @@ describe('app registry', () => {
 
     await registry.init()
     expect(registry.list()).toMatchObject([{ slug: 'julien-app', title: 'Julien App', acceptedPort: 6150, candidatePort: 6151 }])
+  })
+
+  test('does not resurrect a partially provisioned app after restart', async () => {
+    const { appsRoot, templateRoot, runtimeModeAdapter } = await fixture()
+    const failing = createAppRegistry({
+      appsRoot,
+      templateRoot,
+      runtimeModeAdapter,
+      publicHost: '127.0.0.1',
+      portStart: 6170,
+      portEnd: 6172,
+      isPortAvailable: async () => true,
+      runCommand: async () => {
+        throw new Error('deliberate install failure')
+      },
+      runApp: async (_runtime, _app, signal) => pendingUntilAbort(signal),
+    })
+    registries.push(failing)
+    await failing.init()
+    await expect(failing.create('Broken')).rejects.toThrow('deliberate install failure')
+    expect((await readdir(appsRoot)).some((name) => name.startsWith('.provisioning-broken-'))).toBe(true)
+
+    const started: string[] = []
+    const restarted = createAppRegistry({
+      appsRoot,
+      templateRoot,
+      runtimeModeAdapter,
+      publicHost: '127.0.0.1',
+      portStart: 6170,
+      portEnd: 6172,
+      isPortAvailable: async () => true,
+      runCommand: async () => {},
+      runApp: async (_runtime, app, signal) => {
+        started.push(app.slug)
+        await pendingUntilAbort(signal)
+      },
+    })
+    registries.push(restarted)
+    await restarted.init()
+    expect(restarted.list()).toEqual([])
+    expect(started).toEqual([])
   })
 
   test('migrates ONE_CHAT_WORKSPACE_ROOT through adapter template materialization', async () => {
