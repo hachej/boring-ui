@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { rename } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import path from 'node:path'
 
@@ -473,7 +472,16 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
         if (closing) throw new Error('The app registry is shutting down')
         await runtime.disposeRuntime?.()
         runtime = undefined
-        await rename(stagingRoot, rootFor(app.slug))
+        const registryRuntime = await options.runtimeModeAdapter.create({
+          workspaceRoot: appsRoot,
+          workspaceId: 'one-chat-app-registry-promotion',
+          sessionId: `one-chat-app-registry-promotion:${app.slug}`,
+        })
+        try {
+          await registryRuntime.workspace.rename(path.basename(stagingRoot), app.slug)
+        } finally {
+          await registryRuntime.disposeRuntime?.()
+        }
         await acquireRuntime(app)
         apps.set(app.slug, app)
         await persist()
