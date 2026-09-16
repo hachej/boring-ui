@@ -16,7 +16,6 @@ const PUBLISHABLE = [
   "packages/workspace",
   "packages/agent",
   "packages/ui",
-  "packages/channels/whatsapp",
   "plugins/deck",
   "plugins/ask-user",
   "plugins/live-transcription",

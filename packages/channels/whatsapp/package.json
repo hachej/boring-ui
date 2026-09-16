@@ -1,6 +1,7 @@
 {
   "name": "@hachej/channel-whatsapp",
   "version": "0.1.110",
+  "private": true,
   "type": "module",
   "license": "MIT",
   "description": "Thin Meta WhatsApp Cloud API edge for Boring channels.",

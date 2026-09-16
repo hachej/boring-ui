@@ -34,6 +34,9 @@ export default defineConfig({
   outDir: 'dist',
   target: 'es2022',
   external: EXTERNALS,
+  // The WhatsApp edge is an internal workspace implementation detail. Bundle
+  // it so the published Core package has no unpublished runtime dependency.
+  noExternal: ['@hachej/channel-whatsapp'],
   // esbuild otherwise falls back to the CLASSIC jsx transform (which
   // requires `React` in scope) unless it can auto-detect "jsx": "react-jsx"
   // from tsconfig.json. Set it explicitly so Docker/cwd differences cannot
