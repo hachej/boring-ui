@@ -159,6 +159,20 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
           actual = calls.map((call) => `${call.name} ${JSON.stringify(call.input ?? {})}`).join(', ') || '(none)'
           break
         }
+        case 'manifest_tool_called': {
+          const manifests = matchingFiles(context.workspaceRoot, 'agent/tools/*.json')
+          const names = manifests.flatMap((file) => {
+            try {
+              const parsed = JSON.parse(readFileSync(path.join(context.workspaceRoot, file), 'utf8')) as { name?: unknown }
+              return typeof parsed.name === 'string' ? [parsed.name] : []
+            } catch {
+              return []
+            }
+          })
+          ok = expected === true && names.length > 0 && names.some((name) => calls.some((call) => call.name === name))
+          actual = `manifests=${names.join(', ') || '(none)'}; calls=${calls.map((call) => call.name).join(', ') || '(none)'}`
+          break
+        }
         case 'tool_not_called': {
           ok = !calls.some((call) => toolMatches(call, expected))
           if (spec.before_answer && context.turns.some((item) => item.changedBeforeAnswer.length > 0)) ok = false

@@ -9,6 +9,7 @@
     "dev": "pnpm run build:deps && pnpm run dev:app",
     "dev:app": "tsx src/server/index.ts",
     "eval": "tsx eval/run.ts",
+    "eval:bwrap": "BORING_AGENT_MODE=local tsx eval/run.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"

@@ -973,6 +973,7 @@ export async function createAgentHost(
         if (!active) throw bindingDisposedError()
       }
       const workspace = guardMethods(providerLease.bundle.workspace, assertActive)
+      const sandbox = guardMethods(providerLease.bundle.sandbox, assertActive)
       const storageRoot = getOptionalRuntimeBundleStorageRoot(providerLease.bundle)
       const gitWorkspaceSource = storageRoot
         ? (options.runtimeHost ?? providerLease.bundle.runtimeHost)?.createNodeWorkspace(storageRoot)
@@ -984,6 +985,7 @@ export async function createAgentHost(
       }))
       return Object.freeze({
         workspace,
+        sandbox,
         gitWorkspace: guardMethods(gitWorkspaceSource, assertActive),
         fileSearch: guardMethods(providerLease.bundle.fileSearch, assertActive),
         ...(guardedFilesystemBindings

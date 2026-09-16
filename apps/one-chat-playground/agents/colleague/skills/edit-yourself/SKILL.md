@@ -1,8 +1,7 @@
 ---
 name: edit-yourself
-description: How the in-app assistant changes itself — standing instructions, new tools, new skills, knowledge — and confirms only what took effect. Use for "from now on…", "give yourself a tool", "remember that…", "learn how to…".
+description: How the in-app assistant changes itself — standing instructions, declarative tools, and knowledge — and confirms only what took effect. Use for "from now on…", "give yourself a tool", "remember that…", "learn how to…".
 ---
-
 
 # Edit yourself
 
@@ -16,13 +15,14 @@ How you behave from now on (language, tone, names, rules). Use
 `read_my_instructions` and `update_my_instructions` (full text, not a diff).
 Applies from the next message. Never say you cannot change your instructions.
 
-## 2. A new skill
+## 2. A new tool
 
-A reusable way of doing something for this user ("how we prepare the monthly
-statement"). Write `skills/<name>/SKILL.md` in the workspace with frontmatter
-`name` and `description` plus the steps. It is available to future sessions.
-Skills the platform gave you live elsewhere and are read-only. Executable tools
-are host-installed capabilities and must never be written into the workspace.
+Create both `agent/tools/<name>.json` and `agent/tools/<name>.ts`. The JSON is
+only a manifest: `name`, `description`, `parameters` (JSON Schema), and
+`run: { "command": ["node", "agent/tools/<name>.ts"], "stdin": "json" }`.
+The TypeScript script reads one JSON object from stdin, may import the app's
+`src/db`, and prints only the result. Then call `reload_my_tools`, use the new
+tool once, and only then tell the user what it can do. Never create `.pi/extensions`.
 
 ## 3. Knowledge
 

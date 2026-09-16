@@ -1,22 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import type {
-  AgentGateway,
-  AgentTool,
-  AuthorizedAgentScope,
-} from '@hachej/boring-agent/shared'
+import type { AgentGateway, AgentTool, AuthorizedAgentScope, Workspace } from '@hachej/boring-agent/shared'
 
-import {
-  assertValidSlug,
-  noteIntent,
-  readIntent,
-  setIntentStatus,
-  systemClock,
-  type Clock,
-  type IntentFile,
-} from './memoryFiles.js'
+import { assertValidSlug, noteIntent, readIntent, setIntentStatus, systemClock, type Clock, type IntentFile } from './memoryFiles.js'
 import type { SessionTracker } from './reloadTools.js'
 import type { StageBus } from './stageBus.js'
 import { formatSystemEvent } from './systemEvents.js'
@@ -31,9 +18,7 @@ const BUILT_HISTORY_PATTERN = /\bBuilder(?: build)?:/i
 
 /** Default omitted stages without making callers reproduce intent-history rules. */
 export function defaultBuilderStage(intent: Pick<IntentFile, 'status' | 'body' | 'agreement'>): BuilderStage {
-  const hasBuiltHistory = intent.status === 'built'
-    || intent.status === 'kept'
-    || BUILT_HISTORY_PATTERN.test(intent.body)
+  const hasBuiltHistory = intent.status === 'built' || intent.status === 'kept' || BUILT_HISTORY_PATTERN.test(intent.body)
   return !hasBuiltHistory && NEW_SURFACE_PATTERN.test(intent.agreement ?? '') ? 'mockup' : 'build'
 }
 
@@ -47,11 +32,11 @@ function mockupUrl(appBaseUrl: string | undefined, slug: string): string {
   return appBaseUrl ? new URL(relative, appBaseUrl).href : `/${relative}`
 }
 
-async function verifyMockup(workspaceRoot: string, slug: string): Promise<void> {
+async function verifyMockup(workspace: Workspace, slug: string): Promise<void> {
   const relative = path.posix.join('public', 'mockups', `${slug}.html`)
   let body: string
   try {
-    body = await readFile(path.join(workspaceRoot, relative), 'utf8')
+    body = await workspace.readFile(relative)
   } catch {
     throw new Error(`${relative} was not created`)
   }
@@ -69,19 +54,25 @@ function sketchSummary(summary: string): string {
 }
 
 function text(body: string, isError = false): Awaited<ReturnType<AgentTool['execute']>> {
-  return { content: [{ type: 'text', text: body }], ...(isError ? { isError: true } : {}) }
+  return {
+    content: [{ type: 'text', text: body }],
+    ...(isError ? { isError: true } : {}),
+  }
 }
 
 function assistantText(message: { readonly parts: readonly { readonly type: string; readonly text?: string }[] }): string {
   return message.parts
     .filter((part) => part.type === 'text')
-    .map((part) => part.type === 'text' ? part.text : '')
+    .map((part) => (part.type === 'text' ? part.text : ''))
     .join('\n')
     .trim()
 }
 
 interface FreshRun {
-  readonly completion: Promise<{ summary: string; status: 'ok' | 'aborted' | 'error' }>
+  readonly completion: Promise<{
+    summary: string
+    status: 'ok' | 'aborted' | 'error'
+  }>
 }
 
 async function startFreshRun(options: {
@@ -98,7 +89,10 @@ async function startFreshRun(options: {
     requestId,
     title: options.title,
   })
-  const connection = await options.gateway.connectSession({ scope: options.scope, ref })
+  const connection = await options.gateway.connectSession({
+    scope: options.scope,
+    ref,
+  })
   try {
     await connection.send({
       kind: 'prompt',
@@ -146,8 +140,14 @@ async function postToColleague(options: {
     return
   }
   const ref = { agentTypeId: 'default', sessionId }
-  const state = await options.gateway.readSessionState({ scope: options.scope, ref })
-  const connection = await options.gateway.connectSession({ scope: options.scope, ref })
+  const state = await options.gateway.readSessionState({
+    scope: options.scope,
+    ref,
+  })
+  const connection = await options.gateway.connectSession({
+    scope: options.scope,
+    ref,
+  })
   const requestId = `one-chat:system-event:${randomUUID()}`
   try {
     if (state.summary.status === 'idle' || state.summary.status === 'error') {
@@ -179,7 +179,7 @@ const SLUG_PARAM = {
 } as const
 
 export function createRunAgentTools(options: {
-  readonly workspaceRoot: string
+  readonly workspace: Workspace
   readonly scope: AuthorizedAgentScope
   readonly getGateway: () => AgentGateway | undefined
   readonly sessions: SessionTracker
@@ -195,7 +195,8 @@ export function createRunAgentTools(options: {
 
   const runBuilder: AgentTool = {
     name: 'run_builder',
-    description: 'Start a fresh builder for an agreed intent. Choose "mockup" for one static sketch or "build" for the working app. If omitted, a never-built new app or screen is sketched first; other changes build immediately. It returns as soon as it starts, and only one builder can run at a time.',
+    description:
+      'Start a fresh builder for an agreed intent. Choose "mockup" for one static sketch or "build" for the working app. If omitted, a never-built new app or screen is sketched first; other changes build immediately. It returns as soon as it starts, and only one builder can run at a time.',
     parameters: {
       type: 'object',
       properties: {
@@ -216,7 +217,7 @@ export function createRunAgentTools(options: {
         if (builderRunning) return text('a builder is already running')
         const gateway = options.getGateway()
         if (!gateway) return text('The builder is not ready yet.', true)
-        const intent = await readIntent(options.workspaceRoot, slug)
+        const intent = await readIntent(options.workspace, slug)
         if (!intent?.agreement) return text(`Intent ${slug} must be agreed before building.`, true)
         if (params.stage !== undefined && !BUILDER_STAGES.includes(params.stage as BuilderStage)) {
           return text(`Stage must be one of: ${BUILDER_STAGES.join(', ')}.`, true)
@@ -232,75 +233,92 @@ export function createRunAgentTools(options: {
 
         builderRunning = true
         try {
-          if (stage === 'build') await setIntentStatus(options.workspaceRoot, slug, 'building')
+          if (stage === 'build') await setIntentStatus(options.workspace, slug, 'building')
           options.activityBus?.emit({ type: 'activity.started', ...activity })
           const run = await startFreshRun({
             gateway,
             scope: options.scope,
             agentTypeId: BUILDER_AGENT_TYPE_ID,
             title: `${stage === 'mockup' ? 'Sketch' : 'Build'} ${slug}`,
-            prompt: stage === 'mockup'
-              ? `Create the MOCKUP for intent ${slug}. Write only ${mockupRelativePath}.`
-              : `BUILD intent ${slug}. Match the approved sketch at ${mockupRelativePath} when it exists.`,
+            prompt:
+              stage === 'mockup'
+                ? `Create the MOCKUP for intent ${slug}. Write only ${mockupRelativePath}.`
+                : `BUILD intent ${slug}. Match the approved sketch at ${mockupRelativePath} when it exists.`,
           })
-          void run.completion.then(async ({ summary, status }) => {
-            options.activityBus?.emit({ type: 'activity.verifying', ...activity })
-            let finalSummary = summary || `could not, because the builder session ended with ${status}`
-            if (stage === 'mockup') {
-              try {
-                await verifyMockup(options.workspaceRoot, slug)
-              } catch (error) {
-                finalSummary = `could not, because ${error instanceof Error ? error.message : String(error)}`
-                await noteIntent(options.workspaceRoot, slug, `Builder mockup: ${finalSummary}`, now)
-                await setIntentStatus(options.workspaceRoot, slug, 'agreed')
-                options.activityBus?.emit({ type: 'activity.done', ...activity })
+          void run.completion
+            .then(async ({ summary, status }) => {
+              options.activityBus?.emit({
+                type: 'activity.verifying',
+                ...activity,
+              })
+              let finalSummary = summary || `could not, because the builder session ended with ${status}`
+              if (stage === 'mockup') {
+                try {
+                  await verifyMockup(options.workspace, slug)
+                } catch (error) {
+                  finalSummary = `could not, because ${error instanceof Error ? error.message : String(error)}`
+                  await noteIntent(options.workspace, slug, `Builder mockup: ${finalSummary}`, now)
+                  await setIntentStatus(options.workspace, slug, 'agreed')
+                  options.activityBus?.emit({
+                    type: 'activity.done',
+                    ...activity,
+                  })
+                  await postToColleague({
+                    gateway,
+                    scope: options.scope,
+                    sessions: options.sessions,
+                    prompt: `[system event] The builder could not finish the sketch for intent ${slug}: ${finalSummary}. Tell the user plainly and offer to try the sketch again.`,
+                    log: options.log,
+                  })
+                  return
+                }
+                finalSummary = sketchSummary(finalSummary)
+                await noteIntent(options.workspace, slug, `Builder mockup: ${finalSummary}`, now)
+                await setIntentStatus(options.workspace, slug, 'sketched')
+                options.activityBus?.emit({
+                  type: 'activity.done',
+                  ...activity,
+                })
                 await postToColleague({
                   gateway,
                   scope: options.scope,
                   sessions: options.sessions,
-                  prompt: `[system event] The builder could not finish the sketch for intent ${slug}: ${finalSummary}. Tell the user plainly and offer to try the sketch again.`,
+                  prompt: formatSystemEvent({
+                    kind: 'mockup-finished',
+                    slug,
+                    summary: finalSummary,
+                    url: mockupUrl(options.appBaseUrl, slug),
+                    title: `Sketch: ${intent.title ?? humanIntentTitle(slug)}`,
+                  }),
                   log: options.log,
                 })
                 return
               }
-              finalSummary = sketchSummary(finalSummary)
-              await noteIntent(options.workspaceRoot, slug, `Builder mockup: ${finalSummary}`, now)
-              await setIntentStatus(options.workspaceRoot, slug, 'sketched')
+
+              await noteIntent(options.workspace, slug, `Builder build: ${finalSummary}`, now)
+              await setIntentStatus(options.workspace, slug, 'built')
               options.activityBus?.emit({ type: 'activity.done', ...activity })
               await postToColleague({
                 gateway,
                 scope: options.scope,
                 sessions: options.sessions,
                 prompt: formatSystemEvent({
-                  kind: 'mockup-finished',
+                  kind: 'builder-finished',
                   slug,
                   summary: finalSummary,
-                  url: mockupUrl(options.appBaseUrl, slug),
-                  title: `Sketch: ${intent.title ?? humanIntentTitle(slug)}`,
                 }),
                 log: options.log,
               })
-              return
-            }
-
-            await noteIntent(options.workspaceRoot, slug, `Builder build: ${finalSummary}`, now)
-            await setIntentStatus(options.workspaceRoot, slug, 'built')
-            options.activityBus?.emit({ type: 'activity.done', ...activity })
-            await postToColleague({
-              gateway,
-              scope: options.scope,
-              sessions: options.sessions,
-              prompt: formatSystemEvent({ kind: 'builder-finished', slug, summary: finalSummary }),
-              log: options.log,
             })
-          }).catch((error) => {
-            // No colleague turn will arrive to clear a terminal milestone on this
-            // path, so do not leave stale work visible indefinitely.
-            options.activityBus?.emit({ type: 'activity.clear' })
-            options.log?.(`builder completion failed for ${slug}: ${String(error)}`)
-          }).finally(() => {
-            builderRunning = false
-          })
+            .catch((error) => {
+              // No colleague turn will arrive to clear a terminal milestone on this
+              // path, so do not leave stale work visible indefinitely.
+              options.activityBus?.emit({ type: 'activity.clear' })
+              options.log?.(`builder completion failed for ${slug}: ${String(error)}`)
+            })
+            .finally(() => {
+              builderRunning = false
+            })
           return text(`started ${stage}`)
         } catch (error) {
           options.activityBus?.emit({ type: 'activity.done', ...activity })
@@ -320,7 +338,10 @@ export function createRunAgentTools(options: {
       type: 'object',
       properties: {
         slug: SLUG_PARAM,
-        summary: { type: 'string', description: 'The builder\'s short final summary.' },
+        summary: {
+          type: 'string',
+          description: "The builder's short final summary.",
+        },
       },
       required: ['slug', 'summary'],
       additionalProperties: false,
@@ -339,11 +360,13 @@ export function createRunAgentTools(options: {
           title: `Document ${params.slug}`,
           prompt: `Document intent ${params.slug}. Diff summary: ${summary}`,
         })
-        void run.completion.then(({ summary: answer, status }) => {
-          options.log?.(`documenter finished ${params.slug} (${status}): ${answer || '(no final text)'}`)
-        }).catch((error) => {
-          options.log?.(`documenter completion failed for ${params.slug}: ${String(error)}`)
-        })
+        void run.completion
+          .then(({ summary: answer, status }) => {
+            options.log?.(`documenter finished ${params.slug} (${status}): ${answer || '(no final text)'}`)
+          })
+          .catch((error) => {
+            options.log?.(`documenter completion failed for ${params.slug}: ${String(error)}`)
+          })
         return text('started')
       } catch (error) {
         return text(error instanceof Error ? error.message : String(error), true)

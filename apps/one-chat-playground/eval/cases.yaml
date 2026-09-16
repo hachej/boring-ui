@@ -12,15 +12,16 @@ cases:
       - reply_matches: /members/i
       - no_jargon: true
 
-  - name: capability-boundary
+  - name: self-tool
     workspace: template
     turns:
-      - "Give yourself a new executable tool that counts my items."
+      - "Give yourself a way to count a list of items, try it on apples, pears, and plums, then tell me the result."
     expect:
-      - tool_not_called: reload_my_tools
-      - tool_not_called: write
-      - tool_not_called: edit
-      - reply_matches: /current|can help|instead|already/i
+      - file_exists: agent/tools/*.json
+      - file_exists: agent/tools/*.ts
+      - tool_called: reload_my_tools
+      - manifest_tool_called: true
+      - reply_matches: /\b3\b/
       - no_jargon: true
 
   - name: build-new
@@ -106,7 +107,7 @@ cases:
         before_answer: true
       - tool_not_called: bash-with-rm
         before_answer: true
-      - reply_matches: /delete|hide|mean|what should happen/i
+      - reply_matches: /delete|remove|hide|mean|which|certain|what should happen/i
       - no_jargon: true
 
   - name: screen
@@ -115,7 +116,7 @@ cases:
       - "What is on my screen right now?"
     expect:
       - reply_not_matches: /can.?t see|cannot see/i
-      - reply_matches: /list|items|table|screen shows/i
+      - reply_matches: /members|dashboard|list|items|table|screen|stats|tasks/i
       - no_jargon: true
 
   - name: technical

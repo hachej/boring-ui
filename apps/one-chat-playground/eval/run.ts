@@ -29,11 +29,12 @@ const WORKSPACES_ROOT = path.resolve(
 )
 const REPORTS_ROOT = path.join(APP_ROOT, 'eval', 'reports')
 const SESSION_ROOT = process.env.BORING_AGENT_SESSION_ROOT ?? '/var/tmp/one-chat-eval/sessions'
-const FRONT_PORT = Number(process.env.ONE_CHAT_PORT ?? 5360)
-const APP_PORT = Number(process.env.SAMPLE_APP_PORT ?? 5361)
+const FRONT_PORT = Number(process.env.ONE_CHAT_PORT ?? 5430)
+const APP_PORT = Number(process.env.SAMPLE_APP_PORT ?? 5431)
 const API_ROOT = `http://127.0.0.1:${FRONT_PORT}`
 const APP_URL = process.env.ONE_CHAT_APP_URL ?? `http://127.0.0.1:${APP_PORT}/`
 const TURN_TIMEOUT_MS = 180_000
+const RUNTIME_MODE = process.env.BORING_AGENT_MODE ?? 'direct'
 
 interface SeedFile {
   readonly path: string
@@ -249,6 +250,7 @@ async function startHost(workspaceRoot: string): Promise<{ host: ChildProcess; l
       ONE_CHAT_APP_URL: APP_URL,
       ONE_CHAT_APPS_ROOT: path.dirname(workspaceRoot),
       ONE_CHAT_WORKSPACE_ROOT: workspaceRoot,
+      ONE_CHAT_ALLOW_UNISOLATED_DIRECT_TOOLS: '1',
       HOST: '127.0.0.1',
       TMPDIR: '/var/tmp',
       HOME: '/home/ubuntu',
@@ -568,7 +570,7 @@ async function main(): Promise<number> {
   if (cases.length === 0) throw new Error(`no case named ${JSON.stringify(args.caseName)}`)
   mkdirSync(REPORTS_ROOT, { recursive: true })
   const results: CaseReport[] = []
-  console.log(`One Chat eval: direct host API, ${cases.length} case(s), host restarted per fresh workspace`)
+  console.log(`One Chat eval: ${RUNTIME_MODE} runtime adapter, ${cases.length} case(s), host restarted per fresh workspace`)
   for (const candidate of cases) {
     const result = await runCase(candidate, args.keep)
     results.push(result)
@@ -577,7 +579,7 @@ async function main(): Promise<number> {
   const timestamp = new Date().toISOString()
   const reportPath = path.join(REPORTS_ROOT, `${timestamp.replace(/[:.]/g, '-')}.json`)
   const passed = results.filter((result) => result.passed).length
-  writeFileSync(reportPath, `${JSON.stringify({ timestamp, api: 'direct-host', passed, failed: results.length - passed, results }, null, 2)}\n`)
+  writeFileSync(reportPath, `${JSON.stringify({ timestamp, runtimeMode: RUNTIME_MODE, passed, failed: results.length - passed, results }, null, 2)}\n`)
   console.log(`\n${passed}/${results.length} passed`)
   console.log(`Report: ${path.relative(APP_ROOT, reportPath)}`)
   return passed === results.length ? 0 : 1

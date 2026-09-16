@@ -1,30 +1,18 @@
-import { watch, type FSWatcher } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
-import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import type { AgentTool } from '@hachej/boring-agent/shared'
 
-export const EXTENSIONS_RELATIVE_PATH = path.join('.pi', 'extensions')
-
 function text(body: string, isError = false): Awaited<ReturnType<AgentTool['execute']>> {
-  return { content: [{ type: 'text', text: body }], ...(isError ? { isError: true } : {}) }
+  return {
+    content: [{ type: 'text', text: body }],
+    ...(isError ? { isError: true } : {}),
+  }
 }
 
-/**
- * The agent grows its own toolset by writing a Pi extension into the
- * workspace's `.pi/extensions/` and asking the host to reload. The reload
- * goes through the host's own route (`POST /api/v1/agents/:id/reload`) so it
- * is the same operation the CLI's `/reload` performs: resource loader +
- * running Pi session, no restart.
- */
 export interface ReloadOptions {
   readonly agentTypeId: string
   /** Lazy: the Fastify app is created after the tools are. */
   readonly getApp: () => FastifyInstance | undefined
-  /**
-   * The live chat session to reload. Without it the host reloads a session
-   * called "default", which is not the user's, and reports `reloaded: false`.
-   */
+  /** The live chat session to reload. */
   readonly sessions: SessionTracker
   readonly requestHeaders?: Readonly<Record<string, string>>
   readonly log?: (message: string) => void
@@ -46,7 +34,7 @@ export function createSessionTracker(): SessionTracker {
   }
 }
 
-/** Wraps tools so every execution records its session id for the watcher. */
+/** Wraps tools so every execution records its session id for reload routing. */
 export function trackSessions(tools: readonly AgentTool[], tracker: SessionTracker): AgentTool[] {
   return tools.map((tool) => ({
     ...tool,
@@ -74,7 +62,11 @@ export async function requestReload(
   })
   const body = response.body
   options.log?.(`reload (${reason}): ${response.statusCode} ${body.slice(0, 300)}`)
-  if (response.statusCode >= 300) return { ok: false, summary: `Reload failed (${response.statusCode}): ${body.slice(0, 500)}` }
+  if (response.statusCode >= 300)
+    return {
+      ok: false,
+      summary: `Reload failed (${response.statusCode}): ${body.slice(0, 500)}`,
+    }
   return { ok: true, summary: body.slice(0, 2000) }
 }
 
@@ -82,48 +74,20 @@ export function createReloadTool(options: ReloadOptions): AgentTool {
   return {
     name: 'reload_my_tools',
     description:
-      'Load the tools you just added or changed under .pi/extensions/ into this conversation, without any restart. Call it right after writing or editing an extension file. The load happens right after this call returns; your NEXT step in this same reply can already use the new tool. If the new tool is then missing, the file has an error: read it, fix it, reload again. Never claim a tool exists before you have used it or seen it listed.',
+      'Reload the declarative tools under agent/tools into this conversation. Call it immediately after writing or editing a tool manifest and script, then use the new tool once before telling the user it works.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     async execute(_params, ctx) {
       options.sessions.remember(ctx.sessionId)
       if (!ctx.sessionId) return text('No live conversation to reload.', true)
-      // Pi's reload swaps the extension runtime and invalidates the runner
-      // this very call is being delivered through. Awaiting it here would turn
-      // our own result into a stale-context error. So return first, reload a
-      // moment later, once nothing is in flight.
+      // Pi replaces the extension runtime that is delivering this call. Return
+      // first, then reload once the current tool result is no longer in flight.
       const sessionId = ctx.sessionId
       setTimeout(() => {
         void requestReload(options, 'tool', sessionId).then((result) => {
           if (!result.ok) options.log?.(`deferred reload failed: ${result.summary}`)
         })
       }, 250)
-      return text('Reloading your tools now. Continue: your next step can use the new tool. If it is missing, the extension file has an error — fix it and reload again.')
+      return text('Reloading now. Use the new capability next; if it is missing, correct its manifest and reload again.')
     },
-  }
-}
-
-/** Debounced auto-reload when anything under .pi/extensions changes. */
-export function watchExtensions(options: ReloadOptions & { readonly workspaceRoot: string }): () => void {
-  const dir = path.join(options.workspaceRoot, EXTENSIONS_RELATIVE_PATH)
-  let watcher: FSWatcher | null = null
-  let timer: NodeJS.Timeout | null = null
-  const schedule = () => {
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => {
-      timer = null
-      void requestReload(options, 'watcher').catch((error) => options.log?.(`reload watcher error: ${String(error)}`))
-    }, 600)
-  }
-  void mkdir(dir, { recursive: true }).then(() => {
-    try {
-      watcher = watch(dir, { persistent: false, recursive: true }, schedule)
-      watcher.on('error', () => {})
-    } catch {
-      // Recursive watch unsupported: the agent still has reload_my_tools.
-    }
-  })
-  return () => {
-    if (timer) clearTimeout(timer)
-    watcher?.close()
   }
 }

@@ -7,14 +7,11 @@ import {
   createAgentHost,
   createSandboxRuntimeModeAdapter,
   registerAgentHostEnvironmentRoutes,
+  type AgentHostEnvironmentLease,
   type CreatedAgentHost,
   type RuntimeModeAdapter,
 } from '@hachej/boring-agent/server'
-import type {
-  AgentGateway,
-  AgentScopeVerifier,
-  AuthorizedAgentScope,
-} from '@hachej/boring-agent/shared'
+import type { AgentGateway, AgentScopeVerifier, AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
 import { bindToolGroups, loadOneChatAgentPackages, type OneChatSeat } from './agentPackages.js'
@@ -23,21 +20,17 @@ import { compactAfterAgreement, createCompactCommandExtension } from './compacti
 import { createInstructionsLoader, type InstructionsLoader } from './instructionsFile.js'
 import { createInstructionsTools } from './instructionsTool.js'
 import { createMemoryTools } from './memoryTools.js'
-import { createSessionTracker, trackSessions, type SessionTracker } from './reloadTools.js'
-import {
-  BUILDER_AGENT_TYPE_ID,
-  DOCUMENTER_AGENT_TYPE_ID,
-  createRunAgentTools,
-} from './runAgentTools.js'
+import { createReloadTool, createSessionTracker, trackSessions, type SessionTracker } from './reloadTools.js'
+import { BUILDER_AGENT_TYPE_ID, DOCUMENTER_AGENT_TYPE_ID, createRunAgentTools } from './runAgentTools.js'
 import { createStageBus, registerStageRoutes, type StageBus } from './stageBus.js'
 import { createStageTools } from './stageTools.js'
+import { createWorkspaceToolsExtension } from './workspaceTools.js'
 
 export const ONE_CHAT_AGENT_TYPE_ID = 'default'
 export const ONE_CHAT_WORKSPACE_SCOPE_ID = 'one-chat-playground'
 export const ONE_CHAT_AUTH_SUBJECT_ID = 'trusted-local'
 export const ONE_CHAT_SESSION_ID = 'one-chat'
 export const ONE_CHAT_APP_HEADER = 'x-one-chat-app'
-export const SKILLS_RELATIVE_DIR = path.join('.pi', 'skills')
 export const ONE_CHAT_AGENTS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../agents')
 
 export interface OneChatRuntimeApp {
@@ -58,6 +51,7 @@ export interface OneChatRuntimeOptions {
   readonly appBaseUrl?: string
   readonly allowedOrigins?: readonly string[]
   readonly runtimeModeAdapter?: RuntimeModeAdapter
+  readonly allowUnisolatedDirectTools?: boolean
   readonly logger?: boolean
 }
 
@@ -70,14 +64,21 @@ export interface OneChatRuntime {
   close(): Promise<void>
 }
 
+interface AppWorkspaceResources {
+  readonly environmentLease: AgentHostEnvironmentLease
+  readonly instructions: InstructionsLoader
+  readonly boundBySeat: Record<OneChatSeat, ReturnType<typeof bindToolGroups>>
+  readonly workspaceToolsExtension: ReturnType<typeof createWorkspaceToolsExtension>
+}
+
 interface AppRuntimeResources {
   readonly app: OneChatRuntimeApp
   readonly scope: AuthorizedAgentScope
   readonly stage: StageBus
   readonly askUser: OneChatAskUser
-  readonly instructions: InstructionsLoader
   readonly sessions: SessionTracker
-  readonly boundBySeat: Record<OneChatSeat, ReturnType<typeof bindToolGroups>>
+  getWorkspace(): Promise<AppWorkspaceResources>
+  closeWorkspace(): void
 }
 
 function scopeIdForApp(slug: string, defaultSlug: string): string {
@@ -95,10 +96,16 @@ function requestAppSlug(request: FastifyRequest, fallback: string): string {
   return fallback
 }
 
-async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance, onClose?: () => void): Promise<void> {
+async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance, onClose?: () => void | Promise<void>): Promise<void> {
   let firstError: unknown
-  onClose?.()
-  for (const operation of [() => app.close(), () => created.host.close()]) {
+  try {
+    await onClose?.()
+  } catch (error) {
+    firstError = error
+  }
+  // Fence Environment acquisitions before asking Fastify to drain requests;
+  // otherwise a request waiting on a provider can keep app.close() pending.
+  for (const operation of [() => created.host.close(), () => app.close()]) {
     try {
       await operation()
     } catch (error) {
@@ -111,20 +118,22 @@ async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance, onC
 /**
  * One Agent Host, many request-scoped app bindings. The public host header is
  * converted to an AuthorizedAgentScope, and the existing Agent Host resolver
- * then binds workspace, tools, prompt watchers and session namespace from that
+ * then binds workspace, tools, prompt cache and session namespace from that
  * verified scope. This keeps one gateway/protocol while isolating every app.
  */
 export async function createOneChatRuntime(options: OneChatRuntimeOptions): Promise<OneChatRuntime> {
   const defaultSlug = options.defaultAppSlug ?? 'default'
   const legacyRoot = options.workspaceRoot ? path.resolve(options.workspaceRoot) : undefined
-  const resolveConfiguredApp = options.resolveApp ?? ((slug: string) => {
-    if (!legacyRoot || slug !== defaultSlug) return undefined
-    return {
-      slug,
-      workspaceRoot: legacyRoot,
-      appBaseUrl: options.appBaseUrl ?? 'http://127.0.0.1:5321/',
-    }
-  })
+  const resolveConfiguredApp =
+    options.resolveApp ??
+    ((slug: string) => {
+      if (!legacyRoot || slug !== defaultSlug) return undefined
+      return {
+        slug,
+        workspaceRoot: legacyRoot,
+        appBaseUrl: options.appBaseUrl ?? 'http://127.0.0.1:5321/',
+      }
+    })
   if (!options.resolveApp && !legacyRoot) throw new TypeError('createOneChatRuntime requires workspaceRoot or resolveApp')
 
   const agentPackages = await loadOneChatAgentPackages(options.agentsRoot ?? ONE_CHAT_AGENTS_ROOT)
@@ -177,74 +186,146 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     if (existing) return existing
     const app = appDescriptor(slug)
     const scope = scopeForApp(slug)
-    const workspaceRoot = app.workspaceRoot
     const stage = createStageBus()
     const sessions = createSessionTracker()
-    const instructions = createInstructionsLoader({ workspaceRoot, basePrompt: undefined })
     const requestHeaders = { [ONE_CHAT_APP_HEADER]: slug }
     const log = (message: string) => hostApp?.log.info(`[${slug}] ${message}`)
     const colleagueUsesCompact = agentPackages.colleague.tools.includes('compact')
-    const memoryTools = createMemoryTools({
-      workspaceRoot,
-      ...(colleagueUsesCompact
-        ? {
-            onAgreement(intentSlug: string, sessionId: string | undefined) {
-              sessions.remember(sessionId)
-              setTimeout(() => {
-                if (!hostApp || !createdHost) return
-                void compactAfterAgreement({
-                  app: hostApp,
-                  gateway: createdHost.gateway,
-                  scope,
-                  sessions,
-                  slug: intentSlug,
-                  requestHeaders,
-                  log,
-                }).catch((error) => log(`compaction failed for ${intentSlug}: ${String(error)}`))
-              }, 0)
-            },
-          }
-        : {}),
-    })
-    const askUserStatePath = options.askUserStatePath && slug === defaultSlug
-      ? options.askUserStatePath
-      : path.join(options.sessionRoot ?? path.join(workspaceRoot, '.boring-agent'), slug, 'ask-user.json')
+    const askUserStateRoot = options.sessionRoot ?? path.join(process.env.TMPDIR ?? '/tmp', `one-chat-playground-${process.pid}`)
+    const askUserStatePath = options.askUserStatePath && slug === defaultSlug ? options.askUserStatePath : path.join(askUserStateRoot, slug, 'ask-user.json')
     const askUser = createAskUser({
       statePath: askUserStatePath,
       agentTypeId: ONE_CHAT_AGENT_TYPE_ID,
       defaultSessionId: ONE_CHAT_SESSION_ID,
     })
     void askUser.abandonStale().catch((error) => log(`stale question cleanup failed: ${String(error)}`))
-    const runAgentTools = createRunAgentTools({
-      workspaceRoot,
-      scope,
-      getGateway: () => createdHost?.gateway,
-      sessions,
-      activityBus: stage,
-      appBaseUrl: app.appBaseUrl,
-      log,
-    })
-    const availableToolGroups = {
-      intents: memoryTools,
-      instructions: createInstructionsTools({ workspaceRoot }),
-      stage: createStageTools({ bus: stage, allowedOrigins, appBaseUrl: app.appBaseUrl }),
-      ask_user: [askUser.tool],
-      run_agents: runAgentTools,
-    } as const
-    const boundBySeat = Object.fromEntries(
-      (Object.keys(agentPackages) as OneChatSeat[]).map((seat) => [
-        seat,
-        bindToolGroups(agentPackages[seat].tools, availableToolGroups),
-      ]),
-    ) as AppRuntimeResources['boundBySeat']
-    const createdResources = {
+
+    const acquireWorkspace = async (): Promise<AppWorkspaceResources> => {
+      const host = createdHost
+      if (!host) throw new Error('one-chat Agent Host is not ready')
+      const environmentLease = await host.acquireEnvironment({
+        authorizedScope: scope,
+        intent: {
+          kind: 'agent-binding',
+          requestId: `one-chat-resources:${slug}`,
+        },
+      })
+      try {
+        const instructions = createInstructionsLoader({
+          workspace: environmentLease.workspace,
+          basePrompt: undefined,
+        })
+        const memoryTools = createMemoryTools({
+          workspace: environmentLease.workspace,
+          invalidatePrompt: instructions.invalidate,
+          ...(colleagueUsesCompact
+            ? {
+                onAgreement(intentSlug: string, sessionId: string | undefined) {
+                  sessions.remember(sessionId)
+                  setTimeout(() => {
+                    if (!hostApp || !createdHost) return
+                    void compactAfterAgreement({
+                      app: hostApp,
+                      gateway: createdHost.gateway,
+                      scope,
+                      sessions,
+                      slug: intentSlug,
+                      requestHeaders,
+                      log,
+                    }).catch((error) => log(`compaction failed for ${intentSlug}: ${String(error)}`))
+                  }, 0)
+                },
+              }
+            : {}),
+        })
+        const runAgentTools = createRunAgentTools({
+          workspace: environmentLease.workspace,
+          scope,
+          getGateway: () => createdHost?.gateway,
+          sessions,
+          activityBus: stage,
+          appBaseUrl: app.appBaseUrl,
+          log,
+        })
+        const availableToolGroups = {
+          intents: memoryTools,
+          instructions: createInstructionsTools({
+            workspace: environmentLease.workspace,
+            invalidatePrompt: instructions.invalidate,
+          }),
+          stage: createStageTools({
+            bus: stage,
+            allowedOrigins,
+            appBaseUrl: app.appBaseUrl,
+          }),
+          ask_user: [askUser.tool],
+          run_agents: runAgentTools,
+          self_tools: [
+            createReloadTool({
+              agentTypeId: ONE_CHAT_AGENT_TYPE_ID,
+              getApp: () => hostApp,
+              sessions,
+              requestHeaders,
+              log,
+            }),
+          ],
+        } as const
+        const boundBySeat = Object.fromEntries(
+          (Object.keys(agentPackages) as OneChatSeat[]).map((seat) => [seat, bindToolGroups(agentPackages[seat].tools, availableToolGroups)]),
+        ) as AppWorkspaceResources['boundBySeat']
+        const reservedNames = new Set([
+          'bash',
+          'edit',
+          'find',
+          'grep',
+          'ls',
+          'read',
+          'write',
+          ...Object.values(boundBySeat).flatMap((bound) => bound.tools.map((tool) => tool.name)),
+        ])
+        return {
+          environmentLease,
+          instructions,
+          boundBySeat,
+          workspaceToolsExtension: createWorkspaceToolsExtension({
+            workspace: environmentLease.workspace,
+            sandbox: environmentLease.sandbox,
+            reservedNames,
+            allowUnisolatedDirectExecution: options.allowUnisolatedDirectTools,
+          }),
+        }
+      } catch (error) {
+        environmentLease.release()
+        throw error
+      }
+    }
+    let workspace: Promise<AppWorkspaceResources> | undefined
+    const createdResources: AppRuntimeResources = {
       app,
       scope,
       stage,
       askUser,
-      instructions,
       sessions,
-      boundBySeat,
+      getWorkspace() {
+        if (workspace) return workspace
+        const pending = acquireWorkspace().catch((error) => {
+          if (workspace === pending) workspace = undefined
+          throw error
+        })
+        workspace = pending
+        return pending
+      },
+      closeWorkspace() {
+        const pending = workspace
+        workspace = undefined
+        if (!pending) return
+        // Do not hold shutdown open on provider acquisition. The Host fences
+        // the Environment below; if acquisition wins the race, release it.
+        void pending.then((acquired) => {
+          acquired.instructions.close()
+          acquired.environmentLease.release()
+        }, () => {})
+      },
     }
     resources.set(slug, createdResources)
     return createdResources
@@ -255,14 +336,23 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     return scopeForApp(slug)
   }
 
-  const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
+  const app = Fastify({
+    logger: options.logger ?? true,
+    bodyLimit: 16 * 1024 * 1024,
+  })
   hostApp = app
   const startedAt = Date.now()
   const created = await createAgentHost({
     agents: [
-      { agentTypeId: ONE_CHAT_AGENT_TYPE_ID, definition: agentPackages.colleague },
+      {
+        agentTypeId: ONE_CHAT_AGENT_TYPE_ID,
+        definition: agentPackages.colleague,
+      },
       { agentTypeId: BUILDER_AGENT_TYPE_ID, definition: agentPackages.builder },
-      { agentTypeId: DOCUMENTER_AGENT_TYPE_ID, definition: agentPackages.documenter },
+      {
+        agentTypeId: DOCUMENTER_AGENT_TYPE_ID,
+        definition: agentPackages.documenter,
+      },
     ].map(({ agentTypeId, definition }) => ({
       agentTypeId,
       definition: {
@@ -272,7 +362,11 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         ...(definition.definitionDigest ? { digest: definition.definitionDigest } : {}),
       },
     })),
-    fleetCompiler: { async compile({ agents }) { return agents } },
+    fleetCompiler: {
+      async compile({ agents }) {
+        return agents
+      },
+    },
     hostId: 'one-chat-playground',
     scopeVerifier: verifier,
     runtimeModeAdapter: modeAdapter,
@@ -289,14 +383,11 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     },
     async resolveAuthorizedAgentRuntimeScope({ authorizedScope, agentTypeId }) {
       const selected = resourcesForApp(slugForScope(authorizedScope))
+      const selectedWorkspace = await selected.getWorkspace()
       const isColleague = agentTypeId === ONE_CHAT_AGENT_TYPE_ID
-      const seat: OneChatSeat = isColleague
-        ? 'colleague'
-        : agentTypeId === BUILDER_AGENT_TYPE_ID
-          ? 'builder'
-          : 'documenter'
+      const seat: OneChatSeat = isColleague ? 'colleague' : agentTypeId === BUILDER_AGENT_TYPE_ID ? 'builder' : 'documenter'
       const agentPackage = agentPackages[seat]
-      const bound = selected.boundBySeat[seat]
+      const bound = selectedWorkspace.boundBySeat[seat]
       const identity = [
         'one-chat-playground',
         selected.app.slug,
@@ -310,35 +401,42 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
         identity: JSON.stringify(identity),
         physicalBindingIdentity: JSON.stringify([agentTypeId, modeAdapter.id, selected.app.workspaceRoot]),
         resourceInputDigest: JSON.stringify(identity),
-        sessionNamespace: selected.app.slug === defaultSlug
-          ? `one-chat-playground-${agentTypeId}`
-          : `one-chat-playground-${selected.app.slug}-${agentTypeId}`,
+        sessionNamespace: selected.app.slug === defaultSlug ? `one-chat-playground-${agentTypeId}` : `one-chat-playground-${selected.app.slug}-${agentTypeId}`,
         pi: {
-          // Direct mode is trusted-host execution. Never discover executable
-          // code authored in an app workspace in this process.
+          // Never discover or import executable workspace code in the host.
+          // One host-owned factory registers validated command manifests whose
+          // execution remains inside the paired runtime sandbox.
           noExtensions: true,
-          additionalSkillPaths: isColleague
-            ? [
-                path.join(agentPackage.packageRoot, 'skills'),
-                path.join(selected.app.workspaceRoot, SKILLS_RELATIVE_DIR),
-                path.join(selected.app.workspaceRoot, 'skills'),
-              ]
-            : seat === 'builder'
-              ? [path.join(agentPackage.packageRoot, 'skills')]
-              : [],
-          ...(bound.compact ? { extensionFactories: [createCompactCommandExtension((message) => hostApp?.log.info(`[${selected.app.slug}] ${message}`))] } : {}),
+          additionalSkillPaths: isColleague || seat === 'builder' ? [path.join(agentPackage.packageRoot, 'skills')] : [],
+          extensionFactories: [
+            ...(bound.compact ? [createCompactCommandExtension((message) => hostApp?.log.info(`[${selected.app.slug}] ${message}`))] : []),
+            ...(isColleague ? [selectedWorkspace.workspaceToolsExtension] : []),
+          ],
         },
         ...(bound.tools.length
-          ? { extraTools: isColleague ? trackSessions(bound.tools, selected.sessions) : [...bound.tools] }
+          ? {
+              extraTools: isColleague ? trackSessions(bound.tools, selected.sessions) : [...bound.tools],
+            }
           : {}),
-        ...(isColleague ? { loadSystemPromptAppend: () => selected.instructions.load() } : {}),
+        ...(isColleague
+          ? {
+              loadSystemPromptAppend: () => selectedWorkspace.instructions.load(),
+            }
+          : {}),
       }
     },
   })
   createdHost = created
 
+  const closeAppResources = () => {
+    for (const selected of resources.values()) selected.closeWorkspace()
+  }
+
   try {
-    app.get('/health', async () => ({ status: 'ok', uptime: Math.floor((Date.now() - startedAt) / 1000) }))
+    app.get('/health', async () => ({
+      status: 'ok',
+      uptime: Math.floor((Date.now() - startedAt) / 1000),
+    }))
     app.get('/ready', async () => ({ status: 'ready' }))
     registerStageRoutes(app, async (request) => resourcesForApp(requestAppSlug(request, defaultSlug)).stage)
     registerScopedAskUserRoutes(app, async (request) => resourcesForApp(requestAppSlug(request, defaultSlug)).askUser)
@@ -347,14 +445,14 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
       authorizeAgentRequest,
       runtimeHost: modeAdapter.runtimeHost,
     })
-    await app.register(created.registerDirectRoutes({
-      authorizeAgentRequest,
-      defaultSessionId: ONE_CHAT_SESSION_ID,
-    }))
+    await app.register(
+      created.registerDirectRoutes({
+        authorizeAgentRequest,
+        defaultSessionId: ONE_CHAT_SESSION_ID,
+      }),
+    )
   } catch (error) {
-    await closeRuntime(created, app, () => {
-      for (const selected of resources.values()) selected.instructions.close()
-    }).catch(() => {})
+    await closeRuntime(created, app, closeAppResources).catch(() => {})
     throw error
   }
 
@@ -366,9 +464,7 @@ export async function createOneChatRuntime(options: OneChatRuntimeOptions): Prom
     scopeForApp,
     stageForApp: (slug) => resourcesForApp(slug).stage,
     close() {
-      closePromise ??= closeRuntime(created, app, () => {
-        for (const selected of resources.values()) selected.instructions.close()
-      })
+      closePromise ??= closeRuntime(created, app, closeAppResources)
       return closePromise
     },
   }

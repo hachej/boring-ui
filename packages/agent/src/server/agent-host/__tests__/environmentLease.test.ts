@@ -77,6 +77,35 @@ describe('EnvironmentLeaseManager', () => {
     },
   )
 
+  it('fences an acquisition even when provider creation has not settled', async () => {
+    const workspaceRoot = await makeRoot()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const entered = deferred<void>()
+    const blocked = deferred<void>()
+    const disposeRuntime = vi.fn(async () => {})
+    const manager = new EnvironmentLeaseManager({
+      ...baseAdapter,
+      async create(ctx) {
+        const bundle = await baseAdapter.create(ctx)
+        entered.resolve()
+        await blocked.promise
+        return { ...bundle, disposeRuntime }
+      },
+    })
+    const acquiring = manager.acquire('workspace-a', {
+      placementIdentity: 'direct:pending',
+      workspaceRoot,
+      provisioningFingerprint: 'generation-a',
+    })
+    await entered.promise
+
+    const closing = manager.close(0)
+    await expect(acquiring).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
+    blocked.resolve()
+    await closing
+    await vi.waitFor(() => expect(disposeRuntime).toHaveBeenCalledOnce())
+  })
+
   it('keeps verified storage scope separate from the physical provider workspace id', async () => {
     const workspaceRoot = await makeRoot()
     const baseAdapter = createTestRuntimeModeAdapter('direct')
@@ -128,6 +157,31 @@ describe('EnvironmentLeaseManager', () => {
     await vi.waitFor(() => expect(disposeRuntime).toHaveBeenCalledOnce())
     expect(retained.signal.aborted).toBe(true)
     retained.release()
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+  })
+
+  it('disposes once when retirement races a second acquisition', async () => {
+    const workspaceRoot = await makeRoot()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const disposeRuntime = vi.fn(async () => {})
+    const manager = new EnvironmentLeaseManager({
+      ...baseAdapter,
+      async create(ctx) {
+        return { ...await baseAdapter.create(ctx), disposeRuntime }
+      },
+    })
+    const environment = {
+      placementIdentity: 'direct:retire-race',
+      workspaceRoot,
+      provisioningFingerprint: 'generation-a',
+    }
+    const lease = await manager.acquire('workspace-a', environment)
+    const racingAcquire = manager.acquire('workspace-a', environment)
+
+    await lease.retire()
+    await expect(racingAcquire).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
+    await vi.waitFor(() => expect(disposeRuntime).toHaveBeenCalledOnce())
+    await manager.close()
     expect(disposeRuntime).toHaveBeenCalledOnce()
   })
 

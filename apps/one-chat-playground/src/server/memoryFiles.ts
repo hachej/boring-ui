@@ -1,5 +1,6 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+
+import type { Workspace } from '@hachej/boring-agent/shared'
 
 /**
  * The agent's whole memory of this app is three kinds of file in the user's
@@ -35,9 +36,7 @@ export function isValidSlug(slug: unknown): slug is string {
 /** Throws with a message the agent can act on; slugs are a tool contract, not user text. */
 export function assertValidSlug(slug: unknown): asserts slug is string {
   if (!isValidSlug(slug)) {
-    throw new Error(
-      `"${String(slug)}" is not a valid intent name. Use lowercase words joined by single hyphens, for example "track-invoices".`,
-    )
+    throw new Error(`"${String(slug)}" is not a valid intent name. Use lowercase words joined by single hyphens, for example "track-invoices".`)
   }
 }
 
@@ -45,9 +44,9 @@ export function isIntentStatus(value: unknown): value is IntentStatus {
   return typeof value === 'string' && (INTENT_STATUSES as readonly string[]).includes(value)
 }
 
-export function intentPath(workspaceRoot: string, slug: string): string {
+export function intentPath(slug: string): string {
   assertValidSlug(slug)
-  return path.join(workspaceRoot, INTENTS_RELATIVE_DIR, `${slug}.md`)
+  return path.join(INTENTS_RELATIVE_DIR, `${slug}.md`)
 }
 
 export interface IntentFile {
@@ -84,7 +83,14 @@ export function parseIntent(slug: string, raw: string): IntentFile {
   const title = titleMatch?.[1]?.trim() || undefined
   const afterMetadata = lines.slice(title ? 2 : 1).join('\n')
   const headingIndex = afterMetadata.indexOf(AGREEMENT_HEADING)
-  if (headingIndex < 0) return { slug, status, title, body: afterMetadata.trim(), agreement: undefined }
+  if (headingIndex < 0)
+    return {
+      slug,
+      status,
+      title,
+      body: afterMetadata.trim(),
+      agreement: undefined,
+    }
   return {
     slug,
     status,
@@ -95,14 +101,12 @@ export function parseIntent(slug: string, raw: string): IntentFile {
 }
 
 export function serializeIntent(intent: Omit<IntentFile, 'slug'>): string {
-  const parts = [
-    `status: ${intent.status}`,
-    ...(intent.title ? [`title: ${intent.title}`] : []),
-    '',
-    intent.body.trim(),
-  ]
+  const parts = [`status: ${intent.status}`, ...(intent.title ? [`title: ${intent.title}`] : []), '', intent.body.trim()]
   if (intent.agreement) parts.push('', AGREEMENT_HEADING, '', intent.agreement.trim())
-  return `${parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
+  return `${parts
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd()}\n`
 }
 
 function singular(value: string): string {
@@ -129,47 +133,52 @@ export function intentTitleFromUserWords(text: string, slug: string): string {
   return `${fallback.charAt(0).toLowerCase()}${fallback.slice(1)}`
 }
 
-export async function readIntent(workspaceRoot: string, slug: string): Promise<IntentFile | undefined> {
+export async function readIntent(workspace: Workspace, slug: string): Promise<IntentFile | undefined> {
   try {
-    return parseIntent(slug, await readFile(intentPath(workspaceRoot, slug), 'utf8'))
+    return parseIntent(slug, await workspace.readFile(intentPath(slug)))
   } catch {
     return undefined
   }
 }
 
-async function writeIntent(workspaceRoot: string, slug: string, intent: Omit<IntentFile, 'slug'>): Promise<void> {
-  const file = intentPath(workspaceRoot, slug)
-  await mkdir(path.dirname(file), { recursive: true })
-  await writeFile(file, serializeIntent(intent), 'utf8')
+async function writeIntent(workspace: Workspace, slug: string, intent: Omit<IntentFile, 'slug'>): Promise<void> {
+  const file = intentPath(slug)
+  await workspace.mkdir(path.dirname(file), { recursive: true })
+  await workspace.writeFile(file, serializeIntent(intent))
 }
 
 /** Creates the intent (status `proposed`) or appends to the one that exists. */
 export async function openIntent(
-  workspaceRoot: string,
+  workspace: Workspace,
   slug: string,
   text: string,
   now: Clock = systemClock,
   title?: string,
 ): Promise<{ intent: IntentFile; created: boolean }> {
-  const existing = await readIntent(workspaceRoot, slug)
+  const existing = await readIntent(workspace, slug)
   const entry = `- ${stamp(now())} — ${text.trim()}`
   const requestedTitle = title?.replace(/\s+/g, ' ').trim().slice(0, 80)
   const humanTitle = requestedTitle || intentTitleFromUserWords(text, slug)
   const next: Omit<IntentFile, 'slug'> = existing
-    ? { status: existing.status, title: existing.title ?? humanTitle, body: [existing.body, entry].filter(Boolean).join('\n'), agreement: existing.agreement }
-    : { status: 'proposed', title: humanTitle, body: entry, agreement: undefined }
-  await writeIntent(workspaceRoot, slug, next)
+    ? {
+        status: existing.status,
+        title: existing.title ?? humanTitle,
+        body: [existing.body, entry].filter(Boolean).join('\n'),
+        agreement: existing.agreement,
+      }
+    : {
+        status: 'proposed',
+        title: humanTitle,
+        body: entry,
+        agreement: undefined,
+      }
+  await writeIntent(workspace, slug, next)
   return { intent: { slug, ...next }, created: !existing }
 }
 
 /** Appends one timestamped entry. Fails if the intent was never opened. */
-export async function noteIntent(
-  workspaceRoot: string,
-  slug: string,
-  text: string,
-  now: Clock = systemClock,
-): Promise<IntentFile> {
-  const existing = await readIntent(workspaceRoot, slug)
+export async function noteIntent(workspace: Workspace, slug: string, text: string, now: Clock = systemClock): Promise<IntentFile> {
+  const existing = await readIntent(workspace, slug)
   if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
   const next = {
     status: existing.status,
@@ -177,32 +186,33 @@ export async function noteIntent(
     body: [existing.body, `- ${stamp(now())} — ${text.trim()}`].filter(Boolean).join('\n'),
     agreement: existing.agreement,
   }
-  await writeIntent(workspaceRoot, slug, next)
+  await writeIntent(workspace, slug, next)
   return { slug, ...next }
 }
 
 /** Writes the agreement section and moves the intent to `agreed`. */
-export async function agreeIntent(
-  workspaceRoot: string,
-  slug: string,
-  agreement: string,
-  now: Clock = systemClock,
-): Promise<IntentFile> {
-  const existing = (await readIntent(workspaceRoot, slug)) ?? (await openIntent(workspaceRoot, slug, 'Opened.', now)).intent
-  const next = { status: 'agreed' as const, title: existing.title, body: existing.body, agreement: agreement.trim() }
-  await writeIntent(workspaceRoot, slug, next)
+export async function agreeIntent(workspace: Workspace, slug: string, agreement: string, now: Clock = systemClock): Promise<IntentFile> {
+  const existing = (await readIntent(workspace, slug)) ?? (await openIntent(workspace, slug, 'Opened.', now)).intent
+  const next = {
+    status: 'agreed' as const,
+    title: existing.title,
+    body: existing.body,
+    agreement: agreement.trim(),
+  }
+  await writeIntent(workspace, slug, next)
   return { slug, ...next }
 }
 
-export async function setIntentStatus(
-  workspaceRoot: string,
-  slug: string,
-  status: IntentStatus,
-): Promise<IntentFile> {
-  const existing = await readIntent(workspaceRoot, slug)
+export async function setIntentStatus(workspace: Workspace, slug: string, status: IntentStatus): Promise<IntentFile> {
+  const existing = await readIntent(workspace, slug)
   if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
-  const next = { status, title: existing.title, body: existing.body, agreement: existing.agreement }
-  await writeIntent(workspaceRoot, slug, next)
+  const next = {
+    status,
+    title: existing.title,
+    body: existing.body,
+    agreement: existing.agreement,
+  }
+  await writeIntent(workspace, slug, next)
   return { slug, ...next }
 }
 
@@ -230,7 +240,7 @@ export function parseChangeLine(line: string): ChangeLine | undefined {
  * Interim: the agent writes both. A later documenter session takes this over.
  */
 export async function recordChange(
-  workspaceRoot: string,
+  workspace: Workspace,
   input: { slug: string; summary: string; productToday: string },
   now: Clock = systemClock,
 ): Promise<{ line: string }> {
@@ -240,26 +250,29 @@ export async function recordChange(
   const productToday = input.productToday.trim()
   if (!productToday) throw new Error('A change needs the new description of what the app is today.')
 
-  const changesFile = path.join(workspaceRoot, CHANGES_RELATIVE_PATH)
-  const productFile = path.join(workspaceRoot, PRODUCT_RELATIVE_PATH)
-  await mkdir(path.dirname(changesFile), { recursive: true })
-
+  await workspace.mkdir(path.dirname(CHANGES_RELATIVE_PATH), {
+    recursive: true,
+  })
   let existing = ''
   try {
-    existing = await readFile(changesFile, 'utf8')
+    existing = await workspace.readFile(CHANGES_RELATIVE_PATH)
   } catch {
     existing = '# Changes\n'
   }
-  const line = formatChangeLine({ date: isoDate(now()), slug: input.slug, summary })
-  await writeFile(changesFile, `${existing.trimEnd()}\n${line}\n`, 'utf8')
-  await writeFile(productFile, `${productToday}\n`, 'utf8')
+  const line = formatChangeLine({
+    date: isoDate(now()),
+    slug: input.slug,
+    summary,
+  })
+  await workspace.writeFile(CHANGES_RELATIVE_PATH, `${existing.trimEnd()}\n${line}\n`)
+  await workspace.writeFile(PRODUCT_RELATIVE_PATH, `${productToday}\n`)
   return { line }
 }
 
-export async function readLastChange(workspaceRoot: string): Promise<ChangeLine | undefined> {
+export async function readLastChange(workspace: Workspace): Promise<ChangeLine | undefined> {
   let raw: string
   try {
-    raw = await readFile(path.join(workspaceRoot, CHANGES_RELATIVE_PATH), 'utf8')
+    raw = await workspace.readFile(CHANGES_RELATIVE_PATH)
   } catch {
     return undefined
   }
@@ -271,22 +284,24 @@ export async function readLastChange(workspaceRoot: string): Promise<ChangeLine 
 }
 
 /** The open track: the most recently touched intent that is neither kept nor undone. */
-export async function readActiveIntent(workspaceRoot: string): Promise<IntentFile | undefined> {
-  const dir = path.join(workspaceRoot, INTENTS_RELATIVE_DIR)
-  let names: string[]
+export async function readActiveIntent(workspace: Workspace): Promise<IntentFile | undefined> {
+  let entries: Awaited<ReturnType<Workspace['readdir']>>
   try {
-    names = await readdir(dir)
+    entries = await workspace.readdir(INTENTS_RELATIVE_DIR)
   } catch {
     return undefined
   }
   let best: { intent: IntentFile; mtime: number } | undefined
-  for (const name of names) {
-    if (!name.endsWith('.md')) continue
-    const slug = name.slice(0, -3)
+  for (const entry of entries) {
+    if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
+    const slug = entry.name.slice(0, -3)
     if (!isValidSlug(slug)) continue
-    const intent = await readIntent(workspaceRoot, slug)
+    const intent = await readIntent(workspace, slug)
     if (!intent || CLOSED_STATUSES.includes(intent.status)) continue
-    const mtime = await stat(path.join(dir, name)).then((s) => s.mtimeMs, () => 0)
+    const mtime = await workspace.stat(path.join(INTENTS_RELATIVE_DIR, entry.name)).then(
+      (value) => value.mtimeMs,
+      () => 0,
+    )
     if (!best || mtime > best.mtime) best = { intent, mtime }
   }
   return best?.intent
@@ -297,11 +312,8 @@ export async function readActiveIntent(workspaceRoot: string): Promise<IntentFil
  * so the agent picks the thread back up instead of asking the user to repeat
  * themselves. Recomputed only when a memory file changes — never per turn.
  */
-export async function whereWeAreLine(workspaceRoot: string): Promise<string | undefined> {
-  const [active, lastChange] = await Promise.all([
-    readActiveIntent(workspaceRoot),
-    readLastChange(workspaceRoot),
-  ])
+export async function whereWeAreLine(workspace: Workspace): Promise<string | undefined> {
+  const [active, lastChange] = await Promise.all([readActiveIntent(workspace), readLastChange(workspace)])
   const parts: string[] = []
   if (active) parts.push(`active intent ${active.slug} (${active.status})`)
   if (lastChange) parts.push(`Last kept: ${lastChange.slug} (${lastChange.date})`)

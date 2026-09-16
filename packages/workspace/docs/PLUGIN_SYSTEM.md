@@ -62,6 +62,14 @@ would need iframe fronts and sandbox-proxied tools — are **not implemented**;
 that provenance/permission model is a future phase (see §7 and the archived
 repo-level `docs/plans/archive/runtime-plugin-trust-modes-plan.md`).
 
+Brokered sandbox tools are a route-free exception: a strict manifest declares
+`{ name, description, parameters, run }`, while execution stays in the caller's
+paired sandbox with capped output and JSON stdin. Declared cwd/script paths are
+checked through the paired Workspace, including traversal and symlink boundaries;
+workspace code is never imported by the host. The unisolated `direct` provider is
+rejected by default;
+a trusted host may opt in explicitly for local development only.
+
 ---
 
 ## 2. End-to-end behaviour

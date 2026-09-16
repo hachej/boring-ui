@@ -32,10 +32,12 @@ screen allowlist beyond loopback. Path-based deployments set
 slug placeholder; the deployment proxy resolves each slug through `apps.json`.
 `BORING_AGENT_SESSION_ROOT` remains host data and must live outside app folders.
 
-`POST /api/one-chat/apps` copies `template-app/`, runs a frozen install and
-`db:push`, assigns a free app port, then starts its Vite server. The registry
-restarts failed app servers and stops them with the host. `GET /api/one-chat/apps`
-lists apps and `GET /api/one-chat/apps/:slug` resolves one.
+`POST /api/one-chat/apps` materializes `template-app/` through the selected
+runtime adapter, then runs the frozen install, `db:push`, and the Vite server
+through that adapter's sandbox. In direct mode those commands are ordinary
+local child processes rooted in the app folder; swapping to local/bwrap keeps
+the host code unchanged. The registry restarts failed servers and aborts them
+with the host. `apps.json` alone remains explicit host control-plane state.
 
 Legacy migration: `ONE_CHAT_WORKSPACE_ROOT=/path/to/old-app` is copied once to
 `<ONE_CHAT_APPS_ROOT>/default` and recorded as the `default` app. If the legacy
@@ -46,7 +48,7 @@ ports.
 
 The frontend sends `x-one-chat-app: <slug>`. One Agent Host turns that header
 into an `AuthorizedAgentScope`; its existing runtime-scope resolver binds the
-workspace root, session namespace, tools, prompt/intents watchers, stage bus,
+workspace root, session namespace, tools, mtime-checked prompt cache, stage bus,
 and builder lock for that app. This request-scoped seam avoids parallel gateway
 implementations while preserving strict per-app runtime state. The app keeps a
 separate browser-pinned session id per slug.
@@ -64,7 +66,7 @@ through `UiBridge.postCommand` without mounting the Workspace shell.
 Three plain Markdown files in the user's app, and nothing else:
 
 - `agent/intents/<slug>.md` — one track of work. First line `status:
-  proposed|agreed|sketched|building|built|kept|undone`, then timestamped entries, then a
+proposed|agreed|sketched|building|built|kept|undone`, then timestamped entries, then a
   `## What we agreed` section once the user has said yes.
 - `docs/CHANGES.md` — append-only, one line per kept change or undo.
 - `docs/PRODUCT.md` — what the app is today, rewritten in place.
@@ -73,8 +75,8 @@ Five memory tools write them: `open_intent`, `note_intent`, `agree_intent`,
 `set_intent_status`, `record_change`. Two host tools start isolated work:
 `run_builder` and `run_documenter`. The dynamic prompt carries one generated
 line built from those files — `Where we are: active intent track-invoices
-(agreed). Last kept: members-list (2026-09-15).` — recomputed only when one of
-them changes, never per turn.
+(agreed). Last kept: members-list (2026-09-15).` Before each turn, adapter
+`stat` calls compare tracked mtimes; the prompt is rebuilt only after a change.
 
 ## Fresh builder and documenter
 
@@ -108,25 +110,27 @@ Each seat is a package under `agents/<seat>/`: `package.json#boring.agent`
 owns its identity and `instructionsRef`, while the package's top-level `tools`
 array names trusted host capability groups. Startup rejects unknown groups.
 The colleague receives `intents`, `instructions`, `stage`, `ask_user`,
-`run_agents`, and `compact`; the builder receives none; the
-documenter receives only the two `instructions` tools.
-
-Platform skills live under the owning package's `skills/`. The colleague also
-sees skills shipped in the user's workspace; ambient discovery stays off.
-Check what loaded with `GET /api/v1/agents/default/skills`.
+`run_agents`, `self_tools`, and `compact`; the builder receives none; the
+documenter receives only the two `instructions` tools. User-made tools are a
+validated `agent/tools/<name>.json` manifest plus a matching TypeScript script;
+the host registers only the manifest while execution stays in the sandbox.
+Platform skills live under the owning package's host-side `skills/` directory;
+ambient workspace discovery stays off.
 
 The desktop chat includes a 40px sun/moon control. An explicit choice is kept
 in local storage; with no choice, the page leaves `data-theme` unset and follows
 the system palette. Phones follow the system theme without showing the control.
 
-The trusted host currently uses direct mode, so ambient executable extensions
-are disabled (`noExtensions: true`): app-authored code is never loaded into the
-host process. An isolated product-runtime tier is required before editable
-runtime extensions can return. Out of scope in this cut: the Keep loop, git
-hiding, auth, and any workspace/Dockview shell.
+The trusted host defaults to direct mode and keeps ambient executable
+extensions disabled (`noExtensions: true`): app-authored code is never loaded
+into the host process. Declarative workspace tools require an isolated provider
+by default; set `BORING_AGENT_MODE=local` for bwrap. The eval runner alone opts
+into unisolated direct-tool execution explicitly so the same contract can be
+exercised in both modes. Out of scope in this cut: the Keep loop, git hiding,
+auth, and any workspace/Dockview shell.
 
 The standard app a user's agent builds on lives in `template-app/` (TanStack Start + SQLite/Drizzle + shadcn; `bash template-app/verify.sh`).
 
 ## On-demand behavior eval
 
-`pnpm -C apps/one-chat-playground eval` runs the cases in `eval/cases.yaml` against the real host through its HTTP API. The runner restarts the host on ports 5360/5361 for each fresh workspace, prints pass/fail results, and writes a JSON report under `eval/reports/`. Use `--case <name>` for one case or `--keep` to retain its `.eval-workspaces/` copy. This spends model tokens and is intentionally not part of CI.
+`pnpm -C apps/one-chat-playground eval` runs the cases in `eval/cases.yaml` against the real direct-mode host through its HTTP API. `eval:bwrap` runs the same table with the local/bwrap adapter. The runner restarts the host on ports 5430/5431 for each fresh workspace, prints pass/fail results, and writes a JSON report under `eval/reports/`. Use `--case <name>` for one case or `--keep` to retain its `.eval-workspaces/` copy. This spends model tokens and is intentionally not part of CI.

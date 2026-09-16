@@ -3,12 +3,15 @@ import { fileURLToPath } from 'node:url'
 
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { createServer as createViteServer } from 'vite'
+import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
-import { createOneChatRuntime } from './agentHost.js'
+import { createSandboxRuntimeModeAdapter, type BuiltinRuntimeModeId } from '@hachej/boring-agent/server'
+
+import { createOneChatRuntime, type OneChatRuntime } from './agentHost.js'
 import { createAppRegistry } from './appRegistry.js'
 import { registerAppRoutes } from './appRoutes.js'
 import { devCspPolicy } from './csp.js'
+import { closeOneChatStartupServices } from './startupLifecycle.js'
 import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -32,22 +35,31 @@ const publicHost = process.env.ONE_CHAT_PUBLIC_HOST ?? '127.0.0.1'
 const sessionRoot = path.resolve(
   process.env.BORING_AGENT_SESSION_ROOT ?? path.join(appRoot, '.boring-agent', 'sessions'),
 )
+const configuredMode = process.env.BORING_AGENT_MODE ?? 'direct'
+if (configuredMode !== 'direct' && configuredMode !== 'local') {
+  throw new Error('one-chat-playground supports BORING_AGENT_MODE=direct or local')
+}
+const runtimeModeAdapter = createSandboxRuntimeModeAdapter(configuredMode as BuiltinRuntimeModeId)
 
 const registry = createAppRegistry({
   appsRoot,
   templateRoot,
   publicHost,
+  runtimeModeAdapter,
   appUrlPattern: process.env.ONE_CHAT_APP_URL,
   appBasePattern: process.env.ONE_CHAT_APP_BASE,
   portStart,
   portEnd,
   legacyWorkspaceRoot,
 })
-await registry.init()
+let runtime: OneChatRuntime | undefined
+let vite: ViteDevServer | undefined
+try {
+  await registry.init()
 
 const allowedOrigins = resolveAllowedOriginsFromEnv()
 const cspPolicy = devCspPolicy(allowedOrigins)
-const runtime = await createOneChatRuntime({
+runtime = await createOneChatRuntime({
   resolveApp(slug) {
     const registered = registry.get(slug)
     if (!registered) return undefined
@@ -59,13 +71,15 @@ const runtime = await createOneChatRuntime({
   },
   allowedOrigins,
   sessionRoot,
+  runtimeModeAdapter,
+  allowUnisolatedDirectTools: process.env.ONE_CHAT_ALLOW_UNISOLATED_DIRECT_TOOLS === '1',
 })
 registerAppRoutes(runtime.app, registry)
 
 const apiAddress = await runtime.app.listen({ port: 0, host: '127.0.0.1' })
 const apiTarget = `http://127.0.0.1:${new URL(apiAddress).port}`
 
-const vite = await createViteServer({
+vite = await createViteServer({
   configFile: false,
   root: appRoot,
   plugins: [
@@ -136,14 +150,24 @@ await vite.listen()
 runtime.app.log.info(`one-chat front  http://${publicHost}:${frontPort}/`)
 runtime.app.log.info(`one-chat apps   ${appsRoot} (${registry.list().length})`)
 runtime.app.log.info(`one-chat api    ${apiAddress}`)
+} catch (error) {
+  await closeOneChatStartupServices({ registry, runtime, vite, runtimeModeAdapter }).catch(() => {})
+  throw error
+}
 
+if (!runtime || !vite) throw new Error('one-chat-playground startup did not complete')
+const runningRuntime = runtime
+const runningVite = vite
 let shutdownPromise: Promise<void> | undefined
 function shutdown(signal: NodeJS.Signals): Promise<void> {
   shutdownPromise ??= (async () => {
-    runtime.app.log.info({ signal }, 'one-chat-playground shutting down')
-    await registry.close()
-    await runtime.close()
-    await vite.close()
+    runningRuntime.app.log.info({ signal }, 'one-chat-playground shutting down')
+    await closeOneChatStartupServices({
+      registry,
+      runtime: runningRuntime,
+      vite: runningVite,
+      runtimeModeAdapter,
+    })
   })()
   return shutdownPromise
 }

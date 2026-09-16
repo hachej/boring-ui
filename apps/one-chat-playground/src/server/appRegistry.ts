@@ -1,11 +1,9 @@
-import { spawn, type ChildProcess } from 'node:child_process'
-import { cp, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import path from 'node:path'
-import { promisify } from 'node:util'
-import { execFile } from 'node:child_process'
 
-const execFileAsync = promisify(execFile)
+import type { RuntimeBundle, RuntimeModeAdapter } from '@hachej/boring-agent/server'
+
+import { createAppRegistryState } from './appRegistryState.js'
 
 export interface OneChatApp {
   readonly slug: string
@@ -14,21 +12,18 @@ export interface OneChatApp {
   readonly port: number
 }
 
-interface RegistryFile {
-  readonly apps: readonly OneChatApp[]
-}
-
 export interface AppRegistryOptions {
   readonly appsRoot: string
   readonly templateRoot: string
   readonly publicHost: string
+  readonly runtimeModeAdapter: RuntimeModeAdapter
   readonly appUrlPattern?: string
   readonly appBasePattern?: string
   readonly portStart: number
   readonly portEnd: number
   readonly legacyWorkspaceRoot?: string
-  readonly runCommand?: (command: string, args: readonly string[], cwd: string, signal?: AbortSignal) => Promise<void>
-  readonly spawnApp?: (app: OneChatApp, cwd: string) => ChildProcess
+  readonly runCommand?: (runtime: RuntimeBundle, command: string, args: readonly string[], signal?: AbortSignal) => Promise<void>
+  readonly runApp?: (runtime: RuntimeBundle, app: OneChatApp, signal: AbortSignal) => Promise<void>
   readonly isPortAvailable?: (port: number) => Promise<boolean>
   readonly restartDelayMs?: number
   readonly logger?: Pick<Console, 'info' | 'error'>
@@ -48,13 +43,15 @@ export interface AppRegistry {
 function isApp(value: unknown): value is OneChatApp {
   if (!value || typeof value !== 'object') return false
   const app = value as Record<string, unknown>
-  return typeof app.slug === 'string'
-    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(app.slug)
-    && typeof app.title === 'string'
-    && app.title.trim().length > 0
-    && typeof app.createdAt === 'string'
-    && !Number.isNaN(Date.parse(app.createdAt))
-    && Number.isInteger(app.port)
+  return (
+    typeof app.slug === 'string' &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(app.slug) &&
+    typeof app.title === 'string' &&
+    app.title.trim().length > 0 &&
+    typeof app.createdAt === 'string' &&
+    !Number.isNaN(Date.parse(app.createdAt)) &&
+    Number.isInteger(app.port)
+  )
 }
 
 export function slugifyAppTitle(title: string): string {
@@ -67,49 +64,12 @@ export function slugifyAppTitle(title: string): string {
   return normalized || 'app'
 }
 
-function processGroupKill(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (!child.pid || child.exitCode !== null) return
-  if (process.platform !== 'win32') {
-    try {
-      process.kill(-child.pid, signal)
-      return
-    } catch {
-      // A custom spawner may not create a process group. Kill the direct child.
-    }
-  }
-  child.kill(signal)
-}
-
 function renderPattern(pattern: string, app: OneChatApp): string {
   return pattern.replaceAll('{slug}', encodeURIComponent(app.slug)).replaceAll('{port}', String(app.port))
 }
 
-function defaultSpawn(app: OneChatApp, cwd: string, appBasePattern?: string): ChildProcess {
-  // Spawn Vite itself, not a package-manager wrapper. It stays in the host's
-  // process group and is also directly terminated during graceful shutdown.
-  const args = [path.join(cwd, 'node_modules', 'vite', 'bin', 'vite.js'), 'dev']
-  if (appBasePattern) args.push('--base', renderPattern(appBasePattern, app))
-  return spawn(process.execPath, args, {
-    cwd,
-    detached: false,
-    env: { ...process.env, PORT: String(app.port), SAMPLE_APP_PORT: String(app.port) },
-    stdio: 'inherit',
-  })
-}
-
-async function defaultRun(command: string, args: readonly string[], cwd: string, signal?: AbortSignal): Promise<void> {
-  await execFileAsync(command, [...args], {
-    cwd,
-    env: process.env,
-    maxBuffer: 10 * 1024 * 1024,
-    signal,
-  })
-}
-
 function renderAppUrl(pattern: string, app: OneChatApp): string {
-  if (pattern.includes('{slug}') || pattern.includes('{port}')) {
-    return renderPattern(pattern, app)
-  }
+  if (pattern.includes('{slug}') || pattern.includes('{port}')) return renderPattern(pattern, app)
   try {
     const url = new URL(pattern)
     url.port = String(app.port)
@@ -124,22 +84,54 @@ function defaultPortAvailable(port: number): Promise<boolean> {
     const server = createServer()
     server.unref()
     server.once('error', () => resolve(false))
-    server.listen({ host: '127.0.0.1', port, exclusive: true }, () => {
-      server.close(() => resolve(true))
-    })
+    server.listen({ host: '127.0.0.1', port, exclusive: true }, () => server.close(() => resolve(true)))
   })
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+function decode(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes)
+}
+
+async function defaultRunCommand(runtime: RuntimeBundle, command: string, args: readonly string[], signal?: AbortSignal): Promise<void> {
+  const result = await runtime.sandbox.exec([command, ...args].map(shellQuote).join(' '), {
+    cwd: runtime.workspace.root,
+    signal,
+    maxOutputBytes: 10 * 1024 * 1024,
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(`${command} failed (${result.exitCode}): ${decode(result.stderr).slice(0, 2_000)}`)
+  }
+}
+
+async function defaultRunApp(runtime: RuntimeBundle, app: OneChatApp, signal: AbortSignal, appBasePattern?: string): Promise<void> {
+  const args = ['node', 'node_modules/vite/bin/vite.js', 'dev']
+  if (appBasePattern) args.push('--base', renderPattern(appBasePattern, app))
+  const result = await runtime.sandbox.exec(args.map(shellQuote).join(' '), {
+    cwd: runtime.workspace.root,
+    env: { PORT: String(app.port), SAMPLE_APP_PORT: String(app.port) },
+    signal,
+    maxOutputBytes: 256 * 1024,
+  })
+  if (!signal.aborted && result.exitCode !== 0) {
+    throw new Error(`app exited ${result.exitCode}: ${decode(result.stderr).slice(-2_000)}`)
+  }
 }
 
 export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
   const appsRoot = path.resolve(options.appsRoot)
-  const registryPath = path.join(appsRoot, 'apps.json')
+  const state = createAppRegistryState(appsRoot)
   const logger = options.logger ?? console
-  const runCommand = options.runCommand ?? defaultRun
-  const spawnApp = options.spawnApp ?? ((app, cwd) => defaultSpawn(app, cwd, options.appBasePattern))
+  const runCommand = options.runCommand ?? defaultRunCommand
+  const runApp = options.runApp ?? ((runtime, app, signal) => defaultRunApp(runtime, app, signal, options.appBasePattern))
   const isPortAvailable = options.isPortAvailable ?? defaultPortAvailable
   const restartDelayMs = options.restartDelayMs ?? 1_000
   const apps = new Map<string, OneChatApp>()
-  const children = new Map<string, ChildProcess>()
+  const runtimes = new Map<string, Promise<RuntimeBundle>>()
+  const appRuns = new Map<string, { controller: AbortController; done: Promise<void> }>()
   const restartTimers = new Map<string, NodeJS.Timeout>()
   let initialized = false
   let closing = false
@@ -147,22 +139,13 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
   let provisioningController: AbortController | undefined
 
   const rootFor = (slug: string) => path.join(appsRoot, slug)
-  const urlFor = (app: OneChatApp) => renderAppUrl(
-    options.appUrlPattern ?? `http://${options.publicHost}:{port}/`,
-    app,
-  )
-
-  const persist = async () => {
-    const body: RegistryFile = { apps: [...apps.values()] }
-    const temporary = `${registryPath}.tmp`
-    await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`, 'utf8')
-    await rename(temporary, registryPath)
-  }
+  const urlFor = (app: OneChatApp) => renderAppUrl(options.appUrlPattern ?? `http://${options.publicHost}:{port}/`, app)
+  const persist = () => state.write({ apps: [...apps.values()] })
 
   const nextPort = async () => {
     const used = new Set([...apps.values()].map((app) => app.port))
     for (let port = options.portStart; port <= options.portEnd; port += 1) {
-      if (!used.has(port) && await isPortAvailable(port)) return port
+      if (!used.has(port) && (await isPortAvailable(port))) return port
     }
     throw new Error(`No app port is available in ${options.portStart}-${options.portEnd}`)
   }
@@ -175,65 +158,85 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     return `${base}-${suffix}`
   }
 
-  const start = (app: OneChatApp) => {
-    if (closing || children.has(app.slug)) return
-    const child = spawnApp(app, rootFor(app.slug))
-    children.set(app.slug, child)
-    let settled = false
-    const settle = (reason: string) => {
-      if (settled) return
-      settled = true
-      if (children.get(app.slug) === child) children.delete(app.slug)
-      if (closing || !apps.has(app.slug)) return
-      logger.error(`[one-chat] app ${app.slug} stopped (${reason}); restarting`)
-      const timer = setTimeout(() => {
-        restartTimers.delete(app.slug)
-        start(app)
-      }, restartDelayMs)
-      timer.unref?.()
-      restartTimers.set(app.slug, timer)
+  const acquireRuntime = (app: OneChatApp, templatePath?: string): Promise<RuntimeBundle> => {
+    let runtime = runtimes.get(app.slug)
+    if (!runtime) {
+      runtime = options.runtimeModeAdapter.create({
+        workspaceRoot: rootFor(app.slug),
+        workspaceId: `one-chat-app:${app.slug}`,
+        sessionId: `one-chat-app:${app.slug}`,
+        templatePath,
+      })
+      runtimes.set(app.slug, runtime)
+      runtime.catch(() => {
+        if (runtimes.get(app.slug) === runtime) runtimes.delete(app.slug)
+      })
     }
-    child.once('error', (error) => settle(error.message))
-    child.once('exit', (code, signal) => settle(signal ?? String(code ?? 'unknown')))
+    return runtime
   }
 
-  const copyApp = async (source: string, target: string, includeNodeModules: boolean) => {
-    await cp(source, target, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      filter: includeNodeModules ? undefined : (candidate) => path.basename(candidate) !== 'node_modules',
-    })
+  const start = (app: OneChatApp) => {
+    if (closing || appRuns.has(app.slug)) return
+    const controller = new AbortController()
+    const done = acquireRuntime(app)
+      .then((runtime) => runApp(runtime, app, controller.signal))
+      .catch((error) => {
+        if (!closing && !controller.signal.aborted) logger.error(`[one-chat] app ${app.slug} stopped: ${String(error)}`)
+      })
+      .finally(() => {
+        if (appRuns.get(app.slug)?.controller === controller) appRuns.delete(app.slug)
+        if (closing || controller.signal.aborted || !apps.has(app.slug)) return
+        const timer = setTimeout(() => {
+          restartTimers.delete(app.slug)
+          start(app)
+        }, restartDelayMs)
+        timer.unref?.()
+        restartTimers.set(app.slug, timer)
+      })
+    appRuns.set(app.slug, { controller, done })
   }
 
   const registerExistingFolders = async () => {
-    for (const entry of await readdir(appsRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.name) || apps.has(entry.name)) continue
-      try {
-        await stat(path.join(appsRoot, entry.name, 'package.json'))
-      } catch {
-        continue
+    const runtime = await options.runtimeModeAdapter.create({
+      workspaceRoot: appsRoot,
+      workspaceId: 'one-chat-app-registry',
+      sessionId: 'one-chat-app-registry',
+    })
+    try {
+      for (const entry of await runtime.workspace.readdir('.')) {
+        if (entry.kind !== 'dir' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.name) || apps.has(entry.name)) continue
+        try {
+          if ((await runtime.workspace.stat(path.join(entry.name, 'package.json'))).kind !== 'file') continue
+        } catch {
+          continue
+        }
+        apps.set(entry.name, {
+          slug: entry.name,
+          title:
+            entry.name === 'default'
+              ? 'Default'
+              : entry.name
+                  .split('-')
+                  .map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1)}`)
+                  .join(' '),
+          createdAt: new Date().toISOString(),
+          port: await nextPort(),
+        })
       }
-      apps.set(entry.name, {
-        slug: entry.name,
-        title: entry.name === 'default'
-          ? 'Default'
-          : entry.name.split('-').map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1)}`).join(' '),
-        createdAt: new Date().toISOString(),
-        port: await nextPort(),
-      })
+    } finally {
+      await runtime.disposeRuntime?.()
     }
   }
 
   const init = async () => {
     if (initialized) return
-    await mkdir(appsRoot, { recursive: true })
+    await state.initRoot()
     let needsPersist = false
-    try {
-      const parsed = JSON.parse(await readFile(registryPath, 'utf8')) as RegistryFile
-      if (!Array.isArray(parsed.apps) || !parsed.apps.every(isApp)) throw new Error('apps.json has an invalid shape')
+    const stored = await state.read()
+    if (stored) {
+      if (!Array.isArray(stored.apps) || !stored.apps.every(isApp)) throw new Error('apps.json has an invalid shape')
       const ports = new Set<number>()
-      for (const app of parsed.apps) {
+      for (const app of stored.apps) {
         if (apps.has(app.slug)) throw new Error(`apps.json repeats slug ${app.slug}`)
         if (app.port < options.portStart || app.port > options.portEnd) {
           throw new Error(`apps.json port ${app.port} is outside ${options.portStart}-${options.portEnd}`)
@@ -242,32 +245,28 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
         ports.add(app.port)
         apps.set(app.slug, Object.freeze({ ...app }))
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    } else {
       needsPersist = true
     }
 
     if (options.legacyWorkspaceRoot && !apps.has('default')) {
       const legacyRoot = path.resolve(options.legacyWorkspaceRoot)
-      // Some existing launches pointed ONE_CHAT_WORKSPACE_ROOT at the parent
-      // `.workspaces` directory. In that shape, discover its app folders below
-      // rather than recursively copying the directory into itself.
       if (legacyRoot !== appsRoot) {
-        const defaultRoot = rootFor('default')
-        if (legacyRoot !== defaultRoot) await copyApp(legacyRoot, defaultRoot, true)
-        apps.set('default', {
+        const app: OneChatApp = Object.freeze({
           slug: 'default',
           title: 'Default',
           createdAt: new Date().toISOString(),
           port: await nextPort(),
         })
+        await acquireRuntime(app, legacyRoot === rootFor(app.slug) ? undefined : legacyRoot)
+        apps.set(app.slug, app)
         needsPersist = true
       }
     }
 
     await registerExistingFolders()
     for (const app of apps.values()) {
-      if (!await isPortAvailable(app.port)) throw new Error(`App port ${app.port} for ${app.slug} is already in use`)
+      if (!(await isPortAvailable(app.port))) throw new Error(`App port ${app.port} for ${app.slug} is already in use`)
     }
     if (needsPersist || apps.size > 0) await persist()
     initialized = true
@@ -288,25 +287,27 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
         createdAt: new Date().toISOString(),
         port: await nextPort(),
       })
-      const root = rootFor(app.slug)
-      const stagingRoot = path.join(appsRoot, `.${app.slug}-creating-${Date.now().toString(36)}`)
       const controller = new AbortController()
       provisioningController = controller
+      let runtime: RuntimeBundle | undefined
       try {
-        await copyApp(path.resolve(options.templateRoot), stagingRoot, false)
-        await runCommand('pnpm', [
-          'install',
-          '--frozen-lockfile',
-          '--config.minimum-release-age=0',
-          '--config.dangerously-allow-all-builds=true',
-        ], stagingRoot, controller.signal)
-        await runCommand('pnpm', ['run', 'db:push'], stagingRoot, controller.signal)
+        runtime = await acquireRuntime(app, path.resolve(options.templateRoot))
+        await runCommand(
+          runtime,
+          'pnpm',
+          ['install', '--frozen-lockfile', '--config.minimum-release-age=0', '--config.dangerously-allow-all-builds=true'],
+          controller.signal,
+        )
+        await runCommand(runtime, 'pnpm', ['run', 'db:push'], controller.signal)
         if (closing) throw new Error('The app registry is shutting down')
-        await rename(stagingRoot, root)
         apps.set(app.slug, app)
         await persist()
         start(app)
         result = app
+      } catch (error) {
+        if (runtime) await runtime.disposeRuntime?.().catch(() => {})
+        runtimes.delete(app.slug)
+        throw error
       } finally {
         if (provisioningController === controller) provisioningController = undefined
       }
@@ -323,21 +324,15 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
     await mutation.catch(() => undefined)
     for (const timer of restartTimers.values()) clearTimeout(timer)
     restartTimers.clear()
-    const active = [...children.values()]
-    for (const child of active) processGroupKill(child, 'SIGTERM')
-    await Promise.all(active.map((child) => child.exitCode !== null
-      ? Promise.resolve()
-      : new Promise<void>((resolve) => {
-          const timeout = setTimeout(() => {
-            processGroupKill(child, 'SIGKILL')
-            resolve()
-          }, 5_000)
-          child.once('exit', () => {
-            clearTimeout(timeout)
-            resolve()
-          })
-        })))
-    children.clear()
+    const active = [...appRuns.values()]
+    for (const run of active) run.controller.abort(new Error('app registry is shutting down'))
+    await Promise.race([Promise.allSettled(active.map((run) => run.done)), new Promise((resolve) => setTimeout(resolve, 5_000))])
+    appRuns.clear()
+    const acquired = await Promise.allSettled([...runtimes.values()])
+    runtimes.clear()
+    await Promise.allSettled(
+      acquired.flatMap((result) => (result.status === 'fulfilled' && result.value.disposeRuntime ? [result.value.disposeRuntime()] : [])),
+    )
   }
 
   return {

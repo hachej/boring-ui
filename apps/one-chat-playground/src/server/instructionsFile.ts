@@ -1,83 +1,97 @@
-import { mkdirSync, watch, type FSWatcher } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { INTENTS_RELATIVE_DIR, whereWeAreLine } from './memoryFiles.js'
+import type { Workspace } from '@hachej/boring-agent/shared'
 
-/**
- * The agent's own standing instructions live in its workspace at
- * `agent/instructions.md`, so the agent can edit them with its ordinary write
- * tool. The loader caches the file and invalidates on change, so the prompt
- * is only rebuilt when the agent (or the user) actually edits it — never per
- * turn, which would defeat prompt caching.
- *
- * The same cache carries the one generated "where were we" line, computed from
- * the memory files (`agent/intents/`, `docs/CHANGES.md`). Those directories are
- * watched for the same reason: the line must be current, but recomputing it on
- * every turn would churn the prompt for no reason.
- */
+import { CHANGES_RELATIVE_PATH, INTENTS_RELATIVE_DIR, whereWeAreLine } from './memoryFiles.js'
+
+/** The agent-owned standing instructions inside the runtime workspace. */
 export const INSTRUCTIONS_RELATIVE_PATH = path.join('agent', 'instructions.md')
 
 export interface InstructionsLoader {
   /** Base prompt + standing instructions + the one "where were we" line. */
   load(): Promise<string | undefined>
+  /** Direct invalidation for host tools that just changed a tracked file. */
+  invalidate(): void
   close(): void
 }
 
-/** Directories whose contents change the dynamic prompt. */
-function watchedDirectories(workspaceRoot: string): string[] {
-  return [
-    path.join(workspaceRoot, 'agent'),
-    path.join(workspaceRoot, INTENTS_RELATIVE_DIR),
-    path.join(workspaceRoot, 'docs'),
-  ]
+interface PromptMtimes {
+  readonly instructions?: number
+  readonly intentsFingerprint: string
+  readonly changes?: number
 }
 
-export function createInstructionsLoader(options: {
-  readonly workspaceRoot: string
-  readonly basePrompt: string | undefined
-}): InstructionsLoader {
-  const file = path.join(options.workspaceRoot, INSTRUCTIONS_RELATIVE_PATH)
-  let cached: string | undefined | null = null
-  const watchers: FSWatcher[] = []
-
-  const invalidate = () => { cached = null }
-  for (const dir of watchedDirectories(options.workspaceRoot)) {
-    try {
-      // Create first: fs.watch cannot attach to a directory that does not exist
-      // yet, and these are created lazily by the memory tools.
-      mkdirSync(dir, { recursive: true })
-      const watcher = watch(dir, { persistent: false }, invalidate)
-      watcher.on('error', invalidate)
-      watchers.push(watcher)
-    } catch {
-      // No watcher: fall back to re-reading on each load.
-    }
+async function mtime(workspace: Workspace, relativePath: string): Promise<number | undefined> {
+  try {
+    return (await workspace.stat(relativePath)).mtimeMs
+  } catch {
+    return undefined
   }
-  const watching = watchers.length === watchedDirectories(options.workspaceRoot).length
+}
+
+async function intentsFingerprint(workspace: Workspace): Promise<string> {
+  try {
+    const files = (await workspace.readdir(INTENTS_RELATIVE_DIR))
+      .filter((entry) => entry.kind === 'file' && entry.name.endsWith('.md'))
+      .map((entry) => entry.name)
+      .sort()
+    const mtimes = await Promise.all(files.map(async (file) => [file, await mtime(workspace, path.join(INTENTS_RELATIVE_DIR, file))] as const))
+    return JSON.stringify(mtimes)
+  } catch {
+    return '[]'
+  }
+}
+
+function sameMtimes(left: PromptMtimes | undefined, right: PromptMtimes): boolean {
+  return (
+    left !== undefined && left.instructions === right.instructions && left.intentsFingerprint === right.intentsFingerprint && left.changes === right.changes
+  )
+}
+
+/**
+ * Prompt changes are detected only through the runtime Workspace adapter. A
+ * stable cache is checked with cheap stats before every turn; no host watcher
+ * or direct filesystem read participates.
+ */
+export function createInstructionsLoader(options: { readonly workspace: Workspace; readonly basePrompt: string | undefined }): InstructionsLoader {
+  let cached: string | undefined
+  let cachedMtimes: PromptMtimes | undefined
+  let dirty = true
+
+  const observedMtimes = async (): Promise<PromptMtimes> => ({
+    instructions: await mtime(options.workspace, INSTRUCTIONS_RELATIVE_PATH),
+    intentsFingerprint: await intentsFingerprint(options.workspace),
+    changes: await mtime(options.workspace, CHANGES_RELATIVE_PATH),
+  })
 
   return {
     async load() {
-      if (cached !== null && watching) return cached
+      const observed = await observedMtimes()
+      if (!dirty && sameMtimes(cachedMtimes, observed)) return cached
+
       let instructions = ''
       try {
-        instructions = (await readFile(file, 'utf8')).trim()
+        instructions = (await options.workspace.readFile(INSTRUCTIONS_RELATIVE_PATH)).trim()
       } catch {
         instructions = ''
       }
-      const where = await whereWeAreLine(options.workspaceRoot)
+      const where = await whereWeAreLine(options.workspace)
       const parts = [
         options.basePrompt?.trim() ?? '',
-        instructions
-          ? `# Your standing instructions (kept in ${INSTRUCTIONS_RELATIVE_PATH}; edit that file to change them)\n\n${instructions}`
-          : '',
+        instructions ? `# Your standing instructions (kept in ${INSTRUCTIONS_RELATIVE_PATH}; edit that file to change them)\n\n${instructions}` : '',
         where ?? '',
       ].filter(Boolean)
       cached = parts.length ? parts.join('\n\n') : undefined
+      // Cache the snapshot observed before rendering. If anything changes while
+      // this prompt is being read, the next load sees a different fingerprint
+      // and rebuilds instead of associating stale text with newer mtimes.
+      cachedMtimes = observed
+      dirty = false
       return cached
     },
-    close() {
-      for (const watcher of watchers.splice(0)) watcher.close()
+    invalidate() {
+      dirty = true
     },
+    close() {},
   }
 }

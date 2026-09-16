@@ -23,6 +23,7 @@ import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
 import type { PiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
 import type { AgentCapabilityReadiness } from '../runtime/readyStatus'
+import type { Sandbox } from '../../shared/sandbox'
 import type { Workspace } from '../../shared/workspace'
 import type { FileSearch } from '../../shared/file-search'
 import type {
@@ -353,6 +354,8 @@ export interface AgentHostSessionEnvironmentLease {
 
 export interface AgentHostEnvironmentLease {
   readonly workspace: Workspace
+  /** Process execution paired with this exact runtime-owned workspace generation. */
+  readonly sandbox: Sandbox
   readonly gitWorkspace: Workspace
   readonly fileSearch: FileSearch
   readonly filesystemBindings?: readonly RuntimeFilesystemBinding[]

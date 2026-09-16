@@ -1,4 +1,4 @@
-import type { AgentTool } from '@hachej/boring-agent/shared'
+import type { AgentTool, Workspace } from '@hachej/boring-agent/shared'
 
 import {
   INTENT_STATUSES,
@@ -15,7 +15,10 @@ import {
 } from './memoryFiles.js'
 
 function text(body: string, isError = false): Awaited<ReturnType<AgentTool['execute']>> {
-  return { content: [{ type: 'text', text: body }], ...(isError ? { isError: true } : {}) }
+  return {
+    content: [{ type: 'text', text: body }],
+    ...(isError ? { isError: true } : {}),
+  }
 }
 
 function str(value: unknown): string {
@@ -33,8 +36,7 @@ async function guarded(run: () => Promise<string>): Promise<Awaited<ReturnType<A
 
 const SLUG_PARAM = {
   type: 'string',
-  description:
-    'Short name for this piece of work, lowercase words joined by hyphens, e.g. "track-invoices". Reuse the same name for the whole track.',
+  description: 'Short name for this piece of work, lowercase words joined by hyphens, e.g. "track-invoices". Reuse the same name for the whole track.',
 } as const
 
 /**
@@ -43,11 +45,12 @@ const SLUG_PARAM = {
  * and it keeps the three files' structure something the loader can parse.
  */
 export function createMemoryTools(options: {
-  readonly workspaceRoot: string
+  readonly workspace: Workspace
   readonly now?: Clock
+  readonly invalidatePrompt: () => void
   readonly onAgreement?: (slug: string, sessionId: string | undefined) => void
 }): AgentTool[] {
-  const root = options.workspaceRoot
+  const workspace = options.workspace
   const now = options.now ?? systemClock
 
   const open: AgentTool = {
@@ -58,7 +61,10 @@ export function createMemoryTools(options: {
       type: 'object',
       properties: {
         slug: SLUG_PARAM,
-        text: { type: 'string', description: "What the user asked, in their own words." },
+        text: {
+          type: 'string',
+          description: 'What the user asked, in their own words.',
+        },
         title: {
           type: 'string',
           description: 'A short human name in the user\'s words, e.g. "supplier list". Omit only when the request itself is already a short title.',
@@ -72,10 +78,9 @@ export function createMemoryTools(options: {
         assertValidSlug(params.slug)
         const body = str(params.text)
         if (!body) throw new Error('Say what the user asked.')
-        const { intent, created } = await openIntent(root, params.slug, body, now, str(params.title))
-        const agreement = intent.agreement
-          ? 'It already has an agreement — you can build.'
-          : 'It has no agreement yet — understand first, then agree.'
+        const { intent, created } = await openIntent(workspace, params.slug, body, now, str(params.title))
+        options.invalidatePrompt()
+        const agreement = intent.agreement ? 'It already has an agreement — you can build.' : 'It has no agreement yet — understand first, then agree.'
         return `${created ? 'Opened' : 'Reopened'} ${intent.slug} (${intent.status}). ${agreement}`
       })
     },
@@ -87,7 +92,13 @@ export function createMemoryTools(options: {
       'Add one entry to an open track: an answer the user gave, a clarification, a "change something" request, a decision. One call per thing worth remembering.',
     parameters: {
       type: 'object',
-      properties: { slug: SLUG_PARAM, text: { type: 'string', description: 'The entry, one or two plain sentences.' } },
+      properties: {
+        slug: SLUG_PARAM,
+        text: {
+          type: 'string',
+          description: 'The entry, one or two plain sentences.',
+        },
+      },
       required: ['slug', 'text'],
       additionalProperties: false,
     },
@@ -96,7 +107,8 @@ export function createMemoryTools(options: {
         assertValidSlug(params.slug)
         const body = str(params.text)
         if (!body) throw new Error('An entry cannot be empty.')
-        const intent = await noteIntent(root, params.slug, body, now)
+        const intent = await noteIntent(workspace, params.slug, body, now)
+        options.invalidatePrompt()
         return `Noted on ${intent.slug} (${intent.status}).`
       })
     },
@@ -112,8 +124,7 @@ export function createMemoryTools(options: {
         slug: SLUG_PARAM,
         agreement: {
           type: 'string',
-          description:
-            'The complete agreement in plain words (Markdown): a short brief, then the handful of lines that say when it is right. Not a diff.',
+          description: 'The complete agreement in plain words (Markdown): a short brief, then the handful of lines that say when it is right. Not a diff.',
         },
       },
       required: ['slug', 'agreement'],
@@ -124,7 +135,8 @@ export function createMemoryTools(options: {
         assertValidSlug(params.slug)
         const body = str(params.agreement)
         if (!body) throw new Error('An agreement cannot be empty.')
-        const intent = await agreeIntent(root, params.slug, body, now)
+        const intent = await agreeIntent(workspace, params.slug, body, now)
+        options.invalidatePrompt()
         options.onAgreement?.(intent.slug, ctx.sessionId)
         return `Agreed on ${intent.slug}. You can build it now.`
       })
@@ -138,7 +150,11 @@ export function createMemoryTools(options: {
       type: 'object',
       properties: {
         slug: SLUG_PARAM,
-        status: { type: 'string', enum: [...INTENT_STATUSES], description: 'The new status.' },
+        status: {
+          type: 'string',
+          enum: [...INTENT_STATUSES],
+          description: 'The new status.',
+        },
       },
       required: ['slug', 'status'],
       additionalProperties: false,
@@ -147,7 +163,8 @@ export function createMemoryTools(options: {
       return guarded(async () => {
         assertValidSlug(params.slug)
         if (!isIntentStatus(params.status)) throw new Error(`Status must be one of: ${INTENT_STATUSES.join(', ')}.`)
-        const intent = await setIntentStatus(root, params.slug, params.status)
+        const intent = await setIntentStatus(workspace, params.slug, params.status)
+        options.invalidatePrompt()
         return `${intent.slug} is now ${intent.status}.`
       })
     },
@@ -156,12 +173,15 @@ export function createMemoryTools(options: {
   const record: AgentTool = {
     name: 'record_change',
     description:
-      'Call this right after a change is in front of the user and kept (or after you undid one). It adds one line to the app\'s change log and rewrites the description of what the app is today, and closes the track as kept.',
+      "Call this right after a change is in front of the user and kept (or after you undid one). It adds one line to the app's change log and rewrites the description of what the app is today, and closes the track as kept.",
     parameters: {
       type: 'object',
       properties: {
         slug: SLUG_PARAM,
-        summary: { type: 'string', description: 'One sentence, from the user\'s point of view, of what changed.' },
+        summary: {
+          type: 'string',
+          description: "One sentence, from the user's point of view, of what changed.",
+        },
         productToday: {
           type: 'string',
           description:
@@ -175,12 +195,17 @@ export function createMemoryTools(options: {
       return guarded(async () => {
         assertValidSlug(params.slug)
         const { line } = await recordChange(
-          root,
-          { slug: params.slug, summary: str(params.summary), productToday: str(params.productToday) },
+          workspace,
+          {
+            slug: params.slug,
+            summary: str(params.summary),
+            productToday: str(params.productToday),
+          },
           now,
         )
-        const existing = await readIntent(root, params.slug)
-        if (existing && existing.status !== 'undone') await setIntentStatus(root, params.slug, 'kept')
+        const existing = await readIntent(workspace, params.slug)
+        if (existing && existing.status !== 'undone') await setIntentStatus(workspace, params.slug, 'kept')
+        options.invalidatePrompt()
         return `Recorded: ${line}`
       })
     },

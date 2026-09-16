@@ -16,7 +16,7 @@ $PM run typecheck || fail "typecheck"
 
 step "schema is additive"
 SQL_DIR="$(mktemp -d)"
-$PM exec drizzle-kit generate --dialect sqlite --schema ./src/db/schema.ts \
+./node_modules/.bin/drizzle-kit generate --dialect sqlite --schema ./src/db/schema.ts \
   --name verify --out "$SQL_DIR" >/dev/null \
   || fail "db:generate-sql"
 SQL="$(cat "$SQL_DIR"/*.sql 2>/dev/null || true)"

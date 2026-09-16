@@ -105,13 +105,27 @@ export class EnvironmentLeaseManager {
     }
     record.references += 1
     let generation: EnvironmentGeneration
+    let rejectOnAbort = () => {}
+    const aborted = new Promise<never>((_resolve, reject) => {
+      rejectOnAbort = () => reject(closedError())
+      if (record!.abort.signal.aborted) {
+        rejectOnAbort()
+        return
+      }
+      record!.abort.signal.addEventListener('abort', rejectOnAbort, { once: true })
+    })
     try {
-      generation = await record.generation
+      generation = await Promise.race([record.generation, aborted])
       if (this.closed || record.abort.signal.aborted || this.records.get(key) !== record) throw closedError()
     } catch (error) {
       record.references = Math.max(0, record.references - 1)
-      if (record.references === 0 && this.records.get(key) === record) this.records.delete(key)
+      if (record.references === 0) {
+        if (record.retiring) void this.retireRecord(record)
+        else if (this.records.get(key) === record) this.records.delete(key)
+      }
       throw error
+    } finally {
+      record.abort.signal.removeEventListener('abort', rejectOnAbort)
     }
     return this.createLease(record, generation)
   }
