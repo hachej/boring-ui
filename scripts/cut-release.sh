@@ -4,19 +4,27 @@
 # `release: published` event and publishes to npm.
 #
 # Usage:
-#   ./scripts/cut-release.sh                # patch bump (default)
+#   ./scripts/cut-release.sh                # patch bump (default, direct main flow)
 #   ./scripts/cut-release.sh minor
 #   ./scripts/cut-release.sh major
+#   ./scripts/cut-release.sh --pr patch     # prepare and push a release PR branch
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-bump="${1:-patch}"
-case "$bump" in patch|minor|major) ;; *)
-  echo "Usage: $0 [patch|minor|major]" >&2
-  exit 2
-esac
+mode=direct
+bump=patch
+for arg in "$@"; do
+  case "$arg" in
+    --pr) mode=pr ;;
+    patch|minor|major) bump="$arg" ;;
+    *)
+      echo "Usage: $0 [--pr] [patch|minor|major]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # Refuse to bump from a dirty tree — the release commit must contain only
 # version markers and required generated release evidence.
@@ -25,17 +33,30 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-# Refuse to release from anything other than main, and make sure we're
-# in sync with origin so the tag we cut points at the same SHA people see.
+# Direct releases must run from the exact remote main commit. PR releases run
+# from an up-to-date release/* branch and defer the GitHub release until merge.
 branch=$(git branch --show-current)
-if [ "$branch" != "main" ]; then
-  echo "Release must run on main; got '$branch'." >&2
-  exit 1
-fi
 git fetch origin main
-if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
-  echo "Local main does not match origin/main. Pull/rebase first." >&2
-  exit 1
+if [ "$mode" = direct ]; then
+  if [ "$branch" != "main" ]; then
+    echo "Direct release must run on main; got '$branch'." >&2
+    exit 1
+  fi
+  if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+    echo "Local main does not match origin/main. Pull/rebase first." >&2
+    exit 1
+  fi
+else
+  case "$branch" in release/*) ;;
+    *)
+      echo "PR release must run on a release/* branch; got '$branch'." >&2
+      exit 1
+      ;;
+  esac
+  if ! git merge-base --is-ancestor origin/main HEAD; then
+    echo "Release branch is not based on current origin/main. Rebase first." >&2
+    exit 1
+  fi
 fi
 
 before=$(node -p "require('./package.json').version")
@@ -54,6 +75,7 @@ release_files=(
   packages/workspace/package.json
   packages/agent/package.json
   packages/ui/package.json
+  packages/channels/whatsapp/package.json
   packages/cli/package.json
   packages/boring-sandbox/package.json
   plugins/boring-mcp/package.json
@@ -101,6 +123,15 @@ while IFS= read -r line; do
 done <<< "$status"
 
 git commit -m "chore(release): bump packages to $after"
+
+if [ "$mode" = pr ]; then
+  git push --set-upstream origin "$branch"
+  echo
+  echo "✓ Prepared $after (from $before) on $branch."
+  echo "  Merge the release PR, then create GitHub release v$after from the merge commit."
+  exit 0
+fi
+
 git push origin main
 
 tag="v$after"

@@ -22,6 +22,7 @@ const PUBLISHABLE_PACKAGES = [
   "packages/agent",
   "packages/plugin-cli",
   "packages/workspace",
+  "packages/channels/whatsapp",
   "packages/core",
   "plugins/deck",
   "plugins/ask-user",
