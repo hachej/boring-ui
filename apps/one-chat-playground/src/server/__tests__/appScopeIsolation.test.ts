@@ -67,7 +67,7 @@ describe('per-app runtime scope', () => {
     })
     await entered.promise
 
-    await expect(runtime.close()).rejects.toMatchObject({ code: 'AGENT_GATEWAY_CLOSED' })
+    await expect(runtime.close()).resolves.toBeUndefined()
     await expect(request).resolves.toMatchObject({ statusCode: 503 })
     blocked.resolve()
     await settled.promise

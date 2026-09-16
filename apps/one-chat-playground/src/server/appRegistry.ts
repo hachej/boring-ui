@@ -293,11 +293,12 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
 
   const ensureRepository = async (app: OneChatApp) => {
     const runtime = await acquireRuntime(app)
-    const check = await runtime.sandbox.exec('git rev-parse --is-inside-work-tree', {
+    const check = await runtime.sandbox.exec('git rev-parse --show-toplevel', {
       cwd: runtime.workspace.root,
       maxOutputBytes: 64 * 1024,
     })
-    if (check.exitCode === 0) return
+    const repositoryRoot = check.exitCode === 0 ? decode(check.stdout).trim() : ''
+    if (repositoryRoot && path.resolve(repositoryRoot) === path.resolve(runtime.workspace.root)) return
     await runCommand(runtime, 'git', ['init', '-b', 'main'])
     await runCommand(runtime, 'git', ['config', 'user.name', 'One Chat'])
     await runCommand(runtime, 'git', ['config', 'user.email', 'one-chat@local.invalid'])
@@ -432,7 +433,7 @@ export function createAppRegistry(options: AppRegistryOptions): AppRegistry {
         await runCommand(
           runtime,
           'pnpm',
-          ['install', '--frozen-lockfile', '--config.minimum-release-age=0', '--config.dangerously-allow-all-builds=true'],
+          ['install', '--frozen-lockfile', '--config.minimum-release-age=0'],
           controller.signal,
         )
         await runCommand(runtime, 'pnpm', ['run', 'db:push'], controller.signal)

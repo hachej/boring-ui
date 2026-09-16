@@ -49,8 +49,5 @@
     "shadcn": "4.21.0",
     "typescript": "6.0.3",
     "vite": "8.2.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
   }
 }

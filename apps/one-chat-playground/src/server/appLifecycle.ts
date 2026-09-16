@@ -72,7 +72,7 @@ interface PreviewRun {
 }
 
 const CREDENTIALLESS_PROCESS_ENV_ALLOWLIST = /^(?:PATH|TMPDIR|TMP|TEMP|LANG|LC_[A-Z_]+|TZ|CI|NO_COLOR|FORCE_COLOR|TERM|COLORTERM)$/
-const CREDENTIALLESS_EXPLICIT_ENV_ALLOWLIST = /^(?:PATH|TMPDIR|TMP|TEMP|LANG|LC_[A-Z_]+|TZ|CI|NO_COLOR|FORCE_COLOR|TERM|COLORTERM|PORT|SAMPLE_APP_PORT|VERIFY_PORT|BASE_URL|DATABASE_URL|ONE_CHAT_(?:DB|SOURCE|DESTINATION|SQL_BASE64|APPROVED_SQL|SKIP_DB_PUSH|HEALTH|HOST_PID))$/
+const CREDENTIALLESS_EXPLICIT_ENV_ALLOWLIST = /^(?:PATH|COREPACK_HOME|TMPDIR|TMP|TEMP|LANG|LC_[A-Z_]+|TZ|CI|NO_COLOR|FORCE_COLOR|TERM|COLORTERM|PORT|SAMPLE_APP_PORT|VERIFY_PORT|BASE_URL|DATABASE_URL|ONE_CHAT_(?:DB|SOURCE|DESTINATION|SQL_BASE64|APPROVED_SQL|SKIP_DB_PUSH|HEALTH|HOST_PID))$/
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
@@ -235,8 +235,16 @@ async function appendChange(runtime: RuntimeBundle, slug: string, summary: strin
 async function install(runtime: RuntimeBundle): Promise<void> {
   await exec(
     runtime,
-    "pnpm install --frozen-lockfile --config.minimum-release-age=0 --config.dangerously-allow-all-builds=true",
-    {},
+    "pnpm install --frozen-lockfile --config.minimum-release-age=0",
+    {
+      env: {
+        ...(process.env.COREPACK_HOME
+          ? { COREPACK_HOME: process.env.COREPACK_HOME }
+          : process.env.HOME
+            ? { COREPACK_HOME: path.join(process.env.HOME, '.cache', 'node', 'corepack') }
+            : {}),
+      },
+    },
     'candidate dependency install failed',
   )
 }

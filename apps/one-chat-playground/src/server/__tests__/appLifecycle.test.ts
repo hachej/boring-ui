@@ -115,6 +115,7 @@ describe('hidden app revision lifecycle', () => {
       env: {
         DATABASE_URL: './data/app.sqlite',
         VERIFY_PORT: '5442',
+        COREPACK_HOME: '/trusted/corepack-cache',
         OPENAI_API_KEY: 'must-not-leak',
         AWS_ACCESS_KEY_ID: 'must-not-leak-either',
       },
@@ -123,6 +124,7 @@ describe('hidden app revision lifecycle', () => {
     expect(received).toMatchObject({
       DATABASE_URL: './data/app.sqlite',
       VERIFY_PORT: '5442',
+      COREPACK_HOME: '/trusted/corepack-cache',
       HOME: '/workspace/.one-chat/home',
       NPM_CONFIG_USERCONFIG: '/dev/null',
     })
