@@ -695,7 +695,12 @@ function createRuntime(
         ])
         if (completed.completed) {
           const failed = completed.results.find(
-            (result): result is PromiseRejectedResult => result.status === 'rejected',
+            (result): result is PromiseRejectedResult =>
+              result.status === 'rejected'
+              && !(
+                result.reason instanceof AgentGatewayError
+                && result.reason.code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED
+              ),
           )
           if (failed) throw failed.reason
           return
