@@ -1,6 +1,6 @@
 {
   "name": "@hachej/channel-whatsapp",
-  "version": "0.1.109",
+  "version": "0.1.110",
   "type": "module",
   "license": "MIT",
   "description": "Thin Meta WhatsApp Cloud API edge for Boring channels.",
@@ -8,9 +8,15 @@
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
   },
-  "files": ["dist", "NOTICE"],
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsup",
