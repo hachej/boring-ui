@@ -34,7 +34,7 @@ export const AGREEMENT_SECTIONS = [
   ['observation', 'Observation'],
   ['objective', 'Objective'],
   ['whoAndWhen', 'Who and when'],
-  ['appRole', "What I do in the app / what I don't"],
+  ['appRole', 'What I do for you in the app'],
   ['productSentence', 'The product in one sentence'],
   ['journey', 'The journey'],
   ['outOfScope', 'Out of scope, with why'],

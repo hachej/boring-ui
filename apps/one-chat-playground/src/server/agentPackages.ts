@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -95,6 +96,19 @@ export async function loadOneChatAgentPackage(
     manifest: 'package.json',
     expectedAgentTypeId: seat,
   })
+  let staticKnowledge = ''
+  if (seat === 'colleague') {
+    const capabilitiesPath = path.join(packageRoot, 'knowledge', 'capabilities.md')
+    try {
+      staticKnowledge = (await readFile(capabilitiesPath, 'utf8')).trim()
+    } catch (error) {
+      throw new Error(`${capabilitiesPath}: could not read colleague capabilities: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  const instructions = [materialized.instructions.trim(), staticKnowledge].filter(Boolean).join('\n\n')
+  const definitionDigest = staticKnowledge
+    ? createHash('sha256').update(`${materialized.definitionDigest ?? ''}\0${staticKnowledge}`).digest('hex')
+    : materialized.definitionDigest
 
   return {
     seat,
@@ -104,8 +118,8 @@ export async function loadOneChatAgentPackage(
     version: materialized.version,
     label: materialized.label ?? seat,
     instructionsRef,
-    instructions: materialized.instructions,
-    ...(materialized.definitionDigest ? { definitionDigest: materialized.definitionDigest } : {}),
+    instructions,
+    ...(definitionDigest ? { definitionDigest } : {}),
     tools: toolGroups(parsed.tools, manifestPath),
   }
 }

@@ -27,22 +27,45 @@ cases:
   - name: build-new
     workspace: template
     turns:
-      - message: "I need to track my suppliers with a phone number and a note."
+      - message: "I need to track my suppliers with a phone number and a note, and my team should use it too."
+        answer_card: /something else/i
+      - "I am comfortable using everyday apps and spreadsheets, but I do not set up workflows or write software."
+      - "The most recent case was yesterday, when a supplier called and I needed their number and my last note before I replied."
+      - "The call triggered it. I searched my spreadsheet, checked the latest note, called them back, and wrote the outcome in the same row."
+      - "I look at how urgent the request is and whether I promised a date. If a date is promised, that follow-up comes first."
+      - message: "The exception is a blocked supplier: I wait until I have the missing answer, even if their promised date is earlier."
         answer_card: /recommended/i
+      - message: "I want to review the next action myself before anything changes; that is the assumption that matters most."
+        answer_card: /recommended/i
+      - message: "The different recent case was a blocked supplier waiting on missing paperwork. Even with an earlier promised date, I waited for the missing answer instead of calling. That is the main exception."
+        answer_card: /recommended/i
+        wait_before_ms: 15000
+      - message: "A normal follow-up was a supplier who promised delivery on Friday. I contacted them on Thursday because the date was close and nothing was blocked; after they confirmed, I updated the latest note."
+        answer_card: /recommended/i
+        wait_before_ms: 10000
       - await_card: true
         answer_card: /keep.*recommended/i
       - await_card: true
         answer_card: /keep.*recommended/i
-      - "Actually, undo that last change."
+      - message: "Actually, undo that last change."
+        wait_before_ms: 10000
     expect:
-      - any_reply_matches: /recommend|I'd (say|go with|suggest)/i
-      - cards_shown_min: 2
+      - any_assistant_text_matches: /comfort|how you use software|software today/i
+      - any_assistant_text_matches: /recent|last time|most recent/i
+      - any_assistant_text_matches: /not (yet|possible)|for now|later/i
+      - no_multi_user_promise: true
+      - solution_exploration_card: true
+      - user_turns_before_agreement_min: 6
+      - cards_shown_min: 4
       - cards_follow_recommendation_rule: true
       - tool_called: open_intent
       - intent_status:
           slug: "*supplier*"
           status: /agreed|sketched|building|built|kept|undone/
       - tool_called: agree_intent
+      - file_contains:
+          path: agent/intents/*supplier*.md
+          regex: /what I do for you in the app/i
       - tool_called_with:
           name: run_builder
           args_match:
@@ -60,6 +83,19 @@ cases:
       - git_main_exists: true
       - tool_called: undo_change
       - any_reply_matches: /can.?t take that back without losing|hide the field/i
+      - no_jargon: true
+
+  - name: interview-capability
+    workspace: template
+    turns:
+      - message: "I want to track my invoices and my team should use it too."
+        answer_card: /something else/i
+    expect:
+      - tool_called: open_intent
+      - any_assistant_text_matches: /not (yet|possible)|for now|later/i
+      - any_assistant_text_matches: /comfort|how you use software|software today/i
+      - no_multi_user_promise: true
+      - tool_not_called: agree_intent
       - no_jargon: true
 
   - name: build-small
@@ -100,9 +136,12 @@ cases:
           ## What we agreed
           Track suppliers with a phone number and a note.
     turns:
-      - "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user naturally what is ready."
+      - message: "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user naturally what is ready."
+        answer_card: /something else/i
     expect:
-      - reply_matches: /preview|nothing.*saved|keep|change|leave/i
+      - tool_input_matches:
+          name: ask_user
+          regex: /preview|nothing.*saved|keep|change|leave/i
       - reply_not_matches: /system event|builder|git|commit|branch|worktree/i
       - no_jargon: true
 
@@ -150,8 +189,11 @@ cases:
           ## What we agreed
           Track suppliers with a phone number and a note.
     turns:
-      - "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user in one or two sentences and offer to show it."
+      - message: "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user in one or two sentences and offer to show it."
+        answer_card: /something else/i
     expect:
-      - reply_matches: /preview|nothing.*saved|keep|change|leave/i
+      - tool_input_matches:
+          name: ask_user
+          regex: /preview|nothing.*saved|keep|change|leave/i
       - reply_not_matches: /system event|builder|git|commit|branch|worktree/i
       - no_jargon: true

@@ -34,12 +34,28 @@ function fixture(): AssertionContext {
       toolCalls: [
         { name: 'update_my_instructions' },
         { name: 'count_items', input: {} },
-        { name: 'ask_user', input: { context: 'This is a preview — nothing here is saved.' } },
+        {
+          name: 'ask_user',
+          input: {
+            title: 'Best first version',
+            context: 'This is a preview — nothing here is saved. Choose how we should work.',
+            schema: {
+              fields: [{
+                options: [
+                  { label: 'Guided list (recommended)', description: 'I will prepare the next action while you stay in control.' },
+                  { label: 'Daily queue', description: 'I will answer questions and keep the queue ready.' },
+                  { label: 'Something else' },
+                ],
+              }],
+            },
+          },
+        },
       ],
       toolCallsBeforeAnswer: [{ name: 'ask_user' }],
       cardShown: true,
       cardsShown: 2,
       recommendedCards: 2,
+      userTurnsBeforeAgreement: 6,
       changedPaths: ['src/routes/index.tsx'],
       changedBeforeAnswer: [],
     }],
@@ -52,6 +68,7 @@ describe('evaluateAssertions', () => {
       { reply_matches: '/members/i' },
       { reply_not_matches: '/cannot see/i' },
       { any_reply_matches: '/4 members/i' },
+      { any_assistant_text_matches: '/guided list/i' },
       { tool_called: '/count/' },
       { tool_called_with: { name: 'count_items', args_match: {} } },
       { tool_input_matches: { name: 'ask_user', regex: '/preview.*nothing.*saved/i' } },
@@ -66,10 +83,62 @@ describe('evaluateAssertions', () => {
       { card_shown: true },
       { cards_shown_min: 2 },
       { cards_follow_recommendation_rule: true },
+      { solution_exploration_card: true },
+      { user_turns_before_agreement_min: 6 },
+      { no_multi_user_promise: true },
       { no_jargon: true },
     ], fixture())
 
     expect(results.every((result) => result.ok)).toBe(true)
+  })
+
+  it('does not mistake a comfort card for solution exploration', () => {
+    const context = fixture()
+    const comfortCard = {
+      ...context.turns[0]!,
+      toolCalls: [{
+        name: 'ask_user',
+        input: {
+          title: 'Your comfort with apps',
+          schema: {
+            fields: [{
+              label: 'How comfortable are you?',
+              options: [
+                { label: 'Basic (recommended)', description: 'I will keep it simple.' },
+                { label: 'Comfortable', description: 'I will include more detail.' },
+                { label: 'Something else' },
+              ],
+            }],
+          },
+        },
+      }],
+    }
+    const [result] = evaluateAssertions([{ solution_exploration_card: true }], {
+      ...context,
+      turns: [comfortCard],
+    })
+    expect(result?.ok).toBe(false)
+  })
+
+  it('allows a capability boundary without treating later sharing as a promise', () => {
+    const context = fixture()
+    const [result] = evaluateAssertions([{ no_multi_user_promise: true }], {
+      ...context,
+      turns: [{
+        ...context.turns[0]!,
+        reply: 'Team use is not possible yet, but I can make this useful for you and keep it ready for sharing later.',
+      }],
+    })
+    expect(result?.ok).toBe(true)
+  })
+
+  it('rejects a promise to add team use', () => {
+    const context = fixture()
+    const [result] = evaluateAssertions([{ no_multi_user_promise: true }], {
+      ...context,
+      turns: [{ ...context.turns[0]!, reply: 'I will add sharing for your team.' }],
+    })
+    expect(result?.ok).toBe(false)
   })
 
   it('matches a tool by name and a subset of nested arguments', () => {

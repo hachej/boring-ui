@@ -426,6 +426,8 @@ async function runTurn(sessionId: string, turn: EvalTurn): Promise<TurnObservati
   collectTranscriptToolCalls(currentWorkspace!, priorCalls)
   const calls = new Map<string, ObservedToolCall>()
   const callsBeforeAnswer = new Map<string, ObservedToolCall>()
+  const agreementExisted = [...priorCalls.values()].some((call) => call.name === 'agree_intent')
+  let userTurnsBeforeAgreement = !agreementExisted && !turn.await_card ? 1 : 0
   const cardIds = new Set<string>()
   const recommendedCardIds = new Set<string>()
   const answeredQuestionIds = new Set<string>()
@@ -472,6 +474,8 @@ async function runTurn(sessionId: string, turn: EvalTurn): Promise<TurnObservati
       }
       if (!answeredQuestionIds.has(pending.questionId)) {
         if (answeredQuestionIds.size >= 10) throw new Error('turn raised more than 10 question cards')
+        const agreementAlreadyCalled = agreementExisted || [...calls.values()].some((call) => call.name === 'agree_intent')
+        if (!agreementAlreadyCalled) userTurnsBeforeAgreement += 1
         await submitAnswer(pending, turn.answer_card)
         answeredQuestionIds.add(pending.questionId)
       }
@@ -487,6 +491,7 @@ async function runTurn(sessionId: string, turn: EvalTurn): Promise<TurnObservati
         cardShown: cardIds.size > 0,
         cardsShown: cardIds.size,
         recommendedCards: recommendedCardIds.size,
+        userTurnsBeforeAgreement,
         changedPaths: changedPaths(beforeWorkspace, snapshotWorkspace(currentWorkspace!)),
         changedBeforeAnswer,
       }

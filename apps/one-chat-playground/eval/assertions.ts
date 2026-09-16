@@ -14,6 +14,8 @@ export interface TurnObservation {
   readonly cardShown: boolean
   readonly cardsShown: number
   readonly recommendedCards: number
+  /** Initial messages and card answers submitted before agree_intent ran. */
+  readonly userTurnsBeforeAgreement: number
   readonly changedPaths: readonly string[]
   readonly changedBeforeAnswer: readonly string[]
 }
@@ -115,6 +117,51 @@ function format(value: unknown): string {
   return typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value)
 }
 
+function visibleAssistantText(turns: readonly TurnObservation[]): string[] {
+  return turns.flatMap((turn) => [
+    turn.reply,
+    ...turn.toolCalls
+      .filter((call) => call.name === 'ask_user')
+      .map((call) => JSON.stringify(call.input ?? {})),
+  ])
+}
+
+function solutionExploration(input: unknown): { readonly ok: boolean; readonly summary: string } {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { ok: false, summary: 'invalid input' }
+  const value = input as { title?: unknown; context?: unknown; schema?: unknown }
+  const schema = value.schema
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return { ok: false, summary: 'no schema' }
+  const fields = (schema as { fields?: unknown }).fields
+  if (!Array.isArray(fields) || fields.length !== 1) return { ok: false, summary: 'not one field' }
+  const options = (fields[0] as { options?: unknown } | undefined)?.options
+  if (!Array.isArray(options)) return { ok: false, summary: 'no options' }
+  const normalized = options.map((option) => {
+    const value = option && typeof option === 'object' && !Array.isArray(option) ? option as Record<string, unknown> : {}
+    return {
+      label: typeof value.label === 'string' ? value.label.trim() : '',
+      description: typeof value.description === 'string' ? value.description.trim() : '',
+    }
+  })
+  const approaches = normalized.filter((option) => !/^something else$/i.test(option.label))
+  const hasEmbeddedRole = approaches.every((option) => /\bI (?:will|can)\b|\bI['’]ll\b|\bcolleague\b/i.test(option.description))
+  const framing = [
+    typeof value.title === 'string' ? value.title : '',
+    typeof value.context === 'string' ? value.context : '',
+    typeof (fields[0] as { label?: unknown } | undefined)?.label === 'string'
+      ? (fields[0] as { label: string }).label
+      : '',
+  ].join(' ')
+  const ok = /\b(?:approach|version|way|shape|workflow)\b/i.test(framing)
+    && approaches.length >= 2
+    && /\(recommended\)/i.test(normalized[0]?.label ?? '')
+    && normalized.some((option) => /^something else$/i.test(option.label))
+    && hasEmbeddedRole
+  return {
+    ok,
+    summary: normalized.map((option) => `${option.label}: ${option.description}`).join(' | '),
+  }
+}
+
 export function evaluateAssertions(rawAssertions: readonly unknown[], context: AssertionContext): AssertionResult[] {
   return rawAssertions.map((raw) => {
     const spec = raw as AssertionSpec
@@ -147,6 +194,12 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
           const replies = context.turns.map((item) => item.reply)
           ok = replies.some((candidate) => regexFrom(expected).test(candidate))
           actual = replies.join(' | ')
+          break
+        }
+        case 'any_assistant_text_matches': {
+          const visibleText = visibleAssistantText(context.turns)
+          ok = visibleText.some((candidate) => regexFrom(expected).test(candidate))
+          actual = visibleText.join(' | ')
           break
         }
         case 'tool_called': {
@@ -282,6 +335,37 @@ export function evaluateAssertions(rawAssertions: readonly unknown[], context: A
             : turn?.recommendedCards ?? 0
           ok = expected === true && shown > 0 && recommended === shown
           actual = `${recommended}/${shown}`
+          break
+        }
+        case 'solution_exploration_card': {
+          const candidates = calls
+            .filter((call) => call.name === 'ask_user')
+            .map((call) => solutionExploration(call.input))
+          ok = expected === true && candidates.some((candidate) => candidate.ok)
+          actual = candidates.map((candidate) => `${candidate.ok ? 'match' : 'no match'}: ${candidate.summary}`).join(' || ') || '(none)'
+          break
+        }
+        case 'user_turns_before_agreement_min': {
+          const count = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.userTurnsBeforeAgreement, 0)
+            : turn?.userTurnsBeforeAgreement ?? 0
+          ok = typeof expected === 'number' && count >= expected
+          actual = String(count)
+          break
+        }
+        case 'no_multi_user_promise': {
+          const replies = spec.turn === undefined
+            ? visibleAssistantText(context.turns).join(' | ')
+            : visibleAssistantText(turn ? [turn] : []).join(' | ')
+          const promise = replies
+            .split(/(?<=[.!?])\s+|\s+\|\s+/)
+            .find((sentence) => {
+              const promisesTeamUse = /\b(?:I|we)(?:['’]ll| will| can)\s+(?:build|add|support|make|enable|let)\b.{0,80}\b(?:team|sharing|shared|multi-user|several people)\b/i.test(sentence)
+              const statesBoundary = /\bnot (?:yet|possible)\b|\bfor now\b|\blater\b/i.test(sentence)
+              return promisesTeamUse && !statesBoundary
+            })
+          ok = expected === true && !promise
+          actual = promise ? `matched ${JSON.stringify(promise)}` : replies
           break
         }
         case 'no_jargon': {

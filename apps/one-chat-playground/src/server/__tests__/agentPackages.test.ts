@@ -18,8 +18,9 @@ const appAgentsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 
 async function writeAgentPackage(root: string, tools: readonly string[]): Promise<void> {
   const packageRoot = path.join(root, 'colleague')
-  await mkdir(packageRoot, { recursive: true })
+  await mkdir(path.join(packageRoot, 'knowledge'), { recursive: true })
   await writeFile(path.join(packageRoot, 'instructions.md'), 'Be useful.\n')
+  await writeFile(path.join(packageRoot, 'knowledge', 'capabilities.md'), '# TEST CAPABILITY MARKER\n')
   await writeFile(
     path.join(packageRoot, 'package.json'),
     JSON.stringify({
@@ -40,6 +41,13 @@ async function writeAgentPackage(root: string, tools: readonly string[]): Promis
 }
 
 describe('one-chat agent packages', () => {
+  test('loads colleague capabilities beside the static instructions', async () => {
+    const loaded = await loadOneChatAgentPackage(appAgentsRoot, 'colleague')
+    expect(loaded.instructions).toContain('You are the assistant built into')
+    expect(loaded.instructions).toContain('What I can build for you today')
+    expect(loaded.instructions).toContain('What I cannot build yet')
+  })
+
   test('fails fast when a manifest names an unknown host tool group', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'one-chat-agent-package-'))
     await writeAgentPackage(root, ['instructions', 'not_a_real_group'])
