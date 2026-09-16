@@ -76,14 +76,14 @@ describe('app registry', () => {
     expect(second).toMatchObject({ slug: 'client-portal-2', acceptedPort: 6102, candidatePort: 6103 })
     expect(registry.list().map((app) => app.slug)).toEqual(['client-portal', 'client-portal-2'])
     expect(commands).toEqual([
-      'pnpm install --frozen-lockfile --config.minimum-release-age=0 --config.dangerously-allow-all-builds=true',
+      'pnpm install --frozen-lockfile --config.minimum-release-age=0',
       'pnpm run db:push',
       'git init -b main',
       'git config user.name One Chat',
       'git config user.email one-chat@local.invalid',
       'git add -A',
       'git commit -m Created Client Portal',
-      'pnpm install --frozen-lockfile --config.minimum-release-age=0 --config.dangerously-allow-all-builds=true',
+      'pnpm install --frozen-lockfile --config.minimum-release-age=0',
       'pnpm run db:push',
       'git init -b main',
       'git config user.name One Chat',
