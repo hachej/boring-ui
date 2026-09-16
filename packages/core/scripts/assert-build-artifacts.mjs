@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises"
+import { access, readFile, readdir } from "node:fs/promises"
 import { constants } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -65,6 +65,34 @@ if (missing.length > 0) {
     "\nFix: ensure tsup emits every exports#import entry, and that tsup.config.ts's " +
       "onSuccess hook copies every hand-authored CSS file referenced by exports.",
   )
+  process.exit(1)
+}
+
+const whatsappPackage = "@hachej/channel-whatsapp"
+if (pkg.dependencies?.[whatsappPackage]) {
+  console.error(`assert-build-artifacts: ${whatsappPackage} must remain an internal bundled dependency`)
+  process.exit(1)
+}
+
+async function collectJavaScriptFiles(dir) {
+  const files = []
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const entryPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) files.push(...await collectJavaScriptFiles(entryPath))
+    else if (entry.isFile() && entry.name.endsWith(".js")) files.push(entryPath)
+  }
+  return files
+}
+
+const externalWhatsAppImports = []
+for (const file of await collectJavaScriptFiles(path.resolve(packageRoot, "dist"))) {
+  if ((await readFile(file, "utf8")).includes(whatsappPackage)) {
+    externalWhatsAppImports.push(path.relative(packageRoot, file))
+  }
+}
+if (externalWhatsAppImports.length > 0) {
+  console.error(`assert-build-artifacts: ${whatsappPackage} was not bundled into Core:`)
+  for (const file of externalWhatsAppImports) console.error(`  - ${file}`)
   process.exit(1)
 }
 
