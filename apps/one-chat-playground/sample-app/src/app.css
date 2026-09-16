@@ -1,0 +1,83 @@
+:root {
+  color-scheme: light;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f7f7f8;
+  color: #16181d;
+}
+
+.page {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+.page-header h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.page-header p {
+  margin: 0 0 24px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.clients {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.clients th,
+.clients td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f1f3;
+}
+
+.clients th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  background: #fafafa;
+}
+
+.clients tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.clients .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.clients .name {
+  font-weight: 600;
+}
+
+.status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.status-active {
+  background: #e7f6ec;
+  color: #1a7f3c;
+}
+
+.status-pending {
+  background: #fdf2e3;
+  color: #9a6207;
+}

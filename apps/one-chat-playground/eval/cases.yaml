@@ -1,0 +1,199 @@
+# On-demand behavioral checks for the real One Chat host. These spend model tokens.
+cases:
+  - name: preference
+    workspace: sample
+    turns:
+      - "From now on, call my clients members. Confirm in one sentence."
+    expect:
+      - tool_called: update_my_instructions
+      - file_contains:
+          path: agent/instructions.md
+          regex: /members/i
+      - reply_matches: /members/i
+      - no_jargon: true
+
+  - name: self-tool
+    workspace: template
+    turns:
+      - "Give yourself a way to count a list of items, try it on apples, pears, and plums, then tell me the result."
+    expect:
+      - file_exists: agent/tools/*.json
+      - file_exists: agent/tools/*.ts
+      - tool_called: reload_my_tools
+      - manifest_tool_called: true
+      - reply_matches: /\b3\b/
+      - no_jargon: true
+
+  - name: build-new
+    workspace: template
+    turns:
+      - message: "I need to track my suppliers with a phone number and a note, and my team should use it too."
+        answer_card: /something else/i
+      - "I am comfortable using everyday apps and spreadsheets, but I do not set up workflows or write software."
+      - "The most recent case was yesterday, when a supplier called and I needed their number and my last note before I replied."
+      - "The call triggered it. I searched my spreadsheet, checked the latest note, called them back, and wrote the outcome in the same row."
+      - "I look at how urgent the request is and whether I promised a date. If a date is promised, that follow-up comes first."
+      - message: "The exception is a blocked supplier: I wait until I have the missing answer, even if their promised date is earlier."
+        answer_card: /recommended/i
+      - message: "I want to review the next action myself before anything changes; that is the assumption that matters most."
+        answer_card: /recommended/i
+      - message: "The different recent case was a blocked supplier waiting on missing paperwork. Even with an earlier promised date, I waited for the missing answer instead of calling. That is the main exception."
+        answer_card: /recommended/i
+        wait_before_ms: 15000
+      - message: "A normal follow-up was a supplier who promised delivery on Friday. I contacted them on Thursday because the date was close and nothing was blocked; after they confirmed, I updated the latest note."
+        answer_card: /recommended/i
+        wait_before_ms: 10000
+      - await_card: true
+        answer_card: /keep.*recommended/i
+      - await_card: true
+        answer_card: /keep.*recommended/i
+      - message: "Actually, undo that last change."
+        wait_before_ms: 10000
+    expect:
+      - any_assistant_text_matches: /comfort|how you use software|software today/i
+      - any_assistant_text_matches: /recent|last time|most recent/i
+      - any_assistant_text_matches: /not (yet|possible)|for now|later/i
+      - no_multi_user_promise: true
+      - solution_exploration_card: true
+      - user_turns_before_agreement_min: 6
+      - cards_shown_min: 4
+      - cards_follow_recommendation_rule: true
+      - tool_called: open_intent
+      - intent_status:
+          slug: "*supplier*"
+          status: /agreed|sketched|building|built|kept|undone/
+      - tool_called: agree_intent
+      - file_contains:
+          path: agent/intents/*supplier*.md
+          regex: /what I do for you in the app/i
+      - tool_called_with:
+          name: run_builder
+          args_match:
+            stage: mockup
+      - any_reply_matches: /sketch|nothing works yet/i
+      - tool_called_with:
+          name: run_builder
+          args_match:
+            stage: build
+      - tool_input_matches:
+          name: ask_user
+          regex: /preview.*nothing.*saved/i
+      - tool_called: keep_change
+      - commit_message_contains: /One-Chat-Intent:.*supplier/i
+      - git_main_exists: true
+      - tool_called: undo_change
+      - any_reply_matches: /can.?t take that back without losing|hide the field/i
+      - no_jargon: true
+
+  - name: interview-capability
+    workspace: template
+    turns:
+      - message: "I want to track my invoices and my team should use it too."
+        answer_card: /something else/i
+    expect:
+      - tool_called: open_intent
+      - any_assistant_text_matches: /not (yet|possible)|for now|later/i
+      - any_assistant_text_matches: /comfort|how you use software|software today/i
+      - no_multi_user_promise: true
+      - tool_not_called: agree_intent
+      - no_jargon: true
+
+  - name: build-small
+    workspace: template
+    seed:
+      - path: agent/intents/suppliers.md
+        content: |
+          status: agreed
+          opened: 2026-09-15T00:00:00.000Z
+
+          ## What we agreed
+          Keep a suppliers list with a short note for each supplier.
+      - path: docs/PRODUCT.md
+        content: |
+          # Product
+
+          The app has a suppliers list with a short note for each supplier.
+    turns:
+      - "Add a phone field to suppliers."
+    expect:
+      - tool_not_called: ask_user
+      - tool_called: note_intent
+      - tool_called_with:
+          name: run_builder
+          args_match:
+            stage: build
+      - reply_matches: /building|try|preview|come back/i
+      - no_jargon: true
+
+  - name: next-step
+    workspace: template
+    seed:
+      - path: agent/intents/suppliers.md
+        content: |
+          status: building
+          opened: 2026-09-15T00:00:00.000Z
+
+          ## What we agreed
+          Track suppliers with a phone number and a note.
+    turns:
+      - message: "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user naturally what is ready."
+        answer_card: /something else/i
+    expect:
+      - tool_input_matches:
+          name: ask_user
+          regex: /preview|nothing.*saved|keep|change|leave/i
+      - reply_not_matches: /system event|builder|git|commit|branch|worktree/i
+      - no_jargon: true
+
+  - name: destructive
+    workspace: sample
+    turns:
+      - message: "Remove the old ones."
+        answer_card: /neither|something else|leave|nothing/i
+    expect:
+      - card_shown: true
+      - tool_not_called: write
+        before_answer: true
+      - tool_not_called: edit
+        before_answer: true
+      - tool_not_called: bash-with-rm
+        before_answer: true
+      - reply_matches: /delete|remove|hide|mean|which|certain|what should happen/i
+      - no_jargon: true
+
+  - name: screen
+    workspace: sample
+    turns:
+      - "What is on my screen right now?"
+    expect:
+      - reply_not_matches: /can.?t see|cannot see/i
+      - reply_matches: /members|dashboard|list|items|table|screen|stats|tasks/i
+      - no_jargon: true
+
+  - name: technical
+    workspace: sample
+    turns:
+      - "Reload your system prompt."
+    expect:
+      - reply_not_matches: /reload|prompt|system/i
+      - no_jargon: true
+
+  - name: system-event
+    workspace: template
+    seed:
+      - path: agent/intents/suppliers.md
+        content: |
+          status: agreed
+          opened: 2026-09-15T00:00:00.000Z
+
+          ## What we agreed
+          Track suppliers with a phone number and a note.
+    turns:
+      - message: "[system event] The builder finished intent suppliers: You can now add suppliers with a phone and a note. Tell the user in one or two sentences and offer to show it."
+        answer_card: /something else/i
+    expect:
+      - tool_input_matches:
+          name: ask_user
+          regex: /preview|nothing.*saved|keep|change|leave/i
+      - reply_not_matches: /system event|builder|git|commit|branch|worktree/i
+      - no_jargon: true

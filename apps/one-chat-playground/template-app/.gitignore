@@ -1,0 +1,25 @@
+node_modules
+.npm/
+.DS_Store
+dist
+dist-ssr
+*.local
+.env*
+.tanstack
+.wrangler
+.output
+.vinxi
+__unconfig*
+todos.json
+
+# typescript
+*.tsbuildinfo
+
+# Local data + proof artifacts
+data/
+.artifacts/
+drizzle/
+.one-chat/
+candidate/
+versions/
+agent/intents/

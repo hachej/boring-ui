@@ -1,6 +1,6 @@
 "use client"
 
-import type { CSSProperties, ChangeEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
+import type { CSSProperties, ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import { useCallback, useLayoutEffect } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import type { QueuedUserMessage } from '../../../shared/chat'
@@ -69,6 +69,8 @@ export interface PiChatComposerSurfaceProps<
   chrome: boolean
   pickerPlacement?: 'above' | 'above-compact'
   isStreaming: boolean
+  /** Replaces the default streaming pill when supplied. `null` hides it. */
+  composerActivity?: ReactNode
   status: string
   disabled: boolean
   submitStatus: 'ready' | 'submitted' | 'streaming' | 'error'
@@ -138,6 +140,7 @@ export function PiChatComposerSurface<
   chrome,
   pickerPlacement = 'above',
   isStreaming,
+  composerActivity,
   status,
   disabled,
   submitStatus,
@@ -201,6 +204,8 @@ export function PiChatComposerSurface<
   onStop,
 }: PiChatComposerSurfaceProps<TComposerBlocker>) {
   const prefersReducedMotion = useReducedMotion()
+  const customActivity = composerActivity !== undefined
+  const visibleActivity = customActivity ? composerActivity != null : isStreaming
   const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
   const composerContributions = useComposerContributions()
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
@@ -251,24 +256,26 @@ export function PiChatComposerSurface<
         className={cn(
           'mx-auto w-full overflow-hidden transition-[margin,max-height,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]',
           chrome ? 'max-w-3xl' : 'max-w-[680px]',
-          isStreaming ? 'mb-2 max-h-8 opacity-100' : 'mb-0 max-h-0 opacity-0',
+          visibleActivity ? 'mb-2 max-h-8 opacity-100' : 'mb-0 max-h-0 opacity-0',
         )}
-        aria-hidden={!isStreaming}
+        aria-hidden={!visibleActivity}
       >
-        <div
-          data-testid={isStreaming ? 'chat-working' : undefined}
-          role={isStreaming ? 'status' : undefined}
-          aria-live={isStreaming ? 'polite' : undefined}
-          className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-foreground shadow-sm backdrop-blur"
-        >
-          <motion.span
-            aria-hidden="true"
-            className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: [0.35, 1, 0.35] }}
-            transition={prefersReducedMotion ? { duration: 0 } : { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <span>Working…</span>
-        </div>
+        {customActivity ? composerActivity : (
+          <div
+            data-testid={isStreaming ? 'chat-working' : undefined}
+            role={isStreaming ? 'status' : undefined}
+            aria-live={isStreaming ? 'polite' : undefined}
+            className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-foreground shadow-sm backdrop-blur"
+          >
+            <motion.span
+              aria-hidden="true"
+              className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
+              animate={prefersReducedMotion ? { opacity: 1 } : { opacity: [0.35, 1, 0.35] }}
+              transition={prefersReducedMotion ? { duration: 0 } : { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <span>Working…</span>
+          </div>
+        )}
       </div>
       {composerStatusNotice ? <ComposerRuntimeNotice notice={composerStatusNotice} /> : null}
       {composerBlocked && !workspaceWarmupBlocked ? (

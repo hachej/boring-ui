@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "profile_id": "TBD",
+  "participant_id": "TBD",
+  "scope": {
+    "kind": "project",
+    "project_id": "TBD"
+  },
+  "revision": 0,
+  "updated_at": null,
+  "facts": [],
+  "interaction_preferences": {
+    "technical_depth": null,
+    "preferred_formats": [],
+    "pace": null,
+    "basis_fact_ids": []
+  },
+  "open_questions": [],
+  "change_history": []
+}

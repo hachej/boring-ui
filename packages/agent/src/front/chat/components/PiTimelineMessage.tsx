@@ -7,6 +7,7 @@ import { Button } from '@hachej/boring-ui-kit'
 import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
 import { useOpenArtifact } from '../../ArtifactOpenContext'
 import { resolveToolRendererForPart, toToolPart, type ToolRendererOverrides } from '../../bareToolRenderers'
+import type { ChatRenderMode } from '../renderMode'
 import { cn } from '../../lib'
 import {
   Attachment,
@@ -41,6 +42,12 @@ function isCollapsibleTool(part: BoringChatPart): boolean {
   return part.type === 'tool-call' && COLLAPSIBLE_TOOL_NAMES.has(part.toolName)
 }
 
+const EMPTY_VISIBLE_TOOLS: readonly string[] = []
+
+function toolNameOf(part: Extract<BoringChatPart, { type: 'tool-call' }>): string {
+  return part.toolName
+}
+
 export interface PiTimelineMessageProps {
   message: BoringChatMessage
   isLast: boolean
@@ -49,6 +56,17 @@ export interface PiTimelineMessageProps {
   toolRenderers: ToolRendererOverrides
   mentionCatalog?: MessageMentionCatalog
   onMentionActivate?: (mention: Exclude<MessageMention, { kind: 'file' }>) => void
+  /** `messages-only` drops reasoning and tool parts from the transcript. Defaults to `full`. */
+  renderMode?: ChatRenderMode
+  /**
+   * Tools that stay visible in `messages-only`. Empty by default: the mode
+   * exists to hide the machinery of a turn. A host opts one tool back in when
+   * the tool call *is* the message — a question the user has to answer — and
+   * supplies its card through `toolRenderers`.
+   */
+  messagesOnlyVisibleTools?: readonly string[]
+  /** Hide the copy action when the host uses the consumer-facing messages-only view. */
+  messagesOnlyHideCopyActions?: boolean
 }
 
 export function PiTimelineMessage(props: PiTimelineMessageProps) {
@@ -59,12 +77,12 @@ export function PiTimelineMessage(props: PiTimelineMessageProps) {
   )
 }
 
-function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate }: PiTimelineMessageProps) {
+function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate, renderMode = 'full', messagesOnlyVisibleTools = EMPTY_VISIBLE_TOOLS, messagesOnlyHideCopyActions = false }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
   const fileParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'file' }> => part.type === 'file')
-  const finalParts = groupRenderableParts(message)
+  const finalParts = groupRenderableParts(message, renderMode, messagesOnlyVisibleTools)
   const attachmentSummaryPaths = role === 'user' ? attachmentPathsFromTextParts(textParts) : []
   const openArtifact = useOpenArtifact()
   const effectiveMentionCatalog = useMemo<MessageMentionCatalog>(() => ({
@@ -205,7 +223,7 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           return null
         })}
       </MessageContent>
-      {isAssistant && (textParts.length > 0 || shouldReserveStreamingActions) ? (
+      {isAssistant && !(renderMode === 'messages-only' && messagesOnlyHideCopyActions) && (textParts.length > 0 || shouldReserveStreamingActions) ? (
         <MessageActionsBar
           text={textParts.map((part) => part.text).join('\n\n')}
           visible={!messageIsStreaming}
@@ -280,7 +298,15 @@ type RenderablePart =
   | { kind: 'tool-group'; key: string; tools: GroupedToolEntry[] }
   | { kind: 'tool-plain'; key: string; part: Extract<BoringChatPart, { type: 'tool-call' }> }
 
-function groupRenderableParts(message: BoringChatMessage): RenderablePart[] {
+function groupRenderableParts(
+  message: BoringChatMessage,
+  renderMode: ChatRenderMode = 'full',
+  messagesOnlyVisibleTools: readonly string[] = EMPTY_VISIBLE_TOOLS,
+): RenderablePart[] {
+  // messages-only hides the machinery of a turn, so tool and reasoning parts are
+  // dropped here rather than at render time: nothing downstream (grouping keys,
+  // codeFilenameForPart adjacency) then has to reason about invisible items.
+  const messagesOnly = renderMode === 'messages-only'
   const grouped: RenderablePart[] = []
   let pendingTools: GroupedToolEntry[] = []
 
@@ -294,6 +320,14 @@ function groupRenderableParts(message: BoringChatMessage): RenderablePart[] {
     const key = partKey(message.id, part, index)
     if (part.type === 'file') return
     if (part.type === 'tool-call') {
+      if (messagesOnly) {
+        if (!messagesOnlyVisibleTools.includes(toolNameOf(part))) return
+        // An opted-in tool is always its own card: it is the message, never a
+        // line in a collapsed "Used X · Y" summary.
+        flushTools()
+        grouped.push({ kind: 'tool-plain', key, part })
+        return
+      }
       if (isCollapsibleTool(part)) {
         // read-only tools accumulate into the collapsed group summary.
         pendingTools.push({ part, key })
@@ -307,6 +341,7 @@ function groupRenderableParts(message: BoringChatMessage): RenderablePart[] {
     }
     flushTools()
     if (part.type === 'reasoning') {
+      if (messagesOnly) return
       const previous = grouped[grouped.length - 1]
       if (previous?.kind === 'reasoning') {
         previous.text = `${previous.text}\n\n${part.text}`

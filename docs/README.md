@@ -91,6 +91,7 @@ standalone (`createAgentApp`) with zero core dependency.
 | App | One-liner | Docs |
 | --- | --- | --- |
 | `agent-playground` | Minimal chat-only playground for the agent package: in-process Fastify agent (`createAgentApp`, mode `direct`) behind Vite with agent-front source HMR. | [README](../apps/agent-playground/README.md) |
+| `one-chat-playground` | "One Chat, One Screen": one messages-only chat beside one app iframe, for a non-technical user. Two stage tools (`show_on_screen` / `back_to_app`) let the agent raise a sheet over the app; the agent edits a bundled Vite sample app live. | [README](../apps/one-chat-playground/README.md) |
 | `workspace-playground` | Full IDE workbench playground for plugin development: Vite front proxying to an in-process `createWorkspaceAgentServer`, fixture-seeded workspace, demo plugins, Playwright e2e + agent evals. | [README](../apps/workspace-playground/README.md) |
 | `full-app` | Production-shaped local reference composing core + agent + workspace: better-auth and Postgres workspaces with roles/invites. | [README](../apps/full-app/README.md) |
 | `factory-playground` | Native local Factory dogfood app: Orchestrator-only `/loop`, Worker-only disposable sandboxes, Tasks/Inbox/Automations watch plane, and deterministic two-Worker feature simulation. | [README](../apps/factory-playground/README.md) |

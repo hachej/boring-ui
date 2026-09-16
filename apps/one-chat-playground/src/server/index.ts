@@ -1,0 +1,197 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { createServer as createViteServer, type ViteDevServer } from 'vite'
+
+import { createSandboxRuntimeModeAdapter, type BuiltinRuntimeModeId } from '@hachej/boring-agent/server'
+
+import { createOneChatRuntime, type OneChatRuntime } from './agentHost.js'
+import { createAppRegistry } from './appRegistry.js'
+import { registerAppRoutes } from './appRoutes.js'
+import { devCspPolicy } from './csp.js'
+import { closeOneChatStartupServices } from './startupLifecycle.js'
+import { resolveAllowedOriginsFromEnv } from '../shared/allowedOrigins.js'
+
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const repoRoot = path.resolve(appRoot, '../..')
+const agentSourceRoot = path.resolve(repoRoot, 'packages/agent/src')
+const appsRoot = path.resolve(process.env.ONE_CHAT_APPS_ROOT ?? path.join(appRoot, '.workspaces'))
+const templateRoot = path.resolve(path.join(appRoot, 'template-app'))
+const legacyWorkspaceRoot = process.env.ONE_CHAT_WORKSPACE_ROOT
+  ? path.resolve(process.env.ONE_CHAT_WORKSPACE_ROOT)
+  : undefined
+
+const frontPort = Number(process.env.ONE_CHAT_PORT ?? 5320)
+const firstAppPort = Number(process.env.SAMPLE_APP_PORT ?? 5321)
+const configuredRange = process.env.ONE_CHAT_APP_PORT_RANGE?.match(/^(\d+)-(\d+)$/)
+const portStart = Number(process.env.ONE_CHAT_APP_PORT_START ?? configuredRange?.[1] ?? firstAppPort)
+const portEnd = Number(process.env.ONE_CHAT_APP_PORT_END ?? configuredRange?.[2] ?? (portStart + 8))
+if (!Number.isInteger(portStart) || !Number.isInteger(portEnd) || portStart < 1 || portEnd < portStart) {
+  throw new Error('ONE_CHAT_APP_PORT_RANGE must be an inclusive range such as 5321-5329')
+}
+const publicHost = process.env.ONE_CHAT_PUBLIC_HOST ?? '127.0.0.1'
+const sessionRoot = path.resolve(
+  process.env.BORING_AGENT_SESSION_ROOT ?? path.join(appRoot, '.boring-agent', 'sessions'),
+)
+const configuredMode = process.env.BORING_AGENT_MODE ?? 'direct'
+if (configuredMode !== 'direct' && configuredMode !== 'local') {
+  throw new Error('one-chat-playground supports BORING_AGENT_MODE=direct or local')
+}
+const runtimeModeAdapter = createSandboxRuntimeModeAdapter(configuredMode as BuiltinRuntimeModeId)
+
+const registry = createAppRegistry({
+  appsRoot,
+  templateRoot,
+  publicHost,
+  runtimeModeAdapter,
+  appUrlPattern: process.env.ONE_CHAT_APP_URL,
+  appBasePattern: process.env.ONE_CHAT_APP_BASE,
+  portStart,
+  portEnd,
+  legacyWorkspaceRoot,
+})
+let runtime: OneChatRuntime | undefined
+let vite: ViteDevServer | undefined
+try {
+  await registry.init()
+
+const allowedOrigins = resolveAllowedOriginsFromEnv()
+const cspPolicy = devCspPolicy(allowedOrigins)
+runtime = await createOneChatRuntime({
+  resolveApp(slug) {
+    const registered = registry.get(slug)
+    if (!registered) return undefined
+    return {
+      slug,
+      workspaceRoot: registry.rootFor(slug),
+      appBaseUrl: registry.urlFor(registered),
+      candidateBaseUrl: registry.candidateUrlFor(registered),
+      lifecycle: registry.lifecycleFor(slug),
+    }
+  },
+  allowedOrigins,
+  sessionRoot,
+  runtimeModeAdapter,
+  allowUnisolatedDirectTools: process.env.ONE_CHAT_ALLOW_UNISOLATED_DIRECT_TOOLS === '1',
+})
+registerAppRoutes(runtime.app, registry, {
+  onAcceptedShown(slug) {
+    const app = registry.get(slug)
+    if (!app) return
+    runtime?.stageForApp(slug).emit({
+      type: 'stage.show',
+      what: 'app',
+      url: registry.urlFor(app),
+      title: app.title,
+    })
+  },
+})
+
+const apiAddress = await runtime.app.listen({ port: 0, host: '127.0.0.1' })
+const apiTarget = `http://127.0.0.1:${new URL(apiAddress).port}`
+
+vite = await createViteServer({
+  configFile: false,
+  root: appRoot,
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'one-chat-index',
+      configureServer(server) {
+        server.middlewares.use((_req, res, next) => {
+          res.setHeader('Content-Security-Policy', cspPolicy)
+          next()
+        })
+        server.middlewares.use(async (req, res, next) => {
+          const pathname = req.url?.split('?', 1)[0]
+          const isAppRoute = pathname === '/' || pathname === '/new' || /^\/apps\/[^/]+\/?$/.test(pathname ?? '')
+          if (req.method !== 'GET' || !req.url || !isAppRoute) {
+            next()
+            return
+          }
+          const rawHtml = [
+            '<!doctype html>',
+            '<html lang="en">',
+            '  <head>',
+            '    <meta charset="UTF-8" />',
+            '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+            '    <title>Your apps</title>',
+            '  </head>',
+            '  <body>',
+            '    <div id="root"></div>',
+            '    <script type="module" src="/src/front/main.tsx"></script>',
+            '  </body>',
+            '</html>',
+          ].join('\n')
+          try {
+            res.statusCode = 200
+            res.setHeader('Content-Type', 'text/html; charset=utf-8')
+            res.end(await server.transformIndexHtml(req.url, rawHtml))
+          } catch (error) {
+            server.ssrFixStacktrace(error as Error)
+            next(error)
+          }
+        })
+      },
+    },
+  ],
+  server: {
+    port: frontPort,
+    strictPort: true,
+    host: process.env.HOST ?? '127.0.0.1',
+    allowedHosts: true,
+    proxy: {
+      '/api': apiTarget,
+      '/health': apiTarget,
+      '/ready': apiTarget,
+    },
+  },
+  resolve: {
+    alias: {
+      '@hachej/boring-agent/front/styles.css': path.resolve(agentSourceRoot, 'front/styles/globals.css'),
+      '@hachej/boring-agent/front': path.resolve(agentSourceRoot, 'front/index.ts'),
+      '@hachej/boring-agent/shared': path.resolve(agentSourceRoot, 'shared/index.ts'),
+      '@': agentSourceRoot,
+    },
+  },
+})
+
+await vite.listen()
+runtime.app.log.info(`one-chat front  http://${publicHost}:${frontPort}/`)
+runtime.app.log.info(`one-chat apps   ${appsRoot} (${registry.list().length})`)
+runtime.app.log.info(`one-chat api    ${apiAddress}`)
+} catch (error) {
+  await closeOneChatStartupServices({ registry, runtime, vite, runtimeModeAdapter }).catch(() => {})
+  throw error
+}
+
+if (!runtime || !vite) throw new Error('one-chat-playground startup did not complete')
+const runningRuntime = runtime
+const runningVite = vite
+let shutdownPromise: Promise<void> | undefined
+function shutdown(signal: NodeJS.Signals): Promise<void> {
+  shutdownPromise ??= (async () => {
+    runningRuntime.app.log.info({ signal }, 'one-chat-playground shutting down')
+    await closeOneChatStartupServices({
+      registry,
+      runtime: runningRuntime,
+      vite: runningVite,
+      runtimeModeAdapter,
+    })
+  })()
+  return shutdownPromise
+}
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    void shutdown(signal)
+      .catch((error) => {
+        console.error(error)
+        process.exitCode = 1
+      })
+      .finally(() => process.exit())
+  })
+}

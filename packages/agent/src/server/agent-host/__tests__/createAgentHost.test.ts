@@ -643,6 +643,7 @@ describe('createAgentHost', () => {
     })
     await environment.workspace.writeFile('direct-contract.txt', 'environment')
     expect(await environment.workspace.readFile('direct-contract.txt')).toBe('environment')
+    expect(new TextDecoder().decode((await environment.sandbox.exec('printf paired')).stdout)).toBe('paired')
     expect(resolveFilesystemBindings).toHaveBeenCalledWith({
       verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' },
       requestId: 'files-1',
@@ -653,6 +654,9 @@ describe('createAgentHost', () => {
     })).toEqual({ content: 'bound' })
     environment.release()
     expect(() => environment.workspace.readFile('direct-contract.txt')).toThrow(expect.objectContaining({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    }))
+    expect(() => environment.sandbox.exec('true')).toThrow(expect.objectContaining({
       code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
     }))
     expect(() => environment.filesystemBindings![0]!.operations.read({

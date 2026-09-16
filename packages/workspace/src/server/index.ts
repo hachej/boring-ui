@@ -176,6 +176,13 @@ export type {
   WorkspaceServerPluginAsset,
 } from "./plugins/bootstrapServer"
 export {
+  BROKERED_SANDBOX_TOOL_MAX_OUTPUT_BYTES,
+  brokeredSandboxToolManifestSchema,
+  createBrokeredSandboxTool,
+  parseBrokeredSandboxToolManifest,
+} from "./plugins/brokeredSandboxTool"
+export type { BrokeredSandboxToolManifest } from "./plugins/brokeredSandboxTool"
+export {
   PACKAGE_RESOURCE_CONFLICT_CODE,
   PACKAGE_RESOURCE_INVALID_CODE,
   WorkspacePackageResourceRegistryError,

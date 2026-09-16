@@ -1,0 +1,390 @@
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import path from 'node:path'
+
+export interface ObservedToolCall {
+  readonly name: string
+  readonly input?: unknown
+}
+
+export interface TurnObservation {
+  readonly reply: string
+  readonly toolCalls: readonly ObservedToolCall[]
+  readonly toolCallsBeforeAnswer: readonly ObservedToolCall[]
+  readonly cardShown: boolean
+  readonly cardsShown: number
+  readonly recommendedCards: number
+  /** Initial messages and card answers submitted before agree_intent ran. */
+  readonly userTurnsBeforeAgreement: number
+  readonly changedPaths: readonly string[]
+  readonly changedBeforeAnswer: readonly string[]
+}
+
+export interface AssertionContext {
+  readonly workspaceRoot: string
+  readonly turns: readonly TurnObservation[]
+}
+
+export interface AssertionResult {
+  readonly assertion: string
+  readonly ok: boolean
+  readonly optional: boolean
+  readonly actual: string
+}
+
+type AssertionSpec = Record<string, unknown> & {
+  readonly optional?: boolean
+  readonly turn?: number
+  readonly before_answer?: boolean
+}
+
+const JARGON = /\b(file|folder|git|commit|branch|reload|server|terminal|code|repo|tool)\b/i
+const META_KEYS = new Set(['optional', 'turn', 'before_answer'])
+
+function regexFrom(value: unknown): RegExp {
+  if (typeof value !== 'string') throw new Error(`expected a regex string, got ${JSON.stringify(value)}`)
+  const delimited = value.match(/^\/(.*)\/([a-z]*)$/s)
+  return delimited ? new RegExp(delimited[1], delimited[2]) : new RegExp(value)
+}
+
+function globRegex(glob: string): RegExp {
+  let source = '^'
+  for (let index = 0; index < glob.length; index += 1) {
+    const char = glob[index]
+    if (char === '*' && glob[index + 1] === '*') {
+      source += '.*'
+      index += 1
+    } else if (char === '*') {
+      source += '[^/]*'
+    } else if (char === '?') {
+      source += '[^/]'
+    } else {
+      source += char!.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+    }
+  }
+  return new RegExp(`${source}$`)
+}
+
+function listFiles(root: string, relative = ''): string[] {
+  const directory = path.join(root, relative)
+  if (!existsSync(directory)) return []
+  const files: string[] = []
+  for (const entry of readdirSync(directory)) {
+    if (entry === 'node_modules' || entry === '.git') continue
+    const child = path.posix.join(relative.split(path.sep).join('/'), entry)
+    const absolute = path.join(root, child)
+    if (statSync(absolute).isDirectory()) files.push(...listFiles(root, child))
+    else files.push(child)
+  }
+  return files
+}
+
+function matchingFiles(root: string, pattern: string): string[] {
+  const normalized = pattern.replace(/^\.\//, '').split(path.sep).join('/')
+  if (!/[?*]/.test(normalized)) return existsSync(path.join(root, normalized)) ? [normalized] : []
+  const matcher = globRegex(normalized)
+  return listFiles(root).filter((candidate) => matcher.test(candidate))
+}
+
+function selectTurn(spec: AssertionSpec, context: AssertionContext): TurnObservation | undefined {
+  if (spec.turn === undefined) return context.turns.at(-1)
+  if (!Number.isInteger(spec.turn) || spec.turn < 1) return undefined
+  return context.turns[spec.turn - 1]
+}
+
+function toolMatches(call: ObservedToolCall, expected: unknown): boolean {
+  if (expected === 'bash-with-rm') {
+    return call.name === 'bash' && /(^|[;&|\s])rm(?:\s|$)/i.test(JSON.stringify(call.input ?? ''))
+  }
+  if (typeof expected !== 'string') return false
+  if (/^\/.+\/[a-z]*$/s.test(expected)) return regexFrom(expected).test(call.name)
+  return call.name === expected
+}
+
+function argsMatch(actual: unknown, expected: unknown): boolean {
+  if (!expected || typeof expected !== 'object' || Array.isArray(expected)) return Object.is(actual, expected)
+  if (!actual || typeof actual !== 'object' || Array.isArray(actual)) return false
+  return Object.entries(expected).every(([key, value]) => argsMatch((actual as Record<string, unknown>)[key], value))
+}
+
+function assertionEntry(spec: AssertionSpec): [string, unknown] {
+  const entries = Object.entries(spec).filter(([key]) => !META_KEYS.has(key))
+  if (entries.length !== 1) throw new Error(`assertion must have one assertion key: ${JSON.stringify(spec)}`)
+  return entries[0]!
+}
+
+function format(value: unknown): string {
+  return typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value)
+}
+
+function visibleAssistantText(turns: readonly TurnObservation[]): string[] {
+  return turns.flatMap((turn) => [
+    turn.reply,
+    ...turn.toolCalls
+      .filter((call) => call.name === 'ask_user')
+      .map((call) => JSON.stringify(call.input ?? {})),
+  ])
+}
+
+function solutionExploration(input: unknown): { readonly ok: boolean; readonly summary: string } {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { ok: false, summary: 'invalid input' }
+  const value = input as { title?: unknown; context?: unknown; schema?: unknown }
+  const schema = value.schema
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return { ok: false, summary: 'no schema' }
+  const fields = (schema as { fields?: unknown }).fields
+  if (!Array.isArray(fields) || fields.length !== 1) return { ok: false, summary: 'not one field' }
+  const options = (fields[0] as { options?: unknown } | undefined)?.options
+  if (!Array.isArray(options)) return { ok: false, summary: 'no options' }
+  const normalized = options.map((option) => {
+    const value = option && typeof option === 'object' && !Array.isArray(option) ? option as Record<string, unknown> : {}
+    return {
+      label: typeof value.label === 'string' ? value.label.trim() : '',
+      description: typeof value.description === 'string' ? value.description.trim() : '',
+    }
+  })
+  const approaches = normalized.filter((option) => !/^something else$/i.test(option.label))
+  const hasEmbeddedRole = approaches.every((option) => /\bI (?:will|can)\b|\bI['’]ll\b|\bcolleague\b/i.test(option.description))
+  const framing = [
+    typeof value.title === 'string' ? value.title : '',
+    typeof value.context === 'string' ? value.context : '',
+    typeof (fields[0] as { label?: unknown } | undefined)?.label === 'string'
+      ? (fields[0] as { label: string }).label
+      : '',
+  ].join(' ')
+  const ok = /\b(?:approach|version|way|shape|workflow)\b/i.test(framing)
+    && approaches.length >= 2
+    && /\(recommended\)/i.test(normalized[0]?.label ?? '')
+    && normalized.some((option) => /^something else$/i.test(option.label))
+    && hasEmbeddedRole
+  return {
+    ok,
+    summary: normalized.map((option) => `${option.label}: ${option.description}`).join(' | '),
+  }
+}
+
+export function evaluateAssertions(rawAssertions: readonly unknown[], context: AssertionContext): AssertionResult[] {
+  return rawAssertions.map((raw) => {
+    const spec = raw as AssertionSpec
+    const optional = spec?.optional === true
+    let assertion = JSON.stringify(raw)
+    try {
+      if (!spec || typeof spec !== 'object' || Array.isArray(spec)) throw new Error('assertion must be an object')
+      const [kind, expected] = assertionEntry(spec)
+      assertion = `${kind}: ${format(expected)}${spec.turn ? ` (turn ${spec.turn})` : ''}${spec.before_answer ? ' (before answer)' : ''}`
+      const turn = selectTurn(spec, context)
+      const reply = turn?.reply ?? ''
+      const calls = spec.turn === undefined
+        ? context.turns.flatMap((item) => spec.before_answer ? item.toolCallsBeforeAnswer : item.toolCalls)
+        : (spec.before_answer ? turn?.toolCallsBeforeAnswer : turn?.toolCalls) ?? []
+
+      let ok = false
+      let actual = ''
+      switch (kind) {
+        case 'reply_matches': {
+          ok = regexFrom(expected).test(reply)
+          actual = reply
+          break
+        }
+        case 'reply_not_matches': {
+          ok = !regexFrom(expected).test(reply)
+          actual = reply
+          break
+        }
+        case 'any_reply_matches': {
+          const replies = context.turns.map((item) => item.reply)
+          ok = replies.some((candidate) => regexFrom(expected).test(candidate))
+          actual = replies.join(' | ')
+          break
+        }
+        case 'any_assistant_text_matches': {
+          const visibleText = visibleAssistantText(context.turns)
+          ok = visibleText.some((candidate) => regexFrom(expected).test(candidate))
+          actual = visibleText.join(' | ')
+          break
+        }
+        case 'tool_called': {
+          ok = calls.some((call) => toolMatches(call, expected))
+          actual = calls.map((call) => call.name).join(', ') || '(none)'
+          break
+        }
+        case 'tool_called_with': {
+          const value = expected as { name?: unknown; args_match?: unknown }
+          ok = calls.some((call) => toolMatches(call, value?.name) && argsMatch(call.input, value?.args_match))
+          actual = calls.map((call) => `${call.name} ${JSON.stringify(call.input ?? {})}`).join(', ') || '(none)'
+          break
+        }
+        case 'tool_input_matches': {
+          const value = expected as { name?: unknown; regex?: unknown }
+          const matcher = regexFrom(value?.regex)
+          ok = calls.some((call) => toolMatches(call, value?.name) && matcher.test(JSON.stringify(call.input ?? {})))
+          actual = calls.map((call) => `${call.name} ${JSON.stringify(call.input ?? {})}`).join(', ') || '(none)'
+          break
+        }
+        case 'manifest_tool_called': {
+          const manifests = matchingFiles(context.workspaceRoot, 'agent/tools/*.json')
+          const names = manifests.flatMap((file) => {
+            try {
+              const parsed = JSON.parse(readFileSync(path.join(context.workspaceRoot, file), 'utf8')) as { name?: unknown }
+              return typeof parsed.name === 'string' ? [parsed.name] : []
+            } catch {
+              return []
+            }
+          })
+          ok = expected === true && names.length > 0 && names.some((name) => calls.some((call) => call.name === name))
+          actual = `manifests=${names.join(', ') || '(none)'}; calls=${calls.map((call) => call.name).join(', ') || '(none)'}`
+          break
+        }
+        case 'tool_not_called': {
+          ok = !calls.some((call) => toolMatches(call, expected))
+          if (spec.before_answer && context.turns.some((item) => item.changedBeforeAnswer.length > 0)) ok = false
+          const changed = context.turns.flatMap((item) => item.changedBeforeAnswer)
+          actual = `${calls.map((call) => call.name).join(', ') || '(none)'}${changed.length ? `; changed: ${changed.join(', ')}` : ''}`
+          break
+        }
+        case 'file_exists': {
+          const files = matchingFiles(context.workspaceRoot, String(expected))
+          ok = files.length > 0
+          actual = files.join(', ') || '(none)'
+          break
+        }
+        case 'file_changed': {
+          const matcher = globRegex(String(expected).replace(/^\.\//, ''))
+          const changed = spec.turn === undefined
+            ? context.turns.flatMap((item) => item.changedPaths)
+            : turn?.changedPaths ?? []
+          const matches = [...new Set(changed)].filter((file) => matcher.test(file))
+          ok = matches.length > 0
+          actual = matches.join(', ') || `(none; changed: ${[...new Set(changed)].join(', ') || 'none'})`
+          break
+        }
+        case 'file_contains':
+        case 'file_not_contains': {
+          const value = expected as { path?: unknown; regex?: unknown }
+          const files = matchingFiles(context.workspaceRoot, String(value?.path ?? ''))
+          const matcher = regexFrom(value?.regex)
+          const matches = files.filter((file) => matcher.test(readFileSync(path.join(context.workspaceRoot, file), 'utf8')))
+          ok = kind === 'file_contains' ? matches.length > 0 : files.length > 0 && matches.length === 0
+          actual = `files=${files.join(', ') || '(none)'}; matching=${matches.join(', ') || '(none)'}`
+          break
+        }
+        case 'commit_message_contains': {
+          let message = ''
+          try {
+            message = execFileSync('git', ['-C', context.workspaceRoot, 'log', '-1', '--format=%B'], {
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'ignore'],
+            })
+          } catch {
+            // The assertion below reports a missing commit without aborting the eval.
+          }
+          ok = regexFrom(expected).test(message)
+          actual = message.trim() || '(no commit message)'
+          break
+        }
+        case 'git_main_exists': {
+          const loose = path.join(context.workspaceRoot, '.git', 'refs', 'heads', 'main')
+          const packed = path.join(context.workspaceRoot, '.git', 'packed-refs')
+          const present = existsSync(loose) || (existsSync(packed) && /\srefs\/heads\/main$/m.test(readFileSync(packed, 'utf8')))
+          ok = expected === true && present
+          actual = String(present)
+          break
+        }
+        case 'intent_status': {
+          const value = expected as { slug?: unknown; status?: unknown }
+          const intentRoot = path.join(context.workspaceRoot, 'agent', 'intents')
+          const slugPattern = globRegex(`${String(value?.slug ?? '')}.md`)
+          const candidates = existsSync(intentRoot)
+            ? readdirSync(intentRoot).filter((file) => slugPattern.test(file))
+            : []
+          const statuses = candidates.map((file) => {
+            const body = readFileSync(path.join(intentRoot, file), 'utf8')
+            return `${file.replace(/\.md$/, '')}:${body.match(/^status:\s*(\S+)/m)?.[1] ?? '(missing)'}`
+          })
+          const expectedStatus = String(value?.status ?? '')
+          ok = statuses.some((entry) => {
+            const status = entry.slice(entry.lastIndexOf(':') + 1)
+            return /^\/.+\/[a-z]*$/s.test(expectedStatus)
+              ? regexFrom(expectedStatus).test(status)
+              : status === expectedStatus
+          })
+          actual = statuses.join(', ') || '(none)'
+          break
+        }
+        case 'card_shown': {
+          const shown = spec.turn === undefined
+            ? context.turns.some((item) => item.cardShown)
+            : turn?.cardShown === true
+          ok = shown === expected
+          actual = String(shown)
+          break
+        }
+        case 'cards_shown_min': {
+          const count = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.cardsShown, 0)
+            : turn?.cardsShown ?? 0
+          ok = typeof expected === 'number' && count >= expected
+          actual = String(count)
+          break
+        }
+        case 'cards_follow_recommendation_rule': {
+          const shown = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.cardsShown, 0)
+            : turn?.cardsShown ?? 0
+          const recommended = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.recommendedCards, 0)
+            : turn?.recommendedCards ?? 0
+          ok = expected === true && shown > 0 && recommended === shown
+          actual = `${recommended}/${shown}`
+          break
+        }
+        case 'solution_exploration_card': {
+          const candidates = calls
+            .filter((call) => call.name === 'ask_user')
+            .map((call) => solutionExploration(call.input))
+          ok = expected === true && candidates.some((candidate) => candidate.ok)
+          actual = candidates.map((candidate) => `${candidate.ok ? 'match' : 'no match'}: ${candidate.summary}`).join(' || ') || '(none)'
+          break
+        }
+        case 'user_turns_before_agreement_min': {
+          const count = spec.turn === undefined
+            ? context.turns.reduce((sum, item) => sum + item.userTurnsBeforeAgreement, 0)
+            : turn?.userTurnsBeforeAgreement ?? 0
+          ok = typeof expected === 'number' && count >= expected
+          actual = String(count)
+          break
+        }
+        case 'no_multi_user_promise': {
+          const replies = spec.turn === undefined
+            ? visibleAssistantText(context.turns).join(' | ')
+            : visibleAssistantText(turn ? [turn] : []).join(' | ')
+          const promise = replies
+            .split(/(?<=[.!?])\s+|\s+\|\s+/)
+            .find((sentence) => {
+              const promisesTeamUse = /\b(?:I|we)(?:['’]ll| will| can)\s+(?:build|add|support|make|enable|let)\b.{0,80}\b(?:team|sharing|shared|multi-user|several people)\b/i.test(sentence)
+              const statesBoundary = /\bnot (?:yet|possible)\b|\bfor now\b|\blater\b/i.test(sentence)
+              return promisesTeamUse && !statesBoundary
+            })
+          ok = expected === true && !promise
+          actual = promise ? `matched ${JSON.stringify(promise)}` : replies
+          break
+        }
+        case 'no_jargon': {
+          const match = reply.match(JARGON)
+          ok = expected === true && !match
+          actual = match ? `matched ${JSON.stringify(match[0])} in ${JSON.stringify(reply)}` : reply
+          break
+        }
+        default:
+          throw new Error(`unknown assertion ${kind}`)
+      }
+      return { assertion, ok, optional, actual }
+    } catch (error) {
+      return {
+        assertion,
+        ok: false,
+        optional,
+        actual: error instanceof Error ? error.message : String(error),
+      }
+    }
+  })
+}

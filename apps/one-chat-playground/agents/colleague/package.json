@@ -1,0 +1,22 @@
+{
+  "name": "@one-chat/agent-colleague",
+  "private": true,
+  "version": "1.0.0",
+  "boring": {
+    "agent": {
+      "definitionId": "colleague",
+      "version": "1.0.0",
+      "label": "Colleague",
+      "instructionsRef": "instructions.md"
+    }
+  },
+  "tools": [
+    "intents",
+    "instructions",
+    "stage",
+    "ask_user",
+    "run_agents",
+    "self_tools",
+    "compact"
+  ]
+}
