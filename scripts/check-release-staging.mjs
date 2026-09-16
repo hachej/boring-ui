@@ -9,6 +9,7 @@ const allowed = new Set([
   "packages/workspace/package.json",
   "packages/agent/package.json",
   "packages/ui/package.json",
+  "packages/channels/whatsapp/package.json",
   "packages/cli/package.json",
   "packages/boring-sandbox/package.json",
   "plugins/boring-mcp/package.json",
