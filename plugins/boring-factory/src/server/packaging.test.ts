@@ -45,6 +45,17 @@ function captureError(run: () => unknown): unknown {
   }
 }
 
+function npmVersion(packageSpec: string): string | undefined {
+  try {
+    return execFileSync('npm', ['view', packageSpec, 'version'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
 describe('private Boring Factory tarball', () => {
   it('packs, installs frozen through file:, compiles profiles, and rejects symlinked authority bytes', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'boring-factory-pack-'))
@@ -65,6 +76,19 @@ describe('private Boring Factory tarball', () => {
       runPnpm(['pack', '--pack-destination', packRoot], cleanPluginRoot)
       const packedName = 'hachej-boring-factory-0.0.0.tgz'
       await copyFile(path.join(packRoot, packedName), path.join(consumerRoot, 'factory.tgz'))
+      const sourceManifest = JSON.parse(await readFile(path.join(pluginRoot, 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>
+      }
+      const releaseVersion = (JSON.parse(await readFile(path.resolve(pluginRoot, '../..', 'package.json'), 'utf8')) as {
+        version: string
+      }).version
+      const overrides: Record<string, string> = {}
+      for (const name of Object.keys(sourceManifest.dependencies ?? {}).filter((name) => name.startsWith('@hachej/'))) {
+        if (npmVersion(`${name}@${releaseVersion}`)) continue
+        const latest = npmVersion(name)
+        if (!latest) throw new Error(`No published fallback exists for ${name}`)
+        overrides[name] = latest
+      }
       await writeFile(path.join(consumerRoot, 'package.json'), JSON.stringify({
         name: 'factory-artifact-consumer',
         private: true,
@@ -74,8 +98,15 @@ describe('private Boring Factory tarball', () => {
         },
       }))
       // pnpm 10 exits non-zero when transitive dependencies carry ignored build scripts; the consumer never runs them.
-      // The consumer never runs transitive build scripts; declaring that keeps pnpm 10 from failing the install.
-      await writeFile(path.join(consumerRoot, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies: []\nstrictDepBuilds: false\nshamefullyHoist: true\n')
+      // Release PRs must also prove the private tarball before matching public package versions exist. Keep exact
+      // versions when published; otherwise use each dependency's latest real registry artifact for this install.
+      const overrideLines = Object.entries(overrides)
+        .map(([name, version]) => `  "${name}": "${version}"`)
+        .join('\n')
+      await writeFile(
+        path.join(consumerRoot, 'pnpm-workspace.yaml'),
+        `onlyBuiltDependencies: []\nstrictDepBuilds: false\nshamefullyHoist: true\noverrides:\n${overrideLines}\n`,
+      )
       runPnpm(['install', '--lockfile-only'], consumerRoot)
       runPnpm(['fetch'], consumerRoot)
       runPnpm(['install', '--frozen-lockfile', '--offline'], consumerRoot)
