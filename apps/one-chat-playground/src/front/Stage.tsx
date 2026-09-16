@@ -16,9 +16,15 @@ export function Stage({ screen, onReady }: StageProps) {
     >
       {screen.label ? (
         <div className="one-chat-stage-label" data-testid="one-chat-stage-label" role="status">
-          {screen.label === 'preview'
-            ? 'Preview — nothing you do here is saved'
-            : `${screen.versionLabel ? `Previous version · ${screen.versionLabel}` : 'Previous version'} — nothing you do here is saved`}
+          <span>
+            {screen.label === 'preview'
+              ? (screen.title.startsWith('Sketch:') ? 'Sketch' : 'Preview')
+              : screen.versionLabel ? `Previous version · ${screen.versionLabel}` : 'Previous version'}
+          </span>
+          {screen.revision ? (
+            <span className="one-chat-stage-revision" data-testid="one-chat-stage-revision">v{screen.revision}</span>
+          ) : null}
+          <span>— nothing you do here is saved</span>
         </div>
       ) : null}
       <iframe

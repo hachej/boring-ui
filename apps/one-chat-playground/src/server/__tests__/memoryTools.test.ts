@@ -10,6 +10,20 @@ afterEach(async () => {
   await Promise.all(disposers.splice(0).map((dispose) => dispose()))
 })
 
+const REAL_CASES = ['Late invoice for Marie', 'Paid invoice for Léo', 'Overdue invoice for Sam']
+const AGREEMENT = {
+  observation: 'Invoices are hard to follow.',
+  objective: 'Find an invoice in under one minute, measured on the real cases.',
+  whoAndWhen: 'The owner, at the end of the week.',
+  appRole: "I update invoice status; I don't send email.",
+  productSentence: 'One place to follow invoices.',
+  journey: 'Open, find, update.',
+  outOfScope: '| Out of scope | Why |\n| --- | --- |\n| Email | Not available |',
+  acceptance: '1. Case 1: late → shown late.\n2. Case 2: paid → shown paid.\n3. Case 3: overdue → delay shown.',
+  knownLimits: 'One person.',
+  openQuestions: 'None.',
+}
+
 async function fixture() {
   const bundle = await workspaceFixture('one-chat-memtools-')
   disposers.push(bundle.disposeRuntime ?? (async () => {}))
@@ -68,20 +82,23 @@ describe('memory tools', () => {
       (
         await call('agree_intent', {
           slug: 'crm',
-          agreement: 'One page listing clients.',
+          realCases: REAL_CASES,
+          agreement: AGREEMENT,
         })
       ).body,
     ).toContain('Agreed on crm')
     const intent = await readIntent(workspace, 'crm')
     expect(intent?.status).toBe('agreed')
-    expect(intent?.agreement).toBe('One page listing clients.')
+    expect(intent?.agreement).toContain('### Observation')
+    expect(intent?.realCases).toEqual(REAL_CASES)
+    expect(intent?.revision).toBe(1)
     expect((await call('open_intent', { slug: 'crm', text: 'more' })).body).toContain('already has an agreement')
   })
 
   test('agree_intent refuses an empty agreement', async () => {
     const { call } = await fixture()
     await call('open_intent', { slug: 'crm', text: 'x' })
-    expect((await call('agree_intent', { slug: 'crm', agreement: '   ' })).isError).toBe(true)
+    expect((await call('agree_intent', { slug: 'crm', realCases: REAL_CASES, agreement: {} })).isError).toBe(true)
   })
 
   test('set_intent_status validates and persists status', async () => {
@@ -92,6 +109,21 @@ describe('memory tools', () => {
       expect((await call('set_intent_status', { slug: 'crm', status })).body).toContain(`crm is now ${status}`)
     }
     expect((await readIntent(workspace, 'crm'))?.status).toBe('built')
+  })
+
+  test('classifies revisions and freezes a kept sketch', async () => {
+    const { workspace, call } = await fixture()
+    await call('open_intent', { slug: 'crm', text: 'x' })
+    await call('agree_intent', { slug: 'crm', realCases: REAL_CASES, agreement: AGREEMENT })
+    await call('note_intent', { slug: 'crm', text: 'I propose another view.', changeClass: 'scope-by-me' })
+    expect(await readIntent(workspace, 'crm')).toMatchObject({ revision: 2, approvedRevision: 1 })
+    expect((await call('set_intent_status', { slug: 'crm', status: 'frozen' })).body).toContain('awaiting the user\'s yes')
+    await call('agree_intent', { slug: 'crm', realCases: REAL_CASES, agreement: AGREEMENT })
+    expect(await readIntent(workspace, 'crm')).toMatchObject({ revision: 2, approvedRevision: 2 })
+    expect((await readIntent(workspace, 'crm'))?.body).toContain('Revision v2 approved by the user.')
+    await call('set_intent_status', { slug: 'crm', status: 'frozen' })
+    expect((await readIntent(workspace, 'crm'))?.status).toBe('frozen')
+    expect((await call('open_intent', { slug: 'crm', text: 'later request' })).body).toContain('crm-v2')
   })
 
   test('record_change logs, rewrites the description, and closes the track', async () => {

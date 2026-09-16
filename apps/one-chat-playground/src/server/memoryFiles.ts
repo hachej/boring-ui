@@ -18,13 +18,70 @@ export const INTENTS_RELATIVE_DIR = path.join('agent', 'intents')
 export const CHANGES_RELATIVE_PATH = path.join('docs', 'CHANGES.md')
 export const PRODUCT_RELATIVE_PATH = path.join('docs', 'PRODUCT.md')
 
-export const INTENT_STATUSES = ['proposed', 'agreed', 'sketched', 'building', 'built', 'kept', 'undone'] as const
+export const INTENT_STATUSES = ['proposed', 'agreed', 'sketched', 'frozen', 'building', 'built', 'kept', 'undone'] as const
 export type IntentStatus = (typeof INTENT_STATUSES)[number]
+
+export const INTENT_CHANGE_CLASSES = ['asked-by-user', 'wording', 'scope-by-me'] as const
+export type IntentChangeClass = (typeof INTENT_CHANGE_CLASSES)[number]
 
 /** Statuses that mean the track is finished and no longer "where we are". */
 const CLOSED_STATUSES: readonly IntentStatus[] = ['kept', 'undone']
 
+export const REAL_CASES_HEADING = '## Real cases'
 export const AGREEMENT_HEADING = '## What we agreed'
+
+export const AGREEMENT_SECTIONS = [
+  ['observation', 'Observation'],
+  ['objective', 'Objective'],
+  ['whoAndWhen', 'Who and when'],
+  ['appRole', "What I do in the app / what I don't"],
+  ['productSentence', 'The product in one sentence'],
+  ['journey', 'The journey'],
+  ['outOfScope', 'Out of scope, with why'],
+  ['acceptance', 'Acceptance'],
+  ['knownLimits', 'Known limits'],
+  ['openQuestions', 'Open questions'],
+] as const
+
+export type AgreementSectionKey = (typeof AGREEMENT_SECTIONS)[number][0]
+export type AgreementSections = Readonly<Record<AgreementSectionKey, string>>
+
+function nonEmptySection(value: unknown, heading: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`Agreement section "${heading}" cannot be empty.`)
+  return value.trim()
+}
+
+/** Render the fixed agreement contract from user-worded section values. */
+export function renderAgreement(sections: AgreementSections): string {
+  const rendered = AGREEMENT_SECTIONS.map(([key, heading]) => `### ${heading}\n\n${nonEmptySection(sections[key], heading)}`).join('\n\n')
+  const parsed = parseAgreement(rendered)
+  if (!parsed) throw new Error('Agreement is missing one or more required sections.')
+  if (!/^\s*\|.+\|\s*$/m.test(parsed.outOfScope) || !/^\s*\|\s*:?-+/m.test(parsed.outOfScope)) {
+    throw new Error('Agreement section "Out of scope, with why" must be a Markdown table.')
+  }
+  for (const number of [1, 2, 3]) {
+    if (!new RegExp(`^\\s*${number}\\.\\s+.*Case\\s+${number}\\b`, 'im').test(parsed.acceptance)) {
+      throw new Error(`Acceptance item ${number} must reference Case ${number}.`)
+    }
+  }
+  return rendered
+}
+
+/** Parse only complete fixed-shape agreements; legacy prose remains readable as raw text. */
+export function parseAgreement(raw: string): AgreementSections | undefined {
+  const values = new Map<AgreementSectionKey, string>()
+  const matches = [...raw.matchAll(/^###\s+(.+?)\s*$/gm)]
+  for (let index = 0; index < matches.length; index += 1) {
+    const heading = matches[index]![1]!.trim()
+    const definition = AGREEMENT_SECTIONS.find(([, expected]) => expected === heading)
+    if (!definition) continue
+    const start = (matches[index]!.index ?? 0) + matches[index]![0].length
+    const end = matches[index + 1]?.index ?? raw.length
+    values.set(definition[0], raw.slice(start, end).trim())
+  }
+  if (AGREEMENT_SECTIONS.some(([key]) => !values.get(key))) return undefined
+  return Object.fromEntries(AGREEMENT_SECTIONS.map(([key]) => [key, values.get(key)!])) as AgreementSections
+}
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const MAX_SLUG_LENGTH = 64
@@ -52,12 +109,24 @@ export function intentPath(slug: string): string {
 export interface IntentFile {
   readonly slug: string
   readonly status: IntentStatus
+  /** Published agreement/sketch revision. Zero means there is no agreement yet. */
+  readonly revision: number
+  /** Exact revision approved for building; lower than revision means awaiting the user's yes. */
+  readonly approvedRevision: number
+  /** Revision whose sketch closed this agreement, retained after kept/undone statuses. */
+  readonly frozenRevision?: number
   /** Short user-facing name used in progress UI; persisted as `title:`. */
   readonly title?: string
-  /** Everything between the metadata and the agreement heading. */
+  /** Timestamped interview and revision journal entries. */
   readonly body: string
+  /** The three lived situations that acceptance must exercise. */
+  readonly realCases: readonly string[]
   /** The text under "## What we agreed", or undefined while it is still being understood. */
   readonly agreement: string | undefined
+}
+
+export function isAgreementFrozen(intent: Pick<IntentFile, 'status' | 'frozenRevision'>): boolean {
+  return intent.status === 'frozen' || intent.frozenRevision !== undefined
 }
 
 /** A clock seam so tests can assert exact timestamps. */
@@ -77,31 +146,68 @@ export function stamp(now: Date): string {
 
 export function parseIntent(slug: string, raw: string): IntentFile {
   const lines = raw.split('\n')
-  const statusMatch = /^status:\s*(\S+)\s*$/.exec(lines[0] ?? '')
-  const status: IntentStatus = isIntentStatus(statusMatch?.[1]) ? statusMatch[1] : 'proposed'
-  const titleMatch = /^title:\s*(.+?)\s*$/.exec(lines[1] ?? '')
-  const title = titleMatch?.[1]?.trim() || undefined
-  const afterMetadata = lines.slice(title ? 2 : 1).join('\n')
-  const headingIndex = afterMetadata.indexOf(AGREEMENT_HEADING)
-  if (headingIndex < 0)
-    return {
-      slug,
-      status,
-      title,
-      body: afterMetadata.trim(),
-      agreement: undefined,
+  let metadataEnd = 0
+  let status: IntentStatus = 'proposed'
+  let title: string | undefined
+  let revision: number | undefined
+  let approvedRevision: number | undefined
+  let frozenRevision: number | undefined
+  for (; metadataEnd < lines.length; metadataEnd += 1) {
+    const line = lines[metadataEnd] ?? ''
+    if (!line.trim()) {
+      metadataEnd += 1
+      break
     }
+    const match = /^(status|title|revision|approved-revision|frozen-revision):\s*(.*?)\s*$/.exec(line)
+    if (!match) break
+    if (match[1] === 'status' && isIntentStatus(match[2])) status = match[2]
+    if (match[1] === 'title') title = match[2]?.trim() || undefined
+    if (match[1] === 'revision' && /^\d+$/.test(match[2] ?? '')) revision = Number(match[2])
+    if (match[1] === 'approved-revision' && /^\d+$/.test(match[2] ?? '')) approvedRevision = Number(match[2])
+    if (match[1] === 'frozen-revision' && /^\d+$/.test(match[2] ?? '')) frozenRevision = Number(match[2])
+  }
+
+  const afterMetadata = lines.slice(metadataEnd).join('\n')
+  const agreementIndex = afterMetadata.indexOf(AGREEMENT_HEADING)
+  const beforeAgreement = agreementIndex < 0 ? afterMetadata : afterMetadata.slice(0, agreementIndex)
+  const realCasesIndex = beforeAgreement.indexOf(REAL_CASES_HEADING)
+  const body = (realCasesIndex < 0 ? beforeAgreement : beforeAgreement.slice(0, realCasesIndex)).trim()
+  const realCasesRaw = realCasesIndex < 0 ? '' : beforeAgreement.slice(realCasesIndex + REAL_CASES_HEADING.length).trim()
+  const realCases = realCasesRaw
+    .split('\n')
+    .map((line) => line.replace(/^\s*(?:\d+\.|[-*])\s+/, '').trim())
+    .filter(Boolean)
+  const agreement = agreementIndex < 0
+    ? undefined
+    : afterMetadata.slice(agreementIndex + AGREEMENT_HEADING.length).trim() || undefined
   return {
     slug,
     status,
+    revision: revision ?? (agreement ? 1 : 0),
+    approvedRevision: approvedRevision ?? (agreement ? revision ?? 1 : 0),
+    ...(frozenRevision !== undefined || status === 'frozen'
+      ? { frozenRevision: frozenRevision ?? revision ?? (agreement ? 1 : 0) }
+      : {}),
     title,
-    body: afterMetadata.slice(0, headingIndex).trim(),
-    agreement: afterMetadata.slice(headingIndex + AGREEMENT_HEADING.length).trim() || undefined,
+    body,
+    realCases,
+    agreement,
   }
 }
 
 export function serializeIntent(intent: Omit<IntentFile, 'slug'>): string {
-  const parts = [`status: ${intent.status}`, ...(intent.title ? [`title: ${intent.title}`] : []), '', intent.body.trim()]
+  const parts = [
+    `status: ${intent.status}`,
+    ...(intent.title ? [`title: ${intent.title}`] : []),
+    `revision: ${intent.revision}`,
+    `approved-revision: ${intent.approvedRevision}`,
+    ...(intent.frozenRevision !== undefined ? [`frozen-revision: ${intent.frozenRevision}`] : []),
+    '',
+    intent.body.trim(),
+  ]
+  if (intent.realCases.length) {
+    parts.push('', REAL_CASES_HEADING, '', ...intent.realCases.map((realCase, index) => `${index + 1}. ${realCase.trim()}`))
+  }
   if (intent.agreement) parts.push('', AGREEMENT_HEADING, '', intent.agreement.trim())
   return `${parts
     .join('\n')
@@ -156,48 +262,150 @@ export async function openIntent(
   title?: string,
 ): Promise<{ intent: IntentFile; created: boolean }> {
   const existing = await readIntent(workspace, slug)
+  if (existing && isAgreementFrozen(existing)) {
+    throw new Error(`Intent "${slug}" is frozen at v${existing.revision}. Open a new intent such as "${slug}-v2" for this later request.`)
+  }
   const entry = `- ${stamp(now())} — ${text.trim()}`
   const requestedTitle = title?.replace(/\s+/g, ' ').trim().slice(0, 80)
   const humanTitle = requestedTitle || intentTitleFromUserWords(text, slug)
   const next: Omit<IntentFile, 'slug'> = existing
     ? {
         status: existing.status,
+        revision: existing.revision,
+        approvedRevision: existing.approvedRevision,
+        ...(existing.frozenRevision !== undefined ? { frozenRevision: existing.frozenRevision } : {}),
         title: existing.title ?? humanTitle,
         body: [existing.body, entry].filter(Boolean).join('\n'),
+        realCases: existing.realCases,
         agreement: existing.agreement,
       }
     : {
         status: 'proposed',
+        revision: 0,
+        approvedRevision: 0,
         title: humanTitle,
         body: entry,
+        realCases: [],
         agreement: undefined,
       }
   await writeIntent(workspace, slug, next)
   return { intent: { slug, ...next }, created: !existing }
 }
 
-/** Appends one timestamped entry. Fails if the intent was never opened. */
-export async function noteIntent(workspace: Workspace, slug: string, text: string, now: Clock = systemClock): Promise<IntentFile> {
-  const existing = await readIntent(workspace, slug)
-  if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
+async function appendIntentEvent(
+  workspace: Workspace,
+  slug: string,
+  existing: IntentFile,
+  entry: string,
+  revision = existing.revision,
+  approvedRevision = existing.approvedRevision,
+): Promise<IntentFile> {
   const next = {
     status: existing.status,
+    revision,
+    approvedRevision,
+    ...(existing.frozenRevision !== undefined ? { frozenRevision: existing.frozenRevision } : {}),
     title: existing.title,
-    body: [existing.body, `- ${stamp(now())} — ${text.trim()}`].filter(Boolean).join('\n'),
+    body: [existing.body, entry].filter(Boolean).join('\n'),
+    realCases: existing.realCases,
     agreement: existing.agreement,
   }
   await writeIntent(workspace, slug, next)
   return { slug, ...next }
 }
 
-/** Writes the agreement section and moves the intent to `agreed`. */
-export async function agreeIntent(workspace: Workspace, slug: string, agreement: string, now: Clock = systemClock): Promise<IntentFile> {
+/** Host-authored lifecycle history may still be appended after the agreement freezes. */
+export async function recordIntentEvent(
+  workspace: Workspace,
+  slug: string,
+  text: string,
+  now: Clock = systemClock,
+): Promise<IntentFile> {
+  const existing = await readIntent(workspace, slug)
+  if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
+  return appendIntentEvent(workspace, slug, existing, `- ${stamp(now())} — ${text.trim()}`)
+}
+
+/** Appends one timestamped entry. Classified post-agreement changes publish a new revision. */
+export async function noteIntent(
+  workspace: Workspace,
+  slug: string,
+  text: string,
+  now: Clock = systemClock,
+  changeClass?: IntentChangeClass,
+): Promise<IntentFile> {
+  const existing = await readIntent(workspace, slug)
+  if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
+  if (isAgreementFrozen(existing)) {
+    throw new Error(`Intent "${slug}" is frozen at v${existing.revision}. Open a new intent such as "${slug}-v2" instead.`)
+  }
+  if (changeClass && !existing.agreement) throw new Error('Change classes apply only after an agreement.')
+  const revision = existing.revision + (changeClass ? 1 : 0)
+  const hasPendingApproval = existing.approvedRevision < existing.revision
+  const approvedRevision = hasPendingApproval || changeClass === 'scope-by-me' ? existing.approvedRevision : revision
+  const classification = changeClass
+    ? ` [${changeClass}; v${revision}${changeClass === 'scope-by-me' ? '; awaiting your yes' : '; no revalidation'}]`
+    : ''
+  return appendIntentEvent(
+    workspace,
+    slug,
+    existing,
+    `- ${stamp(now())} —${classification} ${text.trim()}`,
+    revision,
+    approvedRevision,
+  )
+}
+
+/** Writes the complete agreement contract and publishes revision v1. */
+export async function agreeIntent(
+  workspace: Workspace,
+  slug: string,
+  agreement: AgreementSections | string,
+  realCases: readonly string[],
+  now: Clock = systemClock,
+): Promise<IntentFile> {
   const existing = (await readIntent(workspace, slug)) ?? (await openIntent(workspace, slug, 'Opened.', now)).intent
+  if (isAgreementFrozen(existing)) throw new Error(`Intent "${slug}" is already frozen at v${existing.revision}.`)
+  const cases = realCases.map((realCase) => realCase.trim()).filter(Boolean)
+  if (cases.length < 3) throw new Error('An agreement needs at least three real cases.')
+  const rendered = typeof agreement === 'string' ? agreement.trim() : renderAgreement(agreement)
+  const parsed = parseAgreement(rendered)
+  if (!parsed) throw new Error('Agreement is missing one or more required sections.')
+  // Validate table and case-linked numbered acceptance for authored Markdown too.
+  renderAgreement(parsed)
+  const revision = Math.max(1, existing.revision)
   const next = {
     status: 'agreed' as const,
+    revision,
+    approvedRevision: revision,
+    ...(existing.frozenRevision !== undefined ? { frozenRevision: existing.frozenRevision } : {}),
     title: existing.title,
-    body: existing.body,
-    agreement: agreement.trim(),
+    body: existing.approvedRevision < revision
+      ? [existing.body, `- ${stamp(now())} — Revision v${revision} approved by the user.`].filter(Boolean).join('\n')
+      : existing.body,
+    realCases: cases,
+    agreement: rendered,
+  }
+  await writeIntent(workspace, slug, next)
+  return { slug, ...next }
+}
+
+/** Close the sketch gate without allowing later requests to mutate this contract. */
+export async function freezeIntent(workspace: Workspace, slug: string, now: Clock = systemClock): Promise<IntentFile> {
+  const existing = await readIntent(workspace, slug)
+  if (!existing?.agreement) throw new Error(`Intent "${slug}" needs an agreement before it can be frozen.`)
+  if (existing.approvedRevision !== existing.revision) {
+    throw new Error(`Revision v${existing.revision} is awaiting the user's yes.`)
+  }
+  const next = {
+    status: 'frozen' as const,
+    revision: existing.revision,
+    approvedRevision: existing.approvedRevision,
+    frozenRevision: existing.revision,
+    title: existing.title,
+    body: [existing.body, `- ${stamp(now())} — Revision v${existing.revision} validated on the sketch; agreement frozen.`].filter(Boolean).join('\n'),
+    realCases: existing.realCases,
+    agreement: existing.agreement,
   }
   await writeIntent(workspace, slug, next)
   return { slug, ...next }
@@ -206,10 +414,17 @@ export async function agreeIntent(workspace: Workspace, slug: string, agreement:
 export async function setIntentStatus(workspace: Workspace, slug: string, status: IntentStatus): Promise<IntentFile> {
   const existing = await readIntent(workspace, slug)
   if (!existing) throw new Error(`There is no intent called "${slug}" yet. Open it first.`)
+  if (isAgreementFrozen(existing) && status !== 'frozen' && status !== 'kept' && status !== 'undone') {
+    throw new Error(`Intent "${slug}" is frozen at v${existing.revision} and cannot return to ${status}.`)
+  }
   const next = {
     status,
+    revision: existing.revision,
+    approvedRevision: existing.approvedRevision,
+    ...(existing.frozenRevision !== undefined ? { frozenRevision: existing.frozenRevision } : {}),
     title: existing.title,
     body: existing.body,
+    realCases: existing.realCases,
     agreement: existing.agreement,
   }
   await writeIntent(workspace, slug, next)

@@ -70,16 +70,22 @@ through `UiBridge.postCommand` without mounting the Workspace shell.
 
 Three plain Markdown files in the user's app, and nothing else:
 
-- `agent/intents/<slug>.md` — one track of work. First line `status:
-proposed|agreed|sketched|building|built|kept|undone`, then timestamped entries, then a
-  `## What we agreed` section once the user has said yes.
+- `agent/intents/<slug>.md` — one track of work. Its metadata records `status` and
+  `revision`; `frozen` means the kept sketch has closed this agreement and later
+  needs must open a new v2 intent. The journal classifies post-agreement changes
+  as `asked-by-user`, `wording`, or `scope-by-me` (the last waits for an explicit
+  yes). `## Real cases` holds at least three lived situations. `## What we agreed`
+  has fixed Observation, measurable Objective, Who and when, app role, product
+  sentence, journey, out-of-scope-with-why, case-linked Acceptance, Known limits,
+  and dated Open questions sections.
 - `docs/CHANGES.md` — append-only, one line per kept change or undo.
 - `docs/PRODUCT.md` — what the app is today, rewritten in place.
 
 Five memory tools write them: `open_intent`, `note_intent`, `agree_intent`,
 `set_intent_status`, `record_change`. Host tools start isolated work and manage
 the resulting candidate: `run_builder`, `keep_change`, `discard_change`,
-`undo_change`, and `run_documenter`. The dynamic prompt carries one generated
+`undo_change`, `app_status`, and `run_documenter`. `app_status({slug})` reports
+up/down with the browser address and starts a restart when the app is down. The dynamic prompt carries one generated
 line built from those files — `Where we are: active intent track-invoices
 (agreed). Last kept: members-list (2026-09-15).` Before each turn, adapter
 `stat` calls compare tracked mtimes; the prompt is rebuilt only after a change.
@@ -94,14 +100,19 @@ sketch but never skip the candidate, checks, or preview. Up to three
 builder/verification attempts are allowed. The accepted app and its database
 continue serving while the candidate is built and checked.
 
+Every checked sketch and unsaved preview shows the intent's `v<n>` revision in
+its sheet label, and the same shown/validated revision is written to the intent
+journal. Keeping a sketch freezes that revision for the running build.
+
 A checked build is shown as an unsaved preview. `keep_change` makes one commit
 with intent/session/model trailers, pauses accepted writes, snapshots SQLite,
 applies only the approved additive SQL, fast-forwards source, and health-checks
 the restarted app. Any failure restores the last-good source and database.
 `discard_change` removes only the candidate. `undo_change` creates a new revert
 commit and never rewinds history or restores data; it refuses an undo whose old
-schema would discard current columns or saved information. The documenter runs
-only after Keep succeeds. Neither child transcript is shown to the user.
+schema would discard current columns or saved information. The Keep result includes the live address, one-line Add to Home Screen guidance,
+and the recovery phrase “my app is down”; the documenter runs only after Keep
+succeeds. Neither child transcript is shown to the user.
 
 ## Asking the user
 

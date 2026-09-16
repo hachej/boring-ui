@@ -8,7 +8,8 @@ import { createSandboxRuntimeModeAdapter, type RuntimeBundle } from '@hachej/bor
 
 import { withoutRuntimeCredentials } from '../appLifecycle'
 import { createAppRegistry, type AppRegistry, type OneChatAppProcess } from '../appRegistry'
-import { agreeIntent, openIntent } from '../memoryFiles'
+import { agreeIntent, noteIntent, openIntent, readIntent } from '../memoryFiles'
+import { TEST_AGREEMENT, TEST_REAL_CASES } from './workspaceFixture'
 
 const templateRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../template-app')
 const active: Array<{ registry: AppRegistry; adapter: ReturnType<typeof createSandboxRuntimeModeAdapter> }> = []
@@ -66,7 +67,7 @@ async function fixture(options: { failAcceptedHealth?: boolean } = {}) {
     sessionId: 'test-accepted',
   })
   await openIntent(accepted.workspace, 'phone-numbers', 'Add phone numbers.', undefined, 'phone numbers')
-  await agreeIntent(accepted.workspace, 'phone-numbers', 'Members shall have an optional phone number.')
+  await agreeIntent(accepted.workspace, 'phone-numbers', TEST_AGREEMENT, TEST_REAL_CASES)
   return {
     root,
     registry,
@@ -151,6 +152,26 @@ describe('hidden app revision lifecycle', () => {
     expect(captured).not.toHaveProperty('DATABASE_URL')
   })
 
+  test('refreshes the candidate intent before building a later revision', async () => {
+    const value = await fixture()
+    const metadata = {
+      intentSlug: 'phone-numbers',
+      intentTitle: 'Phone numbers',
+      sessionId: 'session-1',
+      model: 'openai-codex/gpt-5.5',
+    }
+    await value.lifecycle.prepareCandidate(metadata)
+    await noteIntent(value.accepted.workspace, 'phone-numbers', 'Show the country code.', undefined, 'asked-by-user')
+    await value.lifecycle.prepareCandidate(metadata)
+
+    const candidateIntent = await readFile(
+      path.join(value.registry.rootFor(value.app.slug), 'candidate', 'agent', 'intents', 'phone-numbers.md'),
+      'utf8',
+    )
+    expect(candidateIntent).toContain('revision: 2')
+    expect(candidateIntent).toContain('Show the country code.')
+  }, 120_000)
+
   test('a failing post-Keep health check restores last-good source and data', async () => {
     const value = await fixture({ failAcceptedHealth: true })
     const oldHead = output(await value.accepted.sandbox.exec('git rev-parse HEAD', { cwd: value.accepted.workspace.root }))
@@ -210,6 +231,9 @@ describe('hidden app revision lifecycle', () => {
     const undoLog = output(await value.accepted.sandbox.exec('git log -1 --format=%B', { cwd: value.accepted.workspace.root }))
     expect(undoLog).toContain(`One-Chat-Undo: ${keptHead}`)
     expect(undoLog).toContain('One-Chat-Session: session-2')
+    const changes = await value.accepted.workspace.readFile('docs/CHANGES.md')
+    expect(changes.match(/· phone-numbers ·/g)).toHaveLength(2)
+    expect(changes).toContain('Undid Phone numbers')
 
     const shown = await value.lifecycle.showVersion({ commit: keptHead })
     expect(shown.url).toBe(value.registry.candidateUrlFor(value.app))
@@ -229,6 +253,10 @@ describe('hidden app revision lifecycle', () => {
 
     const kept = await value.lifecycle.keepChange('phone-numbers')
     expect(kept).toMatchObject({ ok: true })
+    expect(kept.message).toContain(value.registry.urlFor(value.app))
+    expect(kept.message).toContain('Add to Home Screen')
+    expect(kept.message).toContain('my app is down')
+    expect((await readIntent(value.accepted.workspace, 'phone-numbers'))?.body).toContain('Revision v1 validated and kept.')
     const keptHead = output(await value.accepted.sandbox.exec('git rev-parse HEAD', { cwd: value.accepted.workspace.root }))
     const log = output(await value.accepted.sandbox.exec('git log -1 --format=%B', { cwd: value.accepted.workspace.root }))
     expect(log).toContain('One-Chat-Intent: phone-numbers')

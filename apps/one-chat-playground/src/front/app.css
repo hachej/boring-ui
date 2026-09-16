@@ -295,7 +295,10 @@
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
   max-width: calc(100% - 24px);
+  align-items: center;
+  gap: 7px;
   padding: 7px 12px;
   border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
   border-radius: 999px;
@@ -310,6 +313,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   backdrop-filter: blur(10px);
+}
+.one-chat-stage-revision {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--boring-accent-soft, var(--color-muted));
+  color: var(--boring-accent, var(--color-foreground));
+  font-variant-numeric: tabular-nums;
 }
 @keyframes one-chat-stage-enter {
   from { opacity: 0; transform: translateX(14px); }

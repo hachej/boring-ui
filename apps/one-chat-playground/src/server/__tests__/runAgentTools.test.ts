@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import type { AgentGateway, AgentSessionConnection, AgentTool, AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 
-import { agreeIntent, openIntent, readIntent } from '../memoryFiles'
+import { agreeIntent, noteIntent, openIntent, readIntent } from '../memoryFiles'
 import { createSessionTracker } from '../reloadTools'
 import { createRunAgentTools, defaultBuilderStage } from '../runAgentTools'
 import { createStageBus } from '../stageBus'
-import { workspaceFixture } from './workspaceFixture'
+import { TEST_AGREEMENT, TEST_REAL_CASES, workspaceFixture } from './workspaceFixture'
 
 const disposers: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -31,7 +31,7 @@ describe('fresh agent run tools', () => {
     disposers.push(bundle.disposeRuntime ?? (async () => {}))
     const workspace = bundle.workspace
     await openIntent(workspace, 'suppliers', 'I need suppliers.')
-    await agreeIntent(workspace, 'suppliers', 'A supplier list.')
+    await agreeIntent(workspace, 'suppliers', TEST_AGREEMENT, TEST_REAL_CASES)
     const tracker = createSessionTracker()
     tracker.remember('live-colleague')
 
@@ -142,8 +142,46 @@ describe('fresh agent run tools', () => {
       content: 'BUILD intent suppliers in this isolated candidate. Match public/mockups/suppliers.html when it exists and write one smoke check per agreement shall-line.',
     })
     expect(prompts.find((entry) => entry.agentTypeId === 'default')?.content).toBe(
-      '[system event] The builder finished intent suppliers: Suppliers can now be listed. The verified preview is already on screen at "/" titled "Preview: supplier list". Say it is a preview where nothing is saved, then ask whether to keep it, change something, or leave it as it was.',
+      '[system event] The builder finished intent suppliers at revision v1: Suppliers can now be listed. The verified preview is already on screen at "/" titled "Preview: supplier list". Say it is a preview where nothing is saved, then ask whether to keep it, change something, or leave it as it was.',
     )
+  })
+
+  test('blocks a scope-by-me revision until the user approves that exact revision', async () => {
+    const bundle = await workspaceFixture('one-chat-pending-scope-')
+    disposers.push(bundle.disposeRuntime ?? (async () => {}))
+    await openIntent(bundle.workspace, 'suppliers', 'I need suppliers.')
+    await agreeIntent(bundle.workspace, 'suppliers', TEST_AGREEMENT, TEST_REAL_CASES)
+    await noteIntent(bundle.workspace, 'suppliers', 'I propose another dashboard.', undefined, 'scope-by-me')
+    const tools = createRunAgentTools({
+      workspace: bundle.workspace,
+      scope: { workspaceScopeId: 'workspace', authSubjectId: 'user' } as AuthorizedAgentScope,
+      getGateway: () => { throw new Error('must not start') },
+      sessions: createSessionTracker(),
+    })
+    const result = await tools.find((candidate) => candidate.name === 'run_builder')!.execute(
+      { slug: 'suppliers', stage: 'build' },
+      {} as never,
+    )
+    expect(result.isError).toBe(true)
+    expect(resultText(result)).toContain("revision v2 is awaiting the user's yes")
+  })
+
+  test('reports app status with its address', async () => {
+    const bundle = await workspaceFixture('one-chat-status-')
+    disposers.push(bundle.disposeRuntime ?? (async () => {}))
+    const tools = createRunAgentTools({
+      workspace: bundle.workspace,
+      scope: { workspaceScopeId: 'workspace', authSubjectId: 'user' } as AuthorizedAgentScope,
+      getGateway: () => { throw new Error('unused') },
+      sessions: createSessionTracker(),
+      appSlug: 'members',
+      lifecycle: {
+        appStatus: async () => ({ up: true, address: 'https://members.apps.test/' }),
+      } as never,
+    })
+
+    const result = await tools.find((candidate) => candidate.name === 'app_status')!.execute({ slug: 'members' }, {} as never)
+    expect(resultText(result)).toBe('up — https://members.apps.test/')
   })
 
   test('shows a historical version from the lifecycle tool catalog', async () => {

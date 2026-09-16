@@ -3,7 +3,16 @@ import path from 'node:path'
 
 import type { AgentGateway, AgentTool, AuthorizedAgentScope, Workspace } from '@hachej/boring-agent/shared'
 
-import { assertValidSlug, noteIntent, readIntent, setIntentStatus, systemClock, type Clock, type IntentFile } from './memoryFiles.js'
+import {
+  assertValidSlug,
+  freezeIntent,
+  readIntent,
+  recordIntentEvent,
+  setIntentStatus,
+  systemClock,
+  type Clock,
+  type IntentFile,
+} from './memoryFiles.js'
 import type { AppLifecycle } from './appLifecycle.js'
 import type { SessionTracker } from './reloadTools.js'
 import type { StageBus } from './stageBus.js'
@@ -186,7 +195,8 @@ export function createRunAgentTools(options: {
   readonly sessions: SessionTracker
   /** User-visible sketch/build milestones. Documenter and maintenance work never emit here. */
   readonly activityBus?: StageBus
-  /** Browser-reachable accepted and isolated candidate URLs. */
+  /** Current registry slug and browser-reachable accepted/candidate URLs. */
+  readonly appSlug?: string
   readonly appBaseUrl?: string
   readonly candidateBaseUrl?: string
   readonly lifecycle?: AppLifecycle
@@ -219,14 +229,19 @@ export function createRunAgentTools(options: {
         assertValidSlug(params.slug)
         const slug = params.slug
         if (builderRunning) return text('a builder is already running')
-        const gateway = options.getGateway()
-        if (!gateway) return text('The builder is not ready yet.', true)
         const intent = await readIntent(options.workspace, slug)
         if (!intent?.agreement) return text(`Intent ${slug} must be agreed before building.`, true)
+        if (intent.approvedRevision !== intent.revision) {
+          return text(`Intent ${slug} revision v${intent.revision} is awaiting the user's yes.`, true)
+        }
+        const gateway = options.getGateway()
+        if (!gateway) return text('The builder is not ready yet.', true)
         if (params.stage !== undefined && !BUILDER_STAGES.includes(params.stage as BuilderStage)) {
           return text(`Stage must be one of: ${BUILDER_STAGES.join(', ')}.`, true)
         }
         const stage = (params.stage as BuilderStage | undefined) ?? defaultBuilderStage(intent)
+        const contractFrozen = intent.status === 'frozen' || (stage === 'build' && intent.status === 'sketched')
+        if (stage === 'build' && intent.status === 'sketched') await freezeIntent(options.workspace, slug, now)
         const mockupRelativePath = `public/mockups/${slug}.html`
         const activity = {
           slug,
@@ -247,7 +262,7 @@ export function createRunAgentTools(options: {
 
         builderRunning = true
         try {
-          if (stage === 'build') await setIntentStatus(options.workspace, slug, 'building')
+          if (stage === 'build' && !contractFrozen) await setIntentStatus(options.workspace, slug, 'building')
           options.activityBus?.emit({ type: 'activity.started', ...activity })
 
           const attempt = async (number: number, priorFailure?: string): Promise<void> => {
@@ -282,9 +297,15 @@ export function createRunAgentTools(options: {
                 url: previewUrl,
                 title: stage === 'mockup' ? `Sketch: ${intent.title ?? humanIntentTitle(slug)}` : `Preview: ${intent.title ?? humanIntentTitle(slug)}`,
                 label: 'preview',
+                revision: intent.revision,
               })
-              await noteIntent(options.workspace, slug, `Builder ${stage}: ${finalSummary}`, now)
-              await setIntentStatus(options.workspace, slug, stage === 'mockup' ? 'sketched' : 'built')
+              await recordIntentEvent(
+                options.workspace,
+                slug,
+                `Builder ${stage}: ${finalSummary} Revision v${intent.revision} shown (${stage === 'mockup' ? 'sketch' : 'preview'}).`,
+                now,
+              )
+              if (!contractFrozen) await setIntentStatus(options.workspace, slug, stage === 'mockup' ? 'sketched' : 'built')
               options.activityBus?.emit({ type: 'activity.done', ...activity })
               await postToColleague({
                 gateway,
@@ -297,6 +318,7 @@ export function createRunAgentTools(options: {
                       summary: finalSummary,
                       url: previewUrl,
                       title: `Sketch: ${intent.title ?? humanIntentTitle(slug)}`,
+                      revision: intent.revision,
                     }
                   : {
                       kind: 'builder-finished',
@@ -304,6 +326,7 @@ export function createRunAgentTools(options: {
                       summary: finalSummary,
                       url: previewUrl,
                       title: `Preview: ${intent.title ?? humanIntentTitle(slug)}`,
+                      revision: intent.revision,
                     }),
                 log: options.log,
               })
@@ -322,8 +345,8 @@ export function createRunAgentTools(options: {
             .catch(async (error) => {
               const reason = error instanceof Error ? error.message : String(error)
               const finalSummary = `could not, because ${reason.split('\n')[0]}`
-              await noteIntent(options.workspace, slug, `Builder ${stage}: ${finalSummary}`, now).catch(() => undefined)
-              await setIntentStatus(options.workspace, slug, 'agreed').catch(() => undefined)
+              await recordIntentEvent(options.workspace, slug, `Builder ${stage}: ${finalSummary}`, now).catch(() => undefined)
+              if (!contractFrozen) await setIntentStatus(options.workspace, slug, 'agreed').catch(() => undefined)
               options.activityBus?.emit({ type: 'activity.done', ...activity })
               await postToColleague({
                 gateway,
@@ -449,6 +472,35 @@ export function createRunAgentTools(options: {
       })
     },
   )
+  const appStatus: AgentTool = {
+    name: 'app_status',
+    description: 'Check whether an app is up and return its address. If it is down, the host starts a restart before returning. Use when the user says “my app is down”.',
+    parameters: {
+      type: 'object',
+      properties: {
+        slug: {
+          type: 'string',
+          description: 'The app name from the app rail.',
+        },
+      },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+    async execute(params) {
+      try {
+        assertValidSlug(params.slug)
+        if (options.appSlug && params.slug !== options.appSlug) {
+          return text(`This conversation is for ${options.appSlug}, not ${params.slug}.`, true)
+        }
+        if (!options.lifecycle) return text('App status is not available yet.', true)
+        const status = await options.lifecycle.appStatus()
+        return text(`${status.up ? 'up' : 'down'} — ${status.address}${status.up ? '' : ' — restart started'}`)
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error), true)
+      }
+    },
+  }
+
   const showVersion: AgentTool = {
     name: 'show_version',
     description: 'Show a previous kept version read-only, using throwaway data. Choose a commit or intent name.',
@@ -483,5 +535,5 @@ export function createRunAgentTools(options: {
     },
   }
 
-  return [runBuilder, runDocumenter, keepChange, discardChange, undoChange, showVersion]
+  return [runBuilder, runDocumenter, keepChange, discardChange, undoChange, appStatus, showVersion]
 }

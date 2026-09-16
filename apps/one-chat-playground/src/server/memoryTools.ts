@@ -1,10 +1,15 @@
 import type { AgentTool, Workspace } from '@hachej/boring-agent/shared'
 
 import {
+  AGREEMENT_SECTIONS,
+  INTENT_CHANGE_CLASSES,
   INTENT_STATUSES,
   agreeIntent,
   assertValidSlug,
+  freezeIntent,
   isIntentStatus,
+  type AgreementSections,
+  type IntentChangeClass,
   noteIntent,
   openIntent,
   readIntent,
@@ -23,6 +28,16 @@ function text(body: string, isError = false): Awaited<ReturnType<AgentTool['exec
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function isChangeClass(value: unknown): value is IntentChangeClass {
+  return typeof value === 'string' && (INTENT_CHANGE_CLASSES as readonly string[]).includes(value)
+}
+
+function agreementSections(value: unknown): AgreementSections {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The agreement must include every fixed section.')
+  const input = value as Record<string, unknown>
+  return Object.fromEntries(AGREEMENT_SECTIONS.map(([key]) => [key, str(input[key])])) as unknown as AgreementSections
 }
 
 /** Tool errors are the agent's problem, not the user's: never surface a stack. */
@@ -98,6 +113,11 @@ export function createMemoryTools(options: {
           type: 'string',
           description: 'The entry, one or two plain sentences.',
         },
+        changeClass: {
+          type: 'string',
+          enum: [...INTENT_CHANGE_CLASSES],
+          description: 'For a post-agreement request, classify it as asked-by-user, wording, or scope-by-me. Omit for interview answers and host-authored build notes.',
+        },
       },
       required: ['slug', 'text'],
       additionalProperties: false,
@@ -107,7 +127,10 @@ export function createMemoryTools(options: {
         assertValidSlug(params.slug)
         const body = str(params.text)
         if (!body) throw new Error('An entry cannot be empty.')
-        const intent = await noteIntent(workspace, params.slug, body, now)
+        if (params.changeClass !== undefined && !isChangeClass(params.changeClass)) {
+          throw new Error(`Change class must be one of: ${INTENT_CHANGE_CLASSES.join(', ')}.`)
+        }
+        const intent = await noteIntent(workspace, params.slug, body, now, params.changeClass as IntentChangeClass | undefined)
         options.invalidatePrompt()
         return `Noted on ${intent.slug} (${intent.status}).`
       })
@@ -117,25 +140,41 @@ export function createMemoryTools(options: {
   const agree: AgentTool = {
     name: 'agree_intent',
     description:
-      'Write down what you and the user agreed, once they have said yes to your summary. This is the brief you build from: who it is for, the one task, what it must do, and what "done" looks like. Sets the track to agreed.',
+      'Write the complete agreement only after the user says yes. Supply three lived cases and every fixed section in the user\'s words. Acceptance items 1–3 must say Case 1, Case 2, and Case 3; outOfScope must be a Markdown table. Sets revision v1 to agreed.',
     parameters: {
       type: 'object',
       properties: {
         slug: SLUG_PARAM,
+        realCases: {
+          type: 'array',
+          minItems: 3,
+          items: { type: 'string' },
+          description: 'At least three situations the user actually lived, kept in the user\'s words.',
+        },
         agreement: {
-          type: 'string',
-          description: 'The complete agreement in plain words (Markdown): a short brief, then the handful of lines that say when it is right. Not a diff.',
+          type: 'object',
+          properties: Object.fromEntries(AGREEMENT_SECTIONS.map(([key, heading]) => [key, {
+            type: 'string',
+            description: heading === 'Out of scope, with why'
+              ? 'A Markdown table with columns Out of scope and Why.'
+              : heading === 'Acceptance'
+                ? 'A numbered Markdown list whose first three items explicitly reference Case 1, Case 2, and Case 3.'
+                : heading === 'Open questions'
+                  ? 'Open questions; when one closes, cross it out and include the date.'
+                  : heading,
+          }])),
+          required: AGREEMENT_SECTIONS.map(([key]) => key),
+          additionalProperties: false,
         },
       },
-      required: ['slug', 'agreement'],
+      required: ['slug', 'realCases', 'agreement'],
       additionalProperties: false,
     },
     async execute(params, ctx) {
       return guarded(async () => {
         assertValidSlug(params.slug)
-        const body = str(params.agreement)
-        if (!body) throw new Error('An agreement cannot be empty.')
-        const intent = await agreeIntent(workspace, params.slug, body, now)
+        const realCases = Array.isArray(params.realCases) ? params.realCases.map(str) : []
+        const intent = await agreeIntent(workspace, params.slug, agreementSections(params.agreement), realCases, now)
         options.invalidatePrompt()
         options.onAgreement?.(intent.slug, ctx.sessionId)
         return `Agreed on ${intent.slug}. You can build it now.`
@@ -145,7 +184,7 @@ export function createMemoryTools(options: {
 
   const status: AgentTool = {
     name: 'set_intent_status',
-    description: `Move a track along: ${INTENT_STATUSES.join(', ')}. Use "sketched" when its static sketch is ready, "building" while the real app is being built, "built" when it finishes, and "undone" if the change was taken back.`,
+    description: `Move a track along: ${INTENT_STATUSES.join(', ')}. Use "frozen" only when the user keeps the sketch; later requests then need a new v2 intent. Use "undone" if a kept change was taken back.`,
     parameters: {
       type: 'object',
       properties: {
@@ -163,7 +202,9 @@ export function createMemoryTools(options: {
       return guarded(async () => {
         assertValidSlug(params.slug)
         if (!isIntentStatus(params.status)) throw new Error(`Status must be one of: ${INTENT_STATUSES.join(', ')}.`)
-        const intent = await setIntentStatus(workspace, params.slug, params.status)
+        const intent = params.status === 'frozen'
+          ? await freezeIntent(workspace, params.slug, now)
+          : await setIntentStatus(workspace, params.slug, params.status)
         options.invalidatePrompt()
         return `${intent.slug} is now ${intent.status}.`
       })

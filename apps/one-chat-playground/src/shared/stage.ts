@@ -8,6 +8,7 @@ export interface StageScreen {
   readonly title: string
   readonly label?: 'preview' | 'version'
   readonly versionLabel?: string
+  readonly revision?: number
 }
 
 export type BuilderActivityStage = 'mockup' | 'build'
@@ -207,6 +208,7 @@ export type StageEvent =
       readonly title?: string
       readonly label?: 'preview' | 'version'
       readonly versionLabel?: string
+      readonly revision?: number
     }
   | { readonly type: 'stage.clear' }
   | ({ readonly type: 'activity.started' } & Omit<BuilderActivity, 'milestone'>)
@@ -239,6 +241,7 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
         title,
         ...(event.label ? { label: event.label } : {}),
         ...(event.versionLabel?.trim() ? { versionLabel: event.versionLabel.trim() } : {}),
+        ...(Number.isInteger(event.revision) && (event.revision ?? 0) > 0 ? { revision: event.revision } : {}),
       } as const
       if (
         state.screen?.what === screen.what
@@ -246,6 +249,7 @@ export function stageReducer(state: StageState, event: StageEvent): StageState {
         && state.screen.title === screen.title
         && state.screen.label === screen.label
         && state.screen.versionLabel === screen.versionLabel
+        && state.screen.revision === screen.revision
       ) return state
       return { ...state, screen }
     }
@@ -290,6 +294,9 @@ export function parseStageEvent(raw: unknown): StageEvent | null {
       ...(typeof candidate.title === 'string' ? { title: candidate.title } : {}),
       ...((candidate.label === 'preview' || candidate.label === 'version') ? { label: candidate.label } : {}),
       ...(typeof candidate.versionLabel === 'string' ? { versionLabel: candidate.versionLabel } : {}),
+      ...(typeof candidate.revision === 'number' && Number.isInteger(candidate.revision) && candidate.revision > 0
+        ? { revision: candidate.revision }
+        : {}),
     }
   }
   if (

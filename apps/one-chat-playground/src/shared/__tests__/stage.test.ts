@@ -33,6 +33,18 @@ describe('stageReducer', () => {
     expect(next.screen).toEqual({ what: 'page', url: 'http://127.0.0.1:5321/mockup', title: 'New layout' })
   })
 
+  it('keeps the published revision with the preview sheet', () => {
+    const next = stageReducer(initialStageState, {
+      type: 'stage.show',
+      what: 'page',
+      url: 'http://localhost:9/sketch',
+      title: 'Sketch: invoices',
+      label: 'preview',
+      revision: 4,
+    })
+    expect(next.screen).toMatchObject({ label: 'preview', revision: 4 })
+  })
+
   it('defaults the title when the tool omits it', () => {
     const next = stageReducer(initialStageState, { type: 'stage.show', what: 'page', url: 'http://localhost:9/x' })
     expect(next.screen?.title).toBe('Preview')
@@ -188,11 +200,12 @@ describe('chatPresenceReducer', () => {
 describe('parseStageEvent', () => {
   it('accepts well-formed events', () => {
     expect(parseStageEvent({ type: 'stage.clear' })).toEqual({ type: 'stage.clear' })
-    expect(parseStageEvent({ type: 'stage.show', what: 'page', url: 'http://localhost:1/', title: 'T' })).toEqual({
+    expect(parseStageEvent({ type: 'stage.show', what: 'page', url: 'http://localhost:1/', title: 'T', revision: 2 })).toEqual({
       type: 'stage.show',
       what: 'page',
       url: 'http://localhost:1/',
       title: 'T',
+      revision: 2,
     })
   })
 

@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { RuntimeBundle, RuntimeModeAdapter } from '@hachej/boring-agent/server'
 import type { ExecOptions, ExecResult, Sandbox } from '@hachej/boring-agent/shared'
 
-import { setIntentStatus } from './memoryFiles.js'
+import { readIntent, recordIntentEvent, setIntentStatus } from './memoryFiles.js'
 import { inspectSafeAdditiveSql, planSafeAdditiveMigration, type SqliteSchemaSnapshot } from './safeAdditiveSql.js'
 
 export interface LifecycleApp {
@@ -35,6 +35,11 @@ export interface LifecycleResult {
 export interface VersionPreview {
   readonly url: string
   readonly label: string
+}
+
+export interface AppServiceStatus {
+  readonly up: boolean
+  readonly address: string
 }
 
 export interface AppLifecycleHost {
@@ -211,7 +216,7 @@ function changeLine(slug: string, summary: string): string {
   return `- ${new Date().toISOString().slice(0, 10)} · ${slug} · ${summary}`
 }
 
-async function appendChange(runtime: RuntimeBundle, slug: string, summary: string): Promise<void> {
+async function appendChange(runtime: RuntimeBundle, slug: string, summary: string, replacePrior = true): Promise<void> {
   const relative = path.posix.join('docs', 'CHANGES.md')
   let body = '# Changes\n'
   try {
@@ -220,9 +225,11 @@ async function appendChange(runtime: RuntimeBundle, slug: string, summary: strin
     // A generated app may not have a change log yet.
   }
   const line = changeLine(slug, summary)
-  const withoutPrior = body.split('\n').filter((candidate) => !candidate.includes(`· ${slug} ·`)).join('\n').trimEnd()
+  const previous = replacePrior
+    ? body.split('\n').filter((candidate) => !candidate.includes(`· ${slug} ·`)).join('\n').trimEnd()
+    : body.trimEnd()
   await runtime.workspace.mkdir('docs', { recursive: true })
-  await runtime.workspace.writeFile(relative, `${withoutPrior}\n${line}\n`)
+  await runtime.workspace.writeFile(relative, `${previous}\n${line}\n`)
 }
 
 async function install(runtime: RuntimeBundle): Promise<void> {
@@ -255,6 +262,7 @@ export interface AppLifecycle {
   discardChange(intentSlug: string): Promise<LifecycleResult>
   undoChange(input: { slug?: string; sessionId: string; model: string }): Promise<LifecycleResult>
   showVersion(input: { commit?: string; slug?: string }): Promise<VersionPreview>
+  appStatus(): Promise<AppServiceStatus>
   backToApp(): Promise<void>
   close(): Promise<void>
 }
@@ -311,6 +319,9 @@ export function createAppLifecycle(host: AppLifecycleHost): AppLifecycle {
   const prepareCandidate = (metadata: CandidateMetadata) => serialize(async () => {
     if (candidate?.intentSlug === metadata.intentSlug) {
       await stopPreview()
+      const accepted = await acceptedRuntime()
+      const intentPath = path.posix.join('agent', 'intents', `${metadata.intentSlug}.md`)
+      await candidate.runtime.workspace.writeFile(intentPath, await accepted.workspace.readFile(intentPath))
       candidate.verified = false
       candidate.approvedSql = undefined
       return { workspaceRoot: candidate.workspaceRoot, previewUrl: host.candidateUrl }
@@ -455,9 +466,21 @@ export function createAppLifecycle(host: AppLifecycleHost): AppLifecycle {
       await exec(accepted, `git merge --ff-only ${shellQuote(commit)}`, {}, 'candidate promotion failed')
       host.startAccepted()
       await host.health(accepted, host.app.acceptedPort)
+      const keptIntent = await readIntent(accepted.workspace, intentSlug)
+      if (keptIntent) {
+        await recordIntentEvent(
+          accepted.workspace,
+          intentSlug,
+          `Revision v${keptIntent.revision} validated and kept.`,
+        ).catch((error) => host.log(`intent revision journal update failed: ${String(error)}`))
+      }
       await setIntentStatus(accepted.workspace, intentSlug, 'kept').catch((error) => host.log(`intent status update failed: ${String(error)}`))
       await cleanupCandidate(true)
-      return { ok: true, message: 'Kept. Your app is updated.', intentSlug }
+      return {
+        ok: true,
+        message: `Kept. Your app is updated. Address: ${host.acceptedUrl} On your phone, open that address and choose Add to Home Screen. If it does not open, tell me “my app is down”.`,
+        intentSlug,
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       try {
@@ -508,6 +531,12 @@ export function createAppLifecycle(host: AppLifecycleHost): AppLifecycle {
     const kept = await keptCommit(accepted, input.slug)
     if (!kept?.slug) return { ok: false, message: 'There is no kept change to take back.' }
     const branch = `undo/${kept.slug}-${Date.now()}`
+    let existingChangeLog = '# Changes\n'
+    try {
+      existingChangeLog = await accepted.workspace.readFile(path.posix.join('docs', 'CHANGES.md'))
+    } catch {
+      // The first undo may start the readable history.
+    }
     await exec(accepted, `git worktree add -b ${shellQuote(branch)} candidate main`, {}, 'undo copy could not be prepared')
     const workspaceRoot = path.join(host.appRoot, 'candidate')
     let runtime: RuntimeBundle | undefined
@@ -519,7 +548,9 @@ export function createAppLifecycle(host: AppLifecycleHost): AppLifecycle {
       }))
       await install(runtime)
       await exec(runtime, `git revert --no-commit ${shellQuote(kept.sha)}`, {}, 'the change could not be taken back cleanly')
-      await appendChange(runtime, kept.slug, `Undid ${kept.message.split('\n', 1)[0] ?? kept.slug}`)
+      await runtime.workspace.mkdir('docs', { recursive: true })
+      await runtime.workspace.writeFile(path.posix.join('docs', 'CHANGES.md'), existingChangeLog)
+      await appendChange(runtime, kept.slug, `Undid ${kept.message.split('\n', 1)[0] ?? kept.slug}`, false)
       const [live, target] = await Promise.all([schemaSnapshot(accepted, 'data/app.sqlite'), modelSchema(runtime)])
       const plan = planSafeAdditiveMigration(live, target)
       if (!plan.ok) {
@@ -626,6 +657,18 @@ export function createAppLifecycle(host: AppLifecycleHost): AppLifecycle {
     discardChange,
     undoChange,
     showVersion,
+    appStatus: () => serialize(async () => {
+      const accepted = await acceptedRuntime()
+      try {
+        await host.health(accepted, host.app.acceptedPort)
+        return { up: true, address: host.acceptedUrl }
+      } catch (error) {
+        host.log(`accepted app status check failed; restarting: ${String(error)}`)
+        await host.stopAccepted().catch(() => undefined)
+        host.startAccepted()
+        return { up: false, address: host.acceptedUrl }
+      }
+    }),
     backToApp: () => serialize(stopPreview),
     close: () => serialize(async () => {
       if (candidate) await cleanupCandidate(true)

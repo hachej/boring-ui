@@ -7,15 +7,19 @@ import {
   formatChangeLine,
   isValidSlug,
   intentPath,
+  freezeIntent,
   noteIntent,
   openIntent,
+  parseAgreement,
   parseChangeLine,
   parseIntent,
   readActiveIntent,
   readIntent,
   readLastChange,
   recordChange,
+  renderAgreement,
   setIntentStatus,
+  type AgreementSections,
   whereWeAreLine,
 } from '../memoryFiles'
 import { workspaceFixture } from './workspaceFixture'
@@ -32,6 +36,19 @@ async function tmpWorkspace() {
 }
 
 const at = (iso: string) => () => new Date(iso)
+const REAL_CASES = ['Late invoice for Marie', 'Paid invoice for Léo', 'Overdue invoice for Sam']
+const agreement = (observation = 'Invoices are hard to follow.'): AgreementSections => ({
+  observation,
+  objective: 'Find an invoice in under one minute, measured during the three real cases.',
+  whoAndWhen: 'The owner uses it alone, especially at the end of the week.',
+  appRole: "I show and update invoices; I don't send email.",
+  productSentence: 'One place to follow invoices.',
+  journey: 'Open the list, find the invoice, update its status.',
+  outOfScope: '| Out of scope | Why |\n| --- | --- |\n| Email reminders | Not available yet |',
+  acceptance: '1. Case 1: late invoice → the app shows it as late.\n2. Case 2: paid invoice → the app shows it as paid.\n3. Case 3: overdue invoice → the app shows how late it is.',
+  knownLimits: 'One person only.',
+  openQuestions: 'None.',
+})
 
 describe('slugs', () => {
   test('accepts kebab-case only', () => {
@@ -82,19 +99,33 @@ describe('note_intent', () => {
   test('refuses an intent that was never opened', async () => {
     await expect(noteIntent(await tmpWorkspace(), 'ghost', 'x')).rejects.toThrow(/no intent called "ghost"/)
   })
+
+  test('classifies post-agreement changes and advances the published revision', async () => {
+    const workspace = await tmpWorkspace()
+    await openIntent(workspace, 'crm', 'opened', at('2026-09-15T09:00:00Z'))
+    await agreeIntent(workspace, 'crm', agreement(), REAL_CASES, at('2026-09-15T09:30:00Z'))
+    await noteIntent(workspace, 'crm', 'Add the label photo.', at('2026-09-15T10:00:00Z'), 'asked-by-user')
+    const pending = await noteIntent(workspace, 'crm', 'I propose a second dashboard.', at('2026-09-15T10:05:00Z'), 'scope-by-me')
+    expect(pending).toMatchObject({ revision: 3, approvedRevision: 2 })
+    const stillPending = await noteIntent(workspace, 'crm', 'Correct a label.', at('2026-09-15T10:10:00Z'), 'wording')
+    expect(stillPending).toMatchObject({ revision: 4, approvedRevision: 2 })
+    expect(stillPending.body).toContain('[asked-by-user; v2; no revalidation]')
+    expect(stillPending.body).toContain('[scope-by-me; v3; awaiting your yes]')
+    expect(stillPending.body).toContain('[wording; v4; no revalidation]')
+  })
 })
 
 describe('agree_intent', () => {
   test('writes one agreement section and replaces it on re-agreement', async () => {
     const workspace = await tmpWorkspace()
     await openIntent(workspace, 'crm', 'opened', at('2026-09-15T09:00:00Z'))
-    await agreeIntent(workspace, 'crm', 'One page listing clients.', at('2026-09-15T09:30:00Z'))
+    await agreeIntent(workspace, 'crm', agreement('One page listing clients.'), REAL_CASES, at('2026-09-15T09:30:00Z'))
     const raw = await workspace.readFile(intentPath('crm'))
     expect(raw.split('\n')[0]).toBe('status: agreed')
     expect(raw.match(/## What we agreed/g)).toHaveLength(1)
     expect(raw).toContain('One page listing clients.')
 
-    await agreeIntent(workspace, 'crm', 'One page listing clients, sorted by name.', at('2026-09-15T09:40:00Z'))
+    await agreeIntent(workspace, 'crm', agreement('One page listing clients, sorted by name.'), REAL_CASES, at('2026-09-15T09:40:00Z'))
     const again = await workspace.readFile(intentPath('crm'))
     expect(again.match(/## What we agreed/g)).toHaveLength(1)
     expect(again).toContain('sorted by name')
@@ -103,24 +134,53 @@ describe('agree_intent', () => {
   test('entries appended after an agreement stay above it', async () => {
     const workspace = await tmpWorkspace()
     await openIntent(workspace, 'crm', 'opened', at('2026-09-15T09:00:00Z'))
-    await agreeIntent(workspace, 'crm', 'AGREEMENT', at('2026-09-15T09:30:00Z'))
+    await agreeIntent(workspace, 'crm', agreement('AGREEMENT'), REAL_CASES, at('2026-09-15T09:30:00Z'))
     await noteIntent(workspace, 'crm', 'LATER ENTRY', at('2026-09-15T10:00:00Z'))
     const raw = await workspace.readFile(intentPath('crm'))
     expect(raw.indexOf('LATER ENTRY')).toBeLessThan(raw.indexOf('## What we agreed'))
     expect(raw).toContain('AGREEMENT')
+    expect(raw).toContain('## Real cases')
+    expect(raw).toContain('1. Late invoice for Marie')
+  })
+})
+
+describe('agreement contract', () => {
+  test('renders and parses every fixed section', () => {
+    const rendered = renderAgreement(agreement())
+    expect(rendered).toContain('### Out of scope, with why')
+    expect(parseAgreement(rendered)).toEqual(agreement())
+  })
+
+  test('rejects agreements without three case-linked acceptance lines', () => {
+    expect(() => renderAgreement({ ...agreement(), acceptance: '1. Looks right.' })).toThrow(/Case 1/)
   })
 })
 
 describe('set_intent_status', () => {
+  test('freezes the validated revision and refuses later mutation', async () => {
+    const workspace = await tmpWorkspace()
+    await openIntent(workspace, 'crm', 'opened', at('2026-09-15T09:00:00Z'))
+    await agreeIntent(workspace, 'crm', agreement(), REAL_CASES, at('2026-09-15T09:30:00Z'))
+    await setIntentStatus(workspace, 'crm', 'sketched')
+    const frozen = await freezeIntent(workspace, 'crm', at('2026-09-15T10:00:00Z'))
+    expect(frozen).toMatchObject({ status: 'frozen', revision: 1, frozenRevision: 1 })
+    expect(await workspace.readFile(intentPath('crm'))).toContain('frozen-revision: 1')
+    expect(frozen.body).toContain('Revision v1 validated on the sketch; agreement frozen.')
+    await expect(setIntentStatus(workspace, 'crm', 'agreed')).rejects.toThrow(/cannot return to agreed/)
+    await setIntentStatus(workspace, 'crm', 'kept')
+    await expect(openIntent(workspace, 'crm', 'one more thing')).rejects.toThrow(/crm-v2/)
+    await expect(noteIntent(workspace, 'crm', 'one more thing')).rejects.toThrow(/crm-v2/)
+  })
+
   test('rewrites only the status line', async () => {
     const workspace = await tmpWorkspace()
     await openIntent(workspace, 'crm', 'opened', at('2026-09-15T09:00:00Z'))
-    await agreeIntent(workspace, 'crm', 'AGREEMENT', at('2026-09-15T09:30:00Z'))
+    await agreeIntent(workspace, 'crm', agreement('AGREEMENT'), REAL_CASES, at('2026-09-15T09:30:00Z'))
     expect((await setIntentStatus(workspace, 'crm', 'sketched')).status).toBe('sketched')
     expect((await setIntentStatus(workspace, 'crm', 'building')).status).toBe('building')
     const intent = await setIntentStatus(workspace, 'crm', 'built')
     expect(intent.status).toBe('built')
-    expect(intent.agreement).toBe('AGREEMENT')
+    expect(intent.agreement).toContain('AGREEMENT')
     expect(intent.body).toContain('opened')
   })
 })
@@ -213,7 +273,7 @@ describe('where were we', () => {
     )
     await setIntentStatus(workspace, 'members-list', 'kept')
     await openIntent(workspace, 'track-invoices', 'newer', at('2026-09-15T11:00:00Z'))
-    await agreeIntent(workspace, 'track-invoices', 'AGREEMENT', at('2026-09-15T11:30:00Z'))
+    await agreeIntent(workspace, 'track-invoices', agreement('AGREEMENT'), REAL_CASES, at('2026-09-15T11:30:00Z'))
     expect(await whereWeAreLine(workspace)).toBe('Where we are: active intent track-invoices (agreed). Last kept: members-list (2026-09-15).')
   })
 

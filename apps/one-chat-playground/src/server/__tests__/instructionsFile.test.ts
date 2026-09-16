@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { createInstructionsLoader, type InstructionsLoader } from '../instructionsFile'
 import { agreeIntent, openIntent, recordChange } from '../memoryFiles'
-import { workspaceFixture } from './workspaceFixture'
+import { TEST_AGREEMENT, TEST_REAL_CASES, workspaceFixture } from './workspaceFixture'
 
 const loaders: InstructionsLoader[] = []
 const disposers: Array<() => Promise<void>> = []
@@ -95,7 +95,7 @@ describe('the "where were we" line', () => {
     expect(before).toContain('(proposed)')
     for (let index = 0; index < 5; index += 1) expect(await loader.load()).toBe(before)
 
-    await agreeIntent(workspace, 'track-invoices', 'AGREEMENT', () => new Date('2026-09-15T14:30:00Z'))
+    await agreeIntent(workspace, 'track-invoices', TEST_AGREEMENT, TEST_REAL_CASES, () => new Date('2026-09-15T14:30:00Z'))
     expect(await loader.load()).toContain('active intent track-invoices (agreed).')
   })
 
