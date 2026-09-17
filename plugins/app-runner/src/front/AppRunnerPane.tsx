@@ -69,6 +69,10 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
 
   useEffect(() => {
     loadApps()
+    // Serving tokens and their path-scoped cookies are deliberately short-lived.
+    // Refreshing the signed document URL renews browser authority before expiry.
+    const renewal = window.setInterval(loadApps, 120_000)
+    return () => window.clearInterval(renewal)
   }, [loadApps])
 
   useEffect(() => {
