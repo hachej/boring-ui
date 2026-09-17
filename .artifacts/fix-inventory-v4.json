@@ -1,0 +1,34 @@
+{
+  "prompt": "List the exact names of all currently available native tools whose names begin with app_. Do not infer from files and do not call them.",
+  "status": "idle",
+  "messages": [
+    {
+      "id": "04ae5400",
+      "createdAt": "2026-09-17T17:24:48.179Z",
+      "piEntryId": "04ae5400",
+      "role": "user",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "04ae5400:text:0",
+          "text": "List the exact names of all currently available native tools whose names begin with app_. Do not infer from files and do not call them."
+        }
+      ]
+    },
+    {
+      "id": "1bc1fad5",
+      "createdAt": "2026-09-17T17:24:48.250Z",
+      "piEntryId": "1bc1fad5",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "1bc1fad5:text:0",
+          "text": "- `app_6775657374626f6f6b_636f756e745f656e7472696573`\n- `app_6775657374626f6f6b_70696e5f656e747279`\n- `app_6775657374626f6f6b_66616b655f746f6f6c`"
+        }
+      ]
+    }
+  ]
+}

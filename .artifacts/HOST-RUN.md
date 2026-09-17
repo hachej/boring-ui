@@ -75,18 +75,33 @@ Hello! 🎯
 
 Transcript: `chat-step-g.json`.
 
+## Astra evidence rerun — PASS
+
+After the fixes, both processes were stopped and restarted without clearing durable state. `restart-receipts.txt` records the old host process IDs, the new hub PID, and the two host startup/ready timestamps. The real Agent session remained usable after the second host restart.
+
+For the rollback inventory proof, version 5 added one temporary published manifest tool. `fix-inventory-v5b.json` captures the four tools advertised before rollback, including:
+
+```text
+app_6775657374626f6f6b_61737472615f74656d70
+```
+
+`fix-rollback-v4.json` captures the native `rollback_app` call. On the next turn, `fix-inventory-v4.json` captures only the three version-4 tools; the temporary tool is absent. This is the actual before/after inventory, not an assistant inference from draft files.
+
+The first rerun exposed duplicate legacy JSON-store keys that prevented a newly published tool from refreshing. Commit `b7a9c57` normalizes those keys, keeps the newest record, and adds a regression test. The successful inventory above was captured after rebuilding and restarting with that fix.
+
 ## Screenshot
 
-Playwright was available. Screenshot: `apps-panel.png`. It captures the live host after restart with published native tool calls, profile behavior, and the app-runner surface command in the transcript.
+Playwright opened the `app-runner` surface through the UI bridge and captured the actual Apps panel in `.artifacts/apps-panel.png`. The image shows guestbook current at v4, versions v1–v5, rollback/activate controls, SHA metadata, iframe area, and recent logs.
 
 ## Verification summaries
 
-- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 4 files / 10 tests.
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 10 files / 31 tests.
 - `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
 - `pnpm --dir packages/workspace exec vitest run src/server/__tests__/bootstrapServer.test.ts --no-file-parallelism`: **PASS**, 40 tests.
-- Workspace full test attempt: **2323 passed, 11 skipped, 2 unrelated failures** (missing pnpm-linked `@hachej/boring-bi-dashboard`; an async chat-loading timing test). See console run; neither failure touches this change.
-- Playground `dev` full dependency build: **BLOCKED by pre-existing `@hachej/boring-core` Fastify declaration incompatibilities**. Required affected packages were built individually and `dev:app` completed; the live run above used that real server.
-- `pnpm typecheck`: **BLOCKED by unrelated existing `plugins/generated-pane` TS2883 portable declaration errors**; full output saved in `typecheck.log`.
+- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, including credential non-disclosure and failed-migration HTTP status/storage checks.
+- `pnpm typecheck:changed`: **BLOCKED before typecheck by the existing `plugins/generated-pane` TS2883 declaration-build errors**.
+- `pnpm test:changed`: **BLOCKED before tests by the same existing `plugins/generated-pane` TS2883 declaration-build errors**.
+- `git diff --check` in both repositories: **PASS**.
 
 ## Owner ruling needed
 

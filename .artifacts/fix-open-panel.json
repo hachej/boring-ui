@@ -1,0 +1,139 @@
+{
+  "prompt": "Open the Apps panel focused on guestbook now.",
+  "status": "idle",
+  "messages": [
+    {
+      "id": "601d3980",
+      "createdAt": "2026-09-17T17:25:15.796Z",
+      "piEntryId": "601d3980",
+      "role": "user",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "601d3980:text:0",
+          "text": "Open the Apps panel focused on guestbook now."
+        }
+      ]
+    },
+    {
+      "id": "de383f30",
+      "createdAt": "2026-09-17T17:25:15.860Z",
+      "piEntryId": "de383f30",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "reasoning",
+          "id": "de383f30:reasoning:0",
+          "text": "**Executing UI openSurface**",
+          "state": "done"
+        },
+        {
+          "type": "tool-call",
+          "id": "call_Cwq4GYNqw6if6tIFIqS7LKed|fc_0e3bfd0172bb8df6016aac227ff16087d2a6c20c84e3913b21",
+          "toolName": "exec_ui",
+          "input": {
+            "kind": "openSurface",
+            "params": {
+              "kind": "app-runner",
+              "target": "guestbook"
+            }
+          },
+          "state": "output-available",
+          "output": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"seq\":2,\"status\":\"ok\",\"uiState\":{\"v\":1,\"drawerOpen\":true,\"workbenchOpen\":false,\"openTabs\":[],\"activeTab\":null,\"activeFile\":null,\"availablePanels\":[\"chat\",\"session-list\",\"workbench-left\",\"artifact-surface\",\"empty-file-panel\",\"code-editor\",\"csv-viewer\",\"markdown-editor\",\"image-viewer\",\"pdf-viewer\",\"html-viewer\",\"url-pane.panel\",\"ask-user.questions\",\"deck\",\"diagram.panel\",\"app-runner.panel\"],\"availableSurfaces\":[{\"id\":\"filesystem-path\",\"kind\":\"workspace.open.path\",\"source\":\"builtin\",\"pluginId\":\"filesystem\"},{\"id\":\"ask-user.surface\",\"kind\":\"questions\",\"source\":\"builtin\",\"pluginId\":\"ask-user\"},{\"id\":\"deck.open-path\",\"kind\":\"workspace.open.path\",\"source\":\"app\",\"pluginId\":\"deck\"},{\"id\":\"diagram.open-file\",\"kind\":\"workspace.open.path\",\"source\":\"plugin\",\"pluginId\":\"diagram\"},{\"id\":\"app-runner.open-app\",\"kind\":\"app-runner\",\"title\":\"Open published app\",\"description\":\"Open the Apps panel focused on a published workspace app.\",\"targetHint\":\"<appName>\",\"source\":\"app\",\"pluginId\":\"app-runner\"}],\"questions.pending\":{\"hint\":null,\"hintsBySession\":{}}}}"
+              }
+            ],
+            "details": {
+              "seq": 2,
+              "status": "ok",
+              "uiState": {
+                "v": 1,
+                "drawerOpen": true,
+                "workbenchOpen": false,
+                "openTabs": [],
+                "activeTab": null,
+                "activeFile": null,
+                "availablePanels": [
+                  "chat",
+                  "session-list",
+                  "workbench-left",
+                  "artifact-surface",
+                  "empty-file-panel",
+                  "code-editor",
+                  "csv-viewer",
+                  "markdown-editor",
+                  "image-viewer",
+                  "pdf-viewer",
+                  "html-viewer",
+                  "url-pane.panel",
+                  "ask-user.questions",
+                  "deck",
+                  "diagram.panel",
+                  "app-runner.panel"
+                ],
+                "availableSurfaces": [
+                  {
+                    "id": "filesystem-path",
+                    "kind": "workspace.open.path",
+                    "source": "builtin",
+                    "pluginId": "filesystem"
+                  },
+                  {
+                    "id": "ask-user.surface",
+                    "kind": "questions",
+                    "source": "builtin",
+                    "pluginId": "ask-user"
+                  },
+                  {
+                    "id": "deck.open-path",
+                    "kind": "workspace.open.path",
+                    "source": "app",
+                    "pluginId": "deck"
+                  },
+                  {
+                    "id": "diagram.open-file",
+                    "kind": "workspace.open.path",
+                    "source": "plugin",
+                    "pluginId": "diagram"
+                  },
+                  {
+                    "id": "app-runner.open-app",
+                    "kind": "app-runner",
+                    "title": "Open published app",
+                    "description": "Open the Apps panel focused on a published workspace app.",
+                    "targetHint": "<appName>",
+                    "source": "app",
+                    "pluginId": "app-runner"
+                  }
+                ],
+                "questions.pending": {
+                  "hint": null,
+                  "hintsBySession": {}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "13cd059b",
+      "createdAt": "2026-09-17T17:25:20.664Z",
+      "piEntryId": "13cd059b",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "13cd059b:text:0",
+          "text": "Opened the Apps panel focused on **guestbook**."
+        }
+      ]
+    }
+  ]
+}
