@@ -7,6 +7,7 @@ import { FileAppRunnerStore, type AppRunnerStore } from "./appRunnerStore"
 import { appRunnerRoutes } from "./appRunnerRoutes"
 import { createAppRunnerTools } from "./createAppRunnerTools"
 import { createPublishedToolsProvider } from "./createPublishedTools"
+import { createPublishedProfilePromptProvider } from "./createPublishedProfilePrompt"
 
 export type AppRunnerServerPluginOptions = {
   workspaceRoot: string
@@ -27,13 +28,14 @@ export function createAppRunnerServerPlugin(options: AppRunnerServerPluginOption
     id: APP_RUNNER_PLUGIN_ID,
     label: "Apps",
     systemPrompt: [
-      "An \"app\" is the app/ folder in the workspace: index.js (an ES module, Cloudflare-Worker-style, exporting a `fetch(request, env, ctx)` handler — env.APPDATA is an RPC-based data store, env.IDENTITY is the current user) plus index.html and any static assets it needs.",
-      "Call publish_app to deploy the app/ folder and get back a live URL. Use list_app_versions, rollback_app, and activate_app_version to manage published versions. Use get_app_logs and get_app_usage to check on a published app.",
-      "An optional app/tools.json manifest ({ tools: [{ name, description, input, route }], bindings }) lets an app expose its own callable tools; they're auto-registered after publish and callable with call_app_tool.",
+      "Apps live under apps/<name>/ and profiles live under profile/. Published index.js receives env.db and the current user in the x-app-user request header.",
+      "Call publish_app to deploy an app and publish_profile to deploy instructions and profile tools. Use list_app_versions, rollback_app, undo_profile, and activate_app_version to manage published versions. Use get_app_logs and get_app_usage to check a published app.",
+      "Only tools in the current published manifest are mounted as native tools. Draft tools.json edits do not change the agent until publish.",
       "After publishing, call exec_ui with { kind: 'openSurface', params: { kind: 'app-runner', target: '<appName>' } } to open the Apps panel focused on that app.",
     ].join("\n"),
     agentTools: createAppRunnerTools({ workspaceRoot: options.workspaceRoot, client, store }),
     agentToolsDynamic: createPublishedToolsProvider({ client, store }),
+    systemPromptDynamic: createPublishedProfilePromptProvider({ client, store }),
     routes,
   })
 }

@@ -634,7 +634,7 @@ export interface AgentSpecPluginArtifactProjection {
   readonly runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: Pick<
     WorkspaceAgentCreateOptions,
-    "extraTools" | "extraToolsDynamic" | "systemPromptAppend" | "pi"
+    "extraTools" | "extraToolsDynamic" | "systemPromptAppend" | "systemPromptDynamic" | "pi"
   >
   readonly onSessionDelete?: (input: {
     readonly workspaceScopeId: string
@@ -941,6 +941,11 @@ export function projectAgentSpecPluginArtifacts(
   const extraToolsDynamic = projected.agentToolsDynamic.length > 0
     ? async () => (await Promise.all(projected.agentToolsDynamic.map((provider) => provider()))).flat()
     : undefined
+  const systemPromptDynamic = projected.systemPromptDynamic.length > 0
+    ? async () => (await Promise.all(projected.systemPromptDynamic.map((provider) => provider())))
+        .filter((value): value is string => Boolean(value?.trim()))
+        .join("\n\n") || undefined
+    : undefined
   const deleteContributions = projected.agentSessionDeleteContributions
   return {
     artifacts: selected,
@@ -949,6 +954,7 @@ export function projectAgentSpecPluginArtifacts(
       extraTools: agentTools,
       extraToolsDynamic,
       systemPromptAppend: projected.systemPromptAppend || undefined,
+      systemPromptDynamic,
       pi: {
         packages: projected.piPackages,
         extensionPaths: projected.extensionPaths,
@@ -2029,7 +2035,7 @@ export async function createWorkspaceAgentServer(
             }
           }
         : undefined
-      const baseDynamicPrompt = opts.systemPromptDynamic
+      const baseDynamicPrompt = contribution.agentOptions.systemPromptDynamic ?? opts.systemPromptDynamic
       const loadSystemPromptAppend = baseDynamicPrompt || getHotReloadableResources || getEffectivePackageResourceSnapshot()
         ? async () => mergePromptContents([
             await baseDynamicPrompt?.(),

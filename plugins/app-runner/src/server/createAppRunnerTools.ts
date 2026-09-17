@@ -108,6 +108,72 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
   }
 }
 
+export function createPublishProfileTool(options: AppRunnerToolsOptions): AgentTool {
+  return {
+    name: "publish_profile",
+    description: "Publish the workspace profile/ folder and activate its instructions and tools.",
+    parameters: {
+      type: "object",
+      properties: { message: { type: "string", description: "Publish message shown in version history." } },
+      additionalProperties: false,
+    },
+    async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+      const name = "profile"
+      const message = typeof params.message === "string" && params.message.trim() ? params.message.trim() : "Publish profile"
+      const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
+      const identity = identityFromToolContext(ctx)
+      try {
+        const sha = await commitPublishedFolder(options.workspaceRoot, "profile", message)
+        const { files } = await collectAppFiles(options.workspaceRoot, "profile")
+        const published = await options.client.publish(workspaceId, name, files, identity, { kind: "profile", message, sha })
+        const current = await options.client.current(workspaceId, name, identity)
+        await options.store.upsertApp({
+          appName: name,
+          workspaceId,
+          kind: "profile",
+          version: current.version,
+          sha: current.sha,
+          url: published.url,
+          updatedAt: new Date().toISOString(),
+          toolManifest: current.manifest,
+        })
+        return textResult(`Published profile version ${current.version}.`)
+      } catch (error) {
+        return errorResult("publish_profile failed", error)
+      }
+    },
+  }
+}
+
+export function createUndoProfileTool(options: AppRunnerToolsOptions): AgentTool {
+  return {
+    name: "undo_profile",
+    description: "Roll the published profile back to its previous version.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute(_params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+      const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
+      const identity = identityFromToolContext(ctx)
+      try {
+        await options.client.rollback(workspaceId, "profile", identity)
+        const current = await options.client.current(workspaceId, "profile", identity)
+        await options.store.upsertApp({
+          appName: "profile",
+          workspaceId,
+          kind: "profile",
+          version: current.version,
+          sha: current.sha,
+          url: options.client.publicAppUrl(workspaceId, "profile"),
+          updatedAt: new Date().toISOString(),
+          toolManifest: current.manifest,
+        })
+        return textResult(`Restored profile version ${current.version}.`)
+      } catch (error) {
+        return errorResult("undo_profile failed", error)
+      }
+    },
+  }
+}
+
 export function createListAppVersionsTool(options: AppRunnerToolsOptions): AgentTool {
   return {
     name: "list_app_versions",
@@ -324,6 +390,8 @@ export function createCallAppToolTool(options: AppRunnerToolsOptions): AgentTool
 export function createAppRunnerTools(options: AppRunnerToolsOptions): AgentTool[] {
   return [
     createPublishAppTool(options),
+    createPublishProfileTool(options),
+    createUndoProfileTool(options),
     createListAppVersionsTool(options),
     createRollbackAppTool(options),
     createActivateAppVersionTool(options),

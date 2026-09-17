@@ -68,6 +68,7 @@ export type WorkspaceAgentSessionDeleteContribution = {
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
+  systemPromptDynamic: Array<NonNullable<WorkspaceServerPlugin["systemPromptDynamic"]>>
   piPackages: WorkspacePiPackageSource[]
   extensionPaths: string[]
   agentTools: AgentTool[]
@@ -120,6 +121,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.systemPrompt && p.systemPrompt.trim())
     .map((p) => p.systemPrompt!.trim())
     .join("\n\n")
+  const systemPromptDynamic = finalPlugins.flatMap((plugin) => plugin.systemPromptDynamic ? [plugin.systemPromptDynamic] : [])
 
   const piPackages = compactPiPackages(finalPlugins.flatMap((plugin) => plugin.piPackages ?? []))
 
@@ -158,6 +160,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
   return {
     registered: finalPlugins.map((p) => p.id),
     systemPromptAppend,
+    systemPromptDynamic,
     piPackages,
     extensionPaths,
     agentTools,

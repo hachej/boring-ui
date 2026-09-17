@@ -79,6 +79,8 @@ export interface WorkspaceServerPlugin {
    */
   extensionPaths?: string[]
   systemPrompt?: string
+  /** Trusted host prompt source refreshed before every model turn. */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
   skills?: PluginSkillSource[]
   /** Installed package resources admitted by this trusted server plugin. */
   packageResources?: WorkspacePackageResourceContribution[]
@@ -339,6 +341,9 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.systemPrompt !== undefined && typeof plugin.systemPrompt !== "string") {
     fail(plugin.id, "systemPrompt must be a string when provided")
+  }
+  if (plugin.systemPromptDynamic !== undefined && typeof plugin.systemPromptDynamic !== "function") {
+    fail(plugin.id, "systemPromptDynamic must be a function when provided")
   }
   if (plugin.agentConfigContract !== undefined) {
     if (
