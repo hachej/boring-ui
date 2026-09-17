@@ -112,7 +112,7 @@ export async function startPlaygroundServer(): Promise<void> {
         },
         ...scriptedCapabilityPlugins,
       ],
-      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
+      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram", "@hachej/boring-app-runner"],
       getFilesystemBindings: multiFilesystemPlayground
         ? async () => [{
             filesystem: "company_context",

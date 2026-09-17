@@ -6,6 +6,7 @@ import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
+import { createAppRunnerPlugin } from "@hachej/boring-app-runner/front"
 import { SHOWCASE_SESSION_ID } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
 import { PLAYGROUND_SHOWCASE_SESSION_ROUTE } from "../shared/showcaseSession"
@@ -119,7 +120,8 @@ const playgroundDeckPlugin = createDeckPlugin({
 
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const tasksPlugin = createTasksPlugin()
-const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
+const appRunnerPlugin = createAppRunnerPlugin()
+const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin, appRunnerPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {

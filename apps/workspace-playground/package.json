@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build && pnpm --filter @hachej/boring-app-runner build",
     "dev": "pnpm run build:deps && pnpm run dev:app",
     "dev:app": "vite",
     "dev:multiagent": "VITE_BORING_FACTORY_AGENTS=1 pnpm run dev",
@@ -30,7 +30,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "@hachej/boring-data-explorer": "workspace:*",
-    "@hachej/boring-data-catalog": "workspace:*"
+    "@hachej/boring-data-catalog": "workspace:*",
+    "@hachej/boring-app-runner": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
