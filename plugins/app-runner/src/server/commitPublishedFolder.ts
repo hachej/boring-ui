@@ -76,7 +76,10 @@ function isInside(parent: string, child: string): boolean {
 export async function resolvePublishGitContext(
   workspaceRoot: string,
   dir: string,
-  metadataRoot = process.env.BORING_APP_RUNNER_GIT_ROOT ?? join(tmpdir(), "boring-app-runner-git"),
+  metadataRoot = process.env.BORING_APP_RUNNER_GIT_ROOT
+    ?? (process.env.BORING_AGENT_SESSION_ROOT
+      ? join(process.env.BORING_AGENT_SESSION_ROOT, "app-runner-git")
+      : join(tmpdir(), "boring-app-runner-git")),
 ): Promise<PublishGitContext> {
   const workspace = await realpath(workspaceRoot)
   const workTree = await resolvePublishedFolder(workspace, dir)
