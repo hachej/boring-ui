@@ -34,7 +34,7 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
     const groups = await Promise.all(records.map(async (record) => {
       let current: AppRunnerCurrent
       try {
-        current = await options.client.current(workspaceId, record.appName, identity)
+        current = await options.client.current(workspaceId, record.appName, identity, context?.abortSignal)
       } catch {
         return []
       }
@@ -58,7 +58,7 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
             if (record.kind === "profile" && record.ownerUserId !== executingIdentity.id) {
               return result(`Published tool ${entry.name} refused: profile owner does not match the acting user.`, true)
             }
-            const latest = await options.client.current(executingWorkspaceId, record.appName, executingIdentity)
+            const latest = await options.client.current(executingWorkspaceId, record.appName, executingIdentity, ctx.abortSignal)
             if (latest.version !== current.version || latest.sha !== current.sha || latest.kind !== current.kind) {
               return result(
                 `Published tool ${entry.name} is stale because ${record.appName} changed from version ${current.version} to ${latest.version}. Re-read the current tool inventory before calling it.`,
@@ -71,6 +71,7 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
               entry.name,
               params,
               executingIdentity,
+              ctx.abortSignal,
             )
             return result(value)
           } catch (error) {

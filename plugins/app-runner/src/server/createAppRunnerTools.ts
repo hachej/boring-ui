@@ -45,9 +45,10 @@ async function refreshStoredManifest(
   version: number,
   identity: AppRunnerIdentity,
   fallback?: AppRunnerToolManifest,
+  signal?: AbortSignal,
 ): Promise<AppRunnerToolManifest | undefined> {
   try {
-    const versionFiles = await options.client.versionFiles(workspaceId, appName, version, identity)
+    const versionFiles = await options.client.versionFiles(workspaceId, appName, version, identity, signal)
     return manifestFromVersionFiles(versionFiles) ?? fallback
   } catch {
     return fallback
@@ -85,11 +86,11 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
           kind: "app",
           message: publishMessage,
           sha,
-        })
+        }, ctx.abortSignal)
         if (!result.activated) {
           return textResult(`publish_app stored version ${result.version} but activation failed: ${result.activationError || "migration or activation failed"}`, true)
         }
-        const current = await options.client.current(workspaceId, appName, identity)
+        const current = await options.client.current(workspaceId, appName, identity, ctx.abortSignal)
         const toolManifest = current.manifest
         await options.store.upsertApp({
           appName,
@@ -129,11 +130,11 @@ export function createPublishProfileTool(options: AppRunnerToolsOptions): AgentT
       try {
         const sha = await commitPublishedFolder(options.workspaceRoot, "profile", message)
         const { files } = await collectAppFiles(options.workspaceRoot, "profile", sha)
-        const published = await options.client.publish(workspaceId, name, files, identity, { kind: "profile", message, sha })
+        const published = await options.client.publish(workspaceId, name, files, identity, { kind: "profile", message, sha }, ctx.abortSignal)
         if (!published.activated) {
           return textResult(`publish_profile stored version ${published.version} but activation failed: ${published.activationError || "migration or activation failed"}`, true)
         }
-        const current = await options.client.current(workspaceId, name, identity)
+        const current = await options.client.current(workspaceId, name, identity, ctx.abortSignal)
         await options.store.upsertApp({
           appName: name,
           workspaceId,
@@ -163,8 +164,8 @@ export function createUndoProfileTool(options: AppRunnerToolsOptions): AgentTool
       const identity = identityFromToolContext(ctx)
       const name = profileAppName(identity.id)
       try {
-        await options.client.rollback(workspaceId, name, identity)
-        const current = await options.client.current(workspaceId, name, identity)
+        await options.client.rollback(workspaceId, name, identity, ctx.abortSignal)
+        const current = await options.client.current(workspaceId, name, identity, ctx.abortSignal)
         await options.store.upsertApp({
           appName: name,
           workspaceId,
@@ -201,7 +202,7 @@ export function createListAppVersionsTool(options: AppRunnerToolsOptions): Agent
       if (!appName) return textResult("list_app_versions requires a non-empty appName.", true)
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       try {
-        const versions = await options.client.listVersions(workspaceId, appName, identityFromToolContext(ctx))
+        const versions = await options.client.listVersions(workspaceId, appName, identityFromToolContext(ctx), ctx.abortSignal)
         return { content: [{ type: "text", text: JSON.stringify(versions) }], details: versions }
       } catch (error) {
         return errorResult(`list_app_versions failed for "${appName}"`, error)
@@ -228,11 +229,11 @@ export function createRollbackAppTool(options: AppRunnerToolsOptions): AgentTool
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       const identity = identityFromToolContext(ctx)
       try {
-        await options.client.rollback(workspaceId, appName, identity)
-        const versions = await options.client.listVersions(workspaceId, appName, identity)
+        await options.client.rollback(workspaceId, appName, identity, ctx.abortSignal)
+        const versions = await options.client.listVersions(workspaceId, appName, identity, ctx.abortSignal)
         const current = versions.find((entry) => entry.current)
         if (current) {
-          const toolManifest = await refreshStoredManifest(options, workspaceId, appName, current.version, identity)
+          const toolManifest = await refreshStoredManifest(options, workspaceId, appName, current.version, identity, undefined, ctx.abortSignal)
           await options.store.upsertApp({
             appName,
             workspaceId,
@@ -275,9 +276,9 @@ export function createActivateAppVersionTool(options: AppRunnerToolsOptions): Ag
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       const identity = identityFromToolContext(ctx)
       try {
-        await options.client.activate(workspaceId, appName, version, identity)
-        const toolManifest = await refreshStoredManifest(options, workspaceId, appName, version, identity)
-        const current = await options.client.current(workspaceId, appName, identity)
+        await options.client.activate(workspaceId, appName, version, identity, ctx.abortSignal)
+        const toolManifest = await refreshStoredManifest(options, workspaceId, appName, version, identity, undefined, ctx.abortSignal)
+        const current = await options.client.current(workspaceId, appName, identity, ctx.abortSignal)
         await options.store.upsertApp({
           appName,
           workspaceId,
@@ -313,7 +314,7 @@ export function createGetAppLogsTool(options: AppRunnerToolsOptions): AgentTool 
       if (!appName) return textResult("get_app_logs requires a non-empty appName.", true)
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       try {
-        const logs = await options.client.logs(workspaceId, appName, identityFromToolContext(ctx))
+        const logs = await options.client.logs(workspaceId, appName, identityFromToolContext(ctx), ctx.abortSignal)
         return { content: [{ type: "text", text: JSON.stringify(logs) }], details: logs }
       } catch (error) {
         return errorResult(`get_app_logs failed for "${appName}"`, error)
@@ -339,7 +340,7 @@ export function createGetAppUsageTool(options: AppRunnerToolsOptions): AgentTool
       if (!appName) return textResult("get_app_usage requires a non-empty appName.", true)
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       try {
-        const usage = await options.client.usage(workspaceId, appName, identityFromToolContext(ctx))
+        const usage = await options.client.usage(workspaceId, appName, identityFromToolContext(ctx), ctx.abortSignal)
         return { content: [{ type: "text", text: JSON.stringify(usage) }], details: usage }
       } catch (error) {
         return errorResult(`get_app_usage failed for "${appName}"`, error)
@@ -388,7 +389,7 @@ export function createCallAppToolTool(options: AppRunnerToolsOptions): AgentTool
       }
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       try {
-        const result = await options.client.callTool(workspaceId, appName, toolName, params.input ?? {}, identityFromToolContext(ctx))
+        const result = await options.client.callTool(workspaceId, appName, toolName, params.input ?? {}, identityFromToolContext(ctx), ctx.abortSignal)
         return { content: [{ type: "text", text: JSON.stringify(result) }], details: result }
       } catch (error) {
         return errorResult(`call_app_tool failed for "${appName}.${toolName}"`, error)

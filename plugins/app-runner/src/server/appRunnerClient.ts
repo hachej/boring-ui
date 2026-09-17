@@ -30,6 +30,7 @@ export interface AppRunnerClientOptions {
   token?: string
   authSecret?: string
   fetchImpl?: typeof fetch
+  timeoutMs?: number
 }
 
 /**
@@ -44,12 +45,14 @@ export class AppRunnerClient {
   private readonly token: string | undefined
   private readonly authSecret: string | undefined
   private readonly fetchImpl: typeof fetch
+  private readonly timeoutMs: number
 
   constructor(options: AppRunnerClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? process.env.BORING_APP_RUNNER_URL ?? "http://127.0.0.1:9877").replace(/\/+$/, "")
     this.token = options.token ?? process.env.BORING_APP_RUNNER_TOKEN
     this.authSecret = options.authSecret ?? process.env.BORING_APP_RUNNER_AUTH_SECRET
     this.fetchImpl = options.fetchImpl ?? fetch
+    this.timeoutMs = options.timeoutMs ?? 15_000
   }
 
   /** Internal runner app id (`{workspaceId}--{app}`), not part of the URL scheme. */
@@ -75,6 +78,7 @@ export class AppRunnerClient {
     files: Record<string, string>,
     identity: AppRunnerIdentity,
     input: { kind: AppRunnerKind; message: string; sha: string },
+    signal?: AbortSignal,
   ): Promise<AppRunnerPublishResponse> {
     return this.request<AppRunnerPublishResponse>(
       "POST",
@@ -82,36 +86,37 @@ export class AppRunnerClient {
       identity,
       workspaceId,
       { files, ...input },
+      signal,
     )
   }
 
-  async rollback(workspaceId: string, appName: string, identity: AppRunnerIdentity): Promise<unknown> {
-    return this.request("POST", `${this.appPath(workspaceId, appName)}/rollback`, identity, workspaceId)
+  async rollback(workspaceId: string, appName: string, identity: AppRunnerIdentity, signal?: AbortSignal): Promise<unknown> {
+    return this.request("POST", `${this.appPath(workspaceId, appName)}/rollback`, identity, workspaceId, undefined, signal)
   }
 
-  async activate(workspaceId: string, appName: string, version: number, identity: AppRunnerIdentity): Promise<unknown> {
-    return this.request("POST", `${this.appPath(workspaceId, appName)}/activate`, identity, workspaceId, { version })
+  async activate(workspaceId: string, appName: string, version: number, identity: AppRunnerIdentity, signal?: AbortSignal): Promise<unknown> {
+    return this.request("POST", `${this.appPath(workspaceId, appName)}/activate`, identity, workspaceId, { version }, signal)
   }
 
-  async listVersions(workspaceId: string, appName: string, identity: AppRunnerIdentity): Promise<AppRunnerVersion[]> {
-    const response = await this.request<{ versions: AppRunnerVersion[] }>("GET", `${this.appPath(workspaceId, appName)}/versions`, identity, workspaceId)
+  async listVersions(workspaceId: string, appName: string, identity: AppRunnerIdentity, signal?: AbortSignal): Promise<AppRunnerVersion[]> {
+    const response = await this.request<{ versions: AppRunnerVersion[] }>("GET", `${this.appPath(workspaceId, appName)}/versions`, identity, workspaceId, undefined, signal)
     return response.versions
   }
 
-  async current(workspaceId: string, name: string, identity: AppRunnerIdentity): Promise<AppRunnerCurrent> {
-    return this.request("GET", `${this.appPath(workspaceId, name)}/current`, identity, workspaceId)
+  async current(workspaceId: string, name: string, identity: AppRunnerIdentity, signal?: AbortSignal): Promise<AppRunnerCurrent> {
+    return this.request("GET", `${this.appPath(workspaceId, name)}/current`, identity, workspaceId, undefined, signal)
   }
 
-  async manifest(workspaceId: string, name: string, identity: AppRunnerIdentity): Promise<{ version: number; kind: AppRunnerKind; manifest: AppRunnerToolManifest }> {
-    return this.request("GET", `${this.appPath(workspaceId, name)}/manifest`, identity, workspaceId)
+  async manifest(workspaceId: string, name: string, identity: AppRunnerIdentity, signal?: AbortSignal): Promise<{ version: number; kind: AppRunnerKind; manifest: AppRunnerToolManifest }> {
+    return this.request("GET", `${this.appPath(workspaceId, name)}/manifest`, identity, workspaceId, undefined, signal)
   }
 
-  async logs(workspaceId: string, appName: string, identity: AppRunnerIdentity): Promise<AppRunnerLogsResponse> {
-    return this.request<AppRunnerLogsResponse>("GET", `${this.appPath(workspaceId, appName)}/logs`, identity, workspaceId)
+  async logs(workspaceId: string, appName: string, identity: AppRunnerIdentity, signal?: AbortSignal): Promise<AppRunnerLogsResponse> {
+    return this.request<AppRunnerLogsResponse>("GET", `${this.appPath(workspaceId, appName)}/logs`, identity, workspaceId, undefined, signal)
   }
 
-  async usage(workspaceId: string, appName: string, identity: AppRunnerIdentity): Promise<AppRunnerUsageResponse> {
-    return this.request<AppRunnerUsageResponse>("GET", `${this.appPath(workspaceId, appName)}/usage`, identity, workspaceId)
+  async usage(workspaceId: string, appName: string, identity: AppRunnerIdentity, signal?: AbortSignal): Promise<AppRunnerUsageResponse> {
+    return this.request<AppRunnerUsageResponse>("GET", `${this.appPath(workspaceId, appName)}/usage`, identity, workspaceId, undefined, signal)
   }
 
   /** `GET /w/{ws}/{app}/versions/{n}/files` — deployed source + manifest for one version. */
@@ -120,12 +125,15 @@ export class AppRunnerClient {
     appName: string,
     version: number,
     identity: AppRunnerIdentity,
+    signal?: AbortSignal,
   ): Promise<{ files?: Record<string, string>; manifest?: unknown }> {
     return this.request(
       "GET",
       `${this.appPath(workspaceId, appName)}/versions/${version}/files`,
       identity,
       workspaceId,
+      undefined,
+      signal,
     )
   }
 
@@ -135,8 +143,9 @@ export class AppRunnerClient {
     toolName: string,
     input: unknown,
     identity: AppRunnerIdentity,
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.request("POST", `${this.appPath(workspaceId, appName)}/tools/${encodeURIComponent(toolName)}`, identity, workspaceId, input)
+    return this.request("POST", `${this.appPath(workspaceId, appName)}/tools/${encodeURIComponent(toolName)}`, identity, workspaceId, input, signal)
   }
 
   /** Credentials used only for runner control-plane and tool requests. */
@@ -158,10 +167,9 @@ export class AppRunnerClient {
   }
 
   async fetchServing(path: string, identity: AppRunnerIdentity, workspaceId: string, signal?: AbortSignal): Promise<Response> {
-    return this.fetchImpl(`${this.baseUrl}${path}`, {
+    return this.fetchWithDeadline(`${this.baseUrl}${path}`, {
       headers: this.servingHeaders(identity, workspaceId),
-      signal,
-    })
+    }, signal)
   }
 
   get base(): string {
@@ -174,19 +182,34 @@ export class AppRunnerClient {
     identity: AppRunnerIdentity,
     workspaceId: string,
     body?: unknown,
+    signal?: AbortSignal,
   ): Promise<T> {
     const headers = this.authHeaders(identity, workspaceId)
     if (body !== undefined) headers["Content-Type"] = "application/json"
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+    const response = await this.fetchWithDeadline(`${this.baseUrl}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
-    })
+    }, signal)
     if (!response.ok) {
       const text = await response.text().catch(() => "")
       throw new AppRunnerHttpError(response.status, text || `app runner request failed with status ${response.status}`)
     }
     if (response.status === 204) return undefined as T
     return (await response.json()) as T
+  }
+
+  private async fetchWithDeadline(url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
+    signal?.throwIfAborted()
+    const controller = new AbortController()
+    const abort = () => controller.abort(signal?.reason)
+    signal?.addEventListener("abort", abort, { once: true })
+    const timeout = setTimeout(() => controller.abort(new Error(`app runner request timed out after ${this.timeoutMs}ms`)), this.timeoutMs)
+    try {
+      return await this.fetchImpl(url, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timeout)
+      signal?.removeEventListener("abort", abort)
+    }
   }
 }

@@ -19,7 +19,7 @@ export function createPublishedProfilePromptProvider(options: {
       record.kind === "profile" && record.workspaceId === workspaceId && record.ownerUserId === identity.id,
     )
     if (!profile) return undefined
-    const current = await options.client.current(workspaceId, profile.appName, identity)
+    const current = await options.client.current(workspaceId, profile.appName, identity, context?.abortSignal)
     const cacheKey = `${workspaceId}:${identity.id}`
     let cached = cache.get(cacheKey)
     if (!cached || current.version !== cached.version) {
