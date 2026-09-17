@@ -13,5 +13,7 @@ const opened = await page.evaluate(async () => {
 })
 if (!opened) throw new Error('failed to post Apps panel command')
 await page.getByTestId('app-runner-metadata').waitFor({ timeout: 30000 })
+await page.locator('iframe').waitFor({ state: 'visible', timeout: 30000 })
+await page.waitForTimeout(5000)
 await page.screenshot({ path: '/home/ubuntu/projects/boring-ui-v2/.worktrees/app-runner-plugin/.artifacts/apps-panel.png', fullPage: true })
 await browser.close()
