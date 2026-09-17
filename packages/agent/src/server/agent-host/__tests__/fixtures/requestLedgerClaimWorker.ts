@@ -41,10 +41,10 @@ async function workerMain(input: ClaimWorkerInput): Promise<void> {
     const claim = await ledger.prepare(input.key, input.digest, accepted(input.key))
     let effectStarted = false
     if (claim.ownership === 'reclaimed') {
-      await ledger.acceptAdmission(input.key, 'parallel-admission')
-      await ledger.beginEffect(input.key)
+      await ledger.acceptAdmission(input.key, claim.claimToken, 'parallel-admission')
+      await ledger.beginEffect(input.key, claim.claimToken)
       effectStarted = true
-      await ledger.complete(input.key, { accepted: true })
+      await ledger.complete(input.key, claim.claimToken, { accepted: true })
     }
     message = { claim, effectStarted }
   } catch (error) {
@@ -74,10 +74,10 @@ async function processMain(input: ClaimProcessInput): Promise<void> {
   const claim = await ledger.prepare(input.key, input.digest, accepted(input.key), input.request)
   let effectStarted = false
   if (claim.ownership === 'created' || claim.ownership === 'reclaimed') {
-    await ledger.acceptAdmission(input.key, 'process-admission')
-    await ledger.beginEffect(input.key)
+    await ledger.acceptAdmission(input.key, claim.claimToken, 'process-admission')
+    await ledger.beginEffect(input.key, claim.claimToken)
     effectStarted = true
-    if (input.mode === 'complete') await ledger.complete(input.key, { accepted: true })
+    if (input.mode === 'complete') await ledger.complete(input.key, claim.claimToken, { accepted: true })
   }
   process.stdout.write(`${JSON.stringify({ claim, effectStarted })}\n`)
   if (input.mode === 'hold' && effectStarted) {

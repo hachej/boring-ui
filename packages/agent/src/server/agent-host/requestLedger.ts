@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
 import { cloneFrozenAcceptedWork, projectAgentRequestRunId } from './acceptedWork'
 import { canonicalDigest, canonicalJson, canonicalJsonValue } from './canonical'
@@ -58,6 +59,7 @@ function validateTarget(key: AgentRequestKey): void {
 export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   readonly durability = 'in-memory' as const
   private readonly records = new Map<string, AgentRequestLedgerRecord>()
+  private readonly claimTokens = new Map<string, string>()
 
   async prepare(
     key: AgentRequestKey,
@@ -84,8 +86,10 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
           state: 'pending-admission',
           updatedAt: Date.now(),
         }
+        const claimToken = randomUUID()
         this.records.set(id, record)
-        return { ownership: 'reclaimed', record }
+        this.claimTokens.set(id, claimToken)
+        return { ownership: 'reclaimed', claimToken, record }
       }
       return { ownership: 'existing', record: existing }
     }
@@ -97,40 +101,45 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
       state: 'pending-admission',
       updatedAt: Date.now(),
     }
+    const claimToken = randomUUID()
     this.records.set(id, record)
-    return { ownership: 'created', record }
+    this.claimTokens.set(id, claimToken)
+    return { ownership: 'created', claimToken, record }
   }
 
-  async heartbeat(key: AgentRequestKey): Promise<void> {
-    const record = this.records.get(keyString(key))
-    if (!record || !['pending-admission', 'admission-accepted', 'in-flight'].includes(record.state)) invalidTransition(record ?? ({ state: 'missing' } as never), 'heartbeat')
+  async heartbeat(key: AgentRequestKey, claimToken: string): Promise<void> {
+    const id = keyString(key)
+    const record = this.records.get(id)
+    if (!record || this.claimTokens.get(id) !== claimToken || !['pending-admission', 'admission-accepted', 'in-flight'].includes(record.state)) {
+      invalidTransition(record ?? ({ state: 'missing' } as never), 'heartbeat')
+    }
   }
 
-  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
-    this.transition(key, 'retry admission', (record) => {
+  async markAdmissionRetryable(key: AgentRequestKey, claimToken: string): Promise<void> {
+    this.transition(key, claimToken, 'retry admission', (record) => {
       if (record.state !== 'pending-admission' || record.retryable) invalidTransition(record, 'retry admission')
       return { ...safeBase(record), state: 'pending-admission', retryable: true }
-    })
+    }, true)
   }
 
-  async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
-    this.transition(key, 'accept admission', (record) => {
+  async acceptAdmission(key: AgentRequestKey, claimToken: string, admissionReceipt: string): Promise<void> {
+    this.transition(key, claimToken, 'accept admission', (record) => {
       if (record.state !== 'pending-admission' || record.retryable) invalidTransition(record, 'accept admission')
       return { ...safeBase(record), state: 'admission-accepted', admissionReceipt }
     })
   }
 
-  async beginEffect(key: AgentRequestKey): Promise<void> {
-    this.transition(key, 'begin effect', (record) => {
+  async beginEffect(key: AgentRequestKey, claimToken: string): Promise<void> {
+    this.transition(key, claimToken, 'begin effect', (record) => {
       if (record.state !== 'admission-accepted') invalidTransition(record, 'begin effect')
       return { ...safeBase(record), state: 'in-flight' }
     })
   }
 
-  async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
-    const digest = canonicalDigest({ state: 'rejected', failure } as unknown as import('../../shared/index').JsonValue)
+  async reject(key: AgentRequestKey, claimToken: string, failure: AgentRequestFailure): Promise<void> {
+    const digest = canonicalDigest({ state: 'rejected', value: failure } as unknown as import('../../shared/index').JsonValue)
     if (this.sameSettlement(key, digest)) return
-    this.transition(key, 'reject', (record) => {
+    this.transition(key, claimToken, 'reject', (record) => {
       const allowed = failure.kind === 'gateway'
         ? record.state === 'pending-admission'
           || record.state === 'admission-accepted'
@@ -138,29 +147,30 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
         : record.state === 'in-flight'
       if (!allowed) invalidTransition(record, 'reject')
       return { ...safeBase(record), state: 'rejected', failure, settlementDigest: digest }
-    })
+    }, true)
   }
 
-  async complete(key: AgentRequestKey, receipt: import('../../shared/index').JsonValue): Promise<void> {
+  async complete(key: AgentRequestKey, claimToken: string, receipt: import('../../shared/index').JsonValue): Promise<void> {
     const canonicalReceipt = canonicalJsonValue(receipt)
-    const digest = canonicalDigest({ state: 'completed', receipt: canonicalReceipt })
+    const digest = canonicalDigest({ state: 'completed', value: canonicalReceipt })
     if (this.sameSettlement(key, digest)) return
-    this.transition(key, 'complete', (record) => {
+    this.transition(key, claimToken, 'complete', (record) => {
       if (record.state !== 'in-flight') invalidTransition(record, 'complete')
       return { ...safeBase(record), state: 'completed', receipt: canonicalReceipt, settlementDigest: digest }
-    })
+    }, true)
   }
 
   async markOutcomeUnknown(
     key: AgentRequestKey,
+    claimToken: string,
     error: import('../../shared/index').AgentGatewayErrorDTO,
   ): Promise<void> {
-    const digest = canonicalDigest({ state: 'outcome-unknown', error } as unknown as import('../../shared/index').JsonValue)
+    const digest = canonicalDigest({ state: 'outcome-unknown', value: error } as unknown as import('../../shared/index').JsonValue)
     if (this.sameSettlement(key, digest)) return
-    this.transition(key, 'mark outcome unknown', (record) => {
+    this.transition(key, claimToken, 'mark outcome unknown', (record) => {
       if (record.state !== 'in-flight') invalidTransition(record, 'mark outcome unknown')
       return { ...safeBase(record), state: 'outcome-unknown', error, settlementDigest: digest }
-    })
+    }, true)
   }
 
   async read(key: AgentRequestKey): Promise<AgentRequestLedgerRecord | undefined> {
@@ -176,17 +186,20 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
 
   private transition(
     key: AgentRequestKey,
+    claimToken: string,
     operation: string,
     update: (record: AgentRequestLedgerRecord) => AgentRequestLedgerRecord,
+    release = false,
   ): void {
     const id = keyString(key)
     const record = this.records.get(id)
-    if (!record) {
+    if (!record || this.claimTokens.get(id) !== claimToken) {
       throw new AgentGatewayError(
         AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
         `request ledger cannot ${operation} before prepare`,
       )
     }
     this.records.set(id, update(record))
+    if (release) this.claimTokens.delete(id)
   }
 }

@@ -193,13 +193,13 @@ describe('Agent Host lifecycle', () => {
         await releasePrepare.promise
         return await base.prepare(key, digest, acceptedWork)
       },
-      heartbeat: (key) => base.heartbeat(key),
-      markAdmissionRetryable: (key) => base.markAdmissionRetryable(key),
-      acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
-      beginEffect: (key) => base.beginEffect(key),
-      reject: (key, failure) => base.reject(key, failure),
-      complete: (key, receipt) => base.complete(key, receipt),
-      markOutcomeUnknown: (key, error) => base.markOutcomeUnknown(key, error),
+      heartbeat: (key, token) => base.heartbeat(key, token),
+      markAdmissionRetryable: (key, token) => base.markAdmissionRetryable(key, token),
+      acceptAdmission: (key, token, receipt) => base.acceptAdmission(key, token, receipt),
+      beginEffect: (key, token) => base.beginEffect(key, token),
+      reject: (key, token, failure) => base.reject(key, token, failure),
+      complete: (key, token, receipt) => base.complete(key, token, receipt),
+      markOutcomeUnknown: (key, token, error) => base.markOutcomeUnknown(key, token, error),
       read: (key) => base.read(key),
     }
     const created = await createAgentHost({

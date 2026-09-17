@@ -123,7 +123,7 @@ export async function createEmbeddedGatewayFixture(options: { requestLedger?: Ag
     },
     startDrain() {},
     registerSubscription() { return () => {} },
-    startPreparedEffect<T>(_key: import('../types').AgentRequestKey, effect: () => Promise<T>) { return effect() },
+    startPreparedEffect<T>(_key: import('../types').AgentRequestKey, _claimToken: string, effect: () => Promise<T>) { return effect() },
     runBindingOperation<T>(_bindingKey: string, operation: () => Promise<T>) { return operation() },
     async closeRuntime() {},
   }

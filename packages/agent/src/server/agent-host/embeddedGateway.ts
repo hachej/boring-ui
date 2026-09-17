@@ -858,12 +858,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
         : {}),
     })
     const prepared = await this.runtime.ledger.prepare(key, digest, acceptedWork, payload)
+    const claimToken = prepared.ownership === 'existing' ? undefined : prepared.claimToken
     const reauthorizeOrReject = async () => {
       try {
         await reauthorize()
       } catch (error) {
-        if (error instanceof AgentGatewayError) {
-          await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+        if (error instanceof AgentGatewayError && claimToken) {
+          await this.runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
         }
         throw error
       }
@@ -889,39 +890,36 @@ export class EmbeddedAgentGateway implements AgentGateway {
         requestId,
       },
     )
-    if (prepared.ownership === 'existing') throw requestInProgress()
+    if (prepared.ownership === 'existing' || !claimToken) throw requestInProgress()
+
+    await this.runtime.ledger.heartbeat(key, claimToken)
+    const heartbeat = setInterval(() => {
+      void this.runtime.ledger.heartbeat(key, claimToken).catch(() => {})
+    }, Math.max(10, Math.floor((this.runtime.ledger.claimLeaseMs ?? 30_000) / 3)))
+    heartbeat.unref?.()
 
     let effect: Promise<JsonValue>
     try {
-      effect = this.runtime.startPreparedEffect(key, async (): Promise<JsonValue> => {
-        if (classify) await this.applyClassification(key, classify)
+      effect = this.runtime.startPreparedEffect(key, claimToken, async (): Promise<JsonValue> => {
+        if (classify) await this.applyClassification(key, claimToken, classify)
 
-        const admitted = await this.runtime.ledger.read(key)
-        let admissionReceipt = admitted?.state === 'admission-accepted' && prepared.ownership === 'reclaimed'
-          ? admitted.admissionReceipt
-          : undefined
-        if (admitted?.state === 'pending-admission') {
-          await reauthorizeOrReject()
-          const admission = await this.runtime.effectAdmission.admit({ key, digest, scope: claim, operation, target })
-          if (admission.type === 'retryable') {
-            await this.runtime.ledger.markAdmissionRetryable(key)
-            throw gatewayError(admission.error)
-          }
-          if (admission.type === 'rejected') {
-            await this.runtime.ledger.reject(key, { kind: 'gateway', error: admission.error })
-            throw gatewayError(admission.error)
-          }
-          admissionReceipt = admission.admissionReceipt
+        await reauthorizeOrReject()
+        const admission = await this.runtime.effectAdmission.admit({ key, digest, scope: claim, operation, target })
+        if (admission.type === 'retryable') {
+          await this.runtime.ledger.markAdmissionRetryable(key, claimToken)
+          throw gatewayError(admission.error)
         }
+        if (admission.type === 'rejected') {
+          await this.runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: admission.error })
+          throw gatewayError(admission.error)
+        }
+        const admissionReceipt = admission.admissionReceipt
         const runEffect = async (): Promise<JsonValue> => {
           const current = await this.runtime.ledger.read(key)
           if (current?.state === 'completed') return this.replayReceipt(current.receipt, duplicateReceipt)
           if (current?.state === 'rejected') throw this.failure(current.failure)
           if (current?.state === 'outcome-unknown') throw gatewayError(current.error)
-          if (current?.state === 'in-flight'
-            || (current?.state === 'admission-accepted' && prepared.ownership !== 'reclaimed')) {
-            throw requestInProgress()
-          }
+          if (current?.state === 'in-flight') throw requestInProgress()
           if (current?.state !== 'pending-admission' && current?.state !== 'admission-accepted') {
             throw new AgentGatewayError(
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
@@ -934,10 +932,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
               'request admission receipt was unavailable',
             )
           }
-          if (serializedClassify) await this.applyClassification(key, serializedClassify)
+          if (serializedClassify) await this.applyClassification(key, claimToken, serializedClassify)
           const retryableGuardError = await guard?.()
           if (retryableGuardError) {
-            await this.runtime.ledger.markAdmissionRetryable(key)
+            await this.runtime.ledger.markAdmissionRetryable(key, claimToken)
             throw gatewayError(retryableGuardError)
           }
           await reauthorizeOrReject()
@@ -948,19 +946,19 @@ export class EmbeddedAgentGateway implements AgentGateway {
             } catch (error) {
               if (error instanceof AgentGatewayError) {
                 if (isRetryableGatewayError(error)) {
-                  await this.runtime.ledger.markAdmissionRetryable(key)
+                  await this.runtime.ledger.markAdmissionRetryable(key, claimToken)
                 } else {
-                  await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+                  await this.runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
                 }
                 throw error
               }
-              await rejectRetryablePreflightFailure(this.runtime.ledger, key)
+              await rejectRetryablePreflightFailure(this.runtime.ledger, key, claimToken)
             }
           }
           if (current.state === 'pending-admission') {
-            await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
+            await this.runtime.ledger.acceptAdmission(key, claimToken, admissionReceipt)
           }
-          await this.runtime.ledger.beginEffect(key)
+          await this.runtime.ledger.beginEffect(key, claimToken)
           let actionResult: Promise<unknown>
           try {
             actionResult = action()
@@ -969,30 +967,24 @@ export class EmbeddedAgentGateway implements AgentGateway {
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
               'effect outcome could not be safely replayed',
             )
-            await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+            await this.runtime.ledger.markOutcomeUnknown(key, claimToken, unknown.toJSON()).catch(() => {})
             throw unknown
           }
           let receipt: JsonValue
-          const heartbeat = setInterval(() => {
-            void this.runtime.ledger.heartbeat(key).catch(() => {})
-          }, Math.max(10, Math.floor((this.runtime.ledger.claimLeaseMs ?? 30_000) / 3)))
-          heartbeat.unref?.()
           try {
             receipt = await actionResult as JsonValue
           } catch (error) {
             const safeFailure = classifySafeActionFailure?.(error)
             if (safeFailure) {
-              await this.runtime.ledger.reject(key, safeFailure)
+              await this.runtime.ledger.reject(key, claimToken, safeFailure)
               throw this.failure(safeFailure)
             }
             const unknown = new AgentGatewayError(
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
               'effect outcome could not be safely replayed',
             )
-            await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+            await this.runtime.ledger.markOutcomeUnknown(key, claimToken, unknown.toJSON()).catch(() => {})
             throw unknown
-          } finally {
-            clearInterval(heartbeat)
           }
           // Drain is an explicit Host generation fence: a late provider result
           // cannot publish, and the stable closure rejection is safe to replay.
@@ -1000,19 +992,19 @@ export class EmbeddedAgentGateway implements AgentGateway {
             this.runtime.assertOpen()
           } catch (error) {
             if (error instanceof AgentGatewayError) {
-              await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+              await this.runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
             }
             throw error
           }
           try {
-            await this.runtime.ledger.complete(key, receipt)
+            await this.runtime.ledger.complete(key, claimToken, receipt)
             return receipt
           } catch {
             const unknown = new AgentGatewayError(
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
               'effect outcome could not be safely replayed',
             )
-            await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+            await this.runtime.ledger.markOutcomeUnknown(key, claimToken, unknown.toJSON()).catch(() => {})
             throw unknown
           }
         }
@@ -1022,13 +1014,18 @@ export class EmbeddedAgentGateway implements AgentGateway {
       const closed = error instanceof AgentGatewayError
         ? error
         : new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
-      await this.runtime.ledger.reject(key, { kind: 'gateway', error: closed.toJSON() }).catch(() => {})
+      await this.runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: closed.toJSON() }).catch(() => {})
+      clearInterval(heartbeat)
       throw error
     }
-    return await effect
+    try {
+      return await effect
+    } finally {
+      clearInterval(heartbeat)
+    }
   }
 
-  private async applyClassification(key: AgentRequestKey, classify: EffectClassifier): Promise<void> {
+  private async applyClassification(key: AgentRequestKey, claimToken: string, classify: EffectClassifier): Promise<void> {
     let classification: EffectClassification
     try {
       classification = await classify()
@@ -1039,11 +1036,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
             AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
             error instanceof Error ? error.message : 'effect classification failed',
           )
-      await this.runtime.ledger.reject(key, { kind: 'gateway', error: classifiedError.toJSON() })
+      await this.runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: classifiedError.toJSON() })
       throw classifiedError
     }
     if (classification.kind === 'reject') {
-      await this.runtime.ledger.reject(key, { kind: 'gateway', error: classification.error })
+      await this.runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: classification.error })
       throw gatewayError(classification.error)
     }
   }

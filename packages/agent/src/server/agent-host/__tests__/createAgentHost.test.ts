@@ -6,7 +6,9 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
-import type { AgentRequestLedger } from '../types'
+import type { AgentRequestKey, AgentRequestLedger } from '../types'
+import { createGatewayAcceptedWorkContext } from '../acceptedWork'
+import { canonicalDigest } from '../canonical'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
@@ -420,6 +422,50 @@ describe('createAgentHost', () => {
     await expect(created.gateway.listAgents({ scope }))
       .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE })
     await created.host.close()
+  })
+
+  it('freshly rejects an expired pre-effect restart without dispatching the retained receipt', async () => {
+    const sessionRoot = await root()
+    const ledgerPath = join(sessionRoot, 'fresh-restart.sqlite')
+    let now = 0
+    const first = new SqliteAgentRequestLedger(ledgerPath, { now: () => now, claimLeaseMs: 100 })
+    const requestId = 'fresh-restart-rejection'
+    const requestKey: AgentRequestKey = {
+      workspaceScopeId: scope.workspaceScopeId,
+      authSubjectId: scope.authSubjectId,
+      operation: 'session.create',
+      target: { kind: 'agent', agentTypeId: 'alpha' },
+      requestId,
+    }
+    const payload = { agentTypeId: 'alpha', title: null, resumeSessionId: null }
+    const prepared = await first.prepare(
+      requestKey,
+      canonicalDigest(payload),
+      createGatewayAcceptedWorkContext({ key: requestKey, admittedAgentTypeId: 'alpha' }),
+      payload,
+    )
+    if (prepared.ownership === 'existing') throw new Error('expected initial ownership')
+    await first.acceptAdmission(requestKey, prepared.claimToken, 'retained-old-receipt')
+    first.close()
+    now = 101
+
+    const admit = vi.fn(async () => ({
+      type: 'rejected' as const,
+      error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED, message: 'revoked after restart' },
+    }))
+    const harnessFactory = vi.fn(createScriptedPiHarness)
+    const restarted = await createAgentHost({
+      ...options(sessionRoot),
+      requestLedger: new SqliteAgentRequestLedger(ledgerPath, { now: () => now, claimLeaseMs: 100 }),
+      effectAdmission: { admit },
+      harnessFactory,
+    })
+    await expect(restarted.gateway.createSession({ scope, agentTypeId: 'alpha', requestId })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED,
+    })
+    expect(admit).toHaveBeenCalledOnce()
+    expect(harnessFactory).not.toHaveBeenCalled()
+    await restarted.host.close()
   })
 
   it('rechecks access immediately before effect admission', async () => {

@@ -159,7 +159,7 @@ export interface AgentHostRuntime {
   startDrain(): void
   drainRuntime(): Promise<void>
   registerSubscription(close: () => void | Promise<void>): () => void
-  startPreparedEffect<T>(key: AgentRequestKey, effect: () => Promise<T>): Promise<T>
+  startPreparedEffect<T>(key: AgentRequestKey, claimToken: string, effect: () => Promise<T>): Promise<T>
   runBindingOperation<T>(bindingKey: string, operation: () => Promise<T>): Promise<T>
   closeRuntime(): Promise<void>
 }
@@ -410,7 +410,7 @@ function createRuntime(
   const bindingDisposals = new WeakMap<RuntimeBinding, Promise<void>>()
   const subscriptions = new Set<() => void | Promise<void>>()
   const subscriptionClosures = new Set<Promise<void>>()
-  const finiteEffects = new Map<Promise<unknown>, AgentRequestKey>()
+  const finiteEffects = new Map<Promise<unknown>, { key: AgentRequestKey; claimToken: string }>()
   const bindingOperationTails = new Map<string, Promise<void>>()
   const graceMs = Math.max(0, options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS)
   let draining = false
@@ -703,11 +703,11 @@ function createRuntime(
         const closed = new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
         for (const reject of [...rejectPendingBindings]) reject(closed)
         const terminalizations: Promise<void>[] = []
-        for (const key of finiteEffects.values()) {
+        for (const { key, claimToken } of finiteEffects.values()) {
           terminalizations.push((async () => {
             const record = await runtime.ledger.read(key)
             if (record?.state === 'pending-admission' || record?.state === 'admission-accepted') {
-              await runtime.ledger.reject(key, { kind: 'gateway', error: closed.toJSON() })
+              await runtime.ledger.reject(key, claimToken, { kind: 'gateway', error: closed.toJSON() })
               return
             }
             if (record?.state === 'in-flight') {
@@ -715,7 +715,7 @@ function createRuntime(
                 AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
                 'effect outcome could not be safely replayed',
               )
-              await runtime.ledger.markOutcomeUnknown(key, unknown.toJSON())
+              await runtime.ledger.markOutcomeUnknown(key, claimToken, unknown.toJSON())
             }
           })().catch(() => {}))
         }
@@ -728,7 +728,7 @@ function createRuntime(
       subscriptions.add(close)
       return () => subscriptions.delete(close)
     },
-    startPreparedEffect(key, start) {
+    startPreparedEffect(key, claimToken, start) {
       runtime.assertOpen()
       let resolveEffect!: (value: Awaited<ReturnType<typeof start>>) => void
       let rejectEffect!: (error: unknown) => void
@@ -736,7 +736,7 @@ function createRuntime(
         resolveEffect = resolve
         rejectEffect = reject
       })
-      finiteEffects.set(effect, key)
+      finiteEffects.set(effect, { key, claimToken })
       effect.finally(() => finiteEffects.delete(effect)).catch(() => {})
       try {
         Promise.resolve(start()).then(resolveEffect, rejectEffect)

@@ -14,7 +14,7 @@ import type {
 } from './types'
 
 const require = createRequire(import.meta.url)
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 const DEFAULT_CLAIM_LEASE_MS = 30_000
 const TERMINAL_STATES = ['rejected', 'completed', 'outcome-unknown'] as const
 
@@ -74,7 +74,9 @@ export interface SqliteAgentRequestLedgerOptions {
 interface ActiveRow {
   readonly record_json: string
   readonly claim_owner: string | null
+  readonly claim_token: string | null
   readonly lease_expires_at: number | null
+  readonly settlement_digest: string | null
 }
 
 /** SQLite-backed atomic ownership, durable queue material, leasing, and settlement ledger. */
@@ -85,11 +87,10 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   private readonly now: () => number
   private readonly retentionMs: number | undefined
   private readonly ownerId = randomUUID()
-  private readonly claimToken = randomUUID()
 
   constructor(path: string, options: SqliteAgentRequestLedgerOptions = {}) {
-    if (path === ':memory:' || path.trim() === '') {
-      throw new TypeError('durable request ledger requires a filesystem SQLite path')
+    if (path === ':memory:' || path.trim() === '' || /^file:/i.test(path)) {
+      throw new TypeError('durable request ledger requires a filesystem SQLite path, not a SQLite URI or memory/temp database')
     }
     if (options.retentionMs !== undefined && (!Number.isFinite(options.retentionMs) || options.retentionMs < 0)) {
       throw new TypeError('request ledger retention must be a finite non-negative duration')
@@ -104,9 +105,14 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       : Math.max(MIN_REQUEST_RETENTION_MS, options.retentionMs)
     const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
     this.database = new SqliteDatabaseSync(path)
-    this.database.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;')
-    this.migrateSchema()
-    this.immediateTransaction(() => this.recoverExpiredClaims(this.now()))
+    try {
+      this.database.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;')
+      this.migrateSchema()
+      this.immediateTransaction(() => this.recoverExpiredClaims(this.now()))
+    } catch (error) {
+      this.database.close()
+      throw error
+    }
   }
 
   async prepare(
@@ -134,6 +140,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         if (tombstone.digest !== digest) conflict('requestId was already used with a different payload')
         return { ownership: 'existing', record: tombstone.record }
       }
+      const claimToken = randomUUID()
       const record: AgentRequestLedgerRecord = {
         key: structuredClone(key),
         acceptedWork: frozenContext,
@@ -146,7 +153,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         INSERT OR IGNORE INTO agent_request_ledger
           (request_key, run_id, digest, state, record_json, updated_at, claim_owner, claim_token, lease_expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, runId, digest, record.state, JSON.stringify(record), now, this.ownerId, this.claimToken, now + this.claimLeaseMs)
+      `).run(id, runId, digest, record.state, JSON.stringify(record), now, this.ownerId, claimToken, now + this.claimLeaseMs)
       const current = this.readActiveRowSync(key)
       if (!current) conflict('request ledger ownership claim was not persisted')
       const currentRecord = this.parseRecord(current.record_json)
@@ -155,7 +162,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         && canonicalJson(currentRecord.queuedRequest) !== canonicalJson(canonicalRequest)) {
         conflict('requestId was already used with different canonical queued material')
       }
-      if (inserted.changes === 1) return { ownership: 'created', record: currentRecord }
+      if (inserted.changes === 1) return { ownership: 'created', claimToken, record: currentRecord }
 
       const reclaimable = currentRecord.state === 'pending-admission'
         ? currentRecord.retryable === true || current.lease_expires_at === null || current.lease_expires_at <= now
@@ -165,23 +172,22 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       if (!sameAcceptedWork(currentRecord.acceptedWork, frozenContext)) {
         conflict('fresh admission no longer matches retained accepted work')
       }
-      const reclaimed: AgentRequestLedgerRecord = currentRecord.state === 'pending-admission'
-        ? { ...safeBase(currentRecord, now), state: 'pending-admission' }
-        : { ...safeBase(currentRecord, now), state: 'admission-accepted', admissionReceipt: (currentRecord as Extract<AgentRequestLedgerRecord, { state: 'admission-accepted' }>).admissionReceipt }
+      const reclaimed: AgentRequestLedgerRecord = { ...safeBase(currentRecord, now), state: 'pending-admission' }
+      const replacementToken = randomUUID()
       const claimed = this.database.prepare(`
         UPDATE agent_request_ledger
         SET record_json = ?, updated_at = ?, claim_owner = ?, claim_token = ?, lease_expires_at = ?
         WHERE request_key = ? AND digest = ? AND record_json = ?
           AND (lease_expires_at IS NULL OR lease_expires_at <= ? OR state = 'pending-admission')
-      `).run(JSON.stringify(reclaimed), now, this.ownerId, this.claimToken, now + this.claimLeaseMs, id, digest, current.record_json, now)
-      if (claimed.changes === 1) return { ownership: 'reclaimed', record: reclaimed }
+      `).run(JSON.stringify(reclaimed), now, this.ownerId, replacementToken, now + this.claimLeaseMs, id, digest, current.record_json, now)
+      if (claimed.changes === 1) return { ownership: 'reclaimed', claimToken: replacementToken, record: reclaimed }
       const winner = this.readActiveSync(key)
       if (!winner) conflict('request ledger ownership claim was not persisted')
       return { ownership: 'existing', record: winner }
     })
   }
 
-  async heartbeat(key: AgentRequestKey): Promise<void> {
+  async heartbeat(key: AgentRequestKey, claimToken: string): Promise<void> {
     this.immediateTransaction(() => {
       const now = this.now()
       const result = this.database.prepare(`
@@ -189,48 +195,48 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         WHERE request_key = ? AND claim_owner = ? AND claim_token = ?
           AND state IN ('pending-admission', 'admission-accepted', 'in-flight')
           AND lease_expires_at >= ?
-      `).run(now + this.claimLeaseMs, keyString(key), this.ownerId, this.claimToken, now)
+      `).run(now + this.claimLeaseMs, keyString(key), this.ownerId, claimToken, now)
       if (result.changes !== 1) conflict('request ledger claim is stale')
     })
   }
 
-  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
-    this.transition(key, ['pending-admission'], (record) => {
+  async markAdmissionRetryable(key: AgentRequestKey, claimToken: string): Promise<void> {
+    this.transition(key, claimToken, ['pending-admission'], (record) => {
       if (record.state !== 'pending-admission' || record.retryable) conflict('request admission is already retryable')
       return { ...safeBase(record, this.now()), state: 'pending-admission', retryable: true }
     }, true)
   }
 
-  async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
-    this.transition(key, ['pending-admission'], (record) => {
+  async acceptAdmission(key: AgentRequestKey, claimToken: string, admissionReceipt: string): Promise<void> {
+    this.transition(key, claimToken, ['pending-admission'], (record) => {
       if (record.state !== 'pending-admission' || record.retryable) conflict('request admission must be claimed before accepting')
       return { ...safeBase(record, this.now()), state: 'admission-accepted', admissionReceipt }
     })
   }
 
-  async beginEffect(key: AgentRequestKey): Promise<void> {
-    this.transition(key, ['admission-accepted'], (record) => ({
+  async beginEffect(key: AgentRequestKey, claimToken: string): Promise<void> {
+    this.transition(key, claimToken, ['admission-accepted'], (record) => ({
       ...safeBase(record, this.now()), state: 'in-flight',
     }))
   }
 
-  async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
+  async reject(key: AgentRequestKey, claimToken: string, failure: AgentRequestFailure): Promise<void> {
     const value = canonicalJsonValue(failure as unknown as JsonValue)
-    this.settle(key, failure.kind === 'gateway' ? ['pending-admission', 'admission-accepted', 'in-flight'] : ['in-flight'], 'rejected', value, (record, digest) => ({
+    this.settle(key, claimToken, failure.kind === 'gateway' ? ['pending-admission', 'admission-accepted', 'in-flight'] : ['in-flight'], 'rejected', value, (record, digest) => ({
       ...safeBase(record, this.now()), state: 'rejected', failure: value as unknown as AgentRequestFailure, settlementDigest: digest,
     }))
   }
 
-  async complete(key: AgentRequestKey, receipt: JsonValue): Promise<void> {
+  async complete(key: AgentRequestKey, claimToken: string, receipt: JsonValue): Promise<void> {
     const value = canonicalJsonValue(receipt)
-    this.settle(key, ['in-flight'], 'completed', value, (record, digest) => ({
+    this.settle(key, claimToken, ['in-flight'], 'completed', value, (record, digest) => ({
       ...safeBase(record, this.now()), state: 'completed', receipt: value, settlementDigest: digest,
     }))
   }
 
-  async markOutcomeUnknown(key: AgentRequestKey, error: import('../../shared/index').AgentGatewayErrorDTO): Promise<void> {
+  async markOutcomeUnknown(key: AgentRequestKey, claimToken: string, error: import('../../shared/index').AgentGatewayErrorDTO): Promise<void> {
     const value = canonicalJsonValue(error as unknown as JsonValue)
-    this.settle(key, ['in-flight'], 'outcome-unknown', value, (record, digest) => ({
+    this.settle(key, claimToken, ['in-flight'], 'outcome-unknown', value, (record, digest) => ({
       ...safeBase(record, this.now()), state: 'outcome-unknown', error: value as unknown as import('../../shared/index').AgentGatewayErrorDTO, settlementDigest: digest,
     }))
   }
@@ -277,17 +283,31 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         ['run_id', 'TEXT'], ['claim_owner', 'TEXT'], ['claim_token', 'TEXT'], ['lease_expires_at', 'INTEGER'], ['settlement_digest', 'TEXT'],
       ])
       this.ensureColumns('agent_request_tombstones', [['settlement_digest', 'TEXT']])
-      const active = this.database.prepare('SELECT request_key, record_json FROM agent_request_ledger').all() as Array<{ request_key: string; record_json: string }>
+      const active = this.database.prepare('SELECT request_key, record_json, settlement_digest FROM agent_request_ledger').all() as Array<{
+        request_key: string
+        record_json: string
+        settlement_digest: string | null
+      }>
       for (const row of active) {
-        const decoded = JSON.parse(row.record_json) as Record<string, unknown> & { key: AgentRequestKey }
+        const decoded = JSON.parse(row.record_json) as Record<string, unknown> & { key: AgentRequestKey; state?: string; settlementDigest?: string }
         if (decoded.acceptedWork === undefined) {
           const agentTypeId = decoded.key.target.kind === 'agent' ? decoded.key.target.agentTypeId : decoded.key.target.ref.agentTypeId
           decoded.acceptedWork = createGatewayAcceptedWorkContext({ key: decoded.key, admittedAgentTypeId: agentTypeId })
         } else decoded.acceptedWork = cloneFrozenAcceptedWork(decoded.acceptedWork)
         if (decoded.queuedRequest !== undefined) decoded.queuedRequest = canonicalJsonValue(decoded.queuedRequest as JsonValue)
+        let digest = row.settlement_digest
+        if (decoded.state === 'completed' || decoded.state === 'rejected' || decoded.state === 'outcome-unknown') {
+          const value = decoded.state === 'completed' ? decoded.receipt : decoded.state === 'rejected' ? decoded.failure : decoded.error
+          const derived = settlementDigest(decoded.state, canonicalJsonValue(value as JsonValue))
+          if ((digest !== null && digest !== derived) || (decoded.settlementDigest !== undefined && decoded.settlementDigest !== derived)) {
+            throw new Error(`request ledger settlement digest mismatch for ${row.request_key}`)
+          }
+          digest = derived
+          decoded.settlementDigest = derived
+        }
         const migrated = JSON.stringify(decoded)
-        this.database.prepare('UPDATE agent_request_ledger SET record_json = ?, run_id = ? WHERE request_key = ?')
-          .run(migrated, projectAgentRequestRunId(decoded.key), row.request_key)
+        this.database.prepare('UPDATE agent_request_ledger SET record_json = ?, run_id = ?, settlement_digest = ? WHERE request_key = ?')
+          .run(migrated, projectAgentRequestRunId(decoded.key), digest, row.request_key)
       }
       const tombstones = this.database.prepare('SELECT request_key, key_json FROM agent_request_tombstones').all() as Array<{ request_key: string; key_json: string }>
       for (const row of tombstones) {
@@ -315,11 +335,25 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
 
   private recoverExpiredClaims(now: number): void {
     const rows = this.database.prepare(`
-      SELECT request_key, record_json FROM agent_request_ledger
-      WHERE state = 'in-flight' AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
-    `).all(now) as Array<{ request_key: string; record_json: string }>
+      SELECT request_key, state, record_json FROM agent_request_ledger
+      WHERE state IN ('pending-admission', 'admission-accepted', 'in-flight')
+        AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+    `).all(now) as Array<{ request_key: string; state: 'pending-admission' | 'admission-accepted' | 'in-flight'; record_json: string }>
     for (const row of rows) {
       const current = this.parseRecord(row.record_json)
+      if (row.state !== 'in-flight') {
+        const record: AgentRequestLedgerRecord = {
+          ...safeBase(current, now), state: 'pending-admission', retryable: true,
+        }
+        this.database.prepare(`
+          UPDATE agent_request_ledger
+          SET state = 'pending-admission', record_json = ?, updated_at = ?, claim_owner = NULL,
+              claim_token = NULL, lease_expires_at = NULL, settlement_digest = NULL
+          WHERE request_key = ? AND state = ? AND record_json = ?
+            AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+        `).run(JSON.stringify(record), now, row.request_key, row.state, row.record_json, now)
+        continue
+      }
       const error = {
         code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
         message: 'request claim lease expired before its effect outcome was settled',
@@ -344,7 +378,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
 
   private readActiveRowSync(key: AgentRequestKey): ActiveRow | undefined {
     return this.database.prepare(`
-      SELECT record_json, claim_owner, lease_expires_at FROM agent_request_ledger WHERE request_key = ?
+      SELECT record_json, claim_owner, claim_token, lease_expires_at, settlement_digest FROM agent_request_ledger WHERE request_key = ?
     `).get(keyString(key)) as ActiveRow | undefined
   }
 
@@ -416,6 +450,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
 
   private settle(
     key: AgentRequestKey,
+    claimToken: string,
     expectedStates: readonly AgentRequestLedgerRecord['state'][],
     state: typeof TERMINAL_STATES[number],
     value: JsonValue,
@@ -437,7 +472,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         conflict('request ledger settlement conflicts with existing outcome')
       }
       if (!expectedStates.includes(current.state)) conflict(`request ledger cannot transition from ${current.state}`)
-      if (currentRow.claim_owner !== this.ownerId || currentRow.lease_expires_at === null || currentRow.lease_expires_at < now) {
+      if (currentRow.claim_owner !== this.ownerId || currentRow.claim_token !== claimToken || currentRow.lease_expires_at === null || currentRow.lease_expires_at < now) {
         conflict('request ledger claim is stale')
       }
       const next = update(current, digest)
@@ -446,7 +481,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         SET state = ?, record_json = ?, updated_at = ?, claim_owner = NULL, claim_token = NULL,
             lease_expires_at = NULL, settlement_digest = ?
         WHERE request_key = ? AND record_json = ? AND claim_owner = ? AND claim_token = ? AND lease_expires_at >= ?
-      `).run(state, JSON.stringify(next), next.updatedAt, digest, keyString(key), currentRow.record_json, this.ownerId, this.claimToken, now)
+      `).run(state, JSON.stringify(next), next.updatedAt, digest, keyString(key), currentRow.record_json, this.ownerId, claimToken, now)
       if (result.changes !== 1) conflict('request ledger settlement lost its compare-and-swap race')
     })
   }
@@ -475,6 +510,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
 
   private transition(
     key: AgentRequestKey,
+    claimToken: string,
     expectedStates: readonly AgentRequestLedgerRecord['state'][],
     update: (record: AgentRequestLedgerRecord) => AgentRequestLedgerRecord,
     release = false,
@@ -487,7 +523,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       if (!row || !current || !expectedStates.includes(current.state)) {
         conflict(`request ledger cannot transition from ${current?.state ?? 'missing'}`)
       }
-      if (row.claim_owner !== this.ownerId || row.lease_expires_at === null || row.lease_expires_at < now) {
+      if (row.claim_owner !== this.ownerId || row.claim_token !== claimToken || row.lease_expires_at === null || row.lease_expires_at < now) {
         conflict('request ledger claim is stale')
       }
       const next = update(current)
@@ -499,8 +535,8 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
           AND claim_owner = ? AND claim_token = ? AND lease_expires_at >= ?
       `).run(
         next.state, JSON.stringify(next), next.updatedAt,
-        release ? null : this.ownerId, release ? null : this.claimToken, release ? null : now + this.claimLeaseMs,
-        keyString(key), current.digest, row.record_json, this.ownerId, this.claimToken, now,
+        release ? null : this.ownerId, release ? null : claimToken, release ? null : now + this.claimLeaseMs,
+        keyString(key), current.digest, row.record_json, this.ownerId, claimToken, now,
       )
       if (result.changes !== 1) conflict('request ledger transition lost its compare-and-swap race')
     })

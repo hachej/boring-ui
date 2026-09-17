@@ -4,8 +4,9 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
+import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { InMemoryHarnessBackend } from '../testing/inMemoryHarnessBackend'
-import type { AgentGatewayEffect } from '../types'
+import type { AgentGatewayEffect, AgentRequestKey } from '../types'
 import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
 const denied = { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED }
@@ -23,6 +24,26 @@ async function createSession() {
 }
 
 describe('Embedded Agent Gateway strong effect admission', () => {
+  it('starts claim heartbeat before waiting on admission', async () => {
+    class ObservedLedger extends InMemoryAgentRequestLedger {
+      heartbeatCalls = 0
+      override async heartbeat(key: AgentRequestKey, claimToken: string): Promise<void> {
+        this.heartbeatCalls += 1
+        await super.heartbeat(key, claimToken)
+      }
+    }
+    const ledger = new ObservedLedger()
+    const fixture = await createEmbeddedGatewayFixture({ requestLedger: ledger })
+    const blocked = fixture.blockAdmission('session.create')
+    const request = fixture.gateway.createSession({
+      scope: fixture.issueScope(), agentTypeId: 'alpha', requestId: 'heartbeat-before-admission',
+    })
+    await blocked.entered
+    expect(ledger.heartbeatCalls).toBeGreaterThan(0)
+    blocked.release()
+    await expect(request).resolves.toMatchObject({ agentTypeId: 'alpha' })
+  })
+
   it('records a strong create rejection before mutation and replays it without readmission', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const scope = fixture.issueScope()
