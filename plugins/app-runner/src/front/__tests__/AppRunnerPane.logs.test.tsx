@@ -22,11 +22,11 @@ describe("AppRunnerPane logs section", () => {
       if (url.endsWith("/apps")) {
         return jsonResponse({
           workspaceId: "ws-1",
-          apps: [{ appName: "myapp", version: 2, url: "x", updatedAt: "now", appId: "ws-1--myapp", appUrl: "/api/v1/plugins/app-runner/open/myapp/" }],
+          apps: [{ appName: "myapp", workspaceId: "ws-1", kind: "app", version: 2, sha: "abcdef123456", url: "x", updatedAt: "now", appId: "ws-1--myapp", appUrl: "/api/v1/plugins/app-runner/open/myapp/" }],
         })
       }
       if (url.endsWith("/versions")) {
-        return jsonResponse({ versions: [{ version: 2, created_at: "now", sha256: "a", current: true, previewUrl: "/p/2/" }], appId: "ws-1--myapp", appUrl: "/open/" })
+        return jsonResponse({ versions: [{ version: 2, kind: "app", sha: "abcdef123456", created_at: "now", current: true, previewUrl: "/p/2/" }], appId: "ws-1--myapp", appUrl: "/open/" })
       }
       if (url.endsWith("/logs")) {
         return jsonResponse({ lines: ["server started", "GET / 200"], errors: ["TypeError: boom"] })
@@ -39,5 +39,7 @@ describe("AppRunnerPane logs section", () => {
     expect(await screen.findByText("TypeError: boom")).toBeInTheDocument()
     expect(screen.getByText("GET / 200")).toBeInTheDocument()
     expect(screen.getByTestId("app-runner-logs")).toBeInTheDocument()
+    expect(screen.getByTestId("app-runner-metadata")).toHaveTextContent("Kind: app")
+    expect(screen.getByTestId("app-runner-metadata")).toHaveTextContent("SHA: abcdef123456")
   })
 })

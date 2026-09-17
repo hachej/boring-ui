@@ -20,9 +20,11 @@ describe("bootstrapServer", () => {
     expect(result).toEqual({
       registered: [],
       systemPromptAppend: "",
+      systemPromptDynamic: [],
       piPackages: [],
       extensionPaths: [],
       agentTools: [],
+      agentToolsDynamic: [],
       agentToolFactories: [],
       agentSessionDeleteContributions: [],
       runtimePlugins: [],
@@ -45,6 +47,17 @@ describe("bootstrapServer", () => {
     expect(agentToolFactory).not.toHaveBeenCalled()
     expect(result.agentToolFactories).toEqual([{ id: "trusted", createTools: agentToolFactory }])
     expect(result.agentSessionDeleteContributions).toEqual([{ id: "trusted", onDelete: onAgentSessionDelete }])
+  })
+
+  it("preserves trusted dynamic tool and prompt providers for per-turn projection", async () => {
+    const agentToolsDynamic = vi.fn(async () => [makeAgentTool("published_tool")])
+    const systemPromptDynamic = vi.fn(async () => "published profile")
+    const result = bootstrapServer({ plugins: [{ id: "hub", agentToolsDynamic, systemPromptDynamic }] })
+
+    expect(result.agentToolsDynamic).toEqual([agentToolsDynamic])
+    expect(result.systemPromptDynamic).toEqual([systemPromptDynamic])
+    expect((await result.agentToolsDynamic[0]!())[0]?.name).toBe("published_tool")
+    expect(await result.systemPromptDynamic[0]!()).toBe("published profile")
   })
 
   it("collects agentTools from plugins", () => {
