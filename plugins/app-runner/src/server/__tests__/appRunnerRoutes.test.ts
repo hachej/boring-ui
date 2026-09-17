@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { AppRunnerClient } from "../appRunnerClient"
 import { appRunnerRoutes } from "../appRunnerRoutes"
 import { MemoryAppRunnerStore } from "./memoryAppRunnerStore"
-import { APP_RUNNER_USER_HEADER, APP_RUNNER_WORKSPACE_HEADER } from "../../shared/constants"
+import { APP_RUNNER_AUTH_SECRET_HEADER, APP_RUNNER_USER_HEADER, APP_RUNNER_WORKSPACE_HEADER } from "../../shared/constants"
 
 describe("appRunnerRoutes", () => {
   const apps: Array<ReturnType<typeof Fastify>> = []
@@ -18,7 +18,7 @@ describe("appRunnerRoutes", () => {
   async function buildApp(fetchImpl: typeof fetch) {
     const app = Fastify()
     apps.push(app)
-    const client = new AppRunnerClient({ baseUrl: "http://127.0.0.1:9877", token: "tok", fetchImpl })
+    const client = new AppRunnerClient({ baseUrl: "http://127.0.0.1:9877", token: "tok", authSecret: "dev-secret", fetchImpl })
     await app.register(appRunnerRoutes, { workspaceRoot: "/tmp/ws-root", client, store: new MemoryAppRunnerStore() })
     await app.ready()
     return app
@@ -43,6 +43,24 @@ describe("appRunnerRoutes", () => {
     const headers = init!.headers as Record<string, string>
     expect(headers[APP_RUNNER_WORKSPACE_HEADER]).toBe("ws-1")
     expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toEqual({ id: "user-1", name: "u@example.com", email: "u@example.com" })
+  })
+
+  it("does not send platform credentials on app-serving proxy requests", async () => {
+    const fetchImpl = vi.fn(async () => new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }))
+    const app = await buildApp(fetchImpl as unknown as typeof fetch)
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/plugins/app-runner/open/myapp/index.html",
+      headers: { "x-boring-workspace-id": "ws-1", "x-boring-user-id": "user-1" },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const headers = fetchImpl.mock.calls[0]![1]!.headers as Record<string, string>
+    expect(headers.Authorization).toBeUndefined()
+    expect(headers[APP_RUNNER_AUTH_SECRET_HEADER]).toBeUndefined()
+    expect(headers[APP_RUNNER_WORKSPACE_HEADER]).toBe("ws-1")
+    expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toMatchObject({ id: "user-1" })
   })
 
   it("GET /apps/:appName/logs surfaces runner errors with their status", async () => {

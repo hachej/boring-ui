@@ -39,9 +39,7 @@ async function proxyToRunner(
 ): Promise<void> {
   const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
   const identity = identityFromRequest(request)
-  const upstream = await fetch(`${opts.client.base}${runnerPath}`, {
-    headers: opts.client.authHeaders(identity, workspaceId),
-  })
+  const upstream = await opts.client.fetchServing(runnerPath, identity, workspaceId)
   reply.code(upstream.status)
   const contentType = upstream.headers.get("content-type")
   if (contentType) reply.header("content-type", contentType)

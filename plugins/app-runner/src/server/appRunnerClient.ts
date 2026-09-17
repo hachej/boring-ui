@@ -139,7 +139,7 @@ export class AppRunnerClient {
     return this.request("POST", `${this.appPath(workspaceId, appName)}/tools/${encodeURIComponent(toolName)}`, identity, workspaceId, input)
   }
 
-  /** Shared header set for any authenticated runner call — exported for the front proxy route. */
+  /** Credentials used only for runner control-plane and tool requests. */
   authHeaders(identity: AppRunnerIdentity, workspaceId: string): Record<string, string> {
     const headers: Record<string, string> = {}
     if (this.token) headers.Authorization = `Bearer ${this.token}`
@@ -147,6 +147,21 @@ export class AppRunnerClient {
     headers[APP_RUNNER_WORKSPACE_HEADER] = workspaceId
     if (this.authSecret) headers[APP_RUNNER_AUTH_SECRET_HEADER] = this.authSecret
     return headers
+  }
+
+  /** Identity-only headers for app-serving requests; platform credentials must never reach app code. */
+  servingHeaders(identity: AppRunnerIdentity, workspaceId: string): Record<string, string> {
+    return {
+      [APP_RUNNER_USER_HEADER]: JSON.stringify(identity),
+      [APP_RUNNER_WORKSPACE_HEADER]: workspaceId,
+    }
+  }
+
+  async fetchServing(path: string, identity: AppRunnerIdentity, workspaceId: string, signal?: AbortSignal): Promise<Response> {
+    return this.fetchImpl(`${this.baseUrl}${path}`, {
+      headers: this.servingHeaders(identity, workspaceId),
+      signal,
+    })
   }
 
   get base(): string {
