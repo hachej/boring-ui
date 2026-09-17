@@ -41,6 +41,7 @@ function keyIdentity(key: AgentRequestKey): string {
 class InMemoryAgentRequestLedger implements AgentRequestLedger {
   readonly durability = 'in-memory' as const
   private readonly records = new Map<string, AgentRequestLedgerRecord>()
+  private readonly claimTokens = new Map<string, string>()
   private clock = 0
 
   async prepare(
@@ -63,8 +64,10 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
         const record: AgentRequestLedgerRecord = {
           key, acceptedWork: context, digest, state: 'pending-admission', updatedAt: this.tick(),
         }
+        const claimToken = `claim-${this.tick()}`
         this.write(key, record)
-        return { ownership: 'reclaimed', record }
+        this.claimTokens.set(identity, claimToken)
+        return { ownership: 'reclaimed', claimToken, record }
       }
       return { ownership: 'existing', record: current }
     }
@@ -75,41 +78,55 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
       digest,
       updatedAt: this.tick(),
     }
+    const claimToken = `claim-${this.tick()}`
     this.records.set(identity, record)
-    return { ownership: 'created', record }
+    this.claimTokens.set(identity, claimToken)
+    return { ownership: 'created', claimToken, record }
   }
 
-  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
-    const current = this.requireState(key, 'pending-admission')
+  async heartbeat(key: AgentRequestKey, claimToken: string): Promise<void> {
+    const current = this.records.get(keyIdentity(key))
+    if (this.claimTokens.get(keyIdentity(key)) !== claimToken) throw new Error('invalid ledger heartbeat')
+    if (!current || !['pending-admission', 'admission-accepted', 'in-flight'].includes(current.state)) {
+      throw new Error('invalid ledger heartbeat')
+    }
+  }
+
+  async markAdmissionRetryable(key: AgentRequestKey, claimToken: string): Promise<void> {
+    const current = this.requireState(key, claimToken, 'pending-admission')
     if (current.retryable) throw new Error('admission is already retryable')
     this.write(key, { ...current, retryable: true, updatedAt: this.tick() })
+    this.claimTokens.delete(keyIdentity(key))
   }
 
-  async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
-    const current = this.requireState(key, 'pending-admission')
+  async acceptAdmission(key: AgentRequestKey, claimToken: string, admissionReceipt: string): Promise<void> {
+    const current = this.requireState(key, claimToken, 'pending-admission')
     if (current.retryable) throw new Error('admission must be claimed before accepting')
     this.write(key, { ...current, state: 'admission-accepted', admissionReceipt, updatedAt: this.tick() })
   }
 
-  async beginEffect(key: AgentRequestKey): Promise<void> {
-    const current = this.requireState(key, 'admission-accepted')
+  async beginEffect(key: AgentRequestKey, claimToken: string): Promise<void> {
+    const current = this.requireState(key, claimToken, 'admission-accepted')
     this.write(key, { ...current, state: 'in-flight', updatedAt: this.tick() })
   }
 
-  async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
+  async reject(key: AgentRequestKey, claimToken: string, failure: AgentRequestFailure): Promise<void> {
     const expected = failure.kind === 'gateway' ? 'pending-admission' : 'in-flight'
-    const current = this.requireState(key, expected)
+    const current = this.requireState(key, claimToken, expected)
     this.write(key, { ...current, state: 'rejected', failure, updatedAt: this.tick() })
+    this.claimTokens.delete(keyIdentity(key))
   }
 
-  async complete(key: AgentRequestKey, receipt: JsonValue): Promise<void> {
-    const current = this.requireState(key, 'in-flight')
+  async complete(key: AgentRequestKey, claimToken: string, receipt: JsonValue): Promise<void> {
+    const current = this.requireState(key, claimToken, 'in-flight')
     this.write(key, { ...current, state: 'completed', receipt, updatedAt: this.tick() })
+    this.claimTokens.delete(keyIdentity(key))
   }
 
-  async markOutcomeUnknown(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void> {
-    const current = this.requireState(key, 'in-flight')
+  async markOutcomeUnknown(key: AgentRequestKey, claimToken: string, error: AgentGatewayErrorDTO): Promise<void> {
+    const current = this.requireState(key, claimToken, 'in-flight')
     this.write(key, { ...current, state: 'outcome-unknown', error, updatedAt: this.tick() })
+    this.claimTokens.delete(keyIdentity(key))
   }
 
   async read(key: AgentRequestKey): Promise<AgentRequestLedgerRecord | undefined> {
@@ -125,10 +142,11 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
 
   private requireState<S extends AgentRequestLedgerRecord['state']>(
     key: AgentRequestKey,
+    claimToken: string,
     expected: S,
   ): Extract<AgentRequestLedgerRecord, { state: S }> {
     const current = this.records.get(keyIdentity(key))
-    if (current?.state !== expected) {
+    if (this.claimTokens.get(keyIdentity(key)) !== claimToken || current?.state !== expected) {
       throw new Error(`invalid ledger transition: ${current?.state ?? 'missing'} -> expected ${expected}`)
     }
     return current as Extract<AgentRequestLedgerRecord, { state: S }>
@@ -174,33 +192,37 @@ const outcomeUnknown: AgentGatewayErrorDTO = {
   message: 'outcome unknown',
 }
 
-async function advanceToInFlight(ledger: AgentRequestLedger, key: AgentRequestKey): Promise<void> {
-  await ledger.prepare(key, 'digest-a', createGatewayAcceptedWorkContext({
+async function advanceToInFlight(ledger: AgentRequestLedger, key: AgentRequestKey): Promise<string> {
+  const prepared = await ledger.prepare(key, 'digest-a', createGatewayAcceptedWorkContext({
     key,
     admittedAgentTypeId: key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId,
   }))
-  await ledger.acceptAdmission(key, 'admission-a')
-  await ledger.beginEffect(key)
+  if (prepared.ownership === 'existing') throw new Error('expected claim ownership')
+  await ledger.acceptAdmission(key, prepared.claimToken, 'admission-a')
+  await ledger.beginEffect(key, prepared.claimToken)
+  return prepared.claimToken
 }
 
 async function ledgerAt(
   state: AgentRequestLedgerRecord['state'],
-): Promise<{ ledger: InMemoryAgentRequestLedger; key: AgentRequestKey }> {
+): Promise<{ ledger: InMemoryAgentRequestLedger; key: AgentRequestKey; claimToken: string }> {
   const ledger = new InMemoryAgentRequestLedger()
   const key = requestKey()
-  await ledger.prepare(key, 'digest-a')
-  if (state === 'pending-admission') return { ledger, key }
+  const prepared = await ledger.prepare(key, 'digest-a')
+  if (prepared.ownership === 'existing') throw new Error('expected claim ownership')
+  const { claimToken } = prepared
+  if (state === 'pending-admission') return { ledger, key, claimToken }
   if (state === 'rejected') {
-    await ledger.reject(key, gatewayFailure)
-    return { ledger, key }
+    await ledger.reject(key, claimToken, gatewayFailure)
+    return { ledger, key, claimToken }
   }
-  await ledger.acceptAdmission(key, 'admission-a')
-  if (state === 'admission-accepted') return { ledger, key }
-  await ledger.beginEffect(key)
-  if (state === 'in-flight') return { ledger, key }
-  if (state === 'completed') await ledger.complete(key, { accepted: true })
-  if (state === 'outcome-unknown') await ledger.markOutcomeUnknown(key, outcomeUnknown)
-  return { ledger, key }
+  await ledger.acceptAdmission(key, claimToken, 'admission-a')
+  if (state === 'admission-accepted') return { ledger, key, claimToken }
+  await ledger.beginEffect(key, claimToken)
+  if (state === 'in-flight') return { ledger, key, claimToken }
+  if (state === 'completed') await ledger.complete(key, claimToken, { accepted: true })
+  if (state === 'outcome-unknown') await ledger.markOutcomeUnknown(key, claimToken, outcomeUnknown)
+  return { ledger, key, claimToken }
 }
 
 describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)', () => {
@@ -245,35 +267,35 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
   })
 
   it('accepts admission only from pending-admission', async () => {
-    const { ledger, key } = await ledgerAt('pending-admission')
-    await ledger.acceptAdmission(key, 'receipt')
+    const { ledger, key, claimToken } = await ledgerAt('pending-admission')
+    await ledger.acceptAdmission(key, claimToken, 'receipt')
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'admission-accepted', admissionReceipt: 'receipt' })
   })
 
   it('strongly rejects only from pending-admission and preserves the closed Gateway error', async () => {
-    const { ledger, key } = await ledgerAt('pending-admission')
-    await ledger.reject(key, gatewayFailure)
+    const { ledger, key, claimToken } = await ledgerAt('pending-admission')
+    await ledger.reject(key, claimToken, gatewayFailure)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'rejected', failure: gatewayFailure })
     expect(await ledger.prepare(key, 'digest-a')).toMatchObject({ record: { state: 'rejected', failure: gatewayFailure } })
   })
 
   it('begins an effect only after accepted admission', async () => {
-    const { ledger, key } = await ledgerAt('admission-accepted')
-    await ledger.beginEffect(key)
+    const { ledger, key, claimToken } = await ledgerAt('admission-accepted')
+    await ledger.beginEffect(key, claimToken)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'in-flight' })
   })
 
   it('completes only from in-flight and replays the typed JSON receipt', async () => {
-    const { ledger, key } = await ledgerAt('in-flight')
+    const { ledger, key, claimToken } = await ledgerAt('in-flight')
     const receipt = { accepted: true, cursor: 7 }
-    await ledger.complete(key, receipt)
+    await ledger.complete(key, claimToken, receipt)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'completed', receipt })
     expect(await ledger.prepare(key, 'digest-a')).toMatchObject({ record: { state: 'completed', receipt } })
   })
 
   it('marks outcome unknown only from in-flight', async () => {
-    const { ledger, key } = await ledgerAt('in-flight')
-    await ledger.markOutcomeUnknown(key, outcomeUnknown)
+    const { ledger, key, claimToken } = await ledgerAt('in-flight')
+    await ledger.markOutcomeUnknown(key, claimToken, outcomeUnknown)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'outcome-unknown', error: outcomeUnknown })
   })
 
@@ -287,21 +309,21 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       'outcome-unknown',
     ]
     const operations = [
-      ['acceptAdmission', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.acceptAdmission(key, 'receipt'), 'pending-admission'],
-      ['beginEffect', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.beginEffect(key), 'admission-accepted'],
-      ['strong reject', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.reject(key, gatewayFailure), 'pending-admission'],
-      ['complete', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.complete(key, { ok: true }), 'in-flight'],
-      ['markOutcomeUnknown', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.markOutcomeUnknown(key, outcomeUnknown), 'in-flight'],
+      ['acceptAdmission', (ledger: AgentRequestLedger, key: AgentRequestKey, token: string) => ledger.acceptAdmission(key, token, 'receipt'), 'pending-admission'],
+      ['beginEffect', (ledger: AgentRequestLedger, key: AgentRequestKey, token: string) => ledger.beginEffect(key, token), 'admission-accepted'],
+      ['strong reject', (ledger: AgentRequestLedger, key: AgentRequestKey, token: string) => ledger.reject(key, token, gatewayFailure), 'pending-admission'],
+      ['complete', (ledger: AgentRequestLedger, key: AgentRequestKey, token: string) => ledger.complete(key, token, { ok: true }), 'in-flight'],
+      ['markOutcomeUnknown', (ledger: AgentRequestLedger, key: AgentRequestKey, token: string) => ledger.markOutcomeUnknown(key, token, outcomeUnknown), 'in-flight'],
     ] as const
 
     for (const [name, operation, validState] of operations) {
       for (const state of states) {
         if (state === validState) continue
-        const { ledger, key } = await ledgerAt(state)
-        await expect(operation(ledger, key), `${name} from ${state}`).rejects.toThrow('invalid ledger transition')
+        const { ledger, key, claimToken } = await ledgerAt(state)
+        await expect(operation(ledger, key, claimToken), `${name} from ${state}`).rejects.toThrow('invalid ledger transition')
       }
       const ledger = new InMemoryAgentRequestLedger()
-      await expect(operation(ledger, requestKey()), `${name} from missing`).rejects.toThrow('invalid ledger transition')
+      await expect(operation(ledger, requestKey(), 'missing-claim'), `${name} from missing`).rejects.toThrow('invalid ledger transition')
     }
   })
 
@@ -343,8 +365,9 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
   it('leaves retryable strong admission pending and process lifetime does not imply durability', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     const key = requestKey()
-    await ledger.prepare(key, 'digest-a')
-    await ledger.markAdmissionRetryable(key)
+    const prepared = await ledger.prepare(key, 'digest-a')
+    if (prepared.ownership === 'existing') throw new Error('expected claim ownership')
+    await ledger.markAdmissionRetryable(key, prepared.claimToken)
     expect(await ledger.read(key)).toMatchObject({ state: 'pending-admission', retryable: true })
     expect(await new InMemoryAgentRequestLedger().read(key)).toBeUndefined()
   })

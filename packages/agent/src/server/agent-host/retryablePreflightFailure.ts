@@ -9,12 +9,13 @@ import type { AgentRequestKey, AgentRequestLedger } from './types'
 export async function rejectRetryablePreflightFailure(
   ledger: AgentRequestLedger,
   key: AgentRequestKey,
+  claimToken: string,
 ): Promise<never> {
   const retryable = new AgentGatewayError(
     AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
     'Agent runtime failed to load',
     { retryable: true },
   )
-  await ledger.markAdmissionRetryable(key)
+  await ledger.markAdmissionRetryable(key, claimToken)
   throw retryable
 }
