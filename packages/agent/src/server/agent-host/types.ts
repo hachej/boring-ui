@@ -315,8 +315,8 @@ export interface ResolvedAgentRuntimeScope {
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
-  /** Trusted host tools refreshed before each model turn. */
-  readonly loadAgentTools?: (context?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>
+  /** Untrusted plugin capability descriptors refreshed before each model turn. */
+  readonly loadAgentTools?: (context?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   /** Joined trusted-plugin cleanup invoked after backend session deletion succeeds. */
   readonly onSessionDelete?: (input: {
     readonly workspaceScopeId: string

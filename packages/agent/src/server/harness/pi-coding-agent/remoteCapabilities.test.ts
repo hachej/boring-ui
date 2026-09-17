@@ -35,6 +35,17 @@ describe("remote capability admission", () => {
     await expect(buildVerifiedRemoteCapability(forged, context)).rejects.toThrow(/without functions/)
   })
 
+  it("refuses an ordinary AgentTool callback on the descriptor channel", async () => {
+    const execute = vi.fn()
+    await expect(buildVerifiedRemoteCapability({
+      name: "local_callback",
+      description: "run caller code",
+      parameters: { type: "object" },
+      execute,
+    }, context)).rejects.toThrow(/without functions/)
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it.each([
     ["workspace", { workspaceId: "victim" }],
     ["version", { version: 3 }],

@@ -182,12 +182,8 @@ function buildDynamicPromptExtension(
   }
 }
 
-function isRemoteCapabilityDescriptor(value: AgentTool | RemoteCapabilityDescriptor): value is RemoteCapabilityDescriptor {
-  return "toolName" in value && "inputSchema" in value
-}
-
 function buildDynamicToolsExtension(
-  source: (ctx?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>,
+  source: (ctx?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>, 
   sessionId: string,
   telemetry: TelemetrySink | undefined,
   getRunContext: () => RunContext | undefined,
@@ -197,10 +193,9 @@ function buildDynamicToolsExtension(
     const refresh = async () => {
       const ctx = getRunContext()
       if (!ctx) return
-      const supplied = [...await source(ctx)]
-      const tools = await Promise.all(supplied.map(async (entry) => isRemoteCapabilityDescriptor(entry)
-        ? await buildVerifiedRemoteCapability(entry, ctx)
-        : entry))
+      const supplied: readonly unknown[] = [...await source(ctx)]
+      const tools = await Promise.all(supplied.map(async (entry) =>
+        await buildVerifiedRemoteCapability(entry, ctx)))
       const adapted = adaptToolsForPi(tools, sessionId, telemetry, getRunContext)
       const names = adapted.map((tool) => tool.name)
       const nextNames = new Set(names)
@@ -489,7 +484,8 @@ function updateRunContextStateFromPiEvent(
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
-  toolsDynamic?: (ctx?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>;
+  /** Untrusted plugin descriptors. Trusted host callbacks belong in static tools. */
+  toolsDynamic?: (ctx?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>;
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
   cwd: string;
   /** Agent-visible cwd used by Pi's system prompt and native session metadata. */

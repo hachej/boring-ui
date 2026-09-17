@@ -178,7 +178,7 @@ export interface WorkspaceAgentCreateOptions {
   authToken?: string
   logger?: boolean
   extraTools?: AgentTool[]
-  extraToolsDynamic?: (context?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>
+  extraToolsDynamic?: (context?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   disableDefaultFileTools?: boolean
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -2084,7 +2084,7 @@ export async function createWorkspaceAgentServer(
             ]
             const seen = new Set<string>()
             for (const tool of tools) {
-              const name = "name" in tool ? tool.name : `${tool.address}:${tool.toolName}`
+              const name = `${tool.address}:${tool.toolName}`
               if (seen.has(name)) throw new Error(`dynamic agent tool name collision: "${name}"`)
               seen.add(name)
             }

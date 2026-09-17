@@ -6,8 +6,8 @@ import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-a
 
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
-  /** Trusted host tools refreshed before every model turn. */
-  toolsDynamic?: (ctx?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>
+  /** Untrusted plugin capability descriptors refreshed before every model turn. */
+  toolsDynamic?: (ctx?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   /** Host/storage cwd used for harness-owned filesystem resources. */
   cwd: string
   /** Agent-visible cwd used by Pi/system prompt/session metadata. */
