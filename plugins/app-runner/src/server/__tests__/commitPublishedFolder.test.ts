@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
-import { commitPublishedFolder } from "../commitPublishedFolder"
+import { commitPublishedFolder, resolvePublishGitContext } from "../commitPublishedFolder"
 
 const execFileAsync = promisify(execFile)
 
@@ -17,19 +17,19 @@ async function workspace(): Promise<string> {
   return root
 }
 
-async function git(cwd: string, args: string[]) {
-  return execFileAsync("git", args, { cwd })
-}
-
 describe("commitPublishedFolder", () => {
-  it("creates an app-owned repository and commits its contents", async () => {
+  it("commits through host-owned metadata outside the workspace", async () => {
     const root = await workspace()
     const sha = await commitPublishedFolder(root, "apps/demo", "publish")
+    const context = await resolvePublishGitContext(root, "apps/demo")
+
     expect(sha).toMatch(/^[0-9a-f]{40}$/)
-    expect((await git(join(root, "apps", "demo"), ["rev-parse", "--show-toplevel"])).stdout.trim()).toBe(await realpath(join(root, "apps", "demo")))
+    expect(context.cwd.startsWith(await realpath(root))).toBe(false)
+    expect(context.gitDir.startsWith(await realpath(root))).toBe(false)
+    expect((await execFileAsync("git", [`--git-dir=${context.gitDir}`, "rev-parse", "HEAD"], { cwd: context.cwd })).stdout.trim()).toBe(sha)
   })
 
-  it.each(["/tmp", "../outside", "apps/../../outside"])("rejects unconfined directory %s", async (dir) => {
+  it.each(["/tmp", "../outside", "apps/../../outside"])('rejects unconfined directory %s', async (dir) => {
     const root = await workspace()
     await expect(commitPublishedFolder(root, dir, "publish")).rejects.toThrow(/workspace-relative|inside the workspace/)
   })
@@ -41,13 +41,14 @@ describe("commitPublishedFolder", () => {
     await expect(commitPublishedFolder(root, "apps/escape", "publish")).rejects.toThrow(/inside the workspace/)
   })
 
-  it("refuses unsafe local config before Git can execute it", async () => {
+  it("refuses app-controlled Git metadata without executing its hooks or filters", async () => {
     const root = await workspace()
     const app = join(root, "apps", "demo")
-    await git(app, ["init"])
-    await git(app, ["config", "filter.evil.clean", "sh -c 'touch ../executed; cat'"])
+    await execFileAsync("git", ["init"], { cwd: app })
+    await execFileAsync("git", ["config", "filter.evil.clean", "sh -c 'touch ../executed; cat'"], { cwd: app })
     await writeFile(join(app, ".gitattributes"), "index.js filter=evil\n")
-    await expect(commitPublishedFolder(root, "apps/demo", "publish")).rejects.toThrow(/unsafe Git configuration/)
+
+    await expect(commitPublishedFolder(root, "apps/demo", "publish")).rejects.toThrow(/app-controlled Git metadata/)
     await expect(realpath(join(root, "apps", "executed"))).rejects.toThrow()
   })
 
@@ -55,7 +56,12 @@ describe("commitPublishedFolder", () => {
     const root = await workspace()
     const nested = join(root, "apps", "demo", "nested")
     await mkdir(nested)
-    await git(nested, ["init"])
+    await mkdir(join(nested, ".git"))
     await expect(commitPublishedFolder(root, "apps/demo", "publish")).rejects.toThrow(/nested Git repository/)
+  })
+
+  it("refuses a metadata root within the workspace", async () => {
+    const root = await workspace()
+    await expect(resolvePublishGitContext(root, "apps/demo", join(root, ".boring", "git"))).rejects.toThrow(/outside/)
   })
 })

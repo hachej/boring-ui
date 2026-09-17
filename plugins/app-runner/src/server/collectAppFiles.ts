@@ -3,7 +3,7 @@ import {
   APP_RUNNER_MAX_FILE_BYTES,
   APP_RUNNER_MAX_TOTAL_BYTES,
 } from "../shared/constants"
-import { resolvePublishedFolder, runPublishGit } from "./commitPublishedFolder"
+import { resolvePublishGitContext, runPublishGit } from "./commitPublishedFolder"
 
 export class AppRunnerLimitError extends Error {
   constructor(
@@ -26,8 +26,8 @@ export interface CollectAppFilesResult {
  * ignored files, Git metadata, or dotfiles (including `.env*`).
  */
 export async function collectAppFiles(workspaceRoot: string, dir: string, sha: string): Promise<CollectAppFilesResult> {
-  const folder = await resolvePublishedFolder(workspaceRoot, dir)
-  const names = (await runPublishGit(folder, ["ls-tree", "-r", "--name-only", "-z", sha]))
+  const context = await resolvePublishGitContext(workspaceRoot, dir)
+  const names = (await runPublishGit(context, ["ls-tree", "-r", "--name-only", "-z", sha]))
     .split("\0")
     .filter((path) => path && !path.split("/").some((segment) => segment.startsWith(".")))
 
@@ -41,7 +41,7 @@ export async function collectAppFiles(workspaceRoot: string, dir: string, sha: s
   const files: Record<string, string> = {}
   let totalBytes = 0
   for (const path of names) {
-    const size = Number(await runPublishGit(folder, ["cat-file", "-s", `${sha}:${path}`]))
+    const size = Number(await runPublishGit(context, ["cat-file", "-s", `${sha}:${path}`]))
     if (size > APP_RUNNER_MAX_FILE_BYTES) {
       throw new AppRunnerLimitError(
         "FILE_TOO_LARGE",
@@ -55,7 +55,7 @@ export async function collectAppFiles(workspaceRoot: string, dir: string, sha: s
         `app "${dir}" is over the ${APP_RUNNER_MAX_TOTAL_BYTES} byte (10 MiB) total size limit.`,
       )
     }
-    files[`app/${path}`] = await runPublishGit(folder, ["show", `${sha}:${path}`], false)
+    files[`app/${path}`] = await runPublishGit(context, ["show", `${sha}:${path}`], false)
   }
   return { files, totalBytes }
 }
