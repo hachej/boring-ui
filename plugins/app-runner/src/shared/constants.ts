@@ -22,7 +22,7 @@ export const APP_RUNNER_DEFAULT_URL = "http://127.0.0.1:9877"
  */
 export const APP_RUNNER_USER_HEADER = "X-Boring-User"
 export const APP_RUNNER_WORKSPACE_HEADER = "X-Boring-Workspace"
-export const APP_RUNNER_AUTH_SECRET_HEADER = "X-Boring-Auth-Secret"
+export const APP_RUNNER_AUTH_SECRET_HEADER = "X-App-Runner-Auth"
 
 /** Workspace-relative path of the optional tool manifest an app may ship. */
 export const APP_RUNNER_TOOLS_MANIFEST_FILENAME = "tools.json"

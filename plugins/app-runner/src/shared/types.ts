@@ -1,8 +1,12 @@
+export type AppRunnerKind = "app" | "profile"
+
 export interface AppRunnerVersion {
   version: number
-  created_at: string
+  kind: AppRunnerKind
+  sha: string | null
+  content_sha?: string
   message?: string
-  sha256: string
+  created_at: string
   current: boolean
 }
 
@@ -22,12 +26,23 @@ export interface AppRunnerToolManifest {
   bindings?: string[]
 }
 
+export interface AppRunnerCurrent {
+  version: number
+  kind: AppRunnerKind
+  sha: string | null
+  contentSha: string
+  manifest: AppRunnerToolManifest
+  instructions?: string | null
+  mcp?: string | null
+}
+
 export interface AppRunnerRecord {
   appName: string
+  kind: AppRunnerKind
   version: number
+  sha: string | null
   url: string
   updatedAt: string
-  /** Parsed `app/tools.json` from the most recent successful publish/activate/rollback, if present. */
   toolManifest?: AppRunnerToolManifest
 }
 
@@ -50,7 +65,10 @@ export interface AppRunnerVersionsResponse {
 export interface AppRunnerPublishResponse {
   version: number
   url: string
-  sha256: string
+  sha: string | null
+  contentSha: string
+  kind: AppRunnerKind
+  activated: boolean
 }
 
 export interface AppRunnerIdentity {

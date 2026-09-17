@@ -4,7 +4,16 @@ import {
   APP_RUNNER_WORKSPACE_HEADER,
 } from "../shared/constants"
 import { appRunnerAppId, sanitizeAppName } from "../shared/sanitize"
-import type { AppRunnerIdentity, AppRunnerLogsResponse, AppRunnerPublishResponse, AppRunnerUsageResponse, AppRunnerVersion } from "../shared/types"
+import type {
+  AppRunnerCurrent,
+  AppRunnerIdentity,
+  AppRunnerKind,
+  AppRunnerLogsResponse,
+  AppRunnerPublishResponse,
+  AppRunnerToolManifest,
+  AppRunnerUsageResponse,
+  AppRunnerVersion,
+} from "../shared/types"
 
 export class AppRunnerHttpError extends Error {
   constructor(
@@ -65,14 +74,14 @@ export class AppRunnerClient {
     appName: string,
     files: Record<string, string>,
     identity: AppRunnerIdentity,
-    message?: string,
+    input: { kind: AppRunnerKind; message: string; sha: string },
   ): Promise<AppRunnerPublishResponse> {
     return this.request<AppRunnerPublishResponse>(
       "POST",
       `${this.appPath(workspaceId, appName)}/publish`,
       identity,
       workspaceId,
-      { files, ...(message ? { message } : {}) },
+      { files, ...input },
     )
   }
 
@@ -85,7 +94,16 @@ export class AppRunnerClient {
   }
 
   async listVersions(workspaceId: string, appName: string, identity: AppRunnerIdentity): Promise<AppRunnerVersion[]> {
-    return this.request<AppRunnerVersion[]>("GET", `${this.appPath(workspaceId, appName)}/versions`, identity, workspaceId)
+    const response = await this.request<{ versions: AppRunnerVersion[] }>("GET", `${this.appPath(workspaceId, appName)}/versions`, identity, workspaceId)
+    return response.versions
+  }
+
+  async current(workspaceId: string, name: string, identity: AppRunnerIdentity): Promise<AppRunnerCurrent> {
+    return this.request("GET", `${this.appPath(workspaceId, name)}/current`, identity, workspaceId)
+  }
+
+  async manifest(workspaceId: string, name: string, identity: AppRunnerIdentity): Promise<{ version: number; kind: AppRunnerKind; manifest: AppRunnerToolManifest }> {
+    return this.request("GET", `${this.appPath(workspaceId, name)}/manifest`, identity, workspaceId)
   }
 
   async logs(workspaceId: string, appName: string, identity: AppRunnerIdentity): Promise<AppRunnerLogsResponse> {

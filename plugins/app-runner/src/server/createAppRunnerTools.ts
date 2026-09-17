@@ -77,11 +77,19 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
 
       try {
         const { files } = await collectAppFiles(options.workspaceRoot, dir)
-        const result = await options.client.publish(workspaceId, appName, files, identity, message)
-        const toolManifest = await readToolManifest(options.workspaceRoot, dir)
+        const publishMessage = message?.trim() || `Publish ${appName}`
+        const result = await options.client.publish(workspaceId, appName, files, identity, {
+          kind: "app",
+          message: publishMessage,
+          sha: "",
+        })
+        const current = await options.client.current(workspaceId, appName, identity)
+        const toolManifest = current.manifest
         await options.store.upsertApp({
           appName,
-          version: result.version,
+          kind: current.kind,
+          version: current.version,
+          sha: current.sha,
           url: result.url,
           updatedAt: new Date().toISOString(),
           toolManifest,
@@ -148,7 +156,9 @@ export function createRollbackAppTool(options: AppRunnerToolsOptions): AgentTool
           const toolManifest = await refreshStoredManifest(options, workspaceId, appName, current.version, identity)
           await options.store.upsertApp({
             appName,
+            kind: current.kind,
             version: current.version,
+            sha: current.sha,
             url: options.client.publicAppUrl(workspaceId, appName),
             updatedAt: new Date().toISOString(),
             toolManifest,
@@ -187,9 +197,12 @@ export function createActivateAppVersionTool(options: AppRunnerToolsOptions): Ag
       try {
         await options.client.activate(workspaceId, appName, version, identity)
         const toolManifest = await refreshStoredManifest(options, workspaceId, appName, version, identity)
+        const current = await options.client.current(workspaceId, appName, identity)
         await options.store.upsertApp({
           appName,
-          version,
+          kind: current.kind,
+          version: current.version,
+          sha: current.sha,
           url: options.client.publicAppUrl(workspaceId, appName),
           updatedAt: new Date().toISOString(),
           toolManifest,

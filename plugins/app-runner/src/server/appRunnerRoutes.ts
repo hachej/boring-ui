@@ -93,11 +93,15 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       const versions = await opts.client.listVersions(workspaceId, request.params.appName, identity)
       const current = versions.find((entry) => entry.current)
       if (current) {
+        const deployed = await opts.client.current(workspaceId, request.params.appName, identity)
         await opts.store.upsertApp({
           appName: request.params.appName,
-          version: current.version,
+          kind: deployed.kind,
+          version: deployed.version,
+          sha: deployed.sha,
           url: opts.client.publicAppUrl(workspaceId, request.params.appName),
           updatedAt: new Date().toISOString(),
+          toolManifest: deployed.manifest,
         })
       }
       return { ok: true, versions }
@@ -117,11 +121,15 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       const identity = identityFromRequest(request)
       try {
         await opts.client.activate(workspaceId, request.params.appName, version, identity)
+        const deployed = await opts.client.current(workspaceId, request.params.appName, identity)
         await opts.store.upsertApp({
           appName: request.params.appName,
-          version,
+          kind: deployed.kind,
+          version: deployed.version,
+          sha: deployed.sha,
           url: opts.client.publicAppUrl(workspaceId, request.params.appName),
           updatedAt: new Date().toISOString(),
+          toolManifest: deployed.manifest,
         })
         return { ok: true }
       } catch (error) {
