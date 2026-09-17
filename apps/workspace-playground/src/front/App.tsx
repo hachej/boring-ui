@@ -120,7 +120,8 @@ const playgroundDeckPlugin = createDeckPlugin({
 
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const tasksPlugin = createTasksPlugin()
-const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin, tldrawAgentPlugin]
+const tldrawEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PLAYGROUND_TLDRAW_ENABLED === "1"
+const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin, ...(tldrawEnabled ? [tldrawAgentPlugin] : [])]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {

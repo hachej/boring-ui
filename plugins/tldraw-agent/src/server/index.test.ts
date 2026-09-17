@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import Fastify from "fastify"
 import { describe, expect, it, vi } from "vitest"
 import type { Stat, Workspace } from "@hachej/boring-agent/shared"
@@ -18,8 +19,7 @@ function workspaceFixture(initial = blankNative()) {
     readFile: vi.fn(async () => content),
     writeFile: vi.fn(async (_path, data) => { content = data }),
     readFileWithStat: vi.fn(async () => ({ content, stat: current })),
-    replaceFileIfUnchanged: vi.fn(async (_path, data, expected) => {
-      if (expected.size !== current.size || expected.mtimeMs !== current.mtimeMs) throw Object.assign(new Error("conflict"), { statusCode: 409 })
+    writeFileWithStat: vi.fn(async (_path, data) => {
       content = data
       current = { kind: "file", size: data.length, mtimeMs: current.mtimeMs + 1 }
       return current
@@ -28,7 +28,12 @@ function workspaceFixture(initial = blankNative()) {
     unlink: vi.fn(async () => {}), readdir: vi.fn(async () => []), stat: vi.fn(async () => current),
     mkdir: vi.fn(async () => {}), rename: vi.fn(async () => {}),
   }
-  return { workspace, get content() { return content }, get stat() { return current } }
+  return {
+    workspace,
+    get content() { return content },
+    get stat() { return current },
+    get revision() { return { size: current.size, mtimeMs: current.mtimeMs, sha256: createHash("sha256").update(content).digest("hex") } },
+  }
 }
 
 async function routeApp(workspace: Workspace) {
@@ -47,7 +52,7 @@ describe("edit_tldraw_canvas", () => {
     const tool = createCanvasTool(workspaceFixture().workspace)
     const schemas = (tool.parameters as { oneOf: Array<{ properties?: { actions?: { items: { oneOf: unknown[] } } } }> }).oneOf
     expect(schemas).toHaveLength(3)
-    expect(schemas[2]?.properties?.actions?.items.oneOf).toHaveLength(6)
+    expect(schemas[2]?.properties?.actions?.items.oneOf).toHaveLength(8)
   })
 
   it("rejects operation fields that would otherwise be ignored", async () => {
@@ -62,10 +67,13 @@ describe("edit_tldraw_canvas", () => {
   })
 
   it("rejects malformed and silent-no-op action variants", () => {
-    expect(() => validateActions([{ type: "update", shape: {} }])).toThrow("requires id")
-    expect(() => validateActions([{ type: "update", shape: { id: "a" } }])).toThrow("mutable property")
-    expect(() => validateActions([{ type: "update", shape: { id: "a", type: "text" } }])).toThrow("requires id")
+    expect(() => validateActions([{ type: "update", shape: {} }])).toThrow("requires valid id")
+    expect(() => validateActions([{ type: "update", shape: { id: "a", target: "text" } }])).toThrow("mutable property")
+    expect(() => validateActions([{ type: "update", shape: { id: "a", type: "text" } }])).toThrow()
+    expect(() => validateActions([{ type: "create", shape: { id: "a", type: "text", x: 1, y: 2, h: 3 } }])).toThrow()
+    expect(() => validateActions([{ type: "update", shape: { id: "a", target: "text", fill: "semi" } }])).toThrow()
     expect(() => validateActions([{ type: "distribute", ids: ["a", "b"], axis: "x" }])).toThrow("at least 3")
+    expect(() => validateActions([{ type: "distribute", ids: ["a", "a", "b"], axis: "x" }])).toThrow("unique ids")
     expect(() => validateActions([{ type: "create", shape: { id: "a", type: "bogus", x: 1, y: 2 } }])).toThrow("valid type")
     expect(() => validateActions([{ type: "clear", extra: true }])).toThrow("additional")
   })
@@ -109,18 +117,34 @@ describe("edit_tldraw_canvas", () => {
     const rejected = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-other", path: "flow.tldraw", filesystem: "user", clientId: "other", json: blankNative(), expectedRevision: revision } })
     expect(rejected.statusCode).toBe(409)
     expect(rejected.json().written).toBe(false)
-    expect(fixture.workspace.replaceFileIfUnchanged).not.toHaveBeenCalled()
+    expect(fixture.workspace.writeFileWithStat).not.toHaveBeenCalled()
     await app.close()
   })
 
-  it("uses provider CAS and returns an idempotent conflict shape", async () => {
+  it("detects a stale content revision before optimistic write", async () => {
     const fixture = workspaceFixture()
     const { app } = await routeApp(fixture.workspace)
     await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
-    const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-conflict", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: 999, mtimeMs: 1 } } })
+    const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-conflict", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: 999, mtimeMs: 1, sha256: "0".repeat(64) } } })
     expect(response.statusCode).toBe(409)
-    expect(response.json()).toMatchObject({ written: false, error: { message: "conflict" } })
-    expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce()
+    expect(response.json()).toMatchObject({ written: false, error: { message: "file changed since it was loaded" } })
+    expect(fixture.workspace.writeFileWithStat).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it("detects an external overwrite during optimistic save verification", async () => {
+    const fixture = workspaceFixture()
+    const write = vi.mocked(fixture.workspace.writeFileWithStat!).getMockImplementation()!
+    vi.mocked(fixture.workspace.writeFileWithStat!).mockImplementation(async (path, data) => {
+      const stat = await write(path, data)
+      await fixture.workspace.writeFile(path, `${data}\nexternal`)
+      return stat
+    })
+    const { app } = await routeApp(fixture.workspace)
+    await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
+    const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-overlap", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: fixture.revision } })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ written: true, error: { message: expect.stringContaining("reload required") } })
     await app.close()
   })
 
@@ -140,17 +164,18 @@ describe("edit_tldraw_canvas", () => {
   it("does not cancel a batch after its provider commit has started", async () => {
     const fixture = workspaceFixture()
     let releaseWrite!: () => void
-    vi.mocked(fixture.workspace.replaceFileIfUnchanged!).mockImplementation(async (_path, data) => {
+    const write = vi.mocked(fixture.workspace.writeFileWithStat!).getMockImplementation()!
+    vi.mocked(fixture.workspace.writeFileWithStat!).mockImplementation(async (path, data) => {
       await new Promise<void>((resolve) => { releaseWrite = resolve })
-      return { kind: "file", size: data.length, mtimeMs: 2 }
+      return await write(path, data)
     })
     const { app, tool } = await routeApp(fixture.workspace)
     await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
     const abort = new AbortController()
     const toolPromise = tool.execute({ operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "call", abortSignal: abort.signal } as never)
     const actions = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/actions?path=flow.tldraw&filesystem=user&clientId=c" })
-    const commitPromise = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: `batch:${actions.json().batches[0].id}`, batchId: actions.json().batches[0].id, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } } })
-    await vi.waitFor(() => expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce())
+    const commitPromise = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: `batch:${actions.json().batches[0].id}`, batchId: actions.json().batches[0].id, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: fixture.revision } })
+    await vi.waitFor(() => expect(fixture.workspace.writeFileWithStat).toHaveBeenCalledOnce())
     abort.abort()
     releaseWrite()
     expect((await commitPromise).statusCode).toBe(200)
@@ -161,23 +186,24 @@ describe("edit_tldraw_canvas", () => {
   it("awaits the same in-flight batch commit for a duplicate stable request id", async () => {
     const fixture = workspaceFixture()
     let release!: () => void
-    vi.mocked(fixture.workspace.replaceFileIfUnchanged!).mockImplementation(async (_path, data) => {
+    const write = vi.mocked(fixture.workspace.writeFileWithStat!).getMockImplementation()!
+    vi.mocked(fixture.workspace.writeFileWithStat!).mockImplementation(async (path, data) => {
       await new Promise<void>((resolve) => { release = resolve })
-      return { kind: "file", size: data.length, mtimeMs: 2 }
+      return await write(path, data)
     })
     const { app, tool } = await routeApp(fixture.workspace)
     await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
     const toolPromise = tool.execute({ operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "call", abortSignal: new AbortController().signal } as never)
     const claimed = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/actions?path=flow.tldraw&filesystem=user&clientId=c" })
     const batchId = claimed.json().batches[0].id as string
-    const payload = { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } }
+    const payload = { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: fixture.revision }
     const first = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
-    await vi.waitFor(() => expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(fixture.workspace.writeFileWithStat).toHaveBeenCalledOnce())
     const retry = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
     release()
     const [one, two] = await Promise.all([first, retry])
     expect(two.json()).toEqual(one.json())
-    expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce()
+    expect(fixture.workspace.writeFileWithStat).toHaveBeenCalledOnce()
     await expect(toolPromise).resolves.toMatchObject({ content: [{ text: expect.stringContaining("Applied one action batch") }] })
     await app.close()
   })
@@ -185,20 +211,21 @@ describe("edit_tldraw_canvas", () => {
   it("awaits the same in-flight manual commit for a duplicate stable request id", async () => {
     const fixture = workspaceFixture()
     let release!: () => void
-    vi.mocked(fixture.workspace.replaceFileIfUnchanged!).mockImplementation(async (_path, data) => {
+    const write = vi.mocked(fixture.workspace.writeFileWithStat!).getMockImplementation()!
+    vi.mocked(fixture.workspace.writeFileWithStat!).mockImplementation(async (path, data) => {
       await new Promise<void>((resolve) => { release = resolve })
-      return { kind: "file", size: data.length, mtimeMs: 2 }
+      return await write(path, data)
     })
     const { app } = await routeApp(fixture.workspace)
     await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
-    const payload = { requestId: "manual:1", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } }
+    const payload = { requestId: "manual:1", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: fixture.revision }
     const first = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
-    await vi.waitFor(() => expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(fixture.workspace.writeFileWithStat).toHaveBeenCalledOnce())
     const retry = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
     release()
     const [one, two] = await Promise.all([first, retry])
     expect(two.json()).toEqual(one.json())
-    expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce()
+    expect(fixture.workspace.writeFileWithStat).toHaveBeenCalledOnce()
     await app.close()
   })
 
@@ -212,13 +239,13 @@ describe("edit_tldraw_canvas", () => {
     const batchId = actionResponse.json().batches[0].id as string
     const replayedClaim = await app.inject({ method: "GET", url: actionsUrl })
     expect(replayedClaim.json().batches[0].id).toBe(batchId)
-    const payload = { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } }
+    const payload = { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: fixture.revision }
     const first = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
     const replay = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
     expect(first.statusCode).toBe(200)
     expect(replay.statusCode).toBe(200)
     expect(replay.json()).toEqual(first.json())
-    expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce()
+    expect(fixture.workspace.writeFileWithStat).toHaveBeenCalledOnce()
     await expect(toolPromise).resolves.toMatchObject({ content: [{ text: expect.stringContaining("Applied one action batch") }] })
     await app.close()
   })

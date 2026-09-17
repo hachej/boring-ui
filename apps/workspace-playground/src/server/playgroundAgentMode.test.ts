@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
-import { resolvePlaygroundAgentMode } from "./playgroundAgentMode"
+import { resolvePlaygroundAgentMode, shouldEnableTldrawPlugin } from "./playgroundAgentMode"
 import { SCRIPTED_DEFAULT_AGENT_TYPE_ID } from "../shared/playgroundAgents"
 import {
   SCRIPTED_ONE_AGENT,
@@ -10,6 +10,11 @@ import {
 } from "./testing/twoAgentFleet"
 
 describe("workspace playground agent mode", () => {
+  it("uses one capability decision for local versus remote tldraw composition", () => {
+    expect(shouldEnableTldrawPlugin({})).toBe(true)
+    expect(shouldEnableTldrawPlugin({ BORING_WORKER_BASE_URL: "https://worker.example" })).toBe(false)
+  })
+
   it("defaults to exactly one scripted agent", () => {
     expect(resolvePlaygroundAgentMode({})).toBe("scripted-single")
     expect(SCRIPTED_ONE_AGENT).toEqual([SCRIPTED_TWO_AGENT_FLEET[0]])

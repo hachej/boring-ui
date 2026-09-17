@@ -60,8 +60,7 @@ export interface Workspace {
    */
   createBinaryFile?(relPath: string, data: Uint8Array): Promise<void>
   /**
-   * Optional consistent read+metadata operation. Content and metadata must
-   * describe the same serialized file version. Remote workspaces should
+   * Optional optimized read+metadata operation. Remote workspaces should
    * implement this as one round trip when possible.
    */
   readFileWithStat?(relPath: string): Promise<{ content: string; stat: Stat }>
@@ -70,16 +69,6 @@ export interface Workspace {
    * implement this as one round trip when possible.
    */
   writeFileWithStat?(relPath: string, data: string): Promise<Stat>
-  /**
-   * Provider-owned conditional atomic replacement. The provider must compare
-   * the expected revision and replace the file within the same serialized
-   * critical section. A mismatch throws an error with statusCode 409.
-   */
-  replaceFileIfUnchanged?(
-    relPath: string,
-    data: string,
-    expected: Pick<Stat, 'size' | 'mtimeMs'>,
-  ): Promise<Stat>
   /** Optional optimized binary write+metadata operation. */
   writeBinaryFileWithStat?(relPath: string, data: Uint8Array): Promise<Stat>
   unlink(relPath: string): Promise<void>

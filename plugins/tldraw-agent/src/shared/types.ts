@@ -14,11 +14,10 @@ export interface TldrawAgentParams {
 
 export type CanvasColor = "black" | "blue" | "green" | "orange" | "red" | "violet"
 export type CanvasFill = "none" | "semi"
-export type CanvasShapeType = "rectangle" | "ellipse" | "diamond" | "text"
-
-export interface CanvasCreateShape {
+export type CanvasGeoShapeType = "rectangle" | "ellipse" | "diamond"
+export interface CanvasGeoCreateShape {
   id: string
-  type: CanvasShapeType
+  type: CanvasGeoShapeType
   x: number
   y: number
   w?: number
@@ -27,17 +26,19 @@ export interface CanvasCreateShape {
   color?: CanvasColor
   fill?: CanvasFill
 }
-
-export interface CanvasUpdateShape {
+export interface CanvasTextCreateShape {
   id: string
-  x?: number
-  y?: number
+  type: "text"
+  x: number
+  y: number
   w?: number
-  h?: number
   text?: string
   color?: CanvasColor
-  fill?: CanvasFill
 }
+export type CanvasCreateShape = CanvasGeoCreateShape | CanvasTextCreateShape
+export type CanvasUpdateShape =
+  | { id: string; target: "geo"; x?: number; y?: number; w?: number; h?: number; text?: string; color?: CanvasColor; fill?: CanvasFill }
+  | { id: string; target: "text"; x?: number; y?: number; w?: number; text?: string; color?: CanvasColor }
 
 export type CanvasAction =
   | { type: "create"; shape: CanvasCreateShape }

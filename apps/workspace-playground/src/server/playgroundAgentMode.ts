@@ -1,5 +1,9 @@
 export type PlaygroundAgentMode = "scripted-single" | "scripted-multi" | "native-single" | "factory"
 
+export function shouldEnableTldrawPlugin(env: Readonly<Record<string, string | undefined>>): boolean {
+  return !env.BORING_WORKER_BASE_URL?.trim()
+}
+
 export function resolvePlaygroundAgentMode(
   env: Readonly<Record<string, string | undefined>>,
 ): PlaygroundAgentMode {

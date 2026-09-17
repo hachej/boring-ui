@@ -14,7 +14,7 @@ import "tldraw/tldraw.css"
 import { normalizeTldrawResourcePath, type CanvasAction, type CanvasCreateShape, type PendingCanvasBatch, type TldrawAgentParams } from "../shared"
 
 export const TLDRAW_AGENT_PANEL_ID = "tldraw-agent-panel"
-type Revision = { size: number; mtimeMs: number }
+type Revision = { size: number; mtimeMs: number; sha256: string }
 
 export function createSerializedSaveQueue(options: {
   snapshot: () => Promise<string>
@@ -23,17 +23,19 @@ export function createSerializedSaveQueue(options: {
   let dirtyGeneration = 0
   let savedGeneration = 0
   let running: Promise<void> | null = null
+  let pending: { generation: number; json: string } | null = null
   return {
     markDirty() { dirtyGeneration += 1; return dirtyGeneration },
-    hasDirty() { return dirtyGeneration > savedGeneration },
+    hasDirty() { return dirtyGeneration > savedGeneration || pending !== null },
+    reconcileToLoadedState() { pending = null; savedGeneration = dirtyGeneration },
     flush() {
       if (running) return running
       const loop = (async () => {
-        while (savedGeneration < dirtyGeneration) {
-          const generation = dirtyGeneration
-          const json = await options.snapshot()
-          await options.commit(json, generation)
-          savedGeneration = generation
+        while (savedGeneration < dirtyGeneration || pending) {
+          if (!pending) pending = { generation: dirtyGeneration, json: await options.snapshot() }
+          await options.commit(pending.json, pending.generation)
+          savedGeneration = pending.generation
+          pending = null
         }
       })()
       running = loop.finally(() => { running = null })
@@ -67,6 +69,11 @@ function existingIds(editor: Editor, values: string[], minimum: number): TLShape
   return ids
 }
 
+export function loadCanvasStoreSnapshot(editor: Editor, snapshot: ReturnType<Editor["store"]["getStoreSnapshot"]>): void {
+  if (Object.keys(snapshot.store).length > 0) editor.store.loadStoreSnapshot(snapshot)
+  else editor.deleteShapes([...editor.getCurrentPageShapeIds()])
+}
+
 export function applyCanvasAction(editor: Editor, action: CanvasAction): void {
   if (action.type === "clear") { editor.deleteShapes([...editor.getCurrentPageShapeIds()]); return }
   if (action.type === "delete") { editor.deleteShapes(existingIds(editor, action.ids, 1)); return }
@@ -78,13 +85,18 @@ export function applyCanvasAction(editor: Editor, action: CanvasAction): void {
   if (action.type === "update") {
     const id = existingIds(editor, [action.shape.id], 1)[0]!
     const existing = editor.getShape(id)!
-    if (existing.type === "text" && (action.shape.h !== undefined || action.shape.fill !== undefined)) throw new Error("text updates do not accept h or fill")
-    if (!Object.keys(action.shape).some((key) => key !== "id")) throw new Error("update requires at least one mutable property")
+    if (action.shape.target !== existing.type) throw new Error(`shape type mismatch for ${action.shape.id}`)
+    if (!Object.keys(action.shape).some((key) => key !== "id" && key !== "target")) throw new Error("update requires at least one mutable property")
     const partial: TLShapePartial = { id, type: existing.type }
     if (action.shape.x !== undefined) partial.x = action.shape.x
     if (action.shape.y !== undefined) partial.y = action.shape.y
     const props: Record<string, unknown> = {}
-    for (const key of ["w", "h", "color", "fill"] as const) if (action.shape[key] !== undefined) props[key] = action.shape[key]
+    if (action.shape.w !== undefined) props.w = action.shape.w
+    if (action.shape.color !== undefined) props.color = action.shape.color
+    if (action.shape.target === "geo") {
+      if (action.shape.h !== undefined) props.h = action.shape.h
+      if (action.shape.fill !== undefined) props.fill = action.shape.fill
+    }
     if (action.shape.text !== undefined) props.richText = toRichText(action.shape.text)
     if (Object.keys(props).length) partial.props = props
     editor.updateShape(partial); return
@@ -97,6 +109,11 @@ export function applyCanvasAction(editor: Editor, action: CanvasAction): void {
     editor.alignShapes(ids, operation); return
   }
   editor.distributeShapes(ids, action.axis === "y" ? "vertical" : "horizontal")
+}
+
+export function flushPendingSaveOnClose(queue: { flush(): Promise<void> } | null, timer: number | null | undefined): Promise<void> {
+  if (timer) window.clearTimeout(timer)
+  return queue?.flush() ?? Promise.resolve()
 }
 
 function wasDefinitelyNotWritten(error: unknown): boolean {
@@ -116,13 +133,25 @@ export async function applyCanvasBatch(options: {
   const wasReadonly = options.editor.getInstanceState().isReadonly
   options.editor.updateInstanceState({ isReadonly: true })
   try {
-    options.editor.run(() => { for (const action of options.batch.actions) applyCanvasAction(options.editor, action) })
+    try {
+      options.editor.run(() => { for (const action of options.batch.actions) applyCanvasAction(options.editor, action) })
+    } catch (error) {
+      options.editor.store.loadStoreSnapshot(before)
+      throw error
+    }
     options.onActionsApplied?.()
-    await options.commit()
-  } catch (error) {
-    if (wasDefinitelyNotWritten(error)) options.editor.store.loadStoreSnapshot(before)
-    else await options.reload()
-    throw error
+    try {
+      await options.commit()
+    } catch (error) {
+      if (wasDefinitelyNotWritten(error)) {
+        options.editor.store.loadStoreSnapshot(before)
+        try { await options.reload() } catch { /* Keep the restored pre-batch state. */ }
+      } else {
+        try { await options.reload() }
+        catch { options.editor.store.loadStoreSnapshot(before) }
+      }
+      throw error
+    }
   } finally {
     options.editor.updateInstanceState({ isReadonly: wasReadonly })
   }
@@ -149,8 +178,9 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     if (!parsed.ok) throw new Error(`Invalid native tldraw file: ${parsed.error.type}`)
     const snapshot = parsed.value.getStoreSnapshot()
     ignoreStoreEventsRef.current = true
-    try { if (Object.keys(snapshot.store).length > 0) editor.store.loadStoreSnapshot(snapshot) }
-    finally { ignoreStoreEventsRef.current = false }
+    try {
+      loadCanvasStoreSnapshot(editor, snapshot)
+    } finally { ignoreStoreEventsRef.current = false }
     revisionRef.current = payload.revision
     setStatus("Live · user and agent share this editor"); setError(null)
   }, [client, filesystem, path])
@@ -188,7 +218,12 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           saveQueueRef.current?.markDirty()
           if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
           saveTimerRef.current = window.setTimeout(() => {
-            void saveQueueRef.current?.flush().catch((cause) => setError(cause instanceof Error ? cause.message : "Save failed"))
+            void saveQueueRef.current?.flush().catch(async (cause) => {
+              if (wasDefinitelyNotWritten(cause)) {
+                try { await loadFile(editor); saveQueueRef.current?.reconcileToLoadedState() } catch { /* retain pending stable request for retry */ }
+              }
+              setError(cause instanceof Error ? cause.message : "Save failed")
+            })
           }, 500)
         }, { scope: "document", source: "user" })
       } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Load failed") }
@@ -197,7 +232,13 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
       if (!editorRef.current) return
       window.clearInterval(wait); void connect(editorRef.current)
     }, 25)
-    return () => { active = false; window.clearInterval(wait); unlisten?.(); if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current) }
+    return () => {
+      active = false; window.clearInterval(wait); unlisten?.()
+      // Pane close is a persistence barrier: start the final stable-request
+      // flush before releasing the editor. The queue retains the exact
+      // snapshot/request id across transient failures while this page lives.
+      void flushPendingSaveOnClose(saveQueueRef.current, saveTimerRef.current).catch(() => {})
+    }
   }, [commitSnapshot, loadFile])
 
   useEffect(() => {

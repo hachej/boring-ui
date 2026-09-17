@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 import { assertReleaseCandidateDistModule } from "./src/release-candidate-dist"
+import { shouldEnableTldrawPlugin } from "./src/server/playgroundAgentMode"
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
@@ -136,6 +137,12 @@ const usePollingWatch = process.env.CHOKIDAR_USEPOLLING === "1" || process.env.B
 const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORING_VITE_POLL_INTERVAL ?? "300")
 
 export default defineConfig({
+  define: {
+    // One boot-time capability decision controls both server composition and
+    // the statically composed front resolver. Remote-worker mode has no local
+    // tldraw routes/tools, so it must not advertise the panel.
+    "import.meta.env.VITE_PLAYGROUND_TLDRAW_ENABLED": JSON.stringify(shouldEnableTldrawPlugin(process.env) ? "1" : "0"),
+  },
   plugins: [
     ...(releaseCandidateDistOnly
       ? [releaseCandidateAgentStylesheet(), releaseCandidateDistOnlyGuard()]

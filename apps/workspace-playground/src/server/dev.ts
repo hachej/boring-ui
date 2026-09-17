@@ -16,7 +16,7 @@ import {
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
 import { loadBoringFactoryAgents } from "./factoryAgents"
-import { resolvePlaygroundAgentMode } from "./playgroundAgentMode"
+import { resolvePlaygroundAgentMode, shouldEnableTldrawPlugin } from "./playgroundAgentMode"
 import { resolvePlaygroundDefaultAgentTypeId } from "../shared/playgroundAgents"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -59,6 +59,7 @@ export async function startPlaygroundServer(): Promise<void> {
       seedWorkspaceFromFixtures(workspaceRoot)
     }
     const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
+    const tldrawEnabled = shouldEnableTldrawPlugin(process.env)
     const remoteWorkerModeAdapter = workerBaseUrl
       ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
       : undefined
@@ -81,8 +82,11 @@ export async function startPlaygroundServer(): Promise<void> {
     // below: the fleet's instruction refs are addressed against the filesystem
     // this server actually serves, so they resolve or are not published.
     const factoryAgents = agentMode === "factory" ? await loadBoringFactoryAgents({}) : undefined
+    const nativeAgents = !tldrawEnabled
+      ? NATIVE_ONE_AGENT.map((agent) => ({ ...agent, plugins: [] }))
+      : NATIVE_ONE_AGENT
     const playgroundAgents = agentMode === "native-single"
-      ? NATIVE_ONE_AGENT
+      ? nativeAgents
       : agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
     const agents = factoryAgents ?? playgroundAgents
     const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
@@ -122,7 +126,7 @@ export async function startPlaygroundServer(): Promise<void> {
           trust: "internal",
         },
         ...scriptedCapabilityPlugins,
-        ...(localWorkspace
+        ...(tldrawEnabled && localWorkspace
           ? [{
               dir: resolve(APP_ROOT, "../../plugins/tldraw-agent"),
               options: { workspace: localWorkspace },

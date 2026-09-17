@@ -8,8 +8,8 @@ Native `.tldraw` editing for the regular Boring agent.
 - `edit_tldraw_canvas` supports `create`, `read`, and batched `edit` operations.
 - `.tldraw` and `.tldr` files resolve to one workspace tab per path.
 - An open tab owns one live tldraw SDK `Editor`. Manual edits and agent action batches mutate that same editor.
-- Agent batches are delivered to the owning tab, applied through tldraw SDK APIs, serialized with `serializeTldrawJson`, and saved once through the Workspace provider's conditional atomic-replace capability.
-- Manual document changes autosave the same native file using the provider-owned `{ size, mtimeMs }` revision; stale revisions fail without replacing the file.
+- Agent batches are delivered to the owning tab, applied through tldraw SDK APIs, serialized with `serializeTldrawJson`, and saved once through the Workspace adapter.
+- Manual document changes autosave with an optimistic `{ size, mtimeMs, sha256 }` revision. Plugin-originated writes are serialized per file; stale content is rejected before writing and the result is read back to detect an immediately overlapping external write.
 - The playground enables the plugin only in local mode, where the plugin and agent runtime share the same policy-aware Workspace instance. Remote-worker mode stays disabled until it exposes the same capability.
 - Native file creation uses the tldraw store schema; files contain `tldrawFileFormatVersion`, serialized schema, and native records.
 
@@ -21,10 +21,14 @@ create/read native file
 → load into the live tldraw Editor
 → apply one validated action batch
 → serialize once
-→ atomically save once
+→ optimistically save once
 ```
 
 Supported batch actions: create, update, delete, clear, align, and distribute.
+
+## Concurrency boundary
+
+The local filesystem does not provide compare-and-swap replacement against arbitrary processes. This plugin therefore does **not** claim cross-process atomic CAS. It detects changes visible before its guarded write and verifies content immediately afterward, but a raw filesystem writer can still race inside or after that interval. On a detected conflict the panel reloads the durable file; users should avoid editing an open `.tldraw` file through unrelated raw filesystem tools.
 
 ## Run
 
