@@ -1,34 +1,44 @@
+import { posix } from "node:path"
 import { randomUUID } from "node:crypto"
 import type { FastifyPluginAsync } from "fastify"
 import { createTLStore, parseTldrawJsonFile } from "tldraw"
-import type { Workspace } from "@hachej/boring-agent/shared"
+import type { Workspace, Stat } from "@hachej/boring-agent/shared"
 import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { TLDRAW_AGENT_PLUGIN_ID, type CanvasAction, type PendingCanvasBatch } from "../shared"
 
-interface PendingRequest {
+type BatchState = "pending" | "claimed" | "committing" | "committed" | "failed" | "cancelled"
+interface BatchEntry {
   batch: PendingCanvasBatch
+  state: BatchState
   resolve: (value: ToolResult) => void
-  timer: ReturnType<typeof setTimeout>
+  timer?: ReturnType<typeof setTimeout>
   ownerClientId?: string
-  expired: boolean
+  outcome?: { statusCode: number; body: unknown }
 }
+
+const USER_FILESYSTEM = "user" as const
+const SHAPE_TYPES = ["rectangle", "ellipse", "diamond", "text"] as const
+const COLORS = ["black", "blue", "green", "orange", "red", "violet"] as const
+const FILLS = ["none", "semi"] as const
 
 function result(text: string, details?: unknown, isError = false): ToolResult {
   return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) }
 }
 
-export function canonicalPath(target: string): string {
-  const path = target.replaceAll("\\", "/").replace(/^\.\//, "")
-  if (!path || path.startsWith("/") || path.split("/").some((part) => part === "..") || !/\.(?:tldraw|tldr)$/i.test(path)) {
-    throw new Error("path must be a contained relative .tldraw or .tldr file")
-  }
-  return path.split("/").filter((part) => part && part !== ".").join("/")
+function tldrawPath(target: unknown): string {
+  const path = String(target ?? "")
+  if (!/\.(?:tldraw|tldr)$/i.test(path)) throw new Error("path must be a .tldraw or .tldr file")
+  return path
+}
+
+function requireUserFilesystem(value: unknown): "user" {
+  if (value !== undefined && value !== USER_FILESYSTEM) throw new Error("only the user filesystem is supported")
+  return USER_FILESYSTEM
 }
 
 function parseNative(json: string) {
-  const schema = createTLStore().schema
-  const parsed = parseTldrawJsonFile({ json, schema })
+  const parsed = parseTldrawJsonFile({ json, schema: createTLStore().schema })
   if (!parsed.ok) throw new Error(`invalid native tldraw file: ${parsed.error.type}`)
   return parsed.value
 }
@@ -38,26 +48,95 @@ function blankFile(): string {
   return JSON.stringify({ tldrawFileFormatVersion: 1, schema: snapshot.schema, records: [] })
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value)
+}
+
+function exactKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key))
+}
+
 export function validateActions(value: unknown): CanvasAction[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 100) throw new Error("edit requires 1-100 actions")
-  for (const action of value as CanvasAction[]) {
-    if (!action || typeof action !== "object") throw new Error("each action must be an object")
-    if ((action.type === "create" || action.type === "update") && !action.shape) throw new Error(`${action.type} requires shape`)
-    if ((action.type === "delete" || action.type === "align" || action.type === "distribute") && (!action.ids?.length)) throw new Error(`${action.type} requires non-empty ids`)
-    if ((action.type === "align" || action.type === "distribute") && !action.axis) throw new Error(`${action.type} requires axis`)
-    if (action.type === "align" && !action.alignment) throw new Error("align requires alignment")
-    if (!["create", "update", "delete", "clear", "align", "distribute"].includes(action.type)) throw new Error(`unsupported action: ${String(action.type)}`)
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("each action must be an object")
+    const action = raw as Record<string, unknown>
+    if (action.type === "clear") {
+      if (!exactKeys(action, ["type"])) throw new Error("clear accepts no additional fields")
+      continue
+    }
+    if (action.type === "create" || action.type === "update") {
+      if (!exactKeys(action, ["type", "shape"]) || !action.shape || typeof action.shape !== "object" || Array.isArray(action.shape)) throw new Error(`${action.type} requires shape`)
+      const shape = action.shape as Record<string, unknown>
+      const allowed = ["id", "type", "x", "y", "w", "h", "text", "color", "fill"]
+      if (!exactKeys(shape, allowed) || typeof shape.id !== "string" || !shape.id) throw new Error(`${action.type} shape requires id`)
+      if (action.type === "create" && (!SHAPE_TYPES.includes(shape.type as never) || !isFiniteNumber(shape.x) || !isFiniteNumber(shape.y))) throw new Error("create shape requires valid type, x, and y")
+      for (const key of ["x", "y", "w", "h"] as const) if (shape[key] !== undefined && !isFiniteNumber(shape[key])) throw new Error(`${key} must be finite`)
+      if (shape.text !== undefined && typeof shape.text !== "string") throw new Error("text must be a string")
+      if (shape.color !== undefined && !COLORS.includes(shape.color as never)) throw new Error("invalid color")
+      if (shape.fill !== undefined && !FILLS.includes(shape.fill as never)) throw new Error("invalid fill")
+      continue
+    }
+    if (action.type === "delete" || action.type === "align" || action.type === "distribute") {
+      const allowed = action.type === "delete" ? ["type", "ids"] : action.type === "align" ? ["type", "ids", "axis", "alignment"] : ["type", "ids", "axis"]
+      const ids = action.ids
+      if (!exactKeys(action, allowed) || !Array.isArray(ids) || ids.some((id) => typeof id !== "string" || !id)) throw new Error(`${action.type} requires string ids`)
+      const minimum = action.type === "delete" ? 1 : action.type === "align" ? 2 : 3
+      if (ids.length < minimum) throw new Error(`${action.type} requires at least ${minimum} ids`)
+      if (action.type !== "delete" && !["x", "y"].includes(String(action.axis))) throw new Error(`${action.type} requires axis`)
+      if (action.type === "align" && !["start", "center", "end"].includes(String(action.alignment))) throw new Error("align requires alignment")
+      continue
+    }
+    throw new Error(`unsupported action: ${String(action.type)}`)
   }
   return value as CanvasAction[]
 }
 
-function shapeSummary(json: string): string {
-  const file = JSON.parse(json) as { records?: Array<{ id?: string; typeName?: string; type?: string; x?: number; y?: number }> }
-  const shapes = (file.records ?? []).filter((record) => record.typeName === "shape").slice(0, 100)
-  return JSON.stringify(shapes.map(({ id, type, x, y }) => ({ id, type, x, y })))
+function richTextText(value: unknown): string {
+  if (!value || typeof value !== "object") return ""
+  const node = value as { text?: unknown; content?: unknown[] }
+  return `${typeof node.text === "string" ? node.text : ""}${Array.isArray(node.content) ? node.content.map(richTextText).join("") : ""}`
 }
 
-export function createCanvasTool(workspace: Workspace, pending: Map<string, PendingRequest> = new Map(), bridge?: UiBridge): AgentTool {
+export function nativeShapeSummary(json: string): string {
+  const store = parseNative(json)
+  const all = store.allRecords().filter((record) => record.typeName === "shape") as unknown as Array<Record<string, unknown>>
+  const limit = 100
+  const shapes = all.slice(0, limit).map((record) => {
+    const props = (record.props && typeof record.props === "object" ? record.props : {}) as Record<string, unknown>
+    return {
+      id: record.id,
+      type: record.type,
+      x: record.x,
+      y: record.y,
+      w: props.w,
+      h: props.h,
+      text: richTextText(props.richText).slice(0, 300),
+      color: props.color,
+      fill: props.fill,
+      geo: props.geo,
+    }
+  })
+  return JSON.stringify({ total: all.length, returned: shapes.length, truncated: all.length > limit, shapes })
+}
+
+const shapeProperties = {
+  id: { type: "string" }, type: { type: "string", enum: [...SHAPE_TYPES] },
+  x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" },
+  text: { type: "string" }, color: { type: "string", enum: [...COLORS] }, fill: { type: "string", enum: [...FILLS] },
+} as const
+const actionSchema = {
+  oneOf: [
+    { type: "object", properties: { type: { const: "create" }, shape: { type: "object", properties: shapeProperties, required: ["id", "type", "x", "y"], additionalProperties: false } }, required: ["type", "shape"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "update" }, shape: { type: "object", properties: shapeProperties, required: ["id"], additionalProperties: false } }, required: ["type", "shape"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "delete" }, ids: { type: "array", minItems: 1, items: { type: "string" } } }, required: ["type", "ids"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "clear" } }, required: ["type"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "align" }, ids: { type: "array", minItems: 2, items: { type: "string" } }, axis: { enum: ["x", "y"] }, alignment: { enum: ["start", "center", "end"] } }, required: ["type", "ids", "axis", "alignment"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "distribute" }, ids: { type: "array", minItems: 3, items: { type: "string" } }, axis: { enum: ["x", "y"] } }, required: ["type", "ids", "axis"], additionalProperties: false },
+  ],
+} as const
+
+export function createCanvasTool(workspace: Workspace, batches: Map<string, BatchEntry> = new Map(), bridge?: UiBridge): AgentTool {
   return {
     name: "edit_tldraw_canvas",
     description: "Create, inspect, or batch-edit a native .tldraw file through its live workspace tab.",
@@ -67,34 +146,44 @@ export function createCanvasTool(workspace: Workspace, pending: Map<string, Pend
       properties: {
         operation: { type: "string", enum: ["create", "read", "edit"] },
         path: { type: "string" },
-        actions: { type: "array", minItems: 1, maxItems: 100, items: { type: "object", additionalProperties: true } },
+        actions: { type: "array", minItems: 1, maxItems: 100, items: actionSchema },
       },
       required: ["operation", "path"], additionalProperties: false,
     },
     async execute(params, ctx) {
       try {
-        const path = canonicalPath(String(params.path ?? ""))
+        const path = tldrawPath(params.path)
         const operation = String(params.operation ?? "")
         if (operation === "create") {
           if (!workspace.createBinaryFile) return result("Workspace does not support exclusive file creation.", undefined, true)
+          const parent = posix.dirname(path)
+          if (parent !== ".") await workspace.mkdir(parent, { recursive: true })
           await workspace.createBinaryFile(path, new TextEncoder().encode(blankFile()))
-          await bridge?.postCommand({ kind: "openFile", params: { path } })
-          return result(`Created native tldraw file ${path} and requested its workspace tab.`, { path })
+          await bridge?.postCommand({ kind: "openFile", params: { path, filesystem: USER_FILESYSTEM } })
+          return result(`Created native tldraw file ${path} and requested its workspace tab.`, { path, filesystem: USER_FILESYSTEM })
         }
         if (operation === "read") {
           const json = await workspace.readFile(path)
-          parseNative(json)
-          return result(`Canvas ${path} shapes: ${shapeSummary(json)}`, { path })
+          return result(`Canvas ${path}: ${nativeShapeSummary(json)}`, { path, filesystem: USER_FILESYSTEM })
         }
         if (operation !== "edit") return result(`Unsupported operation: ${operation}`, undefined, true)
         const actions = validateActions(params.actions)
         const id = randomUUID()
-        const batch: PendingCanvasBatch = { id, path, actions }
+        const batch: PendingCanvasBatch = { id, path, filesystem: USER_FILESYSTEM, actions }
         return await new Promise<ToolResult>((resolveTool) => {
           const finish = (value: ToolResult) => { ctx.abortSignal?.removeEventListener("abort", abort); resolveTool(value) }
-          const abort = () => { const entry = pending.get(id); if (entry) entry.expired = true; pending.delete(id); finish(result("Canvas edit cancelled.", { path }, true)) }
-          const timer = setTimeout(() => { const entry = pending.get(id); if (entry) entry.expired = true; pending.delete(id); finish(result(`The ${path} tab did not commit before expiry.`, { path }, true)) }, 15_000)
-          pending.set(id, { batch, resolve: finish, timer, expired: false })
+          const cancel = (message: string) => {
+            const entry = batches.get(id)
+            if (!entry || entry.state === "committing" || entry.state === "committed") return
+            if (entry.timer) clearTimeout(entry.timer)
+            entry.state = "cancelled"
+            entry.outcome = { statusCode: 409, body: { written: false, error: { message } } }
+            finish(result(message, { path }, true))
+            setTimeout(() => batches.delete(id), 60_000).unref?.()
+          }
+          const abort = () => cancel("Canvas edit cancelled.")
+          const timer = setTimeout(() => cancel(`The ${path} tab did not claim the batch before expiry.`), 15_000)
+          batches.set(id, { batch, state: "pending", resolve: finish, timer })
           ctx.abortSignal?.addEventListener("abort", abort, { once: true })
         })
       } catch (error) { return result(error instanceof Error ? error.message : String(error), undefined, true) }
@@ -102,66 +191,118 @@ export function createCanvasTool(workspace: Workspace, pending: Map<string, Pend
   }
 }
 
+function revision(stat: Stat) { return { size: stat.size, mtimeMs: stat.mtimeMs } }
+function resourceKey(filesystem: string, path: string) { return `${filesystem}:${path}` }
+
 export function createTldrawAgentServerPlugin(options: { workspace: Workspace; bridge?: UiBridge }): WorkspaceServerPlugin {
-  const pending = new Map<string, PendingRequest>()
+  const batches = new Map<string, BatchEntry>()
   const owners = new Map<string, { clientId: string; seenAt: number }>()
-  const locks = new Map<string, Promise<void>>()
-  const withLock = async <T>(path: string, fn: () => Promise<T>): Promise<T> => {
-    const previous = locks.get(path) ?? Promise.resolve()
-    let release!: () => void
-    const current = new Promise<void>((resolve) => { release = resolve })
-    const queued = previous.then(() => current)
-    locks.set(path, queued)
-    await previous
-    try { return await fn() } finally { release(); if (locks.get(path) === queued) locks.delete(path) }
+  const finishBatch = (entry: BatchEntry, state: "committed" | "failed", statusCode: number, body: unknown, tool: ToolResult) => {
+    if (entry.timer) clearTimeout(entry.timer)
+    entry.state = state
+    entry.outcome = { statusCode, body }
+    entry.resolve(tool)
+    setTimeout(() => batches.delete(entry.batch.id), 60_000).unref?.()
   }
   const routes: FastifyPluginAsync = async (app) => {
     app.get<{ Querystring: { path?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/file", async (request, reply) => {
       try {
-        if (request.query.filesystem && request.query.filesystem !== "user") return reply.code(400).send({ error: { message: "only the user filesystem is supported" } })
-        const path = canonicalPath(String(request.query.path ?? ""))
-        const loaded = options.workspace.readFileWithStat ? await options.workspace.readFileWithStat(path) : { content: await options.workspace.readFile(path), stat: await options.workspace.stat(path) }
+        const filesystem = requireUserFilesystem(request.query.filesystem)
+        const path = tldrawPath(request.query.path)
+        if (!options.workspace.readFileWithStat) throw Object.assign(new Error("workspace does not support consistent revision reads"), { statusCode: 501 })
+        const loaded = await options.workspace.readFileWithStat(path)
         parseNative(loaded.content)
-        return { path, json: loaded.content, revision: loaded.stat.mtimeMs }
-      } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
+        return { path, filesystem, json: loaded.content, revision: revision(loaded.stat) }
+      } catch (error) {
+        const statusCode = Number((error as { statusCode?: number }).statusCode) || 400
+        return reply.code(statusCode).send({ error: { message: error instanceof Error ? error.message : String(error) } })
+      }
     })
     app.post<{ Body: { path?: string; clientId?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/connect", async (request, reply) => {
-      if (request.body?.filesystem && request.body.filesystem !== "user") return reply.code(400).send({ error: { message: "only the user filesystem is supported" } })
-      const path = canonicalPath(String(request.body?.path ?? "")); const clientId = String(request.body?.clientId ?? "")
-      if (!clientId) return reply.code(400).send({ error: { message: "clientId is required" } })
-      const current = owners.get(path)
-      if (!current || current.clientId === clientId || Date.now() - current.seenAt > 5_000) owners.set(path, { clientId, seenAt: Date.now() })
-      return { ok: owners.get(path)?.clientId === clientId }
-    })
-    app.get<{ Querystring: { path?: string; clientId?: string } }>("/api/v1/plugins/tldraw-agent/actions", async (request) => {
-      const path = canonicalPath(String(request.query.path ?? "")); const clientId = String(request.query.clientId ?? ""); const owner = owners.get(path)
-      if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return { batches: [] }
-      owner.seenAt = Date.now()
-      const batches = [...pending.values()].filter((entry) => !entry.expired && entry.batch.path === path && (!entry.ownerClientId || entry.ownerClientId === clientId))
-      for (const entry of batches) entry.ownerClientId = clientId
-      return { batches: batches.map((entry) => entry.batch) }
-    })
-    app.post<{ Body: { id?: string; path?: string; clientId?: string; json?: string; expectedRevision?: number } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
       try {
-        const { id, path: rawPath = "", clientId = "", json, expectedRevision } = request.body ?? {}; const path = canonicalPath(rawPath)
+        const filesystem = requireUserFilesystem(request.body?.filesystem)
+        const path = tldrawPath(request.body?.path)
+        const clientId = String(request.body?.clientId ?? "")
+        if (!clientId) throw new Error("clientId is required")
+        const key = resourceKey(filesystem, path)
+        const current = owners.get(key)
+        if (!current || current.clientId === clientId || Date.now() - current.seenAt > 5_000) owners.set(key, { clientId, seenAt: Date.now() })
+        return { ok: owners.get(key)?.clientId === clientId }
+      } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
+    })
+    app.get<{ Querystring: { path?: string; clientId?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/actions", async (request, reply) => {
+      try {
+        const filesystem = requireUserFilesystem(request.query.filesystem)
+        const path = tldrawPath(request.query.path)
+        const clientId = String(request.query.clientId ?? "")
+        const owner = owners.get(resourceKey(filesystem, path))
+        if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return { batches: [] }
+        owner.seenAt = Date.now()
+        const claimed: PendingCanvasBatch[] = []
+        for (const entry of batches.values()) {
+          if (entry.batch.path !== path || entry.batch.filesystem !== filesystem) continue
+          if (entry.state === "claimed" && entry.ownerClientId === clientId) {
+            claimed.push(entry.batch)
+            continue
+          }
+          if (entry.state !== "pending") continue
+          if (entry.timer) clearTimeout(entry.timer)
+          entry.ownerClientId = clientId
+          entry.state = "claimed"
+          entry.timer = setTimeout(() => {
+            if (entry.state !== "claimed") return
+            entry.state = "cancelled"
+            entry.outcome = { statusCode: 409, body: { written: false, error: { message: "batch claim expired" } } }
+            entry.resolve(result("Canvas edit claim expired before commit.", { path }, true))
+            setTimeout(() => batches.delete(entry.batch.id), 60_000).unref?.()
+          }, 15_000)
+          claimed.push(entry.batch)
+        }
+        return { batches: claimed }
+      } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
+    })
+    app.post<{ Body: { id?: string; path?: string; filesystem?: string; clientId?: string; json?: string; expectedRevision?: { size?: number; mtimeMs?: number } } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
+      const { id, clientId = "", json, expectedRevision } = request.body ?? {}
+      try {
+        const filesystem = requireUserFilesystem(request.body?.filesystem)
+        const path = tldrawPath(request.body?.path)
         if (typeof json !== "string") throw new Error("json is required")
         parseNative(json)
-        const owner = owners.get(path)
-        if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return reply.code(409).send({ error: { message: "canvas owner lease is invalid" } })
-        const entry = id ? pending.get(id) : undefined
-        if (id && (!entry || entry.expired || entry.batch.path !== path || entry.ownerClientId !== clientId)) return reply.code(409).send({ error: { message: "batch claim is invalid or expired" } })
-        const stat = await withLock(path, async () => {
-          const current = await options.workspace.stat(path)
-          if (typeof expectedRevision !== "number" || current.mtimeMs !== expectedRevision) throw new Error("file revision conflict")
-          return options.workspace.writeFileWithStat ? options.workspace.writeFileWithStat(path, json) : (await options.workspace.writeFile(path, json), await options.workspace.stat(path))
-        })
-        if (entry && id) { clearTimeout(entry.timer); pending.delete(id); entry.resolve(result(`Applied one action batch to ${path} and saved it.`, { path, revision: stat.mtimeMs })) }
-        return { ok: true, revision: stat.mtimeMs }
-      } catch (error) { return reply.code(409).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
+        if (!expectedRevision || !isFiniteNumber(expectedRevision.size) || !isFiniteNumber(expectedRevision.mtimeMs)) throw new Error("expectedRevision is required")
+        const entry = id ? batches.get(id) : undefined
+        if (entry?.outcome) {
+          if (entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId) return reply.code(409).send({ written: false, error: { message: "batch identity mismatch" } })
+          return reply.code(entry.outcome.statusCode).send(entry.outcome.body)
+        }
+        const owner = owners.get(resourceKey(filesystem, path))
+        if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return reply.code(409).send({ written: false, error: { message: "canvas owner lease is invalid" } })
+        if (id && (!entry || entry.state !== "claimed" || entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId)) return reply.code(409).send({ written: false, error: { message: "batch claim is invalid or expired" } })
+        if (entry) {
+          if (entry.timer) clearTimeout(entry.timer)
+          entry.state = "committing"
+        }
+        if (!options.workspace.replaceFileIfUnchanged) throw Object.assign(new Error("workspace does not support conditional atomic replacement"), { statusCode: 501 })
+        const stat = await options.workspace.replaceFileIfUnchanged(path, json, { size: expectedRevision.size, mtimeMs: expectedRevision.mtimeMs })
+        const body = { ok: true, written: true, revision: revision(stat) }
+        if (entry) finishBatch(entry, "committed", 200, body, result(`Applied one action batch to ${path} and saved it.`, { path, filesystem, revision: body.revision }))
+        return body
+      } catch (error) {
+        const statusCode = Number((error as { statusCode?: number }).statusCode) || 409
+        const body = { written: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        const entry = id ? batches.get(id) : undefined
+        if (entry && entry.state === "committing") finishBatch(entry, "failed", statusCode, body, result(body.error.message, { path: entry.batch.path }, true))
+        return reply.code(statusCode).send(body)
+      }
     })
-    app.addHook("onClose", async () => { for (const entry of pending.values()) { clearTimeout(entry.timer); entry.resolve(result("Canvas server stopped.", undefined, true)) }; pending.clear(); owners.clear() })
+    app.addHook("onClose", async () => {
+      for (const entry of batches.values()) {
+        if (entry.timer) clearTimeout(entry.timer)
+        if (entry.state !== "committed" && entry.state !== "failed") entry.resolve(result("Canvas server stopped.", undefined, true))
+      }
+      batches.clear(); owners.clear()
+    })
   }
-  return defineServerPlugin({ id: TLDRAW_AGENT_PLUGIN_ID, label: "tldraw Canvas", routes, agentTools: [createCanvasTool(options.workspace, pending, options.bridge)], systemPrompt: "Use edit_tldraw_canvas for native .tldraw diagrams in the user filesystem." })
+  return defineServerPlugin({ id: TLDRAW_AGENT_PLUGIN_ID, label: "tldraw Canvas", routes, agentTools: [createCanvasTool(options.workspace, batches, options.bridge)], systemPrompt: "Use edit_tldraw_canvas for native .tldraw diagrams in the user filesystem." })
 }
 
 export default function defaultTldrawAgentServerPlugin(options: { workspace?: Workspace } | undefined, context: { bridge?: UiBridge }): WorkspaceServerPlugin {

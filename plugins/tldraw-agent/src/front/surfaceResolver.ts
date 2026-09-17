@@ -15,6 +15,7 @@ export const tldrawAgentSurfaceResolver: BoringFrontSurfaceResolverRegistration 
   resolve(request) {
     if (request.kind !== WORKSPACE_OPEN_PATH_SURFACE_KIND || !isTldrawPath(request.target)) return undefined
     const filesystem = typeof request.filesystem === "string" && request.filesystem ? request.filesystem : undefined
+    if (filesystem && filesystem !== "user") return undefined
     return {
       id: `tldraw:${encodeURIComponent(filesystem ?? "user")}:${encodeURIComponent(request.target)}`,
       component: TLDRAW_AGENT_PANEL_ID,

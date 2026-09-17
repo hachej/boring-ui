@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import tldrawAgentPlugin, { TLDRAW_AGENT_PANEL_ID, TldrawAgentPanel } from "../index"
 import { TLDRAW_AGENT_PLUGIN_ID } from "../../shared/constants"
+import { tldrawAgentSurfaceResolver } from "../surfaceResolver"
 
 describe("tldrawAgentPlugin (BoringFrontFactory)", () => {
   it("registers a panel, a panel command, and a surface resolver", async () => {
@@ -42,6 +43,11 @@ describe("tldrawAgentPlugin (BoringFrontFactory)", () => {
         kind: "workspace.open.path",
       }),
     )
+  })
+
+  it("resolves only user-filesystem tldraw paths", () => {
+    expect(tldrawAgentSurfaceResolver.resolve({ kind: "workspace.open.path", target: "flow.tldraw", filesystem: "user" })).toMatchObject({ component: TLDRAW_AGENT_PANEL_ID })
+    expect(tldrawAgentSurfaceResolver.resolve({ kind: "workspace.open.path", target: "flow.tldraw", filesystem: "company_context" })).toBeUndefined()
   })
 
   it("is the default export (required for hot-reload dynamic import)", () => {

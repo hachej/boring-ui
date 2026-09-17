@@ -100,6 +100,49 @@ test('optimized read/write with stat helpers return content and metadata', async
   expect(writeStat?.size).toBe(11)
 })
 
+test('conditional replacement is atomic and rejects stale revisions', async () => {
+  const { workspace } = await setupWorkspace()
+  await workspace.writeFile('document.txt', 'first')
+  const initial = await workspace.stat('document.txt')
+
+  const replaced = await workspace.replaceFileIfUnchanged?.('document.txt', 'second', {
+    size: initial.size,
+    mtimeMs: initial.mtimeMs,
+  })
+  expect(replaced?.kind).toBe('file')
+  expect(await workspace.readFile('document.txt')).toBe('second')
+
+  await expect(workspace.replaceFileIfUnchanged?.('document.txt', 'stale', {
+    size: initial.size,
+    mtimeMs: initial.mtimeMs,
+  })).rejects.toMatchObject({ code: 'workspace_revision_conflict', statusCode: 409 })
+  expect(await workspace.readFile('document.txt')).toBe('second')
+})
+
+test('concurrent conditional replacements across adapters allow only one winner', async () => {
+  const { root, workspace } = await setupWorkspace()
+  const secondWorkspace = createNodeWorkspace(root)
+  await workspace.writeFile('race.txt', 'initial')
+  const initial = await workspace.stat('race.txt')
+  const expected = { size: initial.size, mtimeMs: initial.mtimeMs }
+  const settled = await Promise.allSettled([
+    workspace.replaceFileIfUnchanged!('race.txt', 'one', expected),
+    secondWorkspace.replaceFileIfUnchanged!('race.txt', 'two', expected),
+  ])
+  expect(settled.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1)
+  expect(settled.filter((entry) => entry.status === 'rejected')).toHaveLength(1)
+  expect(['one', 'two']).toContain(await workspace.readFile('race.txt'))
+})
+
+test('adapter-owned readonly paths reject lexical and canonical writes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'boring-ui-node-workspace-readonly-'))
+  tempDirs.push(root)
+  const workspace = createNodeWorkspace(root, { readonlyPaths: ['.agents'] })
+  await mkdir(join(root, '.agents'), { recursive: true })
+  await expect(workspace.writeFile('.agents/config.json', 'x')).rejects.toMatchObject({ code: 'readonly', statusCode: 403 })
+  await expect(workspace.mkdir('.agents/nested', { recursive: true })).rejects.toMatchObject({ code: 'readonly', statusCode: 403 })
+})
+
 test('readdir returns only name and kind fields', async () => {
   const { workspace } = await setupWorkspace()
   await workspace.mkdir('data', { recursive: false })

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { basename, dirname, resolve } from "node:path"
-import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createRemoteWorkerModeAdapter, createSandboxRuntimeModeAdapter } from "@hachej/boring-agent/server"
 import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
 import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness, isPlaygroundShowcaseSession, markPlaygroundShowcaseSession } from "./testing/scriptedPiHarness"
@@ -65,10 +65,21 @@ export async function startPlaygroundServer(): Promise<void> {
     const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
-    const beadsOperations = remoteWorkerModeAdapter
-      ? undefined
-      : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
+    const localWorkspace = remoteWorkerModeAdapter ? undefined : createNodeWorkspace(workspaceRoot, { readonlyPaths: [".agents"] })
+    const localModeAdapter = localWorkspace
+      ? (() => {
+          const adapter = createSandboxRuntimeModeAdapter(localRuntimeMode)
+          return {
+            ...adapter,
+            async create(context: Parameters<typeof adapter.create>[0]) {
+              const bundle = await adapter.create(context)
+              return { ...bundle, workspace: localWorkspace }
+            },
+          }
+        })()
+      : undefined
+    const beadsOperations = localWorkspace ? createWorkspaceBeadsOperations(localWorkspace) : undefined
     const agentMode = resolvePlaygroundAgentMode(process.env)
     // Same `workspaceRoot` value that is handed to createWorkspaceAgentServer
     // below: the fleet's instruction refs are addressed against the filesystem
@@ -94,8 +105,7 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       appRoot: APP_ROOT,
       sessionId: remoteWorkerWorkspaceId,
-      mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
-      runtimeModeAdapter: remoteWorkerModeAdapter,
+      runtimeModeAdapter: remoteWorkerModeAdapter ?? localModeAdapter,
       logger: true,
       // Explicit so the playground exercises the same `.agents` protection
       // production hosts get, instead of relying on the library default.
@@ -116,11 +126,13 @@ export async function startPlaygroundServer(): Promise<void> {
           trust: "internal",
         },
         ...scriptedCapabilityPlugins,
-        {
-          dir: resolve(APP_ROOT, "../../plugins/tldraw-agent"),
-          options: { workspace: createNodeWorkspace(workspaceRoot) },
-          trust: "internal",
-        },
+        ...(localWorkspace
+          ? [{
+              dir: resolve(APP_ROOT, "../../plugins/tldraw-agent"),
+              options: { workspace: localWorkspace },
+              trust: "internal" as const,
+            }]
+          : []),
       ],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       getFilesystemBindings: multiFilesystemPlayground
