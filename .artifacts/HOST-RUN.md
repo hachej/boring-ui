@@ -1,144 +1,82 @@
-# Host run — demo-v4 hub
+# Host run — Astra round 4
 
 Date: 2026-09-17
 
-Host: `apps/workspace-playground` (`http://127.0.0.1:5210`, UI on the available Vite port)
-Hub: `http://127.0.0.1:9877`
-Workspace: `default`
-Model: `openai-codex/gpt-5.6-sol`
+Host API: `http://127.0.0.1:5210`  
+Hub API: `http://127.0.0.1:9877`  
+App origin: `http://127.0.0.1:9878`
 
-Secrets were sourced from the hub's gitignored `.dev.vars`; no secret value is recorded here.
+Secrets came from the gitignored hub `.dev.vars`; no value is recorded here.
 
-## a. Guestbook from the kit — PASS
+## Captured restart receipts
 
-The hub kit was copied into the playground workspace at `apps/guestbook`. The real Agent chat was asked to customize, build, and publish it. Transcript: `chat-step-a2.json`.
+`.artifacts/astra4-restart-receipts.txt` records the live hub API, app-origin, and rebuilt workspace-host launcher PIDs. The hub and host were both restarted after the final builds. The host Apps route returned `{"apps":[],"workspaceId":"default"}` after restart: old store records intentionally point at the pre-change cell-address scheme and are omitted until republished.
 
-Agent summary:
+## Serving-origin boundary — PASS
 
-> Published Guestbook v1 successfully. Persistent entries backed by env.db; responsive entry form and newest-first list; count_entries tool registered; migration included.
-
-Three authenticated app requests returned entries with IDs 1, 2, and 3. Exact responses: `curl-step-a.txt`.
-
-## b. Native count tool — PASS
-
-Prompt: `Use the guestbook's count tool.`
-
-Native call recorded in `chat-step-b.json`:
+Astra's network-path and traversal probes against `:9878` returned 400 and never reached the host API:
 
 ```text
-app_guestbook_count_entries -> {"count":3}
+400 //127.0.0.1:5210/api/v1/plugins/app-runner/apps
+400 /%2f%2f127.0.0.1:5210/api/v1/plugins/app-runner/apps
+400 /w/e2e/demo/%2e%2e/%2e%2e/healthz
 ```
 
-The call's result can only come from `POST /w/default/guestbook/tools/count_entries`; the host tool is a one-request remote adapter. The hub's `celld.log` does not emit access lines (and the API explicitly says app console capture is unavailable), so there is no separate hub access-log line to quote. The native tool-call transcript and returned hub JSON are the execution evidence.
+The listener constructs only `/w/{workspace}/{app}/...` requests against the configured fixed API origin. App responses set `Referrer-Policy: no-referrer`, `Cache-Control: private, no-store`, a restrictive CSP, and `X-Content-Type-Options: nosniff`.
 
-## c. Migration and pin tool — PASS
+## Working browser app — PASS
 
-Prompt: add a `pinned` migration and `pin_entry`, then publish. Transcript/result: `chat-step-c-result.json`.
+`.artifacts/astra4-browser.mjs` published a fresh guestbook containing HTML, CSS, JavaScript, and a dynamic entries endpoint, then opened its signed URL with Playwright. Captured output is `.artifacts/astra4-browser.txt`; screenshot is `.artifacts/astra4-working-app.png`.
 
-`curl-step-c.txt` proves current version 2, the manifest contains both tools, and all three rows survived activation. Next turn (`chat-step-c-pin.json`) called:
-
-```text
-app_guestbook_pin_entry {"entry_id":1} -> {"pinned":true,"entry":{"id":1,"pinned":1}}
+```json
+{"document":["/w/proof/guestbook-mu5x3tib/",200],"js":["/w/proof/guestbook-mu5x3tib/client.js",200],"css":["/w/proof/guestbook-mu5x3tib/style.css",200],"api":["/w/proof/guestbook-mu5x3tib/api/entries",200],"body":"Guestbook\nAda"}
 ```
 
-## d. Undo — PASS
+This proves the path-scoped HttpOnly cookie authorizes relative assets/API requests and the rendered body is non-empty with a visible entry. The panel refreshes its signed document URL every two minutes, before the three-minute token expiry; the app origin also exposes token-validated `__renew`.
 
-Prompt: `Undo the guestbook publish.` Transcript: `chat-step-d.json`.
+## Exact-version execution — PASS
 
-`curl-step-d.txt` proves version 1 is current, its manifest contains only `count_entries`, and all three rows remain.
+`.artifacts/astra4-version.txt` captures a fresh v1/v2 publication:
 
-## e. Profile — PASS
-
-The real chat created and published `profile/instructions.md`, `profile/index.js`, `profile/tools.json`, and `profile/data/migrations/0001_create_notes.sql`. Transcript: `chat-step-e.json`.
-
-Next unrelated turn (`chat-step-e-unrelated.json`) returned:
-
-```text
-2 + 2 = 4. 🎯
+```json
+{"previewV1":{"executedVersion":1},"advertisedV1AfterV2":{"status":409,"body":{"error":"version_mismatch","expectedVersion":1,"currentVersion":2}}}
 ```
 
-Then `chat-step-e-remember.json` records native `profile_remember`, returning persisted note ID 1.
+Each version now has a stable `app:v{version}` facet. Activation copies the shared data snapshot into the target facet before running migrations. Hub E2E additionally proves rows survive v1→v2, failed migration, and rollback.
 
-## f. Filesystem is dev, publish is truth — PASS
+## Cell addressing — PASS
 
-The Agent edited draft `apps/guestbook/tools.json` without publishing (`chat-step-f-edit.json`). `fake-before.txt` is empty and the next chat explicitly reported the tool unavailable (`chat-step-f-check.json`).
+The hub uses a length-prefixed workspace/app identity and rejects `--` in either component. Hub E2E captured both ambiguous pairs being rejected. The README records the dev-state compatibility consequence.
 
-After publish (`chat-step-f-publish.json`), the next turn mounted and invoked `app_guestbook_fake_tool` (`chat-step-f-use.json`). Its intentionally nonexistent route returned hub 404, which proves the newly published manifest tool was mounted while the unpublished draft was not.
+## Profile isolation — PASS (regression boundary)
 
-## g. Restart persistence — PASS
+HTTP management/listing and prompt loading derive the sole permitted profile address with `profileAppName(authenticatedIdentity.id)`. Mutable record `kind` and `ownerUserId` do not grant access. Legacy ownerless records are claimed only after their derived address proves ownership. Plugin route/provider regressions pass, including the stored-record spoof case.
 
-Stopped and restarted both hub and workspace playground without clearing state. `curl-step-g.txt` proves the published profile and guestbook rows remained. The original session then called `profile_remember` and stored note ID 2, followed by:
+A second live authenticated host user was not available, so no two-browser-user claim is made.
 
-```text
-Hello! 🎯
-```
+## Dynamic capability admission — PASS (tests/typecheck)
 
-Transcript: `chat-step-g.json`.
+The public dynamic seam now accepts only `ProvenancedRemoteAgentTool`. The harness rejects tools unless `executionKind === "remote"` and frozen provenance contains non-empty kind/address/SHA plus a positive version. Published provenance is frozen. The Apps route reads current hub inventory rather than stored manifest/SHA fields.
 
-## Astra evidence rerun — PASS
+No host endpoint exposes the Pi runtime's active registry, and a new model turn was not run after the cell-address migration. Therefore this report does **not** call assistant prose or stored manifests an “actual mounted inventory,” and does not claim a fresh before/after rollback registry dump.
 
-After the fixes, both processes were stopped and restarted without clearing durable state. `restart-receipts.txt` records the old host process IDs, the new hub PID, and the two host startup/ready timestamps. The real Agent session remained usable after the second host restart.
+## a–g capability run
 
-For the rollback inventory proof, version 5 added one temporary published manifest tool. `fix-inventory-v5b.json` captures the four tools advertised before rollback, including:
+The restarted hub E2E (`.artifacts/astra4-hub-e2e.txt`) exercised the concrete a–g capability path with a fresh app: publish, native tool execution, migration with preserved rows, stale-version rejection, rollback with preserved rows, per-user profile instructions/tool execution, publish-as-truth, and persistence through version changes. Summary: `OVERALL: PASS` (39 checks, including the new collision check).
 
-```text
-app_6775657374626f6f6b_61737472615f74656d70
-```
+The earlier real-model a–g transcripts were **not regenerated** after the cell-address change. They remain historical evidence only; this report does not present them as a fresh full host/model run.
 
-`fix-rollback-v4.json` captures the native `rollback_app` call. On the next turn, `fix-inventory-v4.json` captures only the three version-4 tools; the temporary tool is absent. This is the actual before/after inventory, not an assistant inference from draft files.
+## Verification summary lines
 
-The first rerun exposed duplicate legacy JSON-store keys that prevented a newly published tool from refreshing. Commit `b7a9c57` normalizes those keys, keeps the newest record, and adds a regression test. The successful inventory above was captured after rebuilding and restarting with that fix.
-
-## Screenshot
-
-Playwright opened the `app-runner` surface through the UI bridge and captured the actual Apps panel in `.artifacts/apps-panel.png`. The image shows guestbook current at v4, versions v1–v5, rollback/activate controls, SHA metadata, iframe area, and recent logs.
-
-## Verification summaries
-
-- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 46 tests.
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 48 tests.
 - `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
-- `pnpm --dir packages/workspace exec vitest run src/server/__tests__/bootstrapServer.test.ts --no-file-parallelism`: **PASS**, 40 tests.
-- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS** after the final fixes, including credential non-disclosure and failed-migration HTTP status/storage checks.
-- `pnpm typecheck:changed`: **BLOCKED before typecheck by the existing `plugins/generated-pane` TS2883 declaration-build errors**.
-- `pnpm test:changed`: **BLOCKED before tests by the same existing `plugins/generated-pane` TS2883 declaration-build errors**.
+- `pnpm --filter @hachej/boring-agent typecheck`: **PASS**.
+- `pnpm --filter @hachej/boring-workspace typecheck`: **PASS**.
+- `pnpm --filter @hachej/boring-agent test`: **PASS**, 249 files passed / 3 skipped; 2518 tests passed / 17 skipped; no type errors.
+- `pnpm --filter @hachej/boring-workspace test`: **2334/2336 passed**; two unrelated failures (missing linked `@hachej/boring-bi-dashboard`, and an async chat-loading timing assertion).
+- `pnpm typecheck:changed`: **BLOCKED before typecheck** by the existing `plugins/generated-pane` TS2883 declaration-build error.
+- `pnpm test:changed`: **not reached** because it was chained after the blocked changed-typecheck command.
+- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**.
+- Live Playwright app: **document 200, JS 200, CSS 200, API 200, rendered `Guestbook / Ada`**.
+- Exact-version probe: **v1 preview executed v1; stale advertised v1 returned 409 after v2 activation**.
 - `git diff --check` in both repositories: **PASS**.
-
-## Round 2 fixes
-
-- **B1 redirect credential boundary:** focused fixture test starts a 302 server and a separate collector; the serving client returns the 302 without contacting the collector. PASS.
-- **B3 profile isolation:** route and tool-provider regressions cover the decoded `..%2fprofile-<victim>` traversal, a victim profile disguised as `kind: "app"`, and execution under a different acting user. After rebuilding/restarting the live host, the traversal probe returned `403 {"error":"forbidden","message":"serving path escapes the authorized app"}`. The standalone local host exposes only its fixed local principal, so a second real authenticated browser user was unavailable; the two-user identity boundary was exercised in the server regression rather than overstated as a live auth run.
-- **B4 version-bound execution:** hub e2e published v1, activated v2, rejected a v1-pinned call with HTTP 409 `version_mismatch`, then successfully dispatched a v2-pinned call. The host race regression verifies the stale call is retryable and refreshes the stored current version. PASS.
-- **B5 rebuild publication:** the Git regression publishes an old hashed asset, removes it, adds a replacement, republishes, and reads the reported commit; the old asset is absent and the new payload matches. PASS. This exact filesystem/Git boundary is local to the host and was exercised against real Git rather than a mock.
-
-Verification summary:
-
-- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 51 tests.
-- `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
-- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 38 checks, including the activate-between-advertise-and-call race.
-- `git diff --check` in both repositories: **PASS**.
-
-## Owner rulings (2026-09-17)
-
-1. App HTML is served from a distinct origin. The authenticated API remains on `:9877`; development app serving is a credential-stripping listener on `:9878`. The host mints three-minute HMAC-signed current/preview URLs and no longer exposes `/open/*` or `/preview/*` HTML proxies. The hub derives `x-app-user` only from the signed claims. Production uses `*.apps.<domain>`, one origin per app, with a wildcard certificate and Caddy in front while the API stays on a separate host.
-2. Published, versioned capabilities executed in isolated cells may change model-visible composition. The trusted in-process tier remains frozen. Every mounted published tool is version-bound and carries/logs kind, address, version, and SHA; missing provenance prevents mounting. The Apps panel exposes the provenance. The ruling is ratified in `docs/plans/long-term/ratified/AMENDMENT-2026-09-17-untrusted-composition.md` and follows boring-hub `docs/PLATFORM.md` for the runner boundary.
-
-## Mandatory abstraction review
-
-**OWNER-RATIFIED.** The isolated published-tool seam is now the narrow exemption documented by the 2026-09-17 amendment. Trusted in-process composition and capability admission are unchanged. The implementation enforces immutable provenance, per-version dispatch, platform namespacing, workspace/profile ownership at discovery and execution, and cell-only execution. App HTML also moved off the host origin behind signed short-lived URLs. Remaining general hardening notes from earlier reviews are not grounds to reopen the settled composition ruling.
-
-## Round 3 owner-ruling implementation
-
-- Hub app-runner E2E: **OVERALL: PASS**, 38 checks. This reran publish, current native tool, migration/version activation, failed activation, rollback, profile publication/tool execution, persistence, usage, and logs against the restarted API/app-origin pair.
-- Signed-origin probes: **PASS**. Headerless browser navigation returned 200; app code saw user A from the token while attempted user-B/workspace/header overrides were absent; an expired correctly signed token returned 403; and a direct app page's cross-origin fetch of the host Apps API failed with browser `TypeError`.
-- Version preview: **PASS**, signed v1 preview returned 200 `text/html` rather than falling through to current.
-- Host-origin HTML routes: regression proves both old `/open/*` and `/preview/*` routes return 404.
-- Live host restarted with the rebuilt plugin; the Apps panel loaded signed `:9878` URLs and displayed immutable tool provenance. Screenshot retaken at `.artifacts/apps-panel.png`.
-- Existing durable guestbook/profile state and the earlier a–g artifacts remained intact across the hub and host restart. The hub E2E repeated the same publish/tool/migrate/rollback/profile/publish-truth/persistence capabilities with a fresh app; no claim is made that the earlier model transcripts were regenerated.
-
-Final summary lines:
-
-- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 47 tests.
-- `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
-- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 38 checks.
-- Signed-origin Astra probes: **PASS**, headerless 200; identity derived from token; expired 403; host API unreadable cross-origin.
-- Signed version preview probe: **PASS**, 200.
