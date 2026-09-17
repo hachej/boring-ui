@@ -1,0 +1,34 @@
+{
+  "prompt": "Do you have the guestbook fake_tool available? Do not publish.",
+  "status": "idle",
+  "messages": [
+    {
+      "id": "910fe333",
+      "createdAt": "2026-09-17T15:45:34.928Z",
+      "piEntryId": "910fe333",
+      "role": "user",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "910fe333:text:0",
+          "text": "Do you have the guestbook fake_tool available? Do not publish."
+        }
+      ]
+    },
+    {
+      "id": "320db33f",
+      "createdAt": "2026-09-17T15:45:34.964Z",
+      "piEntryId": "320db33f",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "320db33f:text:0",
+          "text": "No. `fake_tool` only exists in the unpublished `apps/guestbook/tools.json`; it is not available as a callable tool. 🎯"
+        }
+      ]
+    }
+  ]
+}

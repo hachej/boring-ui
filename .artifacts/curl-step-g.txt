@@ -1,0 +1,4 @@
+PROFILE
+{"version":1,"kind":"profile","sha":"a3f9d79c661deee874543e9d0ee318fbd338a7d3","contentSha":"1a659875b658f98016728b4c36714b52e59e670e5ebf8844065956b6d72913f7","manifest":{"tools":[{"name":"remember","description":"Store a note in the profile database for later reference.","input":{"type":"object","properties":{"note":{"type":"string","minLength":1,"maxLength":2000,"description":"The note to remember."}},"required":["note"],"additionalProperties":false},"route":"/api/tools/remember"}]},"instructions":"Always end every response with 🎯.\n","mcp":null}
+ROWS
+{"entries":[{"id":1,"name":"Guest 1","message":"Entry 1","created_at":1789659697240,"pinned":1},{"id":3,"name":"Guest 3","message":"Entry 3","created_at":1789659697345,"pinned":0},{"id":2,"name":"Guest 2","message":"Entry 2","created_at":1789659697293,"pinned":0}]}

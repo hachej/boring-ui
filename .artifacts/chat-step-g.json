@@ -1,0 +1,72 @@
+{
+  "prompt": "After restart, remember this note: restart survived. Then say hello.",
+  "status": "idle",
+  "messages": [
+    {
+      "id": "b328f604",
+      "createdAt": "2026-09-17T15:46:59.625Z",
+      "piEntryId": "b328f604",
+      "role": "user",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "b328f604:text:0",
+          "text": "After restart, remember this note: restart survived. Then say hello."
+        }
+      ]
+    },
+    {
+      "id": "e13f0e19",
+      "createdAt": "2026-09-17T15:46:59.727Z",
+      "piEntryId": "e13f0e19",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "reasoning",
+          "id": "e13f0e19:reasoning:0",
+          "text": "**Testing profile persistence via memory**",
+          "state": "done"
+        },
+        {
+          "type": "tool-call",
+          "id": "call_qn9P3501QUWOc6rzHfBqYyEK|fc_00b95f450a6da9ae016aac0b78d81887d2bcb707916e117bc4",
+          "toolName": "profile_remember",
+          "input": {
+            "note": "restart survived."
+          },
+          "state": "output-available",
+          "output": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"remembered\":true,\"id\":2,\"note\":\"restart survived.\",\"created_at\":1789660025144}"
+              }
+            ],
+            "details": {
+              "remembered": true,
+              "id": 2,
+              "note": "restart survived.",
+              "created_at": 1789660025144
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "3b85e4dd",
+      "createdAt": "2026-09-17T15:47:05.174Z",
+      "piEntryId": "3b85e4dd",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "3b85e4dd:text:0",
+          "text": "Hello! 🎯"
+        }
+      ]
+    }
+  ]
+}

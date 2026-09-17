@@ -1,0 +1,66 @@
+{
+  "prompt": "Use the guestbook fake_tool now.",
+  "status": "idle",
+  "messages": [
+    {
+      "id": "c80128de",
+      "createdAt": "2026-09-17T15:46:18.331Z",
+      "piEntryId": "c80128de",
+      "role": "user",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "c80128de:text:0",
+          "text": "Use the guestbook fake_tool now."
+        }
+      ]
+    },
+    {
+      "id": "ebdc7584",
+      "createdAt": "2026-09-17T15:46:18.369Z",
+      "piEntryId": "ebdc7584",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "reasoning",
+          "id": "ebdc7584:reasoning:0",
+          "text": "",
+          "state": "done"
+        },
+        {
+          "type": "tool-call",
+          "id": "call_qgoXhR4mVFKZKZiPNVZxAMRc|fc_00b95f450a6da9ae016aac0b4cfa9087d28d0970156953645c",
+          "toolName": "app_guestbook_fake_tool",
+          "input": {},
+          "state": "output-error",
+          "output": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Published tool fake_tool failed: app runner responded 404: {\"error\":\"404 Not Found\"}"
+              }
+            ],
+            "details": "Published tool fake_tool failed: app runner responded 404: {\"error\":\"404 Not Found\"}"
+          },
+          "errorText": "Published tool fake_tool failed: app runner responded 404: {\"error\":\"404 Not Found\"}"
+        }
+      ]
+    },
+    {
+      "id": "ce52bb6e",
+      "createdAt": "2026-09-17T15:46:21.231Z",
+      "piEntryId": "ce52bb6e",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "ce52bb6e:text:0",
+          "text": "`fake_tool` is registered, but its route returned **404 Not Found** because no backend handler exists at `/api/tools/fake_tool`. 🎯"
+        }
+      ]
+    }
+  ]
+}

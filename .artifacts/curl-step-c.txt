@@ -1,0 +1,4 @@
+CURRENT
+{"version":2,"kind":"app","sha":"6e5f3e8670d90f45174ad8a6ccd5618cdd247cc0","contentSha":"3c2ab643f0cbe78c21c2506c36776b002e63aaa946fa68fd03405887d97a6c10","manifest":{"tools":[{"name":"count_entries","description":"Count the entries currently in the guestbook.","input":{"type":"object","properties":{},"additionalProperties":false},"route":"/api/tools/count_entries"},{"name":"pin_entry","description":"Pin a guestbook entry so it appears before unpinned entries.","input":{"type":"object","properties":{"entry_id":{"type":"integer","minimum":1,"description":"The ID of the guestbook entry to pin."}},"required":["entry_id"],"additionalProperties":false},"route":"/api/tools/pin_entry"}]}}
+ROWS
+{"entries":[{"id":3,"name":"Guest 3","message":"Entry 3","created_at":1789659697345,"pinned":0},{"id":2,"name":"Guest 2","message":"Entry 2","created_at":1789659697293,"pinned":0},{"id":1,"name":"Guest 1","message":"Entry 1","created_at":1789659697240,"pinned":0}]}

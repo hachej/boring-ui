@@ -1,0 +1,104 @@
+{
+  "prompt": "Undo the guestbook publish.",
+  "status": "idle",
+  "messages": [
+    {
+      "id": "887a492d",
+      "createdAt": "2026-09-17T15:43:57.574Z",
+      "piEntryId": "887a492d",
+      "role": "user",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "887a492d:text:0",
+          "text": "Undo the guestbook publish."
+        }
+      ]
+    },
+    {
+      "id": "f0be53eb",
+      "createdAt": "2026-09-17T15:43:57.607Z",
+      "piEntryId": "f0be53eb",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "reasoning",
+          "id": "f0be53eb:reasoning:0",
+          "text": "**Planning rollback and reopening surface**",
+          "state": "done"
+        },
+        {
+          "type": "tool-call",
+          "id": "call_VOfT4u1frrfWbDiQPsFNP3oE|fc_00b95f450a6da9ae016aac0ac0752887d2ab002fad1135d58a",
+          "toolName": "rollback_app",
+          "input": {
+            "appName": "guestbook"
+          },
+          "state": "output-available",
+          "output": [
+            {
+              "type": "text",
+              "text": "Rolled back \"guestbook\" to its previous version."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c01c4293",
+      "createdAt": "2026-09-17T15:44:00.868Z",
+      "piEntryId": "c01c4293",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "tool-call",
+          "id": "call_RZSpJOlPzX3ROXkBQ5jqkz5O|fc_00b95f450a6da9ae016aac0ac357d487d2b2cf37ec350d7f21",
+          "toolName": "exec_ui",
+          "input": {
+            "kind": "openSurface",
+            "params": {
+              "kind": "app-runner",
+              "target": "guestbook"
+            }
+          },
+          "state": "output-available",
+          "output": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"seq\":4,\"status\":\"ok\",\"uiState\":{\"questions.pending\":{\"hint\":null,\"hintsBySession\":{}}}}"
+              }
+            ],
+            "details": {
+              "seq": 4,
+              "status": "ok",
+              "uiState": {
+                "questions.pending": {
+                  "hint": null,
+                  "hintsBySession": {}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "b82ff5c3",
+      "createdAt": "2026-09-17T15:44:04.135Z",
+      "piEntryId": "b82ff5c3",
+      "role": "assistant",
+      "status": "done",
+      "parts": [
+        {
+          "type": "text",
+          "id": "b82ff5c3:text:0",
+          "text": "Rolled back **guestbook** to its previous published version."
+        }
+      ]
+    }
+  ]
+}
