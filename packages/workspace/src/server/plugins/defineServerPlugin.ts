@@ -39,6 +39,16 @@ export interface WorkspaceAgentReloadBlock {
   message: string
 }
 
+export interface WorkspaceAgentDynamicContext {
+  readonly abortSignal: AbortSignal
+  readonly sessionId?: string
+  readonly userId?: string
+  readonly userEmail?: string
+  readonly userEmailVerified?: boolean
+  readonly workspaceId?: string
+  readonly requestId?: string
+}
+
 export interface WorkspaceAgentToolFactoryContext {
   /** Canonical Agent identity selected by the trusted fleet compiler. */
   readonly agentTypeId: string
@@ -80,13 +90,13 @@ export interface WorkspaceServerPlugin {
   extensionPaths?: string[]
   systemPrompt?: string
   /** Trusted host prompt source refreshed before every model turn. */
-  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  systemPromptDynamic?: (context?: WorkspaceAgentDynamicContext) => string | undefined | Promise<string | undefined>
   skills?: PluginSkillSource[]
   /** Installed package resources admitted by this trusted server plugin. */
   packageResources?: WorkspacePackageResourceContribution[]
   agentTools?: AgentTool[]
   /** Trusted host provider refreshed before each model turn. It may narrow or replace its own tools, never host authority. */
-  agentToolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>
+  agentToolsDynamic?: (context?: WorkspaceAgentDynamicContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>
   /** Trusted boot-time factory invoked only when this preflighted plugin is selected for an Agent. */
   agentToolFactory?: (context: WorkspaceAgentToolFactoryContext) => readonly AgentTool[]
   /** Joined cleanup invoked only after a selected Agent session is successfully deleted. */

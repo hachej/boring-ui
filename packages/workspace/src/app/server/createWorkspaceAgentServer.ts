@@ -54,6 +54,7 @@ import {
   AgentGatewayErrorCode,
   ErrorCode,
   type AgentTool,
+  type RunContext,
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
@@ -176,7 +177,7 @@ export interface WorkspaceAgentCreateOptions {
   authToken?: string
   logger?: boolean
   extraTools?: AgentTool[]
-  extraToolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>
+  extraToolsDynamic?: (context?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>
   disableDefaultFileTools?: boolean
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -218,7 +219,7 @@ export interface WorkspaceAgentCreateOptions {
   /** Independently trusted roots for configured Pi resources outside the workspace/plugin roots. */
   piResourceAuthorizedRoots?: string[]
   beforeReload?: () => void | WorkspaceReloadHookResult | undefined | Promise<void | WorkspaceReloadHookResult | undefined>
-  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  systemPromptDynamic?: (context?: RunContext) => string | undefined | Promise<string | undefined>
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
 }
 
@@ -939,10 +940,10 @@ export function projectAgentSpecPluginArtifacts(
   })
   const agentTools = projectWorkspaceAgentTools(agent.agentTypeId, projected, existingTools)
   const extraToolsDynamic = projected.agentToolsDynamic.length > 0
-    ? async () => (await Promise.all(projected.agentToolsDynamic.map((provider) => provider()))).flat()
+    ? async (context?: RunContext) => (await Promise.all(projected.agentToolsDynamic.map((provider) => provider(context)))).flat()
     : undefined
   const systemPromptDynamic = projected.systemPromptDynamic.length > 0
-    ? async () => (await Promise.all(projected.systemPromptDynamic.map((provider) => provider())))
+    ? async (context?: RunContext) => (await Promise.all(projected.systemPromptDynamic.map((provider) => provider(context))))
         .filter((value): value is string => Boolean(value?.trim()))
         .join("\n\n") || undefined
     : undefined

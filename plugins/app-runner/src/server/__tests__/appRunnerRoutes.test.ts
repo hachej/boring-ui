@@ -39,14 +39,14 @@ describe("appRunnerRoutes", () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ lines: ["boot", "ready"], errors: ["TypeError: x is not a function"] })
     const [url, init] = fetchImpl.mock.calls[0]!
-    expect(url).toBe("http://127.0.0.1:9877/w/ws-1/myapp/logs")
+    expect(url).toBe("http://127.0.0.1:9877/w/ws-root/myapp/logs")
     const headers = init!.headers as Record<string, string>
-    expect(headers[APP_RUNNER_WORKSPACE_HEADER]).toBe("ws-1")
-    expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toEqual({ id: "user-1", name: "u@example.com", email: "u@example.com" })
+    expect(headers[APP_RUNNER_WORKSPACE_HEADER]).toBe("ws-root")
+    expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toEqual({ id: "local", name: "Local user" })
   })
 
   it("does not send platform credentials on app-serving proxy requests", async () => {
-    const fetchImpl = vi.fn(async () => new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }))
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }))
     const app = await buildApp(fetchImpl as unknown as typeof fetch)
 
     const response = await app.inject({
@@ -59,8 +59,8 @@ describe("appRunnerRoutes", () => {
     const headers = fetchImpl.mock.calls[0]![1]!.headers as Record<string, string>
     expect(headers.Authorization).toBeUndefined()
     expect(headers[APP_RUNNER_AUTH_SECRET_HEADER]).toBeUndefined()
-    expect(headers[APP_RUNNER_WORKSPACE_HEADER]).toBe("ws-1")
-    expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toMatchObject({ id: "user-1" })
+    expect(headers[APP_RUNNER_WORKSPACE_HEADER]).toBe("ws-root")
+    expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toEqual({ id: "local", name: "Local user" })
   })
 
   it("GET /apps/:appName/logs surfaces runner errors with their status", async () => {

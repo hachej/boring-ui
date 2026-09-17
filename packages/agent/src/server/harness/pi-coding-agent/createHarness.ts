@@ -167,11 +167,14 @@ export interface HotReloadablePiResources {
 export type PiExtensionFactory = ExtensionFactory;
 
 function buildDynamicPromptExtension(
-  source: () => string | undefined | Promise<string | undefined>,
+  source: (ctx?: RunContext) => string | undefined | Promise<string | undefined>,
+  getRunContext: () => RunContext | undefined,
 ): ExtensionFactory {
   return (pi) => {
     pi.on("before_agent_start", async (event) => {
-      const extra = (await source())?.trim()
+      const ctx = getRunContext()
+      if (!ctx) return
+      const extra = (await source(ctx))?.trim()
       if (!extra) return
       return { systemPrompt: `${event.systemPrompt}\n\n${extra}` }
     })
@@ -179,7 +182,7 @@ function buildDynamicPromptExtension(
 }
 
 function buildDynamicToolsExtension(
-  source: () => readonly AgentTool[] | Promise<readonly AgentTool[]>,
+  source: (ctx?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>,
   sessionId: string,
   telemetry: TelemetrySink | undefined,
   getRunContext: () => RunContext | undefined,
@@ -187,7 +190,9 @@ function buildDynamicToolsExtension(
   return (pi) => {
     let ownedNames = new Set<string>()
     pi.on("before_agent_start", async () => {
-      const tools = [...await source()]
+      const ctx = getRunContext()
+      if (!ctx) return
+      const tools = [...await source(ctx)]
       const adapted = adaptToolsForPi(tools, sessionId, telemetry, getRunContext)
       const nextNames = new Set(adapted.map((tool) => tool.name))
       for (const tool of adapted) pi.registerTool(tool)
@@ -463,7 +468,7 @@ function updateRunContextStateFromPiEvent(
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
-  toolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>;
+  toolsDynamic?: (ctx?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>;
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
   cwd: string;
   /** Agent-visible cwd used by Pi's system prompt and native session metadata. */
@@ -474,7 +479,7 @@ export function createPiCodingAgentHarness(opts: {
    * Dynamic system-prompt source. Read on every before_agent_start, so live
    * plugin reloads land in the next agent turn without re-creating the harness.
    */
-  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>;
+  systemPromptDynamic?: (ctx?: RunContext) => string | undefined | Promise<string | undefined>;
   /** Optional pi adapter/runtime knobs. */
   pi?: PiHarnessOptions;
   /** Optional stable namespace for file-backed session storage. */
@@ -663,7 +668,7 @@ export function createPiCodingAgentHarness(opts: {
     refreshEffectiveResources()
     const composedSystemPromptAppend = composeSystemPromptAppend(opts.systemPromptAppend)
     const dynamicPromptExtension = opts.systemPromptDynamic
-      ? buildDynamicPromptExtension(opts.systemPromptDynamic)
+      ? buildDynamicPromptExtension(opts.systemPromptDynamic, () => runContextStorage.getStore())
       : undefined
     const dynamicToolsExtension = opts.toolsDynamic
       ? buildDynamicToolsExtension(opts.toolsDynamic, sessionId, opts.telemetry, () => runContextStorage.getStore())

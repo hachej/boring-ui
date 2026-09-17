@@ -7,7 +7,7 @@ import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-a
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
   /** Trusted host tools refreshed before every model turn. */
-  toolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>
+  toolsDynamic?: (ctx?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>
   /** Host/storage cwd used for harness-owned filesystem resources. */
   cwd: string
   /** Agent-visible cwd used by Pi/system prompt/session metadata. */
@@ -22,7 +22,7 @@ export interface AgentHarnessFactoryInput {
    * Workspace plugin layer wires this so live-reloaded plugins can contribute
    * prompt context without a workspace-injected harness extension.
    */
-  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  systemPromptDynamic?: (ctx?: RunContext) => string | undefined | Promise<string | undefined>
   /** Host-provided telemetry sink. Optional and best-effort; harnesses may ignore it. */
   telemetry?: TelemetrySink
 }

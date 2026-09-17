@@ -1,11 +1,9 @@
 import type { AgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace/shared"
-import type { AppRunnerCurrent, AppRunnerIdentity, AppRunnerRecord } from "../shared/types"
+import type { AppRunnerCurrent, AppRunnerRecord } from "../shared/types"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
 import type { AppRunnerStore } from "./appRunnerStore"
 import { identityFromToolContext } from "./resolveIdentity"
-
-const HOST_IDENTITY: AppRunnerIdentity = { id: "boring-host", name: "Boring Host" }
 
 function result(value: unknown, isError = false): ToolResult {
   const text = typeof value === "string" ? value : JSON.stringify(value)
@@ -21,15 +19,20 @@ export interface PublishedToolsProviderOptions {
   store: AppRunnerStore
 }
 
-export function createPublishedToolsProvider(options: PublishedToolsProviderOptions): () => Promise<readonly AgentTool[]> {
+type DynamicContext = Pick<ToolExecContext, "abortSignal" | "sessionId" | "userId" | "userEmail" | "userEmailVerified" | "workspaceId" | "requestId">
+
+export function createPublishedToolsProvider(options: PublishedToolsProviderOptions): (context?: DynamicContext) => Promise<readonly AgentTool[]> {
   const cache = new Map<string, readonly AgentTool[]>()
 
-  return async () => {
-    const records = await options.store.listApps()
+  return async (context) => {
+    const workspaceId = context?.workspaceId?.trim()
+    if (!workspaceId) throw new Error("authenticated workspace identity is required to load published tools")
+    const identity = identityFromToolContext(context ?? {})
+    const records = (await options.store.listApps()).filter((record) => record.workspaceId === workspaceId)
     const groups = await Promise.all(records.map(async (record) => {
       let current: AppRunnerCurrent
       try {
-        current = await options.client.current(record.workspaceId, record.appName, HOST_IDENTITY)
+        current = await options.client.current(workspaceId, record.appName, identity)
       } catch {
         return []
       }
@@ -45,8 +48,12 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
         parameters: entry.input ?? { type: "object", properties: {}, additionalProperties: false },
         async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
           try {
+            const executingWorkspaceId = ctx.workspaceId?.trim()
+            if (!executingWorkspaceId || executingWorkspaceId !== workspaceId) {
+              return result(`Published tool ${entry.name} refused: executing workspace does not match its published workspace.`, true)
+            }
             const value = await options.client.callTool(
-              record.workspaceId,
+              executingWorkspaceId,
               record.appName,
               entry.name,
               params,

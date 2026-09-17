@@ -1,18 +1,20 @@
+import type { ToolExecContext } from "@hachej/boring-workspace/shared"
 import type { AppRunnerClient } from "./appRunnerClient"
 import type { AppRunnerStore } from "./appRunnerStore"
-
-const HOST_IDENTITY = { id: "boring-host", name: "Boring Host" }
+import { identityFromToolContext } from "./resolveIdentity"
 
 export function createPublishedProfilePromptProvider(options: {
   client: AppRunnerClient
   store: AppRunnerStore
-}): () => Promise<string | undefined> {
+}): (context?: Pick<ToolExecContext, "abortSignal" | "sessionId" | "userId" | "userEmail" | "userEmailVerified" | "workspaceId" | "requestId">) => Promise<string | undefined> {
   let cachedVersion: number | undefined
   let cachedInstructions: string | undefined
-  return async () => {
-    const profile = (await options.store.listApps()).find((record) => record.kind === "profile")
+  return async (context) => {
+    const workspaceId = context?.workspaceId?.trim()
+    if (!workspaceId) throw new Error("authenticated workspace identity is required to load profile instructions")
+    const profile = (await options.store.listApps()).find((record) => record.kind === "profile" && record.workspaceId === workspaceId)
     if (!profile) return undefined
-    const current = await options.client.current(profile.workspaceId, profile.appName, HOST_IDENTITY)
+    const current = await options.client.current(workspaceId, profile.appName, identityFromToolContext(context ?? {}))
     if (current.version !== cachedVersion) {
       cachedVersion = current.version
       cachedInstructions = current.instructions?.trim() || undefined

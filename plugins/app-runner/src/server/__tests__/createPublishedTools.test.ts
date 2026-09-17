@@ -31,7 +31,7 @@ describe("published manifest native tools", () => {
       : new Response(JSON.stringify({ count: 3 })))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }), store: await seededStore() })
 
-    const tools = await provider()
+    const tools = await provider(context)
     expect(tools).toHaveLength(1)
     expect(tools[0]).toMatchObject({ name: "app_guestbook_count_entries", description: "Count entries", parameters: { type: "object" } })
     const result = await tools[0]!.execute({}, context)
@@ -47,9 +47,23 @@ describe("published manifest native tools", () => {
       : [{ name: "pin_entry", description: "Pin", input: { type: "object" }, route: "/pin" }]))))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }), store: await seededStore() })
 
-    expect((await provider()).map((tool) => tool.name)).toEqual(["app_guestbook_count"])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual(["app_guestbook_count"])
     version = 2
-    expect((await provider()).map((tool) => tool.name)).toEqual(["app_guestbook_pin_entry"])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual(["app_guestbook_pin_entry"])
+  })
+
+  it("never mounts or executes a victim workspace record in an attacker context", async () => {
+    const store = await seededStore()
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(current(1, [{ name: "count", description: "Count", input: {}, route: "/count" }]))))
+    const provider = createPublishedToolsProvider({
+      client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }),
+      store,
+    })
+
+    const tools = await provider({ ...context, workspaceId: "attacker" })
+
+    expect(tools).toEqual([])
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it("does not mount an unpublished on-disk tools.json edit", async () => {
@@ -60,6 +74,6 @@ describe("published manifest native tools", () => {
       store: await seededStore(),
     })
     // The provider has no filesystem input by design: only GET /current is authoritative.
-    expect(await provider()).toEqual([])
+    expect(await provider(context)).toEqual([])
   })
 })

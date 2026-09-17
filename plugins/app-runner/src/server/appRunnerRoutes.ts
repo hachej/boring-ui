@@ -12,9 +12,8 @@ export interface AppRunnerRoutesOptions {
 }
 
 function workspaceIdFromRequest(request: FastifyRequest, workspaceRoot: string): string {
-  const header = request.headers["x-boring-workspace-id"]
-  if (typeof header === "string" && header.trim().length > 0) return header.trim()
-  return basename(workspaceRoot) || "default"
+  const trusted = (request as FastifyRequest & { workspaceContext?: { workspaceId?: string } }).workspaceContext?.workspaceId?.trim()
+  return trusted || basename(workspaceRoot) || "default"
 }
 
 function sendAppRunnerError(reply: FastifyReply, error: unknown): FastifyReply {
