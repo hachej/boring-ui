@@ -285,7 +285,10 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     let timer: number | undefined
     const drain = async () => {
       const editor = editorRef.current
-      if (!editor || !readinessRef.current.isReady()) return
+      if (!editor || !readinessRef.current.isReady()) {
+        if (active) timer = window.setTimeout(() => { void drain() }, 300)
+        return
+      }
       try {
         await client.postJson("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
         const query = new URLSearchParams({ path, filesystem, clientId: clientIdRef.current })
