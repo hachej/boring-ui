@@ -98,6 +98,36 @@ describe("appRunnerRoutes", () => {
     expect(headers.get("x-custom-secret")).toBeNull()
   })
 
+  it("allows only opaque sandbox origins and handles their CORS preflight locally", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response("export default {}", { headers: { "content-type": "text/javascript" } }))
+    const app = await buildApp(fetchImpl as unknown as typeof fetch)
+
+    const moduleResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/plugins/app-runner/open/myapp/assets/app.js",
+      headers: { origin: "null" },
+    })
+    expect(moduleResponse.headers["access-control-allow-origin"]).toBe("null")
+    expect(moduleResponse.headers["access-control-allow-credentials"]).toBeUndefined()
+
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/plugins/app-runner/open/myapp/api/entries",
+      headers: { origin: "null", "access-control-request-method": "POST", "access-control-request-headers": "content-type" },
+    })
+    expect(preflight.statusCode).toBe(204)
+    expect(preflight.headers["access-control-allow-origin"]).toBe("null")
+    expect(preflight.headers["access-control-allow-headers"]).toBe("Content-Type, Accept")
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+
+    const foreignOrigin = await app.inject({
+      method: "GET",
+      url: "/api/v1/plugins/app-runner/open/myapp/assets/app.js",
+      headers: { origin: "https://attacker.example" },
+    })
+    expect(foreignOrigin.headers["access-control-allow-origin"]).toBeUndefined()
+  })
+
   it("returns working proxy links and the runner version list for the trusted workspace", async () => {
     const store = new MemoryAppRunnerStore()
     await store.upsertApp({ appName: "myapp", workspaceId: "ws-root", kind: "app", version: 2, sha: "abc", url: "http://hub/direct", updatedAt: "now" })

@@ -52,12 +52,25 @@ async function authorizeAppName(
  * headers, so this keeps the identity/secret headers server-side while
  * still letting the front just point an <iframe> at a same-origin URL.
  */
+function applySandboxCors(request: FastifyRequest, reply: FastifyReply): void {
+  if (request.headers.origin !== "null") return
+  reply.header("access-control-allow-origin", "null")
+  reply.header("vary", "Origin")
+  reply.header("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
+  reply.header("access-control-allow-headers", "Content-Type, Accept")
+}
+
 async function proxyToRunner(
   opts: AppRunnerRoutesOptions,
   request: FastifyRequest,
   reply: FastifyReply,
   runnerPath: string,
 ): Promise<void> {
+  applySandboxCors(request, reply)
+  if (request.method === "OPTIONS") {
+    reply.code(204).send()
+    return
+  }
   const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
   const identity = identityFromRequest(request)
   const query = request.raw.url?.includes("?") ? `?${request.raw.url.split("?")[1]}` : ""
