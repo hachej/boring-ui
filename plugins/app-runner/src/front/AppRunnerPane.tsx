@@ -34,6 +34,10 @@ export interface AppRunnerPaneParams {
   appName?: string
 }
 
+function formatLogError(error: AppRunnerLogsResponse["errors"][number]): string {
+  return [error.created_at, error.path, error.message].filter(Boolean).join(" · ")
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof AppRunnerApiError) return error.message
   return error instanceof Error ? error.message : "Something went wrong."
@@ -284,7 +288,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
             {recentErrors.length > 0 && (
               <ul className="mb-1 space-y-0.5">
                 {recentErrors.map((line, index) => (
-                  <li key={`err-${index}`} className="whitespace-pre-wrap text-destructive">{line}</li>
+                  <li key={`err-${index}`} className="whitespace-pre-wrap text-destructive">{formatLogError(line)}</li>
                 ))}
               </ul>
             )}

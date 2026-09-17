@@ -26,7 +26,7 @@ describe("appRunnerRoutes", () => {
 
   it("GET /apps/:appName/logs returns the runner's {lines, errors} shape and forwards identity headers", async () => {
     const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) =>
-      new Response(JSON.stringify({ lines: ["boot", "ready"], errors: ["TypeError: x is not a function"] }), { status: 200 }),
+      new Response(JSON.stringify({ lines: ["boot", "ready"], errors: [{ created_at: "now", path: "/", message: "TypeError: x is not a function" }] }), { status: 200 }),
     )
     const app = await buildApp(fetchImpl as unknown as typeof fetch)
 
@@ -37,7 +37,7 @@ describe("appRunnerRoutes", () => {
     })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({ lines: ["boot", "ready"], errors: ["TypeError: x is not a function"] })
+    expect(response.json()).toEqual({ lines: ["boot", "ready"], errors: [{ created_at: "now", path: "/", message: "TypeError: x is not a function" }] })
     const [url, init] = fetchImpl.mock.calls[0]!
     expect(url).toBe("http://127.0.0.1:9877/w/ws-root/myapp/logs")
     const headers = init!.headers as Record<string, string>

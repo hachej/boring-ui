@@ -29,14 +29,14 @@ describe("AppRunnerPane logs section", () => {
         return jsonResponse({ versions: [{ version: 2, kind: "app", sha: "abcdef123456", created_at: "now", current: true, previewUrl: "/p/2/" }], appId: "ws-1--myapp", appUrl: "/open/" })
       }
       if (url.endsWith("/logs")) {
-        return jsonResponse({ lines: ["server started", "GET / 200"], errors: ["TypeError: boom"] })
+        return jsonResponse({ lines: ["server started", "GET / 200"], errors: [{ created_at: "2026-09-17T10:00:00Z", path: "/api/save", message: "TypeError: boom" }] })
       }
       throw new Error(`unexpected fetch ${url}`)
     }))
 
     render(<AppRunnerPane {...paneProps({ appName: "myapp" })} />)
 
-    expect(await screen.findByText("TypeError: boom")).toBeInTheDocument()
+    expect(await screen.findByText(/\/api\/save · TypeError: boom/)).toBeInTheDocument()
     expect(screen.getByText("GET / 200")).toBeInTheDocument()
     expect(screen.getByTestId("app-runner-logs")).toBeInTheDocument()
     expect(screen.getByTestId("app-runner-metadata")).toHaveTextContent("Kind: app")

@@ -81,9 +81,15 @@ export interface AppRunnerIdentity {
   email?: string
 }
 
+export interface AppRunnerLogError {
+  created_at: string
+  path: string
+  message: string
+}
+
 export interface AppRunnerLogsResponse {
   lines: string[]
-  errors: string[]
+  errors: AppRunnerLogError[]
 }
 
 export interface AppRunnerUsageResponse {
