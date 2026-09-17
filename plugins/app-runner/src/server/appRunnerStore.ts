@@ -19,6 +19,20 @@ type StoredAppRunnerState = {
 
 const EMPTY_STATE: StoredAppRunnerState = { apps: {} }
 
+function recordKey(record: AppRunnerRecord): string {
+  return `${record.workspaceId}:${record.appName}:${record.ownerUserId ?? ""}`
+}
+
+function normalizeState(apps: Record<string, AppRunnerRecord>): StoredAppRunnerState {
+  const normalized: Record<string, AppRunnerRecord> = {}
+  for (const record of Object.values(apps)) {
+    const key = recordKey(record)
+    const existing = normalized[key]
+    if (!existing || record.updatedAt >= existing.updatedAt) normalized[key] = record
+  }
+  return { apps: normalized }
+}
+
 export class FileAppRunnerStore implements AppRunnerStore {
   private state: StoredAppRunnerState | null = null
   private loadInFlight: Promise<StoredAppRunnerState> | null = null
@@ -33,7 +47,7 @@ export class FileAppRunnerStore implements AppRunnerStore {
 
   async upsertApp(record: AppRunnerRecord): Promise<void> {
     await this.mutate((state) => {
-      state.apps[`${record.workspaceId}:${record.appName}:${record.ownerUserId ?? ""}`] = record
+      state.apps[recordKey(record)] = record
     })
   }
 
@@ -44,7 +58,7 @@ export class FileAppRunnerStore implements AppRunnerStore {
       try {
         const raw = await readFile(this.filePath, "utf8")
         const parsed = JSON.parse(raw) as Partial<StoredAppRunnerState>
-        this.state = { apps: parsed.apps ?? {} }
+        this.state = normalizeState(parsed.apps ?? {})
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
         this.state = structuredClone(EMPTY_STATE)
