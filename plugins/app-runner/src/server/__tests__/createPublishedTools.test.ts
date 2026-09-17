@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { createHash } from "node:crypto"
 import { describe, expect, it, vi } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace/shared"
 import { AppRunnerClient } from "../appRunnerClient"
@@ -25,6 +26,8 @@ async function seededStore() {
   return store
 }
 
+const segment = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 20)
+
 describe("published manifest native tools", () => {
   it("maps manifest schema to a named native tool and executes remotely with acting identity", async () => {
     const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => url.endsWith("/current")
@@ -35,7 +38,7 @@ describe("published manifest native tools", () => {
     const tools = await provider(context)
     expect(tools).toHaveLength(1)
     expect(tools[0]).toMatchObject({
-      name: `app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("count_entries").toString("hex")}`,
+      name: `app_${segment("guestbook")}_${segment("count_entries")}`,
       description: "Count entries",
       parameters: { type: "object" },
       provenance: { kind: "app", address: "acme/guestbook", version: 1, sha: "sha-1" },
@@ -57,9 +60,9 @@ describe("published manifest native tools", () => {
       : [{ name: "pin_entry", description: "Pin", input: { type: "object" }, route: "/pin" }]))))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }), store: await seededStore() })
 
-    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("count").toString("hex")}`])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${segment("guestbook")}_${segment("count")}`])
     version = 2
-    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("pin_entry").toString("hex")}`])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${segment("guestbook")}_${segment("pin_entry")}`])
   })
 
   it("mounts only the acting user's profile tools", async () => {
@@ -72,7 +75,7 @@ describe("published manifest native tools", () => {
     })))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
 
-    expect((await provider(context)).map((tool) => tool.name)).toEqual([`profile_${Buffer.from("remember").toString("hex")}`])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual([`profile_${segment("remember")}`])
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 

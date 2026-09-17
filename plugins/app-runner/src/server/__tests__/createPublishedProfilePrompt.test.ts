@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { AppRunnerClient } from "../appRunnerClient"
 import { createPublishedProfilePromptProvider } from "../createPublishedProfilePrompt"
 import { MemoryAppRunnerStore } from "./memoryAppRunnerStore"
+import { profileAppName } from "../profileAddress"
 
 function context(userId: string) {
   return { abortSignal: new AbortController().signal, workspaceId: "acme", userId, userEmail: `${userId}@example.com` }
@@ -12,10 +13,12 @@ function context(userId: string) {
 describe("published profile prompt", () => {
   it("loads only the acting user's delimited profile", async () => {
     const store = new MemoryAppRunnerStore()
-    await store.upsertApp({ appName: "profile-alice", workspaceId: "acme", ownerUserId: "alice", kind: "profile", version: 1, sha: "a", url: "a", updatedAt: "now" })
-    await store.upsertApp({ appName: "profile-bob", workspaceId: "acme", ownerUserId: "bob", kind: "profile", version: 1, sha: "b", url: "b", updatedAt: "now" })
+    const aliceAddress = profileAppName("alice")
+    const bobAddress = profileAppName("bob")
+    await store.upsertApp({ appName: aliceAddress, workspaceId: "acme", ownerUserId: "alice", kind: "profile", version: 1, sha: "a", url: "a", updatedAt: "now" })
+    await store.upsertApp({ appName: bobAddress, workspaceId: "acme", ownerUserId: "bob", kind: "profile", version: 1, sha: "b", url: "b", updatedAt: "now" })
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const name = String(input).includes("profile-alice") ? "Alice preference" : "Bob preference"
+      const name = String(input).includes(aliceAddress) ? "Alice preference" : "Bob preference"
       return new Response(JSON.stringify({ version: 1, kind: "profile", sha: "x", contentSha: "c", manifest: { tools: [] }, instructions: name }))
     })
     const provider = createPublishedProfilePromptProvider({

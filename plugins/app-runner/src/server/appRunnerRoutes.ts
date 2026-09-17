@@ -70,8 +70,8 @@ async function authorizeAppName(
 /**
  * Thin HTTP routes over the server-side app runner client + store. The
  * front never talks to the runner directly for authenticated operations —
- * only these routes (and the `/open/*` iframe proxy) hold
- * `BORING_APP_RUNNER_TOKEN`/`BORING_APP_RUNNER_AUTH_SECRET`.
+ * only these routes hold `BORING_APP_RUNNER_TOKEN` and
+ * `BORING_APP_RUNNER_AUTH_SECRET`; app pages use signed URLs on another origin.
  */
 export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptions, done: (err?: Error) => void): void {
   app.get("/api/v1/plugins/app-runner/apps", async (request) => {

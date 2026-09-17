@@ -90,7 +90,7 @@ export class AppRunnerClient {
   async publish(
     workspaceId: string,
     appName: string,
-    files: Record<string, string>,
+    files: Record<string, string | { base64: string }>,
     identity: AppRunnerIdentity,
     input: { kind: AppRunnerKind; message: string; sha: string },
     signal?: AbortSignal,
@@ -141,7 +141,7 @@ export class AppRunnerClient {
     version: number,
     identity: AppRunnerIdentity,
     signal?: AbortSignal,
-  ): Promise<{ files?: Record<string, string>; manifest?: unknown }> {
+  ): Promise<{ files?: Record<string, string | { base64: string }>; manifest?: unknown }> {
     return this.request(
       "GET",
       `${this.appPath(workspaceId, appName)}/versions/${version}/files`,

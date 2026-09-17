@@ -28,7 +28,7 @@ export interface PublishGitContext {
   readonly workTree: string
 }
 
-export async function runPublishGit(context: PublishGitContext, args: string[], trim = true): Promise<string> {
+export async function runPublishGitBuffer(context: PublishGitContext, args: string[]): Promise<Buffer> {
   const { stdout } = await execFileAsync("git", [
     ...SAFE_GIT_CONFIG,
     `--git-dir=${context.gitDir}`,
@@ -36,10 +36,15 @@ export async function runPublishGit(context: PublishGitContext, args: string[], 
     ...args,
   ], {
     cwd: context.cwd,
-    encoding: "utf8",
+    encoding: "buffer",
     env: SAFE_GIT_ENV,
     maxBuffer: 16 * 1024 * 1024,
   })
+  return stdout
+}
+
+export async function runPublishGit(context: PublishGitContext, args: string[], trim = true): Promise<string> {
+  const stdout = (await runPublishGitBuffer(context, args)).toString("utf8")
   return trim ? stdout.trim() : stdout
 }
 

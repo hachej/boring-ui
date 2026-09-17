@@ -33,6 +33,17 @@ describe("collectAppFiles", () => {
     expect(JSON.stringify(result.files)).not.toContain("ignored secret")
   })
 
+  it("preserves non-UTF-8 bytes with base64 transport", async () => {
+    const { root, app } = await fixture()
+    const bytes = Buffer.from([0, 255, 128, 65])
+    await writeFile(join(app, "image.bin"), bytes)
+    const sha = await commitPublishedFolder(root, "apps/demo", "binary")
+
+    const result = await collectAppFiles(root, "apps/demo", sha)
+
+    expect(result.files["app/image.bin"]).toEqual({ base64: bytes.toString("base64") })
+  })
+
   it("enforces the per-file limit before any hub request", async () => {
     const { root, app } = await fixture()
     await writeFile(join(app, "large.txt"), "x".repeat(APP_RUNNER_MAX_FILE_BYTES + 1))

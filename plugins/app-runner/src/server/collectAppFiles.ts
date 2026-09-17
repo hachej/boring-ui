@@ -3,7 +3,7 @@ import {
   APP_RUNNER_MAX_FILE_BYTES,
   APP_RUNNER_MAX_TOTAL_BYTES,
 } from "../shared/constants"
-import { resolvePublishGitContext, runPublishGit } from "./commitPublishedFolder"
+import { resolvePublishGitContext, runPublishGit, runPublishGitBuffer } from "./commitPublishedFolder"
 
 export class AppRunnerLimitError extends Error {
   constructor(
@@ -17,7 +17,7 @@ export class AppRunnerLimitError extends Error {
 
 export interface CollectAppFilesResult {
   /** Relative path (e.g. `app/index.js`) -> contents from the reported commit. */
-  files: Record<string, string>
+  files: Record<string, string | { base64: string }>
   totalBytes: number
 }
 
@@ -38,7 +38,7 @@ export async function collectAppFiles(workspaceRoot: string, dir: string, sha: s
     )
   }
 
-  const files: Record<string, string> = {}
+  const files: Record<string, string | { base64: string }> = {}
   let totalBytes = 0
   for (const path of names) {
     const size = Number(await runPublishGit(context, ["cat-file", "-s", `${sha}:${path}`]))
@@ -55,7 +55,9 @@ export async function collectAppFiles(workspaceRoot: string, dir: string, sha: s
         `app "${dir}" is over the ${APP_RUNNER_MAX_TOTAL_BYTES} byte (10 MiB) total size limit.`,
       )
     }
-    files[`app/${path}`] = await runPublishGit(context, ["show", `${sha}:${path}`], false)
+    const bytes = await runPublishGitBuffer(context, ["show", `${sha}:${path}`])
+    const text = bytes.toString("utf8")
+    files[`app/${path}`] = Buffer.from(text, "utf8").equals(bytes) ? text : { base64: bytes.toString("base64") }
   }
   return { files, totalBytes }
 }

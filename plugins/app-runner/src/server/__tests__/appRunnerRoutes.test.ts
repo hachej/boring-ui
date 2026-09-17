@@ -41,6 +41,7 @@ describe("appRunnerRoutes", () => {
     const store = new MemoryAppRunnerStore()
     await store.upsertApp({ appName: "myapp", workspaceId: "ws-root", kind: "app", version: 2, sha: "abc", url: "old", updatedAt: "now" })
     const fetchImpl = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/current")) return new Response(JSON.stringify({ version: 2, kind: "app", sha: "abc", contentSha: "content", manifest: { tools: [] } }))
       if (url.endsWith("/versions")) return new Response(JSON.stringify({ versions: [
         { version: 2, kind: "app", sha: "abc", created_at: "now", current: true },
         { version: 1, kind: "app", sha: "def", created_at: "before", current: false },

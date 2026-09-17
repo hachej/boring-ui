@@ -1,4 +1,5 @@
 import type { ProvenancedRemoteAgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace/shared"
+import { createHash } from "node:crypto"
 import type { AppRunnerCurrent, AppRunnerRecord, PublishedToolProvenance } from "../shared/types"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
@@ -12,7 +13,7 @@ function result(value: unknown, isError = false): ToolResult {
 }
 
 function toolSegment(value: string): string {
-  return Buffer.from(value.normalize("NFC"), "utf8").toString("hex")
+  return createHash("sha256").update(value.normalize("NFC"), "utf8").digest("hex").slice(0, 20)
 }
 
 export interface PublishedToolsProviderOptions {

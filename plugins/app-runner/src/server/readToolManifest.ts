@@ -31,11 +31,12 @@ export async function readToolManifest(workspaceRoot: string, dir: string): Prom
  * out of the returned `files` map (the exact response shape isn't finalized
  * upstream, so this accepts either).
  */
-export function manifestFromVersionFiles(response: { files?: Record<string, string>; manifest?: unknown }): AppRunnerToolManifest | undefined {
+export function manifestFromVersionFiles(response: { files?: Record<string, string | { base64: string }>; manifest?: unknown }): AppRunnerToolManifest | undefined {
   if (isValidManifest(response.manifest)) return response.manifest
-  const raw = response.files?.[`app/${APP_RUNNER_TOOLS_MANIFEST_FILENAME}`]
-  if (!raw) return undefined
+  const value = response.files?.[`app/${APP_RUNNER_TOOLS_MANIFEST_FILENAME}`]
+  if (!value) return undefined
   try {
+    const raw = typeof value === "string" ? value : Buffer.from(value.base64, "base64").toString("utf8")
     const parsed = JSON.parse(raw) as unknown
     return isValidManifest(parsed) ? parsed : undefined
   } catch {

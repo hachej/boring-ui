@@ -74,7 +74,7 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
     parameters: {
       type: "object",
       properties: {
-        appName: { type: "string", description: "Stable app name. Sanitized to [a-z0-9-] for the runner." },
+        appName: { type: "string", description: "Stable app name. Invalid names are rejected; use [a-z0-9-]." },
         dir: { type: "string", description: `Workspace-relative directory to publish. Defaults to "${APP_RUNNER_DEFAULT_DIR}".` },
         message: { type: "string", description: "Optional publish message shown in version history." },
       },
@@ -90,9 +90,12 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
       const identity = identityFromToolContext(ctx)
 
       try {
+        ctx.abortSignal.throwIfAborted()
         const publishMessage = message?.trim() || `Publish ${appName}`
         const sha = await commitPublishedFolder(options.workspaceRoot, dir, publishMessage)
+        ctx.abortSignal.throwIfAborted()
         const { files } = await collectAppFiles(options.workspaceRoot, dir, sha)
+        ctx.abortSignal.throwIfAborted()
         const result = await options.client.publish(workspaceId, appName, files, identity, {
           kind: "app",
           message: publishMessage,
@@ -139,8 +142,11 @@ export function createPublishProfileTool(options: AppRunnerToolsOptions): AgentT
       const identity = identityFromToolContext(ctx)
       const name = profileAppName(identity.id)
       try {
+        ctx.abortSignal.throwIfAborted()
         const sha = await commitPublishedFolder(options.workspaceRoot, "profile", message)
+        ctx.abortSignal.throwIfAborted()
         const { files } = await collectAppFiles(options.workspaceRoot, "profile", sha)
+        ctx.abortSignal.throwIfAborted()
         const published = await options.client.publish(workspaceId, name, files, identity, { kind: "profile", message, sha }, ctx.abortSignal)
         if (!published.activated) {
           return textResult(`publish_profile stored version ${published.version} but activation failed: ${published.activationError || "migration or activation failed"}`, true)

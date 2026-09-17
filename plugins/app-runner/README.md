@@ -20,7 +20,7 @@ profile/
 
 Apps receive `fetch(request, env)`, SQLite-compatible `env.db`, and the current user in the `x-app-user` request header. Profiles use a separate runner cell per authenticated user. Published manifests are the only source of native tools; editing a draft `tools.json` does not change the agent until publish.
 
-On each publish the plugin creates or updates the app folder's private Git repository, commits the publishable files, and uploads bytes from that commit. Dotfiles, Git metadata, ignored files, oversized files, traversal, escaping symlinks, unsafe Git configuration, and nested repositories are rejected or excluded.
+On each publish the plugin creates or updates a host-owned private Git repository outside the workspace, commits the publishable files, and uploads the exact bytes from that commit. Configure its durable location with `BORING_APP_RUNNER_GIT_ROOT`; otherwise it uses the durable agent-session volume when configured, or a temporary host directory. Dotfiles, app-authored Git metadata, ignored files, oversized files, traversal, escaping symlinks, unsafe Git configuration, and nested repositories are rejected or excluded.
 
 ## Configuration
 
