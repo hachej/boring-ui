@@ -178,6 +178,7 @@ function validatePiPackages(pluginId: string, piPackages: unknown[]): void {
 }
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
+const REMOTE_CAPABILITY_PLUGIN_IDS = new Set(["app-runner"])
 
 function validatePackageResources(
   pluginId: string,
@@ -394,8 +395,13 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
     }
     plugin.agentTools.forEach((tool, index) => validateAgentTool(plugin.id, tool, index))
   }
-  if (plugin.agentToolsDynamic !== undefined && typeof plugin.agentToolsDynamic !== "function") {
-    fail(plugin.id, "agentToolsDynamic must be a function when provided")
+  if (plugin.agentToolsDynamic !== undefined) {
+    if (typeof plugin.agentToolsDynamic !== "function") {
+      fail(plugin.id, "agentToolsDynamic must be a function when provided")
+    }
+    if (!REMOTE_CAPABILITY_PLUGIN_IDS.has(plugin.id)) {
+      fail(plugin.id, "agentToolsDynamic is reserved for the ratified app-runner remote-capability boundary")
+    }
   }
   if (plugin.agentToolFactory !== undefined && typeof plugin.agentToolFactory !== "function") {
     fail(plugin.id, "agentToolFactory must be a function when provided")

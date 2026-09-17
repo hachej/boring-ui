@@ -60,7 +60,7 @@ describe("bootstrapServer", () => {
   it("preserves trusted dynamic tool and prompt providers for per-turn projection", async () => {
     const agentToolsDynamic = vi.fn(async () => [makeRemoteAgentTool("published_tool")])
     const systemPromptDynamic = vi.fn(async () => "published profile")
-    const result = bootstrapServer({ plugins: [{ id: "hub", agentToolsDynamic, systemPromptDynamic }] })
+    const result = bootstrapServer({ plugins: [{ id: "app-runner", agentToolsDynamic, systemPromptDynamic }] })
 
     expect(result.agentToolsDynamic).toEqual([agentToolsDynamic])
     expect(result.systemPromptDynamic).toEqual([systemPromptDynamic])
@@ -378,6 +378,18 @@ describe("bootstrapServer", () => {
         agentTools: [{ name: "missing-execute", description: "bad", parameters: {} } as any],
       }),
     ).toThrow("agentTools[0].execute must be a function")
+  })
+
+  it("defineServerPlugin rejects unapproved dynamic tool providers at registration", () => {
+    expect(() => defineServerPlugin({
+      id: "self-attested-tools",
+      agentToolsDynamic: async () => [],
+    })).toThrow("agentToolsDynamic is reserved for the ratified app-runner remote-capability boundary")
+
+    expect(defineServerPlugin({
+      id: "app-runner",
+      agentToolsDynamic: async () => [],
+    }).agentToolsDynamic).toBeTypeOf("function")
   })
 
   it("defineServerPlugin rejects malformed routes", () => {
