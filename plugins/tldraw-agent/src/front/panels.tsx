@@ -22,7 +22,7 @@ function createClientId(): string {
   return `tldraw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-function shapePartial(shape: CanvasShapeInput & { props?: Record<string, unknown> }, index: number): TLShapePartial {
+function createShapePartial(shape: CanvasShapeInput & { props?: Record<string, unknown> }, index: number): TLShapePartial {
   const props = shape.props ?? {}
   const id = idFor((shape.id ?? `agent-${Date.now()}-${index}`).replace(/^shape:/, ""))
   const x = Number.isFinite(shape.x) ? Number(shape.x) : 100 + index * 240
@@ -47,13 +47,22 @@ function shapePartial(shape: CanvasShapeInput & { props?: Record<string, unknown
 function applyAction(editor: Editor, action: CanvasAction) {
   if (action.type === "clear") return editor.deleteShapes([...editor.getCurrentPageShapeIds()])
   if (action.type === "delete") return editor.deleteShapes((action.ids ?? []).map(idFor))
-  if (action.type === "create") return editor.createShapes((action.shapes ?? (action.shape ? [action.shape] : [])).map(shapePartial))
-  if (action.type === "update") {
-    for (const [index, shape] of (action.shapes ?? (action.shape ? [action.shape] : [])).entries()) {
-      if (!shape.id || !editor.getShape(idFor(shape.id))) continue
-      const partial = shapePartial(shape, index)
-      editor.updateShape(partial)
-    }
+  if (action.type === "create") return editor.createShapes((action.shapes ?? (action.shape ? [action.shape] : [])).map(createShapePartial))
+  if (action.type === "update" && action.shape?.id) {
+    const id = idFor(action.shape.id.replace(/^shape:/, ""))
+    const existing = editor.getShape(id)
+    if (!existing) throw new Error(`missing shape: ${action.shape.id}`)
+    const partial: TLShapePartial = { id, type: existing.type }
+    if (action.shape.x !== undefined) partial.x = action.shape.x
+    if (action.shape.y !== undefined) partial.y = action.shape.y
+    const props: Record<string, unknown> = {}
+    if (action.shape.w !== undefined) props.w = action.shape.w
+    if (action.shape.h !== undefined) props.h = action.shape.h
+    if (action.shape.color !== undefined) props.color = action.shape.color
+    if (action.shape.fill !== undefined) props.fill = action.shape.fill
+    if (action.shape.text !== undefined) props.richText = toRichText(action.shape.text)
+    if (Object.keys(props).length) partial.props = props
+    editor.updateShape(partial)
     return editor
   }
   const ids = (action.ids ?? []).map(idFor).filter((id) => editor.getShape(id))
@@ -69,9 +78,10 @@ function applyAction(editor: Editor, action: CanvasAction) {
 
 export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
   const path = params.path ?? "canvas.tldraw"
+  const filesystem = params.filesystem ?? "user"
   const editorRef = useRef<Editor | null>(null)
   const clientIdRef = useRef(createClientId())
-  const mtimeRef = useRef<number | undefined>(undefined)
+  const revisionRef = useRef<number | undefined>(undefined)
   const suppressSaveRef = useRef(false)
   const processingRef = useRef(new Set<string>())
   const saveTimerRef = useRef<number | undefined>(undefined)
@@ -82,18 +92,18 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     const json = await serializeTldrawJson(editor)
     const response = await fetch("/api/v1/plugins/tldraw-agent/commit", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, path, json, expectedMtimeMs: mtimeRef.current }),
+      body: JSON.stringify({ id, path, clientId: clientIdRef.current, json, expectedRevision: revisionRef.current }),
     })
-    const payload = await response.json() as { mtimeMs?: number; error?: { message?: string } }
+    const payload = await response.json() as { revision?: number; error?: { message?: string } }
     if (!response.ok) throw new Error(payload.error?.message ?? `Save failed (${response.status})`)
-    mtimeRef.current = payload.mtimeMs
+    revisionRef.current = payload.revision
     setStatus(id ? "Agent batch applied and saved" : "Saved")
     setError(null)
-  }, [path])
+  }, [filesystem, path])
 
   const loadFile = useCallback(async (editor: Editor) => {
-    const response = await fetch(`/api/v1/plugins/tldraw-agent/file?path=${encodeURIComponent(path)}`)
-    const payload = await response.json() as { json?: string; mtimeMs?: number; error?: { message?: string } }
+    const response = await fetch(`/api/v1/plugins/tldraw-agent/file?path=${encodeURIComponent(path)}&filesystem=${encodeURIComponent(filesystem)}`)
+    const payload = await response.json() as { json?: string; revision?: number; error?: { message?: string } }
     if (!response.ok || !payload.json) throw new Error(payload.error?.message ?? `Load failed (${response.status})`)
     const parsed = parseTldrawJsonFile({ json: payload.json, schema: editor.store.schema })
     if (!parsed.ok) throw new Error(`Invalid native tldraw file: ${parsed.error.type}`)
@@ -104,10 +114,10 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     // have a live current page to target.
     if (Object.keys(snapshot.store).length > 0) editor.store.loadStoreSnapshot(snapshot)
     suppressSaveRef.current = false
-    mtimeRef.current = payload.mtimeMs
+    revisionRef.current = payload.revision
     setStatus("Live · user and agent share this editor")
     setError(null)
-  }, [path])
+  }, [filesystem, path])
 
   useEffect(() => {
     let active = true
@@ -139,27 +149,33 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
       try {
         await fetch("/api/v1/plugins/tldraw-agent/connect", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ path, clientId: clientIdRef.current }),
+          body: JSON.stringify({ path, filesystem, clientId: clientIdRef.current }),
         })
         const response = await fetch(`/api/v1/plugins/tldraw-agent/actions?path=${encodeURIComponent(path)}&clientId=${encodeURIComponent(clientIdRef.current)}`)
         const payload = await response.json() as { batches?: PendingCanvasBatch[] }
         for (const batch of payload.batches ?? []) {
           if (!active || processingRef.current.has(batch.id)) continue
           processingRef.current.add(batch.id)
-          suppressSaveRef.current = true
+          const before = editor.store.getStoreSnapshot()
           try {
+            suppressSaveRef.current = true
             editor.run(() => { for (const action of batch.actions) applyAction(editor, action) })
+            suppressSaveRef.current = false
             await commit(editor, batch.id)
             editor.zoomToFit({ animation: { duration: 180 } })
-          } catch (cause) { setError(cause instanceof Error ? cause.message : "Agent edit failed") }
-          finally { suppressSaveRef.current = false; processingRef.current.delete(batch.id) }
+          } catch (cause) {
+            suppressSaveRef.current = true
+            editor.store.loadStoreSnapshot(before)
+            suppressSaveRef.current = false
+            setError(cause instanceof Error ? cause.message : "Agent edit failed")
+          } finally { suppressSaveRef.current = false; processingRef.current.delete(batch.id) }
         }
       } catch { /* transient polling failure is surfaced by load/save paths */ }
     }
     void poll()
     const interval = window.setInterval(poll, 300)
     return () => { active = false; window.clearInterval(interval) }
-  }, [commit, path])
+  }, [commit, filesystem, path])
 
   return (
     <div className="relative h-full min-h-[420px] min-w-[560px] overflow-hidden bg-background text-foreground" data-testid="tldraw-agent-panel">

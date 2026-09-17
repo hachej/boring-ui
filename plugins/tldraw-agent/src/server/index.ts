@@ -1,8 +1,7 @@
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
-import { dirname, isAbsolute, resolve, sep } from "node:path"
 import { randomUUID } from "node:crypto"
 import type { FastifyPluginAsync } from "fastify"
-import { createTLStore } from "tldraw"
+import { createTLStore, parseTldrawJsonFile } from "tldraw"
+import type { Workspace } from "@hachej/boring-agent/shared"
 import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { TLDRAW_AGENT_PLUGIN_ID, type CanvasAction, type PendingCanvasBatch } from "../shared"
@@ -11,181 +10,161 @@ interface PendingRequest {
   batch: PendingCanvasBatch
   resolve: (value: ToolResult) => void
   timer: ReturnType<typeof setTimeout>
+  ownerClientId?: string
+  expired: boolean
 }
 
-function toolResult(text: string, details?: unknown, isError = false): ToolResult {
+function result(text: string, details?: unknown, isError = false): ToolResult {
   return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) }
 }
 
-function resolveWorkspacePath(root: string, target: string): string {
-  const normalized = target.replace(/^\.?[\\/]+/, "")
-  if (!normalized || isAbsolute(normalized) || !/\.(?:tldraw|tldr)$/i.test(normalized)) throw new Error("path must be a relative .tldraw or .tldr file")
-  const absoluteRoot = resolve(root)
-  const candidate = resolve(absoluteRoot, normalized)
-  if (candidate !== absoluteRoot && !candidate.startsWith(absoluteRoot.endsWith(sep) ? absoluteRoot : `${absoluteRoot}${sep}`)) throw new Error("path escapes workspace")
-  return candidate
+export function canonicalPath(target: string): string {
+  const path = target.replaceAll("\\", "/").replace(/^\.\//, "")
+  if (!path || path.startsWith("/") || path.split("/").some((part) => part === "..") || !/\.(?:tldraw|tldr)$/i.test(path)) {
+    throw new Error("path must be a contained relative .tldraw or .tldr file")
+  }
+  return path.split("/").filter((part) => part && part !== ".").join("/")
 }
 
-function blankTldrawFile(): string {
-  const store = createTLStore()
-  const snapshot = store.getStoreSnapshot()
-  return JSON.stringify({ tldrawFileFormatVersion: 1, schema: snapshot.schema, records: Object.values(snapshot.store) })
+function parseNative(json: string) {
+  const schema = createTLStore().schema
+  const parsed = parseTldrawJsonFile({ json, schema })
+  if (!parsed.ok) throw new Error(`invalid native tldraw file: ${parsed.error.type}`)
+  return parsed.value
 }
 
-async function atomicWrite(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`
-  await writeFile(temporary, content, "utf8")
-  await rename(temporary, path)
+function blankFile(): string {
+  const snapshot = createTLStore().getStoreSnapshot()
+  return JSON.stringify({ tldrawFileFormatVersion: 1, schema: snapshot.schema, records: [] })
 }
 
-export function createCanvasTool(workspaceRoot: string, pending: Map<string, PendingRequest> = new Map(), bridge?: UiBridge): AgentTool {
+export function validateActions(value: unknown): CanvasAction[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) throw new Error("edit requires 1-100 actions")
+  for (const action of value as CanvasAction[]) {
+    if (!action || typeof action !== "object") throw new Error("each action must be an object")
+    if ((action.type === "create" || action.type === "update") && !action.shape) throw new Error(`${action.type} requires shape`)
+    if ((action.type === "delete" || action.type === "align" || action.type === "distribute") && (!action.ids?.length)) throw new Error(`${action.type} requires non-empty ids`)
+    if ((action.type === "align" || action.type === "distribute") && !action.axis) throw new Error(`${action.type} requires axis`)
+    if (action.type === "align" && !action.alignment) throw new Error("align requires alignment")
+    if (!["create", "update", "delete", "clear", "align", "distribute"].includes(action.type)) throw new Error(`unsupported action: ${String(action.type)}`)
+  }
+  return value as CanvasAction[]
+}
+
+function shapeSummary(json: string): string {
+  const file = JSON.parse(json) as { records?: Array<{ id?: string; typeName?: string; type?: string; x?: number; y?: number }> }
+  const shapes = (file.records ?? []).filter((record) => record.typeName === "shape").slice(0, 100)
+  return JSON.stringify(shapes.map(({ id, type, x, y }) => ({ id, type, x, y })))
+}
+
+export function createCanvasTool(workspace: Workspace, pending: Map<string, PendingRequest> = new Map(), bridge?: UiBridge): AgentTool {
   return {
     name: "edit_tldraw_canvas",
-    description: "Create, read, or batch-edit a native .tldraw file. When its tab is open, the action batch is applied to the same live tldraw Editor used by the user and saved once.",
-    promptSnippet: "Use edit_tldraw_canvas with a workspace-relative .tldraw path. Send all related edits in one actions batch. The target tab must be open for edits so user and agent share one live SDK Editor.",
+    description: "Create, inspect, or batch-edit a native .tldraw file through its live workspace tab.",
+    promptSnippet: "Use one edit action batch per requested canvas change. Only the user filesystem is supported.",
     parameters: {
       type: "object",
       properties: {
         operation: { type: "string", enum: ["create", "read", "edit"] },
-        path: { type: "string", description: "Workspace-relative .tldraw or .tldr path." },
-        actions: {
-          type: "array",
-          maxItems: 100,
-          description: "One SDK action batch. Actions: create, update, delete, clear, align, distribute.",
-          items: {
-            type: "object",
-            properties: {
-              type: { type: "string", enum: ["create", "update", "delete", "clear", "align", "distribute"] },
-              shape: {
-                type: "object",
-                description: "Single tldraw-style shape for create/update.",
-                properties: {
-                  id: { type: "string" }, type: { type: "string", enum: ["rectangle", "ellipse", "diamond", "text"] },
-                  x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" },
-                  text: { type: "string" }, color: { type: "string", enum: ["black", "blue", "green", "orange", "red", "violet"] },
-                  fill: { type: "string", enum: ["none", "semi"] },
-                },
-                required: ["id", "type", "x", "y"], additionalProperties: false,
-              },
-              ids: { type: "array", items: { type: "string" } },
-              axis: { type: "string", enum: ["x", "y"] },
-              alignment: { type: "string", enum: ["start", "center", "end"] },
-            },
-            required: ["type"], additionalProperties: false,
-          },
-        },
+        path: { type: "string" },
+        actions: { type: "array", minItems: 1, maxItems: 100, items: { type: "object", additionalProperties: true } },
       },
-      required: ["operation", "path"],
-      additionalProperties: false,
+      required: ["operation", "path"], additionalProperties: false,
     },
-    async execute(params) {
+    async execute(params, ctx) {
       try {
-        const path = String(params.path ?? "")
-        const absolute = resolveWorkspacePath(workspaceRoot, path)
+        const path = canonicalPath(String(params.path ?? ""))
         const operation = String(params.operation ?? "")
         if (operation === "create") {
-          try { await stat(absolute); return toolResult(`File already exists: ${path}`, undefined, true) } catch { /* create */ }
-          await atomicWrite(absolute, blankTldrawFile())
+          if (!workspace.createBinaryFile) return result("Workspace does not support exclusive file creation.", undefined, true)
+          await workspace.createBinaryFile(path, new TextEncoder().encode(blankFile()))
           await bridge?.postCommand({ kind: "openFile", params: { path } })
-          return toolResult(`Created native tldraw file ${path} and requested its workspace tab.`, { path })
+          return result(`Created native tldraw file ${path} and requested its workspace tab.`, { path })
         }
         if (operation === "read") {
-          const json = await readFile(absolute, "utf8")
-          return toolResult(`Read ${path}.`, { path, json: JSON.parse(json) })
+          const json = await workspace.readFile(path)
+          parseNative(json)
+          return result(`Canvas ${path} shapes: ${shapeSummary(json)}`, { path })
         }
-        if (operation !== "edit") return toolResult(`Unsupported operation: ${operation}`, undefined, true)
-        const actions = Array.isArray(params.actions) ? params.actions as CanvasAction[] : []
-        if (!actions.length) return toolResult("actions are required for edit", undefined, true)
+        if (operation !== "edit") return result(`Unsupported operation: ${operation}`, undefined, true)
+        const actions = validateActions(params.actions)
         const id = randomUUID()
         const batch: PendingCanvasBatch = { id, path, actions }
-        return await new Promise<ToolResult>((resolveResult) => {
-          const timer = setTimeout(() => {
-            pending.delete(id)
-            resolveResult(toolResult(`The ${path} tab is not connected. Open the file in the workspace, then retry the edit.`, { path }, true))
-          }, 15_000)
-          pending.set(id, { batch, resolve: resolveResult, timer })
+        return await new Promise<ToolResult>((resolveTool) => {
+          const finish = (value: ToolResult) => { ctx.abortSignal?.removeEventListener("abort", abort); resolveTool(value) }
+          const abort = () => { const entry = pending.get(id); if (entry) entry.expired = true; pending.delete(id); finish(result("Canvas edit cancelled.", { path }, true)) }
+          const timer = setTimeout(() => { const entry = pending.get(id); if (entry) entry.expired = true; pending.delete(id); finish(result(`The ${path} tab did not commit before expiry.`, { path }, true)) }, 15_000)
+          pending.set(id, { batch, resolve: finish, timer, expired: false })
+          ctx.abortSignal?.addEventListener("abort", abort, { once: true })
         })
-      } catch (error) {
-        return toolResult(error instanceof Error ? error.message : String(error), undefined, true)
-      }
+      } catch (error) { return result(error instanceof Error ? error.message : String(error), undefined, true) }
     },
   }
 }
 
-export function createTldrawAgentServerPlugin(options: { workspaceRoot: string; bridge?: UiBridge }): WorkspaceServerPlugin {
+export function createTldrawAgentServerPlugin(options: { workspace: Workspace; bridge?: UiBridge }): WorkspaceServerPlugin {
   const pending = new Map<string, PendingRequest>()
   const owners = new Map<string, { clientId: string; seenAt: number }>()
+  const locks = new Map<string, Promise<void>>()
+  const withLock = async <T>(path: string, fn: () => Promise<T>): Promise<T> => {
+    const previous = locks.get(path) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>((resolve) => { release = resolve })
+    const queued = previous.then(() => current)
+    locks.set(path, queued)
+    await previous
+    try { return await fn() } finally { release(); if (locks.get(path) === queued) locks.delete(path) }
+  }
   const routes: FastifyPluginAsync = async (app) => {
-    app.get<{ Querystring: { path?: string } }>("/api/v1/plugins/tldraw-agent/file", async (request, reply) => {
+    app.get<{ Querystring: { path?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/file", async (request, reply) => {
       try {
-        const path = String(request.query.path ?? "")
-        const absolute = resolveWorkspacePath(options.workspaceRoot, path)
-        const [json, fileStat] = await Promise.all([readFile(absolute, "utf8"), stat(absolute)])
-        return { path, json, mtimeMs: fileStat.mtimeMs }
-      } catch (error) {
-        return reply.code((error as NodeJS.ErrnoException).code === "ENOENT" ? 404 : 400).send({ error: { message: error instanceof Error ? error.message : String(error) } })
-      }
+        if (request.query.filesystem && request.query.filesystem !== "user") return reply.code(400).send({ error: { message: "only the user filesystem is supported" } })
+        const path = canonicalPath(String(request.query.path ?? ""))
+        const loaded = options.workspace.readFileWithStat ? await options.workspace.readFileWithStat(path) : { content: await options.workspace.readFile(path), stat: await options.workspace.stat(path) }
+        parseNative(loaded.content)
+        return { path, json: loaded.content, revision: loaded.stat.mtimeMs }
+      } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
     })
-    app.post<{ Body: { path?: string; clientId?: string } }>("/api/v1/plugins/tldraw-agent/connect", async (request) => {
-      const path = String(request.body?.path ?? "")
-      const clientId = String(request.body?.clientId ?? "")
-      resolveWorkspacePath(options.workspaceRoot, path)
-      if (!clientId) throw new Error("clientId is required")
+    app.post<{ Body: { path?: string; clientId?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/connect", async (request, reply) => {
+      if (request.body?.filesystem && request.body.filesystem !== "user") return reply.code(400).send({ error: { message: "only the user filesystem is supported" } })
+      const path = canonicalPath(String(request.body?.path ?? "")); const clientId = String(request.body?.clientId ?? "")
+      if (!clientId) return reply.code(400).send({ error: { message: "clientId is required" } })
       const current = owners.get(path)
-      if (!current || current.clientId === clientId || Date.now() - current.seenAt > 5_000) {
-        owners.set(path, { clientId, seenAt: Date.now() })
-      }
+      if (!current || current.clientId === clientId || Date.now() - current.seenAt > 5_000) owners.set(path, { clientId, seenAt: Date.now() })
       return { ok: owners.get(path)?.clientId === clientId }
     })
     app.get<{ Querystring: { path?: string; clientId?: string } }>("/api/v1/plugins/tldraw-agent/actions", async (request) => {
-      const path = String(request.query.path ?? "")
-      const clientId = String(request.query.clientId ?? "")
-      const owner = owners.get(path)
+      const path = canonicalPath(String(request.query.path ?? "")); const clientId = String(request.query.clientId ?? ""); const owner = owners.get(path)
       if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return { batches: [] }
       owner.seenAt = Date.now()
-      return { batches: [...pending.values()].map((entry) => entry.batch).filter((batch) => batch.path === path) }
+      const batches = [...pending.values()].filter((entry) => !entry.expired && entry.batch.path === path && (!entry.ownerClientId || entry.ownerClientId === clientId))
+      for (const entry of batches) entry.ownerClientId = clientId
+      return { batches: batches.map((entry) => entry.batch) }
     })
-    app.post<{ Body: { id?: string; path?: string; json?: string; expectedMtimeMs?: number } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
+    app.post<{ Body: { id?: string; path?: string; clientId?: string; json?: string; expectedRevision?: number } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
       try {
-        const { id, path = "", json, expectedMtimeMs } = request.body ?? {}
+        const { id, path: rawPath = "", clientId = "", json, expectedRevision } = request.body ?? {}; const path = canonicalPath(rawPath)
         if (typeof json !== "string") throw new Error("json is required")
-        const absolute = resolveWorkspacePath(options.workspaceRoot, path)
-        if (typeof expectedMtimeMs === "number") {
-          const current = await stat(absolute)
-          if (Math.abs(current.mtimeMs - expectedMtimeMs) > 0.5) return reply.code(409).send({ error: { message: "file changed since it was loaded" } })
-        }
-        JSON.parse(json)
-        await atomicWrite(absolute, json)
-        const fileStat = await stat(absolute)
-        if (id) {
-          const requestEntry = pending.get(id)
-          if (requestEntry) {
-            clearTimeout(requestEntry.timer)
-            pending.delete(id)
-            requestEntry.resolve(toolResult(`Applied one action batch to ${path} and saved the native tldraw file.`, { path, mtimeMs: fileStat.mtimeMs }))
-          }
-        }
-        return { ok: true, mtimeMs: fileStat.mtimeMs }
-      } catch (error) {
-        return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } })
-      }
+        parseNative(json)
+        const owner = owners.get(path)
+        if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return reply.code(409).send({ error: { message: "canvas owner lease is invalid" } })
+        const entry = id ? pending.get(id) : undefined
+        if (id && (!entry || entry.expired || entry.batch.path !== path || entry.ownerClientId !== clientId)) return reply.code(409).send({ error: { message: "batch claim is invalid or expired" } })
+        const stat = await withLock(path, async () => {
+          const current = await options.workspace.stat(path)
+          if (typeof expectedRevision !== "number" || current.mtimeMs !== expectedRevision) throw new Error("file revision conflict")
+          return options.workspace.writeFileWithStat ? options.workspace.writeFileWithStat(path, json) : (await options.workspace.writeFile(path, json), await options.workspace.stat(path))
+        })
+        if (entry && id) { clearTimeout(entry.timer); pending.delete(id); entry.resolve(result(`Applied one action batch to ${path} and saved it.`, { path, revision: stat.mtimeMs })) }
+        return { ok: true, revision: stat.mtimeMs }
+      } catch (error) { return reply.code(409).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
     })
-    app.addHook("onClose", async () => {
-      for (const entry of pending.values()) { clearTimeout(entry.timer); entry.resolve(toolResult("Canvas server stopped.", undefined, true)) }
-      pending.clear()
-      owners.clear()
-    })
+    app.addHook("onClose", async () => { for (const entry of pending.values()) { clearTimeout(entry.timer); entry.resolve(result("Canvas server stopped.", undefined, true)) }; pending.clear(); owners.clear() })
   }
-  return defineServerPlugin({
-    id: TLDRAW_AGENT_PLUGIN_ID,
-    label: "tldraw Canvas",
-    routes,
-    agentTools: [createCanvasTool(options.workspaceRoot, pending, options.bridge)],
-    systemPrompt: "Use edit_tldraw_canvas for native .tldraw diagrams. Create the file, open it through workspace.open.path, then send related edits in one batch. The open tab and agent share the same live tldraw SDK Editor; the batch is saved once after application.",
-  })
+  return defineServerPlugin({ id: TLDRAW_AGENT_PLUGIN_ID, label: "tldraw Canvas", routes, agentTools: [createCanvasTool(options.workspace, pending, options.bridge)], systemPrompt: "Use edit_tldraw_canvas for native .tldraw diagrams in the user filesystem." })
 }
 
-export default function defaultTldrawAgentServerPlugin(_options: unknown, context: { workspaceRoot: string; bridge?: UiBridge }): WorkspaceServerPlugin {
-  return createTldrawAgentServerPlugin({ workspaceRoot: context.workspaceRoot, bridge: context.bridge })
+export default function defaultTldrawAgentServerPlugin(options: { workspace?: Workspace } | undefined, context: { bridge?: UiBridge }): WorkspaceServerPlugin {
+  if (!options?.workspace) throw new Error("tldraw-agent requires an injected Workspace")
+  return createTldrawAgentServerPlugin({ workspace: options.workspace, bridge: context.bridge })
 }

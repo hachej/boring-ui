@@ -116,8 +116,13 @@ export async function startPlaygroundServer(): Promise<void> {
           trust: "internal",
         },
         ...scriptedCapabilityPlugins,
+        {
+          dir: resolve(APP_ROOT, "../../plugins/tldraw-agent"),
+          options: { workspace: createNodeWorkspace(workspaceRoot) },
+          trust: "internal",
+        },
       ],
-      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram", "@hachej/boring-tldraw-agent"],
+      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       getFilesystemBindings: multiFilesystemPlayground
         ? async () => [{
             filesystem: "company_context",
