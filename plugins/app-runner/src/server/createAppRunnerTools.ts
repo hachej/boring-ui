@@ -86,6 +86,9 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
           message: publishMessage,
           sha,
         })
+        if (!result.activated) {
+          return textResult(`publish_app stored version ${result.version} but activation failed: ${result.activationError || "migration or activation failed"}`, true)
+        }
         const current = await options.client.current(workspaceId, appName, identity)
         const toolManifest = current.manifest
         await options.store.upsertApp({
@@ -127,6 +130,9 @@ export function createPublishProfileTool(options: AppRunnerToolsOptions): AgentT
         const sha = await commitPublishedFolder(options.workspaceRoot, "profile", message)
         const { files } = await collectAppFiles(options.workspaceRoot, "profile", sha)
         const published = await options.client.publish(workspaceId, name, files, identity, { kind: "profile", message, sha })
+        if (!published.activated) {
+          return textResult(`publish_profile stored version ${published.version} but activation failed: ${published.activationError || "migration or activation failed"}`, true)
+        }
         const current = await options.client.current(workspaceId, name, identity)
         await options.store.upsertApp({
           appName: name,

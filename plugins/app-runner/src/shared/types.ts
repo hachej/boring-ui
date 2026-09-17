@@ -72,6 +72,7 @@ export interface AppRunnerPublishResponse {
   contentSha: string
   kind: AppRunnerKind
   activated: boolean
+  activationError?: string
 }
 
 export interface AppRunnerIdentity {

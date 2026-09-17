@@ -61,6 +61,29 @@ describe("createAppRunnerTools", () => {
     expect(result.content[0]?.text).toContain("broken module")
   })
 
+  it("reports a stored version with failed migration activation as an error", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      version: 4,
+      url: "http://hub/w/ws-1/myapp/",
+      sha: "abc",
+      contentSha: "content",
+      kind: "app",
+      activated: false,
+      activationError: "migration 0002 failed: no such table",
+    }), { status: 200 }))
+    const store = new MemoryAppRunnerStore()
+    const result = await createPublishAppTool({
+      workspaceRoot,
+      client: new AppRunnerClient({ fetchImpl: fetchImpl as typeof fetch }),
+      store,
+    }).execute({ appName: "myapp" }, ctx())
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0]?.text).toContain("migration 0002 failed")
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(await store.listApps()).toEqual([])
+  })
+
   it("surfaces a runner 413 limit response", async () => {
     const client = new AppRunnerClient({ fetchImpl: vi.fn(async () => new Response("payload too large", { status: 413 })) })
     const result = await createPublishAppTool({ workspaceRoot, client, store: new MemoryAppRunnerStore() }).execute({ appName: "myapp" }, ctx())
