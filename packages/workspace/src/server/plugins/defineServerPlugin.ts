@@ -178,7 +178,19 @@ function validatePiPackages(pluginId: string, piPackages: unknown[]): void {
 }
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
-const REMOTE_CAPABILITY_PLUGIN_IDS = new Set(["app-runner"])
+const appRunnerRemoteCapabilityProviders = new WeakSet<WorkspaceServerPlugin["agentToolsDynamic"] & object>()
+
+/**
+ * Brands the app-runner's dynamic provider at construction time. Registration
+ * accepts only this minted function identity; an object literal cannot claim
+ * the exemption by copying the app-runner id or provenance fields.
+ */
+export function defineAppRunnerRemoteCapabilityProvider(
+  provider: NonNullable<WorkspaceServerPlugin["agentToolsDynamic"]>,
+): NonNullable<WorkspaceServerPlugin["agentToolsDynamic"]> {
+  appRunnerRemoteCapabilityProviders.add(provider)
+  return provider
+}
 
 function validatePackageResources(
   pluginId: string,
@@ -399,8 +411,8 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
     if (typeof plugin.agentToolsDynamic !== "function") {
       fail(plugin.id, "agentToolsDynamic must be a function when provided")
     }
-    if (!REMOTE_CAPABILITY_PLUGIN_IDS.has(plugin.id)) {
-      fail(plugin.id, "agentToolsDynamic is reserved for the ratified app-runner remote-capability boundary")
+    if (plugin.id !== "app-runner" || !appRunnerRemoteCapabilityProviders.has(plugin.agentToolsDynamic)) {
+      fail(plugin.id, "agentToolsDynamic must be constructed by the app-runner remote-capability factory")
     }
   }
   if (plugin.agentToolFactory !== undefined && typeof plugin.agentToolFactory !== "function") {

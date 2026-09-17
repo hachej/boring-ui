@@ -156,6 +156,7 @@ export { createWorkspaceBridgeRuntimeCore } from "./workspaceBridge/runtimeCore"
 export type { WorkspaceBridgeRuntimeCore, WorkspaceBridgeRuntimeCoreOptions } from "./workspaceBridge/runtimeCore"
 export {
   bootstrapServer,
+  defineAppRunnerRemoteCapabilityProvider,
   definePluginAsset,
   defineServerPlugin,
   resolvePluginAssetPath,

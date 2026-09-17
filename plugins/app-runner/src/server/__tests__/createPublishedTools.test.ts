@@ -125,6 +125,35 @@ describe("published manifest native tools", () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  it("does not mount provenance when the hub address cannot resolve", async () => {
+    const fetchImpl = vi.fn(async () => new Response("missing", { status: 404 }))
+    const provider = createPublishedToolsProvider({
+      client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }),
+      store: await seededStore(),
+    })
+
+    expect(await provider(context)).toEqual([])
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://hub/w/acme/guestbook/current",
+      expect.objectContaining({ method: "GET" }),
+    )
+  })
+
+  it("uses the hub current version and sha rather than stored declared provenance", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(current(2, [
+      { name: "count", description: "Count", input: {}, route: "/count" },
+    ]))))
+    const store = await seededStore()
+    const provider = createPublishedToolsProvider({
+      client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }),
+      store,
+    })
+
+    const [tool] = await provider(context)
+    expect(tool?.provenance).toEqual({ kind: "app", address: "acme/guestbook", version: 2, sha: "sha-2" })
+    expect((await store.listApps())[0]).toMatchObject({ version: 2, sha: "sha-2" })
+  })
+
   it("surfaces and refreshes an atomic version mismatch when activation races dispatch", async () => {
     let currentCalls = 0
     const fetchImpl = vi.fn(async (url: string) => {

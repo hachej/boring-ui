@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest"
 import {
   bootstrapServer,
+  defineAppRunnerRemoteCapabilityProvider,
   defineServerPlugin,
 } from "../plugins/bootstrapServer"
 
@@ -58,7 +59,9 @@ describe("bootstrapServer", () => {
   })
 
   it("preserves trusted dynamic tool and prompt providers for per-turn projection", async () => {
-    const agentToolsDynamic = vi.fn(async () => [makeRemoteAgentTool("published_tool")])
+    const agentToolsDynamic = defineAppRunnerRemoteCapabilityProvider(
+      vi.fn(async () => [makeRemoteAgentTool("published_tool")]),
+    )
     const systemPromptDynamic = vi.fn(async () => "published profile")
     const result = bootstrapServer({ plugins: [{ id: "app-runner", agentToolsDynamic, systemPromptDynamic }] })
 
@@ -380,16 +383,28 @@ describe("bootstrapServer", () => {
     ).toThrow("agentTools[0].execute must be a function")
   })
 
-  it("defineServerPlugin rejects unapproved dynamic tool providers at registration", () => {
+  it("defineServerPlugin requires the app-runner factory identity for dynamic providers", () => {
+    const forgedProvider = async () => [makeRemoteAgentTool("forged")]
     expect(() => defineServerPlugin({
       id: "self-attested-tools",
-      agentToolsDynamic: async () => [],
-    })).toThrow("agentToolsDynamic is reserved for the ratified app-runner remote-capability boundary")
+      agentToolsDynamic: forgedProvider,
+    })).toThrow("agentToolsDynamic must be constructed by the app-runner remote-capability factory")
+
+    expect(() => defineServerPlugin({
+      id: "app-runner",
+      agentToolsDynamic: forgedProvider,
+    })).toThrow("agentToolsDynamic must be constructed by the app-runner remote-capability factory")
+
+    const mintedProvider = defineAppRunnerRemoteCapabilityProvider(async () => [])
+    expect(() => defineServerPlugin({
+      id: "not-app-runner",
+      agentToolsDynamic: mintedProvider,
+    })).toThrow("agentToolsDynamic must be constructed by the app-runner remote-capability factory")
 
     expect(defineServerPlugin({
       id: "app-runner",
-      agentToolsDynamic: async () => [],
-    }).agentToolsDynamic).toBeTypeOf("function")
+      agentToolsDynamic: mintedProvider,
+    }).agentToolsDynamic).toBe(mintedProvider)
   })
 
   it("defineServerPlugin rejects malformed routes", () => {
