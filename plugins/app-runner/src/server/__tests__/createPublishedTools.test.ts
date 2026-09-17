@@ -1,6 +1,5 @@
 // @vitest-environment node
 
-import { createHash } from "node:crypto"
 import { describe, expect, it, vi } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace/shared"
 import { AppRunnerClient } from "../appRunnerClient"
@@ -26,8 +25,6 @@ async function seededStore() {
   return store
 }
 
-const segment = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 20)
-
 describe("published manifest native tools", () => {
   it("maps manifest schema to a named native tool and executes remotely with acting identity", async () => {
     const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => url.endsWith("/current")
@@ -37,20 +34,18 @@ describe("published manifest native tools", () => {
 
     const tools = await provider(context)
     expect(tools).toHaveLength(1)
-    expect(tools[0]).toMatchObject({
-      name: `app_${segment("guestbook")}_${segment("count_entries")}`,
+    expect(tools[0]).toEqual({
+      kind: "app",
+      workspaceId: "acme",
+      address: "acme/guestbook",
+      version: 1,
+      sha: "sha-1",
+      toolName: "count_entries",
       description: "Count entries",
-      parameters: { type: "object" },
-      provenance: { kind: "app", address: "acme/guestbook", version: 1, sha: "sha-1" },
+      inputSchema: { type: "object", properties: {} },
     })
-    const log = vi.spyOn(console, "info").mockImplementation(() => undefined)
-    const result = await tools[0]!.execute({}, context)
-    expect(result.details).toEqual({ count: 3 })
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"published_tool_call"'))
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('"sha":"sha-1"'))
-    log.mockRestore()
-    const [, init] = fetchImpl.mock.calls[1]!
-    expect(JSON.parse((init!.headers as Record<string, string>)["X-Boring-User"]!)).toMatchObject({ id: "alice", email: "alice@example.com" })
+    expect(Object.values(tools[0]!).some((value) => typeof value === "function")).toBe(false)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
   it("refreshes the tool set when current reports a newly published version", async () => {
@@ -60,9 +55,9 @@ describe("published manifest native tools", () => {
       : [{ name: "pin_entry", description: "Pin", input: { type: "object" }, route: "/pin" }]))))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }), store: await seededStore() })
 
-    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${segment("guestbook")}_${segment("count")}`])
+    expect((await provider(context)).map((tool) => tool.toolName)).toEqual(["count"])
     version = 2
-    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${segment("guestbook")}_${segment("pin_entry")}`])
+    expect((await provider(context)).map((tool) => tool.toolName)).toEqual(["pin_entry"])
   })
 
   it("mounts only the acting user's profile tools", async () => {
@@ -75,7 +70,7 @@ describe("published manifest native tools", () => {
     })))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
 
-    expect((await provider(context)).map((tool) => tool.name)).toEqual([`profile_${segment("remember")}`])
+    expect((await provider(context)).map((tool) => tool.toolName)).toEqual(["remember"])
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
@@ -93,22 +88,6 @@ describe("published manifest native tools", () => {
 
     expect(await provider(context)).toEqual([])
     expect(fetchImpl).not.toHaveBeenCalled()
-  })
-
-  it("re-checks the derived profile address when a discovered tool executes", async () => {
-    const store = new MemoryAppRunnerStore()
-    await store.upsertApp({ appName: profileAppName("alice"), workspaceId: "acme", kind: "app", version: 1, sha: "a", url: "a", updatedAt: "now" })
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
-      version: 1, kind: "profile", sha: "a", contentSha: "c",
-      manifest: { tools: [{ name: "remember", description: "Remember", input: {}, route: "/remember" }] },
-    })))
-    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
-    const tool = (await provider(context))[0]!
-
-    const response = await tool.execute({}, { ...context, userId: "attacker" })
-    expect(response.isError).toBe(true)
-    expect(response.content[0]?.text).toContain("profile address does not match")
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
   it("never mounts or executes a victim workspace record in an attacker context", async () => {
@@ -150,33 +129,8 @@ describe("published manifest native tools", () => {
     })
 
     const [tool] = await provider(context)
-    expect(tool?.provenance).toEqual({ kind: "app", address: "acme/guestbook", version: 2, sha: "sha-2" })
+    expect(tool).toMatchObject({ kind: "app", workspaceId: "acme", address: "acme/guestbook", version: 2, sha: "sha-2" })
     expect((await store.listApps())[0]).toMatchObject({ version: 2, sha: "sha-2" })
-  })
-
-  it("surfaces and refreshes an atomic version mismatch when activation races dispatch", async () => {
-    let currentCalls = 0
-    const fetchImpl = vi.fn(async (url: string) => {
-      if (url.includes("/tools/count?version=1")) {
-        return new Response(JSON.stringify({ error: "version_mismatch", expectedVersion: 1, currentVersion: 2 }), { status: 409 })
-      }
-      currentCalls += 1
-      return new Response(JSON.stringify(current(currentCalls === 1 ? 1 : 2, [{ name: "count", description: "Count", input: {}, route: "/count" }])))
-    })
-    const store = await seededStore()
-    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
-    const stale = (await provider(context))[0]!
-
-    const response = await stale.execute({}, context)
-
-    expect(response.isError).toBe(true)
-    expect(response.content[0]?.text).toContain("Retry after the tool inventory refreshes")
-    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
-      "http://hub/w/acme/guestbook/current",
-      "http://hub/w/acme/guestbook/tools/count?version=1",
-      "http://hub/w/acme/guestbook/current",
-    ])
-    expect((await store.listApps())[0]?.version).toBe(2)
   })
 
   it("escapes names injectively and rejects duplicate manifest entries", async () => {
@@ -188,7 +142,7 @@ describe("published manifest native tools", () => {
       : current(1, [{ name: "book_count", description: "Count", input: {}, route: "/count" }]))))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
 
-    const names = (await provider(context)).map((tool) => tool.name)
+    const names = (await provider(context)).map((tool) => `${tool.address}:${tool.toolName}`)
     expect(new Set(names).size).toBe(2)
 
     const duplicateStore = new MemoryAppRunnerStore()

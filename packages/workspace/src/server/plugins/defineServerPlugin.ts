@@ -1,7 +1,7 @@
 import type { PluginSkillSource, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { WorkspaceBridgeOperationDefinition } from "../../shared/workspace-bridge-rpc"
-import type { AgentTool, ProvenancedRemoteAgentTool } from "../../shared/types/agent-tool"
+import type { AgentTool, RemoteCapabilityDescriptor } from "../../shared/types/agent-tool"
 import { validateWorkspaceBridgeOperationDefinition, type WorkspaceBridgeHandler } from "../workspaceBridge/registry"
 
 import {
@@ -95,8 +95,8 @@ export interface WorkspaceServerPlugin {
   /** Installed package resources admitted by this trusted server plugin. */
   packageResources?: WorkspacePackageResourceContribution[]
   agentTools?: AgentTool[]
-  /** Published, provenance-bound remote capabilities refreshed before each model turn. */
-  agentToolsDynamic?: (context?: WorkspaceAgentDynamicContext) => readonly ProvenancedRemoteAgentTool[] | Promise<readonly ProvenancedRemoteAgentTool[]>
+  /** Serializable remote-capability descriptors refreshed before each model turn. */
+  agentToolsDynamic?: (context?: WorkspaceAgentDynamicContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   /** Trusted boot-time factory invoked only when this preflighted plugin is selected for an Agent. */
   agentToolFactory?: (context: WorkspaceAgentToolFactoryContext) => readonly AgentTool[]
   /** Joined cleanup invoked only after a selected Agent session is successfully deleted. */
@@ -178,19 +178,6 @@ function validatePiPackages(pluginId: string, piPackages: unknown[]): void {
 }
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
-const appRunnerRemoteCapabilityProviders = new WeakSet<WorkspaceServerPlugin["agentToolsDynamic"] & object>()
-
-/**
- * Brands the app-runner's dynamic provider at construction time. Registration
- * accepts only this minted function identity; an object literal cannot claim
- * the exemption by copying the app-runner id or provenance fields.
- */
-export function defineAppRunnerRemoteCapabilityProvider(
-  provider: NonNullable<WorkspaceServerPlugin["agentToolsDynamic"]>,
-): NonNullable<WorkspaceServerPlugin["agentToolsDynamic"]> {
-  appRunnerRemoteCapabilityProviders.add(provider)
-  return provider
-}
 
 function validatePackageResources(
   pluginId: string,
@@ -411,8 +398,8 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
     if (typeof plugin.agentToolsDynamic !== "function") {
       fail(plugin.id, "agentToolsDynamic must be a function when provided")
     }
-    if (plugin.id !== "app-runner" || !appRunnerRemoteCapabilityProviders.has(plugin.agentToolsDynamic)) {
-      fail(plugin.id, "agentToolsDynamic must be constructed by the app-runner remote-capability factory")
+    if (plugin.id !== "app-runner") {
+      fail(plugin.id, "agentToolsDynamic is reserved for app-runner capability descriptors")
     }
   }
   if (plugin.agentToolFactory !== undefined && typeof plugin.agentToolFactory !== "function") {

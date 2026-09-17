@@ -12,7 +12,6 @@ import {
   type WorkspacePiPackageSource,
 } from "./piPackages"
 export {
-  defineAppRunnerRemoteCapabilityProvider,
   defineServerPlugin,
   validateServerPlugin,
 } from "./defineServerPlugin"

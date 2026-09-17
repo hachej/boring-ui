@@ -39,10 +39,16 @@ export interface PublishedToolProvenance {
   readonly sha: string
 }
 
-/** A hot-mounted capability whose implementation dispatches outside the host process. */
-export interface ProvenancedRemoteAgentTool extends AgentTool {
-  readonly executionKind: "remote"
-  readonly provenance: Readonly<PublishedToolProvenance>
+/** Serializable request for a host-built, hub-verified remote capability. */
+export interface RemoteCapabilityDescriptor {
+  readonly kind: string
+  readonly workspaceId: string
+  readonly address: string
+  readonly version: number
+  readonly sha: string
+  readonly toolName: string
+  readonly description: string
+  readonly inputSchema: JSONSchema
 }
 
 export interface AgentTool {

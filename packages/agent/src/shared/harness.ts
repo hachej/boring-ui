@@ -1,13 +1,13 @@
 import type { SessionCtx, SessionStore } from './session'
 import type { TelemetrySink } from './telemetry'
-import type { AgentTool } from './tool'
+import type { AgentTool, RemoteCapabilityDescriptor } from './tool'
 import type { AgentSendInput, MessageAttachment } from './events'
 import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-agent'
 
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
   /** Trusted host tools refreshed before every model turn. */
-  toolsDynamic?: (ctx?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>
+  toolsDynamic?: (ctx?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>
   /** Host/storage cwd used for harness-owned filesystem resources. */
   cwd: string
   /** Agent-visible cwd used by Pi/system prompt/session metadata. */

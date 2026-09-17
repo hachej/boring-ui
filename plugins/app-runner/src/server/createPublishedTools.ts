@@ -1,20 +1,9 @@
-import type { ProvenancedRemoteAgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace/shared"
-import { createHash } from "node:crypto"
-import type { AppRunnerCurrent, AppRunnerRecord, PublishedToolProvenance } from "../shared/types"
+import type { RemoteCapabilityDescriptor, ToolExecContext } from "@hachej/boring-workspace/shared"
+import type { AppRunnerCurrent, AppRunnerRecord } from "../shared/types"
 import type { AppRunnerClient } from "./appRunnerClient"
-import { AppRunnerHttpError } from "./appRunnerClient"
 import type { AppRunnerStore } from "./appRunnerStore"
 import { profileAppName, isProfileAppName } from "./profileAddress"
 import { identityFromToolContext } from "./resolveIdentity"
-
-function result(value: unknown, isError = false): ToolResult {
-  const text = typeof value === "string" ? value : JSON.stringify(value)
-  return { content: [{ type: "text", text }], details: value, ...(isError ? { isError: true } : {}) }
-}
-
-function toolSegment(value: string): string {
-  return createHash("sha256").update(value.normalize("NFC"), "utf8").digest("hex").slice(0, 20)
-}
 
 export interface PublishedToolsProviderOptions {
   client: AppRunnerClient
@@ -23,9 +12,11 @@ export interface PublishedToolsProviderOptions {
 
 type DynamicContext = Pick<ToolExecContext, "abortSignal" | "sessionId" | "userId" | "userEmail" | "userEmailVerified" | "workspaceId" | "requestId">
 
-export function createPublishedToolsProvider(options: PublishedToolsProviderOptions): (context?: DynamicContext) => Promise<readonly ProvenancedRemoteAgentTool[]> {
-  const cache = new Map<string, readonly ProvenancedRemoteAgentTool[]>()
-
+/**
+ * Discovers serializable capability descriptors only. The agent runtime
+ * independently re-fetches the hub manifest and constructs every executor.
+ */
+export function createPublishedToolsProvider(options: PublishedToolsProviderOptions): (context?: DynamicContext) => Promise<readonly RemoteCapabilityDescriptor[]> {
   return async (context) => {
     const workspaceId = context?.workspaceId?.trim()
     if (!workspaceId) throw new Error("authenticated workspace identity is required to load published tools")
@@ -43,77 +34,29 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
       } catch {
         return []
       }
-      if ((isProfile && current.kind !== "profile") || (!isProfile && current.kind !== "app")) return []
-      // A published tool without immutable source provenance is not mountable.
-      if (!current.sha) return []
-      const provenance: PublishedToolProvenance = Object.freeze({
-        kind: current.kind,
-        address: `${workspaceId}/${record.appName}`,
-        version: current.version,
-        sha: current.sha,
-      })
+      if ((isProfile && current.kind !== "profile") || (!isProfile && current.kind !== "app") || !current.sha) return []
       if (current.version !== record.version || current.sha !== record.sha || current.kind !== record.kind) {
         await options.store.upsertApp(recordFromCurrent(record, current))
       }
-      const cacheKey = `${workspaceId}:${isProfile ? identity.id : "shared"}:${record.appName}:${current.version}:${current.sha ?? ""}`
-      const cached = cache.get(cacheKey)
-      if (cached) return cached
-      const tools = current.manifest.tools.map((entry): ProvenancedRemoteAgentTool => ({
-        executionKind: "remote",
-        name: `${isProfile ? "profile" : `app_${toolSegment(record.appName)}`}_${toolSegment(entry.name)}`,
+      return current.manifest.tools.map((entry): RemoteCapabilityDescriptor => ({
+        kind: current.kind,
+        workspaceId,
+        address: `${workspaceId}/${record.appName}`,
+        version: current.version,
+        sha: current.sha!,
+        toolName: entry.name,
         description: entry.description || `Call ${entry.name} in published ${current.kind} ${record.appName}.`,
-        parameters: entry.input ?? { type: "object", properties: {}, additionalProperties: false },
-        provenance,
-        async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
-          console.info(JSON.stringify({ event: "published_tool_call", tool: entry.name, provenance }))
-          try {
-            const executingWorkspaceId = ctx.workspaceId?.trim()
-            if (!executingWorkspaceId || executingWorkspaceId !== workspaceId) {
-              return result(`Published tool ${entry.name} refused: executing workspace does not match its published workspace.`, true)
-            }
-            const executingIdentity = identityFromToolContext(ctx)
-            if (isProfile && record.appName !== profileAppName(executingIdentity.id)) {
-              return result(`Published tool ${entry.name} refused: profile address does not match the acting user.`, true)
-            }
-            const value = await options.client.callTool(
-              executingWorkspaceId,
-              record.appName,
-              entry.name,
-              params,
-              executingIdentity,
-              current.version,
-              ctx.abortSignal,
-            )
-            return result(value)
-          } catch (error) {
-            if (error instanceof AppRunnerHttpError && error.status === 409) {
-              const latest = await options.client.current(workspaceId, record.appName, identityFromToolContext(ctx), ctx.abortSignal)
-              await options.store.upsertApp(recordFromCurrent(record, latest))
-              return result(
-                `Published tool ${entry.name} is stale because ${record.appName} changed from version ${current.version} to ${latest.version}. Retry after the tool inventory refreshes.`,
-                true,
-              )
-            }
-            const message = error instanceof AppRunnerHttpError
-              ? `app runner responded ${error.status}: ${error.message}`
-              : error instanceof Error ? error.message : String(error)
-            return result(`Published tool ${entry.name} failed: ${message}`, true)
-          }
-        },
+        inputSchema: entry.input ?? { type: "object", properties: {}, additionalProperties: false },
       }))
-      cache.set(cacheKey, tools)
-      return tools
     }))
-    const tools = groups.flat()
-    const owners = new Map<string, string>()
-    for (const tool of tools) {
-      const owner = `${tool.name}`
-      if (owners.has(tool.name)) {
-        throw new Error(`published tool name collision for "${tool.name}"; manifests must expose unique tool names`)
-      }
-      owners.set(tool.name, owner)
+    const descriptors = groups.flat()
+    const names = new Set<string>()
+    for (const descriptor of descriptors) {
+      const key = `${descriptor.address}:${descriptor.toolName}`
+      if (names.has(key)) throw new Error(`published tool name collision for "${descriptor.toolName}"; manifests must expose unique tool names`)
+      names.add(key)
     }
-    return tools
+    return descriptors
   }
 }
 

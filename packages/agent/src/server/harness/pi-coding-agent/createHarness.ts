@@ -19,7 +19,7 @@ import {
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
 import { createLogger } from "@hachej/boring-bash/server";
-import type { AgentTool } from "../../../shared/tool.js";
+import type { AgentTool, RemoteCapabilityDescriptor } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
@@ -32,6 +32,7 @@ import {
   type PiPackageSource,
 } from "../../piPackages.js";
 import { createResourceSettingsManager } from "./resourceSettingsManager.js";
+import { buildVerifiedRemoteCapability } from "./remoteCapabilities.js";
 
 interface PiRunContextState {
   queuedFollowUpContexts: WeakMap<object, RunContext>;
@@ -181,20 +182,12 @@ function buildDynamicPromptExtension(
   }
 }
 
-function assertRemoteDynamicTool(tool: AgentTool): void {
-  const provenance = tool.provenance
-  if (tool.executionKind !== "remote" || !provenance
-    || typeof provenance.kind !== "string" || !provenance.kind
-    || typeof provenance.address !== "string" || !provenance.address
-    || !Number.isSafeInteger(provenance.version) || provenance.version < 1
-    || typeof provenance.sha !== "string" || !provenance.sha
-    || !Object.isFrozen(provenance)) {
-    throw new Error(`dynamic agent tool "${tool.name}" must be a remote capability with frozen kind/address/version/sha provenance`)
-  }
+function isRemoteCapabilityDescriptor(value: AgentTool | RemoteCapabilityDescriptor): value is RemoteCapabilityDescriptor {
+  return "toolName" in value && "inputSchema" in value
 }
 
 function buildDynamicToolsExtension(
-  source: (ctx?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>,
+  source: (ctx?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>,
   sessionId: string,
   telemetry: TelemetrySink | undefined,
   getRunContext: () => RunContext | undefined,
@@ -204,8 +197,10 @@ function buildDynamicToolsExtension(
     const refresh = async () => {
       const ctx = getRunContext()
       if (!ctx) return
-      const tools = [...await source(ctx)]
-      tools.forEach(assertRemoteDynamicTool)
+      const supplied = [...await source(ctx)]
+      const tools = await Promise.all(supplied.map(async (entry) => isRemoteCapabilityDescriptor(entry)
+        ? await buildVerifiedRemoteCapability(entry, ctx)
+        : entry))
       const adapted = adaptToolsForPi(tools, sessionId, telemetry, getRunContext)
       const names = adapted.map((tool) => tool.name)
       const nextNames = new Set(names)
@@ -494,7 +489,7 @@ function updateRunContextStateFromPiEvent(
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
-  toolsDynamic?: (ctx?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>;
+  toolsDynamic?: (ctx?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>;
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
   cwd: string;
   /** Agent-visible cwd used by Pi's system prompt and native session metadata. */

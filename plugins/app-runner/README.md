@@ -36,7 +36,7 @@ Published pages are served from an origin distinct from the host/API and rendere
 
 ## Dynamic-tool provenance
 
-Published app/profile tools are the ratified isolated-composition tier. Every mounted tool is bound to and carries its kind, workspace/address, version, and Git SHA. Calls log that provenance; the Apps panel displays it. Tools without a SHA are not mounted, stale versions are rejected, names are platform-namespaced, and workspace/profile ownership is checked again at execution.
+Published app/profile tools are the ratified isolated-composition tier. The plugin contributes only serializable descriptors (kind, workspace/address, version, Git SHA, tool name, description, and input schema), never executable callbacks. Before each mount the agent runtime fetches a fresh hub manifest, verifies every descriptor field and schema, then constructs and freezes the hub-dispatch executor from host-owned credentials. Tools without a SHA, stale or mismatched descriptors, unknown tools, and descriptors containing functions are refused. Refresh always rebuilds descriptors and executors.
 
 ## Installation
 

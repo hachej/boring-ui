@@ -54,6 +54,7 @@ import {
   AgentGatewayErrorCode,
   ErrorCode,
   type AgentTool,
+  type RemoteCapabilityDescriptor,
   type RunContext,
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
@@ -177,7 +178,7 @@ export interface WorkspaceAgentCreateOptions {
   authToken?: string
   logger?: boolean
   extraTools?: AgentTool[]
-  extraToolsDynamic?: (context?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>
+  extraToolsDynamic?: (context?: RunContext) => readonly (AgentTool | RemoteCapabilityDescriptor)[] | Promise<readonly (AgentTool | RemoteCapabilityDescriptor)[]>
   disableDefaultFileTools?: boolean
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -2083,8 +2084,9 @@ export async function createWorkspaceAgentServer(
             ]
             const seen = new Set<string>()
             for (const tool of tools) {
-              if (seen.has(tool.name)) throw new Error(`dynamic agent tool name collision: "${tool.name}"`)
-              seen.add(tool.name)
+              const name = "name" in tool ? tool.name : `${tool.address}:${tool.toolName}`
+              if (seen.has(name)) throw new Error(`dynamic agent tool name collision: "${name}"`)
+              seen.add(name)
             }
             return tools
           }

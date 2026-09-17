@@ -2,7 +2,6 @@
 import { describe, it, expect, vi } from "vitest"
 import {
   bootstrapServer,
-  defineAppRunnerRemoteCapabilityProvider,
   defineServerPlugin,
 } from "../plugins/bootstrapServer"
 
@@ -15,11 +14,16 @@ function makeAgentTool(name = "tool") {
   }
 }
 
-function makeRemoteAgentTool(name = "tool") {
+function makeRemoteCapabilityDescriptor(toolName = "tool") {
   return {
-    ...makeAgentTool(name),
-    executionKind: "remote" as const,
-    provenance: Object.freeze({ kind: "app", address: "ws/app", version: 1, sha: "abc123" }),
+    kind: "app",
+    workspaceId: "ws",
+    address: "ws/app",
+    version: 1,
+    sha: "abc123",
+    toolName,
+    description: "Tool",
+    inputSchema: { type: "object" as const, properties: {} },
   }
 }
 
@@ -58,16 +62,14 @@ describe("bootstrapServer", () => {
     expect(result.agentSessionDeleteContributions).toEqual([{ id: "trusted", onDelete: onAgentSessionDelete }])
   })
 
-  it("preserves trusted dynamic tool and prompt providers for per-turn projection", async () => {
-    const agentToolsDynamic = defineAppRunnerRemoteCapabilityProvider(
-      vi.fn(async () => [makeRemoteAgentTool("published_tool")]),
-    )
+  it("preserves descriptor-only dynamic capability and prompt providers for per-turn projection", async () => {
+    const agentToolsDynamic = vi.fn(async () => [makeRemoteCapabilityDescriptor("published_tool")])
     const systemPromptDynamic = vi.fn(async () => "published profile")
     const result = bootstrapServer({ plugins: [{ id: "app-runner", agentToolsDynamic, systemPromptDynamic }] })
 
     expect(result.agentToolsDynamic).toEqual([agentToolsDynamic])
     expect(result.systemPromptDynamic).toEqual([systemPromptDynamic])
-    expect((await result.agentToolsDynamic[0]!())[0]?.name).toBe("published_tool")
+    expect((await result.agentToolsDynamic[0]!())[0]?.toolName).toBe("published_tool")
     expect(await result.systemPromptDynamic[0]!()).toBe("published profile")
   })
 
@@ -383,28 +385,17 @@ describe("bootstrapServer", () => {
     ).toThrow("agentTools[0].execute must be a function")
   })
 
-  it("defineServerPlugin requires the app-runner factory identity for dynamic providers", () => {
-    const forgedProvider = async () => [makeRemoteAgentTool("forged")]
+  it("reserves the descriptor-only dynamic seam for app-runner", () => {
+    const provider = async () => [makeRemoteCapabilityDescriptor("published")]
     expect(() => defineServerPlugin({
       id: "self-attested-tools",
-      agentToolsDynamic: forgedProvider,
-    })).toThrow("agentToolsDynamic must be constructed by the app-runner remote-capability factory")
-
-    expect(() => defineServerPlugin({
-      id: "app-runner",
-      agentToolsDynamic: forgedProvider,
-    })).toThrow("agentToolsDynamic must be constructed by the app-runner remote-capability factory")
-
-    const mintedProvider = defineAppRunnerRemoteCapabilityProvider(async () => [])
-    expect(() => defineServerPlugin({
-      id: "not-app-runner",
-      agentToolsDynamic: mintedProvider,
-    })).toThrow("agentToolsDynamic must be constructed by the app-runner remote-capability factory")
+      agentToolsDynamic: provider,
+    })).toThrow("agentToolsDynamic is reserved for app-runner capability descriptors")
 
     expect(defineServerPlugin({
       id: "app-runner",
-      agentToolsDynamic: mintedProvider,
-    }).agentToolsDynamic).toBe(mintedProvider)
+      agentToolsDynamic: provider,
+    }).agentToolsDynamic).toBe(provider)
   })
 
   it("defineServerPlugin rejects malformed routes", () => {

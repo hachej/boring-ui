@@ -1,7 +1,6 @@
 import { join } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
 import {
-  defineAppRunnerRemoteCapabilityProvider,
   defineServerPlugin,
   type WorkspaceServerPlugin,
 } from "@hachej/boring-workspace/server"
@@ -39,9 +38,7 @@ export function createAppRunnerServerPlugin(options: AppRunnerServerPluginOption
       "After publishing, call exec_ui with { kind: 'openSurface', params: { kind: 'app-runner', target: '<appName>' } } to open the Apps panel focused on that app.",
     ].join("\n"),
     agentTools: createAppRunnerTools({ workspaceRoot: options.workspaceRoot, client, store }),
-    agentToolsDynamic: defineAppRunnerRemoteCapabilityProvider(
-      createPublishedToolsProvider({ client, store }),
-    ),
+    agentToolsDynamic: createPublishedToolsProvider({ client, store }),
     systemPromptDynamic: createPublishedProfilePromptProvider({ client, store }),
     routes,
   })

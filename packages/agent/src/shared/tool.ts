@@ -7,6 +7,17 @@ export type ToolReadinessRequirement =
   | 'runtime-dependencies'
   | `runtime:${string}`
 
+export interface RemoteCapabilityDescriptor {
+  readonly kind: string
+  readonly workspaceId: string
+  readonly address: string
+  readonly version: number
+  readonly sha: string
+  readonly toolName: string
+  readonly description: string
+  readonly inputSchema: JSONSchema
+}
+
 export interface AgentTool {
   name: string
   /** Required on tools admitted through the dynamic remote-capability seam. */
