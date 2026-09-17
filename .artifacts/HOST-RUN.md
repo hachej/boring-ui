@@ -1,4 +1,4 @@
-# Host run — Astra round 7
+# Host run — Astra round 8
 
 Date: 2026-09-17
 
@@ -8,62 +8,60 @@ Per-app dev origin: `<app-id>.apps.localhost:9878`
 
 Secrets came from the gitignored hub `.dev.vars`; no value is recorded here.
 
-## Descriptor-only capability admission — PASS
+## Dynamic capability boundary — PASS
 
-The registration surface no longer exports the public capability-minting
-function and no longer accepts executable dynamic tools. App-runner contributes
-plain descriptors containing exactly kind, workspace id, address, version, SHA,
-tool name, description, and input schema. It does not construct, retain, or
-supply an executor.
+The plugin dynamic seam now accepts only `RemoteCapabilityDescriptor[]`. Ordinary
+`AgentTool` callbacks no longer share that channel; trusted host callbacks remain
+on the existing static host-tool paths. The harness sends every dynamic entry
+through descriptor admission and rejects an ordinary callback before execution.
 
-The agent runtime rejects malformed descriptors and any nested function-valued
-property. At every refresh it fetches `/current` directly with host-owned hub
-configuration and authenticated run identity, then verifies workspace/address,
-kind, version, SHA, manifest membership, and schema before constructing a new
-frozen executor. Execution rechecks the authenticated workspace and dispatches
-to the pinned hub tool endpoint. No plugin callback is retained in the mounted
-capability.
+Descriptor admission first makes a recursive own-property, data-only snapshot.
+It rejects accessors, proxies, functions, symbols, cycles, and non-plain objects
+without invoking caller accessors. Validation, manifest lookup, executor creation,
+and dispatch use only that snapshot. A regression mutates `workspaceId` while the
+`/current` request is pending and confirms execution remains bound to the original
+workspace.
 
-The focused regression matrix covers: function-bearing descriptors; wrong
-workspace, version, and SHA; a tool absent from the manifest; a genuine
-descriptor whose runtime-built executor emits the exact authenticated hub
-request; attempted post-mount descriptor/executor mutation; and two refreshes
-producing distinct executors after two fresh manifest requests.
+For `kind: "profile"`, the runtime independently derives the sole permitted
+profile address from the authenticated user id and rejects another user's profile
+before contacting the hub.
 
-This aligns with ratified R1/D33: executable selection and credentials remain
-host-owned, while the plugin contributes serializable mechanism facts only.
+Focused admission coverage is **13 passing tests**, including Astra's callback,
+accessor, mutation-race, and cross-user profile reproductions plus the round-6/7
+manifest/dispatch/refresh matrix.
 
 ## Hub and sandboxed panel — PASS
 
-`.artifacts/astra7-hub-e2e.txt` is a fresh live hub run: **OVERALL: PASS** (39
+`.artifacts/astra8-hub-e2e.txt` is a fresh live hub run: **OVERALL: PASS** (39
 checks), including failed-migration rollback and version-pinned dispatch.
 
-`.artifacts/astra7-panel.txt` and `apps/workspace-playground/.artifacts/astra7-panel.png` are a fresh live
+`.artifacts/astra8-panel.txt` and `.artifacts/astra8-panel.png` are a fresh live
 Apps-panel capture. The iframe retained exactly
 `sandbox="allow-scripts allow-forms"`; document, CSS, JavaScript, and
 `/api/entries` each returned 200, and the rendered body was `Guestbook / Ada`.
 
 ## Verification
 
-- agent descriptor admission regression: **PASS**, 8 tests.
-- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 48 tests.
-- `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
-- focused workspace registration test: **PASS**, 41 tests.
-- `pnpm --filter @hachej/boring-workspace typecheck`: **PASS**.
-- `pnpm --filter @hachej/boring-agent typecheck`: **PASS**.
-- `pnpm lint:invariants`: **PASS**, including workspace-plugin and
-  cross-package alignment gates.
+- agent focused descriptor admission: **PASS**, 13 tests.
+- agent typecheck: **PASS** after rebuilding `@hachej/boring-ui-kit`.
+- app-runner plugin tests: **PASS**, 11 files / 48 tests.
+- app-runner plugin typecheck: **PASS**.
+- workspace registration tests: **PASS**, 41 tests.
+- workspace typecheck: **PASS**.
+- `pnpm lint:invariants`: **PASS**.
 - hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 39 checks.
 - live panel iframe: **document/CSS/JS/API 200**, rendered `Guestbook / Ada`.
-- `pnpm typecheck:changed`: **BLOCKED** during broad dependency builds by the
-  existing `plugins/generated-pane` TS2883 declaration error and existing
-  `packages/core` Fastify type-identity errors. Scoped affected-package
-  typechecks above passed.
+- full workspace test command: **FAILED**, 17 tests in 5 files (timeouts under
+  concurrent full-suite load plus the pre-existing missing
+  `node_modules/@hachej/boring-bi-dashboard` fixture link); 2309 tests passed.
+- full agent test command: **FAILED**, 3 tests plus one suite (timeouts and the
+  initially unbuilt `@hachej/boring-ui-kit` dependency); 2447 tests passed. The
+  affected admission file was rerun independently and passed after the UI build.
+- `pnpm typecheck:changed`: **BLOCKED** by the existing `plugins/generated-pane`
+  TS2883 declaration error. Scoped affected-package typechecks passed.
 - `pnpm test:changed`: **BLOCKED during the same dependency build** by the
-  existing generated-pane TS2883 error; focused affected tests above passed.
-- `git diff --check`: **PASS**.
+  existing generated-pane TS2883 error.
 
 The full external-model a–g transcript was **not rerun**. No provider-backed
-model/inventory/restart claim is made from these focused checks. The live hub
-and panel services were already running for this round; their startup procedure
-was not rerun.
+model/inventory/restart claim is made. The live services were already running;
+their startup/restart procedure was not rerun.
