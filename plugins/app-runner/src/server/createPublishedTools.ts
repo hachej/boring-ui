@@ -3,6 +3,7 @@ import type { AppRunnerCurrent, AppRunnerRecord } from "../shared/types"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
 import type { AppRunnerStore } from "./appRunnerStore"
+import { profileAppName, isProfileAppName } from "./profileAddress"
 import { identityFromToolContext } from "./resolveIdentity"
 
 function result(value: unknown, isError = false): ToolResult {
@@ -28,24 +29,28 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
     const workspaceId = context?.workspaceId?.trim()
     if (!workspaceId) throw new Error("authenticated workspace identity is required to load published tools")
     const identity = identityFromToolContext(context ?? {})
+    const permittedProfile = profileAppName(identity.id)
     const records = (await options.store.listApps()).filter((record) =>
-      record.workspaceId === workspaceId && (record.kind !== "profile" || record.ownerUserId === identity.id),
+      record.workspaceId === workspaceId
+      && (record.appName === permittedProfile || (!isProfileAppName(record.appName) && record.kind !== "profile")),
     )
     const groups = await Promise.all(records.map(async (record) => {
+      const isProfile = record.appName === permittedProfile
       let current: AppRunnerCurrent
       try {
         current = await options.client.current(workspaceId, record.appName, identity, context?.abortSignal)
       } catch {
         return []
       }
+      if ((isProfile && current.kind !== "profile") || (!isProfile && current.kind !== "app")) return []
       if (current.version !== record.version || current.sha !== record.sha || current.kind !== record.kind) {
         await options.store.upsertApp(recordFromCurrent(record, current))
       }
-      const cacheKey = `${workspaceId}:${record.ownerUserId ?? "shared"}:${record.appName}:${current.version}:${current.sha ?? ""}`
+      const cacheKey = `${workspaceId}:${isProfile ? identity.id : "shared"}:${record.appName}:${current.version}:${current.sha ?? ""}`
       const cached = cache.get(cacheKey)
       if (cached) return cached
       const tools = current.manifest.tools.map((entry): AgentTool => ({
-        name: `${current.kind === "profile" ? "profile" : `app_${toolSegment(record.appName)}`}_${toolSegment(entry.name)}`,
+        name: `${isProfile ? "profile" : `app_${toolSegment(record.appName)}`}_${toolSegment(entry.name)}`,
         description: entry.description || `Call ${entry.name} in published ${current.kind} ${record.appName}.`,
         parameters: entry.input ?? { type: "object", properties: {}, additionalProperties: false },
         async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
@@ -55,8 +60,8 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
               return result(`Published tool ${entry.name} refused: executing workspace does not match its published workspace.`, true)
             }
             const executingIdentity = identityFromToolContext(ctx)
-            if (record.kind === "profile" && record.ownerUserId !== executingIdentity.id) {
-              return result(`Published tool ${entry.name} refused: profile owner does not match the acting user.`, true)
+            if (isProfile && record.appName !== profileAppName(executingIdentity.id)) {
+              return result(`Published tool ${entry.name} refused: profile address does not match the acting user.`, true)
             }
             const latest = await options.client.current(executingWorkspaceId, record.appName, executingIdentity, ctx.abortSignal)
             if (latest.version !== current.version || latest.sha !== current.sha || latest.kind !== current.kind) {

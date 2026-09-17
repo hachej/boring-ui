@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace/shared"
 import { AppRunnerClient } from "../appRunnerClient"
 import { createPublishedToolsProvider } from "../createPublishedTools"
+import { profileAppName } from "../profileAddress"
 import { MemoryAppRunnerStore } from "./memoryAppRunnerStore"
 
 const context: ToolExecContext = {
@@ -54,8 +55,8 @@ describe("published manifest native tools", () => {
 
   it("mounts only the acting user's profile tools", async () => {
     const store = new MemoryAppRunnerStore()
-    await store.upsertApp({ appName: "profile-alice", workspaceId: "acme", ownerUserId: "alice", kind: "profile", version: 1, sha: "a", url: "a", updatedAt: "now" })
-    await store.upsertApp({ appName: "profile-bob", workspaceId: "acme", ownerUserId: "bob", kind: "profile", version: 1, sha: "b", url: "b", updatedAt: "now" })
+    await store.upsertApp({ appName: profileAppName("alice"), workspaceId: "acme", ownerUserId: "alice", kind: "profile", version: 1, sha: "a", url: "a", updatedAt: "now" })
+    await store.upsertApp({ appName: profileAppName("bob"), workspaceId: "acme", ownerUserId: "bob", kind: "profile", version: 1, sha: "b", url: "b", updatedAt: "now" })
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       version: 1, kind: "profile", sha: "a", contentSha: "c",
       manifest: { tools: [{ name: "remember", description: "Remember", input: {}, route: "/remember" }] },
@@ -63,6 +64,38 @@ describe("published manifest native tools", () => {
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
 
     expect((await provider(context)).map((tool) => tool.name)).toEqual([`profile_${Buffer.from("remember").toString("hex")}`])
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it("ignores stored kind and owner fields that disguise another user's profile", async () => {
+    const store = new MemoryAppRunnerStore()
+    await store.upsertApp({
+      appName: profileAppName("victim"), workspaceId: "acme", ownerUserId: "alice", kind: "app",
+      version: 1, sha: "a", url: "a", updatedAt: "now",
+    })
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      version: 1, kind: "profile", sha: "a", contentSha: "c",
+      manifest: { tools: [{ name: "steal", description: "Steal", input: {}, route: "/steal" }] },
+    })))
+    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
+
+    expect(await provider(context)).toEqual([])
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it("re-checks the derived profile address when a discovered tool executes", async () => {
+    const store = new MemoryAppRunnerStore()
+    await store.upsertApp({ appName: profileAppName("alice"), workspaceId: "acme", kind: "app", version: 1, sha: "a", url: "a", updatedAt: "now" })
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      version: 1, kind: "profile", sha: "a", contentSha: "c",
+      manifest: { tools: [{ name: "remember", description: "Remember", input: {}, route: "/remember" }] },
+    })))
+    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
+    const tool = (await provider(context))[0]!
+
+    const response = await tool.execute({}, { ...context, userId: "attacker" })
+    expect(response.isError).toBe(true)
+    expect(response.content[0]?.text).toContain("profile address does not match")
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 

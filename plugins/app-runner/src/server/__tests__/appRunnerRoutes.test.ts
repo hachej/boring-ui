@@ -183,6 +183,18 @@ describe("appRunnerRoutes", () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  it("rejects a decoded wildcard that traverses to another profile address", async () => {
+    const store = new MemoryAppRunnerStore()
+    await store.upsertApp({ appName: "demo", workspaceId: "ws-root", kind: "app", version: 1, sha: "a", url: "a", updatedAt: "now" })
+    const fetchImpl = vi.fn(async () => new Response("should not dispatch"))
+    const app = await buildApp(fetchImpl as unknown as typeof fetch, store)
+
+    const response = await app.inject({ method: "GET", url: `/api/v1/plugins/app-runner/open/demo/..%2f${profileAppName("victim")}/read` })
+
+    expect(response.statusCode).toBe(403)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it("rejects noncanonical app names without addressing a lossy hub path", async () => {
     const fetchImpl = vi.fn(async () => new Response("should not dispatch"))
     const app = await buildApp(fetchImpl as unknown as typeof fetch)

@@ -67,6 +67,12 @@ function applySandboxCors(request: FastifyRequest, reply: FastifyReply): void {
   reply.header("access-control-allow-headers", "Content-Type, Accept")
 }
 
+function confinedWildcardPath(rest: string): string | undefined {
+  const segments = rest.split("/")
+  if (segments.some((segment) => segment === "." || segment === ".." || segment.includes("\\"))) return undefined
+  return segments.map(encodeURIComponent).join("/")
+}
+
 async function proxyToRunner(
   opts: AppRunnerRoutesOptions,
   request: FastifyRequest,
@@ -233,7 +239,11 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
     await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
     if (reply.sent) return
-    const rest = request.params["*"] ?? ""
+    const rest = confinedWildcardPath(request.params["*"] ?? "")
+    if (rest === undefined) {
+      reply.code(403).send({ error: "forbidden", message: "serving path escapes the authorized app" })
+      return
+    }
     await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/${rest}`)
   })
 
@@ -243,7 +253,11 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
       await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
       if (reply.sent) return
-      const rest = request.params["*"] ?? ""
+      const rest = confinedWildcardPath(request.params["*"] ?? "")
+      if (rest === undefined) {
+        reply.code(403).send({ error: "forbidden", message: "preview path escapes the authorized app" })
+        return
+      }
       await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/preview/${encodeURIComponent(request.params.version)}/${rest}`)
     },
   )
