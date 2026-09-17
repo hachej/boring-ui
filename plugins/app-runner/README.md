@@ -28,7 +28,7 @@ On each publish the plugin creates or updates the app folder's private Git repos
 - `BORING_APP_RUNNER_TOKEN` — bearer token for runner control-plane and tool calls.
 - `BORING_APP_RUNNER_AUTH_SECRET` — optional development forward-auth secret sent as `X-App-Runner-Auth` on control-plane and tool calls.
 
-The front end never receives these credentials. App-serving proxy requests carry only trusted session-derived identity routing headers, and the hub converts those into the app-facing `x-app-user` header.
+The front end never receives these credentials. App-serving proxy requests never carry the bearer token. In development they carry `X-App-Runner-Auth` only as far as the trusted hub authentication boundary; the hub strips that secret and the raw identity routing headers before dispatching to app code, then injects only the app-facing `x-app-user` header.
 
 ## Browser isolation
 

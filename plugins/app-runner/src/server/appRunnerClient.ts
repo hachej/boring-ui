@@ -158,11 +158,16 @@ export class AppRunnerClient {
     return headers
   }
 
-  /** Identity-only headers for app-serving requests; platform credentials must never reach app code. */
+  /**
+   * Serving requests use the dev forward-auth secret only at the trusted hub
+   * boundary. They never carry the broader bearer token; the hub strips this
+   * secret and the raw identity headers before dispatching to app code.
+   */
   servingHeaders(identity: AppRunnerIdentity, workspaceId: string): Record<string, string> {
     return {
       [APP_RUNNER_USER_HEADER]: JSON.stringify(identity),
       [APP_RUNNER_WORKSPACE_HEADER]: workspaceId,
+      ...(this.authSecret ? { [APP_RUNNER_AUTH_SECRET_HEADER]: this.authSecret } : {}),
     }
   }
 

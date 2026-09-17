@@ -45,7 +45,7 @@ describe("appRunnerRoutes", () => {
     expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toEqual({ id: "local", name: "Local user" })
   })
 
-  it("does not send platform credentials on app-serving proxy requests", async () => {
+  it("sends no bearer token to serving and limits the dev secret to the trusted hub boundary", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }))
     const app = await buildApp(fetchImpl as unknown as typeof fetch)
 
@@ -58,7 +58,7 @@ describe("appRunnerRoutes", () => {
     expect(response.statusCode).toBe(200)
     const headers = fetchImpl.mock.calls[0]![1]!.headers as Record<string, string>
     expect(headers.Authorization).toBeUndefined()
-    expect(headers[APP_RUNNER_AUTH_SECRET_HEADER]).toBeUndefined()
+    expect(headers[APP_RUNNER_AUTH_SECRET_HEADER]).toBe("dev-secret")
     expect(headers[APP_RUNNER_WORKSPACE_HEADER]).toBe("ws-root")
     expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toEqual({ id: "local", name: "Local user" })
   })
