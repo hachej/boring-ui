@@ -89,6 +89,7 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
         const toolManifest = current.manifest
         await options.store.upsertApp({
           appName,
+          workspaceId,
           kind: current.kind,
           version: current.version,
           sha: current.sha,
@@ -158,6 +159,7 @@ export function createRollbackAppTool(options: AppRunnerToolsOptions): AgentTool
           const toolManifest = await refreshStoredManifest(options, workspaceId, appName, current.version, identity)
           await options.store.upsertApp({
             appName,
+            workspaceId,
             kind: current.kind,
             version: current.version,
             sha: current.sha,
@@ -202,6 +204,7 @@ export function createActivateAppVersionTool(options: AppRunnerToolsOptions): Ag
         const current = await options.client.current(workspaceId, appName, identity)
         await options.store.upsertApp({
           appName,
+          workspaceId,
           kind: current.kind,
           version: current.version,
           sha: current.sha,
@@ -326,6 +329,5 @@ export function createAppRunnerTools(options: AppRunnerToolsOptions): AgentTool[
     createActivateAppVersionTool(options),
     createGetAppLogsTool(options),
     createGetAppUsageTool(options),
-    createCallAppToolTool(options),
   ]
 }

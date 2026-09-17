@@ -96,6 +96,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
         const deployed = await opts.client.current(workspaceId, request.params.appName, identity)
         await opts.store.upsertApp({
           appName: request.params.appName,
+          workspaceId,
           kind: deployed.kind,
           version: deployed.version,
           sha: deployed.sha,
@@ -124,6 +125,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
         const deployed = await opts.client.current(workspaceId, request.params.appName, identity)
         await opts.store.upsertApp({
           appName: request.params.appName,
+          workspaceId,
           kind: deployed.kind,
           version: deployed.version,
           sha: deployed.sha,

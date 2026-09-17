@@ -178,6 +178,26 @@ function buildDynamicPromptExtension(
   }
 }
 
+function buildDynamicToolsExtension(
+  source: () => readonly AgentTool[] | Promise<readonly AgentTool[]>,
+  sessionId: string,
+  telemetry: TelemetrySink | undefined,
+  getRunContext: () => RunContext | undefined,
+): ExtensionFactory {
+  return (pi) => {
+    let ownedNames = new Set<string>()
+    pi.on("before_agent_start", async () => {
+      const tools = [...await source()]
+      const adapted = adaptToolsForPi(tools, sessionId, telemetry, getRunContext)
+      const nextNames = new Set(adapted.map((tool) => tool.name))
+      for (const tool of adapted) pi.registerTool(tool)
+      const active = pi.getActiveTools().filter((name) => !ownedNames.has(name))
+      pi.setActiveTools([...new Set([...active, ...nextNames])])
+      ownedNames = nextNames
+    })
+  }
+}
+
 const PI_RELATIVE_SKILL_PATH_GUIDANCE = "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands."
 const RESOURCE_RELATIVE_SKILL_PATH_GUIDANCE = "When a skill location is a JSON resource locator, pass its filesystem and path fields to the read tool. Resolve referenced relative paths against the locator's directory in the same filesystem; never convert a resource locator to a host path."
 
@@ -443,6 +463,7 @@ function updateRunContextStateFromPiEvent(
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
+  toolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>;
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
   cwd: string;
   /** Agent-visible cwd used by Pi's system prompt and native session metadata. */
@@ -644,6 +665,9 @@ export function createPiCodingAgentHarness(opts: {
     const dynamicPromptExtension = opts.systemPromptDynamic
       ? buildDynamicPromptExtension(opts.systemPromptDynamic)
       : undefined
+    const dynamicToolsExtension = opts.toolsDynamic
+      ? buildDynamicToolsExtension(opts.toolsDynamic, sessionId, opts.telemetry, () => runContextStorage.getStore())
+      : undefined
     const agentDir = getAgentDir()
     const toolErrorResultExtension = buildToolErrorResultExtension()
     const skillResourceProjectionExtension = pi.locateSkillResource
@@ -652,6 +676,7 @@ export function createPiCodingAgentHarness(opts: {
     const extensionFactories = [
       toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
+      ...(dynamicToolsExtension ? [dynamicToolsExtension] : []),
       ...(pi.extensionFactories ?? []),
       ...(skillResourceProjectionExtension ? [skillResourceProjectionExtension] : []),
     ]

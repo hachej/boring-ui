@@ -361,6 +361,7 @@ export async function buildAgentComposition(
         }) as AgentCoreHarnessFactory
   const harness = await harnessFactory({
     tools,
+    toolsDynamic: runtimeScope.loadAgentTools,
     cwd: runtimeScope.environment.workspaceRoot,
     runtimeCwd: runtimeBundle.workspace.root,
     systemPromptAppend: staticPromptAppend,

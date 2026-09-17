@@ -6,6 +6,7 @@ import { AppRunnerClient, type AppRunnerClientOptions } from "./appRunnerClient"
 import { FileAppRunnerStore, type AppRunnerStore } from "./appRunnerStore"
 import { appRunnerRoutes } from "./appRunnerRoutes"
 import { createAppRunnerTools } from "./createAppRunnerTools"
+import { createPublishedToolsProvider } from "./createPublishedTools"
 
 export type AppRunnerServerPluginOptions = {
   workspaceRoot: string
@@ -32,6 +33,7 @@ export function createAppRunnerServerPlugin(options: AppRunnerServerPluginOption
       "After publishing, call exec_ui with { kind: 'openSurface', params: { kind: 'app-runner', target: '<appName>' } } to open the Apps panel focused on that app.",
     ].join("\n"),
     agentTools: createAppRunnerTools({ workspaceRoot: options.workspaceRoot, client, store }),
+    agentToolsDynamic: createPublishedToolsProvider({ client, store }),
     routes,
   })
 }

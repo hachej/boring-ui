@@ -6,6 +6,8 @@ import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-a
 
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
+  /** Trusted host tools refreshed before every model turn. */
+  toolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>
   /** Host/storage cwd used for harness-owned filesystem resources. */
   cwd: string
   /** Agent-visible cwd used by Pi/system prompt/session metadata. */

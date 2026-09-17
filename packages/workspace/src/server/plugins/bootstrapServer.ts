@@ -71,6 +71,7 @@ export interface ServerBootstrapResult {
   piPackages: WorkspacePiPackageSource[]
   extensionPaths: string[]
   agentTools: AgentTool[]
+  agentToolsDynamic: Array<NonNullable<WorkspaceServerPlugin["agentToolsDynamic"]>>
   agentToolFactories: WorkspaceAgentToolFactoryContribution[]
   agentSessionDeleteContributions: WorkspaceAgentSessionDeleteContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
@@ -104,6 +105,8 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
       agentTools.push(tool)
     }
   }
+
+  const agentToolsDynamic = finalPlugins.flatMap((plugin) => plugin.agentToolsDynamic ? [plugin.agentToolsDynamic] : [])
 
   const agentToolFactories = finalPlugins
     .filter((plugin) => plugin.agentToolFactory)
@@ -158,6 +161,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     piPackages,
     extensionPaths,
     agentTools,
+    agentToolsDynamic,
     agentToolFactories,
     agentSessionDeleteContributions,
     runtimePlugins,

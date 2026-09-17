@@ -83,6 +83,8 @@ export interface WorkspaceServerPlugin {
   /** Installed package resources admitted by this trusted server plugin. */
   packageResources?: WorkspacePackageResourceContribution[]
   agentTools?: AgentTool[]
+  /** Trusted host provider refreshed before each model turn. It may narrow or replace its own tools, never host authority. */
+  agentToolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>
   /** Trusted boot-time factory invoked only when this preflighted plugin is selected for an Agent. */
   agentToolFactory?: (context: WorkspaceAgentToolFactoryContext) => readonly AgentTool[]
   /** Joined cleanup invoked only after a selected Agent session is successfully deleted. */
@@ -376,6 +378,9 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
       fail(plugin.id, "agentTools must be an array when provided")
     }
     plugin.agentTools.forEach((tool, index) => validateAgentTool(plugin.id, tool, index))
+  }
+  if (plugin.agentToolsDynamic !== undefined && typeof plugin.agentToolsDynamic !== "function") {
+    fail(plugin.id, "agentToolsDynamic must be a function when provided")
   }
   if (plugin.agentToolFactory !== undefined && typeof plugin.agentToolFactory !== "function") {
     fail(plugin.id, "agentToolFactory must be a function when provided")

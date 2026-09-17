@@ -176,6 +176,7 @@ export interface WorkspaceAgentCreateOptions {
   authToken?: string
   logger?: boolean
   extraTools?: AgentTool[]
+  extraToolsDynamic?: () => readonly AgentTool[] | Promise<readonly AgentTool[]>
   disableDefaultFileTools?: boolean
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -633,7 +634,7 @@ export interface AgentSpecPluginArtifactProjection {
   readonly runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: Pick<
     WorkspaceAgentCreateOptions,
-    "extraTools" | "systemPromptAppend" | "pi"
+    "extraTools" | "extraToolsDynamic" | "systemPromptAppend" | "pi"
   >
   readonly onSessionDelete?: (input: {
     readonly workspaceScopeId: string
@@ -937,12 +938,16 @@ export function projectAgentSpecPluginArtifacts(
     plugins: selected.map((artifact) => artifact.plugin),
   })
   const agentTools = projectWorkspaceAgentTools(agent.agentTypeId, projected, existingTools)
+  const extraToolsDynamic = projected.agentToolsDynamic.length > 0
+    ? async () => (await Promise.all(projected.agentToolsDynamic.map((provider) => provider()))).flat()
+    : undefined
   const deleteContributions = projected.agentSessionDeleteContributions
   return {
     artifacts: selected,
     runtimePlugins: projected.runtimePlugins,
     agentOptions: {
       extraTools: agentTools,
+      extraToolsDynamic,
       systemPromptAppend: projected.systemPromptAppend || undefined,
       pi: {
         packages: projected.piPackages,
@@ -2178,6 +2183,7 @@ export async function createWorkspaceAgentServer(
           : {}),
         systemPromptAppend: staticSystemPromptAppend,
         loadSystemPromptAppend,
+        loadAgentTools: contribution.agentOptions.extraToolsDynamic ?? opts.extraToolsDynamic,
       }
     },
   })
