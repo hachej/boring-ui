@@ -33,7 +33,7 @@ export class FileAppRunnerStore implements AppRunnerStore {
 
   async upsertApp(record: AppRunnerRecord): Promise<void> {
     await this.mutate((state) => {
-      state.apps[record.appName] = record
+      state.apps[`${record.workspaceId}:${record.appName}:${record.ownerUserId ?? ""}`] = record
     })
   }
 

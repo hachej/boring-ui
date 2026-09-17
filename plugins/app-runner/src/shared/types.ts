@@ -39,6 +39,8 @@ export interface AppRunnerCurrent {
 export interface AppRunnerRecord {
   appName: string
   workspaceId: string
+  /** Present only for a per-user profile cell. */
+  ownerUserId?: string
   kind: AppRunnerKind
   version: number
   sha: string | null

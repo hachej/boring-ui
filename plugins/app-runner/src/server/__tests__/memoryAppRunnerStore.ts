@@ -9,6 +9,6 @@ export class MemoryAppRunnerStore implements AppRunnerStore {
   }
 
   async upsertApp(record: AppRunnerRecord): Promise<void> {
-    this.apps.set(record.appName, record)
+    this.apps.set(`${record.workspaceId}:${record.appName}:${record.ownerUserId ?? ""}`, record)
   }
 }

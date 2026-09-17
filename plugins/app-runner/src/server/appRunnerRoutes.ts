@@ -54,7 +54,10 @@ async function proxyToRunner(
 export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptions, done: (err?: Error) => void): void {
   app.get("/api/v1/plugins/app-runner/apps", async (request) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
-    const apps = await opts.store.listApps()
+    const identity = identityFromRequest(request)
+    const apps = (await opts.store.listApps()).filter((record) =>
+      record.workspaceId === workspaceId && (record.kind !== "profile" || record.ownerUserId === identity.id),
+    )
     return {
       apps: apps.map((record) => ({
         ...record,

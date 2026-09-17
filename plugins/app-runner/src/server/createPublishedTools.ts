@@ -28,7 +28,9 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
     const workspaceId = context?.workspaceId?.trim()
     if (!workspaceId) throw new Error("authenticated workspace identity is required to load published tools")
     const identity = identityFromToolContext(context ?? {})
-    const records = (await options.store.listApps()).filter((record) => record.workspaceId === workspaceId)
+    const records = (await options.store.listApps()).filter((record) =>
+      record.workspaceId === workspaceId && (record.kind !== "profile" || record.ownerUserId === identity.id),
+    )
     const groups = await Promise.all(records.map(async (record) => {
       let current: AppRunnerCurrent
       try {

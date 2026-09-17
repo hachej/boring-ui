@@ -9,6 +9,7 @@ import { commitPublishedFolder } from "./commitPublishedFolder"
 import { identityFromToolContext } from "./resolveIdentity"
 import { manifestFromVersionFiles, readToolManifest } from "./readToolManifest"
 import { resolveWorkspaceId } from "./resolveWorkspaceId"
+import { profileAppName } from "./profileAddress"
 
 export interface AppRunnerToolsOptions {
   workspaceRoot: string
@@ -118,10 +119,10 @@ export function createPublishProfileTool(options: AppRunnerToolsOptions): AgentT
       additionalProperties: false,
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
-      const name = "profile"
       const message = typeof params.message === "string" && params.message.trim() ? params.message.trim() : "Publish profile"
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       const identity = identityFromToolContext(ctx)
+      const name = profileAppName(identity.id)
       try {
         const sha = await commitPublishedFolder(options.workspaceRoot, "profile", message)
         const { files } = await collectAppFiles(options.workspaceRoot, "profile", sha)
@@ -130,6 +131,7 @@ export function createPublishProfileTool(options: AppRunnerToolsOptions): AgentT
         await options.store.upsertApp({
           appName: name,
           workspaceId,
+          ownerUserId: identity.id,
           kind: "profile",
           version: current.version,
           sha: current.sha,
@@ -153,16 +155,18 @@ export function createUndoProfileTool(options: AppRunnerToolsOptions): AgentTool
     async execute(_params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       const identity = identityFromToolContext(ctx)
+      const name = profileAppName(identity.id)
       try {
-        await options.client.rollback(workspaceId, "profile", identity)
-        const current = await options.client.current(workspaceId, "profile", identity)
+        await options.client.rollback(workspaceId, name, identity)
+        const current = await options.client.current(workspaceId, name, identity)
         await options.store.upsertApp({
-          appName: "profile",
+          appName: name,
           workspaceId,
+          ownerUserId: identity.id,
           kind: "profile",
           version: current.version,
           sha: current.sha,
-          url: options.client.publicAppUrl(workspaceId, "profile"),
+          url: options.client.publicAppUrl(workspaceId, name),
           updatedAt: new Date().toISOString(),
           toolManifest: current.manifest,
         })

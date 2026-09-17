@@ -52,6 +52,20 @@ describe("published manifest native tools", () => {
     expect((await provider(context)).map((tool) => tool.name)).toEqual(["app_guestbook_pin_entry"])
   })
 
+  it("mounts only the acting user's profile tools", async () => {
+    const store = new MemoryAppRunnerStore()
+    await store.upsertApp({ appName: "profile-alice", workspaceId: "acme", ownerUserId: "alice", kind: "profile", version: 1, sha: "a", url: "a", updatedAt: "now" })
+    await store.upsertApp({ appName: "profile-bob", workspaceId: "acme", ownerUserId: "bob", kind: "profile", version: 1, sha: "b", url: "b", updatedAt: "now" })
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      version: 1, kind: "profile", sha: "a", contentSha: "c",
+      manifest: { tools: [{ name: "remember", description: "Remember", input: {}, route: "/remember" }] },
+    })))
+    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
+
+    expect((await provider(context)).map((tool) => tool.name)).toEqual(["profile_remember"])
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   it("never mounts or executes a victim workspace record in an attacker context", async () => {
     const store = await seededStore()
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(current(1, [{ name: "count", description: "Count", input: {}, route: "/count" }]))))
