@@ -49,9 +49,17 @@ export interface AppRunnerRecord {
   toolManifest?: AppRunnerToolManifest
 }
 
+export interface PublishedToolProvenance {
+  kind: AppRunnerKind
+  address: string
+  version: number
+  sha: string
+}
+
 export interface AppRunnerRecordWithLinks extends AppRunnerRecord {
   appId: string
   appUrl: string
+  toolProvenance: PublishedToolProvenance[]
 }
 
 export interface AppRunnerAppsResponse {

@@ -1,5 +1,5 @@
 import type { AgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace/shared"
-import type { AppRunnerCurrent, AppRunnerRecord } from "../shared/types"
+import type { AppRunnerCurrent, AppRunnerRecord, PublishedToolProvenance } from "../shared/types"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
 import type { AppRunnerStore } from "./appRunnerStore"
@@ -43,17 +43,27 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
         return []
       }
       if ((isProfile && current.kind !== "profile") || (!isProfile && current.kind !== "app")) return []
+      // A published tool without immutable source provenance is not mountable.
+      if (!current.sha) return []
+      const provenance: PublishedToolProvenance = {
+        kind: current.kind,
+        address: `${workspaceId}/${record.appName}`,
+        version: current.version,
+        sha: current.sha,
+      }
       if (current.version !== record.version || current.sha !== record.sha || current.kind !== record.kind) {
         await options.store.upsertApp(recordFromCurrent(record, current))
       }
       const cacheKey = `${workspaceId}:${isProfile ? identity.id : "shared"}:${record.appName}:${current.version}:${current.sha ?? ""}`
       const cached = cache.get(cacheKey)
       if (cached) return cached
-      const tools = current.manifest.tools.map((entry): AgentTool => ({
+      const tools = current.manifest.tools.map((entry): AgentTool & { provenance: PublishedToolProvenance } => ({
         name: `${isProfile ? "profile" : `app_${toolSegment(record.appName)}`}_${toolSegment(entry.name)}`,
         description: entry.description || `Call ${entry.name} in published ${current.kind} ${record.appName}.`,
         parameters: entry.input ?? { type: "object", properties: {}, additionalProperties: false },
+        provenance,
         async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+          console.info(JSON.stringify({ event: "published_tool_call", tool: entry.name, provenance }))
           try {
             const executingWorkspaceId = ctx.workspaceId?.trim()
             if (!executingWorkspaceId || executingWorkspaceId !== workspaceId) {

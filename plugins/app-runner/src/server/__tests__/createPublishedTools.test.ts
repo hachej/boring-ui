@@ -34,9 +34,18 @@ describe("published manifest native tools", () => {
 
     const tools = await provider(context)
     expect(tools).toHaveLength(1)
-    expect(tools[0]).toMatchObject({ name: `app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("count_entries").toString("hex")}`, description: "Count entries", parameters: { type: "object" } })
+    expect(tools[0]).toMatchObject({
+      name: `app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("count_entries").toString("hex")}`,
+      description: "Count entries",
+      parameters: { type: "object" },
+      provenance: { kind: "app", address: "acme/guestbook", version: 1, sha: "sha-1" },
+    })
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined)
     const result = await tools[0]!.execute({}, context)
     expect(result.details).toEqual({ count: 3 })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"published_tool_call"'))
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"sha":"sha-1"'))
+    log.mockRestore()
     const [, init] = fetchImpl.mock.calls[1]!
     expect(JSON.parse((init!.headers as Record<string, string>)["X-Boring-User"]!)).toMatchObject({ id: "alice", email: "alice@example.com" })
   })

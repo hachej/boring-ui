@@ -71,6 +71,12 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
         ...record,
         appId: opts.client.appId(workspaceId, record.appName),
         appUrl: await opts.client.signedServingUrl(workspaceId, record.appName, identity),
+        toolProvenance: (record.toolManifest?.tools ?? []).flatMap(() => record.sha ? [{
+          kind: record.kind,
+          address: `${workspaceId}/${record.appName}`,
+          version: record.version,
+          sha: record.sha,
+        }] : []),
       }))),
       workspaceId,
     }

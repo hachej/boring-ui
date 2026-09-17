@@ -241,6 +241,15 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
               <span><strong>Current:</strong> v{currentApp.version}</span>
               <span className="font-mono"><strong className="font-sans">SHA:</strong> {currentApp.sha ?? "not recorded"}</span>
             </div>
+            {(currentApp.toolProvenance?.length ?? 0) > 0 && (
+              <ul aria-label="Mounted tool provenance" className="mt-1 font-mono text-[11px] text-muted-foreground">
+                {currentApp.toolProvenance!.map((provenance, index) => (
+                  <li key={`${provenance.address}:${provenance.version}:${index}`}>
+                    {provenance.kind} {provenance.address} · v{provenance.version} · {provenance.sha.slice(0, 12)}
+                  </li>
+                ))}
+              </ul>
+            )}
             {versions && versions.length > 0 && (
               <ul aria-label="Published versions" className="mt-2 flex flex-wrap gap-2">
                 {versions.map((entry) => (
