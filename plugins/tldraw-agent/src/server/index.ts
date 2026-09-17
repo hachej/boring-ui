@@ -56,8 +56,11 @@ function exactKeys(value: Record<string, unknown>, allowed: readonly string[]): 
   return Object.keys(value).every((key) => allowed.includes(key))
 }
 
+function canonicalShapeId(value: string): string { return value.replace(/^shape:/, "") }
+
 export function validateActions(value: unknown): CanvasAction[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 100) throw new Error("edit requires 1-100 actions")
+  const createdIds = new Set<string>()
   for (const raw of value) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("each action must be an object")
     const action = raw as Record<string, unknown>
@@ -75,6 +78,11 @@ export function validateActions(value: unknown): CanvasAction[] {
         : isTextUpdate ? ["id", "target", "x", "y", "w", "text", "color"] : ["id", "target", "x", "y", "w", "h", "text", "color", "fill"]
       if (!exactKeys(shape, allowed) || typeof shape.id !== "string" || !SHAPE_ID_PATTERN.test(shape.id)) throw new Error(`${action.type} shape requires valid id`)
       if (action.type === "create" && (!(shape.type === "text" || GEO_SHAPE_TYPES.includes(shape.type as never)) || !isFiniteNumber(shape.x) || !isFiniteNumber(shape.y))) throw new Error("create shape requires valid type, x, and y")
+      if (action.type === "create") {
+        const canonicalId = canonicalShapeId(shape.id as string)
+        if (createdIds.has(canonicalId)) throw new Error("create requires unique canonical shape ids")
+        createdIds.add(canonicalId)
+      }
       if (action.type === "update" && !["geo", "text"].includes(String(shape.target))) throw new Error("update requires target")
       if (action.type === "update" && !Object.keys(shape).some((key) => key !== "id" && key !== "target")) throw new Error("update requires at least one mutable property")
       for (const key of ["x", "y", "w", "h"] as const) if (shape[key] !== undefined && !isFiniteNumber(shape[key])) throw new Error(`${key} must be finite`)
@@ -87,7 +95,7 @@ export function validateActions(value: unknown): CanvasAction[] {
       const allowed = action.type === "delete" ? ["type", "ids"] : action.type === "align" ? ["type", "ids", "axis", "alignment"] : ["type", "ids", "axis"]
       const ids = action.ids
       if (!exactKeys(action, allowed) || !Array.isArray(ids) || ids.some((id) => typeof id !== "string" || !SHAPE_ID_PATTERN.test(id))) throw new Error(`${action.type} requires valid string ids`)
-      if (new Set(ids).size !== ids.length) throw new Error(`${action.type} requires unique ids`)
+      if (new Set(ids.map(canonicalShapeId)).size !== ids.length) throw new Error(`${action.type} requires unique canonical ids`)
       const minimum = action.type === "delete" ? 1 : action.type === "align" ? 2 : 3
       if (ids.length < minimum) throw new Error(`${action.type} requires at least ${minimum} ids`)
       if (action.type !== "delete" && !["x", "y"].includes(String(action.axis))) throw new Error(`${action.type} requires axis`)
@@ -308,6 +316,7 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         }
         const promise = (async (): Promise<CommitOutcome> => {
           const entry = batchId ? batches.get(batchId) : undefined
+          let writeStarted = false
           try {
             const owner = owners.get(resourceKey(filesystem, path))
             if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) throw Object.assign(new Error("canvas owner lease is invalid"), { statusCode: 409 })
@@ -324,6 +333,7 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
               if (!revisionsMatch(actual, expected)) {
                 return { statusCode: 409, body: { written: false, error: { message: "file changed since it was loaded" }, currentRevision: actual } }
               }
+              writeStarted = true
               await options.workspace.writeFileWithStat!(path, json)
               const verified = await options.workspace.readFileWithStat!(path)
               const verifiedRevision = revision(verified.stat, verified.content)
@@ -338,7 +348,10 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
             return { statusCode: 200, body }
           } catch (error) {
             const statusCode = Number((error as { statusCode?: number }).statusCode) || 409
-            const body = (error as { commitBody?: unknown }).commitBody ?? { written: false, error: { message: error instanceof Error ? error.message : String(error) } }
+            const body = (error as { commitBody?: unknown }).commitBody ?? {
+              written: writeStarted ? "unknown" : false,
+              error: { message: error instanceof Error ? error.message : String(error) },
+            }
             const message = (body as { error?: { message?: string } }).error?.message ?? "canvas commit failed"
             if (entry && entry.state === "committing") finishBatch(entry, "failed", statusCode, body, result(message, { path: entry.batch.path }, true))
             return { statusCode, body }

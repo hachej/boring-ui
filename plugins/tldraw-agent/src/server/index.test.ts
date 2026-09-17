@@ -73,7 +73,12 @@ describe("edit_tldraw_canvas", () => {
     expect(() => validateActions([{ type: "create", shape: { id: "a", type: "text", x: 1, y: 2, h: 3 } }])).toThrow()
     expect(() => validateActions([{ type: "update", shape: { id: "a", target: "text", fill: "semi" } }])).toThrow()
     expect(() => validateActions([{ type: "distribute", ids: ["a", "b"], axis: "x" }])).toThrow("at least 3")
-    expect(() => validateActions([{ type: "distribute", ids: ["a", "a", "b"], axis: "x" }])).toThrow("unique ids")
+    expect(() => validateActions([{ type: "distribute", ids: ["a", "a", "b"], axis: "x" }])).toThrow("unique canonical ids")
+    expect(() => validateActions([{ type: "distribute", ids: ["a", "shape:a", "b"], axis: "x" }])).toThrow("unique canonical ids")
+    expect(() => validateActions([
+      { type: "create", shape: { id: "a", type: "rectangle", x: 1, y: 2 } },
+      { type: "create", shape: { id: "shape:a", type: "rectangle", x: 3, y: 4 } },
+    ])).toThrow("unique canonical shape ids")
     expect(() => validateActions([{ type: "create", shape: { id: "a", type: "bogus", x: 1, y: 2 } }])).toThrow("valid type")
     expect(() => validateActions([{ type: "clear", extra: true }])).toThrow("additional")
   })
@@ -129,6 +134,38 @@ describe("edit_tldraw_canvas", () => {
     expect(response.statusCode).toBe(409)
     expect(response.json()).toMatchObject({ written: false, error: { message: "file changed since it was loaded" } })
     expect(fixture.workspace.writeFileWithStat).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it("reports an unknown outcome when the provider mutates then rejects", async () => {
+    const fixture = workspaceFixture()
+    const write = vi.mocked(fixture.workspace.writeFileWithStat!).getMockImplementation()!
+    vi.mocked(fixture.workspace.writeFileWithStat!).mockImplementation(async (path, data) => {
+      await write(path, data)
+      throw new Error("provider response lost after write")
+    })
+    const { app } = await routeApp(fixture.workspace)
+    await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
+    const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-mutated-reject", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: fixture.revision } })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ written: "unknown", error: { message: "provider response lost after write" } })
+    await app.close()
+  })
+
+  it("reports an unknown outcome when post-write verification rejects", async () => {
+    const fixture = workspaceFixture()
+    const read = vi.mocked(fixture.workspace.readFileWithStat!).getMockImplementation()!
+    let reads = 0
+    vi.mocked(fixture.workspace.readFileWithStat!).mockImplementation(async (path) => {
+      reads += 1
+      if (reads === 2) throw new Error("verification unavailable")
+      return await read(path)
+    })
+    const { app } = await routeApp(fixture.workspace)
+    await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
+    const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-verify-reject", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: fixture.revision } })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ written: "unknown", error: { message: "verification unavailable" } })
     await app.close()
   })
 

@@ -27,7 +27,16 @@ export function createSerializedSaveQueue(options: {
   return {
     markDirty() { dirtyGeneration += 1; return dirtyGeneration },
     hasDirty() { return dirtyGeneration > savedGeneration || pending !== null },
-    reconcileToLoadedState() { pending = null; savedGeneration = dirtyGeneration },
+    currentGeneration() { return dirtyGeneration },
+    pendingGeneration() { return pending?.generation },
+    reconcileToLoadedState(generation = dirtyGeneration) {
+      if (pending && pending.generation <= generation) pending = null
+      savedGeneration = Math.max(savedGeneration, generation)
+    },
+    discardFailedGeneration(generation: number) {
+      if (pending?.generation === generation) pending = null
+      savedGeneration = Math.max(savedGeneration, generation)
+    },
     flush() {
       if (running) return running
       const loop = (async () => {
@@ -42,6 +51,18 @@ export function createSerializedSaveQueue(options: {
       return running
     },
   }
+}
+
+export async function reconcileFailedSave(
+  queue: ReturnType<typeof createSerializedSaveQueue>,
+  failedGeneration: number,
+  reload: (applySnapshot: boolean) => Promise<void>,
+): Promise<boolean> {
+  const hasNewerLocalEdits = queue.currentGeneration() > failedGeneration
+  await reload(!hasNewerLocalEdits)
+  queue.discardFailedGeneration(failedGeneration)
+  if (!hasNewerLocalEdits) queue.reconcileToLoadedState(failedGeneration)
+  return hasNewerLocalEdits
 }
 
 function idFor(value: string): TLShapeId { return createShapeId(value.replace(/^shape:/, "")) }
@@ -63,6 +84,7 @@ function createShapePartial(shape: CanvasCreateShape): TLShapePartial {
 
 function existingIds(editor: Editor, values: string[], minimum: number): TLShapeId[] {
   const ids = values.map(idFor)
+  if (new Set(ids).size !== ids.length) throw new Error("action requires unique canonical shape ids")
   if (ids.length < minimum) throw new Error(`action requires at least ${minimum} shape ids`)
   const missing = ids.filter((id) => !editor.getShape(id))
   if (missing.length) throw new Error(`missing shapes: ${missing.join(", ")}`)
@@ -70,8 +92,8 @@ function existingIds(editor: Editor, values: string[], minimum: number): TLShape
 }
 
 export function loadCanvasStoreSnapshot(editor: Editor, snapshot: ReturnType<Editor["store"]["getStoreSnapshot"]>): void {
-  if (Object.keys(snapshot.store).length > 0) editor.store.loadStoreSnapshot(snapshot)
-  else editor.deleteShapes([...editor.getCurrentPageShapeIds()])
+  editor.store.mergeRemoteChanges(() => { editor.loadSnapshot(snapshot) })
+  editor.clearHistory()
 }
 
 export function applyCanvasAction(editor: Editor, action: CanvasAction): void {
@@ -116,44 +138,50 @@ export function flushPendingSaveOnClose(queue: { flush(): Promise<void> } | null
   return queue?.flush() ?? Promise.resolve()
 }
 
-function wasDefinitelyNotWritten(error: unknown): boolean {
-  if (!(error instanceof WorkspacePluginClientRequestError)) return false
+function writeOutcome(error: unknown): false | true | "unknown" | undefined {
+  if (!(error instanceof WorkspacePluginClientRequestError)) return undefined
   const body = error.body as { written?: unknown } | undefined
-  return body?.written === false
+  if (body?.written === false || body?.written === true) return body.written
+  if (body?.written === null || body?.written === "unknown") return "unknown"
+  return undefined
 }
+
+function wasDefinitelyNotWritten(error: unknown): boolean { return writeOutcome(error) === false }
 
 export async function applyCanvasBatch(options: {
   editor: Editor
   batch: PendingCanvasBatch
   commit: () => Promise<void>
   reload: () => Promise<void>
-  onActionsApplied?: () => void
 }): Promise<void> {
   const before = options.editor.store.getStoreSnapshot()
+  const historyMark = options.editor.markHistoryStoppingPoint(`tldraw-agent:${options.batch.id}`)
+  const rollbackLocal = () => {
+    options.editor.bailToMark(historyMark)
+    loadCanvasStoreSnapshot(options.editor, before)
+  }
   const wasReadonly = options.editor.getInstanceState().isReadonly
-  options.editor.updateInstanceState({ isReadonly: true })
+  options.editor.updateInstanceState({ isReadonly: true }, { history: "ignore" })
   try {
     try {
-      options.editor.run(() => { for (const action of options.batch.actions) applyCanvasAction(options.editor, action) })
+      options.editor.store.mergeRemoteChanges(() => {
+        options.editor.run(() => { for (const action of options.batch.actions) applyCanvasAction(options.editor, action) })
+      })
     } catch (error) {
-      options.editor.store.loadStoreSnapshot(before)
+      rollbackLocal()
       throw error
     }
-    options.onActionsApplied?.()
     try {
       await options.commit()
+      options.editor.clearHistory()
     } catch (error) {
-      if (wasDefinitelyNotWritten(error)) {
-        options.editor.store.loadStoreSnapshot(before)
-        try { await options.reload() } catch { /* Keep the restored pre-batch state. */ }
-      } else {
-        try { await options.reload() }
-        catch { options.editor.store.loadStoreSnapshot(before) }
-      }
+      if (wasDefinitelyNotWritten(error)) options.editor.bailToMark(historyMark)
+      try { await options.reload() }
+      catch { rollbackLocal() }
       throw error
     }
   } finally {
-    options.editor.updateInstanceState({ isReadonly: wasReadonly })
+    options.editor.updateInstanceState({ isReadonly: wasReadonly }, { history: "ignore" })
   }
 }
 
@@ -164,23 +192,18 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
   const editorRef = useRef<Editor | null>(null)
   const clientIdRef = useRef(createClientId())
   const revisionRef = useRef<Revision | undefined>(undefined)
-  const ignoreStoreEventsRef = useRef(false)
   const saveQueueRef = useRef<ReturnType<typeof createSerializedSaveQueue> | null>(null)
   const saveTimerRef = useRef<number | undefined>(undefined)
   const completedBatchIdsRef = useRef(new Set<string>())
   const [status, setStatus] = useState("Loading native tldraw file…")
   const [error, setError] = useState<string | null>(null)
 
-  const loadFile = useCallback(async (editor: Editor) => {
+  const loadFile = useCallback(async (editor: Editor, applySnapshot = true) => {
     const query = new URLSearchParams({ path, filesystem })
     const payload = await client.getJson<{ json: string; revision: Revision }>(`/api/v1/plugins/tldraw-agent/file?${query}`)
     const parsed = parseTldrawJsonFile({ json: payload.json, schema: editor.store.schema })
     if (!parsed.ok) throw new Error(`Invalid native tldraw file: ${parsed.error.type}`)
-    const snapshot = parsed.value.getStoreSnapshot()
-    ignoreStoreEventsRef.current = true
-    try {
-      loadCanvasStoreSnapshot(editor, snapshot)
-    } finally { ignoreStoreEventsRef.current = false }
+    if (applySnapshot) loadCanvasStoreSnapshot(editor, parsed.value.getStoreSnapshot())
     revisionRef.current = payload.revision
     setStatus("Live · user and agent share this editor"); setError(null)
   }, [client, filesystem, path])
@@ -214,13 +237,17 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           commit: (json, generation) => commitSnapshot(json, `${clientIdRef.current}:manual:${generation}`),
         })
         unlisten = editor.store.listen(() => {
-          if (ignoreStoreEventsRef.current) return
-          saveQueueRef.current?.markDirty()
+          const queue = saveQueueRef.current
+          queue?.markDirty()
           if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
           saveTimerRef.current = window.setTimeout(() => {
-            void saveQueueRef.current?.flush().catch(async (cause) => {
-              if (wasDefinitelyNotWritten(cause)) {
-                try { await loadFile(editor); saveQueueRef.current?.reconcileToLoadedState() } catch { /* retain pending stable request for retry */ }
+            void queue?.flush().catch(async (cause) => {
+              const failedGeneration = queue.pendingGeneration()
+              if (failedGeneration !== undefined) {
+                try {
+                  const hasNewerLocalEdits = await reconcileFailedSave(queue, failedGeneration, (applySnapshot) => loadFile(editor, applySnapshot))
+                  if (hasNewerLocalEdits) void queue.flush().catch((retryCause) => setError(retryCause instanceof Error ? retryCause.message : "Save failed"))
+                } catch { /* retain the stable pending generation for retry */ }
               }
               setError(cause instanceof Error ? cause.message : "Save failed")
             })
@@ -255,12 +282,10 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           if (!active) return
           if (completedBatchIdsRef.current.has(batch.id)) continue
           await saveQueueRef.current?.flush()
-          ignoreStoreEventsRef.current = true
           try {
             await applyCanvasBatch({
               editor,
               batch,
-              onActionsApplied: () => { ignoreStoreEventsRef.current = false },
               commit: async () => commitSnapshot(await serializeTldrawJson(editor), `batch:${batch.id}`, batch.id),
               reload: async () => loadFile(editor),
             })
@@ -269,7 +294,6 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : "Agent edit failed")
           } finally {
-            ignoreStoreEventsRef.current = false
             if (saveQueueRef.current?.hasDirty()) void saveQueueRef.current.flush().catch((cause) => setError(cause instanceof Error ? cause.message : "Save failed"))
           }
         }

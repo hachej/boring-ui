@@ -8,7 +8,7 @@ Native `.tldraw` editing for the regular Boring agent.
 - `edit_tldraw_canvas` supports `create`, `read`, and batched `edit` operations.
 - `.tldraw` and `.tldr` files resolve to one workspace tab per path.
 - An open tab owns one live tldraw SDK `Editor`. Manual edits and agent action batches mutate that same editor.
-- Agent batches are delivered to the owning tab, applied through tldraw SDK APIs, serialized with `serializeTldrawJson`, and saved once through the Workspace adapter.
+- Agent batches are delivered to the owning tab, applied as remote tldraw SDK changes, serialized with `serializeTldrawJson`, and submitted as one stable commit request through the Workspace adapter. An unknown transport/write outcome may replay that same request idempotently.
 - Manual document changes autosave with an optimistic `{ size, mtimeMs, sha256 }` revision. Plugin-originated writes are serialized per file; stale content is rejected before writing and the result is read back to detect an immediately overlapping external write.
 - The playground enables the plugin only in local mode, where the plugin and agent runtime share the same policy-aware Workspace instance. Remote-worker mode stays disabled until it exposes the same capability.
 - Native file creation uses the tldraw store schema; files contain `tldrawFileFormatVersion`, serialized schema, and native records.
@@ -20,8 +20,8 @@ create/read native file
 → open corresponding workspace tab
 → load into the live tldraw Editor
 → apply one validated action batch
-→ serialize once
-→ optimistically save once
+→ serialize one resulting snapshot
+→ submit one stable optimistic commit (idempotently replayed only after an unknown outcome)
 ```
 
 Supported batch actions: create, update, delete, clear, align, and distribute.
