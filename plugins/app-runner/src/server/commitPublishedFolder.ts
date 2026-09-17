@@ -18,13 +18,14 @@ const SAFE_GIT_CONFIG = [
   "-c", "commit.gpgSign=false",
 ]
 
-async function git(cwd: string, args: string[]): Promise<string> {
+export async function runPublishGit(cwd: string, args: string[], trim = true): Promise<string> {
   const { stdout } = await execFileAsync("git", [...SAFE_GIT_CONFIG, ...args], {
     cwd,
     encoding: "utf8",
     env: SAFE_GIT_ENV,
+    maxBuffer: 16 * 1024 * 1024,
   })
-  return stdout.trim()
+  return trim ? stdout.trim() : stdout
 }
 
 export async function resolvePublishedFolder(workspaceRoot: string, dir: string): Promise<string> {
@@ -52,15 +53,15 @@ async function rejectNestedRepositories(folder: string, current = folder): Promi
 }
 
 async function verifyRepository(folder: string): Promise<void> {
-  const topLevel = await realpath(await git(folder, ["rev-parse", "--show-toplevel"]))
+  const topLevel = await realpath(await runPublishGit(folder, ["rev-parse", "--show-toplevel"]))
   if (topLevel !== folder) throw new Error("publish repository worktree must be exactly the app folder")
   const gitPath = resolve(folder, ".git")
   const gitStats = await lstat(gitPath)
   if (gitStats.isSymbolicLink()) throw new Error("publish repository .git directory must not be a symlink")
-  const gitDir = await realpath(await git(folder, ["rev-parse", "--absolute-git-dir"]))
+  const gitDir = await realpath(await runPublishGit(folder, ["rev-parse", "--absolute-git-dir"]))
   if (gitDir !== await realpath(gitPath)) throw new Error("publish repository metadata must be inside the app folder")
 
-  const unsafe = await git(folder, [
+  const unsafe = await runPublishGit(folder, [
     "config", "--local", "--name-only", "--get-regexp",
     "^(filter\\.|core\\.(hooksPath|fsmonitor)|credential\\.|include\\.)",
   ]).catch((error: unknown) => {
@@ -71,20 +72,40 @@ async function verifyRepository(folder: string): Promise<void> {
   if (unsafe) throw new Error(`publish repository contains unsafe Git configuration: ${unsafe.split("\n")[0]}`)
 }
 
+async function publishablePaths(folder: string): Promise<string[]> {
+  const output = await runPublishGit(folder, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+  const paths = output.split("\0").filter(Boolean)
+  const publishable: string[] = []
+  for (const path of paths) {
+    if (path.split("/").some((segment) => segment.startsWith("."))) continue
+    const ignored = await runPublishGit(folder, ["check-ignore", "--no-index", "-q", "--", path])
+      .then(() => true, (error: unknown) => {
+        if ((error as { code?: number }).code === 1) return false
+        throw error
+      })
+    if (!ignored) publishable.push(path)
+  }
+  return publishable
+}
+
 export async function commitPublishedFolder(workspaceRoot: string, dir: string, message: string): Promise<string> {
   const folder = await resolvePublishedFolder(workspaceRoot, dir)
   await rejectNestedRepositories(folder)
   try {
     await access(resolve(folder, ".git"))
   } catch {
-    await git(folder, ["init"])
+    await runPublishGit(folder, ["init"])
   }
   await verifyRepository(folder)
-  await git(folder, ["add", "-A"])
-  await git(folder, [
+  const paths = await publishablePaths(folder)
+  await runPublishGit(folder, ["rm", "-r", "--cached", "--ignore-unmatch", "."])
+  for (let index = 0; index < paths.length; index += 100) {
+    await runPublishGit(folder, ["add", "--", ...paths.slice(index, index + 100)])
+  }
+  await runPublishGit(folder, [
     "-c", "user.name=Boring App Publisher",
     "-c", "user.email=app-publisher@localhost",
     "commit", "--allow-empty", "-m", message,
   ])
-  return git(folder, ["rev-parse", "HEAD"])
+  return runPublishGit(folder, ["rev-parse", "HEAD"])
 }

@@ -79,7 +79,7 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
       try {
         const publishMessage = message?.trim() || `Publish ${appName}`
         const sha = await commitPublishedFolder(options.workspaceRoot, dir, publishMessage)
-        const { files } = await collectAppFiles(options.workspaceRoot, dir)
+        const { files } = await collectAppFiles(options.workspaceRoot, dir, sha)
         const result = await options.client.publish(workspaceId, appName, files, identity, {
           kind: "app",
           message: publishMessage,
@@ -124,7 +124,7 @@ export function createPublishProfileTool(options: AppRunnerToolsOptions): AgentT
       const identity = identityFromToolContext(ctx)
       try {
         const sha = await commitPublishedFolder(options.workspaceRoot, "profile", message)
-        const { files } = await collectAppFiles(options.workspaceRoot, "profile")
+        const { files } = await collectAppFiles(options.workspaceRoot, "profile", sha)
         const published = await options.client.publish(workspaceId, name, files, identity, { kind: "profile", message, sha })
         const current = await options.client.current(workspaceId, name, identity)
         await options.store.upsertApp({
