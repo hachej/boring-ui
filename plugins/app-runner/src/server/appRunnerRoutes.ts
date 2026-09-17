@@ -62,7 +62,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       apps: apps.map((record) => ({
         ...record,
         appId: opts.client.appId(workspaceId, record.appName),
-        appUrl: opts.client.publicAppUrl(workspaceId, record.appName),
+        appUrl: `/api/v1/plugins/app-runner/open/${encodeURIComponent(record.appName)}/`,
       })),
       workspaceId,
     }
@@ -161,7 +161,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
   app.get<{ Params: { appName: string; "*": string } }>("/api/v1/plugins/app-runner/open/:appName/*", async (request, reply) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
     const rest = request.params["*"] ?? ""
-    await proxyToRunner(opts, request, reply, `/w/${workspaceId}/${request.params.appName}/${rest}`)
+    await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/${rest}`)
   })
 
   app.get<{ Params: { appName: string; version: string; "*": string } }>(
@@ -169,7 +169,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
     async (request, reply) => {
       const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
       const rest = request.params["*"] ?? ""
-      await proxyToRunner(opts, request, reply, `/w/${workspaceId}/${request.params.appName}/preview/${request.params.version}/${rest}`)
+      await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/preview/${encodeURIComponent(request.params.version)}/${rest}`)
     },
   )
 
