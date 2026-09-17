@@ -1,4 +1,4 @@
-# Host run — Astra round 6
+# Host run — Astra round 7
 
 Date: 2026-09-17
 
@@ -8,59 +8,62 @@ Per-app dev origin: `<app-id>.apps.localhost:9878`
 
 Secrets came from the gitignored hub `.dev.vars`; no value is recorded here.
 
-## Dynamic capability admission — PASS
+## Descriptor-only capability admission — PASS
 
-Dynamic providers are now admitted by function identity minted through the
-app-runner capability factory, not by the caller-supplied plugin id. The focused
-workspace registration matrix in `.artifacts/astra6-workspace-registration.txt`
-captures all four registration cases: an arbitrary id is rejected, a forged
-`app-runner` object is rejected, a factory-minted provider under the wrong id is
-rejected, and only the factory-minted app-runner provider is accepted.
+The registration surface no longer exports the public capability-minting
+function and no longer accepts executable dynamic tools. App-runner contributes
+plain descriptors containing exactly kind, workspace id, address, version, SHA,
+tool name, description, and input schema. It does not construct, retain, or
+supply an executor.
 
-The harness still rejects missing/non-remote/unfrozen provenance before mounting.
-The app-runner provider resolves every retained address through the hub's
-`/current` endpoint before constructing tools. The plugin suite now explicitly
-covers an unresolvable address (nothing mounted) and stale retained metadata
-(the mounted version and SHA come from hub current, and the record is refreshed).
+The agent runtime rejects malformed descriptors and any nested function-valued
+property. At every refresh it fetches `/current` directly with host-owned hub
+configuration and authenticated run identity, then verifies workspace/address,
+kind, version, SHA, manifest membership, and schema before constructing a new
+frozen executor. Execution rechecks the authenticated workspace and dispatches
+to the pinned hub tool endpoint. No plugin callback is retained in the mounted
+capability.
 
-## Atomic migration failure — PASS
+The focused regression matrix covers: function-bearing descriptors; wrong
+workspace, version, and SHA; a tool absent from the manifest; a genuine
+descriptor whose runtime-built executor emits the exact authenticated hub
+request; attempted post-mount descriptor/executor mutation; and two refreshes
+producing distinct executors after two fresh manifest requests.
 
-`.artifacts/astra6-hub-e2e.txt` is a fresh live hub run: **OVERALL: PASS** (39
-checks). The v2 database contains rows named `before`, `during`, and `after`.
-The v3 migration deletes `during` and then executes invalid SQL. Publication and
-explicit activation both return 400, current remains v2, and the subsequent v2
-read contains all three rows. Migration statements and `_migrations` bookkeeping
-run in one `ctx.storage.transactionSync` boundary, so the thrown statement rolls
-back the entire activation migration.
+This aligns with ratified R1/D33: executable selection and credentials remain
+host-owned, while the plugin contributes serializable mechanism facts only.
 
-## Sandboxed panel — PASS
+## Hub and sandboxed panel — PASS
 
-`.artifacts/astra6-panel.txt` and `.artifacts/astra6-panel.png` are a fresh live
-Apps-panel capture. The actual iframe retained exactly
-`sandbox="allow-scripts allow-forms"`. Its document, CSS, JavaScript, and
-`/api/entries` each returned 200 from the per-app origin, and the rendered body
-was:
+`.artifacts/astra7-hub-e2e.txt` is a fresh live hub run: **OVERALL: PASS** (39
+checks), including failed-migration rollback and version-pinned dispatch.
 
-```text
-Guestbook
-Ada
-```
+`.artifacts/astra7-panel.txt` and `apps/workspace-playground/.artifacts/astra7-panel.png` are a fresh live
+Apps-panel capture. The iframe retained exactly
+`sandbox="allow-scripts allow-forms"`; document, CSS, JavaScript, and
+`/api/entries` each returned 200, and the rendered body was `Guestbook / Ada`.
 
 ## Verification
 
-- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 50 tests.
+- agent descriptor admission regression: **PASS**, 8 tests.
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 48 tests.
 - `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
 - focused workspace registration test: **PASS**, 41 tests.
 - `pnpm --filter @hachej/boring-workspace typecheck`: **PASS**.
+- `pnpm --filter @hachej/boring-agent typecheck`: **PASS**.
+- `pnpm lint:invariants`: **PASS**, including workspace-plugin and
+  cross-package alignment gates.
 - hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 39 checks.
 - live panel iframe: **document/CSS/JS/API 200**, rendered `Guestbook / Ada`.
-- `pnpm typecheck:changed`: **BLOCKED** by the existing
-  `plugins/generated-pane` TS2883 declaration-build error.
-- `pnpm test:changed`: **BLOCKED during the same dependency build** by that
-  existing generated-pane TS2883 error.
-- `git diff --check` in both repositories: **PASS**.
+- `pnpm typecheck:changed`: **BLOCKED** during broad dependency builds by the
+  existing `plugins/generated-pane` TS2883 declaration error and existing
+  `packages/core` Fastify type-identity errors. Scoped affected-package
+  typechecks above passed.
+- `pnpm test:changed`: **BLOCKED during the same dependency build** by the
+  existing generated-pane TS2883 error; focused affected tests above passed.
+- `git diff --check`: **PASS**.
 
-The full external-model a–g transcript was **not rerun**. This round reran the
-changed admission tests, exact migration-failure reproduction, hub E2E, and live
-sandboxed panel path requested by the brief; those captures are not presented as
-a substitute for a provider-backed model transcript.
+The full external-model a–g transcript was **not rerun**. No provider-backed
+model/inventory/restart claim is made from these focused checks. The live hub
+and panel services were already running for this round; their startup procedure
+was not rerun.
