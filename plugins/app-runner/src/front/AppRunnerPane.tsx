@@ -105,7 +105,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
   const isCurrentVersionSelected = activeVersion?.current ?? true
 
   const iframeSrc = useMemo(() => {
-    if (!currentApp) return undefined
+    if (!currentApp || currentApp.kind !== "app") return undefined
     if (!activeVersion || isCurrentVersionSelected) return currentApp.appUrl
     return activeVersion.previewUrl
   }, [activeVersion, currentApp, isCurrentVersionSelected])
@@ -187,7 +187,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
               <SelectContent>
                 {apps.map((app) => (
                   <SelectItem key={app.appName} value={app.appName}>
-                    {app.appName} (v{app.version})
+                    {app.appName} ({app.kind}, v{app.version})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -230,6 +230,31 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
       <PaneBody className="flex flex-1 flex-col p-0">
         {actionError && <Notice tone="destructive" className="m-2">{actionError}</Notice>}
         {versionsError && <Notice tone="destructive" className="m-2">{versionsError}</Notice>}
+        {currentApp && (
+          <section data-testid="app-runner-metadata" className="shrink-0 border-b border-border/60 px-3 py-2 text-xs">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span><strong>Kind:</strong> {currentApp.kind}</span>
+              <span><strong>Current:</strong> v{currentApp.version}</span>
+              <span className="font-mono"><strong className="font-sans">SHA:</strong> {currentApp.sha ?? "not recorded"}</span>
+            </div>
+            {versions && versions.length > 0 && (
+              <ul aria-label="Published versions" className="mt-2 flex flex-wrap gap-2">
+                {versions.map((entry) => (
+                  <li key={entry.version}>
+                    <button
+                      type="button"
+                      className="rounded border border-border/60 px-2 py-1 hover:bg-muted"
+                      aria-current={entry.current ? "true" : undefined}
+                      onClick={() => setSelectedVersion(entry.version)}
+                    >
+                      v{entry.version} · {entry.kind} · {entry.sha?.slice(0, 8) ?? "no sha"}{entry.current ? " · current" : ""}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
         {!apps && (
           <div className="flex h-full items-center justify-center">
             <Spinner />
