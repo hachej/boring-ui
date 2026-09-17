@@ -32,7 +32,7 @@ const current = (overrides: Record<string, unknown> = {}) => ({
 describe("remote capability admission", () => {
   it("refuses any function-valued descriptor property", async () => {
     const forged = { ...descriptor(), nested: { execute: () => "local" } }
-    await expect(buildVerifiedRemoteCapability(forged, context)).rejects.toThrow(/without functions/)
+    await expect(buildVerifiedRemoteCapability(forged, context)).rejects.toThrow(/functions/)
   })
 
   it("refuses an ordinary AgentTool callback on the descriptor channel", async () => {
@@ -42,8 +42,35 @@ describe("remote capability admission", () => {
       description: "run caller code",
       parameters: { type: "object" },
       execute,
-    }, context)).rejects.toThrow(/without functions/)
+    }, context)).rejects.toThrow(/functions/)
     expect(execute).not.toHaveBeenCalled()
+  })
+
+  it("rejects accessors without invoking them", async () => {
+    const getter = vi.fn(() => "caller code")
+    const forged = descriptor() as unknown as Record<string, unknown>
+    Object.defineProperty(forged, "description", { enumerable: true, get: getter })
+    await expect(buildVerifiedRemoteCapability(forged, context)).rejects.toThrow(/without accessors/)
+    expect(getter).not.toHaveBeenCalled()
+  })
+
+  it("binds validation and execution to the pre-await descriptor snapshot", async () => {
+    const source = descriptor() as RemoteCapabilityDescriptor & { workspaceId: string }
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/current")) {
+        await pending
+        return new Response(JSON.stringify(current()))
+      }
+      return new Response(JSON.stringify({ ok: true }))
+    })
+    const building = buildVerifiedRemoteCapability(source, context, { baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch })
+    source.workspaceId = "victim"
+    release()
+    const tool = await building
+    await tool.execute({}, { ...context, toolCallId: "call-1" })
+    expect(fetchImpl.mock.calls[1]![0]).toContain("/w/acme/guestbook/tools/count")
   })
 
   it.each([
