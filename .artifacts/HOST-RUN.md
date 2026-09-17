@@ -95,10 +95,10 @@ Playwright opened the `app-runner` surface through the UI bridge and captured th
 
 ## Verification summaries
 
-- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 10 files / 31 tests.
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 46 tests.
 - `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
 - `pnpm --dir packages/workspace exec vitest run src/server/__tests__/bootstrapServer.test.ts --no-file-parallelism`: **PASS**, 40 tests.
-- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, including credential non-disclosure and failed-migration HTTP status/storage checks.
+- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS** after the final fixes, including credential non-disclosure and failed-migration HTTP status/storage checks.
 - `pnpm typecheck:changed`: **BLOCKED before typecheck by the existing `plugins/generated-pane` TS2883 declaration-build errors**.
 - `pnpm test:changed`: **BLOCKED before tests by the same existing `plugins/generated-pane` TS2883 declaration-build errors**.
 - `git diff --check` in both repositories: **PASS**.
