@@ -6,9 +6,10 @@ This doc evaluates **Daytona's managed/hosted service** as a *short-term bridge*
 behind our own `SandboxProviderV1` abstraction. Escape isolation is the critical
 bar: a sandbox escape must not reach other tenants or our control plane.
 
-Date: 2026-08-12. All claims below are quoted with URLs. Vendor pages and
-third-party comparisons are labelled as such (competitor blogs like Northflank /
-Blaxel are marketing-adjacent and treated as secondary corroboration, not proof).
+Date: 2026-08-12; storage-mount addendum checked 2026-08-27. All claims below
+are quoted with URLs. Vendor pages and third-party comparisons are labelled as
+such (competitor blogs like Northflank / Blaxel are marketing-adjacent and
+treated as secondary corroboration, not proof).
 
 ---
 
@@ -94,7 +95,58 @@ threat model it is a **downgrade** from where we want to be. It is a shared-kern
 
 ---
 
-## 5. `SandboxProviderV1` adapter sketch
+## 5. Storage-mount addendum: external buckets versus Daytona Volumes
+
+Daytona has the same core external-storage capability as Vercel Sandbox: install
+a FUSE client in a reusable snapshot (preferred for predictable cold starts) or
+at sandbox startup, then mount the remote store at a chosen path. For S3,
+Daytona and Vercel both document AWS Mountpoint (`mount-s3`). Daytona also
+documents Cloudflare R2, Tigris, Supabase Storage, Google Cloud Storage, Azure
+Blob, Box, Archil, and MesaFS.
+
+This is distinct from **Daytona Volumes**:
+
+| Option | Storage authority | Mount behavior | Credential boundary | Appropriate use |
+| --- | --- | --- | --- | --- |
+| External storage mount | Customer's S3-compatible or other provider | Customer installs/configures the provider-specific FUSE client | Daytona's documented S3 flow injects scoped `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` through sandbox environment variables | Immutable inputs, completed outputs, or external object workflows |
+| Daytona Volume | Daytona-managed S3-compatible object store | Attached at sandbox creation; persists independently; one volume can serve many sandboxes; `subpath` restricts a sandbox to one prefix | Daytona owns the backing-store integration; the sandbox receives the mounted namespace rather than the customer's bucket key | Shared datasets, caches, application files, and per-tenant prefixes |
+
+For multi-tenant use, Daytona explicitly recommends one shared volume with a
+unique `subpath` per tenant/workspace. Isolation is enforced at the FUSE mount
+boundary: the mounted sandbox cannot traverse to sibling prefixes. Up to 100
+volumes per organization are currently documented, and multiple volumes may be
+mounted in one sandbox.
+
+The feature does **not** make object storage equivalent to local POSIX block
+storage. Daytona states that Volumes are slower than the local sandbox
+filesystem and cannot be used for block-storage applications such as database
+tables. AWS Mountpoint has still narrower object semantics. Therefore the safe
+coding-workspace shape remains:
+
+```text
+/durable   Daytona Volume or customer bucket mount
+/workspace local sandbox filesystem for git/build/package churn
+```
+
+Hydrate the selected durable generation into `/workspace`, execute the turn on
+local storage, then publish declared outputs or a new generation before sandbox
+destruction. A direct mount at `/workspace` is acceptable only after the
+representative git/package/build benchmark passes.
+
+Security consequence: external mounts place provider credentials inside the
+sandbox in Daytona's documented flow. Use a short-lived, least-privilege key
+restricted to one bucket/prefix and one turn; never inject an account-wide key.
+A managed Volume avoids exposing the customer's own S3 key, but Daytona's
+FUSE/subpath enforcement remains part of the trusted provider boundary and does
+not repair Daytona-managed compute's weaker isolation class discussed above.
+
+Sources: [Daytona external storage](https://www.daytona.io/docs/en/mount-external-storage/),
+[Daytona Volumes](https://www.daytona.io/docs/en/volumes/), and
+[Vercel FUSE announcement](https://vercel.com/changelog/vercel-sandbox-now-supports-fuse-based-filesystems).
+The broader provider and filesystem-semantics comparison is in
+[`storage-mount-performance-eval.md`](storage-mount-performance-eval.md).
+
+## 6. `SandboxProviderV1` adapter sketch
 
 Daytona's SDK maps cleanly onto a create/exec/destroy provider interface.
 
@@ -130,7 +182,7 @@ in code and lets the app gate which tenants may run on which provider.
 
 ---
 
-## 6. Risks (honest)
+## 7. Risks (honest)
 
 1. **Isolation-by-default is shared-kernel, not microVM (critical).** No vendor
    guarantee of per-tenant hardware isolation on the managed shared tier; gVisor
@@ -150,7 +202,7 @@ in code and lets the app gate which tenants may run on which provider.
 
 ---
 
-## 7. VERDICT
+## 8. VERDICT
 
 **Daytona-managed is a viable short-term bridge ONLY for trusted / low-risk early
 users — NOT for escape-critical, untrusted, public multi-tenant workloads.**
