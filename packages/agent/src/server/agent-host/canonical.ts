@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { types as utilTypes } from 'node:util'
 import type { JsonValue } from '../../shared/index'
 
 /** Strict RFC-8259 JSON serialization with deterministic object-key ordering. */
@@ -14,6 +15,7 @@ function serializeCanonical(value: unknown, ancestors: WeakSet<object>): string 
     return JSON.stringify(value)
   }
   if (typeof value !== 'object') throw new TypeError('canonical JSON rejects non-JSON values')
+  if (utilTypes.isProxy(value)) throw new TypeError('canonical JSON rejects Proxy objects')
   if (ancestors.has(value)) throw new TypeError('canonical JSON rejects cyclic values')
 
   ancestors.add(value)

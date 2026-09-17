@@ -372,6 +372,58 @@ describe('SqliteAgentRequestLedger', () => {
     expect(canonicalJson(Object.assign(Object.create(null), { b: 2, a: 1 }))).toBe('{"a":1,"b":2}')
   })
 
+  it('rejects Proxy objects before reflective inspection or property reads', () => {
+    const target = { a: 1, hidden: 2 }
+    let hiddenOwnKeysReads = 0
+    let hiddenValueReads = 0
+    const hidingKeys = new Proxy(target, {
+      ownKeys() {
+        hiddenOwnKeysReads += 1
+        return ['a']
+      },
+      get(proxiedTarget, key, receiver) {
+        hiddenValueReads += 1
+        return Reflect.get(proxiedTarget, key, receiver)
+      },
+    })
+
+    let unstableReads = 0
+    const unstable = new Proxy({ value: 0 }, {
+      get(proxiedTarget, key, receiver) {
+        if (key === 'value') unstableReads += 1
+        return key === 'value' ? unstableReads : Reflect.get(proxiedTarget, key, receiver)
+      },
+    })
+
+    for (const value of [
+      hidingKeys,
+      unstable,
+      [hidingKeys],
+      { nested: hidingKeys },
+      [unstable],
+      { nested: unstable },
+    ]) {
+      expect(() => canonicalJson(value as never)).toThrow(/canonical JSON rejects Proxy objects/)
+      expect(() => canonicalDigest(value as never)).toThrow(/canonical JSON rejects Proxy objects/)
+    }
+
+    expect(hiddenOwnKeysReads).toBe(0)
+    expect(hiddenValueReads).toBe(0)
+    expect(unstableReads).toBe(0)
+    expect(canonicalDigest(target)).toBe(canonicalDigest({ a: 1, hidden: 2 }))
+  })
+
+  it('does not let root or nested Proxy objects collide with stable canonical digests', () => {
+    const stable = { a: 1, nested: [{ value: 1 }] }
+    const stableDigest = canonicalDigest(stable)
+    const collidingShape = { a: 1, nested: [new Proxy({ value: 1 }, {})] }
+    const rootProxy = new Proxy(stable, {})
+
+    expect(stableDigest).toBe(canonicalDigest({ nested: [{ value: 1 }], a: 1 }))
+    expect(() => canonicalDigest(rootProxy as never)).toThrow(/canonical JSON rejects Proxy objects/)
+    expect(() => canonicalDigest(collidingShape as never)).toThrow(/canonical JSON rejects Proxy objects/)
+  })
+
   it('stores immutable canonical gateway request material and rejects non-JSON numbers', async () => {
     const path = join(tmpdir(), `canonical-request-ledger-${randomUUID()}.sqlite`)
     const ledger = new SqliteAgentRequestLedger(path)
