@@ -88,6 +88,14 @@ Playwright was available. Screenshot: `apps-panel.png`. It captures the live hos
 - Playground `dev` full dependency build: **BLOCKED by pre-existing `@hachej/boring-core` Fastify declaration incompatibilities**. Required affected packages were built individually and `dev:app` completed; the live run above used that real server.
 - `pnpm typecheck`: **BLOCKED by unrelated existing `plugins/generated-pane` TS2883 portable declaration errors**; full output saved in `typecheck.log`.
 
+## Owner ruling needed
+
+- Dynamic published tools change model-visible composition between turns.
+- The ratified architecture freezes composition and requires capability admission.
+- The current app-runner seam therefore conflicts with that frozen ruling.
+- Blocker 10 is explicitly outside this fix and has not been redesigned here.
+- An owner ruling plus ratified-plan update, or an admitted static broker design, is required.
+
 ## Mandatory abstraction review
 
 **BLOCKED** at `433ee0dda..e08d2690f` by the independent reviewer. Although dependency direction remains valid, the new per-turn dynamic native-tool and profile-prompt seam conflicts with the ratified architecture's frozen model-visible composition and capability-admission rules. Additional blockers: dynamic tool collision/ownership is not enforced, the public plugin lifecycle docs are stale, and real-harness boundary/collision/grant/session-identity tests are missing. This cannot receive an abstraction PASS without an explicit owner ruling plus ratified-plan update, or redesign around an admitted static broker/activation generation.

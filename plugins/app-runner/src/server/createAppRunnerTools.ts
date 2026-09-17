@@ -7,7 +7,7 @@ import type { AppRunnerStore } from "./appRunnerStore"
 import { AppRunnerLimitError, collectAppFiles } from "./collectAppFiles"
 import { commitPublishedFolder } from "./commitPublishedFolder"
 import { identityFromToolContext } from "./resolveIdentity"
-import { manifestFromVersionFiles, readToolManifest } from "./readToolManifest"
+import { manifestFromVersionFiles } from "./readToolManifest"
 import { resolveWorkspaceId } from "./resolveWorkspaceId"
 import { profileAppName } from "./profileAddress"
 
@@ -36,8 +36,7 @@ function requireAppName(params: Record<string, unknown>): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
 }
 
-/** Re-reads the manifest for whatever version is now active and stores it, so the
- * generic `call_app_tool` dispatcher (see below) reflects publish/activate/rollback. */
+/** Re-read the active published manifest after activate or rollback. */
 async function refreshStoredManifest(
   options: AppRunnerToolsOptions,
   workspaceId: string,
@@ -58,8 +57,8 @@ async function refreshStoredManifest(
 export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool {
   return {
     name: "publish_app",
-    description: "Publish the workspace app/ folder (or a custom dir) to the app runner and return a live URL.",
-    promptSnippet: "Call publish_app after writing/updating app/index.js and app/index.html to deploy the app and get a live URL to share. An optional app/tools.json manifest lets the app expose its own callable tools to the agent, auto-registered after publish (see call_app_tool).",
+    description: "Commit and publish apps/<appName>/ (or a custom workspace-relative dir) and return its live URL.",
+    promptSnippet: "Call publish_app after writing or updating apps/<appName>/. Tools in its published tools.json manifest mount natively after activation; draft edits do not change the tool inventory.",
     parameters: {
       type: "object",
       properties: {
@@ -103,7 +102,7 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
           toolManifest,
         })
         const manifestNote = toolManifest?.tools.length
-          ? ` Registered ${toolManifest.tools.length} app tool(s) — call them with call_app_tool.`
+          ? ` Registered ${toolManifest.tools.length} native app tool(s).`
           : ""
         return textResult(`Published "${appName}" as version ${result.version}: ${result.url}.${manifestNote}`)
       } catch (error) {
@@ -349,54 +348,6 @@ export function createGetAppUsageTool(options: AppRunnerToolsOptions): AgentTool
   }
 }
 
-/**
- * Generic dispatcher for `app/tools.json`-declared app tools.
- *
- * The workspace plugin system only supports boot-time-static `agentTools`
- * (see `packages/workspace/docs/PLUGIN_SYSTEM.md` §4.5: "boring.server
- * routes/agentTools: ... Boot-time only", true for both trust tiers) — there
- * is no supported mechanism to register a brand-new named tool per app/tool
- * pair at publish time. Rather than fight that, this exposes one static
- * tool that looks up the *current* manifest from the JSON store (refreshed
- * on publish/activate/rollback, see above) at call time and forwards to the
- * runner. This is an explicit, documented deviation from the literal
- * `app_{app}_{tool}`-per-tool-name ask.
- */
-export function createCallAppToolTool(options: AppRunnerToolsOptions): AgentTool {
-  return {
-    name: "call_app_tool",
-    description: "Call a tool an app declared in its app/tools.json manifest (registered automatically after publish_app).",
-    parameters: {
-      type: "object",
-      properties: {
-        appName: { type: "string", description: "The app name previously published with publish_app." },
-        tool: { type: "string", description: "Tool name as declared in app/tools.json." },
-        input: { type: "object", description: "Input matching the tool's declared input schema.", additionalProperties: true },
-      },
-      required: ["appName", "tool"],
-      additionalProperties: false,
-    },
-    async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
-      const appName = requireAppName(params)
-      if (!appName) return textResult("call_app_tool requires a non-empty appName.", true)
-      const toolName = typeof params.tool === "string" ? params.tool.trim() : ""
-      if (!toolName) return textResult("call_app_tool requires a non-empty tool name.", true)
-      const apps = await options.store.listApps()
-      const app = apps.find((entry) => entry.appName === appName)
-      const declared = app?.toolManifest?.tools.find((entry) => entry.name === toolName)
-      if (!declared) {
-        return textResult(`"${appName}" has no tool named "${toolName}" in its published app/tools.json manifest.`, true)
-      }
-      const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
-      try {
-        const result = await options.client.callTool(workspaceId, appName, toolName, params.input ?? {}, identityFromToolContext(ctx), ctx.abortSignal)
-        return { content: [{ type: "text", text: JSON.stringify(result) }], details: result }
-      } catch (error) {
-        return errorResult(`call_app_tool failed for "${appName}.${toolName}"`, error)
-      }
-    },
-  }
-}
 
 export function createAppRunnerTools(options: AppRunnerToolsOptions): AgentTool[] {
   return [

@@ -4,7 +4,7 @@ export const APP_RUNNER_PANEL_TITLE = "Apps"
 export const APP_RUNNER_SURFACE_KIND = "app-runner"
 
 /** Default directory (relative to the workspace root) an app is published from. */
-export const APP_RUNNER_DEFAULT_DIR = "app"
+export const APP_RUNNER_DEFAULT_DIR = "apps/<appName>"
 
 /** Client-side publish limits, mirrored from the app runner service's own 413 semantics. */
 export const APP_RUNNER_MAX_FILES = 200
@@ -15,10 +15,8 @@ export const APP_RUNNER_DEFAULT_URL = "http://127.0.0.1:9877"
 
 /**
  * Header names the app runner's forward-auth contract expects (see
- * APP-RUNNER-SPEC.md "Identity and access"): a signed/shared-secret identity
- * header pair plus a dev-mode shared secret standing in for Caddy
- * forward-auth. Names are this plugin's own choice — the runner's exact
- * expected header casing/name is not yet finalized upstream.
+ * boring-hub API "Identity and access"): trusted identity headers plus the
+ * X-App-Runner-Auth development secret standing in for Caddy forward-auth.
  */
 export const APP_RUNNER_USER_HEADER = "X-Boring-User"
 export const APP_RUNNER_WORKSPACE_HEADER = "X-Boring-Workspace"
