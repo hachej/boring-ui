@@ -11,7 +11,7 @@ function result(value: unknown, isError = false): ToolResult {
 }
 
 function toolSegment(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "")
+  return Buffer.from(value.normalize("NFC"), "utf8").toString("hex")
 }
 
 export interface PublishedToolsProviderOptions {
@@ -41,7 +41,7 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
       if (current.version !== record.version || current.sha !== record.sha || current.kind !== record.kind) {
         await options.store.upsertApp(recordFromCurrent(record, current))
       }
-      const cacheKey = `${record.appName}:${current.version}`
+      const cacheKey = `${workspaceId}:${record.ownerUserId ?? "shared"}:${record.appName}:${current.version}:${current.sha ?? ""}`
       const cached = cache.get(cacheKey)
       if (cached) return cached
       const tools = current.manifest.tools.map((entry): AgentTool => ({
@@ -54,12 +54,23 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
             if (!executingWorkspaceId || executingWorkspaceId !== workspaceId) {
               return result(`Published tool ${entry.name} refused: executing workspace does not match its published workspace.`, true)
             }
+            const executingIdentity = identityFromToolContext(ctx)
+            if (record.kind === "profile" && record.ownerUserId !== executingIdentity.id) {
+              return result(`Published tool ${entry.name} refused: profile owner does not match the acting user.`, true)
+            }
+            const latest = await options.client.current(executingWorkspaceId, record.appName, executingIdentity)
+            if (latest.version !== current.version || latest.sha !== current.sha || latest.kind !== current.kind) {
+              return result(
+                `Published tool ${entry.name} is stale because ${record.appName} changed from version ${current.version} to ${latest.version}. Re-read the current tool inventory before calling it.`,
+                true,
+              )
+            }
             const value = await options.client.callTool(
               executingWorkspaceId,
               record.appName,
               entry.name,
               params,
-              identityFromToolContext(ctx),
+              executingIdentity,
             )
             return result(value)
           } catch (error) {
@@ -73,7 +84,16 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
       cache.set(cacheKey, tools)
       return tools
     }))
-    return groups.flat()
+    const tools = groups.flat()
+    const owners = new Map<string, string>()
+    for (const tool of tools) {
+      const owner = `${tool.name}`
+      if (owners.has(tool.name)) {
+        throw new Error(`published tool name collision for "${tool.name}"; manifests must expose unique tool names`)
+      }
+      owners.set(tool.name, owner)
+    }
+    return tools
   }
 }
 

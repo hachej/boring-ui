@@ -13,7 +13,7 @@ export function createPublishedProfilePromptProvider(options: {
   const cache = new Map<string, { version: number; instructions?: string }>()
   return async (context) => {
     const workspaceId = context?.workspaceId?.trim()
-    if (!workspaceId) throw new Error("authenticated workspace identity is required to load profile instructions")
+    if (!workspaceId) return undefined
     const identity = identityFromToolContext(context ?? {})
     const profile = (await options.store.listApps()).find((record) =>
       record.kind === "profile" && record.workspaceId === workspaceId && record.ownerUserId === identity.id,

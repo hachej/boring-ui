@@ -2036,10 +2036,14 @@ export async function createWorkspaceAgentServer(
             }
           }
         : undefined
-      const baseDynamicPrompt = contribution.agentOptions.systemPromptDynamic ?? opts.systemPromptDynamic
+      const baseDynamicPrompts = [opts.systemPromptDynamic, contribution.agentOptions.systemPromptDynamic]
+        .filter((provider): provider is NonNullable<typeof provider> => Boolean(provider))
+      const baseDynamicPrompt = baseDynamicPrompts.length > 0
+        ? async (context?: RunContext) => mergePromptContents(await Promise.all(baseDynamicPrompts.map((provider) => provider(context))))
+        : undefined
       const loadSystemPromptAppend = baseDynamicPrompt || getHotReloadableResources || getEffectivePackageResourceSnapshot()
-        ? async () => mergePromptContents([
-            await baseDynamicPrompt?.(),
+        ? async (context?: RunContext) => mergePromptContents([
+            await baseDynamicPrompt?.(context),
             getHotReloadableResources?.().systemPromptAppend,
             contribution.includeAllDiscoveredPluginResources ? aggregatePluginPrompts(boringAssetManager) : undefined,
             ...(getAgentPackageResourceView()?.systemPrompts ?? []),
@@ -2069,6 +2073,22 @@ export async function createWorkspaceAgentServer(
       const staticSystemPromptAppend = [baseSystemPromptAppend, contribution.agentOptions.systemPromptAppend]
         .filter((part): part is string => Boolean(part))
         .join("\n\n") || undefined
+      const hostDynamicTools = opts.extraToolsDynamic
+      const pluginDynamicTools = contribution.agentOptions.extraToolsDynamic
+      const loadAgentTools = hostDynamicTools || pluginDynamicTools
+        ? async (context?: RunContext) => {
+            const tools = [
+              ...(await hostDynamicTools?.(context) ?? []),
+              ...(await pluginDynamicTools?.(context) ?? []),
+            ]
+            const seen = new Set<string>()
+            for (const tool of tools) {
+              if (seen.has(tool.name)) throw new Error(`dynamic agent tool name collision: "${tool.name}"`)
+              seen.add(tool.name)
+            }
+            return tools
+          }
+        : undefined
       const buildResourceDigestInput = async () => {
         const hotResources = getHotReloadableResources?.()
         // Provisioned runtime skill paths are outputs of applyReload. Hash the
@@ -2190,7 +2210,7 @@ export async function createWorkspaceAgentServer(
           : {}),
         systemPromptAppend: staticSystemPromptAppend,
         loadSystemPromptAppend,
-        loadAgentTools: contribution.agentOptions.extraToolsDynamic ?? opts.extraToolsDynamic,
+        loadAgentTools,
       }
     },
   })

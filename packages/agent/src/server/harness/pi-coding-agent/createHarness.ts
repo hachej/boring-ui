@@ -189,16 +189,29 @@ function buildDynamicToolsExtension(
 ): ExtensionFactory {
   return (pi) => {
     let ownedNames = new Set<string>()
-    pi.on("before_agent_start", async () => {
+    const refresh = async () => {
       const ctx = getRunContext()
       if (!ctx) return
       const tools = [...await source(ctx)]
       const adapted = adaptToolsForPi(tools, sessionId, telemetry, getRunContext)
-      const nextNames = new Set(adapted.map((tool) => tool.name))
-      for (const tool of adapted) pi.registerTool(tool)
+      const names = adapted.map((tool) => tool.name)
+      const nextNames = new Set(names)
+      if (nextNames.size !== names.length) {
+        throw new Error("dynamic agent tool providers returned duplicate tool names")
+      }
       const active = pi.getActiveTools().filter((name) => !ownedNames.has(name))
-      pi.setActiveTools([...new Set([...active, ...nextNames])])
+      const collision = names.find((name) => active.includes(name))
+      if (collision) throw new Error(`dynamic agent tool "${collision}" collides with an existing host tool`)
+      for (const tool of adapted) pi.registerTool(tool)
+      pi.setActiveTools([...active, ...names])
       ownedNames = nextNames
+    }
+    pi.on("before_agent_start", refresh)
+    pi.on("tool_result", async (event) => {
+      const toolName = (event as { toolName?: unknown }).toolName
+      if (typeof toolName === "string" && ["publish_app", "publish_profile", "undo_profile", "rollback_app", "activate_app_version"].includes(toolName)) {
+        await refresh()
+      }
     })
   }
 }

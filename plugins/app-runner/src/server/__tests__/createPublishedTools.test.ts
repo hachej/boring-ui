@@ -33,7 +33,7 @@ describe("published manifest native tools", () => {
 
     const tools = await provider(context)
     expect(tools).toHaveLength(1)
-    expect(tools[0]).toMatchObject({ name: "app_guestbook_count_entries", description: "Count entries", parameters: { type: "object" } })
+    expect(tools[0]).toMatchObject({ name: `app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("count_entries").toString("hex")}`, description: "Count entries", parameters: { type: "object" } })
     const result = await tools[0]!.execute({}, context)
     expect(result.details).toEqual({ count: 3 })
     const [, init] = fetchImpl.mock.calls[1]!
@@ -47,9 +47,9 @@ describe("published manifest native tools", () => {
       : [{ name: "pin_entry", description: "Pin", input: { type: "object" }, route: "/pin" }]))))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", token: "tok", fetchImpl: fetchImpl as typeof fetch }), store: await seededStore() })
 
-    expect((await provider(context)).map((tool) => tool.name)).toEqual(["app_guestbook_count"])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("count").toString("hex")}`])
     version = 2
-    expect((await provider(context)).map((tool) => tool.name)).toEqual(["app_guestbook_pin_entry"])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual([`app_${Buffer.from("guestbook").toString("hex")}_${Buffer.from("pin_entry").toString("hex")}`])
   })
 
   it("mounts only the acting user's profile tools", async () => {
@@ -62,7 +62,7 @@ describe("published manifest native tools", () => {
     })))
     const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
 
-    expect((await provider(context)).map((tool) => tool.name)).toEqual(["profile_remember"])
+    expect((await provider(context)).map((tool) => tool.name)).toEqual([`profile_${Buffer.from("remember").toString("hex")}`])
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
@@ -78,6 +78,48 @@ describe("published manifest native tools", () => {
 
     expect(tools).toEqual([])
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it("fails a stale handle instead of calling a new version with an old schema", async () => {
+    let version = 1
+    const fetchImpl = vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.endsWith("/current")
+        ? current(version, [{ name: "count", description: "Count", input: {}, route: "/count" }])
+        : { shouldNotRun: true },
+    )))
+    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store: await seededStore() })
+    const stale = (await provider(context))[0]!
+    version = 2
+
+    const response = await stale.execute({}, context)
+
+    expect(response.isError).toBe(true)
+    expect(response.content[0]?.text).toContain("is stale")
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it("escapes names injectively and rejects duplicate manifest entries", async () => {
+    const store = new MemoryAppRunnerStore()
+    await store.upsertApp({ appName: "guest-book", workspaceId: "acme", kind: "app", version: 1, sha: "a", url: "a", updatedAt: "now" })
+    await store.upsertApp({ appName: "guest", workspaceId: "acme", kind: "app", version: 1, sha: "b", url: "b", updatedAt: "now" })
+    const fetchImpl = vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("guest-book")
+      ? current(1, [{ name: "count", description: "Count", input: {}, route: "/count" }])
+      : current(1, [{ name: "book_count", description: "Count", input: {}, route: "/count" }]))))
+    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
+
+    const names = (await provider(context)).map((tool) => tool.name)
+    expect(new Set(names).size).toBe(2)
+
+    const duplicateStore = new MemoryAppRunnerStore()
+    await duplicateStore.upsertApp({ appName: "dupe", workspaceId: "acme", kind: "app", version: 1, sha: "d", url: "d", updatedAt: "now" })
+    const duplicateProvider = createPublishedToolsProvider({
+      client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: vi.fn(async () => new Response(JSON.stringify(current(1, [
+        { name: "same", description: "A", input: {}, route: "/a" },
+        { name: "same", description: "B", input: {}, route: "/b" },
+      ])))) as typeof fetch }),
+      store: duplicateStore,
+    })
+    await expect(duplicateProvider(context)).rejects.toThrow(/collision/)
   })
 
   it("does not mount an unpublished on-disk tools.json edit", async () => {
