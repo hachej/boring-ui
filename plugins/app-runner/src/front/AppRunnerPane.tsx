@@ -69,10 +69,6 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
 
   useEffect(() => {
     loadApps()
-    // Serving tokens and their path-scoped cookies are deliberately short-lived.
-    // Refreshing the signed document URL renews browser authority before expiry.
-    const renewal = window.setInterval(loadApps, 120_000)
-    return () => window.clearInterval(renewal)
   }, [loadApps])
 
   useEffect(() => {
@@ -90,6 +86,16 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
       setVersionsError(errorMessage(error))
     }
   }, [])
+
+  useEffect(() => {
+    // Signed path prefixes are deliberately short-lived. Refresh both current
+    // and preview URLs before expiry; sandboxed iframes do not use cookies.
+    const renewal = window.setInterval(() => {
+      loadApps()
+      if (selectedApp) loadVersions(selectedApp)
+    }, 120_000)
+    return () => window.clearInterval(renewal)
+  }, [loadApps, loadVersions, selectedApp])
 
   const loadLogs = useCallback(async (appName: string) => {
     setLogsError(null)

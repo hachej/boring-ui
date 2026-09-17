@@ -28,7 +28,7 @@ On each publish the plugin creates or updates a host-owned private Git repositor
 - `BORING_APP_RUNNER_TOKEN` — bearer token for runner control-plane and tool calls.
 - `BORING_APP_RUNNER_AUTH_SECRET` — optional development forward-auth secret sent as `X-App-Runner-Auth` on control-plane and tool calls.
 
-The front end never receives these credentials. The host asks the authenticated API to mint a three-minute HMAC-signed app URL. The browser navigates directly to the separate app-serving origin, which derives `x-app-user` from that token and rejects unsigned or expired requests. No host cookie, bearer token, development secret, or client identity header is sent to that origin.
+The front end never receives these credentials. The host asks the authenticated API to mint a three-minute HMAC-signed URL on an origin unique to that app. Authorization is the `/t/<token>/` path prefix, so relative assets and API requests inherit it inside the sandboxed iframe without cookies. Development uses `<app-id>.apps.localhost:9878`; production needs wildcard DNS and TLS for `<app-id>.apps.<domain>`. The serving boundary validates the Host against the token before deriving `x-app-user`. No host cookie, bearer token, development secret, or client identity header is sent to that origin.
 
 ## Browser isolation
 
