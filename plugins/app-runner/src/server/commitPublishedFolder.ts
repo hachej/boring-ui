@@ -110,7 +110,17 @@ export async function resolvePublishGitContext(
 
 async function publishablePaths(context: PublishGitContext): Promise<string[]> {
   const output = await runPublishGit(context, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
-  return output.split("\0").filter((path) => path && !path.split("/").some((segment) => segment.startsWith(".")))
+  const candidates = output.split("\0").filter((path) => path && !path.split("/").some((segment) => segment.startsWith(".")))
+  const existing = await Promise.all(candidates.map(async (path) => {
+    try {
+      const entry = await lstat(resolve(context.workTree, path))
+      return entry.isFile() ? path : undefined
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+      throw error
+    }
+  }))
+  return existing.filter((path): path is string => path !== undefined)
 }
 
 export async function commitPublishedFolder(workspaceRoot: string, dir: string, message: string): Promise<string> {

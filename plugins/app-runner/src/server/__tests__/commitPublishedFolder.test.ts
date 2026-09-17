@@ -1,11 +1,12 @@
 // @vitest-environment node
 
-import { mkdtemp, mkdir, realpath, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
+import { collectAppFiles } from "../collectAppFiles"
 import { commitPublishedFolder, resolvePublishGitContext } from "../commitPublishedFolder"
 
 const execFileAsync = promisify(execFile)
@@ -27,6 +28,23 @@ describe("commitPublishedFolder", () => {
     expect(context.cwd.startsWith(await realpath(root))).toBe(false)
     expect(context.gitDir.startsWith(await realpath(root))).toBe(false)
     expect((await execFileAsync("git", [`--git-dir=${context.gitDir}`, "rev-parse", "HEAD"], { cwd: context.cwd })).stdout.trim()).toBe(sha)
+  })
+
+  it("publishes again after a hashed build asset is replaced", async () => {
+    const root = await workspace()
+    const app = join(root, "apps", "demo")
+    await writeFile(join(app, "asset-oldhash.js"), "old payload")
+    await commitPublishedFolder(root, "apps/demo", "first publish")
+    await rm(join(app, "asset-oldhash.js"))
+    await writeFile(join(app, "asset-newhash.js"), "new payload")
+
+    const sha = await commitPublishedFolder(root, "apps/demo", "second publish")
+    const payload = await collectAppFiles(root, "apps/demo", sha)
+
+    expect(payload.files["app/asset-oldhash.js"]).toBeUndefined()
+    expect(payload.files["app/asset-newhash.js"]).toBe("new payload")
+    const context = await resolvePublishGitContext(root, "apps/demo")
+    expect(await execFileAsync("git", [`--git-dir=${context.gitDir}`, "rev-parse", "HEAD"], { cwd: context.cwd }).then(({ stdout }) => stdout.trim())).toBe(sha)
   })
 
   it.each(["/tmp", "../outside", "apps/../../outside"])('rejects unconfined directory %s', async (dir) => {
