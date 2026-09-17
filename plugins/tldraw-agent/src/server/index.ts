@@ -203,6 +203,9 @@ export function createCanvasTool(workspace: Workspace, batches: Map<string, Batc
           const timer = setTimeout(() => cancel(`The ${path} tab did not claim the batch before expiry.`), 15_000)
           batches.set(id, { batch, state: "pending", resolve: finish, timer })
           ctx.abortSignal?.addEventListener("abort", abort, { once: true })
+          // addEventListener does not replay an abort that happened before
+          // registration; close that race before returning control.
+          if (ctx.abortSignal?.aborted) abort()
         })
       } catch (error) { return result(error instanceof Error ? error.message : String(error), undefined, true) }
     },

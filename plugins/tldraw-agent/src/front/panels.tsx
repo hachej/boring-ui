@@ -58,11 +58,23 @@ export async function reconcileFailedSave(
   failedGeneration: number,
   reload: (applySnapshot: boolean) => Promise<void>,
 ): Promise<boolean> {
-  const hasNewerLocalEdits = queue.currentGeneration() > failedGeneration
-  await reload(!hasNewerLocalEdits)
+  const hadNewerLocalEdits = queue.currentGeneration() > failedGeneration
+  // A conflict revision is accepted only together with its durable snapshot.
+  // We deliberately enter conflict recovery by discarding unsaved local
+  // generations rather than rebasing stale editor state over external edits.
+  await reload(true)
   queue.discardFailedGeneration(failedGeneration)
-  if (!hasNewerLocalEdits) queue.reconcileToLoadedState(failedGeneration)
-  return hasNewerLocalEdits
+  queue.reconcileToLoadedState(queue.currentGeneration())
+  return hadNewerLocalEdits
+}
+
+export function createCanvasReadinessGate() {
+  let ready = false
+  return {
+    isReady: () => ready,
+    markReady: () => { ready = true },
+    reset: () => { ready = false },
+  }
 }
 
 function idFor(value: string): TLShapeId { return createShapeId(value.replace(/^shape:/, "")) }
@@ -154,12 +166,8 @@ export async function applyCanvasBatch(options: {
   commit: () => Promise<void>
   reload: () => Promise<void>
 }): Promise<void> {
-  const before = options.editor.store.getStoreSnapshot()
   const historyMark = options.editor.markHistoryStoppingPoint(`tldraw-agent:${options.batch.id}`)
-  const rollbackLocal = () => {
-    options.editor.bailToMark(historyMark)
-    loadCanvasStoreSnapshot(options.editor, before)
-  }
+  const rollbackLocal = () => { options.editor.bailToMark(historyMark) }
   const wasReadonly = options.editor.getInstanceState().isReadonly
   options.editor.updateInstanceState({ isReadonly: true }, { history: "ignore" })
   try {
@@ -173,7 +181,6 @@ export async function applyCanvasBatch(options: {
     }
     try {
       await options.commit()
-      options.editor.clearHistory()
     } catch (error) {
       if (wasDefinitelyNotWritten(error)) options.editor.bailToMark(historyMark)
       try { await options.reload() }
@@ -195,6 +202,7 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
   const saveQueueRef = useRef<ReturnType<typeof createSerializedSaveQueue> | null>(null)
   const saveTimerRef = useRef<number | undefined>(undefined)
   const completedBatchIdsRef = useRef(new Set<string>())
+  const readinessRef = useRef(createCanvasReadinessGate())
   const [status, setStatus] = useState("Loading native tldraw file…")
   const [error, setError] = useState<string | null>(null)
 
@@ -229,6 +237,8 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     let active = true
     let unlisten: (() => void) | undefined
     const connect = async (editor: Editor) => {
+      readinessRef.current.reset()
+      editor.updateInstanceState({ isReadonly: true }, { history: "ignore" })
       try {
         await loadFile(editor)
         if (!active) return
@@ -245,14 +255,16 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
               const failedGeneration = queue.pendingGeneration()
               if (failedGeneration !== undefined) {
                 try {
-                  const hasNewerLocalEdits = await reconcileFailedSave(queue, failedGeneration, (applySnapshot) => loadFile(editor, applySnapshot))
-                  if (hasNewerLocalEdits) void queue.flush().catch((retryCause) => setError(retryCause instanceof Error ? retryCause.message : "Save failed"))
-                } catch { /* retain the stable pending generation for retry */ }
-              }
-              setError(cause instanceof Error ? cause.message : "Save failed")
+                  const discardedNewerEdits = await reconcileFailedSave(queue, failedGeneration, (applySnapshot) => loadFile(editor, applySnapshot))
+                  if (discardedNewerEdits) setError("Save conflict: durable external changes were loaded; unsaved local edits were discarded.")
+                  else setError(cause instanceof Error ? cause.message : "Save failed")
+                } catch { setError(cause instanceof Error ? cause.message : "Save failed") }
+              } else setError(cause instanceof Error ? cause.message : "Save failed")
             })
           }, 500)
         }, { scope: "document", source: "user" })
+        readinessRef.current.markReady()
+        editor.updateInstanceState({ isReadonly: false }, { history: "ignore" })
       } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Load failed") }
     }
     const wait = window.setInterval(() => {
@@ -273,7 +285,7 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     let timer: number | undefined
     const drain = async () => {
       const editor = editorRef.current
-      if (!editor) return
+      if (!editor || !readinessRef.current.isReady()) return
       try {
         await client.postJson("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
         const query = new URLSearchParams({ path, filesystem, clientId: clientIdRef.current })
@@ -309,7 +321,10 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
 
   return (
     <div className="relative h-full min-h-[420px] min-w-[560px] overflow-hidden bg-background text-foreground" data-testid="tldraw-agent-panel">
-      <Tldraw onMount={(editor) => { editorRef.current = editor }} />
+      <Tldraw onMount={(editor) => {
+        editor.updateInstanceState({ isReadonly: true }, { history: "ignore" })
+        editorRef.current = editor
+      }} />
       <div className="pointer-events-none absolute left-3 top-3 z-[300] rounded-md border border-border bg-background/95 px-3 py-2 shadow-sm">
         <div className="max-w-72 truncate text-xs font-medium">{path}</div>
         <div className={`mt-0.5 text-[11px] ${error ? "text-destructive" : "text-muted-foreground"}`} role="status">{error ?? status}</div>

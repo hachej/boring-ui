@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { WorkspacePluginClientRequestError } from "@hachej/boring-workspace"
 import { createTLStore, type Editor } from "tldraw"
-import { applyCanvasAction, applyCanvasBatch, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, reconcileFailedSave } from "../panels"
+import { applyCanvasAction, applyCanvasBatch, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, reconcileFailedSave } from "../panels"
 
 function editorFixture() {
   const before = { store: { "shape:before": {} }, schema: {} }
@@ -90,7 +90,7 @@ describe("applyCanvasBatch", () => {
     ])
   })
 
-  it("preserves a newer generation after a delayed definite conflict", async () => {
+  it("loads durable external state and enters conflict recovery after a delayed conflict", async () => {
     let snapshotVersion = 1
     let rejectFirst!: (error: Error) => void
     const commits: Array<{ json: string; generation: number }> = []
@@ -111,15 +111,42 @@ describe("applyCanvasBatch", () => {
     const failedGeneration = queue.pendingGeneration()
     expect(failedGeneration).toBe(1)
     expect(queue.currentGeneration()).toBe(2)
-    const reload = vi.fn(async (_applySnapshot: boolean) => {})
+    const durableShapes = new Set(["external-shape"])
+    const editorShapes = new Set(["stale-local-shape"])
+    const reload = vi.fn(async (applySnapshot: boolean) => {
+      if (applySnapshot) {
+        editorShapes.clear()
+        for (const shape of durableShapes) editorShapes.add(shape)
+      }
+    })
     await expect(reconcileFailedSave(queue, failedGeneration!, reload)).resolves.toBe(true)
-    expect(reload).toHaveBeenCalledWith(false)
-    await queue.flush()
-    expect(commits).toEqual([
-      { json: "snapshot-1", generation: 1 },
-      { json: "snapshot-2", generation: 2 },
-    ])
+    expect(reload).toHaveBeenCalledWith(true)
+    expect(editorShapes).toEqual(durableShapes)
+    expect(commits).toEqual([{ json: "snapshot-1", generation: 1 }])
     expect(queue.hasDirty()).toBe(false)
+  })
+
+  it("blocks drain and edits until the delayed load lifecycle is ready", async () => {
+    const gate = createCanvasReadinessGate()
+    let release!: () => void
+    const delayedLoad = new Promise<void>((resolve) => { release = resolve })
+    const claimed = vi.fn()
+    const editAccepted = vi.fn()
+    const tryWork = () => {
+      if (!gate.isReady()) return
+      claimed()
+      editAccepted()
+    }
+    tryWork()
+    expect(claimed).not.toHaveBeenCalled()
+    const loading = delayedLoad.then(() => gate.markReady())
+    tryWork()
+    expect(editAccepted).not.toHaveBeenCalled()
+    release()
+    await loading
+    tryWork()
+    expect(claimed).toHaveBeenCalledOnce()
+    expect(editAccepted).toHaveBeenCalledOnce()
   })
 
   it("applies durable reload when a failed save has no newer local generation", async () => {
@@ -179,14 +206,15 @@ describe("applyCanvasBatch", () => {
     expect(reload).not.toHaveBeenCalled()
   })
 
-  it("applies all actions before committing once", async () => {
+  it("applies all actions before committing once and preserves prior user undo history", async () => {
     const fixture = editorFixture()
     const commit = vi.fn(async () => {})
     await applyCanvasBatch({ editor: fixture.editor, batch, commit, reload: vi.fn(async () => {}) })
     expect(fixture.deleteShapes).toHaveBeenCalledOnce()
     expect(fixture.mergeRemoteChanges).toHaveBeenCalledOnce()
     expect(commit).toHaveBeenCalledOnce()
-    expect(fixture.clearHistory).toHaveBeenCalledOnce()
+    expect(fixture.clearHistory).not.toHaveBeenCalled()
+    expect(fixture.bailToMark).not.toHaveBeenCalled()
   })
 
   it("rolls back only when the server definitively reports not written", async () => {
@@ -196,7 +224,7 @@ describe("applyCanvasBatch", () => {
     expect(fixture.bailToMark).toHaveBeenCalledWith("mark:batch")
   })
 
-  it("restores the pre-batch snapshot when ambiguous recovery reload also fails", async () => {
+  it("rolls back to the history mark when ambiguous recovery reload also fails", async () => {
     const fixture = editorFixture()
     const reload = vi.fn(async () => { throw new Error("reload failed") })
     await expect(applyCanvasBatch({ editor: fixture.editor, batch, commit: async () => { throw new Error("network") }, reload })).rejects.toThrow("network")

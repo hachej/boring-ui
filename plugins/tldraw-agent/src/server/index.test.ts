@@ -185,6 +185,21 @@ describe("edit_tldraw_canvas", () => {
     await app.close()
   })
 
+  it("does not expose a batch when the tool signal is already aborted", async () => {
+    const fixture = workspaceFixture()
+    const { app, tool } = await routeApp(fixture.workspace)
+    const abort = new AbortController()
+    abort.abort()
+    await expect(tool.execute(
+      { operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] },
+      { toolCallId: "call", abortSignal: abort.signal } as never,
+    )).resolves.toMatchObject({ isError: true })
+    await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
+    const actions = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/actions?path=flow.tldraw&filesystem=user&clientId=c" })
+    expect(actions.json().batches).toEqual([])
+    await app.close()
+  })
+
   it("cancels an uncommitted batch and never exposes it afterward", async () => {
     const fixture = workspaceFixture()
     const { app, tool } = await routeApp(fixture.workspace)
