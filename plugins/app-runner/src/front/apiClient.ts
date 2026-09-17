@@ -1,5 +1,6 @@
 import type {
   AppRunnerAppsResponse,
+  AppRunnerLogsResponse,
   AppRunnerVersionsResponse,
 } from "../shared/types"
 
@@ -44,6 +45,10 @@ export function fetchApps(): Promise<AppRunnerAppsResponse> {
 
 export function fetchAppVersions(appName: string): Promise<AppRunnerVersionsResponse> {
   return requestJson<AppRunnerVersionsResponse>(`/apps/${encodeURIComponent(appName)}/versions`)
+}
+
+export function fetchAppLogs(appName: string): Promise<AppRunnerLogsResponse> {
+  return requestJson<AppRunnerLogsResponse>(`/apps/${encodeURIComponent(appName)}/logs`)
 }
 
 export function rollbackApp(appName: string): Promise<{ ok: boolean }> {

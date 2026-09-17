@@ -20,11 +20,15 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   activateAppVersion,
   AppRunnerApiError,
+  fetchAppLogs,
   fetchAppVersions,
   fetchApps,
   rollbackApp,
 } from "./apiClient"
-import type { AppRunnerRecordWithLinks, AppRunnerVersionWithPreview } from "../shared/types"
+import type { AppRunnerLogsResponse, AppRunnerRecordWithLinks, AppRunnerVersionWithPreview } from "../shared/types"
+
+const LOG_LINES_SHOWN = 20
+const ERROR_LINES_SHOWN = 10
 
 export interface AppRunnerPaneParams {
   appName?: string
@@ -45,6 +49,8 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
   const [selectedVersion, setSelectedVersion] = useState<number | undefined>(undefined)
   const [actionPending, setActionPending] = useState<"rollback" | "activate" | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [logs, setLogs] = useState<AppRunnerLogsResponse | null>(null)
+  const [logsError, setLogsError] = useState<string | null>(null)
 
   const loadApps = useCallback(async () => {
     setAppsError(null)
@@ -77,9 +83,22 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
     }
   }, [])
 
+  const loadLogs = useCallback(async (appName: string) => {
+    setLogsError(null)
+    try {
+      setLogs(await fetchAppLogs(appName))
+    } catch (error) {
+      setLogs(null)
+      setLogsError(errorMessage(error))
+    }
+  }, [])
+
   useEffect(() => {
-    if (selectedApp) loadVersions(selectedApp)
-  }, [selectedApp, loadVersions])
+    if (selectedApp) {
+      loadVersions(selectedApp)
+      loadLogs(selectedApp)
+    }
+  }, [selectedApp, loadVersions, loadLogs])
 
   const currentApp = useMemo(() => apps?.find((app) => app.appName === selectedApp), [apps, selectedApp])
   const activeVersion = useMemo(() => versions?.find((entry) => entry.version === selectedVersion), [versions, selectedVersion])
@@ -98,6 +117,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
     try {
       await rollbackApp(selectedApp)
       await loadVersions(selectedApp)
+      await loadLogs(selectedApp)
       await loadApps()
     } catch (error) {
       setActionError(errorMessage(error))
@@ -113,13 +133,17 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
     try {
       await activateAppVersion(selectedApp, selectedVersion)
       await loadVersions(selectedApp)
+      await loadLogs(selectedApp)
       await loadApps()
     } catch (error) {
       setActionError(errorMessage(error))
     } finally {
       setActionPending(null)
     }
-  }, [selectedApp, selectedVersion, loadVersions, loadApps])
+  }, [selectedApp, selectedVersion, loadVersions, loadLogs, loadApps])
+
+  const recentErrors = useMemo(() => (logs?.errors ?? []).slice(-ERROR_LINES_SHOWN), [logs])
+  const recentLines = useMemo(() => (logs?.lines ?? []).slice(-LOG_LINES_SHOWN), [logs])
 
   if (appsError) {
     return (
@@ -203,7 +227,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
           </Button>
         </div>
       </PaneHeader>
-      <PaneBody className="flex-1 p-0">
+      <PaneBody className="flex flex-1 flex-col p-0">
         {actionError && <Notice tone="destructive" className="m-2">{actionError}</Notice>}
         {versionsError && <Notice tone="destructive" className="m-2">{versionsError}</Notice>}
         {!apps && (
@@ -216,8 +240,36 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
             key={iframeSrc}
             src={iframeSrc}
             title={selectedApp ? `${selectedApp} preview` : "App preview"}
-            className="h-full w-full border-0"
+            className="min-h-0 w-full flex-1 border-0"
           />
+        )}
+        {selectedApp && (
+          <section
+            data-testid="app-runner-logs"
+            className="max-h-48 shrink-0 overflow-auto border-t border-border/60 px-3 py-2 font-mono text-xs"
+          >
+            <div className="mb-1 font-sans text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Recent logs
+            </div>
+            {logsError && <div className="text-destructive">{logsError}</div>}
+            {!logsError && logs && recentErrors.length === 0 && recentLines.length === 0 && (
+              <div className="text-muted-foreground">No log output yet.</div>
+            )}
+            {recentErrors.length > 0 && (
+              <ul className="mb-1 space-y-0.5">
+                {recentErrors.map((line, index) => (
+                  <li key={`err-${index}`} className="whitespace-pre-wrap text-destructive">{line}</li>
+                ))}
+              </ul>
+            )}
+            {recentLines.length > 0 && (
+              <ul className="space-y-0.5">
+                {recentLines.map((line, index) => (
+                  <li key={`line-${index}`} className="whitespace-pre-wrap text-foreground/80">{line}</li>
+                ))}
+              </ul>
+            )}
+          </section>
         )}
       </PaneBody>
     </Pane>
