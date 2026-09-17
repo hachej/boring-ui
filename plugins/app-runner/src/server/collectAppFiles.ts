@@ -24,8 +24,8 @@ export interface CollectAppFilesResult {
 
 /**
  * Recursively reads every file under `workspaceRoot/dir`, returning a
- * `{relativePath: contents}` map keyed by paths relative to `workspaceRoot`
- * (so `app/index.js`, matching the app runner's publish contract).
+ * `{relativePath: contents}` map keyed under the runner's required `app/`
+ * prefix, independent of the workspace folder being published.
  *
  * Enforces the same limits as the runner's own 413 response
  * (200 files / 2 MiB per file / 10 MiB total) client-side, before any
@@ -49,6 +49,7 @@ export async function collectAppFiles(workspaceRoot: string, dir: string): Promi
       throw error
     }
     for (const entry of entries) {
+      if (entry.name === ".git") continue
       const entryPath = join(currentDir, entry.name)
       if (entry.isDirectory()) {
         await walk(entryPath)
@@ -66,7 +67,7 @@ export async function collectAppFiles(workspaceRoot: string, dir: string): Promi
 
       const stats = await stat(entryPath)
       if (stats.size > APP_RUNNER_MAX_FILE_BYTES) {
-        const relativePath = relative(workspaceRoot, entryPath)
+        const relativePath = relative(absoluteDir, entryPath)
         throw new AppRunnerLimitError(
           "FILE_TOO_LARGE",
           `"${relativePath}" is ${stats.size} bytes, over the ${APP_RUNNER_MAX_FILE_BYTES} byte (2 MiB) per-file limit.`,
@@ -81,8 +82,8 @@ export async function collectAppFiles(workspaceRoot: string, dir: string): Promi
         )
       }
 
-      const relativePath = relative(workspaceRoot, entryPath).split("\\").join("/")
-      files[relativePath] = await readFile(entryPath, "utf8")
+      const relativePath = relative(absoluteDir, entryPath).split("\\").join("/")
+      files[`app/${relativePath}`] = await readFile(entryPath, "utf8")
     }
   }
 

@@ -5,6 +5,7 @@ import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
 import type { AppRunnerStore } from "./appRunnerStore"
 import { AppRunnerLimitError, collectAppFiles } from "./collectAppFiles"
+import { commitPublishedFolder } from "./commitPublishedFolder"
 import { identityFromToolContext } from "./resolveIdentity"
 import { manifestFromVersionFiles, readToolManifest } from "./readToolManifest"
 import { resolveWorkspaceId } from "./resolveWorkspaceId"
@@ -70,18 +71,19 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const appName = requireAppName(params)
       if (!appName) return textResult("publish_app requires a non-empty appName.", true)
-      const dir = typeof params.dir === "string" && params.dir.trim().length > 0 ? params.dir.trim() : APP_RUNNER_DEFAULT_DIR
+      const dir = typeof params.dir === "string" && params.dir.trim().length > 0 ? params.dir.trim() : `apps/${appName}`
       const message = typeof params.message === "string" ? params.message : undefined
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       const identity = identityFromToolContext(ctx)
 
       try {
-        const { files } = await collectAppFiles(options.workspaceRoot, dir)
         const publishMessage = message?.trim() || `Publish ${appName}`
+        const sha = await commitPublishedFolder(options.workspaceRoot, dir, publishMessage)
+        const { files } = await collectAppFiles(options.workspaceRoot, dir)
         const result = await options.client.publish(workspaceId, appName, files, identity, {
           kind: "app",
           message: publishMessage,
-          sha: "",
+          sha,
         })
         const current = await options.client.current(workspaceId, appName, identity)
         const toolManifest = current.manifest
