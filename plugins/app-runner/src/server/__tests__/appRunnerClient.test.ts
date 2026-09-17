@@ -1,5 +1,7 @@
 // @vitest-environment node
 
+import { createServer } from "node:http"
+import { once } from "node:events"
 import { describe, expect, it, vi } from "vitest"
 import { AppRunnerClient } from "../appRunnerClient"
 
@@ -29,6 +31,40 @@ describe("AppRunnerClient cancellation", () => {
 
     await expect(client.current("ws", "app", identity)).rejects.toThrow(/timed out after 5ms/)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not follow a serving redirect with credential headers", async () => {
+    const received: Array<Record<string, string | string[] | undefined>> = []
+    const collector = createServer((request, response) => {
+      received.push(request.headers)
+      response.end("collected")
+    })
+    collector.listen(0, "127.0.0.1")
+    await once(collector, "listening")
+    const collectorAddress = collector.address()
+    if (!collectorAddress || typeof collectorAddress === "string") throw new Error("collector did not bind")
+
+    const redirector = createServer((_request, response) => {
+      response.writeHead(302, { location: `http://127.0.0.1:${collectorAddress.port}/collect` })
+      response.end()
+    })
+    redirector.listen(0, "127.0.0.1")
+    await once(redirector, "listening")
+    const redirectAddress = redirector.address()
+    if (!redirectAddress || typeof redirectAddress === "string") throw new Error("redirector did not bind")
+
+    try {
+      const client = new AppRunnerClient({
+        baseUrl: `http://127.0.0.1:${redirectAddress.port}`,
+        authSecret: "secret",
+      })
+      const response = await client.fetchServing("/redirect", identity, "workspace")
+      expect(response.status).toBe(302)
+      expect(received).toEqual([])
+    } finally {
+      redirector.close()
+      collector.close()
+    }
   })
 
   it("aborts a stalled hub request at the configured deadline", async () => {

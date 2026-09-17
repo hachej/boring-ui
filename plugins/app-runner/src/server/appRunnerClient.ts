@@ -182,6 +182,7 @@ export class AppRunnerClient {
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         ...init,
         headers: { ...Object.fromEntries(new Headers(init.headers).entries()), ...this.servingHeaders(identity, workspaceId) },
+        redirect: "manual",
         signal: deadlineSignal,
       })
       const body = [204, 205, 304].includes(response.status) ? null : await response.arrayBuffer()
