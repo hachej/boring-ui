@@ -45,8 +45,16 @@ async function routeApp(workspace: Workspace) {
 describe("edit_tldraw_canvas", () => {
   it("exposes a truthful discriminated action schema", () => {
     const tool = createCanvasTool(workspaceFixture().workspace)
-    expect(tool.parameters).toMatchObject({ required: ["operation", "path"], additionalProperties: false })
-    expect((tool.parameters as { properties: { actions: { items: { oneOf: unknown[] } } } }).properties.actions.items.oneOf).toHaveLength(6)
+    const schemas = (tool.parameters as { oneOf: Array<{ properties?: { actions?: { items: { oneOf: unknown[] } } } }> }).oneOf
+    expect(schemas).toHaveLength(3)
+    expect(schemas[2]?.properties?.actions?.items.oneOf).toHaveLength(6)
+  })
+
+  it("rejects operation fields that would otherwise be ignored", async () => {
+    const tool = createCanvasTool(workspaceFixture().workspace)
+    await expect(tool.execute({ operation: "read", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "read" } as never)).resolves.toMatchObject({ isError: true })
+    await expect(tool.execute({ operation: "create", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "create" } as never)).resolves.toMatchObject({ isError: true })
+    await expect(tool.execute({ operation: "edit", path: "flow.tldraw" }, { toolCallId: "edit" } as never)).resolves.toMatchObject({ isError: true })
   })
 
   it("returns bounded migrated-store metadata for model-visible reads", () => {
@@ -55,9 +63,21 @@ describe("edit_tldraw_canvas", () => {
 
   it("rejects malformed and silent-no-op action variants", () => {
     expect(() => validateActions([{ type: "update", shape: {} }])).toThrow("requires id")
+    expect(() => validateActions([{ type: "update", shape: { id: "a" } }])).toThrow("mutable property")
+    expect(() => validateActions([{ type: "update", shape: { id: "a", type: "text" } }])).toThrow("requires id")
     expect(() => validateActions([{ type: "distribute", ids: ["a", "b"], axis: "x" }])).toThrow("at least 3")
     expect(() => validateActions([{ type: "create", shape: { id: "a", type: "bogus", x: 1, y: 2 } }])).toThrow("valid type")
     expect(() => validateActions([{ type: "clear", extra: true }])).toThrow("additional")
+  })
+
+  it("rejects noncanonical aliases before routing or adapter access", async () => {
+    const fixture = workspaceFixture()
+    const tool = createCanvasTool(fixture.workspace)
+    for (const path of ["./flow.tldraw", "dir\\flow.tldraw", "dir//flow.tldraw", "../flow.tldraw"]) {
+      const output = await tool.execute({ operation: "read", path }, { toolCallId: path } as never)
+      expect(output.isError).toBe(true)
+    }
+    expect(fixture.workspace.readFile).not.toHaveBeenCalled()
   })
 
   it("creates nested files through the adapter without overwriting", async () => {
@@ -86,7 +106,7 @@ describe("edit_tldraw_canvas", () => {
     const revision = file.json().revision
     expect((await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "company", clientId: "c" } })).statusCode).toBe(400)
     expect((await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })).statusCode).toBe(200)
-    const rejected = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { path: "flow.tldraw", filesystem: "user", clientId: "other", json: blankNative(), expectedRevision: revision } })
+    const rejected = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-other", path: "flow.tldraw", filesystem: "user", clientId: "other", json: blankNative(), expectedRevision: revision } })
     expect(rejected.statusCode).toBe(409)
     expect(rejected.json().written).toBe(false)
     expect(fixture.workspace.replaceFileIfUnchanged).not.toHaveBeenCalled()
@@ -97,7 +117,7 @@ describe("edit_tldraw_canvas", () => {
     const fixture = workspaceFixture()
     const { app } = await routeApp(fixture.workspace)
     await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
-    const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: 999, mtimeMs: 1 } } })
+    const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-conflict", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: 999, mtimeMs: 1 } } })
     expect(response.statusCode).toBe(409)
     expect(response.json()).toMatchObject({ written: false, error: { message: "conflict" } })
     expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce()
@@ -129,12 +149,56 @@ describe("edit_tldraw_canvas", () => {
     const abort = new AbortController()
     const toolPromise = tool.execute({ operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "call", abortSignal: abort.signal } as never)
     const actions = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/actions?path=flow.tldraw&filesystem=user&clientId=c" })
-    const commitPromise = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { id: actions.json().batches[0].id, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } } })
+    const commitPromise = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: `batch:${actions.json().batches[0].id}`, batchId: actions.json().batches[0].id, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } } })
     await vi.waitFor(() => expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce())
     abort.abort()
     releaseWrite()
     expect((await commitPromise).statusCode).toBe(200)
     await expect(toolPromise).resolves.toMatchObject({ content: [{ text: expect.stringContaining("Applied one action batch") }] })
+    await app.close()
+  })
+
+  it("awaits the same in-flight batch commit for a duplicate stable request id", async () => {
+    const fixture = workspaceFixture()
+    let release!: () => void
+    vi.mocked(fixture.workspace.replaceFileIfUnchanged!).mockImplementation(async (_path, data) => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return { kind: "file", size: data.length, mtimeMs: 2 }
+    })
+    const { app, tool } = await routeApp(fixture.workspace)
+    await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
+    const toolPromise = tool.execute({ operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "call", abortSignal: new AbortController().signal } as never)
+    const claimed = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/actions?path=flow.tldraw&filesystem=user&clientId=c" })
+    const batchId = claimed.json().batches[0].id as string
+    const payload = { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } }
+    const first = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
+    await vi.waitFor(() => expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce())
+    const retry = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
+    release()
+    const [one, two] = await Promise.all([first, retry])
+    expect(two.json()).toEqual(one.json())
+    expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce()
+    await expect(toolPromise).resolves.toMatchObject({ content: [{ text: expect.stringContaining("Applied one action batch") }] })
+    await app.close()
+  })
+
+  it("awaits the same in-flight manual commit for a duplicate stable request id", async () => {
+    const fixture = workspaceFixture()
+    let release!: () => void
+    vi.mocked(fixture.workspace.replaceFileIfUnchanged!).mockImplementation(async (_path, data) => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return { kind: "file", size: data.length, mtimeMs: 2 }
+    })
+    const { app } = await routeApp(fixture.workspace)
+    await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
+    const payload = { requestId: "manual:1", path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } }
+    const first = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
+    await vi.waitFor(() => expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce())
+    const retry = app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
+    release()
+    const [one, two] = await Promise.all([first, retry])
+    expect(two.json()).toEqual(one.json())
+    expect(fixture.workspace.replaceFileIfUnchanged).toHaveBeenCalledOnce()
     await app.close()
   })
 
@@ -148,7 +212,7 @@ describe("edit_tldraw_canvas", () => {
     const batchId = actionResponse.json().batches[0].id as string
     const replayedClaim = await app.inject({ method: "GET", url: actionsUrl })
     expect(replayedClaim.json().batches[0].id).toBe(batchId)
-    const payload = { id: batchId, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } }
+    const payload = { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "c", json: blankNative(), expectedRevision: { size: fixture.stat.size, mtimeMs: fixture.stat.mtimeMs } }
     const first = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
     const replay = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload })
     expect(first.statusCode).toBe(200)

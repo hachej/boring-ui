@@ -1,3 +1,12 @@
+export function normalizeTldrawResourcePath(value: unknown): string {
+  const raw = String(value ?? "").trim()
+  if (!raw || raw.includes("\\") || raw.startsWith("/")) throw new Error("path must be a canonical relative .tldraw or .tldr path")
+  const segments = raw.split("/")
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) throw new Error("path must not contain empty, dot, or parent segments")
+  if (!/\.(?:tldraw|tldr)$/i.test(raw)) throw new Error("path must be a .tldraw or .tldr file")
+  return raw
+}
+
 export interface TldrawAgentParams {
   path?: string
   filesystem?: string

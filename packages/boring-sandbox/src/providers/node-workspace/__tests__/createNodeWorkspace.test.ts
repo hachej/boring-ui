@@ -134,6 +134,50 @@ test('concurrent conditional replacements across adapters allow only one winner'
   expect(['one', 'two']).toContain(await workspace.readFile('race.txt'))
 })
 
+test('conditional replacement serializes against parent rename', async () => {
+  const { root } = await setupWorkspace()
+  let entered!: () => void
+  let release!: () => void
+  const enteredPromise = new Promise<void>((resolve) => { entered = resolve })
+  const releasePromise = new Promise<void>((resolve) => { release = resolve })
+  const workspace = createNodeWorkspace(root, { testHooks: { beforeConditionalReplaceWrite: async () => { entered(); await releasePromise } } })
+  const parentMutator = createNodeWorkspace(root)
+  await workspace.mkdir('dir', { recursive: false })
+  await workspace.writeFile('dir/file.txt', 'initial')
+  const expected = await workspace.stat('dir/file.txt')
+  const replace = workspace.replaceFileIfUnchanged!('dir/file.txt', 'replaced', expected)
+  await enteredPromise
+  let renameSettled = false
+  const renameParent = parentMutator.rename('dir', 'moved').finally(() => { renameSettled = true })
+  await Promise.resolve()
+  expect(renameSettled).toBe(false)
+  release()
+  await Promise.all([replace, renameParent])
+  await expect(workspace.readFile('moved/file.txt')).resolves.toBe('replaced')
+})
+
+test('conditional replacement serializes against parent unlink', async () => {
+  const { root } = await setupWorkspace()
+  let entered!: () => void
+  let release!: () => void
+  const enteredPromise = new Promise<void>((resolve) => { entered = resolve })
+  const releasePromise = new Promise<void>((resolve) => { release = resolve })
+  const workspace = createNodeWorkspace(root, { testHooks: { beforeConditionalReplaceWrite: async () => { entered(); await releasePromise } } })
+  const parentMutator = createNodeWorkspace(root)
+  await workspace.mkdir('dir', { recursive: false })
+  await workspace.writeFile('dir/file.txt', 'initial')
+  const expected = await workspace.stat('dir/file.txt')
+  const replace = workspace.replaceFileIfUnchanged!('dir/file.txt', 'replaced', expected)
+  await enteredPromise
+  let unlinkSettled = false
+  const unlinkParent = parentMutator.unlink('dir').finally(() => { unlinkSettled = true })
+  await Promise.resolve()
+  expect(unlinkSettled).toBe(false)
+  release()
+  await Promise.all([replace, unlinkParent])
+  await expect(workspace.stat('dir')).rejects.toThrow()
+})
+
 test('adapter-owned readonly paths reject lexical and canonical writes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'boring-ui-node-workspace-readonly-'))
   tempDirs.push(root)

@@ -2,10 +2,11 @@ import {
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
   type BoringFrontSurfaceResolverRegistration,
 } from "@hachej/boring-workspace/plugin"
+import { normalizeTldrawResourcePath } from "../shared"
 import { TLDRAW_AGENT_PANEL_ID } from "./panels"
 
 export function isTldrawPath(path: string): boolean {
-  return /\.(?:tldraw|tldr)$/i.test(path)
+  try { normalizeTldrawResourcePath(path); return true } catch { return false }
 }
 
 export const tldrawAgentSurfaceResolver: BoringFrontSurfaceResolverRegistration = {
@@ -16,11 +17,12 @@ export const tldrawAgentSurfaceResolver: BoringFrontSurfaceResolverRegistration 
     if (request.kind !== WORKSPACE_OPEN_PATH_SURFACE_KIND || !isTldrawPath(request.target)) return undefined
     const filesystem = typeof request.filesystem === "string" && request.filesystem ? request.filesystem : undefined
     if (filesystem && filesystem !== "user") return undefined
+    const path = normalizeTldrawResourcePath(request.target)
     return {
-      id: `tldraw:${encodeURIComponent(filesystem ?? "user")}:${encodeURIComponent(request.target)}`,
+      id: `tldraw:user:${encodeURIComponent(path)}`,
       component: TLDRAW_AGENT_PANEL_ID,
-      title: request.target.split("/").pop() || request.target,
-      params: { path: request.target, ...(filesystem ? { filesystem } : {}) },
+      title: path.split("/").pop() || path,
+      params: { path, filesystem: "user" },
       score: 1000,
     }
   },

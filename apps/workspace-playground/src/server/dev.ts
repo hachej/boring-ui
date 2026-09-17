@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node
 import { basename, dirname, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter, createSandboxRuntimeModeAdapter } from "@hachej/boring-agent/server"
 import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
-import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
+import { createNodeWorkspace, disposeNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness, isPlaygroundShowcaseSession, markPlaygroundShowcaseSession } from "./testing/scriptedPiHarness"
 import { PLAYGROUND_SHOWCASE_SESSION_ROUTE } from "../shared/showcaseSession"
 import {
@@ -66,18 +66,14 @@ export async function startPlaygroundServer(): Promise<void> {
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
-    const localWorkspace = remoteWorkerModeAdapter ? undefined : createNodeWorkspace(workspaceRoot, { readonlyPaths: [".agents"] })
+    const localWorkspace = remoteWorkerModeAdapter
+      ? undefined
+      : createNodeWorkspace(workspaceRoot, {
+          runtimeContext: { runtimeCwd: localRuntimeMode === "local" ? "/workspace" : workspaceRoot },
+          readonlyPaths: [".agents"],
+        })
     const localModeAdapter = localWorkspace
-      ? (() => {
-          const adapter = createSandboxRuntimeModeAdapter(localRuntimeMode)
-          return {
-            ...adapter,
-            async create(context: Parameters<typeof adapter.create>[0]) {
-              const bundle = await adapter.create(context)
-              return { ...bundle, workspace: localWorkspace }
-            },
-          }
-        })()
+      ? createSandboxRuntimeModeAdapter(localRuntimeMode, { createWorkspace: () => localWorkspace })
       : undefined
     const beadsOperations = localWorkspace ? createWorkspaceBeadsOperations(localWorkspace) : undefined
     const agentMode = resolvePlaygroundAgentMode(process.env)
@@ -147,6 +143,7 @@ export async function startPlaygroundServer(): Promise<void> {
         : undefined,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })
+    if (localWorkspace) app.addHook("onClose", async () => { disposeNodeWorkspace(localWorkspace) })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"
       return {

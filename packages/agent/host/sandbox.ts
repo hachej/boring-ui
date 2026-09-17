@@ -85,6 +85,7 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
   readonly bwrap?: BwrapSandboxProviderOptions
+  readonly createWorkspace?: BwrapSandboxProviderOptions['createWorkspace']
 }
 
 type ResolvedBwrapPolicy = Required<Pick<
@@ -136,7 +137,7 @@ export function createSandboxRuntimeModeAdapter(
   switch (mode) {
     case 'direct':
       return createDirectModeAdapter({
-        provider: createDirectSandboxProvider(),
+        provider: createDirectSandboxProvider(options.createWorkspace ? { createWorkspace: options.createWorkspace } : {}),
         runtimeHost: agentSandboxRuntimeHostOperations,
       })
     case 'local': {
@@ -145,6 +146,9 @@ export function createSandboxRuntimeModeAdapter(
       return createLocalModeAdapter({
         provider: createBwrapSandboxProvider({
           ...options.bwrap,
+          ...((options.createWorkspace ?? options.bwrap?.createWorkspace)
+            ? { createWorkspace: options.createWorkspace ?? options.bwrap?.createWorkspace }
+            : {}),
           sandbox: {
             ...options.bwrap?.sandbox,
             ...policy,

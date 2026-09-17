@@ -5,16 +5,18 @@ import { createTLStore, parseTldrawJsonFile } from "tldraw"
 import type { Workspace, Stat } from "@hachej/boring-agent/shared"
 import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
-import { TLDRAW_AGENT_PLUGIN_ID, type CanvasAction, type PendingCanvasBatch } from "../shared"
+import { normalizeTldrawResourcePath, TLDRAW_AGENT_PLUGIN_ID, type CanvasAction, type PendingCanvasBatch } from "../shared"
 
 type BatchState = "pending" | "claimed" | "committing" | "committed" | "failed" | "cancelled"
+interface CommitOutcome { statusCode: number; body: unknown }
+interface CommitRequest { fingerprint: string; promise: Promise<CommitOutcome> }
 interface BatchEntry {
   batch: PendingCanvasBatch
   state: BatchState
   resolve: (value: ToolResult) => void
   timer?: ReturnType<typeof setTimeout>
   ownerClientId?: string
-  outcome?: { statusCode: number; body: unknown }
+  outcome?: CommitOutcome
 }
 
 const USER_FILESYSTEM = "user" as const
@@ -26,11 +28,7 @@ function result(text: string, details?: unknown, isError = false): ToolResult {
   return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) }
 }
 
-function tldrawPath(target: unknown): string {
-  const path = String(target ?? "")
-  if (!/\.(?:tldraw|tldr)$/i.test(path)) throw new Error("path must be a .tldraw or .tldr file")
-  return path
-}
+const tldrawPath = normalizeTldrawResourcePath
 
 function requireUserFilesystem(value: unknown): "user" {
   if (value !== undefined && value !== USER_FILESYSTEM) throw new Error("only the user filesystem is supported")
@@ -68,9 +66,13 @@ export function validateActions(value: unknown): CanvasAction[] {
     if (action.type === "create" || action.type === "update") {
       if (!exactKeys(action, ["type", "shape"]) || !action.shape || typeof action.shape !== "object" || Array.isArray(action.shape)) throw new Error(`${action.type} requires shape`)
       const shape = action.shape as Record<string, unknown>
-      const allowed = ["id", "type", "x", "y", "w", "h", "text", "color", "fill"]
+      const allowed = action.type === "create"
+        ? ["id", "type", "x", "y", "w", "h", "text", "color", "fill"]
+        : ["id", "x", "y", "w", "h", "text", "color", "fill"]
       if (!exactKeys(shape, allowed) || typeof shape.id !== "string" || !shape.id) throw new Error(`${action.type} shape requires id`)
       if (action.type === "create" && (!SHAPE_TYPES.includes(shape.type as never) || !isFiniteNumber(shape.x) || !isFiniteNumber(shape.y))) throw new Error("create shape requires valid type, x, and y")
+      if (action.type === "create" && shape.type === "text" && (shape.h !== undefined || shape.fill !== undefined)) throw new Error("text create does not accept h or fill")
+      if (action.type === "update" && !Object.keys(shape).some((key) => key !== "id")) throw new Error("update requires at least one mutable property")
       for (const key of ["x", "y", "w", "h"] as const) if (shape[key] !== undefined && !isFiniteNumber(shape[key])) throw new Error(`${key} must be finite`)
       if (shape.text !== undefined && typeof shape.text !== "string") throw new Error("text must be a string")
       if (shape.color !== undefined && !COLORS.includes(shape.color as never)) throw new Error("invalid color")
@@ -120,15 +122,18 @@ export function nativeShapeSummary(json: string): string {
   return JSON.stringify({ total: all.length, returned: shapes.length, truncated: all.length > limit, shapes })
 }
 
-const shapeProperties = {
-  id: { type: "string" }, type: { type: "string", enum: [...SHAPE_TYPES] },
+const mutableShapeProperties = {
   x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" },
   text: { type: "string" }, color: { type: "string", enum: [...COLORS] }, fill: { type: "string", enum: [...FILLS] },
 } as const
+const createShapeProperties = {
+  id: { type: "string" }, type: { type: "string", enum: [...SHAPE_TYPES] }, ...mutableShapeProperties,
+} as const
+const updateShapeProperties = { id: { type: "string" }, ...mutableShapeProperties } as const
 const actionSchema = {
   oneOf: [
-    { type: "object", properties: { type: { const: "create" }, shape: { type: "object", properties: shapeProperties, required: ["id", "type", "x", "y"], additionalProperties: false } }, required: ["type", "shape"], additionalProperties: false },
-    { type: "object", properties: { type: { const: "update" }, shape: { type: "object", properties: shapeProperties, required: ["id"], additionalProperties: false } }, required: ["type", "shape"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "create" }, shape: { type: "object", properties: createShapeProperties, required: ["id", "type", "x", "y"], additionalProperties: false } }, required: ["type", "shape"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "update" }, shape: { type: "object", properties: updateShapeProperties, required: ["id"], anyOf: Object.keys(mutableShapeProperties).map((key) => ({ required: [key] })), additionalProperties: false } }, required: ["type", "shape"], additionalProperties: false },
     { type: "object", properties: { type: { const: "delete" }, ids: { type: "array", minItems: 1, items: { type: "string" } } }, required: ["type", "ids"], additionalProperties: false },
     { type: "object", properties: { type: { const: "clear" } }, required: ["type"], additionalProperties: false },
     { type: "object", properties: { type: { const: "align" }, ids: { type: "array", minItems: 2, items: { type: "string" } }, axis: { enum: ["x", "y"] }, alignment: { enum: ["start", "center", "end"] } }, required: ["type", "ids", "axis", "alignment"], additionalProperties: false },
@@ -142,18 +147,18 @@ export function createCanvasTool(workspace: Workspace, batches: Map<string, Batc
     description: "Create, inspect, or batch-edit a native .tldraw file through its live workspace tab.",
     promptSnippet: "Use one edit action batch per requested canvas change. Only the user filesystem is supported.",
     parameters: {
-      type: "object",
-      properties: {
-        operation: { type: "string", enum: ["create", "read", "edit"] },
-        path: { type: "string" },
-        actions: { type: "array", minItems: 1, maxItems: 100, items: actionSchema },
-      },
-      required: ["operation", "path"], additionalProperties: false,
+      oneOf: [
+        { type: "object", properties: { operation: { const: "create" }, path: { type: "string" } }, required: ["operation", "path"], additionalProperties: false },
+        { type: "object", properties: { operation: { const: "read" }, path: { type: "string" } }, required: ["operation", "path"], additionalProperties: false },
+        { type: "object", properties: { operation: { const: "edit" }, path: { type: "string" }, actions: { type: "array", minItems: 1, maxItems: 100, items: actionSchema } }, required: ["operation", "path", "actions"], additionalProperties: false },
+      ],
     },
     async execute(params, ctx) {
       try {
         const path = tldrawPath(params.path)
         const operation = String(params.operation ?? "")
+        const allowedTopLevel = operation === "edit" ? ["operation", "path", "actions"] : ["operation", "path"]
+        if (!exactKeys(params, allowedTopLevel)) throw new Error(`${operation} received unsupported fields`)
         if (operation === "create") {
           if (!workspace.createBinaryFile) return result("Workspace does not support exclusive file creation.", undefined, true)
           const parent = posix.dirname(path)
@@ -196,6 +201,7 @@ function resourceKey(filesystem: string, path: string) { return `${filesystem}:$
 
 export function createTldrawAgentServerPlugin(options: { workspace: Workspace; bridge?: UiBridge }): WorkspaceServerPlugin {
   const batches = new Map<string, BatchEntry>()
+  const commitRequests = new Map<string, CommitRequest>()
   const owners = new Map<string, { clientId: string; seenAt: number }>()
   const finishBatch = (entry: BatchEntry, state: "committed" | "failed", statusCode: number, body: unknown, tool: ToolResult) => {
     if (entry.timer) clearTimeout(entry.timer)
@@ -261,37 +267,52 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         return { batches: claimed }
       } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
     })
-    app.post<{ Body: { id?: string; path?: string; filesystem?: string; clientId?: string; json?: string; expectedRevision?: { size?: number; mtimeMs?: number } } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
-      const { id, clientId = "", json, expectedRevision } = request.body ?? {}
+    app.post<{ Body: { requestId?: string; batchId?: string; path?: string; filesystem?: string; clientId?: string; json?: string; expectedRevision?: { size?: number; mtimeMs?: number } } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
+      const { requestId = "", batchId, clientId = "", json, expectedRevision } = request.body ?? {}
       try {
         const filesystem = requireUserFilesystem(request.body?.filesystem)
         const path = tldrawPath(request.body?.path)
+        if (!requestId) throw new Error("requestId is required")
         if (typeof json !== "string") throw new Error("json is required")
         parseNative(json)
         if (!expectedRevision || !isFiniteNumber(expectedRevision.size) || !isFiniteNumber(expectedRevision.mtimeMs)) throw new Error("expectedRevision is required")
-        const entry = id ? batches.get(id) : undefined
-        if (entry?.outcome) {
-          if (entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId) return reply.code(409).send({ written: false, error: { message: "batch identity mismatch" } })
-          return reply.code(entry.outcome.statusCode).send(entry.outcome.body)
+        const expected = { size: expectedRevision.size, mtimeMs: expectedRevision.mtimeMs }
+        const fingerprint = JSON.stringify({ batchId: batchId ?? null, clientId, filesystem, path, json, expectedRevision })
+        const replay = commitRequests.get(requestId)
+        if (replay) {
+          if (replay.fingerprint !== fingerprint) return reply.code(409).send({ written: false, error: { message: "commit requestId fingerprint mismatch" } })
+          const outcome = await replay.promise
+          return reply.code(outcome.statusCode).send(outcome.body)
         }
-        const owner = owners.get(resourceKey(filesystem, path))
-        if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return reply.code(409).send({ written: false, error: { message: "canvas owner lease is invalid" } })
-        if (id && (!entry || entry.state !== "claimed" || entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId)) return reply.code(409).send({ written: false, error: { message: "batch claim is invalid or expired" } })
-        if (entry) {
-          if (entry.timer) clearTimeout(entry.timer)
-          entry.state = "committing"
-        }
-        if (!options.workspace.replaceFileIfUnchanged) throw Object.assign(new Error("workspace does not support conditional atomic replacement"), { statusCode: 501 })
-        const stat = await options.workspace.replaceFileIfUnchanged(path, json, { size: expectedRevision.size, mtimeMs: expectedRevision.mtimeMs })
-        const body = { ok: true, written: true, revision: revision(stat) }
-        if (entry) finishBatch(entry, "committed", 200, body, result(`Applied one action batch to ${path} and saved it.`, { path, filesystem, revision: body.revision }))
-        return body
+        const promise = (async (): Promise<CommitOutcome> => {
+          const entry = batchId ? batches.get(batchId) : undefined
+          try {
+            const owner = owners.get(resourceKey(filesystem, path))
+            if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) throw Object.assign(new Error("canvas owner lease is invalid"), { statusCode: 409 })
+            if (batchId && (!entry || entry.state !== "claimed" || entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId)) throw Object.assign(new Error("batch claim is invalid or expired"), { statusCode: 409 })
+            if (entry) {
+              if (entry.timer) clearTimeout(entry.timer)
+              entry.state = "committing"
+            }
+            if (!options.workspace.replaceFileIfUnchanged) throw Object.assign(new Error("workspace does not support conditional atomic replacement"), { statusCode: 501 })
+            const stat = await options.workspace.replaceFileIfUnchanged(path, json, expected)
+            const body = { ok: true, written: true, revision: revision(stat) }
+            if (entry) finishBatch(entry, "committed", 200, body, result(`Applied one action batch to ${path} and saved it.`, { path, filesystem, revision: body.revision }))
+            return { statusCode: 200, body }
+          } catch (error) {
+            const statusCode = Number((error as { statusCode?: number }).statusCode) || 409
+            const body = { written: false, error: { message: error instanceof Error ? error.message : String(error) } }
+            if (entry && entry.state === "committing") finishBatch(entry, "failed", statusCode, body, result(body.error.message, { path: entry.batch.path }, true))
+            return { statusCode, body }
+          }
+        })()
+        commitRequests.set(requestId, { fingerprint, promise })
+        void promise.finally(() => { setTimeout(() => commitRequests.delete(requestId), 60_000).unref?.() })
+        const outcome = await promise
+        return reply.code(outcome.statusCode).send(outcome.body)
       } catch (error) {
-        const statusCode = Number((error as { statusCode?: number }).statusCode) || 409
-        const body = { written: false, error: { message: error instanceof Error ? error.message : String(error) } }
-        const entry = id ? batches.get(id) : undefined
-        if (entry && entry.state === "committing") finishBatch(entry, "failed", statusCode, body, result(body.error.message, { path: entry.batch.path }, true))
-        return reply.code(statusCode).send(body)
+        const statusCode = Number((error as { statusCode?: number }).statusCode) || 400
+        return reply.code(statusCode).send({ written: false, error: { message: error instanceof Error ? error.message : String(error) } })
       }
     })
     app.addHook("onClose", async () => {
@@ -299,7 +320,7 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         if (entry.timer) clearTimeout(entry.timer)
         if (entry.state !== "committed" && entry.state !== "failed") entry.resolve(result("Canvas server stopped.", undefined, true))
       }
-      batches.clear(); owners.clear()
+      batches.clear(); commitRequests.clear(); owners.clear()
     })
   }
   return defineServerPlugin({ id: TLDRAW_AGENT_PLUGIN_ID, label: "tldraw Canvas", routes, agentTools: [createCanvasTool(options.workspace, batches, options.bridge)], systemPrompt: "Use edit_tldraw_canvas for native .tldraw diagrams in the user filesystem." })

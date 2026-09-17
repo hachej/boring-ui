@@ -19,6 +19,8 @@ const nodeWorkspacePathLocks = new Map<string, Promise<void>>()
 export interface CreateNodeWorkspaceOptions {
   runtimeContext?: WorkspaceRuntimeContext
   readonlyPaths?: readonly string[]
+  /** Deterministic provider concurrency probes; production callers omit this. */
+  testHooks?: { beforeConditionalReplaceWrite?: () => void | Promise<void> }
 }
 
 const nodeWorkspaceHostRoots = new WeakMap<Workspace, string>()
@@ -46,18 +48,26 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
   // of `watch()` on this workspace. Codex flagged "one watcher per
   // SSE client" as a fd leak — this avoids it.
   let cachedWatcher: NodeWorkspaceWatcher | null = null
-  const withPathLock = async <T>(path: string, fn: () => Promise<T>): Promise<T> => {
-    const previous = nodeWorkspacePathLocks.get(path) ?? Promise.resolve()
+  // One provider-root critical section covers every mutation and consistent
+  // read issued through any node Workspace adapter for this root. A file-only
+  // lock lets CAS race a parent rename/unlink and move or delete its temporary
+  // replacement out from underneath it. Host/sandbox processes that mutate the
+  // tree without this Workspace API are explicitly out-of-band: they are not
+  // serialized by this process-local lock, and CAS detects them only when their
+  // revision changes before the guarded stat check.
+  const withPathLock = async <T>(_path: string, fn: () => Promise<T>): Promise<T> => {
+    const lockKey = resolve(root)
+    const previous = nodeWorkspacePathLocks.get(lockKey) ?? Promise.resolve()
     let release!: () => void
     const current = new Promise<void>((resolveLock) => { release = resolveLock })
     const queued = previous.then(() => current)
-    nodeWorkspacePathLocks.set(path, queued)
+    nodeWorkspacePathLocks.set(lockKey, queued)
     await previous
     try {
       return await fn()
     } finally {
       release()
-      if (nodeWorkspacePathLocks.get(path) === queued) nodeWorkspacePathLocks.delete(path)
+      if (nodeWorkspacePathLocks.get(lockKey) === queued) nodeWorkspacePathLocks.delete(lockKey)
     }
   }
   const toStat = (fileStat: Awaited<ReturnType<typeof stat>>) => ({
@@ -125,6 +135,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
             details: { expected, current: { size: current.size, mtimeMs: current.mtimeMs } },
           })
         }
+        await opts.testHooks?.beforeConditionalReplaceWrite?.()
         const temporary = `${absPath}.${randomUUID()}.tmp`
         let replacementStat
         try {
@@ -195,7 +206,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
         }
       }
       await assertRealPathWithinWorkspace(root, existingAncestor)
-      await mkdir(absPath, { recursive: opts?.recursive ?? false })
+      await withPathLock(absPath, async () => { await mkdir(absPath, { recursive: opts?.recursive ?? false }) })
     },
     async rename(fromRelPath, toRelPath) {
       await assertWritable(fromRelPath)
@@ -203,14 +214,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       validatePath(root, toRelPath)
       const fromAbsPath = await ensureExistingWorkspacePath(root, fromRelPath)
       const toAbsPath = await ensureWritableWorkspacePath(root, toRelPath)
-      if (fromAbsPath === toAbsPath) {
-        await withPathLock(fromAbsPath, async () => { await rename(fromAbsPath, toAbsPath) })
-      } else {
-        const [first, second] = [fromAbsPath, toAbsPath].sort()
-        await withPathLock(first!, async () => {
-          await withPathLock(second!, async () => { await rename(fromAbsPath, toAbsPath) })
-        })
-      }
+      await withPathLock(fromAbsPath, async () => { await rename(fromAbsPath, toAbsPath) })
       // One synthetic rename instead of the unlink/add event storm
       // chokidar would stream for every file under a moved directory.
       // No watcher yet → no subscribers → nothing to announce.

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { WorkspacePluginClientRequestError } from "@hachej/boring-workspace"
 import type { Editor } from "tldraw"
-import { applyCanvasAction, applyCanvasBatch } from "../panels"
+import { applyCanvasAction, applyCanvasBatch, createSerializedSaveQueue } from "../panels"
 
 function editorFixture() {
   const before = { store: { "shape:before": {} }, schema: {} }
@@ -12,6 +12,8 @@ function editorFixture() {
     run: (fn: () => void) => fn(),
     getCurrentPageShapeIds: () => new Set(["shape:before"]),
     deleteShapes,
+    getInstanceState: () => ({ isReadonly: false }),
+    updateInstanceState: vi.fn(),
   } as unknown as Editor
   return { editor, before, loadStoreSnapshot, deleteShapes }
 }
@@ -27,6 +29,33 @@ describe("applyCanvasBatch", () => {
     } as unknown as Editor
     applyCanvasAction(editor, { type: "update", shape: { id: "a", x: 30, color: "red" } })
     expect(updateShape).toHaveBeenCalledWith({ id: "shape:a", type: "geo", x: 30, props: { color: "red" } })
+  })
+
+  it("serializes overlapping saves and preserves edits arriving during a delayed commit", async () => {
+    let snapshotVersion = 1
+    let release!: () => void
+    const commits: Array<{ json: string; generation: number }> = []
+    const queue = createSerializedSaveQueue({
+      snapshot: async () => `snapshot-${snapshotVersion}`,
+      commit: async (json, generation) => {
+        commits.push({ json, generation })
+        if (generation === 1) await new Promise<void>((resolve) => { release = resolve })
+      },
+    })
+    queue.markDirty()
+    const first = queue.flush()
+    await vi.waitFor(() => expect(commits).toHaveLength(1))
+    snapshotVersion = 2
+    queue.markDirty()
+    const overlapping = queue.flush()
+    expect(overlapping).toBe(first)
+    release()
+    await overlapping
+    expect(commits).toEqual([
+      { json: "snapshot-1", generation: 1 },
+      { json: "snapshot-2", generation: 2 },
+    ])
+    expect(queue.hasDirty()).toBe(false)
   })
 
   it("applies all actions before committing once", async () => {
