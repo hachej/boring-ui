@@ -41,5 +41,7 @@ describe("AppRunnerPane logs section", () => {
     expect(screen.getByTestId("app-runner-logs")).toBeInTheDocument()
     expect(screen.getByTestId("app-runner-metadata")).toHaveTextContent("Kind: app")
     expect(screen.getByTestId("app-runner-metadata")).toHaveTextContent("SHA: abcdef123456")
+    expect(screen.getByTitle("myapp preview")).toHaveAttribute("sandbox", "allow-scripts allow-forms")
+    expect(screen.getByTitle("myapp preview").getAttribute("sandbox")).not.toContain("allow-same-origin")
   })
 })

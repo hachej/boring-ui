@@ -265,6 +265,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
             key={iframeSrc}
             src={iframeSrc}
             title={selectedApp ? `${selectedApp} preview` : "App preview"}
+            sandbox="allow-scripts allow-forms"
             className="min-h-0 w-full flex-1 border-0"
           />
         )}

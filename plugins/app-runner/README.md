@@ -64,6 +64,10 @@ to register a brand-new tool name per app/tool pair at publish time — so
 `call_app_tool` is a deliberate, documented substitute for the literal
 "one agent tool named `app_{app}_{tool}` per manifest entry" ask.
 
+## Browser isolation
+
+Published pages are rendered in an iframe with `sandbox="allow-scripts allow-forms"` and deliberately without `allow-same-origin`. Per the iframe sandbox model, this gives the document a unique opaque origin even though the byte proxy is a host route: its scripts cannot read the parent document, host storage/cookies, or same-origin host APIs. Navigation, popups, downloads and top-level navigation are also not granted. The host proxy sends identity routing headers only; platform bearer and development-secret credentials are never put on an app-serving request.
+
 ## Installation
 
 ```ts
