@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import type { RunContext } from "../../../shared/harness.js"
 import type { AgentTool, RemoteCapabilityDescriptor, ToolExecContext, ToolResult } from "../../../shared/tool.js"
+import { getEnv } from "../../config/env.js"
 
 interface HubCurrent {
   version: number
@@ -78,15 +79,15 @@ export async function buildVerifiedRemoteCapability(
     throw new Error(`remote capability "${value.toolName}" has an invalid address`)
   }
 
-  const baseUrl = (options.baseUrl ?? process.env.BORING_APP_RUNNER_URL ?? "http://127.0.0.1:9877").replace(/\/+$/, "")
+  const baseUrl = (options.baseUrl ?? getEnv("BORING_APP_RUNNER_URL") ?? "http://127.0.0.1:9877").replace(/\/+$/, "")
   const fetchImpl = options.fetchImpl ?? fetch
   const actor = identity(context)
   const headers: Record<string, string> = {
     "X-Boring-User": JSON.stringify(actor),
     "X-Boring-Workspace": value.workspaceId,
   }
-  const token = options.token ?? process.env.BORING_APP_RUNNER_TOKEN
-  const authSecret = options.authSecret ?? process.env.BORING_APP_RUNNER_AUTH_SECRET
+  const token = options.token ?? getEnv("BORING_APP_RUNNER_TOKEN")
+  const authSecret = options.authSecret ?? getEnv("BORING_APP_RUNNER_AUTH_SECRET")
   if (token) headers.Authorization = `Bearer ${token}`
   if (authSecret) headers["X-Boring-App-Auth"] = authSecret
   const path = `/w/${encodeURIComponent(value.workspaceId)}/${encodeURIComponent(appName)}`
