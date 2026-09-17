@@ -23,5 +23,6 @@ export type {
   SandboxHandleInspection,
   SandboxHandleKey,
   SandboxHandleLease,
+  SandboxHandlePublicationState,
   SandboxOperatorEvidence,
 } from './FencedSandboxHandleStore.js'

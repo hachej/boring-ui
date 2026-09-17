@@ -211,6 +211,13 @@
       "when": 1789344000000,
       "tag": "0029_fenced_sandbox_handles",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789347600000,
+      "tag": "0030_fenced_sandbox_handle_state",
+      "breakpoints": true
     }
   ]
 }

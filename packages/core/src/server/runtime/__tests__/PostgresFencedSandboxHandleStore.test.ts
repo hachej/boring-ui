@@ -15,6 +15,7 @@ import {
   PostgresFencedSandboxHandleForceAdmin,
   PostgresFencedSandboxHandleStore,
 } from '../PostgresFencedSandboxHandleStore.js'
+import { pendingTakeoverConformance } from './takeoverConformance.js'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const HOST_SCOPE = `fenced-postgres-${process.pid}`
@@ -122,6 +123,16 @@ beforeEach(async () => {
   await sqlA`DELETE FROM fenced_sandbox_handles WHERE host_scope = ${HOST_SCOPE}`
 })
 
+pendingTakeoverConformance('PostgresFencedSandboxHandleStore', () => {
+  const { a, b } = stores()
+  return {
+    key: KEY,
+    first: a,
+    successor: b,
+    expire: (key) => expireLease(sqlA, key),
+  }
+})
+
 describe('PostgresFencedSandboxHandleStore', () => {
   it('atomically admits one claimer and exposes plaintext/token only from that successful claim', async () => {
     const { a, b, admin } = stores()
@@ -142,12 +153,30 @@ describe('PostgresFencedSandboxHandleStore', () => {
     expect(inspection).not.toHaveProperty('handle')
   })
 
+  it('refuses to publish after failed cleanup debt and carries pending handle through takeover', async () => {
+    const { a, b } = stores()
+    const first = await claim(a, KEY, 'first-process', 100)
+    await a.beginCreate(fence(first))
+    expect(await a.update(fence(first), bytes('pending-handle'), 1)).toBe(true)
+    expect(await a.delete(fence(first), { outcome: 'failed', recordedAt: '2026-09-14T00:00:01.000Z' })).toBe(false)
+    expect(await a.publish(fence(first))).toBe(false)
+
+    await expireLease(sqlA)
+    const takeover = await b.claim({ key: KEY, leaseOwner: 'takeover-process', leaseForMs: 10_000 })
+    if (!takeover || takeover.status !== 'claimed') throw new Error('expected takeover')
+    expect(text(takeover.handle)).toBe('pending-handle')
+    expect(takeover.handleState).toBe('pending-validation')
+    expect(takeover.cleanup?.outcome).toBe('failed')
+    expect(await b.publish(fence(takeover))).toBe(false)
+  })
+
   it('survives restart encrypted at rest and fences stale mutations after expiry takeover', async () => {
     const { a, b } = stores()
     const oldLease = await claim(a, KEY, 'old-process')
     const attempt = await a.beginCreate(fence(oldLease))
     expect(attempt?.status).toBe('started')
     await a.update(fence(oldLease), bytes(SECRET), 7)
+    await a.publish(fence(oldLease))
 
     const [raw] = await sqlA<{
       encrypted_handle: Uint8Array
@@ -157,9 +186,10 @@ describe('PostgresFencedSandboxHandleStore', () => {
       handle_version: number
       create_attempt_idempotency_key: string
       create_attempt_state: string
+      handle_state: string
     }[]>`
       SELECT encrypted_handle, encryption_nonce, encryption_auth_tag, encryption_version,
-             handle_version, create_attempt_idempotency_key, create_attempt_state
+             handle_version, handle_state, create_attempt_idempotency_key, create_attempt_state
       FROM fenced_sandbox_handles
       WHERE host_scope = ${KEY.hostScope}
         AND workspace_id = ${KEY.workspaceId}
@@ -171,6 +201,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
       handle_version: 7,
       create_attempt_idempotency_key: attempt?.idempotencyKey,
       create_attempt_state: 'completed',
+      handle_state: 'published',
     })
     expect(Buffer.from(raw!.encrypted_handle).includes(Buffer.from(SECRET))).toBe(false)
     expect(raw!.encryption_nonce).toHaveLength(12)
@@ -181,7 +212,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     const nextLease = await claim(restarted, KEY, 'new-process')
     expect(nextLease.generation).toBe(oldLease.generation + 1)
     expect(text(nextLease.handle)).toBe(SECRET)
-    await expect(a.renew(fence(oldLease), 10_000)).resolves.toBe(false)
+    await expect(a.renew(fence(oldLease), 10_000)).resolves.toBeNull()
     await expect(a.update(fence(oldLease), bytes('stale-write'), 2)).resolves.toBe(false)
     await expect(a.release(fence(oldLease))).resolves.toBe(false)
     await expect(a.delete(fence(oldLease), {
@@ -241,6 +272,7 @@ describe('PostgresFencedSandboxHandleStore', () => {
     const first = await claim(a, KEY, 'first-process')
     await a.beginCreate(fence(first))
     await a.update(fence(first), bytes(SECRET), 1)
+    await a.publish(fence(first))
     await expireLease(sqlA)
     const second = await claim(b, KEY, 'second-process')
     expect(text(second.handle)).toBe(SECRET)
@@ -254,11 +286,59 @@ describe('PostgresFencedSandboxHandleStore', () => {
     expect((await admin.listAudit(KEY)).map((entry) => entry.auditId)).not.toContain('stale-gen-one-delete')
   })
 
+  it.each(['failed', 'ambiguous'] as const)('preserves %s pending-delete debt across takeover for fenced successor cleanup', async (outcome) => {
+    const { a, b, admin } = stores()
+    const pending = await claim(a, KEY, 'deleting-owner')
+    await a.beginCreate(fence(pending))
+    expect(await a.update(fence(pending), bytes('pending-provider-session'), 1)).toBe(true)
+    expect(await a.delete(fence(pending), {
+      outcome,
+      detail: `${outcome} provider delete receipt`,
+      recordedAt: '2026-09-14T00:00:05.000Z',
+    })).toBe(false)
+
+    await expireLease(sqlA)
+    const successor = await claim(b, KEY, 'successor-owner')
+    expect(successor.generation).toBe(2)
+    expect(text(successor.handle)).toBe('pending-provider-session')
+    expect(successor.handleState).toBe('pending-validation')
+    expect(successor.cleanup).toMatchObject({ outcome, detail: `${outcome} provider delete receipt` })
+
+    await expect(a.delete(fence(pending), {
+      outcome: 'succeeded',
+      detail: 'stale owner delayed delete must not tombstone successor generation',
+      recordedAt: '2026-09-14T00:00:06.000Z',
+    })).resolves.toBe(false)
+    await expect(b.publish(fence(successor))).resolves.toBe(false)
+    await expect(b.beginCreate(fence(successor))).rejects.toThrow('sandbox handle already exists')
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 2,
+      hasHandle: true,
+      handleState: 'pending-validation',
+      cleanup: { outcome },
+      tombstoned: false,
+    })
+
+    expect(await b.delete(fence(successor), {
+      outcome: 'succeeded',
+      detail: 'successor retried provider delete under current fence',
+      recordedAt: '2026-09-14T00:00:07.000Z',
+    })).toBe(true)
+    expect(await admin.inspect(KEY)).toMatchObject({
+      generation: 2,
+      hasHandle: false,
+      handleState: null,
+      cleanup: { outcome: 'succeeded' },
+      tombstoned: true,
+    })
+  })
+
   it('tombstones deletion, preserves receipt/generation, and rejects old ciphertext replay after recreation', async () => {
     const { a, b, admin } = stores()
     const lease = await claim(a)
     await a.beginCreate(fence(lease))
     await a.update(fence(lease), bytes(SECRET), 4)
+    await a.publish(fence(lease))
     const [old] = await sqlA<{
       encrypted_handle: Uint8Array
       encryption_nonce: Uint8Array
@@ -301,7 +381,8 @@ describe('PostgresFencedSandboxHandleStore', () => {
           encryption_nonce = ${old!.encryption_nonce},
           encryption_auth_tag = ${old!.encryption_auth_tag},
           encryption_version = ${old!.encryption_version},
-          handle_version = ${old!.handle_version}
+          handle_version = ${old!.handle_version},
+          handle_state = 'published'
       WHERE host_scope = ${KEY.hostScope}
         AND workspace_id = ${KEY.workspaceId}
         AND provider = ${KEY.provider}

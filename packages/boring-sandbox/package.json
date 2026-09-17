@@ -61,6 +61,11 @@
       "boring-source": "./src/providers/remote-worker/index.ts",
       "types": "./dist/providers/remote-worker/index.d.ts",
       "import": "./dist/providers/remote-worker/index.js"
+    },
+    "./test/provider-pair-conformance": {
+      "boring-source": "./src/test/providerPairConformance.ts",
+      "types": "./dist/test/providerPairConformance.d.ts",
+      "import": "./dist/test/providerPairConformance.js"
     }
   },
   "scripts": {

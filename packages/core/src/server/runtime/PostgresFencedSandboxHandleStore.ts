@@ -136,6 +136,7 @@ function inspectRow(row: HandleRow): SandboxHandleInspection {
     leaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null,
     hasHandle: row.encryptedHandle !== null,
     handleVersion: row.handleVersion,
+    handleState: row.handleState as SandboxHandleInspection['handleState'],
     cleanup: cleanupFromRow(row),
     tombstoned: row.tombstonedAt !== null,
     createAttempt: row.createAttemptState && row.createAttemptIdempotencyKey && row.createAttemptStartedAt
@@ -189,6 +190,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
         ? this.cipher.decrypt(row, row.generation, row.handleVersion!, payload)
         : null,
       handleVersion: row.handleVersion,
+      handleState: row.handleState as SandboxHandleLease['handleState'],
       cleanup: cleanupFromRow(row),
     }
   }
@@ -217,12 +219,18 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
       const generation = row.generation + 1
       if (!Number.isSafeInteger(generation)) throw new Error('sandbox handle generation exhausted')
       const priorPayload = encryptedPayload(row)
-      const nextPayload = priorPayload
+      if (priorPayload !== null && row.handleState === null) {
+        throw new Error('fenced sandbox handle has incomplete publication state')
+      }
+      const priorClaimablePayload = row.handleState === 'published' || row.handleState === 'pending-validation'
+        ? priorPayload
+        : null
+      const nextPayload = priorClaimablePayload
         ? this.cipher.encrypt(
             input.key,
             generation,
             row.handleVersion!,
-            this.cipher.decrypt(input.key, row.generation, row.handleVersion!, priorPayload),
+            this.cipher.decrypt(input.key, row.generation, row.handleVersion!, priorClaimablePayload),
           )
         : null
       const leaseToken = randomUUID()
@@ -239,6 +247,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
           encryptionAuthTag: nextPayload?.authTag ?? null,
           encryptionVersion: nextPayload?.encryptionVersion ?? null,
           handleVersion: nextPayload ? row.handleVersion : null,
+          handleState: nextPayload ? row.handleState : null,
           ...(recreated
             ? {
                 createAttemptIdempotencyKey: null,
@@ -306,7 +315,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
     })
   }
 
-  async renew(fence: SandboxHandleFence, leaseForMs: number): Promise<boolean> {
+  async renew(fence: SandboxHandleFence, leaseForMs: number): Promise<string | null> {
     assertLeaseForMs(leaseForMs)
     const rows = await this.db
       .update(fencedSandboxHandles)
@@ -315,8 +324,8 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
         updatedAt: sql`clock_timestamp()`,
       })
       .where(fencePredicate(fence))
-      .returning({ generation: fencedSandboxHandles.generation })
-    return rows.length === 1
+      .returning({ leaseExpiresAt: fencedSandboxHandles.leaseExpiresAt })
+    return rows[0]?.leaseExpiresAt?.toISOString() ?? null
   }
 
   async update(
@@ -334,6 +343,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
         encryptionAuthTag: payload.authTag,
         encryptionVersion: payload.encryptionVersion,
         handleVersion,
+        handleState: 'pending-validation',
         createAttemptState: sql`CASE WHEN ${fencedSandboxHandles.createAttemptState} = 'started' THEN 'completed' ELSE ${fencedSandboxHandles.createAttemptState} END`,
         createAttemptResolvedAt: sql`CASE WHEN ${fencedSandboxHandles.createAttemptState} = 'started' THEN clock_timestamp() ELSE ${fencedSandboxHandles.createAttemptResolvedAt} END`,
         updatedAt: sql`clock_timestamp()`,
@@ -344,6 +354,22 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
           sql`${fencedSandboxHandles.encryptedHandle} IS NOT NULL`,
           eq(fencedSandboxHandles.createAttemptState, 'started'),
         ),
+      ))
+      .returning({ generation: fencedSandboxHandles.generation })
+    return rows.length === 1
+  }
+
+  async publish(fence: SandboxHandleFence): Promise<boolean> {
+    const rows = await this.db
+      .update(fencedSandboxHandles)
+      .set({
+        handleState: 'published',
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(and(
+        fencePredicate(fence),
+        eq(fencedSandboxHandles.handleState, 'pending-validation'),
+        isNull(fencedSandboxHandles.cleanupOutcome),
       ))
       .returning({ generation: fencedSandboxHandles.generation })
     return rows.length === 1
@@ -386,6 +412,7 @@ export class PostgresFencedSandboxHandleStore implements FencedSandboxHandleStor
         encryptionAuthTag: null,
         encryptionVersion: null,
         handleVersion: null,
+        handleState: null,
         createAttemptIdempotencyKey: null,
         createAttemptState: null,
         createAttemptStartedAt: null,
@@ -499,6 +526,7 @@ export class PostgresFencedSandboxHandleAdmin implements FencedSandboxHandleAdmi
             encryptionAuthTag: null,
             encryptionVersion: null,
             handleVersion: null,
+            handleState: null,
             createAttemptIdempotencyKey: null,
             createAttemptState: null,
             createAttemptStartedAt: null,
@@ -621,6 +649,7 @@ export class PostgresFencedSandboxHandleForceAdmin implements FencedSandboxHandl
             encryptionAuthTag: null,
             encryptionVersion: null,
             handleVersion: null,
+            handleState: null,
             createAttemptIdempotencyKey: null,
             createAttemptState: null,
             createAttemptStartedAt: null,

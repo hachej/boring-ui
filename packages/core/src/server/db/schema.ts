@@ -274,6 +274,7 @@ export const fencedSandboxHandles = pgTable(
     encryptionAuthTag: bytea('encryption_auth_tag'),
     encryptionVersion: integer('encryption_version'),
     handleVersion: integer('handle_version'),
+    handleState: text('handle_state'),
     createAttemptIdempotencyKey: uuid('create_attempt_idempotency_key'),
     createAttemptState: text('create_attempt_state'),
     createAttemptStartedAt: timestamp('create_attempt_started_at', { withTimezone: true }),
@@ -296,7 +297,7 @@ export const fencedSandboxHandles = pgTable(
     ),
     check(
       'fenced_sandbox_handles_encryption_check',
-      sql`(${table.encryptedHandle} IS NULL AND ${table.encryptionNonce} IS NULL AND ${table.encryptionAuthTag} IS NULL AND ${table.encryptionVersion} IS NULL AND ${table.handleVersion} IS NULL) OR (${table.encryptedHandle} IS NOT NULL AND ${table.encryptionNonce} IS NOT NULL AND ${table.encryptionAuthTag} IS NOT NULL AND ${table.encryptionVersion} IS NOT NULL AND ${table.handleVersion} IS NOT NULL)`,
+      sql`(${table.encryptedHandle} IS NULL AND ${table.encryptionNonce} IS NULL AND ${table.encryptionAuthTag} IS NULL AND ${table.encryptionVersion} IS NULL AND ${table.handleVersion} IS NULL AND ${table.handleState} IS NULL) OR (${table.encryptedHandle} IS NOT NULL AND ${table.encryptionNonce} IS NOT NULL AND ${table.encryptionAuthTag} IS NOT NULL AND ${table.encryptionVersion} IS NOT NULL AND ${table.handleVersion} IS NOT NULL AND ${table.handleState} IN ('pending-validation', 'published'))`,
     ),
     check(
       'fenced_sandbox_handles_create_attempt_check',
