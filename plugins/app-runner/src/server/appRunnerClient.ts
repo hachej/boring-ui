@@ -178,9 +178,14 @@ export class AppRunnerClient {
     init: Pick<RequestInit, "method" | "body" | "headers"> = {},
     signal?: AbortSignal,
   ): Promise<Response> {
-    return this.fetchWithDeadline(`${this.baseUrl}${path}`, {
-      ...init,
-      headers: { ...Object.fromEntries(new Headers(init.headers).entries()), ...this.servingHeaders(identity, workspaceId) },
+    return this.withDeadline(async (deadlineSignal) => {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        ...init,
+        headers: { ...Object.fromEntries(new Headers(init.headers).entries()), ...this.servingHeaders(identity, workspaceId) },
+        signal: deadlineSignal,
+      })
+      const body = [204, 205, 304].includes(response.status) ? null : await response.arrayBuffer()
+      return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers })
     }, signal)
   }
 
@@ -198,27 +203,30 @@ export class AppRunnerClient {
   ): Promise<T> {
     const headers = this.authHeaders(identity, workspaceId)
     if (body !== undefined) headers["Content-Type"] = "application/json"
-    const response = await this.fetchWithDeadline(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+    return this.withDeadline(async (deadlineSignal) => {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: deadlineSignal,
+      })
+      if (!response.ok) {
+        const text = await response.text().catch(() => "")
+        throw new AppRunnerHttpError(response.status, text || `app runner request failed with status ${response.status}`)
+      }
+      if (response.status === 204) return undefined as T
+      return (await response.json()) as T
     }, signal)
-    if (!response.ok) {
-      const text = await response.text().catch(() => "")
-      throw new AppRunnerHttpError(response.status, text || `app runner request failed with status ${response.status}`)
-    }
-    if (response.status === 204) return undefined as T
-    return (await response.json()) as T
   }
 
-  private async fetchWithDeadline(url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
+  private async withDeadline<T>(operation: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
     signal?.throwIfAborted()
     const controller = new AbortController()
     const abort = () => controller.abort(signal?.reason)
     signal?.addEventListener("abort", abort, { once: true })
     const timeout = setTimeout(() => controller.abort(new Error(`app runner request timed out after ${this.timeoutMs}ms`)), this.timeoutMs)
     try {
-      return await this.fetchImpl(url, { ...init, signal: controller.signal })
+      return await operation(controller.signal)
     } finally {
       clearTimeout(timeout)
       signal?.removeEventListener("abort", abort)
