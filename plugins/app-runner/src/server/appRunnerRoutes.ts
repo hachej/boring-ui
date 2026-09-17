@@ -54,63 +54,6 @@ async function authorizeAppName(
 }
 
 /**
- * Proxies an iframe request to the runner's public app/preview endpoints
- * with the required auth headers — an iframe `src` can't set custom
- * headers, so this keeps the identity/secret headers server-side while
- * still letting the front just point an <iframe> at a same-origin URL.
- */
-function applySandboxCors(request: FastifyRequest, reply: FastifyReply): void {
-  if (request.headers.origin !== "null") return
-  reply.header("access-control-allow-origin", "null")
-  reply.header("vary", "Origin")
-  reply.header("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
-  reply.header("access-control-allow-headers", "Content-Type, Accept")
-}
-
-function confinedWildcardPath(rest: string): string | undefined {
-  const segments = rest.split("/")
-  if (segments.some((segment) => segment === "." || segment === ".." || segment.includes("\\"))) return undefined
-  return segments.map(encodeURIComponent).join("/")
-}
-
-async function proxyToRunner(
-  opts: AppRunnerRoutesOptions,
-  request: FastifyRequest,
-  reply: FastifyReply,
-  runnerPath: string,
-): Promise<void> {
-  applySandboxCors(request, reply)
-  if (request.method === "OPTIONS") {
-    reply.code(204).send()
-    return
-  }
-  const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
-  const identity = identityFromRequest(request)
-  const query = request.raw.url?.includes("?") ? `?${request.raw.url.split("?")[1]}` : ""
-  const incomingType = request.headers["content-type"]
-  const incomingAccept = request.headers.accept
-  const headers: Record<string, string> = {
-    ...(typeof incomingType === "string" ? { "content-type": incomingType } : {}),
-    ...(typeof incomingAccept === "string" ? { accept: incomingAccept } : {}),
-  }
-  const body = request.body === undefined || request.method === "GET" || request.method === "HEAD"
-    ? undefined
-    : Buffer.isBuffer(request.body) || typeof request.body === "string"
-      ? request.body
-      : JSON.stringify(request.body)
-  const upstream = await opts.client.fetchServing(`${runnerPath}${query}`, identity, workspaceId, {
-    method: request.method,
-    headers,
-    ...(body === undefined ? {} : { body: body as BodyInit }),
-  })
-  reply.code(upstream.status)
-  const contentType = upstream.headers.get("content-type")
-  if (contentType) reply.header("content-type", contentType)
-  if (request.method === "HEAD") return void reply.send()
-  reply.send(Buffer.from(await upstream.arrayBuffer()))
-}
-
-/**
  * Thin HTTP routes over the server-side app runner client + store. The
  * front never talks to the runner directly for authenticated operations —
  * only these routes (and the `/open/*` iframe proxy) hold
@@ -124,11 +67,11 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       record.workspaceId === workspaceId && (record.kind !== "profile" || record.ownerUserId === identity.id),
     )
     return {
-      apps: apps.map((record) => ({
+      apps: await Promise.all(apps.map(async (record) => ({
         ...record,
         appId: opts.client.appId(workspaceId, record.appName),
-        appUrl: `/api/v1/plugins/app-runner/open/${encodeURIComponent(record.appName)}/`,
-      })),
+        appUrl: await opts.client.signedServingUrl(workspaceId, record.appName, identity),
+      }))),
       workspaceId,
     }
   })
@@ -139,13 +82,14 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
     if (reply.sent) return
     try {
       const versions = await opts.client.listVersions(workspaceId, request.params.appName, identityFromRequest(request))
+      const identity = identityFromRequest(request)
       return {
-        versions: versions.map((entry) => ({
+        versions: await Promise.all(versions.map(async (entry) => ({
           ...entry,
-          previewUrl: `/api/v1/plugins/app-runner/preview/${encodeURIComponent(request.params.appName)}/${entry.version}/`,
-        })),
+          previewUrl: await opts.client.signedServingUrl(workspaceId, request.params.appName, identity, entry.version),
+        }))),
         appId: opts.client.appId(workspaceId, request.params.appName),
-        appUrl: `/api/v1/plugins/app-runner/open/${encodeURIComponent(request.params.appName)}/`,
+        appUrl: await opts.client.signedServingUrl(workspaceId, request.params.appName, identity),
       }
     } catch (error) {
       return sendAppRunnerError(reply, error)
@@ -234,33 +178,6 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       return sendAppRunnerError(reply, error)
     }
   })
-
-  app.all<{ Params: { appName: string; "*": string } }>("/api/v1/plugins/app-runner/open/:appName/*", async (request, reply) => {
-    const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
-    await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
-    if (reply.sent) return
-    const rest = confinedWildcardPath(request.params["*"] ?? "")
-    if (rest === undefined) {
-      reply.code(403).send({ error: "forbidden", message: "serving path escapes the authorized app" })
-      return
-    }
-    await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/${rest}`)
-  })
-
-  app.all<{ Params: { appName: string; version: string; "*": string } }>(
-    "/api/v1/plugins/app-runner/preview/:appName/:version/*",
-    async (request, reply) => {
-      const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
-      await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
-      if (reply.sent) return
-      const rest = confinedWildcardPath(request.params["*"] ?? "")
-      if (rest === undefined) {
-        reply.code(403).send({ error: "forbidden", message: "preview path escapes the authorized app" })
-        return
-      }
-      await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/preview/${encodeURIComponent(request.params.version)}/${rest}`)
-    },
-  )
 
   done()
 }

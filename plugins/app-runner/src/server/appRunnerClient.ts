@@ -68,8 +68,23 @@ export class AppRunnerClient {
     return `${this.baseUrl}${this.appPath(workspaceId, appName)}/`
   }
 
-  publicPreviewUrl(workspaceId: string, appName: string, version: number): string {
-    return `${this.baseUrl}${this.appPath(workspaceId, appName)}/preview/${version}/`
+  async signedServingUrl(
+    workspaceId: string,
+    appName: string,
+    identity: AppRunnerIdentity,
+    version?: number,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const query = version === undefined ? "" : `?version=${version}`
+    const response = await this.request<{ url: string }>(
+      "POST",
+      `${this.appPath(workspaceId, appName)}/signed-url${query}`,
+      identity,
+      workspaceId,
+      undefined,
+      signal,
+    )
+    return response.url
   }
 
   async publish(
