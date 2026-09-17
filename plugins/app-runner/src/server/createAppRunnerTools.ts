@@ -1,5 +1,6 @@
 import type { AgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace/shared"
 import { APP_RUNNER_DEFAULT_DIR } from "../shared/constants"
+import { sanitizeAppName } from "../shared/sanitize"
 import type { AppRunnerIdentity, AppRunnerToolManifest } from "../shared/types"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
@@ -35,7 +36,12 @@ function requireAppName(params: Record<string, unknown>): string | undefined {
   const value = params.appName
   if (typeof value !== "string" || !value.trim()) return undefined
   const appName = value.trim()
-  return isProfileAppName(appName) || appName === "profile" ? undefined : appName
+  if (isProfileAppName(appName) || appName === "profile") return undefined
+  try {
+    return sanitizeAppName(appName)
+  } catch {
+    return undefined
+  }
 }
 
 function invalidAppName(toolName: string): ToolResult {

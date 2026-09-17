@@ -92,6 +92,18 @@ describe("createAppRunnerTools", () => {
     expect(result.content[0]?.text).toContain("413")
   })
 
+  it("rejects noncanonical app ids before committing or dispatching", async () => {
+    const fetchImpl = vi.fn()
+    const result = await createPublishAppTool({
+      workspaceRoot,
+      client: new AppRunnerClient({ fetchImpl }),
+      store: new MemoryAppRunnerStore(),
+    }).execute({ appName: "foo_bar" }, ctx())
+
+    expect(result.isError).toBe(true)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it("reserves per-user profile addresses from every generic app tool", async () => {
     const fetchImpl = vi.fn()
     const tools = createAppRunnerTools({

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { basename } from "node:path"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
+import { sanitizeAppName } from "../shared/sanitize"
 import type { AppRunnerRecord } from "../shared/types"
 import type { AppRunnerStore } from "./appRunnerStore"
 import { isProfileAppName } from "./profileAddress"
@@ -15,7 +16,7 @@ export interface AppRunnerRoutesOptions {
 
 function workspaceIdFromRequest(request: FastifyRequest, workspaceRoot: string): string {
   const trusted = (request as FastifyRequest & { workspaceContext?: { workspaceId?: string } }).workspaceContext?.workspaceId?.trim()
-  return trusted || basename(workspaceRoot) || "default"
+  return sanitizeAppName(trusted || basename(workspaceRoot) || "default")
 }
 
 function sendAppRunnerError(reply: FastifyReply, error: unknown): FastifyReply {
@@ -33,6 +34,12 @@ async function authorizeAppName(
   workspaceId: string,
   appName: string,
 ): Promise<AppRunnerRecord | undefined> {
+  try {
+    sanitizeAppName(appName)
+  } catch (error) {
+    reply.code(400).send({ error: "invalid_app_name", message: error instanceof Error ? error.message : String(error) })
+    return undefined
+  }
   const record = (await opts.store.listApps()).find((entry) =>
     entry.workspaceId === workspaceId && entry.appName === appName,
   )

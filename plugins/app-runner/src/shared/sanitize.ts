@@ -1,19 +1,17 @@
+const CANONICAL_RUNNER_ID = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+
 /**
- * Sanitizes an app name to the `[a-z0-9-]` alphabet the app runner service
- * expects, matching the runner's `{workspaceId}--{sanitizedAppName}` app id
- * scheme. Lowercases, replaces disallowed characters with `-`, collapses
- * repeats, and trims leading/trailing dashes.
+ * Validates the hub's canonical path alphabet without rewriting identity.
+ * Lossy normalization would let distinct workspace/app ids address one cell.
  */
 export function sanitizeAppName(name: string): string {
-  const lowered = name.trim().toLowerCase()
-  const replaced = lowered.replace(/[^a-z0-9-]+/g, "-")
-  const collapsed = replaced.replace(/-+/g, "-")
-  return collapsed.replace(/^-+|-+$/g, "")
+  if (!CANONICAL_RUNNER_ID.test(name) || name.includes("--")) {
+    throw new Error(`runner id "${name}" must already be canonical lowercase [a-z0-9-] without repeated or edge dashes`)
+  }
+  return name
 }
 
-/** Builds the app runner service's `{app}` path segment for a workspace + app name. */
+/** Builds the app runner service's `{workspace}--{app}` internal id. */
 export function appRunnerAppId(workspaceId: string, appName: string): string {
-  const sanitizedWorkspace = sanitizeAppName(workspaceId)
-  const sanitizedApp = sanitizeAppName(appName)
-  return `${sanitizedWorkspace}--${sanitizedApp}`
+  return `${sanitizeAppName(workspaceId)}--${sanitizeAppName(appName)}`
 }

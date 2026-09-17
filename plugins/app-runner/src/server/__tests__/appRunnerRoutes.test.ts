@@ -183,6 +183,15 @@ describe("appRunnerRoutes", () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  it("rejects noncanonical app names without addressing a lossy hub path", async () => {
+    const fetchImpl = vi.fn(async () => new Response("should not dispatch"))
+    const app = await buildApp(fetchImpl as unknown as typeof fetch)
+
+    const response = await app.inject({ method: "GET", url: "/api/v1/plugins/app-runner/open/foo_bar/" })
+    expect(response.statusCode).toBe(400)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it("GET /apps/:appName/logs surfaces runner errors with their status", async () => {
     const fetchImpl = vi.fn(async () => new Response("unknown app", { status: 404 }))
     const app = await buildApp(fetchImpl as unknown as typeof fetch)
