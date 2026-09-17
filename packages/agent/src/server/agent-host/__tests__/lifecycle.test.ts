@@ -193,6 +193,7 @@ describe('Agent Host lifecycle', () => {
         await releasePrepare.promise
         return await base.prepare(key, digest, acceptedWork)
       },
+      heartbeat: (key) => base.heartbeat(key),
       markAdmissionRetryable: (key) => base.markAdmissionRetryable(key),
       acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
       beginEffect: (key) => base.beginEffect(key),

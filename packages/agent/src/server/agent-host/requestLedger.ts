@@ -1,5 +1,6 @@
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
 import { cloneFrozenAcceptedWork, projectAgentRequestRunId } from './acceptedWork'
+import { canonicalDigest, canonicalJson, canonicalJsonValue } from './canonical'
 import type {
   AcceptedWorkContext,
   AgentRequestFailure,
@@ -41,6 +42,7 @@ function safeBase(record: AgentRequestLedgerRecord) {
     key: record.key,
     acceptedWork: record.acceptedWork,
     digest: record.digest,
+    ...(record.queuedRequest === undefined ? {} : { queuedRequest: record.queuedRequest }),
     updatedAt: Date.now(),
   }
 }
@@ -61,19 +63,24 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     key: AgentRequestKey,
     digest: string,
     acceptedWork: AcceptedWorkContext,
+    queuedRequest?: import('../../shared/index').JsonValue,
   ): Promise<AgentRequestLedgerPrepareResult> {
     validateTarget(key)
     const frozenContext = cloneFrozenAcceptedWork(acceptedWork)
+    const canonicalRequest = queuedRequest === undefined ? undefined : canonicalJsonValue(queuedRequest)
+    if (canonicalRequest !== undefined && canonicalDigest(canonicalRequest) !== digest) conflict()
     if (projectAgentRequestRunId(key) !== frozenContext.identity.runId) conflict()
     const id = keyString(key)
     const existing = this.records.get(id)
     if (existing) {
       if (existing.digest !== digest) conflict()
       if (existing.state === 'pending-admission' && existing.retryable) {
+        if (canonicalJson(existing.acceptedWork as unknown as import('../../shared/index').JsonValue) !== canonicalJson(frozenContext as unknown as import('../../shared/index').JsonValue)) conflict()
         const record: AgentRequestLedgerRecord = {
           key: existing.key,
           acceptedWork: existing.acceptedWork,
           digest,
+          ...(existing.queuedRequest === undefined ? {} : { queuedRequest: existing.queuedRequest }),
           state: 'pending-admission',
           updatedAt: Date.now(),
         }
@@ -86,11 +93,17 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
       key: structuredClone(key),
       acceptedWork: frozenContext,
       digest,
+      ...(canonicalRequest === undefined ? {} : { queuedRequest: canonicalRequest }),
       state: 'pending-admission',
       updatedAt: Date.now(),
     }
     this.records.set(id, record)
     return { ownership: 'created', record }
+  }
+
+  async heartbeat(key: AgentRequestKey): Promise<void> {
+    const record = this.records.get(keyString(key))
+    if (!record || !['pending-admission', 'admission-accepted', 'in-flight'].includes(record.state)) invalidTransition(record ?? ({ state: 'missing' } as never), 'heartbeat')
   }
 
   async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
@@ -115,6 +128,8 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   }
 
   async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
+    const digest = canonicalDigest({ state: 'rejected', failure } as unknown as import('../../shared/index').JsonValue)
+    if (this.sameSettlement(key, digest)) return
     this.transition(key, 'reject', (record) => {
       const allowed = failure.kind === 'gateway'
         ? record.state === 'pending-admission'
@@ -122,14 +137,17 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
           || record.state === 'in-flight'
         : record.state === 'in-flight'
       if (!allowed) invalidTransition(record, 'reject')
-      return { ...safeBase(record), state: 'rejected', failure }
+      return { ...safeBase(record), state: 'rejected', failure, settlementDigest: digest }
     })
   }
 
   async complete(key: AgentRequestKey, receipt: import('../../shared/index').JsonValue): Promise<void> {
+    const canonicalReceipt = canonicalJsonValue(receipt)
+    const digest = canonicalDigest({ state: 'completed', receipt: canonicalReceipt })
+    if (this.sameSettlement(key, digest)) return
     this.transition(key, 'complete', (record) => {
       if (record.state !== 'in-flight') invalidTransition(record, 'complete')
-      return { ...safeBase(record), state: 'completed', receipt }
+      return { ...safeBase(record), state: 'completed', receipt: canonicalReceipt, settlementDigest: digest }
     })
   }
 
@@ -137,14 +155,23 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     key: AgentRequestKey,
     error: import('../../shared/index').AgentGatewayErrorDTO,
   ): Promise<void> {
+    const digest = canonicalDigest({ state: 'outcome-unknown', error } as unknown as import('../../shared/index').JsonValue)
+    if (this.sameSettlement(key, digest)) return
     this.transition(key, 'mark outcome unknown', (record) => {
       if (record.state !== 'in-flight') invalidTransition(record, 'mark outcome unknown')
-      return { ...safeBase(record), state: 'outcome-unknown', error }
+      return { ...safeBase(record), state: 'outcome-unknown', error, settlementDigest: digest }
     })
   }
 
   async read(key: AgentRequestKey): Promise<AgentRequestLedgerRecord | undefined> {
     return this.records.get(keyString(key))
+  }
+
+  private sameSettlement(key: AgentRequestKey, digest: string): boolean {
+    const current = this.records.get(keyString(key))
+    if (!current || !['rejected', 'completed', 'outcome-unknown'].includes(current.state)) return false
+    if ((current as Extract<AgentRequestLedgerRecord, { state: 'rejected' | 'completed' | 'outcome-unknown' }>).settlementDigest === digest) return true
+    conflict()
   }
 
   private transition(

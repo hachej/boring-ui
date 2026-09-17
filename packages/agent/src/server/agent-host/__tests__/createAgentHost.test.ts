@@ -173,6 +173,7 @@ describe('createAgentHost', () => {
     const customLedger: AgentRequestLedger = {
       durability: 'durable-transactional',
       prepare: (...args) => backingLedger.prepare(...args),
+      heartbeat: (...args) => backingLedger.heartbeat(...args),
       markAdmissionRetryable: (...args) => backingLedger.markAdmissionRetryable(...args),
       acceptAdmission: (...args) => backingLedger.acceptAdmission(...args),
       beginEffect: (...args) => backingLedger.beginEffect(...args),
@@ -217,6 +218,14 @@ describe('createAgentHost', () => {
     })
     const ref = await first.gateway.createSession(input)
     await first.host.close()
+
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const inspectQueued = new DatabaseSync(join(sessionRoot, '.agent-request-ledger.sqlite'))
+    const persisted = inspectQueued.prepare(`SELECT record_json FROM agent_request_ledger WHERE state = 'completed'`).get() as { record_json: string }
+    expect(JSON.parse(persisted.record_json)).toMatchObject({
+      queuedRequest: { agentTypeId: 'alpha', title: null, resumeSessionId: null },
+    })
+    inspectQueued.close()
 
     const restarted = await createAgentHost({
       ...options(sessionRoot),

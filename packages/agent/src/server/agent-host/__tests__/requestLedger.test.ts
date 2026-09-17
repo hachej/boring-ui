@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import type { DatabaseSync } from 'node:sqlite'
@@ -10,6 +11,7 @@ import { build } from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import { createGatewayAcceptedWorkContext, projectAgentRequestRunId } from '../acceptedWork'
+import { canonicalDigest, canonicalJson } from '../canonical'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { MIN_REQUEST_RETENTION_MS, SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import { AGENT_GATEWAY_EFFECTS, type AgentRequestKey, type AgentRequestLedger } from '../types'
@@ -65,6 +67,45 @@ function runClaimWorker(
       reject(error)
     })
   })
+}
+
+interface ProcessClaim {
+  child: ChildProcessWithoutNullStreams
+  ready: Promise<void>
+  result: Promise<ParallelClaimResult>
+}
+
+function runProcessClaim(workerPath: string, input: Record<string, unknown>): ProcessClaim {
+  const child = spawn(process.execPath, [workerPath], {
+    env: { ...process.env, REQUEST_LEDGER_PROCESS_INPUT: JSON.stringify(input) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  let buffer = ''
+  let readyResolve!: () => void
+  let resultResolve!: (result: ParallelClaimResult) => void
+  let reject!: (error: Error) => void
+  const ready = new Promise<void>((resolve, rejectReady) => { readyResolve = resolve; reject = rejectReady })
+  const result = new Promise<ParallelClaimResult>((resolve, rejectResult) => {
+    resultResolve = resolve
+    const previous = reject
+    reject = (error) => { previous(error); rejectResult(error) }
+  })
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk: string) => {
+    buffer += chunk
+    while (buffer.includes('\n')) {
+      const index = buffer.indexOf('\n')
+      const line = buffer.slice(0, index)
+      buffer = buffer.slice(index + 1)
+      if (line === 'READY') readyResolve()
+      else if (line) resultResolve(JSON.parse(line) as ParallelClaimResult)
+    }
+  })
+  child.once('error', reject)
+  child.once('exit', (code, signal) => {
+    if (code && code !== 0) reject(new Error(`claim child exited ${code}: ${signal ?? ''}`))
+  })
+  return { child, ready, result }
 }
 
 async function runParallelClaims(dbPath: string): Promise<[ParallelClaimResult, ParallelClaimResult]> {
@@ -295,6 +336,142 @@ describe.each<{ name: string; create(): AgentRequestLedger }>([
 })
 
 describe('SqliteAgentRequestLedger', () => {
+  it('stores immutable canonical gateway request material and rejects non-JSON numbers', async () => {
+    const path = join(tmpdir(), `canonical-request-ledger-${randomUUID()}.sqlite`)
+    const ledger = new SqliteAgentRequestLedger(path)
+    try {
+      const request = { z: [3, { b: true, a: 'secret' }], a: 1 }
+      const digest = canonicalDigest(request)
+      const created = await ledger.prepare(key, digest, acceptedFor(key), request)
+      expect(created.record.queuedRequest).toEqual({ a: 1, z: [3, { a: 'secret', b: true }] })
+      expect(Object.isFrozen(created.record.queuedRequest)).toBe(true)
+      expect(canonicalJson(created.record.queuedRequest!)).toBe(canonicalJson(request))
+      await expect(ledger.prepare(key, digest, acceptedFor(key), { a: 1, z: [3, { a: 'secret', b: true }] }))
+        .resolves.toMatchObject({ ownership: 'existing' })
+      const nanKey = { ...key, requestId: 'nan' }
+      await expect(ledger.prepare(nanKey, 'digest', acceptedFor(nanKey), { value: Number.NaN } as any))
+        .rejects.toThrow('non-finite')
+    } finally {
+      ledger.close()
+    }
+  })
+
+  it('enforces one canonical RequestKey per derived RunId in the database', async () => {
+    const path = join(tmpdir(), `duplicate-run-${randomUUID()}.sqlite`)
+    const ledger = new SqliteAgentRequestLedger(path)
+    await ledger.prepare(key, 'digest-a', acceptedFor(key))
+    ledger.close()
+    const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const database = new SqliteDatabaseSync(path)
+    const duplicateKey = { ...key, requestId: 'different-storage-key' }
+    const duplicateRecord = { key: duplicateKey, acceptedWork: acceptedFor(duplicateKey), digest: 'digest-b', state: 'pending-admission', updatedAt: 0 }
+    expect(() => database.prepare(`
+      INSERT INTO agent_request_ledger(request_key, run_id, digest, state, record_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('different-storage-key', projectAgentRequestRunId(key), 'digest-b', 'pending-admission', JSON.stringify(duplicateRecord), 0)).toThrow(/UNIQUE/)
+    database.close()
+  })
+
+  it('rejects SQLite memory mode when advertising durable transactional storage', () => {
+    expect(() => new SqliteAgentRequestLedger(':memory:')).toThrow('filesystem SQLite path')
+  })
+
+  it('requires fresh matching admission before reclaim after revocation or seat change', async () => {
+    const path = join(tmpdir(), `fresh-readmission-${randomUUID()}.sqlite`)
+    const first = new SqliteAgentRequestLedger(path)
+    const seatA = createGatewayAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha', seat: { seatId: 'seat-a' } })
+    await first.prepare(key, 'digest-a', seatA)
+    await first.markAdmissionRetryable(key)
+    first.close()
+    const resumed = new SqliteAgentRequestLedger(path)
+    try {
+      const seatB = createGatewayAcceptedWorkContext({ key, admittedAgentTypeId: 'alpha', seat: { seatId: 'seat-b' } })
+      await expect(resumed.prepare(key, 'digest-a', seatB)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      await expect(resumed.prepare(key, 'digest-a', seatA)).resolves.toMatchObject({ ownership: 'reclaimed' })
+    } finally { resumed.close() }
+  })
+
+  it('leases claims to one handle, heartbeats them, and recovers expired in-flight work as outcome unknown', async () => {
+    const path = join(tmpdir(), `lease-ledger-${randomUUID()}.sqlite`)
+    let now = 0
+    const owner = new SqliteAgentRequestLedger(path, { now: () => now, claimLeaseMs: 100 })
+    await owner.prepare(key, 'digest-a', acceptedFor(key))
+    await owner.acceptAdmission(key, 'admitted')
+    await owner.beginEffect(key)
+    const observer = new SqliteAgentRequestLedger(path, { now: () => now, claimLeaseMs: 100 })
+    await expect(observer.read(key)).resolves.toMatchObject({ state: 'in-flight' })
+    await expect(observer.complete(key, { ok: true })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+    now = 90
+    await owner.heartbeat(key)
+    now = 150
+    await expect(observer.read(key)).resolves.toMatchObject({ state: 'in-flight' })
+    now = 191
+    await expect(observer.read(key)).resolves.toMatchObject({
+      state: 'outcome-unknown', error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
+    })
+    owner.close(); observer.close()
+  })
+
+  it('makes terminal settlement digest-idempotent and alarms on a conflicting result', async () => {
+    const ledger = new SqliteAgentRequestLedger(join(tmpdir(), `settlement-${randomUUID()}.sqlite`))
+    await ledger.prepare(key, 'digest-a', acceptedFor(key))
+    await ledger.acceptAdmission(key, 'admitted')
+    await ledger.beginEffect(key)
+    await ledger.complete(key, { b: 2, a: 1 })
+    await expect(ledger.complete(key, { a: 1, b: 2 })).resolves.toBeUndefined()
+    await expect(ledger.complete(key, { a: 2, b: 2 })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+    ledger.close()
+  })
+
+  it('atomically claims across real child processes released by a coordinator barrier', async () => {
+    const path = join(tmpdir(), `process-claim-${randomUUID()}.sqlite`)
+    const bundle = join(tmpdir(), `request-ledger-process-${randomUUID()}.mjs`)
+    const request = { operation: 'create' }
+    const digest = canonicalDigest(request)
+    await build({ entryPoints: [claimWorkerPath], outfile: bundle, bundle: true, platform: 'node', format: 'esm', target: 'node22' })
+    const setup = new SqliteAgentRequestLedger(path)
+    await setup.prepare(key, digest, acceptedFor(key), request)
+    await setup.markAdmissionRetryable(key)
+    setup.close()
+    try {
+      const input = { dbPath: path, key, digest, request, claimLeaseMs: 2_000, mode: 'complete' }
+      const left = runProcessClaim(bundle, input)
+      const right = runProcessClaim(bundle, input)
+      await Promise.all([left.ready, right.ready])
+      left.child.stdin.write('go\n'); right.child.stdin.write('go\n')
+      const results = await Promise.all([left.result, right.result])
+      expect(results.filter(({ effectStarted }) => effectStarted)).toHaveLength(1)
+      const inspect = new SqliteAgentRequestLedger(path)
+      await expect(inspect.read(key)).resolves.toMatchObject({ state: 'completed' })
+      inspect.close()
+    } finally {
+      rmSync(bundle, { force: true })
+    }
+  }, 20_000)
+
+  it('recovers a SIGKILLed child claim only after lease expiry', async () => {
+    const path = join(tmpdir(), `process-kill-${randomUUID()}.sqlite`)
+    const bundle = join(tmpdir(), `request-ledger-process-${randomUUID()}.mjs`)
+    const request = { operation: 'create-after-kill' }
+    const digest = canonicalDigest(request)
+    await build({ entryPoints: [claimWorkerPath], outfile: bundle, bundle: true, platform: 'node', format: 'esm', target: 'node22' })
+    const child = runProcessClaim(bundle, { dbPath: path, key, digest, request, claimLeaseMs: 500, mode: 'hold' })
+    try {
+      await child.ready
+      child.child.stdin.write('go\n')
+      await expect(child.result).resolves.toMatchObject({ effectStarted: true })
+      const observer = new SqliteAgentRequestLedger(path, { claimLeaseMs: 500 })
+      await expect(observer.read(key)).resolves.toMatchObject({ state: 'in-flight' })
+      child.child.kill('SIGKILL')
+      await new Promise((resolve) => setTimeout(resolve, 550))
+      await expect(observer.read(key)).resolves.toMatchObject({ state: 'outcome-unknown' })
+      observer.close()
+    } finally {
+      if (!child.child.killed) child.child.kill('SIGKILL')
+      rmSync(bundle, { force: true })
+    }
+  }, 20_000)
+
   it('migrates legacy active rows and raw-key tombstones for every canonical effect across reopen', async () => {
     const path = join(tmpdir(), `legacy-accepted-work-${randomUUID()}.sqlite`)
     const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
@@ -360,13 +537,12 @@ describe('SqliteAgentRequestLedger', () => {
     expect(reclaimed[0]?.effectStarted).toBe(true)
     const losers = retried.filter(({ claim }) => claim.ownership === 'existing')
     expect(losers).toHaveLength(1)
-    expect(losers[0]?.claim.record.state).toMatch(/^(pending-admission|admission-accepted|in-flight)$/)
+    expect(losers[0]?.claim.record.state).toMatch(/^(pending-admission|admission-accepted|in-flight|completed)$/)
     expect(losers[0]?.effectStarted).toBe(false)
     expect(retried.filter(({ effectStarted }) => effectStarted)).toHaveLength(1)
 
     const owner = new SqliteAgentRequestLedger(path)
-    await expect(owner.read(key)).resolves.toMatchObject({ state: 'in-flight' })
-    await owner.complete(key, { accepted: true })
+    await expect(owner.read(key)).resolves.toMatchObject({ state: 'completed', receipt: { accepted: true } })
     owner.close()
 
     const reopened = new SqliteAgentRequestLedger(path)
@@ -462,11 +638,14 @@ describe('SqliteAgentRequestLedger', () => {
     await ledger.prepare(keyed('expired-trigger'), 'digest-expired', acceptedFor(keyed('expired-trigger')))
     expect(count('agent_request_ledger')).toBe(5)
     expect(count('agent_request_tombstones')).toBe(3)
-    for (const state of ['pending-admission', 'admission-accepted', 'in-flight'] as const) {
+    for (const state of ['pending-admission', 'admission-accepted'] as const) {
       await expect(ledger.prepare(keyed(state), `digest-${state}`, acceptedFor(keyed(state)))).resolves.toMatchObject({
-        ownership: 'existing', record: { state },
+        ownership: 'reclaimed', record: { state },
       })
     }
+    await expect(ledger.prepare(keyed('in-flight'), 'digest-in-flight', acceptedFor(keyed('in-flight')))).resolves.toMatchObject({
+      ownership: 'existing', record: { state: 'outcome-unknown' },
+    })
     await expect(ledger.prepare(keyed('completed'), 'digest-completed', acceptedFor(keyed('completed')))).resolves.toMatchObject({
       ownership: 'existing',
       record: {
@@ -488,6 +667,35 @@ describe('SqliteAgentRequestLedger', () => {
     rmSync(path, { force: true })
     rmSync(`${path}-wal`, { force: true })
     rmSync(`${path}-shm`, { force: true })
+  })
+
+  it('prunes canonical queued payload secrets while retaining request and settlement idempotency digests', async () => {
+    const path = join(tmpdir(), `sensitive-retention-${randomUUID()}.sqlite`)
+    let now = 0
+    const request = { prompt: 'sensitive prompt material' }
+    const digest = canonicalDigest(request)
+    const ledger = new SqliteAgentRequestLedger(path, { retentionMs: 1, now: () => now })
+    await ledger.prepare(key, digest, acceptedFor(key), request)
+    await ledger.acceptAdmission(key, 'admitted')
+    await ledger.beginEffect(key)
+    await ledger.complete(key, { ok: true })
+    now = MIN_REQUEST_RETENTION_MS + 1
+    const trigger = { ...key, requestId: 'sensitive-prune-trigger' }
+    await ledger.prepare(trigger, 'trigger-digest', acceptedFor(trigger))
+    const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const inspect = new SqliteDatabaseSync(path)
+    expect(inspect.prepare('SELECT count(*) AS count FROM agent_request_ledger WHERE request_key != ?').get(JSON.stringify([
+      trigger.workspaceScopeId, trigger.authSubjectId, trigger.operation, trigger.target.kind,
+      trigger.target.kind === 'agent' ? trigger.target.agentTypeId : [trigger.target.ref.agentTypeId, trigger.target.ref.sessionId], trigger.requestId,
+    ]))).toEqual({ count: 0 })
+    const tombstone = inspect.prepare('SELECT digest, key_json, settlement_digest FROM agent_request_tombstones').get() as { digest: string; key_json: string; settlement_digest: string }
+    expect(tombstone.digest).toBe(digest)
+    expect(tombstone.settlement_digest).toBeTruthy()
+    expect(tombstone.key_json).not.toContain('sensitive prompt material')
+    inspect.close()
+    await expect(ledger.prepare(key, digest, acceptedFor(key), request)).resolves.toMatchObject({ ownership: 'existing' })
+    await expect(ledger.prepare(key, canonicalDigest({ prompt: 'different' }), acceptedFor(key), { prompt: 'different' })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+    ledger.close()
   })
 
   it('validates the effect target before claiming durable ownership', async () => {

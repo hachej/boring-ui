@@ -109,6 +109,8 @@ export interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
   readonly acceptedWork: AcceptedWorkContext
   readonly digest: string
+  /** Canonical, immutable request material retained until terminal payload pruning. */
+  readonly queuedRequest?: JsonValue
   readonly updatedAt: number
 }
 
@@ -127,25 +129,33 @@ export type AgentRequestLedgerRecord =
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'rejected'
       readonly failure: AgentRequestFailure
+      readonly settlementDigest?: string
     })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'completed'
       readonly receipt: JsonValue
+      readonly settlementDigest?: string
     })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'outcome-unknown'
       readonly error: AgentGatewayErrorDTO
+      readonly settlementDigest?: string
     })
 
 export interface AgentRequestLedger {
   /** Direct production projections require transactional durable ownership. */
   readonly durability: 'durable-transactional' | 'in-memory'
-  /** Atomically create or reclaim explicitly retryable admission across all store users. */
+  /** Durable implementations expose their claim lease so consumers can heartbeat safely. */
+  readonly claimLeaseMs?: number
+  /** Atomically create or reclaim admission using only the canonical RequestKey/RunId identity. */
   prepare(
     key: AgentRequestKey,
     digest: string,
     acceptedWork: AcceptedWorkContext,
+    queuedRequest?: JsonValue,
   ): Promise<AgentRequestLedgerPrepareResult>
+  /** Extend only this ledger handle's live claim. */
+  heartbeat(key: AgentRequestKey): Promise<void>
   /** Release only a pending claim whose owner has stopped before any effect. */
   markAdmissionRetryable(key: AgentRequestKey): Promise<void>
   /** All transitions are compare-and-swap against the exact allowed prior state. */

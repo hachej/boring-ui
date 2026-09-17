@@ -10,38 +10,87 @@ interface ClaimWorkerInput {
   barrier: SharedArrayBuffer
 }
 
+interface ClaimProcessInput {
+  dbPath: string
+  key: AgentRequestKey
+  digest: string
+  request: import('../../../../shared/index').JsonValue
+  claimLeaseMs: number
+  mode: 'complete' | 'hold'
+}
+
 type ClaimWorkerMessage =
   | { claim: AgentRequestLedgerPrepareResult; effectStarted: boolean }
   | { error: { name: string; message: string; stack?: string } }
 
-const input = workerData as ClaimWorkerInput
-const sync = new Int32Array(input.barrier)
-const ledger = new SqliteAgentRequestLedger(input.dbPath)
-let message: ClaimWorkerMessage
+function accepted(key: AgentRequestKey) {
+  return createGatewayAcceptedWorkContext({
+    key,
+    admittedAgentTypeId: key.target.kind === 'agent' ? key.target.agentTypeId : key.target.ref.agentTypeId,
+  })
+}
 
-try {
-  Atomics.add(sync, 0, 1)
-  Atomics.notify(sync, 0)
-  Atomics.wait(sync, 1, 0)
+async function workerMain(input: ClaimWorkerInput): Promise<void> {
+  const sync = new Int32Array(input.barrier)
+  const ledger = new SqliteAgentRequestLedger(input.dbPath)
+  let message: ClaimWorkerMessage
+  try {
+    Atomics.add(sync, 0, 1)
+    Atomics.notify(sync, 0)
+    Atomics.wait(sync, 1, 0)
+    const claim = await ledger.prepare(input.key, input.digest, accepted(input.key))
+    let effectStarted = false
+    if (claim.ownership === 'reclaimed') {
+      await ledger.acceptAdmission(input.key, 'parallel-admission')
+      await ledger.beginEffect(input.key)
+      effectStarted = true
+      await ledger.complete(input.key, { accepted: true })
+    }
+    message = { claim, effectStarted }
+  } catch (error) {
+    message = {
+      error: error instanceof Error
+        ? { name: error.name, message: error.message, stack: error.stack }
+        : { name: 'Error', message: String(error) },
+    }
+  } finally {
+    ledger.close()
+  }
+  parentPort?.postMessage(message)
+}
 
-  const claim = await ledger.prepare(input.key, input.digest, createGatewayAcceptedWorkContext({ key: input.key, admittedAgentTypeId: input.key.target.kind === 'agent' ? input.key.target.agentTypeId : input.key.target.ref.agentTypeId }))
+async function nextStdinLine(): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    process.stdin.once('data', () => resolve())
+    process.stdin.once('error', reject)
+    process.stdin.resume()
+  })
+}
+
+async function processMain(input: ClaimProcessInput): Promise<void> {
+  const ledger = new SqliteAgentRequestLedger(input.dbPath, { claimLeaseMs: input.claimLeaseMs })
+  process.stdout.write('READY\n')
+  await nextStdinLine()
+  const claim = await ledger.prepare(input.key, input.digest, accepted(input.key), input.request)
   let effectStarted = false
-  if (claim.ownership === 'reclaimed') {
-    await ledger.acceptAdmission(input.key, 'parallel-admission')
+  if (claim.ownership === 'created' || claim.ownership === 'reclaimed') {
+    await ledger.acceptAdmission(input.key, 'process-admission')
     await ledger.beginEffect(input.key)
     effectStarted = true
+    if (input.mode === 'complete') await ledger.complete(input.key, { accepted: true })
   }
-  message = { claim, effectStarted }
-} catch (error) {
-  message = {
-    error: error instanceof Error
-      ? { name: error.name, message: error.message, stack: error.stack }
-      : { name: 'Error', message: String(error) },
+  process.stdout.write(`${JSON.stringify({ claim, effectStarted })}\n`)
+  if (input.mode === 'hold' && effectStarted) {
+    setInterval(() => {}, 60_000)
+    return
   }
-} finally {
   ledger.close()
 }
 
-// Report only after closing the worker's connection, so the coordinator's
-// replay check cannot race connection teardown or terminate a held lock.
-parentPort?.postMessage(message)
+if (parentPort) {
+  await workerMain(workerData as ClaimWorkerInput)
+} else {
+  const encoded = process.env.REQUEST_LEDGER_PROCESS_INPUT
+  if (!encoded) throw new Error('REQUEST_LEDGER_PROCESS_INPUT is required')
+  await processMain(JSON.parse(encoded) as ClaimProcessInput)
+}

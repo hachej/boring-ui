@@ -857,7 +857,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         ? { seat: { seatId: admissionAccess.seatId } }
         : {}),
     })
-    const prepared = await this.runtime.ledger.prepare(key, digest, acceptedWork)
+    const prepared = await this.runtime.ledger.prepare(key, digest, acceptedWork, payload)
     const reauthorizeOrReject = async () => {
       try {
         await reauthorize()
@@ -897,7 +897,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         if (classify) await this.applyClassification(key, classify)
 
         const admitted = await this.runtime.ledger.read(key)
-        let admissionReceipt: string | undefined
+        let admissionReceipt = admitted?.state === 'admission-accepted' && prepared.ownership === 'reclaimed'
+          ? admitted.admissionReceipt
+          : undefined
         if (admitted?.state === 'pending-admission') {
           await reauthorizeOrReject()
           const admission = await this.runtime.effectAdmission.admit({ key, digest, scope: claim, operation, target })
@@ -916,10 +918,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
           if (current?.state === 'completed') return this.replayReceipt(current.receipt, duplicateReceipt)
           if (current?.state === 'rejected') throw this.failure(current.failure)
           if (current?.state === 'outcome-unknown') throw gatewayError(current.error)
-          if (current?.state === 'admission-accepted' || current?.state === 'in-flight') {
+          if (current?.state === 'in-flight'
+            || (current?.state === 'admission-accepted' && prepared.ownership !== 'reclaimed')) {
             throw requestInProgress()
           }
-          if (current?.state !== 'pending-admission') {
+          if (current?.state !== 'pending-admission' && current?.state !== 'admission-accepted') {
             throw new AgentGatewayError(
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
               'request ledger record was unavailable',
@@ -954,7 +957,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
               await rejectRetryablePreflightFailure(this.runtime.ledger, key)
             }
           }
-          await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
+          if (current.state === 'pending-admission') {
+            await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
+          }
           await this.runtime.ledger.beginEffect(key)
           let actionResult: Promise<unknown>
           try {
@@ -968,6 +973,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
             throw unknown
           }
           let receipt: JsonValue
+          const heartbeat = setInterval(() => {
+            void this.runtime.ledger.heartbeat(key).catch(() => {})
+          }, Math.max(10, Math.floor((this.runtime.ledger.claimLeaseMs ?? 30_000) / 3)))
+          heartbeat.unref?.()
           try {
             receipt = await actionResult as JsonValue
           } catch (error) {
@@ -982,6 +991,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
             )
             await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
             throw unknown
+          } finally {
+            clearInterval(heartbeat)
           }
           // Drain is an explicit Host generation fence: a late provider result
           // cannot publish, and the stable closure rejection is safe to replay.

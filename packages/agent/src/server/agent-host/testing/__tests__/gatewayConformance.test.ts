@@ -79,6 +79,13 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
     return { ownership: 'created', record }
   }
 
+  async heartbeat(key: AgentRequestKey): Promise<void> {
+    const current = this.records.get(keyIdentity(key))
+    if (!current || !['pending-admission', 'admission-accepted', 'in-flight'].includes(current.state)) {
+      throw new Error('invalid ledger heartbeat')
+    }
+  }
+
   async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
     const current = this.requireState(key, 'pending-admission')
     if (current.retryable) throw new Error('admission is already retryable')
