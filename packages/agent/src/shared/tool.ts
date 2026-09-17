@@ -9,6 +9,9 @@ export type ToolReadinessRequirement =
 
 export interface AgentTool {
   name: string
+  /** Required on tools admitted through the dynamic remote-capability seam. */
+  executionKind?: 'remote'
+  provenance?: Readonly<{ kind: string; address: string; version: number; sha: string }>
   description: string
   /** Optional one-line prompt entry. Pi-built tools should preserve pi's snippet verbatim. */
   promptSnippet?: string

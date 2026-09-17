@@ -32,6 +32,19 @@ export interface ToolResult {
  * factories. Kept agent-runtime-neutral so only the app integration layer
  * needs to import @hachej/boring-agent.
  */
+export interface PublishedToolProvenance {
+  readonly kind: string
+  readonly address: string
+  readonly version: number
+  readonly sha: string
+}
+
+/** A hot-mounted capability whose implementation dispatches outside the host process. */
+export interface ProvenancedRemoteAgentTool extends AgentTool {
+  readonly executionKind: "remote"
+  readonly provenance: Readonly<PublishedToolProvenance>
+}
+
 export interface AgentTool {
   name: string
   description: string

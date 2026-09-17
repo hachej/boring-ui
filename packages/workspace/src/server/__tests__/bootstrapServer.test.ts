@@ -14,6 +14,14 @@ function makeAgentTool(name = "tool") {
   }
 }
 
+function makeRemoteAgentTool(name = "tool") {
+  return {
+    ...makeAgentTool(name),
+    executionKind: "remote" as const,
+    provenance: Object.freeze({ kind: "app", address: "ws/app", version: 1, sha: "abc123" }),
+  }
+}
+
 describe("bootstrapServer", () => {
   it("returns empty results when no plugins or defaults", () => {
     const result = bootstrapServer({})
@@ -50,7 +58,7 @@ describe("bootstrapServer", () => {
   })
 
   it("preserves trusted dynamic tool and prompt providers for per-turn projection", async () => {
-    const agentToolsDynamic = vi.fn(async () => [makeAgentTool("published_tool")])
+    const agentToolsDynamic = vi.fn(async () => [makeRemoteAgentTool("published_tool")])
     const systemPromptDynamic = vi.fn(async () => "published profile")
     const result = bootstrapServer({ plugins: [{ id: "hub", agentToolsDynamic, systemPromptDynamic }] })
 

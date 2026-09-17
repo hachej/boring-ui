@@ -1,4 +1,4 @@
-import type { AgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace/shared"
+import type { ProvenancedRemoteAgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace/shared"
 import type { AppRunnerCurrent, AppRunnerRecord, PublishedToolProvenance } from "../shared/types"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
@@ -22,8 +22,8 @@ export interface PublishedToolsProviderOptions {
 
 type DynamicContext = Pick<ToolExecContext, "abortSignal" | "sessionId" | "userId" | "userEmail" | "userEmailVerified" | "workspaceId" | "requestId">
 
-export function createPublishedToolsProvider(options: PublishedToolsProviderOptions): (context?: DynamicContext) => Promise<readonly AgentTool[]> {
-  const cache = new Map<string, readonly AgentTool[]>()
+export function createPublishedToolsProvider(options: PublishedToolsProviderOptions): (context?: DynamicContext) => Promise<readonly ProvenancedRemoteAgentTool[]> {
+  const cache = new Map<string, readonly ProvenancedRemoteAgentTool[]>()
 
   return async (context) => {
     const workspaceId = context?.workspaceId?.trim()
@@ -45,19 +45,20 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
       if ((isProfile && current.kind !== "profile") || (!isProfile && current.kind !== "app")) return []
       // A published tool without immutable source provenance is not mountable.
       if (!current.sha) return []
-      const provenance: PublishedToolProvenance = {
+      const provenance: PublishedToolProvenance = Object.freeze({
         kind: current.kind,
         address: `${workspaceId}/${record.appName}`,
         version: current.version,
         sha: current.sha,
-      }
+      })
       if (current.version !== record.version || current.sha !== record.sha || current.kind !== record.kind) {
         await options.store.upsertApp(recordFromCurrent(record, current))
       }
       const cacheKey = `${workspaceId}:${isProfile ? identity.id : "shared"}:${record.appName}:${current.version}:${current.sha ?? ""}`
       const cached = cache.get(cacheKey)
       if (cached) return cached
-      const tools = current.manifest.tools.map((entry): AgentTool & { provenance: PublishedToolProvenance } => ({
+      const tools = current.manifest.tools.map((entry): ProvenancedRemoteAgentTool => ({
+        executionKind: "remote",
         name: `${isProfile ? "profile" : `app_${toolSegment(record.appName)}`}_${toolSegment(entry.name)}`,
         description: entry.description || `Call ${entry.name} in published ${current.kind} ${record.appName}.`,
         parameters: entry.input ?? { type: "object", properties: {}, additionalProperties: false },

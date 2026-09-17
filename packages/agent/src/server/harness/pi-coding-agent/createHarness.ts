@@ -181,6 +181,18 @@ function buildDynamicPromptExtension(
   }
 }
 
+function assertRemoteDynamicTool(tool: AgentTool): void {
+  const provenance = tool.provenance
+  if (tool.executionKind !== "remote" || !provenance
+    || typeof provenance.kind !== "string" || !provenance.kind
+    || typeof provenance.address !== "string" || !provenance.address
+    || !Number.isSafeInteger(provenance.version) || provenance.version < 1
+    || typeof provenance.sha !== "string" || !provenance.sha
+    || !Object.isFrozen(provenance)) {
+    throw new Error(`dynamic agent tool "${tool.name}" must be a remote capability with frozen kind/address/version/sha provenance`)
+  }
+}
+
 function buildDynamicToolsExtension(
   source: (ctx?: RunContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>,
   sessionId: string,
@@ -193,6 +205,7 @@ function buildDynamicToolsExtension(
       const ctx = getRunContext()
       if (!ctx) return
       const tools = [...await source(ctx)]
+      tools.forEach(assertRemoteDynamicTool)
       const adapted = adaptToolsForPi(tools, sessionId, telemetry, getRunContext)
       const names = adapted.map((tool) => tool.name)
       const nextNames = new Set(names)

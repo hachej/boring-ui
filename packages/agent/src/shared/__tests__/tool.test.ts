@@ -5,6 +5,8 @@ import type { AgentTool, JSONSchema, ToolExecContext, ToolReadinessRequirement, 
 test('AgentTool contract', () => {
   expectTypeOf<AgentTool>().toEqualTypeOf<{
     name: string
+    executionKind?: 'remote'
+    provenance?: Readonly<{ kind: string; address: string; version: number; sha: string }>
     description: string
     promptSnippet?: string
     readinessRequirements?: ToolReadinessRequirement[]

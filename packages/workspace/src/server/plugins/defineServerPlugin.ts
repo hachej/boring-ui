@@ -1,7 +1,7 @@
 import type { PluginSkillSource, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { WorkspaceBridgeOperationDefinition } from "../../shared/workspace-bridge-rpc"
-import type { AgentTool } from "../../shared/types/agent-tool"
+import type { AgentTool, ProvenancedRemoteAgentTool } from "../../shared/types/agent-tool"
 import { validateWorkspaceBridgeOperationDefinition, type WorkspaceBridgeHandler } from "../workspaceBridge/registry"
 
 import {
@@ -95,8 +95,8 @@ export interface WorkspaceServerPlugin {
   /** Installed package resources admitted by this trusted server plugin. */
   packageResources?: WorkspacePackageResourceContribution[]
   agentTools?: AgentTool[]
-  /** Trusted host provider refreshed before each model turn. It may narrow or replace its own tools, never host authority. */
-  agentToolsDynamic?: (context?: WorkspaceAgentDynamicContext) => readonly AgentTool[] | Promise<readonly AgentTool[]>
+  /** Published, provenance-bound remote capabilities refreshed before each model turn. */
+  agentToolsDynamic?: (context?: WorkspaceAgentDynamicContext) => readonly ProvenancedRemoteAgentTool[] | Promise<readonly ProvenancedRemoteAgentTool[]>
   /** Trusted boot-time factory invoked only when this preflighted plugin is selected for an Agent. */
   agentToolFactory?: (context: WorkspaceAgentToolFactoryContext) => readonly AgentTool[]
   /** Joined cleanup invoked only after a selected Agent session is successfully deleted. */

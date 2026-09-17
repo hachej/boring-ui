@@ -83,17 +83,25 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       && (record.appName === permittedProfile || (!isProfileAppName(record.appName) && record.kind !== "profile")),
     )
     return {
-      apps: await Promise.all(apps.map(async (record) => ({
-        ...record,
-        appId: opts.client.appId(workspaceId, record.appName),
-        appUrl: await opts.client.signedServingUrl(workspaceId, record.appName, identity),
-        toolProvenance: (record.toolManifest?.tools ?? []).flatMap(() => record.sha ? [{
-          kind: record.kind,
+      apps: await Promise.all(apps.map(async (record) => {
+        const mounted = await opts.client.current(workspaceId, record.appName, identity)
+        const provenance = mounted.sha ? Object.freeze({
+          kind: mounted.kind,
           address: `${workspaceId}/${record.appName}`,
-          version: record.version,
-          sha: record.sha,
-        }] : []),
-      }))),
+          version: mounted.version,
+          sha: mounted.sha,
+        }) : undefined
+        return {
+          ...record,
+          kind: mounted.kind,
+          version: mounted.version,
+          sha: mounted.sha,
+          toolManifest: mounted.manifest,
+          appId: opts.client.appId(workspaceId, record.appName),
+          appUrl: await opts.client.signedServingUrl(workspaceId, record.appName, identity),
+          toolProvenance: mounted.manifest.tools.flatMap(() => provenance ? [provenance] : []),
+        }
+      })),
       workspaceId,
     }
   })
