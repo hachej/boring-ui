@@ -28,11 +28,15 @@ On each publish the plugin creates or updates the app folder's private Git repos
 - `BORING_APP_RUNNER_TOKEN` — bearer token for runner control-plane and tool calls.
 - `BORING_APP_RUNNER_AUTH_SECRET` — optional development forward-auth secret sent as `X-App-Runner-Auth` on control-plane and tool calls.
 
-The front end never receives these credentials. App-serving proxy requests never carry the bearer token. In development they carry `X-App-Runner-Auth` only as far as the trusted hub authentication boundary; the hub strips that secret and the raw identity routing headers before dispatching to app code, then injects only the app-facing `x-app-user` header.
+The front end never receives these credentials. The host asks the authenticated API to mint a three-minute HMAC-signed app URL. The browser navigates directly to the separate app-serving origin, which derives `x-app-user` from that token and rejects unsigned or expired requests. No host cookie, bearer token, development secret, or client identity header is sent to that origin.
 
 ## Browser isolation
 
-Published pages are rendered in an iframe with `sandbox="allow-scripts allow-forms"` and deliberately without `allow-same-origin`. The document therefore receives a unique opaque origin even though the byte proxy is a host route: its scripts cannot read the parent document, host storage/cookies, or same-origin host APIs. Navigation, popups, downloads, and top-level navigation are not granted.
+Published pages are served from an origin distinct from the host/API and rendered in an iframe with `sandbox="allow-scripts allow-forms"`, deliberately without `allow-same-origin`. The origin boundary prevents a directly opened app from reading host APIs; the sandbox remains defence in depth for embedded pages.
+
+## Dynamic-tool provenance
+
+Published app/profile tools are the ratified isolated-composition tier. Every mounted tool is bound to and carries its kind, workspace/address, version, and Git SHA. Calls log that provenance; the Apps panel displays it. Tools without a SHA are not mounted, stale versions are rejected, names are platform-namespaced, and workspace/profile ownership is checked again at execution.
 
 ## Installation
 

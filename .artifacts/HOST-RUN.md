@@ -117,15 +117,28 @@ Verification summary:
 - Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 38 checks, including the activate-between-advertise-and-call race.
 - `git diff --check` in both repositories: **PASS**.
 
-## Owner ruling needed
+## Owner rulings (2026-09-17)
 
-- Dynamic published tools change model-visible composition between turns.
-- The ratified architecture freezes composition and requires capability admission.
-- The current app-runner seam therefore conflicts with that frozen ruling.
-- Blocker 10 is explicitly outside this fix and has not been redesigned here.
-- An owner ruling plus ratified-plan update, or an admitted static broker design, is required.
-- Second open question (round-2 blockers 2/6): choose a distinct serving origin and define iframe authentication that works on authenticated standalone hosts; neither serving architecture nor auth was changed in this fix.
+1. App HTML is served from a distinct origin. The authenticated API remains on `:9877`; development app serving is a credential-stripping listener on `:9878`. The host mints three-minute HMAC-signed current/preview URLs and no longer exposes `/open/*` or `/preview/*` HTML proxies. The hub derives `x-app-user` only from the signed claims. Production uses `*.apps.<domain>`, one origin per app, with a wildcard certificate and Caddy in front while the API stays on a separate host.
+2. Published, versioned capabilities executed in isolated cells may change model-visible composition. The trusted in-process tier remains frozen. Every mounted published tool is version-bound and carries/logs kind, address, version, and SHA; missing provenance prevents mounting. The Apps panel exposes the provenance. The ruling is ratified in `docs/plans/long-term/ratified/AMENDMENT-2026-09-17-untrusted-composition.md` and follows boring-hub `docs/PLATFORM.md` for the runner boundary.
 
 ## Mandatory abstraction review
 
-**BLOCKED** at `433ee0dda..e08d2690f` by the independent reviewer. Although dependency direction remains valid, the new per-turn dynamic native-tool and profile-prompt seam conflicts with the ratified architecture's frozen model-visible composition and capability-admission rules. Additional blockers: dynamic tool collision/ownership is not enforced, the public plugin lifecycle docs are stale, and real-harness boundary/collision/grant/session-identity tests are missing. This cannot receive an abstraction PASS without an explicit owner ruling plus ratified-plan update, or redesign around an admitted static broker/activation generation.
+**OWNER-RATIFIED.** The isolated published-tool seam is now the narrow exemption documented by the 2026-09-17 amendment. Trusted in-process composition and capability admission are unchanged. The implementation enforces immutable provenance, per-version dispatch, platform namespacing, workspace/profile ownership at discovery and execution, and cell-only execution. App HTML also moved off the host origin behind signed short-lived URLs. Remaining general hardening notes from earlier reviews are not grounds to reopen the settled composition ruling.
+
+## Round 3 owner-ruling implementation
+
+- Hub app-runner E2E: **OVERALL: PASS**, 38 checks. This reran publish, current native tool, migration/version activation, failed activation, rollback, profile publication/tool execution, persistence, usage, and logs against the restarted API/app-origin pair.
+- Signed-origin probes: **PASS**. Headerless browser navigation returned 200; app code saw user A from the token while attempted user-B/workspace/header overrides were absent; an expired correctly signed token returned 403; and a direct app page's cross-origin fetch of the host Apps API failed with browser `TypeError`.
+- Version preview: **PASS**, signed v1 preview returned 200 `text/html` rather than falling through to current.
+- Host-origin HTML routes: regression proves both old `/open/*` and `/preview/*` routes return 404.
+- Live host restarted with the rebuilt plugin; the Apps panel loaded signed `:9878` URLs and displayed immutable tool provenance. Screenshot retaken at `.artifacts/apps-panel.png`.
+- Existing durable guestbook/profile state and the earlier a–g artifacts remained intact across the hub and host restart. The hub E2E repeated the same publish/tool/migrate/rollback/profile/publish-truth/persistence capabilities with a fresh app; no claim is made that the earlier model transcripts were regenerated.
+
+Final summary lines:
+
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 47 tests.
+- `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
+- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 38 checks.
+- Signed-origin Astra probes: **PASS**, headerless 200; identity derived from token; expired 403; host API unreadable cross-origin.
+- Signed version preview probe: **PASS**, 200.
