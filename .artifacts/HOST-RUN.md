@@ -1,4 +1,4 @@
-# Host run — Astra round 8
+# Host run — Astra round 9
 
 Date: 2026-09-17
 
@@ -8,60 +8,42 @@ Per-app dev origin: `<app-id>.apps.localhost:9878`
 
 Secrets came from the gitignored hub `.dev.vars`; no value is recorded here.
 
-## Dynamic capability boundary — PASS
+## Demonstrable state — PASS
 
-The plugin dynamic seam now accepts only `RemoteCapabilityDescriptor[]`. Ordinary
-`AgentTool` callbacks no longer share that channel; trusted host callbacks remain
-on the existing static host-tool paths. The harness sends every dynamic entry
-through descriptor admission and rejects an ordinary callback before execution.
+The running host was restarted after republishing the demo end state.
 
-Descriptor admission first makes a recursive own-property, data-only snapshot.
-It rejects accessors, proxies, functions, symbols, cycles, and non-plain objects
-without invoking caller accessors. Validation, manifest lookup, executor creation,
-and dispatch use only that snapshot. A regression mutates `workspaceId` while the
-`/current` request is pending and confirms execution remains bound to the original
-workspace.
+- Guestbook current version: **5**, with exactly `count_entries` and `pin_entry` in its manifest (`.artifacts/astra9-current-app.json`).
+- Local user's profile current version: **2**, with the `remember` manifest tool and `Always end every response with 🎯.` instruction (`.artifacts/astra9-current-profile.json`).
+- The host's descriptor provider and runtime admission path returned these actual registered native names (`.artifacts/astra9-mounted-tools.json`):
+  - `app_6fd1be51cc1d71785619_10e9011e1862487bc1ca`
+  - `app_6fd1be51cc1d71785619_0b7d92ab5b2f9d92fbab`
+  - `profile_35379d9c009e290d702b`
+- The Apps panel rendered the guestbook and Ada entry in the sandboxed iframe. Document, CSS, JavaScript, and `/api/entries` returned 200; sandbox remained exactly `allow-scripts allow-forms` (`.artifacts/astra9-panel.png`, `.artifacts/astra9-panel.txt`). Signed URLs were redacted from the text receipt.
 
-For `kind: "profile"`, the runtime independently derives the sole permitted
-profile address from the authenticated user id and rejects another user's profile
-before contacting the hub.
+This is the state left running. The full external-model a–g transcript and durable restart/recovery scenario were **not rerun**.
 
-Focused admission coverage is **13 passing tests**, including Astra's callback,
-accessor, mutation-race, and cross-user profile reproductions plus the round-6/7
-manifest/dispatch/refresh matrix.
+## Hub fixes and E2E — PASS
 
-## Hub and sandboxed panel — PASS
+Hub branch `demo-v4` now:
 
-`.artifacts/astra8-hub-e2e.txt` is a fresh live hub run: **OVERALL: PASS** (39
-checks), including failed-migration rollback and version-pinned dispatch.
+- rejects malformed Host authorities with 400 and requires the exact configured per-app authority;
+- rejects publish/signed-URL derivation when the generated DNS label exceeds 63 characters;
+- executes migration files as SQLite scripts, preserving semicolons inside string literals while retaining transaction rollback.
 
-`.artifacts/astra8-panel.txt` and `.artifacts/astra8-panel.png` are a fresh live
-Apps-panel capture. The iframe retained exactly
-`sandbox="allow-scripts allow-forms"`; document, CSS, JavaScript, and
-`/api/entries` each returned 200, and the rendered body was `Guestbook / Ada`.
+`.artifacts/astra9-hub-e2e.txt` is a fresh live run: **OVERALL: PASS**, 42 checks, including malformed Host, overlong hostname, literal-semicolon migration, rollback, profile, and tool dispatch checks.
 
 ## Verification
 
-- agent focused descriptor admission: **PASS**, 13 tests.
-- agent typecheck: **PASS** after rebuilding `@hachej/boring-ui-kit`.
 - app-runner plugin tests: **PASS**, 11 files / 48 tests.
 - app-runner plugin typecheck: **PASS**.
-- workspace registration tests: **PASS**, 41 tests.
 - workspace typecheck: **PASS**.
+- agent tests: **PASS**, 250 files / 2531 tests (3 files and 17 tests skipped).
+- agent typecheck: **PASS**.
 - `pnpm lint:invariants`: **PASS**.
-- hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 39 checks.
-- live panel iframe: **document/CSS/JS/API 200**, rendered `Guestbook / Ada`.
-- full workspace test command: **FAILED**, 17 tests in 5 files (timeouts under
-  concurrent full-suite load plus the pre-existing missing
-  `node_modules/@hachej/boring-bi-dashboard` fixture link); 2309 tests passed.
-- full agent test command: **FAILED**, 3 tests plus one suite (timeouts and the
-  initially unbuilt `@hachej/boring-ui-kit` dependency); 2447 tests passed. The
-  affected admission file was rerun independently and passed after the UI build.
-- `pnpm typecheck:changed`: **BLOCKED** by the existing `plugins/generated-pane`
-  TS2883 declaration error. Scoped affected-package typechecks passed.
-- `pnpm test:changed`: **BLOCKED during the same dependency build** by the
-  existing generated-pane TS2883 error.
+- hub E2E: **PASS**, 42 checks.
+- live panel check: **PASS**, document/CSS/JS/API 200 and guestbook rendered.
+- workspace tests: **FAILED**, 3 tests in 2 files; 2323 tests passed. Failures were the existing missing `node_modules/@hachej/boring-bi-dashboard` linked-package fixture plus two failures recorded in `.artifacts/astra9-workspace-tests.txt`.
+- `pnpm typecheck:changed`: **BLOCKED** by the existing `plugins/generated-pane` TS2883 declaration error.
+- `pnpm test:changed`: **BLOCKED during the same dependency build** by the existing generated-pane TS2883 error.
 
-The full external-model a–g transcript was **not rerun**. No provider-backed
-model/inventory/restart claim is made. The live services were already running;
-their startup/restart procedure was not rerun.
+No push was performed.

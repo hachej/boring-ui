@@ -1,0 +1,29 @@
+iframes [
+  {
+    title: 'guestbook preview',
+    src: '[signed-app-url]/',
+    sandbox: 'allow-scripts allow-forms'
+  }
+]
+{
+  "sandbox": "allow-scripts allow-forms",
+  "body": "✦\nA PLACE FOR KIND WORDS\nLeave your mark.\n\nSign the guestbook, share a thought, and see who else stopped by.\n\n✎\nSign the guestbook\n\nWe'd love to hear from you.\n\nYOUR NAME\nYOUR MESSAGE\nSign the guestbook\n→\nRecent notes\n\n1 person has signed\n\n● LIVE\nA\nAda\nJan 1, 1970\n\nMade for good conversations ♥",
+  "responses": [
+    {
+      "url": "[signed-app-url]/",
+      "status": 200
+    },
+    {
+      "url": "[signed-app-url]/assets/index-BsUq8ZUn.css",
+      "status": 200
+    },
+    {
+      "url": "[signed-app-url]/assets/index-BFcITc2n.js",
+      "status": 200
+    },
+    {
+      "url": "[signed-app-url]/api/entries",
+      "status": 200
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+
+> @hachej/boring-app-runner@0.1.0 typecheck /home/ubuntu/projects/boring-ui-v2/.worktrees/app-runner-plugin/plugins/app-runner
+> tsc --noEmit
+

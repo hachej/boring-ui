@@ -1,0 +1,20 @@
+
+> @hachej/boring-app-runner@0.1.0 test /home/ubuntu/projects/boring-ui-v2/.worktrees/app-runner-plugin/plugins/app-runner
+> vitest run --no-file-parallelism
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vitest.config.ts:9:50). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+11:29:02 PM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+`optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+Both esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored. The following esbuild options were set: `{ jsx: 'automatic', jsxImportSource: undefined }`
+[vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+
+ RUN  v4.1.11 /home/ubuntu/projects/boring-ui-v2/.worktrees/app-runner-plugin/plugins/app-runner
+
+
+ Test Files  11 passed (11)
+      Tests  48 passed (48)
+   Start at  23:29:02
+   Duration  16.42s (transform 1.04s, setup 4.58s, import 1.93s, tests 2.75s, environment 3.31s)
+

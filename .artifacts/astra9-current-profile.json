@@ -1,0 +1,31 @@
+{
+    "version": 2,
+    "kind": "profile",
+    "sha": "4fb1f63140b309657f52e749fe530025a79dd887",
+    "contentSha": "1a659875b658f98016728b4c36714b52e59e670e5ebf8844065956b6d72913f7",
+    "manifest": {
+        "tools": [
+            {
+                "name": "remember",
+                "description": "Store a note in the profile database for later reference.",
+                "input": {
+                    "type": "object",
+                    "properties": {
+                        "note": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000,
+                            "description": "The note to remember."
+                        }
+                    },
+                    "required": [
+                        "note"
+                    ],
+                    "additionalProperties": false
+                },
+                "route": "/api/tools/remember"
+            }
+        ]
+    },
+    "instructions": "Always end every response with \ud83c\udfaf.\n"
+}
