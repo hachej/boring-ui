@@ -113,22 +113,29 @@ describe("published manifest native tools", () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it("fails a stale handle instead of calling a new version with an old schema", async () => {
-    let version = 1
-    const fetchImpl = vi.fn(async (url: string) => new Response(JSON.stringify(
-      url.endsWith("/current")
-        ? current(version, [{ name: "count", description: "Count", input: {}, route: "/count" }])
-        : { shouldNotRun: true },
-    )))
-    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store: await seededStore() })
+  it("surfaces and refreshes an atomic version mismatch when activation races dispatch", async () => {
+    let currentCalls = 0
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes("/tools/count?version=1")) {
+        return new Response(JSON.stringify({ error: "version_mismatch", expectedVersion: 1, currentVersion: 2 }), { status: 409 })
+      }
+      currentCalls += 1
+      return new Response(JSON.stringify(current(currentCalls === 1 ? 1 : 2, [{ name: "count", description: "Count", input: {}, route: "/count" }])))
+    })
+    const store = await seededStore()
+    const provider = createPublishedToolsProvider({ client: new AppRunnerClient({ baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }), store })
     const stale = (await provider(context))[0]!
-    version = 2
 
     const response = await stale.execute({}, context)
 
     expect(response.isError).toBe(true)
-    expect(response.content[0]?.text).toContain("is stale")
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(response.content[0]?.text).toContain("Retry after the tool inventory refreshes")
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      "http://hub/w/acme/guestbook/current",
+      "http://hub/w/acme/guestbook/tools/count?version=1",
+      "http://hub/w/acme/guestbook/current",
+    ])
+    expect((await store.listApps())[0]?.version).toBe(2)
   })
 
   it("escapes names injectively and rejects duplicate manifest entries", async () => {

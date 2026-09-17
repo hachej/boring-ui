@@ -143,9 +143,10 @@ export class AppRunnerClient {
     toolName: string,
     input: unknown,
     identity: AppRunnerIdentity,
+    expectedVersion: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.request("POST", `${this.appPath(workspaceId, appName)}/tools/${encodeURIComponent(toolName)}`, identity, workspaceId, input, signal)
+    return this.request("POST", `${this.appPath(workspaceId, appName)}/tools/${encodeURIComponent(toolName)}?version=${expectedVersion}`, identity, workspaceId, input, signal)
   }
 
   /** Credentials used only for runner control-plane and tool requests. */

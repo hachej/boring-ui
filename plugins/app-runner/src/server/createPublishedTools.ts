@@ -63,23 +63,25 @@ export function createPublishedToolsProvider(options: PublishedToolsProviderOpti
             if (isProfile && record.appName !== profileAppName(executingIdentity.id)) {
               return result(`Published tool ${entry.name} refused: profile address does not match the acting user.`, true)
             }
-            const latest = await options.client.current(executingWorkspaceId, record.appName, executingIdentity, ctx.abortSignal)
-            if (latest.version !== current.version || latest.sha !== current.sha || latest.kind !== current.kind) {
-              return result(
-                `Published tool ${entry.name} is stale because ${record.appName} changed from version ${current.version} to ${latest.version}. Re-read the current tool inventory before calling it.`,
-                true,
-              )
-            }
             const value = await options.client.callTool(
               executingWorkspaceId,
               record.appName,
               entry.name,
               params,
               executingIdentity,
+              current.version,
               ctx.abortSignal,
             )
             return result(value)
           } catch (error) {
+            if (error instanceof AppRunnerHttpError && error.status === 409) {
+              const latest = await options.client.current(workspaceId, record.appName, identityFromToolContext(ctx), ctx.abortSignal)
+              await options.store.upsertApp(recordFromCurrent(record, latest))
+              return result(
+                `Published tool ${entry.name} is stale because ${record.appName} changed from version ${current.version} to ${latest.version}. Retry after the tool inventory refreshes.`,
+                true,
+              )
+            }
             const message = error instanceof AppRunnerHttpError
               ? `app runner responded ${error.status}: ${error.message}`
               : error instanceof Error ? error.message : String(error)
