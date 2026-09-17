@@ -103,6 +103,20 @@ Playwright opened the `app-runner` surface through the UI bridge and captured th
 - `pnpm test:changed`: **BLOCKED before tests by the same existing `plugins/generated-pane` TS2883 declaration-build errors**.
 - `git diff --check` in both repositories: **PASS**.
 
+## Round 2 fixes
+
+- **B1 redirect credential boundary:** focused fixture test starts a 302 server and a separate collector; the serving client returns the 302 without contacting the collector. PASS.
+- **B3 profile isolation:** route and tool-provider regressions cover the decoded `..%2fprofile-<victim>` traversal, a victim profile disguised as `kind: "app"`, and execution under a different acting user. After rebuilding/restarting the live host, the traversal probe returned `403 {"error":"forbidden","message":"serving path escapes the authorized app"}`. The standalone local host exposes only its fixed local principal, so a second real authenticated browser user was unavailable; the two-user identity boundary was exercised in the server regression rather than overstated as a live auth run.
+- **B4 version-bound execution:** hub e2e published v1, activated v2, rejected a v1-pinned call with HTTP 409 `version_mismatch`, then successfully dispatched a v2-pinned call. The host race regression verifies the stale call is retryable and refreshes the stored current version. PASS.
+- **B5 rebuild publication:** the Git regression publishes an old hashed asset, removes it, adds a replacement, republishes, and reads the reported commit; the old asset is absent and the new payload matches. PASS. This exact filesystem/Git boundary is local to the host and was exercised against real Git rather than a mock.
+
+Verification summary:
+
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 51 tests.
+- `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
+- Hub `node app-runner/scripts/e2e-test.mjs`: **OVERALL: PASS**, 38 checks, including the activate-between-advertise-and-call race.
+- `git diff --check` in both repositories: **PASS**.
+
 ## Owner ruling needed
 
 - Dynamic published tools change model-visible composition between turns.
@@ -110,6 +124,7 @@ Playwright opened the `app-runner` surface through the UI bridge and captured th
 - The current app-runner seam therefore conflicts with that frozen ruling.
 - Blocker 10 is explicitly outside this fix and has not been redesigned here.
 - An owner ruling plus ratified-plan update, or an admitted static broker design, is required.
+- Second open question (round-2 blockers 2/6): choose a distinct serving origin and define iframe authentication that works on authenticated standalone hosts; neither serving architecture nor auth was changed in this fix.
 
 ## Mandatory abstraction review
 
