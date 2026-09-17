@@ -5,7 +5,7 @@ import { AppRunnerHttpError } from "./appRunnerClient"
 import { sanitizeAppName } from "../shared/sanitize"
 import type { AppRunnerRecord } from "../shared/types"
 import type { AppRunnerStore } from "./appRunnerStore"
-import { isProfileAppName } from "./profileAddress"
+import { isProfileAppName, profileAppName } from "./profileAddress"
 import { identityFromRequest } from "./resolveIdentity"
 
 export interface AppRunnerRoutesOptions {
@@ -43,12 +43,26 @@ async function authorizeAppName(
   const record = (await opts.store.listApps()).find((entry) =>
     entry.workspaceId === workspaceId && entry.appName === appName,
   )
-  if (record?.kind === "profile" || isProfileAppName(appName)) {
+  if (isProfileAppName(appName)) {
     const identity = identityFromRequest(request)
-    if (!record || record.ownerUserId !== identity.id) {
+    if (appName !== profileAppName(identity.id) || !record) {
+      reply.code(403).send({ error: "forbidden", message: "profile address does not match the acting user" })
+      return undefined
+    }
+    // Recover old records that predate ownerUserId only after the immutable
+    // address has independently proved ownership.
+    if (!record.ownerUserId) {
+      const recovered = { ...record, kind: "profile" as const, ownerUserId: identity.id }
+      await opts.store.upsertApp(recovered)
+      return recovered
+    }
+    if (record.ownerUserId !== identity.id) {
       reply.code(403).send({ error: "forbidden", message: "profile belongs to another user" })
       return undefined
     }
+  } else if (record?.kind === "profile") {
+    reply.code(403).send({ error: "forbidden", message: "profile record has an invalid address" })
+    return undefined
   }
   return record
 }
@@ -63,8 +77,10 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
   app.get("/api/v1/plugins/app-runner/apps", async (request) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
     const identity = identityFromRequest(request)
+    const permittedProfile = profileAppName(identity.id)
     const apps = (await opts.store.listApps()).filter((record) =>
-      record.workspaceId === workspaceId && (record.kind !== "profile" || record.ownerUserId === identity.id),
+      record.workspaceId === workspaceId
+      && (record.appName === permittedProfile || (!isProfileAppName(record.appName) && record.kind !== "profile")),
     )
     return {
       apps: await Promise.all(apps.map(async (record) => ({
