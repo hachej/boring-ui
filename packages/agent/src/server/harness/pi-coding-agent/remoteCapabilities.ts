@@ -19,6 +19,7 @@ export interface RemoteCapabilityRuntimeOptions {
 }
 
 const segment = (value: string) => createHash("sha256").update(value.normalize("NFC"), "utf8").digest("hex").slice(0, 20)
+const profileAppName = (userId: string) => `profile-${createHash("sha256").update(userId).digest("hex").slice(0, 16)}`
 
 const result = (value: unknown, isError = false): ToolResult => ({
   content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
@@ -104,6 +105,9 @@ export async function buildVerifiedRemoteCapability(
   const baseUrl = (options.baseUrl ?? getEnv("BORING_APP_RUNNER_URL") ?? "http://127.0.0.1:9877").replace(/\/+$/, "")
   const fetchImpl = options.fetchImpl ?? fetch
   const actor = identity(context)
+  if (descriptor.kind === "profile" && appName !== profileAppName(actor.id)) {
+    throw new Error(`remote capability "${descriptor.toolName}" profile does not belong to the authenticated user`)
+  }
   const headers: Record<string, string> = {
     "X-Boring-User": JSON.stringify(actor),
     "X-Boring-Workspace": descriptor.workspaceId,

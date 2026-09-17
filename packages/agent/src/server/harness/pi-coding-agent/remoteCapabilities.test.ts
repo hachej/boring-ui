@@ -83,6 +83,29 @@ describe("remote capability admission", () => {
       .rejects.toThrow(/workspace|manifest/)
   })
 
+  it("refuses another user's profile at the runtime boundary", async () => {
+    const bobProfile = "profile-81b637d8fcd2c6da"
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(current({ kind: "profile" }))))
+    await expect(buildVerifiedRemoteCapability({
+      ...descriptor(),
+      kind: "profile",
+      address: `acme/${bobProfile}`,
+    }, context, { baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }))
+      .rejects.toThrow(/does not belong to the authenticated user/)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it("accepts only the authenticated user's profile address", async () => {
+    const aliceProfile = "profile-2bd806c97f0e00af"
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(current({ kind: "profile" }))))
+    await expect(buildVerifiedRemoteCapability({
+      ...descriptor(),
+      kind: "profile",
+      address: `acme/${aliceProfile}`,
+    }, context, { baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch })).resolves.toBeDefined()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   it("refuses a tool absent from the fresh manifest", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(current({ manifest: { tools: [] } }))))
     await expect(buildVerifiedRemoteCapability(descriptor(), context, { baseUrl: "http://hub", fetchImpl: fetchImpl as typeof fetch }))
