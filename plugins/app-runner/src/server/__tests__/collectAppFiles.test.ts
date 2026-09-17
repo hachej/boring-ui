@@ -4,8 +4,9 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import { APP_RUNNER_MAX_FILE_BYTES } from "../../shared/constants"
 import { commitPublishedFolder } from "../commitPublishedFolder"
-import { collectAppFiles } from "../collectAppFiles"
+import { AppRunnerLimitError, collectAppFiles } from "../collectAppFiles"
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "app-runner-collect-"))
@@ -30,5 +31,13 @@ describe("collectAppFiles", () => {
     expect(result.files).toEqual({ "app/index.js": "export const value = 'committed'\n" })
     expect(JSON.stringify(result.files)).not.toContain("do-not-publish")
     expect(JSON.stringify(result.files)).not.toContain("ignored secret")
+  })
+
+  it("enforces the per-file limit before any hub request", async () => {
+    const { root, app } = await fixture()
+    await writeFile(join(app, "large.txt"), "x".repeat(APP_RUNNER_MAX_FILE_BYTES + 1))
+    const sha = await commitPublishedFolder(root, "apps/demo", "oversized")
+
+    await expect(collectAppFiles(root, "apps/demo", sha)).rejects.toMatchObject({ code: "FILE_TOO_LARGE" } satisfies Partial<AppRunnerLimitError>)
   })
 })
