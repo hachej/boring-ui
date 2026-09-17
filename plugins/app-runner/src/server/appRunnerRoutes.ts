@@ -2,7 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { basename } from "node:path"
 import type { AppRunnerClient } from "./appRunnerClient"
 import { AppRunnerHttpError } from "./appRunnerClient"
+import type { AppRunnerRecord } from "../shared/types"
 import type { AppRunnerStore } from "./appRunnerStore"
+import { isProfileAppName } from "./profileAddress"
 import { identityFromRequest } from "./resolveIdentity"
 
 export interface AppRunnerRoutesOptions {
@@ -22,6 +24,26 @@ function sendAppRunnerError(reply: FastifyReply, error: unknown): FastifyReply {
   }
   const message = error instanceof Error ? error.message : String(error)
   return reply.code(500).send({ error: "app_runner_error", message })
+}
+
+async function authorizeAppName(
+  opts: AppRunnerRoutesOptions,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  workspaceId: string,
+  appName: string,
+): Promise<AppRunnerRecord | undefined> {
+  const record = (await opts.store.listApps()).find((entry) =>
+    entry.workspaceId === workspaceId && entry.appName === appName,
+  )
+  if (record?.kind === "profile" || isProfileAppName(appName)) {
+    const identity = identityFromRequest(request)
+    if (!record || record.ownerUserId !== identity.id) {
+      reply.code(403).send({ error: "forbidden", message: "profile belongs to another user" })
+      return undefined
+    }
+  }
+  return record
 }
 
 /**
@@ -70,6 +92,8 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
 
   app.get<{ Params: { appName: string } }>("/api/v1/plugins/app-runner/apps/:appName/versions", async (request, reply) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
+    await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
+    if (reply.sent) return
     try {
       const versions = await opts.client.listVersions(workspaceId, request.params.appName, identityFromRequest(request))
       return {
@@ -88,6 +112,8 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
   app.post<{ Params: { appName: string } }>("/api/v1/plugins/app-runner/apps/:appName/rollback", async (request, reply) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
     const identity = identityFromRequest(request)
+    const existing = await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
+    if (reply.sent) return
     try {
       await opts.client.rollback(workspaceId, request.params.appName, identity)
       const versions = await opts.client.listVersions(workspaceId, request.params.appName, identity)
@@ -103,6 +129,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
           url: opts.client.publicAppUrl(workspaceId, request.params.appName),
           updatedAt: new Date().toISOString(),
           toolManifest: deployed.manifest,
+          ...(existing?.ownerUserId ? { ownerUserId: existing.ownerUserId } : {}),
         })
       }
       return { ok: true, versions }
@@ -120,6 +147,8 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
         return reply.code(400).send({ error: "invalid_request", message: "body.version must be a number" })
       }
       const identity = identityFromRequest(request)
+      const existing = await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
+      if (reply.sent) return
       try {
         await opts.client.activate(workspaceId, request.params.appName, version, identity)
         const deployed = await opts.client.current(workspaceId, request.params.appName, identity)
@@ -132,6 +161,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
           url: opts.client.publicAppUrl(workspaceId, request.params.appName),
           updatedAt: new Date().toISOString(),
           toolManifest: deployed.manifest,
+          ...(existing?.ownerUserId ? { ownerUserId: existing.ownerUserId } : {}),
         })
         return { ok: true }
       } catch (error) {
@@ -142,6 +172,8 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
 
   app.get<{ Params: { appName: string } }>("/api/v1/plugins/app-runner/apps/:appName/logs", async (request, reply) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
+    await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
+    if (reply.sent) return
     try {
       return await opts.client.logs(workspaceId, request.params.appName, identityFromRequest(request))
     } catch (error) {
@@ -151,6 +183,8 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
 
   app.get<{ Params: { appName: string } }>("/api/v1/plugins/app-runner/apps/:appName/usage", async (request, reply) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
+    await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
+    if (reply.sent) return
     try {
       return await opts.client.usage(workspaceId, request.params.appName, identityFromRequest(request))
     } catch (error) {
@@ -160,6 +194,8 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
 
   app.get<{ Params: { appName: string; "*": string } }>("/api/v1/plugins/app-runner/open/:appName/*", async (request, reply) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
+    await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
+    if (reply.sent) return
     const rest = request.params["*"] ?? ""
     await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/${rest}`)
   })
@@ -168,6 +204,8 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
     "/api/v1/plugins/app-runner/preview/:appName/:version/*",
     async (request, reply) => {
       const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
+      await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
+      if (reply.sent) return
       const rest = request.params["*"] ?? ""
       await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/preview/${encodeURIComponent(request.params.version)}/${rest}`)
     },

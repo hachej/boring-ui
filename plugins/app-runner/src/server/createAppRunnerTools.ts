@@ -9,7 +9,7 @@ import { commitPublishedFolder } from "./commitPublishedFolder"
 import { identityFromToolContext } from "./resolveIdentity"
 import { manifestFromVersionFiles } from "./readToolManifest"
 import { resolveWorkspaceId } from "./resolveWorkspaceId"
-import { profileAppName } from "./profileAddress"
+import { isProfileAppName, profileAppName } from "./profileAddress"
 
 export interface AppRunnerToolsOptions {
   workspaceRoot: string
@@ -33,7 +33,13 @@ function errorResult(prefix: string, error: unknown): ToolResult {
 
 function requireAppName(params: Record<string, unknown>): string | undefined {
   const value = params.appName
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
+  if (typeof value !== "string" || !value.trim()) return undefined
+  const appName = value.trim()
+  return isProfileAppName(appName) || appName === "profile" ? undefined : appName
+}
+
+function invalidAppName(toolName: string): ToolResult {
+  return textResult(`${toolName} requires a non-empty app name outside the reserved profile namespace.`, true)
 }
 
 /** Re-read the active published manifest after activate or rollback. */
@@ -71,7 +77,7 @@ export function createPublishAppTool(options: AppRunnerToolsOptions): AgentTool 
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const appName = requireAppName(params)
-      if (!appName) return textResult("publish_app requires a non-empty appName.", true)
+      if (!appName) return invalidAppName("publish_app")
       const dir = typeof params.dir === "string" && params.dir.trim().length > 0 ? params.dir.trim() : `apps/${appName}`
       const message = typeof params.message === "string" ? params.message : undefined
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
@@ -198,7 +204,7 @@ export function createListAppVersionsTool(options: AppRunnerToolsOptions): Agent
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const appName = requireAppName(params)
-      if (!appName) return textResult("list_app_versions requires a non-empty appName.", true)
+      if (!appName) return invalidAppName("list_app_versions")
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       try {
         const versions = await options.client.listVersions(workspaceId, appName, identityFromToolContext(ctx), ctx.abortSignal)
@@ -224,7 +230,7 @@ export function createRollbackAppTool(options: AppRunnerToolsOptions): AgentTool
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const appName = requireAppName(params)
-      if (!appName) return textResult("rollback_app requires a non-empty appName.", true)
+      if (!appName) return invalidAppName("rollback_app")
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       const identity = identityFromToolContext(ctx)
       try {
@@ -267,7 +273,7 @@ export function createActivateAppVersionTool(options: AppRunnerToolsOptions): Ag
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const appName = requireAppName(params)
-      if (!appName) return textResult("activate_app_version requires a non-empty appName.", true)
+      if (!appName) return invalidAppName("activate_app_version")
       const version = params.version
       if (typeof version !== "number" || !Number.isFinite(version)) {
         return textResult("activate_app_version requires a numeric version.", true)
@@ -310,7 +316,7 @@ export function createGetAppLogsTool(options: AppRunnerToolsOptions): AgentTool 
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const appName = requireAppName(params)
-      if (!appName) return textResult("get_app_logs requires a non-empty appName.", true)
+      if (!appName) return invalidAppName("get_app_logs")
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       try {
         const logs = await options.client.logs(workspaceId, appName, identityFromToolContext(ctx), ctx.abortSignal)
@@ -336,7 +342,7 @@ export function createGetAppUsageTool(options: AppRunnerToolsOptions): AgentTool
     },
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const appName = requireAppName(params)
-      if (!appName) return textResult("get_app_usage requires a non-empty appName.", true)
+      if (!appName) return invalidAppName("get_app_usage")
       const workspaceId = resolveWorkspaceId(ctx, options.workspaceRoot)
       try {
         const usage = await options.client.usage(workspaceId, appName, identityFromToolContext(ctx), ctx.abortSignal)

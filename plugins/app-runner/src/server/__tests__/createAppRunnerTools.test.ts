@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace/shared"
 import { AppRunnerClient } from "../appRunnerClient"
 import { createAppRunnerTools, createPublishAppTool } from "../createAppRunnerTools"
+import { profileAppName } from "../profileAddress"
 import { MemoryAppRunnerStore } from "./memoryAppRunnerStore"
 import { APP_RUNNER_AUTH_SECRET_HEADER } from "../../shared/constants"
 
@@ -89,6 +90,23 @@ describe("createAppRunnerTools", () => {
     const result = await createPublishAppTool({ workspaceRoot, client, store: new MemoryAppRunnerStore() }).execute({ appName: "myapp" }, ctx())
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toContain("413")
+  })
+
+  it("reserves per-user profile addresses from every generic app tool", async () => {
+    const fetchImpl = vi.fn()
+    const tools = createAppRunnerTools({
+      workspaceRoot,
+      client: new AppRunnerClient({ fetchImpl }),
+      store: new MemoryAppRunnerStore(),
+    })
+    const target = profileAppName("victim")
+    for (const name of ["publish_app", "list_app_versions", "rollback_app", "activate_app_version", "get_app_logs", "get_app_usage"]) {
+      const tool = tools.find((entry) => entry.name === name)!
+      const result = await tool.execute({ appName: target, version: 1 }, ctx())
+      expect(result.isError, name).toBe(true)
+      expect(result.content[0]?.text, name).toContain("reserved profile namespace")
+    }
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it("exposes profile lifecycle tools and no generic app dispatcher", () => {

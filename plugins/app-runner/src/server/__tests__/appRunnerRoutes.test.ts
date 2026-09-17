@@ -6,6 +6,7 @@ import { AppRunnerClient } from "../appRunnerClient"
 import { appRunnerRoutes } from "../appRunnerRoutes"
 import { MemoryAppRunnerStore } from "./memoryAppRunnerStore"
 import { APP_RUNNER_AUTH_SECRET_HEADER, APP_RUNNER_USER_HEADER, APP_RUNNER_WORKSPACE_HEADER } from "../../shared/constants"
+import { profileAppName } from "../profileAddress"
 
 describe("appRunnerRoutes", () => {
   const apps: Array<ReturnType<typeof Fastify>> = []
@@ -19,6 +20,10 @@ describe("appRunnerRoutes", () => {
     const app = Fastify()
     apps.push(app)
     const client = new AppRunnerClient({ baseUrl: "http://127.0.0.1:9877", token: "tok", authSecret: "dev-secret", fetchImpl })
+    app.addHook("onRequest", async (request) => {
+      const id = request.headers["x-test-user"]
+      if (typeof id === "string") (request as typeof request & { user?: { id: string } }).user = { id }
+    })
     await app.register(appRunnerRoutes, { workspaceRoot: "/tmp/ws-root", client, store })
     await app.ready()
     return app
@@ -84,6 +89,38 @@ describe("appRunnerRoutes", () => {
     expect(versions.statusCode).toBe(200)
     expect(versions.json().versions).toHaveLength(2)
     expect(versions.json().appUrl).toBe("/api/v1/plugins/app-runner/open/myapp/")
+  })
+
+  it("rejects every direct management and serving path for another user's profile", async () => {
+    const store = new MemoryAppRunnerStore()
+    const victimProfile = profileAppName("victim")
+    await store.upsertApp({
+      appName: victimProfile,
+      workspaceId: "ws-root",
+      ownerUserId: "victim",
+      kind: "profile",
+      version: 1,
+      sha: "abc",
+      url: "http://hub/profile",
+      updatedAt: "now",
+    })
+    const fetchImpl = vi.fn(async () => new Response("should not dispatch"))
+    const app = await buildApp(fetchImpl as unknown as typeof fetch, store)
+    const cases = [
+      { method: "GET", url: `/api/v1/plugins/app-runner/apps/${victimProfile}/versions` },
+      { method: "POST", url: `/api/v1/plugins/app-runner/apps/${victimProfile}/rollback` },
+      { method: "POST", url: `/api/v1/plugins/app-runner/apps/${victimProfile}/activate`, payload: { version: 1 } },
+      { method: "GET", url: `/api/v1/plugins/app-runner/apps/${victimProfile}/logs` },
+      { method: "GET", url: `/api/v1/plugins/app-runner/apps/${victimProfile}/usage` },
+      { method: "GET", url: `/api/v1/plugins/app-runner/open/${victimProfile}/` },
+      { method: "GET", url: `/api/v1/plugins/app-runner/preview/${victimProfile}/1/` },
+    ] as const
+
+    for (const request of cases) {
+      const response = await app.inject({ ...request, headers: { "x-test-user": "attacker" } })
+      expect(response.statusCode, `${request.method} ${request.url}`).toBe(403)
+    }
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it("GET /apps/:appName/logs surfaces runner errors with their status", async () => {
