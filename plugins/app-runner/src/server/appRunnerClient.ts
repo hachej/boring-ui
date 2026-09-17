@@ -171,9 +171,16 @@ export class AppRunnerClient {
     }
   }
 
-  async fetchServing(path: string, identity: AppRunnerIdentity, workspaceId: string, signal?: AbortSignal): Promise<Response> {
+  async fetchServing(
+    path: string,
+    identity: AppRunnerIdentity,
+    workspaceId: string,
+    init: Pick<RequestInit, "method" | "body" | "headers"> = {},
+    signal?: AbortSignal,
+  ): Promise<Response> {
     return this.fetchWithDeadline(`${this.baseUrl}${path}`, {
-      headers: this.servingHeaders(identity, workspaceId),
+      ...init,
+      headers: { ...Object.fromEntries(new Headers(init.headers).entries()), ...this.servingHeaders(identity, workspaceId) },
     }, signal)
   }
 

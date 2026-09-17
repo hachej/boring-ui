@@ -68,6 +68,36 @@ describe("appRunnerRoutes", () => {
     expect(JSON.parse(headers[APP_RUNNER_USER_HEADER]!)).toEqual({ id: "local", name: "Local user" })
   })
 
+  it("proxies interactive methods, query, JSON body, and only safe request headers", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 201, headers: { "content-type": "application/json" } }))
+    const app = await buildApp(fetchImpl as unknown as typeof fetch)
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/plugins/app-runner/open/myapp/api/entries?sort=newest",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: "Bearer browser-secret",
+        cookie: "host=session",
+        "x-custom-secret": "nope",
+      },
+      payload: { message: "hello" },
+    })
+
+    expect(response.statusCode).toBe(201)
+    const [url, init] = fetchImpl.mock.calls[0]!
+    expect(url).toBe("http://127.0.0.1:9877/w/ws-root/myapp/api/entries?sort=newest")
+    expect(init?.method).toBe("POST")
+    expect(init?.body).toBe(JSON.stringify({ message: "hello" }))
+    const headers = new Headers(init?.headers)
+    expect(headers.get("content-type")).toBe("application/json")
+    expect(headers.get("accept")).toBe("application/json")
+    expect(headers.get("authorization")).toBeNull()
+    expect(headers.get("cookie")).toBeNull()
+    expect(headers.get("x-custom-secret")).toBeNull()
+  })
+
   it("returns working proxy links and the runner version list for the trusted workspace", async () => {
     const store = new MemoryAppRunnerStore()
     await store.upsertApp({ appName: "myapp", workspaceId: "ws-root", kind: "app", version: 2, sha: "abc", url: "http://hub/direct", updatedAt: "now" })

@@ -60,10 +60,27 @@ async function proxyToRunner(
 ): Promise<void> {
   const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
   const identity = identityFromRequest(request)
-  const upstream = await opts.client.fetchServing(runnerPath, identity, workspaceId)
+  const query = request.raw.url?.includes("?") ? `?${request.raw.url.split("?")[1]}` : ""
+  const incomingType = request.headers["content-type"]
+  const incomingAccept = request.headers.accept
+  const headers: Record<string, string> = {
+    ...(typeof incomingType === "string" ? { "content-type": incomingType } : {}),
+    ...(typeof incomingAccept === "string" ? { accept: incomingAccept } : {}),
+  }
+  const body = request.body === undefined || request.method === "GET" || request.method === "HEAD"
+    ? undefined
+    : Buffer.isBuffer(request.body) || typeof request.body === "string"
+      ? request.body
+      : JSON.stringify(request.body)
+  const upstream = await opts.client.fetchServing(`${runnerPath}${query}`, identity, workspaceId, {
+    method: request.method,
+    headers,
+    ...(body === undefined ? {} : { body: body as BodyInit }),
+  })
   reply.code(upstream.status)
   const contentType = upstream.headers.get("content-type")
   if (contentType) reply.header("content-type", contentType)
+  if (request.method === "HEAD") return void reply.send()
   reply.send(Buffer.from(await upstream.arrayBuffer()))
 }
 
@@ -192,7 +209,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
     }
   })
 
-  app.get<{ Params: { appName: string; "*": string } }>("/api/v1/plugins/app-runner/open/:appName/*", async (request, reply) => {
+  app.all<{ Params: { appName: string; "*": string } }>("/api/v1/plugins/app-runner/open/:appName/*", async (request, reply) => {
     const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
     await authorizeAppName(opts, request, reply, workspaceId, request.params.appName)
     if (reply.sent) return
@@ -200,7 +217,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
     await proxyToRunner(opts, request, reply, `/w/${encodeURIComponent(workspaceId)}/${encodeURIComponent(request.params.appName)}/${rest}`)
   })
 
-  app.get<{ Params: { appName: string; version: string; "*": string } }>(
+  app.all<{ Params: { appName: string; version: string; "*": string } }>(
     "/api/v1/plugins/app-runner/preview/:appName/:version/*",
     async (request, reply) => {
       const workspaceId = workspaceIdFromRequest(request, opts.workspaceRoot)
