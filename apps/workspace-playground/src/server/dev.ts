@@ -7,6 +7,7 @@ import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-works
 import { createPersistedScriptedPiHarness, isPlaygroundShowcaseSession, markPlaygroundShowcaseSession } from "./testing/scriptedPiHarness"
 import { PLAYGROUND_SHOWCASE_SESSION_ROUTE } from "../shared/showcaseSession"
 import {
+  NATIVE_ONE_AGENT,
   SCRIPTED_ONE_AGENT,
   SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS,
   SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS,
@@ -73,8 +74,10 @@ export async function startPlaygroundServer(): Promise<void> {
     // below: the fleet's instruction refs are addressed against the filesystem
     // this server actually serves, so they resolve or are not published.
     const factoryAgents = agentMode === "factory" ? await loadBoringFactoryAgents({}) : undefined
-    const scriptedAgents = agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
-    const agents = factoryAgents ?? scriptedAgents
+    const playgroundAgents = agentMode === "native-single"
+      ? NATIVE_ONE_AGENT
+      : agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
+    const agents = factoryAgents ?? playgroundAgents
     const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
     const scriptedCapabilityPlugins = agentMode === "scripted-multi"
       ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
@@ -100,7 +103,9 @@ export async function startPlaygroundServer(): Promise<void> {
       agents,
       defaultAgentTypeId,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
-      ...(agentMode === "factory" ? {} : { harnessFactory: createPersistedScriptedPiHarness }),
+      ...(agentMode === "scripted-single" || agentMode === "scripted-multi"
+        ? { harnessFactory: createPersistedScriptedPiHarness }
+        : {}),
       plugins: [
         {
           dir: resolve(APP_ROOT, "../../plugins/tasks"),
@@ -112,7 +117,7 @@ export async function startPlaygroundServer(): Promise<void> {
         },
         ...scriptedCapabilityPlugins,
       ],
-      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
+      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram", "@hachej/boring-tldraw-agent"],
       getFilesystemBindings: multiFilesystemPlayground
         ? async () => [{
             filesystem: "company_context",

@@ -23,6 +23,10 @@ describe("workspace playground agent mode", () => {
     expect(SCRIPTED_TWO_AGENT_FLEET).toHaveLength(2)
   })
 
+  it("can run the single playground agent through the native Pi runtime", () => {
+    expect(resolvePlaygroundAgentMode({ BORING_WORKSPACE_PLAYGROUND_NATIVE_AGENT: "1" })).toBe("native-single")
+  })
+
   it("routes the named multi-agent dev script to the factory fleet", () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(import.meta.dirname, "../../package.json"), "utf8"),
