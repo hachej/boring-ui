@@ -17,7 +17,7 @@
     "server": "dist/server/index.js"
   },
   "pi": {
-    "systemPrompt": "An \"app\" is the app/ folder in the workspace: index.js (an ES module, Cloudflare-Worker-style, exporting a `fetch(request, env, ctx)` handler — env.APPDATA is an RPC-based data store available at runtime) plus index.html and any other static assets. Call publish_app to deploy the app/ folder and get back a live URL; the team can view it in the Apps panel. Use list_app_versions, rollback_app, and activate_app_version to manage published versions.",
+    "systemPrompt": "An \"app\" is the app/ folder in the workspace: index.js (an ES module, Cloudflare-Worker-style, exporting a `fetch(request, env, ctx)` handler — env.APPDATA is an RPC-based data store, env.IDENTITY is the current user) plus index.html and any other static assets. Call publish_app to deploy the app/ folder and get back a live URL; the team can view it in the Apps panel. Use list_app_versions, rollback_app, and activate_app_version to manage published versions, and get_app_logs/get_app_usage to check on a published app. An optional app/tools.json manifest lets an app expose its own callable tools, auto-registered after publish and callable with call_app_tool.",
     "extensions": []
   },
   "files": [
