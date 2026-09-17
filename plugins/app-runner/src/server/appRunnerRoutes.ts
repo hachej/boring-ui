@@ -83,8 +83,14 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
       && (record.appName === permittedProfile || (!isProfileAppName(record.appName) && record.kind !== "profile")),
     )
     return {
-      apps: await Promise.all(apps.map(async (record) => {
-        const mounted = await opts.client.current(workspaceId, record.appName, identity)
+      apps: (await Promise.all(apps.map(async (record) => {
+        let mounted
+        try {
+          mounted = await opts.client.current(workspaceId, record.appName, identity)
+        } catch (error) {
+          if (error instanceof AppRunnerHttpError && error.status === 404) return undefined
+          throw error
+        }
         const provenance = mounted.sha ? Object.freeze({
           kind: mounted.kind,
           address: `${workspaceId}/${record.appName}`,
@@ -101,7 +107,7 @@ export function appRunnerRoutes(app: FastifyInstance, opts: AppRunnerRoutesOptio
           appUrl: await opts.client.signedServingUrl(workspaceId, record.appName, identity),
           toolProvenance: mounted.manifest.tools.flatMap(() => provenance ? [provenance] : []),
         }
-      })),
+      }))).filter((record) => record !== undefined),
       workspaceId,
     }
   })
