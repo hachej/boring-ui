@@ -1,4 +1,0 @@
-
-> @hachej/boring-workspace@0.1.111 typecheck /home/ubuntu/projects/boring-ui-v2/.worktrees/app-runner-plugin/packages/workspace
-> tsc --noEmit -p tsconfig.front.source.json && tsc --noEmit -p tsconfig.server.source.json
-

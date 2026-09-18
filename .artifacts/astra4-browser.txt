@@ -1,1 +1,0 @@
-{"document":["/w/proof/guestbook-mu5x3tib/",200],"js":["/w/proof/guestbook-mu5x3tib/client.js",200],"css":["/w/proof/guestbook-mu5x3tib/style.css",200],"api":["/w/proof/guestbook-mu5x3tib/api/entries",200],"body":"Guestbook\nAda"}
