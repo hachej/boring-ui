@@ -212,11 +212,31 @@ function buildDynamicToolsExtension(
     pi.on("before_agent_start", refresh)
     pi.on("tool_result", async (event) => {
       const toolName = (event as { toolName?: unknown }).toolName
-      if (typeof toolName === "string" && ["publish_app", "publish_profile", "undo_profile", "rollback_app", "activate_app_version"].includes(toolName)) {
+      const input = (event as { input?: unknown }).input
+      if (shouldRefreshDynamicTools(toolName, input)) {
         await refresh()
       }
     })
   }
+}
+
+/**
+ * Tool/action pairs that change which published app or profile version is
+ * live, and so must trigger a dynamic-tools refresh so freshly-activated
+ * native app tools mount. Read-only actions (e.g. "versions", "logs",
+ * "usage" on the app-runner plugin's "app" tool) never refresh.
+ */
+const DYNAMIC_TOOLS_REFRESH_TRIGGERS: Record<string, ReadonlySet<string>> = {
+  app: new Set(["publish", "activate", "rollback", "undo_profile"]),
+}
+
+/** Pure predicate for the tool_result refresh trigger; exported for tests. */
+export function shouldRefreshDynamicTools(toolName: unknown, input: unknown): boolean {
+  if (typeof toolName !== "string") return false
+  const actions = DYNAMIC_TOOLS_REFRESH_TRIGGERS[toolName]
+  if (!actions) return false
+  const action = (input as { action?: unknown } | undefined)?.action
+  return typeof action === "string" && actions.has(action)
 }
 
 const PI_RELATIVE_SKILL_PATH_GUIDANCE = "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands."

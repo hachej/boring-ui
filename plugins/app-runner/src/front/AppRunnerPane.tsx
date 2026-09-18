@@ -253,7 +253,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
         <PaneBody>
           <EmptyState
             title="No apps published yet"
-            description="Ask the agent to publish an app from apps/<name>/ with publish_app."
+            description="Ask the agent to publish an app from apps/<name>/ with app (action publish)."
           />
         </PaneBody>
       </Pane>

@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace/shared"
 import { AppRunnerClient } from "../appRunnerClient"
-import { createActivateAppVersionTool, createPublishAppTool, createRollbackAppTool } from "../createAppRunnerTools"
+import { createAppTool } from "../createAppRunnerTools"
 import { createPublishedToolsProvider } from "../createPublishedTools"
 import { MemoryAppRunnerStore } from "./memoryAppRunnerStore"
 
@@ -65,13 +65,14 @@ describe("published lifecycle tool refresh", () => {
     const provider = createPublishedToolsProvider({ client, store })
     const names = async () => (await provider(context)).map((tool) => tool.description)
 
+    const tool = createAppTool({ workspaceRoot: root, client, store })
     expect(await names()).toEqual(["Count"])
-    expect((await createPublishAppTool({ workspaceRoot: root, client, store }).execute({ appName: "guestbook" }, context)).isError).toBeFalsy()
+    expect((await tool.execute({ action: "publish", kind: "app", name: "guestbook" }, context)).isError).toBeFalsy()
     expect(await names()).toEqual(["Pin"])
-    expect((await createActivateAppVersionTool({ workspaceRoot: root, client, store }).execute({ appName: "guestbook", version: 1 }, context)).isError).toBeFalsy()
+    expect((await tool.execute({ action: "activate", name: "guestbook", version: 1 }, context)).isError).toBeFalsy()
     expect(await names()).toEqual(["Count"])
-    expect((await createActivateAppVersionTool({ workspaceRoot: root, client, store }).execute({ appName: "guestbook", version: 2 }, context)).isError).toBeFalsy()
-    expect((await createRollbackAppTool({ workspaceRoot: root, client, store }).execute({ appName: "guestbook" }, context)).isError).toBeFalsy()
+    expect((await tool.execute({ action: "activate", name: "guestbook", version: 2 }, context)).isError).toBeFalsy()
+    expect((await tool.execute({ action: "rollback", name: "guestbook" }, context)).isError).toBeFalsy()
     expect(await names()).toEqual(["Count"])
   })
 })

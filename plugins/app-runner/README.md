@@ -20,6 +20,22 @@ profile/
 
 Apps receive `fetch(request, env)`, SQLite-compatible `env.db`, and the current user in the `x-app-user` request header. Profiles use a separate runner cell per authenticated user. Published manifests are the only source of native tools; editing a draft `tools.json` does not change the agent until publish.
 
+## Agent tool
+
+The plugin exposes a single agent tool, `app`, discriminated on `action`:
+
+| Action | Effect | Input |
+| --- | --- | --- |
+| `publish` | changes what is live | `{ kind: "app" \| "profile", name?, dir?, message? }` — `name` required for `kind: "app"`; `dir` defaults to `apps/<name>/`; `kind: "profile"` always publishes the caller's own `profile/`. |
+| `activate` | changes what is live | `{ name, version }` — activates a specific previously-published app version. |
+| `rollback` | changes what is live | `{ name }` — rolls an app back to its previous version. |
+| `undo_profile` | changes what is live | `{}` — rolls the caller's own published profile back to its previous version. |
+| `versions` | read-only | `{ name }` — lists published versions, most recent first. |
+| `logs` | read-only | `{ name }` — recent console lines and errors for the current version. |
+| `usage` | read-only | `{ name }` — request counts and distinct users for the current version (24h and 7d). |
+
+Missing or invalid fields are rejected with an error naming the offending field.
+
 On each publish the plugin creates or updates a host-owned private Git repository outside the workspace, commits the publishable files, and uploads the exact bytes from that commit. Configure its durable location with `BORING_APP_RUNNER_GIT_ROOT`; otherwise it uses the durable agent-session volume when configured, or a temporary host directory. Dotfiles, app-authored Git metadata, ignored files, oversized files, traversal, escaping symlinks, unsafe Git configuration, and nested repositories are rejected or excluded.
 
 ## Configuration

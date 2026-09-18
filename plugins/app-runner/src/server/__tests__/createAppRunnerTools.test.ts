@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace/shared"
 import { AppRunnerClient } from "../appRunnerClient"
-import { createAppRunnerTools, createPublishAppTool } from "../createAppRunnerTools"
+import { createAppRunnerTools, createAppTool, APP_RUNNER_TOOL_NAME } from "../createAppRunnerTools"
 import { profileAppName } from "../profileAddress"
 import { MemoryAppRunnerStore } from "./memoryAppRunnerStore"
 import { APP_RUNNER_AUTH_SECRET_HEADER } from "../../shared/constants"
@@ -33,6 +33,11 @@ describe("createAppRunnerTools", () => {
     vi.restoreAllMocks()
   })
 
+  it("exposes a single app tool", () => {
+    const tools = createAppRunnerTools({ workspaceRoot, client: new AppRunnerClient({ fetchImpl: vi.fn() }), store: new MemoryAppRunnerStore() })
+    expect(tools.map((tool) => tool.name)).toEqual([APP_RUNNER_TOOL_NAME])
+  })
+
   it("publishes kind, message, and the hidden repository commit sha", async () => {
     const fetchImpl = vi.fn(async (url: string, _init?: RequestInit) => url.endsWith("/current")
       ? new Response(JSON.stringify(current(3)), { status: 200 })
@@ -40,7 +45,7 @@ describe("createAppRunnerTools", () => {
     const client = new AppRunnerClient({ baseUrl: "http://127.0.0.1:9877", token: "tok", authSecret: "secret", fetchImpl: fetchImpl as typeof fetch })
     const store = new MemoryAppRunnerStore()
 
-    const result = await createPublishAppTool({ workspaceRoot, client, store }).execute({ appName: "myapp", message: "Ship guestbook" }, ctx())
+    const result = await createAppTool({ workspaceRoot, client, store }).execute({ action: "publish", kind: "app", name: "myapp", message: "Ship guestbook" }, ctx())
 
     expect(result.isError).toBeFalsy()
     const [url, init] = fetchImpl.mock.calls[0]!
@@ -56,7 +61,7 @@ describe("createAppRunnerTools", () => {
 
   it("surfaces a 400 broken module response", async () => {
     const client = new AppRunnerClient({ fetchImpl: vi.fn(async () => new Response("broken module", { status: 400 })) })
-    const result = await createPublishAppTool({ workspaceRoot, client, store: new MemoryAppRunnerStore() }).execute({ appName: "myapp" }, ctx())
+    const result = await createAppTool({ workspaceRoot, client, store: new MemoryAppRunnerStore() }).execute({ action: "publish", kind: "app", name: "myapp" }, ctx())
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toContain("400")
     expect(result.content[0]?.text).toContain("broken module")
@@ -73,11 +78,11 @@ describe("createAppRunnerTools", () => {
       activationError: "migration 0002 failed: no such table",
     }), { status: 200 }))
     const store = new MemoryAppRunnerStore()
-    const result = await createPublishAppTool({
+    const result = await createAppTool({
       workspaceRoot,
       client: new AppRunnerClient({ fetchImpl: fetchImpl as typeof fetch }),
       store,
-    }).execute({ appName: "myapp" }, ctx())
+    }).execute({ action: "publish", kind: "app", name: "myapp" }, ctx())
 
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toContain("migration 0002 failed")
@@ -87,44 +92,103 @@ describe("createAppRunnerTools", () => {
 
   it("surfaces a runner 413 limit response", async () => {
     const client = new AppRunnerClient({ fetchImpl: vi.fn(async () => new Response("payload too large", { status: 413 })) })
-    const result = await createPublishAppTool({ workspaceRoot, client, store: new MemoryAppRunnerStore() }).execute({ appName: "myapp" }, ctx())
+    const result = await createAppTool({ workspaceRoot, client, store: new MemoryAppRunnerStore() }).execute({ action: "publish", kind: "app", name: "myapp" }, ctx())
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toContain("413")
   })
 
   it("rejects noncanonical app ids before committing or dispatching", async () => {
     const fetchImpl = vi.fn()
-    const result = await createPublishAppTool({
+    const result = await createAppTool({
       workspaceRoot,
       client: new AppRunnerClient({ fetchImpl }),
       store: new MemoryAppRunnerStore(),
-    }).execute({ appName: "foo_bar" }, ctx())
+    }).execute({ action: "publish", kind: "app", name: "foo_bar" }, ctx())
 
     expect(result.isError).toBe(true)
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it("reserves per-user profile addresses from every generic app tool", async () => {
+  it("reserves per-user profile addresses from every name-taking action", async () => {
     const fetchImpl = vi.fn()
-    const tools = createAppRunnerTools({
+    const tool = createAppTool({
       workspaceRoot,
       client: new AppRunnerClient({ fetchImpl }),
       store: new MemoryAppRunnerStore(),
     })
     const target = profileAppName("victim")
-    for (const name of ["publish_app", "list_app_versions", "rollback_app", "activate_app_version", "get_app_logs", "get_app_usage"]) {
-      const tool = tools.find((entry) => entry.name === name)!
-      const result = await tool.execute({ appName: target, version: 1 }, ctx())
-      expect(result.isError, name).toBe(true)
-      expect(result.content[0]?.text, name).toContain("reserved profile namespace")
+    const calls: Record<string, unknown> = {
+      versions: { action: "versions", name: target },
+      rollback: { action: "rollback", name: target },
+      activate: { action: "activate", name: target, version: 1 },
+      logs: { action: "logs", name: target },
+      usage: { action: "usage", name: target },
+    }
+    for (const [action, input] of Object.entries(calls)) {
+      const result = await tool.execute(input as Record<string, unknown>, ctx())
+      expect(result.isError, action).toBe(true)
+      expect(result.content[0]?.text, action).toContain("reserved profile namespace")
     }
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it("exposes profile lifecycle tools and no generic app dispatcher", () => {
-    const tools = createAppRunnerTools({ workspaceRoot, client: new AppRunnerClient({ fetchImpl: vi.fn() }), store: new MemoryAppRunnerStore() })
-    expect(tools.map((tool) => tool.name)).toContain("publish_profile")
-    expect(tools.map((tool) => tool.name)).toContain("undo_profile")
-    expect(tools.map((tool) => tool.name)).not.toContain("call_app_tool")
+  it("publishes and rolls back the caller's own profile without a name", async () => {
+    const fetchImpl = vi.fn(async (url: string) => url.endsWith("/current")
+      ? new Response(JSON.stringify(current(2)), { status: 200 })
+      : new Response(JSON.stringify({ version: 2, url: "http://hub/w/ws-1/profile/", sha: "abc", contentSha: "content", kind: "profile", activated: true }), { status: 200 }))
+    const client = new AppRunnerClient({ fetchImpl: fetchImpl as typeof fetch })
+    const store = new MemoryAppRunnerStore()
+    await mkdir(join(workspaceRoot, "profile"), { recursive: true })
+    await writeFile(join(workspaceRoot, "profile", "instructions.md"), "hello")
+
+    const tool = createAppTool({ workspaceRoot, client, store })
+    const published = await tool.execute({ action: "publish", kind: "profile", message: "Update profile" }, ctx())
+    expect(published.isError).toBeFalsy()
+
+    const rolled = await tool.execute({ action: "undo_profile" }, ctx())
+    expect(rolled.isError).toBeFalsy()
+    expect(rolled.content[0]?.text).toContain("Restored profile version")
+  })
+
+  describe("discriminated input validation", () => {
+    function tool() {
+      return createAppTool({ workspaceRoot, client: new AppRunnerClient({ fetchImpl: vi.fn() }), store: new MemoryAppRunnerStore() })
+    }
+
+    it("rejects an unknown action", async () => {
+      const result = await tool().execute({ action: "delete_everything" }, ctx())
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.text).toContain("unknown action")
+    })
+
+    it("rejects publish kind app without a name", async () => {
+      const result = await tool().execute({ action: "publish", kind: "app" }, ctx())
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.text).toContain('"name" is required for kind "app"')
+    })
+
+    it("rejects a name-taking action missing name", async () => {
+      const result = await tool().execute({ action: "versions" }, ctx())
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.text).toContain('"name"')
+    })
+
+    it("rejects activate missing version", async () => {
+      const result = await tool().execute({ action: "activate", name: "myapp" }, ctx())
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.text).toContain('"version"')
+    })
+
+    it("rejects a name supplied for kind profile", async () => {
+      const result = await tool().execute({ action: "publish", kind: "profile", name: "myapp" }, ctx())
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.text).toContain('"name" is not used for kind "profile"')
+    })
+
+    it("rejects a dir supplied for kind profile", async () => {
+      const result = await tool().execute({ action: "publish", kind: "profile", dir: "apps/myapp" }, ctx())
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.text).toContain('"dir" is not supported for kind "profile"')
+    })
   })
 })

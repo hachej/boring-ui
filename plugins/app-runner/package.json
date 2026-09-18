@@ -17,7 +17,7 @@
     "server": "dist/server/index.js"
   },
   "pi": {
-    "systemPrompt": "Apps live under apps/<name>/ and profiles under profile/. Call publish_app or publish_profile to commit and deploy them. Current published tools are mounted natively; draft tools.json edits have no effect until publish. Use list_app_versions, rollback_app, undo_profile, activate_app_version, get_app_logs, and get_app_usage to manage deployments.",
+    "systemPrompt": "Apps live under apps/<name>/ and profiles under profile/. Use the app tool: action \"publish\" (kind \"app\" or \"profile\") to commit and deploy; \"activate\", \"rollback\", and \"undo_profile\" to change what is live; \"versions\", \"logs\", and \"usage\" to inspect without changing anything. Current published tools are mounted natively; draft tools.json edits have no effect until publish.",
     "extensions": []
   },
   "files": [
@@ -58,7 +58,8 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.31.0"
+    "lucide-react": "^1.31.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
