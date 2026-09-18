@@ -1,7 +1,9 @@
+import React from "react"
+import { act, cleanup, render, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspacePluginClientRequestError } from "@hachej/boring-workspace"
-import { createTLStore, type Editor } from "tldraw"
-import { applyCanvasAction, applyCanvasBatch, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, reconcileFailedSave, setCanvasOwnership } from "../panels"
+import { createTLStore, Tldraw, type Editor } from "tldraw"
+import { applyCanvasAction, applyCanvasBatch, createCanvasLeaseGuard, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, reconcileFailedSave, setCanvasOwnership } from "../panels"
 
 function editorFixture() {
   const before = { store: { "shape:before": {} }, schema: {} }
@@ -29,6 +31,56 @@ function editorFixture() {
 const batch = { id: "batch", path: "flow.tldraw", filesystem: "user" as const, actions: [{ type: "clear" as const }] }
 
 describe("applyCanvasBatch", () => {
+  it("mutates a real SDK editor while owned and is relocked before async commit", async () => {
+    if (!(Image.prototype as { decode?: () => Promise<void> }).decode) {
+      Object.defineProperty(Image.prototype, "decode", { configurable: true, value: async () => {} })
+    }
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    })
+    Object.defineProperty(globalThis, "FontFace", {
+      configurable: true,
+      value: class TestFontFace {
+        status = "loaded"
+        constructor(public family: string) {}
+        async load() { return this }
+      },
+    })
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: {
+        ready: Promise.resolve(), add() {}, delete() { return true }, has() { return false },
+        check() { return true }, async load() { return [] }, *[Symbol.iterator]() {},
+      },
+    })
+    let editor: Editor | undefined
+    render(React.createElement(Tldraw, { onMount: (mounted: Editor) => { editor = mounted } }))
+    await waitFor(() => expect(editor).toBeDefined())
+    const createBatch = {
+      id: "real-batch",
+      path: "flow.tldraw",
+      filesystem: "user" as const,
+      actions: [{ type: "create" as const, shape: { id: "real", type: "rectangle" as const, x: 10, y: 20, text: "Real" } }],
+    }
+    let readonlyAtCommit = false
+    await act(async () => {
+      setCanvasOwnership(editor!, true)
+      await applyCanvasBatch({
+        editor: editor!,
+        batch: createBatch,
+        commit: async () => {
+          setCanvasOwnership(editor!, false)
+          readonlyAtCommit = editor!.getInstanceState().isReadonly
+        },
+        reload: async () => {},
+      })
+    })
+    expect(editor!.getShape("shape:real" as never)).toBeDefined()
+    expect(readonlyAtCommit).toBe(true)
+    cleanup()
+  })
+
   it("preserves omitted properties during a partial update", () => {
     const updateShape = vi.fn()
     const editor = {
@@ -228,6 +280,7 @@ describe("applyCanvasBatch", () => {
     expect(fixture.deleteShapes).toHaveBeenCalledOnce()
     expect(fixture.mergeRemoteChanges).toHaveBeenCalledOnce()
     expect(commit).toHaveBeenCalledOnce()
+    expect(fixture.editor.updateInstanceState).not.toHaveBeenCalled()
     expect(fixture.clearHistory).not.toHaveBeenCalled()
     expect(fixture.bailToMark).not.toHaveBeenCalled()
   })
@@ -245,6 +298,22 @@ describe("applyCanvasBatch", () => {
     await expect(applyCanvasBatch({ editor: fixture.editor, batch, commit: async () => { throw new Error("network") }, reload })).rejects.toThrow("network")
     expect(reload).toHaveBeenCalledOnce()
     expect(fixture.loadSnapshot).toHaveBeenCalledWith(fixture.before)
+  })
+
+  it("relocks locally when the ownership lease expires", () => {
+    vi.useFakeTimers()
+    const updateInstanceState = vi.fn()
+    const expired = vi.fn()
+    const editor = { updateInstanceState } as unknown as Editor
+    const guard = createCanvasLeaseGuard(editor, expired)
+    guard.grant(5_000)
+    expect(guard.isActive()).toBe(true)
+    expect(updateInstanceState).toHaveBeenLastCalledWith({ isReadonly: false }, { history: "ignore" })
+    vi.advanceTimersByTime(5_000)
+    expect(guard.isActive()).toBe(false)
+    expect(updateInstanceState).toHaveBeenLastCalledWith({ isReadonly: true }, { history: "ignore" })
+    expect(expired).toHaveBeenCalledOnce()
+    vi.useRealTimers()
   })
 
   it("keeps non-owners read-only and unlocks only the owning client", () => {

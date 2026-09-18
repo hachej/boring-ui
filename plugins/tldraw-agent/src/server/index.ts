@@ -17,6 +17,7 @@ interface BatchEntry {
   resolve: (value: ToolResult) => void
   timer?: ReturnType<typeof setTimeout>
   ownerClientId?: string
+  ownerLeaseGeneration?: number
   outcome?: CommitOutcome
 }
 
@@ -25,6 +26,7 @@ const GEO_SHAPE_TYPES = ["rectangle", "ellipse", "diamond"] as const
 const SHAPE_ID_PATTERN = /^(?:shape:)?[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/
 const COLORS = ["black", "blue", "green", "orange", "red", "violet"] as const
 const FILLS = ["none", "semi"] as const
+const OWNER_LEASE_MS = 5_000
 
 function result(text: string, details?: unknown, isError = false): ToolResult {
   return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) }
@@ -225,7 +227,8 @@ function resourceKey(filesystem: string, path: string) { return `${filesystem}:$
 export function createTldrawAgentServerPlugin(options: { workspace: Workspace; bridge?: UiBridge }): WorkspaceServerPlugin {
   const batches = new Map<string, BatchEntry>()
   const commitRequests = new Map<string, CommitRequest>()
-  const owners = new Map<string, { clientId: string; seenAt: number }>()
+  const owners = new Map<string, { clientId: string; seenAt: number; generation: number }>()
+  let nextLeaseGeneration = 1
   const resourceWrites = new Map<string, Promise<void>>()
   const withResourceWriteLock = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
     const previous = resourceWrites.get(key) ?? Promise.resolve()
@@ -267,18 +270,28 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         const clientId = String(request.body?.clientId ?? "")
         if (!clientId) throw new Error("clientId is required")
         const key = resourceKey(filesystem, path)
-        const current = owners.get(key)
-        if (!current || current.clientId === clientId || Date.now() - current.seenAt > 5_000) owners.set(key, { clientId, seenAt: Date.now() })
-        return { ok: owners.get(key)?.clientId === clientId }
+        return await withResourceWriteLock(key, async () => {
+          const current = owners.get(key)
+          if (!current || current.clientId === clientId || Date.now() - current.seenAt > OWNER_LEASE_MS) {
+            owners.set(key, {
+              clientId,
+              seenAt: Date.now(),
+              generation: current?.clientId === clientId ? current.generation : nextLeaseGeneration++,
+            })
+          }
+          const owner = owners.get(key)
+          return { ok: owner?.clientId === clientId, leaseGeneration: owner?.clientId === clientId ? owner.generation : undefined, leaseMs: OWNER_LEASE_MS }
+        })
       } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
     })
-    app.get<{ Querystring: { path?: string; clientId?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/actions", async (request, reply) => {
+    app.get<{ Querystring: { path?: string; clientId?: string; filesystem?: string; leaseGeneration?: string } }>("/api/v1/plugins/tldraw-agent/actions", async (request, reply) => {
       try {
         const filesystem = requireUserFilesystem(request.query.filesystem)
         const path = tldrawPath(request.query.path)
         const clientId = String(request.query.clientId ?? "")
+        const leaseGeneration = Number(request.query.leaseGeneration)
         const owner = owners.get(resourceKey(filesystem, path))
-        if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) return { batches: [] }
+        if (!owner || owner.clientId !== clientId || owner.generation !== leaseGeneration || Date.now() - owner.seenAt > OWNER_LEASE_MS) return { batches: [], leaseValid: false }
         owner.seenAt = Date.now()
         const claimed: PendingCanvasBatch[] = []
         for (const entry of batches.values()) {
@@ -290,6 +303,7 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
           if (entry.state !== "pending") continue
           if (entry.timer) clearTimeout(entry.timer)
           entry.ownerClientId = clientId
+          entry.ownerLeaseGeneration = leaseGeneration
           entry.state = "claimed"
           entry.timer = setTimeout(() => {
             if (entry.state !== "claimed") return
@@ -300,20 +314,21 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
           }, 15_000)
           claimed.push(entry.batch)
         }
-        return { batches: claimed }
+        return { batches: claimed, leaseValid: true }
       } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
     })
-    app.post<{ Body: { requestId?: string; batchId?: string; path?: string; filesystem?: string; clientId?: string; json?: string; expectedRevision?: { size?: number; mtimeMs?: number; sha256?: string } } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
-      const { requestId = "", batchId, clientId = "", json, expectedRevision } = request.body ?? {}
+    app.post<{ Body: { requestId?: string; batchId?: string; path?: string; filesystem?: string; clientId?: string; leaseGeneration?: number; json?: string; expectedRevision?: { size?: number; mtimeMs?: number; sha256?: string } } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
+      const { requestId = "", batchId, clientId = "", leaseGeneration, json, expectedRevision } = request.body ?? {}
       try {
         const filesystem = requireUserFilesystem(request.body?.filesystem)
         const path = tldrawPath(request.body?.path)
         if (!requestId) throw new Error("requestId is required")
         if (typeof json !== "string") throw new Error("json is required")
+        if (!Number.isSafeInteger(leaseGeneration) || Number(leaseGeneration) <= 0) throw new Error("leaseGeneration is required")
         parseNative(json)
         if (!expectedRevision || !isFiniteNumber(expectedRevision.size) || !isFiniteNumber(expectedRevision.mtimeMs) || typeof expectedRevision.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(expectedRevision.sha256)) throw new Error("expectedRevision is required")
         const expected: FileRevision = { size: expectedRevision.size, mtimeMs: expectedRevision.mtimeMs, sha256: expectedRevision.sha256 }
-        const fingerprint = JSON.stringify({ batchId: batchId ?? null, clientId, filesystem, path, json, expectedRevision })
+        const fingerprint = JSON.stringify({ batchId: batchId ?? null, clientId, leaseGeneration, filesystem, path, json, expectedRevision })
         const replay = commitRequests.get(requestId)
         if (replay) {
           if (replay.fingerprint !== fingerprint) return reply.code(409).send({ written: false, error: { message: "commit requestId fingerprint mismatch" } })
@@ -324,16 +339,18 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
           const entry = batchId ? batches.get(batchId) : undefined
           let writeStarted = false
           try {
-            const owner = owners.get(resourceKey(filesystem, path))
-            if (!owner || owner.clientId !== clientId || Date.now() - owner.seenAt > 5_000) throw Object.assign(new Error("canvas owner lease is invalid"), { statusCode: 409 })
-            if (batchId && (!entry || entry.state !== "claimed" || entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId)) throw Object.assign(new Error("batch claim is invalid or expired"), { statusCode: 409 })
-            if (entry) {
-              if (entry.timer) clearTimeout(entry.timer)
-              entry.state = "committing"
-            }
             if (!options.workspace.readFileWithStat || !options.workspace.writeFileWithStat) throw Object.assign(new Error("workspace does not support optimistic revision writes"), { statusCode: 501 })
             const key = resourceKey(filesystem, path)
             const outcome = await withResourceWriteLock(key, async (): Promise<CommitOutcome> => {
+              // Lease identity and generation are fenced inside the same lock
+              // held through provider write + verification. A takeover waits.
+              const owner = owners.get(key)
+              if (!owner || owner.clientId !== clientId || owner.generation !== leaseGeneration || Date.now() - owner.seenAt > OWNER_LEASE_MS) throw Object.assign(new Error("canvas owner lease is invalid"), { statusCode: 409 })
+              if (batchId && (!entry || entry.state !== "claimed" || entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId || entry.ownerLeaseGeneration !== leaseGeneration)) throw Object.assign(new Error("batch claim is invalid or expired"), { statusCode: 409 })
+              if (entry) {
+                if (entry.timer) clearTimeout(entry.timer)
+                entry.state = "committing"
+              }
               const current = await options.workspace.readFileWithStat!(path)
               const actual = revision(current.stat, current.content)
               if (!revisionsMatch(actual, expected)) {

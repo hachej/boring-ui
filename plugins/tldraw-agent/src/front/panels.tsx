@@ -164,6 +164,27 @@ export function setCanvasOwnership(editor: Editor, owned: boolean): void {
   editor.updateInstanceState({ isReadonly: !owned }, { history: "ignore" })
 }
 
+export function createCanvasLeaseGuard(editor: Editor, onExpired?: () => void) {
+  let timer: number | undefined
+  let active = false
+  const revoke = () => {
+    if (timer !== undefined) window.clearTimeout(timer)
+    timer = undefined
+    active = false
+    setCanvasOwnership(editor, false)
+  }
+  return {
+    grant(leaseMs: number) {
+      if (timer !== undefined) window.clearTimeout(timer)
+      active = true
+      setCanvasOwnership(editor, true)
+      timer = window.setTimeout(() => { revoke(); onExpired?.() }, leaseMs)
+    },
+    isActive: () => active,
+    revoke,
+  }
+}
+
 function restoreCanvasStoreSnapshot(
   editor: Editor,
   snapshot: ReturnType<Editor["store"]["getStoreSnapshot"]>,
@@ -182,8 +203,6 @@ export async function applyCanvasBatch(options: {
 }): Promise<void> {
   const preBatchSnapshot = options.editor.store.getStoreSnapshot()
   const rollbackRemote = () => { restoreCanvasStoreSnapshot(options.editor, preBatchSnapshot) }
-  const wasReadonly = options.editor.getInstanceState().isReadonly
-  setCanvasOwnership(options.editor, false)
   try {
     try {
       options.editor.store.mergeRemoteChanges(() => {
@@ -204,7 +223,8 @@ export async function applyCanvasBatch(options: {
       throw error
     }
   } finally {
-    setCanvasOwnership(options.editor, !wasReadonly)
+    // Ownership is controlled by the lease lifecycle in the panel. This
+    // helper never changes editor writability on its own.
   }
 }
 
@@ -215,6 +235,8 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
   const editorRef = useRef<Editor | null>(null)
   const clientIdRef = useRef(createClientId())
   const revisionRef = useRef<Revision | undefined>(undefined)
+  const leaseGenerationRef = useRef<number | undefined>(undefined)
+  const leaseGuardRef = useRef<ReturnType<typeof createCanvasLeaseGuard> | undefined>(undefined)
   const saveQueueRef = useRef<ReturnType<typeof createSerializedSaveQueue> | null>(null)
   const saveTimerRef = useRef<number | undefined>(undefined)
   const completedBatchIdsRef = useRef(new Set<string>())
@@ -234,8 +256,10 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
 
   const commitSnapshot = useCallback(async (json: string, requestId: string, batchId?: string) => {
     if (!revisionRef.current) throw new Error("canvas revision is not loaded")
+    if (!leaseGenerationRef.current) throw new Error("canvas owner lease is not active")
     const body = {
       requestId, batchId, path, filesystem, clientId: clientIdRef.current,
+      leaseGeneration: leaseGenerationRef.current,
       json, expectedRevision: revisionRef.current,
     }
     let payload: { revision: Revision }
@@ -290,6 +314,8 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     }, 25)
     return () => {
       active = false; window.clearInterval(wait); unlisten?.()
+      leaseGuardRef.current?.revoke()
+      leaseGenerationRef.current = undefined
       // Pane close is a persistence barrier: start the final stable-request
       // flush before releasing the editor. The queue retains the exact
       // snapshot/request id across transient failures while this page lives.
@@ -307,24 +333,48 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
         return
       }
       try {
-        const connection = await client.postJson<{ ok: boolean }>("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
-        setCanvasOwnership(editor, connection.ok)
-        if (!connection.ok) {
+        const connection = await client.postJson<{ ok: boolean; leaseGeneration?: number; leaseMs?: number }>("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
+        leaseGuardRef.current ??= createCanvasLeaseGuard(editor, () => {
+          leaseGenerationRef.current = undefined
+          setStatus("Read-only · canvas lease expired")
+        })
+        if (!connection.ok || !connection.leaseGeneration) {
+          leaseGenerationRef.current = undefined
+          leaseGuardRef.current.revoke()
           setStatus("Read-only · another tab owns this canvas")
           return
         }
+        leaseGenerationRef.current = connection.leaseGeneration
+        leaseGuardRef.current.grant(connection.leaseMs ?? 5_000)
         setStatus("Live · user and agent share this editor")
-        const query = new URLSearchParams({ path, filesystem, clientId: clientIdRef.current })
-        const payload = await client.getJson<{ batches?: PendingCanvasBatch[] }>(`/api/v1/plugins/tldraw-agent/actions?${query}`)
+        const query = new URLSearchParams({ path, filesystem, clientId: clientIdRef.current, leaseGeneration: String(connection.leaseGeneration) })
+        const payload = await client.getJson<{ batches?: PendingCanvasBatch[]; leaseValid?: boolean }>(`/api/v1/plugins/tldraw-agent/actions?${query}`)
+        if (!payload.leaseValid) {
+          leaseGenerationRef.current = undefined
+          leaseGuardRef.current.revoke()
+          setStatus("Read-only · canvas lease expired")
+          return
+        }
         for (const batch of payload.batches ?? []) {
           if (!active) return
           if (completedBatchIdsRef.current.has(batch.id)) continue
           await saveQueueRef.current?.flush()
           try {
+            // The lease may have expired while the preceding save drained.
+            if (!leaseGuardRef.current?.isActive() || leaseGenerationRef.current !== connection.leaseGeneration) {
+              setStatus("Read-only · canvas lease expired")
+              return
+            }
+            // SDK mutations are synchronous and require writability. Relock
+            // before serialization/commit crosses its first async boundary.
+            setCanvasOwnership(editor, true)
             await applyCanvasBatch({
               editor,
               batch,
-              commit: async () => commitSnapshot(await serializeTldrawJson(editor), `batch:${batch.id}`, batch.id),
+              commit: async () => {
+                setCanvasOwnership(editor, false)
+                return commitSnapshot(await serializeTldrawJson(editor), `batch:${batch.id}`, batch.id)
+              },
               reload: async () => loadFile(editor),
             })
             completedBatchIdsRef.current.add(batch.id)
@@ -332,11 +382,13 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : "Agent edit failed")
           } finally {
+            setCanvasOwnership(editor, false)
             if (saveQueueRef.current?.hasDirty()) void saveQueueRef.current.flush().catch((cause) => setError(cause instanceof Error ? cause.message : "Save failed"))
           }
         }
       } catch (cause) {
-        setCanvasOwnership(editor, false)
+        leaseGenerationRef.current = undefined
+        leaseGuardRef.current?.revoke()
         if (active) setError(cause instanceof Error ? cause.message : "Canvas connection failed")
       } finally {
         if (active) timer = window.setTimeout(() => { void drain() }, 300)
@@ -346,7 +398,8 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     return () => {
       active = false
       if (timer) window.clearTimeout(timer)
-      if (editorRef.current) setCanvasOwnership(editorRef.current, false)
+      leaseGuardRef.current?.revoke()
+      leaseGenerationRef.current = undefined
     }
   }, [client, commitSnapshot, filesystem, loadFile, path])
 
