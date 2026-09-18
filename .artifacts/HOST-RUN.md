@@ -47,3 +47,46 @@ Hub branch `demo-v4` now:
 - `pnpm test:changed`: **BLOCKED during the same dependency build** by the existing generated-pane TS2883 error.
 
 No push was performed.
+
+## Apps panel: default app-only view, debug behind a toggle (2026-09-18)
+
+Reworked `plugins/app-runner/src/front/AppRunnerPane.tsx` so the default view
+is the app alone: minimal header (app name via `PaneTitle`, the app `Select`
+for navigation, and a `Bug` icon `IconButton` with an accessible
+`aria-label`/`aria-pressed`). All debug chrome — kind/current version/sha,
+full mounted tool provenance, the version switcher, Rollback, Activate
+version, the served URL, mounted tool names, and recent logs/errors — moved
+into a `Collapsible` section revealed by the debug toggle, above the iframe
+(the iframe itself is never unmounted while debug is open). The toggle is
+persisted per browser in `localStorage`
+(`boring:app-runner:debug-visible`), default off, with reads/writes wrapped
+in try/catch. No changes to the serving/auth path, the iframe `sandbox`
+attributes (still exactly `allow-scripts allow-forms`), or the capability
+seam (`packages/workspace`, `packages/agent`).
+
+Same host/hub processes as the Astra round 9 run above were still live
+(workspace-playground on `http://127.0.0.1:5202`, hub API `:9877`, per-app
+serving origin `:9878`); the plugin was rebuilt
+(`pnpm --filter @hachej/boring-app-runner build`) so the playground picked up
+the new front bundle.
+
+Screenshots (Playwright, headless chromium, `.artifacts/panel-debug-toggle.mjs`,
+guestbook app opened via `openSurface`):
+
+- `.artifacts/panel-app-only.png` — default view: only the pane header (app
+  name, app selector, debug toggle) and the guestbook app filling the rest of
+  the pane, entries visible.
+- `.artifacts/panel-debug.png` — debug toggled on: kind/version/sha, mounted
+  tools, provenance, version buttons, Rollback/Activate version, and "Recent
+  logs" all visible above the guestbook app, which stays rendered underneath.
+
+Verification for this change:
+
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 50
+  tests (added default-view, debug-view, and localStorage-persistence tests
+  to `AppRunnerPane.logs.test.tsx`).
+- `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
+- `pnpm lint:invariants`: **PASS** (agent invariants, boring-bash/boring-sandbox
+  invariants, workspace plugin invariants, alignment invariants, skill
+  digests all green).
+

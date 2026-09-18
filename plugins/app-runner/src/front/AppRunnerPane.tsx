@@ -2,7 +2,10 @@
 
 import {
   Button,
+  Collapsible,
+  CollapsibleContent,
   EmptyState,
+  IconButton,
   Notice,
   Pane,
   PaneBody,
@@ -16,6 +19,7 @@ import {
   Spinner,
 } from "@hachej/boring-ui-kit"
 import type { PaneProps } from "@hachej/boring-workspace/plugin"
+import { Bug } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   activateAppVersion,
@@ -29,6 +33,7 @@ import type { AppRunnerLogsResponse, AppRunnerRecordWithLinks, AppRunnerVersionW
 
 const LOG_LINES_SHOWN = 20
 const ERROR_LINES_SHOWN = 10
+const DEBUG_VISIBLE_STORAGE_KEY = "boring:app-runner:debug-visible"
 
 export interface AppRunnerPaneParams {
   appName?: string
@@ -43,6 +48,25 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong."
 }
 
+function readDebugVisible(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    return window.localStorage.getItem(DEBUG_VISIBLE_STORAGE_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function writeDebugVisible(value: boolean): void {
+  if (typeof window === "undefined") return
+  try {
+    if (value) window.localStorage.setItem(DEBUG_VISIBLE_STORAGE_KEY, "1")
+    else window.localStorage.removeItem(DEBUG_VISIBLE_STORAGE_KEY)
+  } catch {
+    // Best-effort preference only.
+  }
+}
+
 export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
   const [apps, setApps] = useState<AppRunnerRecordWithLinks[] | null>(null)
   const [appsError, setAppsError] = useState<string | null>(null)
@@ -55,6 +79,11 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [logs, setLogs] = useState<AppRunnerLogsResponse | null>(null)
   const [logsError, setLogsError] = useState<string | null>(null)
+  const [debugVisible, setDebugVisible] = useState<boolean>(readDebugVisible)
+
+  useEffect(() => {
+    writeDebugVisible(debugVisible)
+  }, [debugVisible])
 
   const loadApps = useCallback(async () => {
     setAppsError(null)
@@ -158,6 +187,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
 
   const recentErrors = useMemo(() => (logs?.errors ?? []).slice(-ERROR_LINES_SHOWN), [logs])
   const recentLines = useMemo(() => (logs?.lines ?? []).slice(-LOG_LINES_SHOWN), [logs])
+  const mountedToolNames = useMemo(() => currentApp?.toolManifest?.tools.map((tool) => tool.name) ?? [], [currentApp])
 
   if (appsError) {
     return (
@@ -191,7 +221,7 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
   return (
     <Pane className="flex h-full flex-col">
       <PaneHeader className="flex flex-wrap items-center justify-between gap-2">
-        <PaneTitle>Apps</PaneTitle>
+        <PaneTitle>{currentApp?.appName ?? "Apps"}</PaneTitle>
         <div className="flex items-center gap-2">
           {apps && apps.length > 0 && (
             <Select value={selectedApp} onValueChange={setSelectedApp}>
@@ -201,83 +231,132 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
               <SelectContent>
                 {apps.map((app) => (
                   <SelectItem key={app.appName} value={app.appName}>
-                    {app.appName} ({app.kind}, v{app.version})
+                    {app.appName}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
-          {versions && versions.length > 0 && (
-            <Select
-              value={selectedVersion !== undefined ? String(selectedVersion) : undefined}
-              onValueChange={(value) => setSelectedVersion(Number(value))}
-            >
-              <SelectTrigger size="sm" aria-label="Select version">
-                <SelectValue placeholder="Version" />
-              </SelectTrigger>
-              <SelectContent>
-                {versions.map((entry) => (
-                  <SelectItem key={entry.version} value={String(entry.version)}>
-                    v{entry.version}{entry.current ? " (current)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!selectedApp || actionPending !== null}
-            onClick={handleRollback}
+          <IconButton
+            aria-label={debugVisible ? "Hide app debug details" : "Show app debug details"}
+            aria-pressed={debugVisible}
+            data-testid="app-runner-debug-toggle"
+            variant={debugVisible ? "secondary" : "ghost"}
+            onClick={() => setDebugVisible((current) => !current)}
           >
-            {actionPending === "rollback" ? <Spinner className="size-4" /> : "Rollback"}
-          </Button>
-          <Button
-            size="sm"
-            disabled={!selectedApp || selectedVersion === undefined || isCurrentVersionSelected || actionPending !== null}
-            onClick={handleActivate}
-          >
-            {actionPending === "activate" ? <Spinner className="size-4" /> : "Activate version"}
-          </Button>
+            <Bug className="size-4" />
+          </IconButton>
         </div>
       </PaneHeader>
       <PaneBody className="flex flex-1 flex-col p-0">
-        {actionError && <Notice tone="destructive" className="m-2">{actionError}</Notice>}
-        {versionsError && <Notice tone="destructive" className="m-2">{versionsError}</Notice>}
-        {currentApp && (
-          <section data-testid="app-runner-metadata" className="shrink-0 border-b border-border/60 px-3 py-2 text-xs">
-            <div className="flex flex-wrap gap-x-4 gap-y-1">
-              <span><strong>Kind:</strong> {currentApp.kind}</span>
-              <span><strong>Current:</strong> v{currentApp.version}</span>
-              <span className="font-mono"><strong className="font-sans">SHA:</strong> {currentApp.sha ?? "not recorded"}</span>
+        <Collapsible open={debugVisible}>
+          <CollapsibleContent data-testid="app-runner-debug" className="shrink-0 border-b border-border/60">
+            <div className="flex flex-wrap items-center gap-2 p-2">
+              {versions && versions.length > 0 && (
+                <Select
+                  value={selectedVersion !== undefined ? String(selectedVersion) : undefined}
+                  onValueChange={(value) => setSelectedVersion(Number(value))}
+                >
+                  <SelectTrigger size="sm" aria-label="Select version">
+                    <SelectValue placeholder="Version" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {versions.map((entry) => (
+                      <SelectItem key={entry.version} value={String(entry.version)}>
+                        v{entry.version}{entry.current ? " (current)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!selectedApp || actionPending !== null}
+                onClick={handleRollback}
+              >
+                {actionPending === "rollback" ? <Spinner className="size-4" /> : "Rollback"}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!selectedApp || selectedVersion === undefined || isCurrentVersionSelected || actionPending !== null}
+                onClick={handleActivate}
+              >
+                {actionPending === "activate" ? <Spinner className="size-4" /> : "Activate version"}
+              </Button>
             </div>
-            {(currentApp.toolProvenance?.length ?? 0) > 0 && (
-              <ul aria-label="Mounted tool provenance" className="mt-1 font-mono text-[11px] text-muted-foreground">
-                {currentApp.toolProvenance!.map((provenance, index) => (
-                  <li key={`${provenance.address}:${provenance.version}:${index}`}>
-                    {provenance.kind} {provenance.address} · v{provenance.version} · {provenance.sha.slice(0, 12)}
-                  </li>
-                ))}
-              </ul>
+            {actionError && <Notice tone="destructive" className="mx-2 mb-2">{actionError}</Notice>}
+            {versionsError && <Notice tone="destructive" className="mx-2 mb-2">{versionsError}</Notice>}
+            {currentApp && (
+              <section data-testid="app-runner-metadata" className="px-3 py-2 text-xs">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  <span><strong>Kind:</strong> {currentApp.kind}</span>
+                  <span><strong>Current:</strong> v{currentApp.version}</span>
+                  <span className="font-mono"><strong className="font-sans">SHA:</strong> {currentApp.sha ?? "not recorded"}</span>
+                  <span className="break-all"><strong>URL:</strong> {currentApp.appUrl}</span>
+                </div>
+                {mountedToolNames.length > 0 && (
+                  <div className="mt-1">
+                    <strong>Mounted tools:</strong> {mountedToolNames.join(", ")}
+                  </div>
+                )}
+                {(currentApp.toolProvenance?.length ?? 0) > 0 && (
+                  <ul aria-label="Mounted tool provenance" className="mt-1 font-mono text-[11px] text-muted-foreground">
+                    {currentApp.toolProvenance!.map((provenance, index) => (
+                      <li key={`${provenance.address}:${provenance.version}:${index}`}>
+                        {provenance.kind} {provenance.address} · v{provenance.version} · {provenance.sha.slice(0, 12)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {versions && versions.length > 0 && (
+                  <ul aria-label="Published versions" className="mt-2 flex flex-wrap gap-2">
+                    {versions.map((entry) => (
+                      <li key={entry.version}>
+                        <button
+                          type="button"
+                          className="rounded border border-border/60 px-2 py-1 hover:bg-muted"
+                          aria-current={entry.current ? "true" : undefined}
+                          onClick={() => setSelectedVersion(entry.version)}
+                        >
+                          v{entry.version} · {entry.kind} · {entry.sha?.slice(0, 8) ?? "no sha"}{entry.current ? " · current" : ""}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             )}
-            {versions && versions.length > 0 && (
-              <ul aria-label="Published versions" className="mt-2 flex flex-wrap gap-2">
-                {versions.map((entry) => (
-                  <li key={entry.version}>
-                    <button
-                      type="button"
-                      className="rounded border border-border/60 px-2 py-1 hover:bg-muted"
-                      aria-current={entry.current ? "true" : undefined}
-                      onClick={() => setSelectedVersion(entry.version)}
-                    >
-                      v{entry.version} · {entry.kind} · {entry.sha?.slice(0, 8) ?? "no sha"}{entry.current ? " · current" : ""}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            {selectedApp && (
+              <section
+                data-testid="app-runner-logs"
+                className="max-h-48 shrink-0 overflow-auto border-t border-border/60 px-3 py-2 font-mono text-xs"
+              >
+                <div className="mb-1 font-sans text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Recent logs
+                </div>
+                {logsError && <div className="text-destructive">{logsError}</div>}
+                {!logsError && logs && recentErrors.length === 0 && recentLines.length === 0 && (
+                  <div className="text-muted-foreground">No log output yet.</div>
+                )}
+                {recentErrors.length > 0 && (
+                  <ul className="mb-1 space-y-0.5">
+                    {recentErrors.map((line, index) => (
+                      <li key={`err-${index}`} className="whitespace-pre-wrap text-destructive">{formatLogError(line)}</li>
+                    ))}
+                  </ul>
+                )}
+                {recentLines.length > 0 && (
+                  <ul className="space-y-0.5">
+                    {recentLines.map((line, index) => (
+                      <li key={`line-${index}`} className="whitespace-pre-wrap text-foreground/80">{line}</li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             )}
-          </section>
-        )}
+          </CollapsibleContent>
+        </Collapsible>
         {!apps && (
           <div className="flex h-full items-center justify-center">
             <Spinner />
@@ -291,34 +370,6 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
             sandbox="allow-scripts allow-forms"
             className="min-h-0 w-full flex-1 border-0"
           />
-        )}
-        {selectedApp && (
-          <section
-            data-testid="app-runner-logs"
-            className="max-h-48 shrink-0 overflow-auto border-t border-border/60 px-3 py-2 font-mono text-xs"
-          >
-            <div className="mb-1 font-sans text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Recent logs
-            </div>
-            {logsError && <div className="text-destructive">{logsError}</div>}
-            {!logsError && logs && recentErrors.length === 0 && recentLines.length === 0 && (
-              <div className="text-muted-foreground">No log output yet.</div>
-            )}
-            {recentErrors.length > 0 && (
-              <ul className="mb-1 space-y-0.5">
-                {recentErrors.map((line, index) => (
-                  <li key={`err-${index}`} className="whitespace-pre-wrap text-destructive">{formatLogError(line)}</li>
-                ))}
-              </ul>
-            )}
-            {recentLines.length > 0 && (
-              <ul className="space-y-0.5">
-                {recentLines.map((line, index) => (
-                  <li key={`line-${index}`} className="whitespace-pre-wrap text-foreground/80">{line}</li>
-                ))}
-              </ul>
-            )}
-          </section>
         )}
       </PaneBody>
     </Pane>
