@@ -3,7 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspacePluginClientRequestError } from "@hachej/boring-workspace"
 import { createTLStore, Tldraw, type Editor } from "tldraw"
-import { applyCanvasAction, applyCanvasBatch, createCanvasLeaseGuard, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, postCanvasSnapshot, reconcileFailedSave, refreshCanvasForLeaseGeneration, setCanvasOwnership } from "../panels"
+import { applyCanvasAction, applyCanvasBatch, batchCommitRequestId, createCanvasLeaseGuard, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, postCanvasSnapshot, reconcileFailedSave, refreshCanvasForLeaseGeneration, setCanvasOwnership } from "../panels"
 
 function editorFixture() {
   const before = { store: { "shape:before": {} }, schema: {} }
@@ -31,6 +31,12 @@ function editorFixture() {
 const batch = { id: "batch", path: "flow.tldraw", filesystem: "user" as const, actions: [{ type: "clear" as const }] }
 
 describe("applyCanvasBatch", () => {
+  it("scopes stable batch commit request IDs to the lease generation", () => {
+    expect(batchCommitRequestId("batch-id", 7)).toBe("batch:batch-id:lease:7")
+    expect(batchCommitRequestId("batch-id", 7)).toBe(batchCommitRequestId("batch-id", 7))
+    expect(batchCommitRequestId("batch-id", 8)).not.toBe(batchCommitRequestId("batch-id", 7))
+  })
+
   it("mutates a real SDK editor while owned and is relocked before async commit", async () => {
     if (!(Image.prototype as { decode?: () => Promise<void> }).decode) {
       Object.defineProperty(Image.prototype, "decode", { configurable: true, value: async () => {} })

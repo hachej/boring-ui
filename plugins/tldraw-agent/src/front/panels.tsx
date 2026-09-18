@@ -281,6 +281,10 @@ export async function applyCanvasBatch(options: {
   }
 }
 
+export function batchCommitRequestId(batchId: string, leaseGeneration: number): string {
+  return `batch:${batchId}:lease:${leaseGeneration}`
+}
+
 export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
   const client = useWorkspacePluginClient()
   const path = normalizeTldrawResourcePath(params.path ?? "canvas.tldraw")
@@ -407,6 +411,7 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           setStatus("Read-only · another tab owns this canvas")
           return
         }
+        const leaseGeneration = connection.leaseGeneration
         await refreshCanvasForLeaseGeneration({
           editor,
           previousGeneration: loadedLeaseGenerationRef.current,
@@ -446,7 +451,7 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
               batch,
               commit: async () => {
                 setCanvasOwnership(editor, false)
-                return commitSnapshot(await serializeTldrawJson(editor), `batch:${batch.id}`, batch.id)
+                return commitSnapshot(await serializeTldrawJson(editor), batchCommitRequestId(batch.id, leaseGeneration), batch.id)
               },
               reload: async () => loadFile(editor),
             })

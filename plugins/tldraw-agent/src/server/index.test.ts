@@ -393,13 +393,19 @@ describe("edit_tldraw_canvas", () => {
     const batchId = firstClaim.json().batches[0].id as string
 
     now += 6_000
+    const staleCommit = await app.inject({
+      method: "POST", url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { requestId: `batch:${batchId}:lease:${first.leaseGeneration}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "owner", leaseGeneration: first.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision },
+    })
+    expect(staleCommit.statusCode).toBe(409)
+
     const reacquired = await connectClient(app, "owner")
     expect(reacquired.leaseGeneration).not.toBe(first.leaseGeneration)
     const rebound = await app.inject({ method: "GET", url: actionsUrl("owner", reacquired.leaseGeneration!) })
     expect(rebound.json()).toMatchObject({ leaseValid: true, batches: [{ id: batchId }] })
     const commit = await app.inject({
       method: "POST", url: "/api/v1/plugins/tldraw-agent/commit",
-      payload: { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "owner", leaseGeneration: reacquired.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision },
+      payload: { requestId: `batch:${batchId}:lease:${reacquired.leaseGeneration}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "owner", leaseGeneration: reacquired.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision },
     })
     expect(commit.statusCode).toBe(200)
     await expect(toolPromise).resolves.toMatchObject({ content: [{ text: expect.stringContaining("Applied one action batch") }] })
