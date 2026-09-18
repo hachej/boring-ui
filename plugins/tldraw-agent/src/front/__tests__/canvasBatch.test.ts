@@ -3,7 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspacePluginClientRequestError } from "@hachej/boring-workspace"
 import { createTLStore, Tldraw, type Editor } from "tldraw"
-import { applyCanvasAction, applyCanvasBatch, createCanvasLeaseGuard, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, postCanvasSnapshot, reconcileFailedSave, setCanvasOwnership } from "../panels"
+import { applyCanvasAction, applyCanvasBatch, createCanvasLeaseGuard, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, postCanvasSnapshot, reconcileFailedSave, refreshCanvasForLeaseGeneration, setCanvasOwnership } from "../panels"
 
 function editorFixture() {
   const before = { store: { "shape:before": {} }, schema: {} }
@@ -255,6 +255,57 @@ describe("applyCanvasBatch", () => {
     await flushPendingSaveOnClose(queue, window.setTimeout(() => {}, 500), () => { leaseGeneration = undefined })
     expect(postJson).toHaveBeenCalledOnce()
     expect(leaseGeneration).toBeUndefined()
+  })
+
+  it("renews the owner lease while a delayed close serialization exceeds the lease window", async () => {
+    vi.useFakeTimers()
+    const events: string[] = []
+    const queue = createSerializedSaveQueue({
+      snapshot: async () => {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 5_500))
+        events.push("serialized")
+        return "closing"
+      },
+      commit: async () => { events.push("committed") },
+    })
+    queue.markDirty()
+    const renewLease = vi.fn(async () => { events.push("renewed") })
+    const closing = flushPendingSaveOnClose(queue, undefined, () => { events.push("released") }, renewLease, 1_000)
+    await vi.advanceTimersByTimeAsync(5_500)
+    await closing
+    expect(renewLease.mock.calls.length).toBeGreaterThanOrEqual(6)
+    expect(events.slice(-3)).toEqual(["serialized", "committed", "released"])
+    vi.useRealTimers()
+  })
+
+  it("waits for an in-flight close renewal before releasing editor ownership", async () => {
+    let finishRenewal!: () => void
+    let released = false
+    const renewal = new Promise<void>((resolve) => { finishRenewal = resolve })
+    const closing = flushPendingSaveOnClose({ flush: async () => {} }, undefined, () => { released = true }, () => renewal)
+    await Promise.resolve()
+    expect(released).toBe(false)
+    finishRenewal()
+    await closing
+    expect(released).toBe(true)
+  })
+
+  it("reloads the durable snapshot before a changed ownership generation can become writable", async () => {
+    const events: string[] = []
+    const editor = { updateInstanceState: vi.fn(() => { events.push("readonly") }) } as unknown as Editor
+    let snapshot = "stale-owner-snapshot"
+    const changed = await refreshCanvasForLeaseGeneration({
+      editor,
+      previousGeneration: 3,
+      nextGeneration: 5,
+      settlePreviousGeneration: async () => { events.push("settled") },
+      reload: async () => { snapshot = "durable-takeover-snapshot"; events.push("reloaded") },
+      reconcileLoadedState: () => { events.push("reconciled") },
+    })
+    expect(changed).toBe(true)
+    expect(snapshot).toBe("durable-takeover-snapshot")
+    expect(events).toEqual(["readonly", "settled", "reloaded", "reconciled"])
+    expect(editor.updateInstanceState).toHaveBeenCalledWith({ isReadonly: true }, { history: "ignore" })
   })
 
   it("loads a native document through the canonical editor API as a remote change", () => {

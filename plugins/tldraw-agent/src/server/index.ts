@@ -249,6 +249,16 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
     entry.resolve(tool)
     setTimeout(() => batches.delete(entry.batch.id), 60_000).unref?.()
   }
+  const scheduleClaimExpiry = (entry: BatchEntry) => {
+    if (entry.timer) clearTimeout(entry.timer)
+    entry.timer = setTimeout(() => {
+      if (entry.state !== "claimed") return
+      entry.state = "cancelled"
+      entry.outcome = { statusCode: 409, body: { written: false, error: { message: "batch claim expired" } } }
+      entry.resolve(result("Canvas edit claim expired before commit.", { path: entry.batch.path }, true))
+      setTimeout(() => batches.delete(entry.batch.id), 60_000).unref?.()
+    }, 15_000)
+  }
   const routes: FastifyPluginAsync = async (app) => {
     app.get<{ Querystring: { path?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/file", async (request, reply) => {
       try {
@@ -302,21 +312,21 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         for (const entry of batches.values()) {
           if (entry.batch.path !== path || entry.batch.filesystem !== filesystem) continue
           if (entry.state === "claimed" && entry.ownerClientId === clientId) {
+            if (entry.ownerLeaseGeneration !== leaseGeneration) {
+              // A same-client reconnect after expiry receives a fresh fencing
+              // token. Rebind and requeue its uncommitted claim so the replayed
+              // action and eventual commit use that current token.
+              entry.ownerLeaseGeneration = leaseGeneration
+              scheduleClaimExpiry(entry)
+            }
             claimed.push(entry.batch)
             continue
           }
           if (entry.state !== "pending") continue
-          if (entry.timer) clearTimeout(entry.timer)
           entry.ownerClientId = clientId
           entry.ownerLeaseGeneration = leaseGeneration
           entry.state = "claimed"
-          entry.timer = setTimeout(() => {
-            if (entry.state !== "claimed") return
-            entry.state = "cancelled"
-            entry.outcome = { statusCode: 409, body: { written: false, error: { message: "batch claim expired" } } }
-            entry.resolve(result("Canvas edit claim expired before commit.", { path }, true))
-            setTimeout(() => batches.delete(entry.batch.id), 60_000).unref?.()
-          }, 15_000)
+          scheduleClaimExpiry(entry)
           claimed.push(entry.batch)
         }
         return { batches: claimed, leaseValid: true }

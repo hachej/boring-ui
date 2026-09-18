@@ -149,13 +149,42 @@ export async function flushPendingSaveOnClose(
   queue: { flush(): Promise<void> } | null,
   timer: number | null | undefined,
   releaseLease: () => void = () => {},
+  renewLease?: () => Promise<void>,
+  renewalIntervalMs = 1_000,
 ): Promise<void> {
   if (timer) window.clearTimeout(timer)
+  let renewal: Promise<void> | null = null
+  const renew = () => {
+    if (!renewLease || renewal) return
+    const running = renewLease().catch(() => {})
+    renewal = running
+    void running.finally(() => { if (renewal === running) renewal = null })
+  }
+  renew()
+  const renewalTimer = renewLease ? window.setInterval(renew, renewalIntervalMs) : undefined
   try {
     await queue?.flush()
   } finally {
+    if (renewalTimer !== undefined) window.clearInterval(renewalTimer)
+    await renewal
     releaseLease()
   }
+}
+
+export async function refreshCanvasForLeaseGeneration(options: {
+  editor: Editor
+  previousGeneration: number | undefined
+  nextGeneration: number
+  settlePreviousGeneration?: () => Promise<void>
+  reload: () => Promise<void>
+  reconcileLoadedState?: () => void
+}): Promise<boolean> {
+  if (options.previousGeneration === options.nextGeneration) return false
+  setCanvasOwnership(options.editor, false)
+  try { await options.settlePreviousGeneration?.() } catch { /* the old fencing token may already be invalid */ }
+  await options.reload()
+  options.reconcileLoadedState?.()
+  return true
 }
 
 function writeOutcome(error: unknown): false | true | "unknown" | undefined {
@@ -260,6 +289,7 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
   const clientIdRef = useRef(createClientId())
   const revisionRef = useRef<Revision | undefined>(undefined)
   const leaseGenerationRef = useRef<number | undefined>(undefined)
+  const loadedLeaseGenerationRef = useRef<number | undefined>(undefined)
   const leaseGuardRef = useRef<ReturnType<typeof createCanvasLeaseGuard> | undefined>(undefined)
   const saveQueueRef = useRef<ReturnType<typeof createSerializedSaveQueue> | null>(null)
   const saveTimerRef = useRef<number | undefined>(undefined)
@@ -337,10 +367,21 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
       // settled; only then release editor ownership. React cannot await an
       // effect cleanup, so the ordering lives inside this async barrier.
       leaseGuardRef.current?.holdForClose()
-      void flushPendingSaveOnClose(saveQueueRef.current, saveTimerRef.current, () => {
-        leaseGuardRef.current?.revoke()
-        leaseGenerationRef.current = undefined
-      }).catch(() => {})
+      void flushPendingSaveOnClose(
+        saveQueueRef.current,
+        saveTimerRef.current,
+        () => {
+          leaseGuardRef.current?.revoke()
+          leaseGenerationRef.current = undefined
+        },
+        async () => {
+          const generation = leaseGenerationRef.current
+          if (!generation) throw new Error("canvas owner lease is not active")
+          const connection = await client.postJson<{ ok: boolean; leaseGeneration?: number; leaseMs?: number }>("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
+          if (!connection.ok || connection.leaseGeneration !== generation) throw new Error("canvas owner lease changed during close")
+          leaseGuardRef.current?.grant(connection.leaseMs ?? 5_000)
+        },
+      ).catch(() => {})
     }
   }, [commitSnapshot, loadFile])
 
@@ -366,9 +407,16 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           setStatus("Read-only · another tab owns this canvas")
           return
         }
-        leaseGenerationRef.current = connection.leaseGeneration
-        leaseGuardRef.current.grant(connection.leaseMs ?? 5_000)
-        setStatus("Live · user and agent share this editor")
+        await refreshCanvasForLeaseGeneration({
+          editor,
+          previousGeneration: loadedLeaseGenerationRef.current,
+          nextGeneration: connection.leaseGeneration,
+          settlePreviousGeneration: () => saveQueueRef.current?.flush() ?? Promise.resolve(),
+          reload: () => loadFile(editor),
+          reconcileLoadedState: () => saveQueueRef.current?.reconcileToLoadedState(),
+        })
+        if (!active) return
+        loadedLeaseGenerationRef.current = connection.leaseGeneration
         const query = new URLSearchParams({ path, filesystem, clientId: clientIdRef.current, leaseGeneration: String(connection.leaseGeneration) })
         const payload = await client.getJson<{ batches?: PendingCanvasBatch[]; leaseValid?: boolean }>(`/api/v1/plugins/tldraw-agent/actions?${query}`)
         if (!payload.leaseValid) {
@@ -377,6 +425,9 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           setStatus("Read-only · canvas lease expired")
           return
         }
+        leaseGenerationRef.current = connection.leaseGeneration
+        leaseGuardRef.current.grant(connection.leaseMs ?? 5_000)
+        setStatus("Live · user and agent share this editor")
         for (const batch of payload.batches ?? []) {
           if (!active) return
           if (completedBatchIdsRef.current.has(batch.id)) continue

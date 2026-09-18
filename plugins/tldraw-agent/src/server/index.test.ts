@@ -382,6 +382,68 @@ describe("edit_tldraw_canvas", () => {
     await app.close()
   })
 
+  it("rebinds a claimed batch when the same client reacquires after lease expiry", async () => {
+    let now = 1_000
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now)
+    const fixture = workspaceFixture()
+    const { app, tool } = await routeApp(fixture.workspace)
+    const first = await connectClient(app, "owner")
+    const toolPromise = tool.execute({ operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "rebind", abortSignal: new AbortController().signal } as never)
+    const firstClaim = await app.inject({ method: "GET", url: actionsUrl("owner", first.leaseGeneration!) })
+    const batchId = firstClaim.json().batches[0].id as string
+
+    now += 6_000
+    const reacquired = await connectClient(app, "owner")
+    expect(reacquired.leaseGeneration).not.toBe(first.leaseGeneration)
+    const rebound = await app.inject({ method: "GET", url: actionsUrl("owner", reacquired.leaseGeneration!) })
+    expect(rebound.json()).toMatchObject({ leaseValid: true, batches: [{ id: batchId }] })
+    const commit = await app.inject({
+      method: "POST", url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { requestId: `batch:${batchId}`, batchId, path: "flow.tldraw", filesystem: "user", clientId: "owner", leaseGeneration: reacquired.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision },
+    })
+    expect(commit.statusCode).toBe(200)
+    await expect(toolPromise).resolves.toMatchObject({ content: [{ text: expect.stringContaining("Applied one action batch") }] })
+    nowSpy.mockRestore()
+    await app.close()
+  })
+
+  it("rejects a stale pre-takeover snapshot until the former owner reloads the durable revision", async () => {
+    let now = 1_000
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now)
+    const fixture = workspaceFixture()
+    const { app } = await routeApp(fixture.workspace)
+    const formerOwner = await connectClient(app, "owner")
+    const staleRevision = fixture.revision
+
+    now += 6_000
+    const competitor = await connectClient(app, "competitor")
+    const takeoverCommit = await app.inject({
+      method: "POST", url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { requestId: "competitor-write", path: "flow.tldraw", filesystem: "user", clientId: "competitor", leaseGeneration: competitor.leaseGeneration, json: blankNative(), expectedRevision: staleRevision },
+    })
+    expect(takeoverCommit.statusCode).toBe(200)
+
+    now += 6_000
+    const reacquired = await connectClient(app, "owner")
+    expect(reacquired.leaseGeneration).not.toBe(formerOwner.leaseGeneration)
+    const staleCommit = await app.inject({
+      method: "POST", url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { requestId: "stale-after-takeover", path: "flow.tldraw", filesystem: "user", clientId: "owner", leaseGeneration: reacquired.leaseGeneration, json: blankNative(), expectedRevision: staleRevision },
+    })
+    expect(staleCommit.statusCode).toBe(409)
+    expect(staleCommit.json()).toMatchObject({ written: false, error: { message: "file changed since it was loaded" } })
+
+    const reload = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/file?path=flow.tldraw&filesystem=user" })
+    const currentRevision = reload.json().revision
+    const currentCommit = await app.inject({
+      method: "POST", url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { requestId: "current-after-reload", path: "flow.tldraw", filesystem: "user", clientId: "owner", leaseGeneration: reacquired.leaseGeneration, json: blankNative(), expectedRevision: currentRevision },
+    })
+    expect(currentCommit.statusCode).toBe(200)
+    nowSpy.mockRestore()
+    await app.close()
+  })
+
   it("rejects an expired lease generation after ownership transfers", async () => {
     let now = 1_000
     const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now)
