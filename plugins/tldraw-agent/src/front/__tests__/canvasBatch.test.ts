@@ -3,7 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspacePluginClientRequestError } from "@hachej/boring-workspace"
 import { createTLStore, Tldraw, type Editor } from "tldraw"
-import { applyCanvasAction, applyCanvasBatch, createCanvasLeaseGuard, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, reconcileFailedSave, setCanvasOwnership } from "../panels"
+import { applyCanvasAction, applyCanvasBatch, createCanvasLeaseGuard, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, postCanvasSnapshot, reconcileFailedSave, setCanvasOwnership } from "../panels"
 
 function editorFixture() {
   const before = { store: { "shape:before": {} }, schema: {} }
@@ -230,12 +230,31 @@ describe("applyCanvasBatch", () => {
     expect(userChanges).toHaveBeenCalledOnce()
   })
 
-  it("flushes a dirty generation when the pane closes before its debounce", async () => {
-    const commit = vi.fn(async () => {})
-    const queue = createSerializedSaveQueue({ snapshot: async () => "closing", commit })
+  it("flushes a dirty generation through the commit transport before releasing its lease", async () => {
+    let leaseGeneration: number | undefined = 7
+    const postJson = vi.fn(async (_path: string, body: unknown) => {
+      expect(leaseGeneration).toBe(7)
+      expect(body).toMatchObject({ leaseGeneration: 7, json: "closing" })
+      return { revision: { size: 8, mtimeMs: 2, sha256: "a".repeat(64) } }
+    })
+    const queue = createSerializedSaveQueue({
+      snapshot: async () => "closing",
+      commit: async (json, generation) => {
+        await postCanvasSnapshot({ postJson }, {
+          requestId: `client:manual:${generation}`,
+          path: "flow.tldraw",
+          filesystem: "user",
+          clientId: "client",
+          leaseGeneration,
+          json,
+          expectedRevision: { size: 1, mtimeMs: 1, sha256: "0".repeat(64) },
+        })
+      },
+    })
     queue.markDirty()
-    await flushPendingSaveOnClose(queue, window.setTimeout(() => {}, 500))
-    expect(commit).toHaveBeenCalledWith("closing", 1)
+    await flushPendingSaveOnClose(queue, window.setTimeout(() => {}, 500), () => { leaseGeneration = undefined })
+    expect(postJson).toHaveBeenCalledOnce()
+    expect(leaseGeneration).toBeUndefined()
   })
 
   it("loads a native document through the canonical editor API as a remote change", () => {

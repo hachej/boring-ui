@@ -145,9 +145,17 @@ export function applyCanvasAction(editor: Editor, action: CanvasAction): void {
   editor.distributeShapes(ids, action.axis === "y" ? "vertical" : "horizontal")
 }
 
-export function flushPendingSaveOnClose(queue: { flush(): Promise<void> } | null, timer: number | null | undefined): Promise<void> {
+export async function flushPendingSaveOnClose(
+  queue: { flush(): Promise<void> } | null,
+  timer: number | null | undefined,
+  releaseLease: () => void = () => {},
+): Promise<void> {
   if (timer) window.clearTimeout(timer)
-  return queue?.flush() ?? Promise.resolve()
+  try {
+    await queue?.flush()
+  } finally {
+    releaseLease()
+  }
 }
 
 function writeOutcome(error: unknown): false | true | "unknown" | undefined {
@@ -159,6 +167,18 @@ function writeOutcome(error: unknown): false | true | "unknown" | undefined {
 }
 
 function wasDefinitelyNotWritten(error: unknown): boolean { return writeOutcome(error) === false }
+
+export async function postCanvasSnapshot(
+  client: { postJson(path: string, body: unknown): Promise<unknown> },
+  body: unknown,
+): Promise<{ revision: Revision }> {
+  try {
+    return await client.postJson("/api/v1/plugins/tldraw-agent/commit", body) as { revision: Revision }
+  } catch (cause) {
+    if (wasDefinitelyNotWritten(cause)) throw cause
+    return client.postJson("/api/v1/plugins/tldraw-agent/commit", body) as Promise<{ revision: Revision }>
+  }
+}
 
 export function setCanvasOwnership(editor: Editor, owned: boolean): void {
   editor.updateInstanceState({ isReadonly: !owned }, { history: "ignore" })
@@ -181,6 +201,10 @@ export function createCanvasLeaseGuard(editor: Editor, onExpired?: () => void) {
       timer = window.setTimeout(() => { revoke(); onExpired?.() }, leaseMs)
     },
     isActive: () => active,
+    holdForClose() {
+      if (timer !== undefined) window.clearTimeout(timer)
+      timer = undefined
+    },
     revoke,
   }
 }
@@ -262,13 +286,7 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
       leaseGeneration: leaseGenerationRef.current,
       json, expectedRevision: revisionRef.current,
     }
-    let payload: { revision: Revision }
-    try {
-      payload = await client.postJson<{ revision: Revision }>("/api/v1/plugins/tldraw-agent/commit", body)
-    } catch (cause) {
-      if (wasDefinitelyNotWritten(cause)) throw cause
-      payload = await client.postJson<{ revision: Revision }>("/api/v1/plugins/tldraw-agent/commit", body)
-    }
+    const payload = await postCanvasSnapshot(client, body)
     revisionRef.current = payload.revision
     setStatus(batchId ? "Agent batch applied and saved" : "Saved"); setError(null)
   }, [client, filesystem, path])
@@ -314,12 +332,15 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     }, 25)
     return () => {
       active = false; window.clearInterval(wait); unlisten?.()
-      leaseGuardRef.current?.revoke()
-      leaseGenerationRef.current = undefined
-      // Pane close is a persistence barrier: start the final stable-request
-      // flush before releasing the editor. The queue retains the exact
-      // snapshot/request id across transient failures while this page lives.
-      void flushPendingSaveOnClose(saveQueueRef.current, saveTimerRef.current).catch(() => {})
+      // Pane close is a persistence barrier. Stop the local expiry timer but
+      // retain the generation and writability until the exact pending save has
+      // settled; only then release editor ownership. React cannot await an
+      // effect cleanup, so the ordering lives inside this async barrier.
+      leaseGuardRef.current?.holdForClose()
+      void flushPendingSaveOnClose(saveQueueRef.current, saveTimerRef.current, () => {
+        leaseGuardRef.current?.revoke()
+        leaseGenerationRef.current = undefined
+      }).catch(() => {})
     }
   }, [commitSnapshot, loadFile])
 
@@ -334,6 +355,7 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
       }
       try {
         const connection = await client.postJson<{ ok: boolean; leaseGeneration?: number; leaseMs?: number }>("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
+        if (!active) return
         leaseGuardRef.current ??= createCanvasLeaseGuard(editor, () => {
           leaseGenerationRef.current = undefined
           setStatus("Read-only · canvas lease expired")
@@ -387,9 +409,11 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           }
         }
       } catch (cause) {
-        leaseGenerationRef.current = undefined
-        leaseGuardRef.current?.revoke()
-        if (active) setError(cause instanceof Error ? cause.message : "Canvas connection failed")
+        if (active) {
+          leaseGenerationRef.current = undefined
+          leaseGuardRef.current?.revoke()
+          setError(cause instanceof Error ? cause.message : "Canvas connection failed")
+        }
       } finally {
         if (active) timer = window.setTimeout(() => { void drain() }, 300)
       }
@@ -398,8 +422,8 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
     return () => {
       active = false
       if (timer) window.clearTimeout(timer)
-      leaseGuardRef.current?.revoke()
-      leaseGenerationRef.current = undefined
+      // The load/save lifecycle cleanup owns the ordered flush-then-revoke
+      // barrier. Revoking here would invalidate its final commit.
     }
   }, [client, commitSnapshot, filesystem, loadFile, path])
 

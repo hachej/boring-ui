@@ -272,11 +272,16 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         const key = resourceKey(filesystem, path)
         return await withResourceWriteLock(key, async () => {
           const current = owners.get(key)
-          if (!current || current.clientId === clientId || Date.now() - current.seenAt > OWNER_LEASE_MS) {
+          const now = Date.now()
+          const expired = current ? now - current.seenAt > OWNER_LEASE_MS : false
+          if (!current || current.clientId === clientId || expired) {
             owners.set(key, {
               clientId,
-              seenAt: Date.now(),
-              generation: current?.clientId === clientId ? current.generation : nextLeaseGeneration++,
+              seenAt: now,
+              // A reconnect after expiry is a new lease even when the client
+              // id is unchanged, so delayed requests carrying the old token
+              // cannot become valid again.
+              generation: current?.clientId === clientId && !expired ? current.generation : nextLeaseGeneration++,
             })
           }
           const owner = owners.get(key)

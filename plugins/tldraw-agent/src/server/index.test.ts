@@ -362,6 +362,26 @@ describe("edit_tldraw_canvas", () => {
     await app.close()
   })
 
+  it("issues a new generation when the same client reconnects after expiry", async () => {
+    let now = 1_000
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now)
+    const fixture = workspaceFixture()
+    const { app } = await routeApp(fixture.workspace)
+    const first = await connectClient(app, "owner")
+    now += 6_000
+    const renewed = await connectClient(app, "owner")
+    expect(renewed.leaseGeneration).not.toBe(first.leaseGeneration)
+
+    const staleCommit = await app.inject({
+      method: "POST", url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { requestId: "stale-same-client", path: "flow.tldraw", filesystem: "user", clientId: "owner", leaseGeneration: first.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision },
+    })
+    expect(staleCommit.statusCode).toBe(409)
+    expect(staleCommit.json()).toMatchObject({ written: false, error: { message: "canvas owner lease is invalid" } })
+    nowSpy.mockRestore()
+    await app.close()
+  })
+
   it("rejects an expired lease generation after ownership transfers", async () => {
     let now = 1_000
     const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now)
