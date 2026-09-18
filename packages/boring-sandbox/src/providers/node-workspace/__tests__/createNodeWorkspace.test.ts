@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
+import { isReadonlyFilesystemMutationError, type RuntimeFilesystemCapability } from '@hachej/boring-agent/shared'
 import { PATH_TRAVERSAL_CORPUS } from '../../__tests__/fixtures/pathTraversalCorpus'
 import { createNodeWorkspace } from '../createNodeWorkspace'
 import type { PathRejectReason } from '../paths'
@@ -98,6 +99,36 @@ test('optimized read/write with stat helpers return content and metadata', async
   const writeStat = await workspace.writeFileWithStat?.('optimized.txt', 'hello again')
   expect(writeStat?.kind).toBe('file')
   expect(writeStat?.size).toBe(11)
+})
+
+test('each adapter-owned readonly mutation throws the canonical detectable error', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'boring-ui-node-workspace-readonly-'))
+  tempDirs.push(root)
+  const workspace = createNodeWorkspace(root, { readonlyPaths: ['.agents'] })
+  await mkdir(join(root, '.agents'), { recursive: true })
+  await workspace.writeFile('movable.txt', 'x')
+
+  const cases: Array<[string, RuntimeFilesystemCapability, () => Promise<unknown>]> = [
+    ['writeFile', 'write', () => workspace.writeFile('.agents/config.json', 'x')],
+    ['writeBinaryFile', 'write', () => workspace.writeBinaryFile!('.agents/config.bin', new Uint8Array([1]))],
+    ['createBinaryFile', 'create-child', () => workspace.createBinaryFile!('.agents/new.bin', new Uint8Array([1]))],
+    ['writeFileWithStat', 'write', () => workspace.writeFileWithStat!('.agents/config.json', 'x')],
+    ['writeBinaryFileWithStat', 'write', () => workspace.writeBinaryFileWithStat!('.agents/config.bin', new Uint8Array([1]))],
+    ['unlink', 'delete', () => workspace.unlink('.agents/config.json')],
+    ['mkdir', 'create-child', () => workspace.mkdir('.agents/nested', { recursive: true })],
+    ['rename source', 'move-from', () => workspace.rename('.agents/config.json', 'moved.txt')],
+    ['rename destination', 'create-child', () => workspace.rename('movable.txt', '.agents/moved.txt')],
+  ]
+
+  for (const [name, operation, mutate] of cases) {
+    try {
+      await mutate()
+      throw new Error(`${name} unexpectedly succeeded`)
+    } catch (error) {
+      expect(isReadonlyFilesystemMutationError(error), name).toBe(true)
+      expect(error, name).toMatchObject({ code: 'readonly', statusCode: 403, filesystem: 'user', operation })
+    }
+  }
 })
 
 test('readdir returns only name and kind fields', async () => {

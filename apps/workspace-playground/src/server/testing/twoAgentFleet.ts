@@ -50,3 +50,13 @@ export const SCRIPTED_TWO_AGENT_DEFAULT = SCRIPTED_DEFAULT_AGENT_TYPE_ID
 
 export const SCRIPTED_ONE_AGENT = [SCRIPTED_TWO_AGENT_FLEET[0]] as const satisfies readonly AgentHostAgentSpec[]
 export const SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS = [SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS[0]] as const
+
+export const NATIVE_ONE_AGENT = [{
+  agentTypeId: SCRIPTED_DEFAULT_AGENT_TYPE_ID,
+  definition: {
+    label: "Agent",
+    instructions: "You are the regular Boring workspace agent. Use available workspace and plugin tools to complete the user's requests.",
+  },
+  model: { preferred: "openai-codex:gpt-5.6-sol" },
+  plugins: [{ name: "hachej-boring-tldraw-agent" }],
+}] as const satisfies readonly AgentHostAgentSpec[]

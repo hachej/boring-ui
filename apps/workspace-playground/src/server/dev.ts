@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { basename, dirname, resolve } from "node:path"
-import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createRemoteWorkerModeAdapter, createSandboxRuntimeModeAdapter } from "@hachej/boring-agent/server"
 import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
-import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
+import { createNodeWorkspace, disposeNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness, isPlaygroundShowcaseSession, markPlaygroundShowcaseSession } from "./testing/scriptedPiHarness"
 import { PLAYGROUND_SHOWCASE_SESSION_ROUTE } from "../shared/showcaseSession"
 import {
+  NATIVE_ONE_AGENT,
   SCRIPTED_ONE_AGENT,
   SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS,
   SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS,
@@ -15,7 +16,7 @@ import {
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
 import { loadBoringFactoryAgents } from "./factoryAgents"
-import { resolvePlaygroundAgentMode } from "./playgroundAgentMode"
+import { resolvePlaygroundAgentMode, shouldEnableTldrawPlugin } from "./playgroundAgentMode"
 import { resolvePlaygroundDefaultAgentTypeId } from "../shared/playgroundAgents"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -58,23 +59,36 @@ export async function startPlaygroundServer(): Promise<void> {
       seedWorkspaceFromFixtures(workspaceRoot)
     }
     const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
+    const tldrawEnabled = shouldEnableTldrawPlugin(process.env)
     const remoteWorkerModeAdapter = workerBaseUrl
       ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
       : undefined
     const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
-    const beadsOperations = remoteWorkerModeAdapter
-      ? undefined
-      : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
+    const localWorkspace = remoteWorkerModeAdapter
+      ? undefined
+      : createNodeWorkspace(workspaceRoot, {
+          runtimeContext: { runtimeCwd: localRuntimeMode === "local" ? "/workspace" : workspaceRoot },
+          readonlyPaths: [".agents"],
+        })
+    const localModeAdapter = localWorkspace
+      ? createSandboxRuntimeModeAdapter(localRuntimeMode, { createWorkspace: () => localWorkspace })
+      : undefined
+    const beadsOperations = localWorkspace ? createWorkspaceBeadsOperations(localWorkspace) : undefined
     const agentMode = resolvePlaygroundAgentMode(process.env)
     // Same `workspaceRoot` value that is handed to createWorkspaceAgentServer
     // below: the fleet's instruction refs are addressed against the filesystem
     // this server actually serves, so they resolve or are not published.
     const factoryAgents = agentMode === "factory" ? await loadBoringFactoryAgents({}) : undefined
-    const scriptedAgents = agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
-    const agents = factoryAgents ?? scriptedAgents
+    const nativeAgents = !tldrawEnabled
+      ? NATIVE_ONE_AGENT.map((agent) => ({ ...agent, plugins: [] }))
+      : NATIVE_ONE_AGENT
+    const playgroundAgents = agentMode === "native-single"
+      ? nativeAgents
+      : agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
+    const agents = factoryAgents ?? playgroundAgents
     const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
     const scriptedCapabilityPlugins = agentMode === "scripted-multi"
       ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
@@ -91,8 +105,7 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       appRoot: APP_ROOT,
       sessionId: remoteWorkerWorkspaceId,
-      mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
-      runtimeModeAdapter: remoteWorkerModeAdapter,
+      runtimeModeAdapter: remoteWorkerModeAdapter ?? localModeAdapter,
       logger: true,
       // Explicit so the playground exercises the same `.agents` protection
       // production hosts get, instead of relying on the library default.
@@ -100,7 +113,9 @@ export async function startPlaygroundServer(): Promise<void> {
       agents,
       defaultAgentTypeId,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
-      ...(agentMode === "factory" ? {} : { harnessFactory: createPersistedScriptedPiHarness }),
+      ...(agentMode === "scripted-single" || agentMode === "scripted-multi"
+        ? { harnessFactory: createPersistedScriptedPiHarness }
+        : {}),
       plugins: [
         {
           dir: resolve(APP_ROOT, "../../plugins/tasks"),
@@ -111,6 +126,13 @@ export async function startPlaygroundServer(): Promise<void> {
           trust: "internal",
         },
         ...scriptedCapabilityPlugins,
+        ...(tldrawEnabled && localWorkspace
+          ? [{
+              dir: resolve(APP_ROOT, "../../plugins/tldraw-agent"),
+              options: { workspace: localWorkspace },
+              trust: "internal" as const,
+            }]
+          : []),
       ],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       getFilesystemBindings: multiFilesystemPlayground
@@ -125,6 +147,7 @@ export async function startPlaygroundServer(): Promise<void> {
         : undefined,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })
+    if (localWorkspace) app.addHook("onClose", async () => { disposeNodeWorkspace(localWorkspace) })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"
       return {

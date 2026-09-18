@@ -1,4 +1,7 @@
 import { expect, test, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const createBwrapSandboxProviderCalls = vi.hoisted(() => vi.fn())
 vi.mock('@hachej/boring-sandbox/providers/bwrap', async (importOriginal) => {
@@ -213,6 +216,34 @@ test('local adapter forwards bwrap sandbox options to its provider', async () =>
     },
   })
   await adapter.dispose?.()
+})
+
+test.each(['direct', 'local'] as const)('%s built-in adapter preserves one canonical Workspace/Sandbox pair', async (mode) => {
+  const root = await mkdtemp(join(tmpdir(), `boring-${mode}-pair-`))
+  let canonicalWorkspace: Workspace | undefined
+  const adapter = createSandboxRuntimeModeAdapter(mode, {
+    createWorkspace: (_context, runtimeContext) => {
+      canonicalWorkspace = {
+        root: runtimeContext.runtimeCwd,
+        runtimeContext,
+        fsCapability: 'strong',
+        async readFile() { return '' }, async writeFile() {}, async unlink() {},
+        async readdir() { return [] }, async stat() { return { kind: 'file', size: 0, mtimeMs: 0 } },
+        async mkdir() {}, async rename() {},
+      }
+      return canonicalWorkspace
+    },
+  })
+  try {
+    const bundle = await adapter.create({ workspaceRoot: root, sessionId: 'pair' })
+    expect(bundle.workspace).toBe(canonicalWorkspace)
+    expect(bundle.runtimeContext).toBe(canonicalWorkspace?.runtimeContext)
+    expect(bundle.sandbox.runtimeContext).toBe(canonicalWorkspace?.runtimeContext)
+    await bundle.disposeRuntime?.()
+  } finally {
+    await adapter.dispose?.()
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {

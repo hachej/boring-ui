@@ -7,6 +7,7 @@ import {
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
 import { createNodeWorkspace, disposeNodeWorkspace } from '../node-workspace/createNodeWorkspace'
+import type { Workspace } from '@hachej/boring-agent/shared'
 import {
   createBwrapSandbox,
   type CreateBwrapSandboxOptions,
@@ -14,6 +15,8 @@ import {
 
 export interface BwrapSandboxProviderOptions {
   sandbox?: Omit<CreateBwrapSandboxOptions, 'hostWorkspaceRoot' | 'runtimeContext'>
+  /** Supplies an externally owned canonical workspace shared with host plugins. */
+  createWorkspace?: (context: Parameters<SandboxProviderV1['create']>[0], runtimeContext: { runtimeCwd: string }) => Workspace
 }
 
 export function createBwrapSandboxProvider(
@@ -36,17 +39,19 @@ export function createBwrapSandboxProvider(
 
       await mkdir(context.workspaceRoot, { recursive: true })
       const runtimeContext = { runtimeCwd: '/workspace' }
-      const workspace = createNodeWorkspace(context.workspaceRoot, { runtimeContext })
+      const ownsWorkspace = !options.createWorkspace
+      const workspace = options.createWorkspace?.(context, runtimeContext)
+        ?? createNodeWorkspace(context.workspaceRoot, { runtimeContext })
       const sandbox = createBwrapSandbox({
         ...options.sandbox,
         hostWorkspaceRoot: context.workspaceRoot,
-        runtimeContext,
+        runtimeContext: workspace.runtimeContext,
       })
 
       try {
         await sandbox.init?.({ workspace, sessionId: context.sessionId })
       } catch (error) {
-        disposeNodeWorkspace(workspace)
+        if (ownsWorkspace) disposeNodeWorkspace(workspace)
         await sandbox.dispose?.()
         const message = error instanceof Error ? error.message : String(error)
         if (/bubblewrap|\bbwrap\b/i.test(message)) {
@@ -64,7 +69,7 @@ export function createBwrapSandboxProvider(
         async dispose() {
           if (disposed) return
           disposed = true
-          disposeNodeWorkspace(workspace)
+          if (ownsWorkspace) disposeNodeWorkspace(workspace)
           await sandbox.dispose?.()
         },
       }
