@@ -19,7 +19,7 @@ import {
   Spinner,
 } from "@hachej/boring-ui-kit"
 import type { PaneProps } from "@hachej/boring-workspace/plugin"
-import { Bug } from "lucide-react"
+import { Bug, Check, Copy } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   activateAppVersion,
@@ -29,11 +29,53 @@ import {
   fetchApps,
   rollbackApp,
 } from "./apiClient"
+import { copyTextToClipboard } from "./clipboard"
 import type { AppRunnerLogsResponse, AppRunnerRecordWithLinks, AppRunnerVersionWithPreview } from "../shared/types"
 
 const LOG_LINES_SHOWN = 20
 const ERROR_LINES_SHOWN = 10
 const DEBUG_VISIBLE_STORAGE_KEY = "boring:app-runner:debug-visible"
+const REDACTED_TOKEN = "•••"
+
+/**
+ * The serving URL carries a short-lived signed authorization token in its
+ * path (`/t/<token>/...`) — see `signedServingUrl` in `appRunnerClient.ts`.
+ * Displaying it in full lets anyone who sees a screenshot or shared screen
+ * use that token until it expires (~3 minutes, but still a live credential).
+ * This only redacts the *displayed text*; the token still necessarily
+ * appears in the DOM via the iframe's `src` attribute, since the browser
+ * must send it to load the app. That's an unavoidable property of using a
+ * signed URL for iframe auth, not something this masking can or should hide
+ * — see `.artifacts/HOST-RUN.md` for the full note. Masking only reduces
+ * shoulder-surfing/screenshot leakage of the debug panel's own text.
+ */
+function maskSignedAppUrl(rawUrl: string): string {
+  return rawUrl.replace(/\/t\/[^/]+\//, `/t/${REDACTED_TOKEN}/`)
+}
+
+function CopySignedUrlButton({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    const ok = await copyTextToClipboard(url)
+    if (ok) {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }
+  }, [url])
+
+  return (
+    <IconButton
+      aria-label="Copy credentialed app URL"
+      title="Copy the full app URL, including its signed access token"
+      data-testid="app-runner-copy-url"
+      variant="ghost"
+      onClick={handleCopy}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </IconButton>
+  )
+}
 
 export interface AppRunnerPaneParams {
   appName?: string
@@ -293,7 +335,10 @@ export function AppRunnerPane({ params }: PaneProps<AppRunnerPaneParams>) {
                   <span><strong>Kind:</strong> {currentApp.kind}</span>
                   <span><strong>Current:</strong> v{currentApp.version}</span>
                   <span className="font-mono"><strong className="font-sans">SHA:</strong> {currentApp.sha ?? "not recorded"}</span>
-                  <span className="break-all"><strong>URL:</strong> {currentApp.appUrl}</span>
+                  <span className="flex items-center gap-1 break-all">
+                    <strong>URL:</strong> <span data-testid="app-runner-masked-url">{maskSignedAppUrl(currentApp.appUrl)}</span>
+                    <CopySignedUrlButton url={currentApp.appUrl} />
+                  </span>
                 </div>
                 {mountedToolNames.length > 0 && (
                   <div className="mt-1">

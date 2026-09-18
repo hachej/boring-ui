@@ -90,3 +90,78 @@ Verification for this change:
   invariants, workspace plugin invariants, alignment invariants, skill
   digests all green).
 
+## Mask the signed token in the debug URL (2026-09-18)
+
+The debug section added above shows `currentApp.appUrl`, which is a
+`signedServingUrl` from the hub carrying a short-lived signed authorization
+token in its path (`/t/<token>/...`, ~3 minute expiry). Displaying it in
+full made the token legible in a screenshot or shared screen — a usable
+credential until it expired. See `.artifacts/panel-debug.png` from the prior
+round for the leaked example.
+
+Changes:
+
+- `plugins/app-runner/src/front/AppRunnerPane.tsx`: added `maskSignedAppUrl()`,
+  which redacts only the `/t/<token>/` path segment (`/t/•••/`), keeping the
+  origin and any trailing path visible — the useful parts for debugging.
+  The debug panel now renders the masked text
+  (`data-testid="app-runner-masked-url"`) plus a `CopySignedUrlButton`
+  (`data-testid="app-runner-copy-url"`, `aria-label="Copy credentialed app
+  URL"`) that copies the *real* URL via an explicit click — an intentional
+  user action, unlike passive display.
+- `plugins/app-runner/src/front/clipboard.ts`: new self-contained
+  `copyTextToClipboard()` helper (navigator.clipboard with an
+  execCommand/textarea fallback), mirroring the existing pattern in
+  `packages/workspace/.../file-tree/clipboard.ts` and
+  `packages/agent/src/front/clipboard.ts`. No new dependency — the plugin
+  only depends on `@hachej/boring-ui-kit` and `lucide-react`, so the helper
+  is local rather than importing across package boundaries.
+- Tests added to `AppRunnerPane.logs.test.tsx`: one asserts the debug
+  panel's `textContent` never contains the raw token while the iframe's
+  `src` attribute still carries the full signed URL; another asserts
+  clicking the copy button calls `navigator.clipboard.writeText` with the
+  full, unmasked URL.
+
+**DOM leak is inherent, not fixed by this change.** The iframe must be given
+the real signed URL as its `src` to load the app (`sandbox="allow-scripts
+allow-forms"`, no cookies), so the token is present in the DOM by
+construction — visible to anyone who opens devtools or inspects the page.
+Masking the *displayed debug text* reduces shoulder-surfing and screenshot
+leakage of the debug panel; it does not and cannot hide the token from DOM
+inspection, and no attempt was made to do so. This is documented inline
+above `maskSignedAppUrl()` in `AppRunnerPane.tsx` as well.
+
+Hub-side (`boring-hub`, branch `demo-v4`, worktree at its repo root — commit
+made there separately, not pushed): grepped `app-runner/index.js` and
+`scripts/apps-origin.mjs` for the signed URL/token reaching a log, error
+message, or telemetry. `index.js`'s `signed-url` action and its serving-token
+verification path never echo the token back in error text. Found one real
+leak: `scripts/apps-origin.mjs`'s top-level proxy `catch` block returned
+`error.message` verbatim in a `502` response body — Node's `fetch failed`
+errors can embed the request URL, which carries the token both as the
+public `/t/<token>/` path segment and as the `t=<token>` query param
+forwarded upstream (`upstreamUrl.searchParams.set("t", ...)`). Added
+`redactSignedUrl()` to strip both forms before the message reaches the
+client. `node --check` passed on the edited file (no project-level test/lint
+harness was run for this ad hoc fix in the hub worktree).
+
+Re-capture: rebuilt the plugin (`pnpm --filter @hachej/boring-app-runner
+build`) so the still-running workspace-playground (`:5202`, hub `:9877`,
+apps-serving `:9878` — same processes as the Astra round 9 run above) picked
+up the new front bundle, then re-ran the existing
+`.artifacts/panel-debug-toggle.mjs` Playwright script unmodified. Its
+console output for the debug step confirmed:
+`URL:\nhttp://7-default-9-guestbook.apps.localhost:9878/t/•••/` (masked) with
+`sandbox: "allow-scripts allow-forms"` and `frameStillVisible: true`. This
+overwrote `.artifacts/panel-debug.png` and `.artifacts/panel-app-only.png`
+in place with the masked view.
+
+Verification for this change:
+
+- `pnpm --filter @hachej/boring-app-runner test`: **PASS**, 11 files / 52
+  tests (2 new tests added; the rest are pre-existing, all green).
+- `pnpm --filter @hachej/boring-app-runner typecheck`: **PASS**.
+- `pnpm lint:invariants`: **PASS**.
+- `.artifacts/panel-debug.png`: re-captured against the live host, token
+  masked, guestbook app still visible underneath.
+
