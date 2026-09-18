@@ -3,6 +3,7 @@ import Fastify from "fastify"
 import { describe, expect, it, vi } from "vitest"
 import type { Stat, Workspace } from "@hachej/boring-agent/shared"
 import { createTLStore } from "tldraw"
+import { TLDRAW_AGENT_ERROR_CODES } from "../shared"
 import { createCanvasTool, createTldrawAgentServerPlugin, nativeShapeSummary, validateActions } from "./index"
 
 function blankNative(): string {
@@ -70,7 +71,7 @@ describe("edit_tldraw_canvas", () => {
 
   it("rejects operation fields that would otherwise be ignored", async () => {
     const tool = createCanvasTool(workspaceFixture().workspace)
-    await expect(tool.execute({ operation: "read", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "read" } as never)).resolves.toMatchObject({ isError: true })
+    await expect(tool.execute({ operation: "read", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "read" } as never)).resolves.toMatchObject({ isError: true, details: { error: { code: TLDRAW_AGENT_ERROR_CODES.invalidRequest } } })
     await expect(tool.execute({ operation: "create", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "create" } as never)).resolves.toMatchObject({ isError: true })
     await expect(tool.execute({ operation: "edit", path: "flow.tldraw" }, { toolCallId: "edit" } as never)).resolves.toMatchObject({ isError: true })
   })
@@ -120,7 +121,7 @@ describe("edit_tldraw_canvas", () => {
     const { app } = await routeApp(fixture.workspace)
     const response = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/file?path=flow.tldraw&filesystem=user" })
     expect(response.statusCode).toBe(400)
-    expect(response.json().error.message).toContain("invalid native tldraw file")
+    expect(response.json()).toMatchObject({ error: { code: TLDRAW_AGENT_ERROR_CODES.invalidRequest, message: expect.stringContaining("invalid native tldraw file") } })
     await app.close()
   })
 
@@ -130,12 +131,28 @@ describe("edit_tldraw_canvas", () => {
     const file = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/file?path=flow.tldraw&filesystem=user" })
     expect(file.statusCode).toBe(200)
     const revision = file.json().revision
-    expect((await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "company", clientId: "c" } })).statusCode).toBe(400)
+    const invalidFilesystem = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "company", clientId: "c" } })
+    expect(invalidFilesystem.statusCode).toBe(400)
+    expect(invalidFilesystem.json()).toMatchObject({ error: { code: TLDRAW_AGENT_ERROR_CODES.invalidRequest } })
     const lease = await connectClient(app)
     const rejected = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-other", path: "flow.tldraw", filesystem: "user", clientId: "other", leaseGeneration: lease.leaseGeneration, json: blankNative(), expectedRevision: revision } })
     expect(rejected.statusCode).toBe(409)
     expect(rejected.json().written).toBe(false)
     expect(fixture.workspace.writeFileWithStat).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it("returns the canonical batch code for an invalid claim", async () => {
+    const fixture = workspaceFixture()
+    const { app } = await routeApp(fixture.workspace)
+    const lease = await connectClient(app)
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { requestId: "missing-batch", batchId: "missing", path: "flow.tldraw", filesystem: "user", clientId: "c", leaseGeneration: lease.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision },
+    })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ written: false, error: { code: TLDRAW_AGENT_ERROR_CODES.batchInvalid } })
     await app.close()
   })
 
@@ -145,7 +162,7 @@ describe("edit_tldraw_canvas", () => {
     const lease = await connectClient(app)
     const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-conflict", path: "flow.tldraw", filesystem: "user", clientId: "c", leaseGeneration: lease.leaseGeneration, json: blankNative(), expectedRevision: { size: 999, mtimeMs: 1, sha256: "0".repeat(64) } } })
     expect(response.statusCode).toBe(409)
-    expect(response.json()).toMatchObject({ written: false, error: { message: "file changed since it was loaded" } })
+    expect(response.json()).toMatchObject({ written: false, error: { code: TLDRAW_AGENT_ERROR_CODES.revisionConflict, message: "file changed since it was loaded" } })
     expect(fixture.workspace.writeFileWithStat).not.toHaveBeenCalled()
     await app.close()
   })
@@ -161,7 +178,7 @@ describe("edit_tldraw_canvas", () => {
     const lease = await connectClient(app)
     const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-mutated-reject", path: "flow.tldraw", filesystem: "user", clientId: "c", leaseGeneration: lease.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision } })
     expect(response.statusCode).toBe(409)
-    expect(response.json()).toMatchObject({ written: "unknown", error: { message: "provider response lost after write" } })
+    expect(response.json()).toMatchObject({ written: "unknown", error: { code: TLDRAW_AGENT_ERROR_CODES.unknownWriteOutcome, message: "provider response lost after write" } })
     await app.close()
   })
 
@@ -178,7 +195,7 @@ describe("edit_tldraw_canvas", () => {
     const lease = await connectClient(app)
     const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-verify-reject", path: "flow.tldraw", filesystem: "user", clientId: "c", leaseGeneration: lease.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision } })
     expect(response.statusCode).toBe(409)
-    expect(response.json()).toMatchObject({ written: "unknown", error: { message: "verification unavailable" } })
+    expect(response.json()).toMatchObject({ written: "unknown", error: { code: TLDRAW_AGENT_ERROR_CODES.unknownWriteOutcome, message: "verification unavailable" } })
     await app.close()
   })
 
@@ -194,7 +211,7 @@ describe("edit_tldraw_canvas", () => {
     const lease = await connectClient(app)
     const response = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "manual-overlap", path: "flow.tldraw", filesystem: "user", clientId: "c", leaseGeneration: lease.leaseGeneration, json: blankNative(), expectedRevision: fixture.revision } })
     expect(response.statusCode).toBe(409)
-    expect(response.json()).toMatchObject({ written: true, error: { message: expect.stringContaining("reload required") } })
+    expect(response.json()).toMatchObject({ written: true, error: { code: TLDRAW_AGENT_ERROR_CODES.revisionConflict, message: expect.stringContaining("reload required") } })
     await app.close()
   })
 
@@ -233,7 +250,7 @@ describe("edit_tldraw_canvas", () => {
     await expect(tool.execute(
       { operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] },
       { toolCallId: "no-bridge", abortSignal: new AbortController().signal } as never,
-    )).resolves.toMatchObject({ isError: true, content: [{ text: expect.stringContaining("Open flow.tldraw") }] })
+    )).resolves.toMatchObject({ isError: true, content: [{ text: expect.stringContaining("Open flow.tldraw") }], details: { error: { code: TLDRAW_AGENT_ERROR_CODES.canvasUnavailable } } })
   })
 
   it("keeps a competing client non-owner until the current lease expires", async () => {
@@ -245,7 +262,7 @@ describe("edit_tldraw_canvas", () => {
     expect(second.json()).toMatchObject({ ok: false, leaseMs: 5_000 })
     const rejected = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "competitor:1", path: "flow.tldraw", filesystem: "user", clientId: "competitor", leaseGeneration: first.json().leaseGeneration, json: blankNative(), expectedRevision: fixture.revision } })
     expect(rejected.statusCode).toBe(409)
-    expect(rejected.json()).toMatchObject({ written: false, error: { message: "canvas owner lease is invalid" } })
+    expect(rejected.json()).toMatchObject({ written: false, error: { code: TLDRAW_AGENT_ERROR_CODES.leaseInvalid, message: "canvas owner lease is invalid" } })
     await app.close()
   })
 
@@ -255,7 +272,7 @@ describe("edit_tldraw_canvas", () => {
     const abort = new AbortController()
     const toolPromise = tool.execute({ operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] }, { toolCallId: "call", abortSignal: abort.signal } as never)
     abort.abort()
-    await expect(toolPromise).resolves.toMatchObject({ isError: true })
+    await expect(toolPromise).resolves.toMatchObject({ isError: true, details: { error: { code: TLDRAW_AGENT_ERROR_CODES.editCancelled } } })
     const lease = await connectClient(app)
     const actions = await app.inject({ method: "GET", url: actionsUrl("c", lease.leaseGeneration!) })
     expect(actions.json().batches).toEqual([])
@@ -327,6 +344,13 @@ describe("edit_tldraw_canvas", () => {
     const [one, two] = await Promise.all([first, retry])
     expect(two.json()).toEqual(one.json())
     expect(fixture.workspace.writeFileWithStat).toHaveBeenCalledOnce()
+    const mismatched = await app.inject({
+      method: "POST",
+      url: "/api/v1/plugins/tldraw-agent/commit",
+      payload: { ...payload, json: `${blankNative()} ` },
+    })
+    expect(mismatched.statusCode).toBe(409)
+    expect(mismatched.json()).toMatchObject({ written: false, error: { code: TLDRAW_AGENT_ERROR_CODES.commitIdConflict } })
     await app.close()
   })
 

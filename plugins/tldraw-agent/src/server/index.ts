@@ -5,7 +5,15 @@ import { createTLStore, parseTldrawJsonFile } from "tldraw"
 import type { Workspace, Stat } from "@hachej/boring-agent/shared"
 import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
-import { normalizeTldrawResourcePath, TLDRAW_AGENT_PLUGIN_ID, type CanvasAction, type PendingCanvasBatch } from "../shared"
+import {
+  normalizeTldrawResourcePath,
+  TLDRAW_AGENT_ERROR_CODES,
+  TLDRAW_AGENT_PLUGIN_ID,
+  type CanvasAction,
+  type PendingCanvasBatch,
+  type TldrawAgentErrorCode,
+  type TldrawAgentErrorEnvelope,
+} from "../shared"
 
 type BatchState = "pending" | "claimed" | "committing" | "committed" | "failed" | "cancelled"
 interface CommitOutcome { statusCode: number; body: unknown }
@@ -28,14 +36,52 @@ const COLORS = ["black", "blue", "green", "orange", "red", "violet"] as const
 const FILLS = ["none", "semi"] as const
 const OWNER_LEASE_MS = 5_000
 
+class TldrawAgentError extends Error {
+  constructor(
+    readonly code: TldrawAgentErrorCode,
+    message: string,
+    readonly statusCode: number,
+  ) {
+    super(message)
+    this.name = "TldrawAgentError"
+  }
+}
+
+function normalizedError(
+  error: unknown,
+  fallbackCode: TldrawAgentErrorCode = TLDRAW_AGENT_ERROR_CODES.internal,
+  fallbackStatusCode = 500,
+): TldrawAgentError {
+  return error instanceof TldrawAgentError
+    ? error
+    : new TldrawAgentError(fallbackCode, error instanceof Error ? error.message : String(error), fallbackStatusCode)
+}
+
+function errorEnvelope(error: unknown, fallbackCode?: TldrawAgentErrorCode, fallbackStatusCode?: number): {
+  statusCode: number
+  body: TldrawAgentErrorEnvelope
+} {
+  const normalized = normalizedError(error, fallbackCode, fallbackStatusCode)
+  return { statusCode: normalized.statusCode, body: { error: { code: normalized.code, message: normalized.message } } }
+}
+
 function result(text: string, details?: unknown, isError = false): ToolResult {
   return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) }
+}
+
+function errorResult(error: unknown, details?: Record<string, unknown>, fallbackCode?: TldrawAgentErrorCode, fallbackStatusCode?: number): ToolResult {
+  const normalized = errorEnvelope(error, fallbackCode, fallbackStatusCode).body
+  return result(normalized.error.message, { ...details, ...normalized }, true)
+}
+
+function codedError(code: TldrawAgentErrorCode, message: string, statusCode: number): TldrawAgentError {
+  return new TldrawAgentError(code, message, statusCode)
 }
 
 const tldrawPath = normalizeTldrawResourcePath
 
 function requireUserFilesystem(value: unknown): "user" {
-  if (value !== undefined && value !== USER_FILESYSTEM) throw new Error("only the user filesystem is supported")
+  if (value !== undefined && value !== USER_FILESYSTEM) throw codedError(TLDRAW_AGENT_ERROR_CODES.invalidRequest, "only the user filesystem is supported", 400)
   return USER_FILESYSTEM
 }
 
@@ -175,7 +221,7 @@ export function createCanvasTool(workspace: Workspace, batches: Map<string, Batc
         const allowedTopLevel = operation === "edit" ? ["operation", "path", "actions"] : ["operation", "path"]
         if (!exactKeys(params, allowedTopLevel)) throw new Error(`${operation} received unsupported fields`)
         if (operation === "create") {
-          if (!workspace.createBinaryFile) return result("Workspace does not support exclusive file creation.", undefined, true)
+          if (!workspace.createBinaryFile) return errorResult(codedError(TLDRAW_AGENT_ERROR_CODES.workspaceUnsupported, "Workspace does not support exclusive file creation.", 501))
           const parent = posix.dirname(path)
           if (parent !== ".") await workspace.mkdir(parent, { recursive: true })
           await workspace.createBinaryFile(path, new TextEncoder().encode(blankFile()))
@@ -186,11 +232,11 @@ export function createCanvasTool(workspace: Workspace, batches: Map<string, Batc
           const json = await workspace.readFile(path)
           return result(`Canvas ${path}: ${nativeShapeSummary(json)}`, { path, filesystem: USER_FILESYSTEM })
         }
-        if (operation !== "edit") return result(`Unsupported operation: ${operation}`, undefined, true)
+        if (operation !== "edit") return errorResult(codedError(TLDRAW_AGENT_ERROR_CODES.invalidRequest, `Unsupported operation: ${operation}`, 400))
         const actions = validateActions(params.actions)
-        if (!bridge) return result(`Open ${path} in the workspace before editing; this host has no UI bridge.`, { path }, true)
+        if (!bridge) return errorResult(codedError(TLDRAW_AGENT_ERROR_CODES.canvasUnavailable, `Open ${path} in the workspace before editing; this host has no UI bridge.`, 409), { path })
         const opened = await bridge.postCommand({ kind: "openFile", params: { path, filesystem: USER_FILESYSTEM } })
-        if (opened.status !== "ok") return result(`Could not open ${path}: ${opened.error?.message ?? "workspace rejected the request"}`, { path }, true)
+        if (opened.status !== "ok") return errorResult(codedError(TLDRAW_AGENT_ERROR_CODES.canvasOpenFailed, `Could not open ${path}: ${opened.error?.message ?? "workspace rejected the request"}`, 409), { path })
         const id = randomUUID()
         const batch: PendingCanvasBatch = { id, path, filesystem: USER_FILESYSTEM, actions }
         return await new Promise<ToolResult>((resolveTool) => {
@@ -200,8 +246,9 @@ export function createCanvasTool(workspace: Workspace, batches: Map<string, Batc
             if (!entry || entry.state === "committing" || entry.state === "committed") return
             if (entry.timer) clearTimeout(entry.timer)
             entry.state = "cancelled"
-            entry.outcome = { statusCode: 409, body: { written: false, error: { message } } }
-            finish(result(message, { path }, true))
+            const cancelled = errorEnvelope(codedError(TLDRAW_AGENT_ERROR_CODES.editCancelled, message, 409))
+            entry.outcome = { statusCode: cancelled.statusCode, body: { written: false, ...cancelled.body } }
+            finish(errorResult(codedError(TLDRAW_AGENT_ERROR_CODES.editCancelled, message, 409), { path }))
             setTimeout(() => batches.delete(id), 60_000).unref?.()
           }
           const abort = () => cancel("Canvas edit cancelled.")
@@ -212,7 +259,7 @@ export function createCanvasTool(workspace: Workspace, batches: Map<string, Batc
           // registration; close that race before returning control.
           if (ctx.abortSignal?.aborted) abort()
         })
-      } catch (error) { return result(error instanceof Error ? error.message : String(error), undefined, true) }
+      } catch (error) { return errorResult(error, undefined, TLDRAW_AGENT_ERROR_CODES.invalidRequest, 400) }
     },
   }
 }
@@ -254,8 +301,9 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
     entry.timer = setTimeout(() => {
       if (entry.state !== "claimed") return
       entry.state = "cancelled"
-      entry.outcome = { statusCode: 409, body: { written: false, error: { message: "batch claim expired" } } }
-      entry.resolve(result("Canvas edit claim expired before commit.", { path: entry.batch.path }, true))
+      const expired = codedError(TLDRAW_AGENT_ERROR_CODES.batchExpired, "batch claim expired", 409)
+      entry.outcome = { statusCode: 409, body: { written: false, ...errorEnvelope(expired).body } }
+      entry.resolve(errorResult(codedError(TLDRAW_AGENT_ERROR_CODES.batchExpired, "Canvas edit claim expired before commit.", 409), { path: entry.batch.path }))
       setTimeout(() => batches.delete(entry.batch.id), 60_000).unref?.()
     }, 15_000)
   }
@@ -264,13 +312,13 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
       try {
         const filesystem = requireUserFilesystem(request.query.filesystem)
         const path = tldrawPath(request.query.path)
-        if (!options.workspace.readFileWithStat) throw Object.assign(new Error("workspace does not support consistent revision reads"), { statusCode: 501 })
+        if (!options.workspace.readFileWithStat) throw codedError(TLDRAW_AGENT_ERROR_CODES.workspaceUnsupported, "workspace does not support consistent revision reads", 501)
         const loaded = await options.workspace.readFileWithStat(path)
         parseNative(loaded.content)
         return { path, filesystem, json: loaded.content, revision: revision(loaded.stat, loaded.content) }
       } catch (error) {
-        const statusCode = Number((error as { statusCode?: number }).statusCode) || 400
-        return reply.code(statusCode).send({ error: { message: error instanceof Error ? error.message : String(error) } })
+        const normalized = errorEnvelope(error, TLDRAW_AGENT_ERROR_CODES.invalidRequest, 400)
+        return reply.code(normalized.statusCode).send(normalized.body)
       }
     })
     app.post<{ Body: { path?: string; clientId?: string; filesystem?: string } }>("/api/v1/plugins/tldraw-agent/connect", async (request, reply) => {
@@ -297,7 +345,10 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
           const owner = owners.get(key)
           return { ok: owner?.clientId === clientId, leaseGeneration: owner?.clientId === clientId ? owner.generation : undefined, leaseMs: OWNER_LEASE_MS }
         })
-      } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
+      } catch (error) {
+        const normalized = errorEnvelope(error, TLDRAW_AGENT_ERROR_CODES.invalidRequest, 400)
+        return reply.code(normalized.statusCode).send(normalized.body)
+      }
     })
     app.get<{ Querystring: { path?: string; clientId?: string; filesystem?: string; leaseGeneration?: string } }>("/api/v1/plugins/tldraw-agent/actions", async (request, reply) => {
       try {
@@ -330,7 +381,10 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
           claimed.push(entry.batch)
         }
         return { batches: claimed, leaseValid: true }
-      } catch (error) { return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } }) }
+      } catch (error) {
+        const normalized = errorEnvelope(error, TLDRAW_AGENT_ERROR_CODES.invalidRequest, 400)
+        return reply.code(normalized.statusCode).send(normalized.body)
+      }
     })
     app.post<{ Body: { requestId?: string; batchId?: string; path?: string; filesystem?: string; clientId?: string; leaseGeneration?: number; json?: string; expectedRevision?: { size?: number; mtimeMs?: number; sha256?: string } } }>("/api/v1/plugins/tldraw-agent/commit", async (request, reply) => {
       const { requestId = "", batchId, clientId = "", leaseGeneration, json, expectedRevision } = request.body ?? {}
@@ -346,7 +400,7 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         const fingerprint = JSON.stringify({ batchId: batchId ?? null, clientId, leaseGeneration, filesystem, path, json, expectedRevision })
         const replay = commitRequests.get(requestId)
         if (replay) {
-          if (replay.fingerprint !== fingerprint) return reply.code(409).send({ written: false, error: { message: "commit requestId fingerprint mismatch" } })
+          if (replay.fingerprint !== fingerprint) return reply.code(409).send({ written: false, ...errorEnvelope(codedError(TLDRAW_AGENT_ERROR_CODES.commitIdConflict, "commit requestId fingerprint mismatch", 409)).body })
           const outcome = await replay.promise
           return reply.code(outcome.statusCode).send(outcome.body)
         }
@@ -354,14 +408,14 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
           const entry = batchId ? batches.get(batchId) : undefined
           let writeStarted = false
           try {
-            if (!options.workspace.readFileWithStat || !options.workspace.writeFileWithStat) throw Object.assign(new Error("workspace does not support optimistic revision writes"), { statusCode: 501 })
+            if (!options.workspace.readFileWithStat || !options.workspace.writeFileWithStat) throw codedError(TLDRAW_AGENT_ERROR_CODES.workspaceUnsupported, "workspace does not support optimistic revision writes", 501)
             const key = resourceKey(filesystem, path)
             const outcome = await withResourceWriteLock(key, async (): Promise<CommitOutcome> => {
               // Lease identity and generation are fenced inside the same lock
               // held through provider write + verification. A takeover waits.
               const owner = owners.get(key)
-              if (!owner || owner.clientId !== clientId || owner.generation !== leaseGeneration || Date.now() - owner.seenAt > OWNER_LEASE_MS) throw Object.assign(new Error("canvas owner lease is invalid"), { statusCode: 409 })
-              if (batchId && (!entry || entry.state !== "claimed" || entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId || entry.ownerLeaseGeneration !== leaseGeneration)) throw Object.assign(new Error("batch claim is invalid or expired"), { statusCode: 409 })
+              if (!owner || owner.clientId !== clientId || owner.generation !== leaseGeneration || Date.now() - owner.seenAt > OWNER_LEASE_MS) throw codedError(TLDRAW_AGENT_ERROR_CODES.leaseInvalid, "canvas owner lease is invalid", 409)
+              if (batchId && (!entry || entry.state !== "claimed" || entry.batch.path !== path || entry.batch.filesystem !== filesystem || entry.ownerClientId !== clientId || entry.ownerLeaseGeneration !== leaseGeneration)) throw codedError(TLDRAW_AGENT_ERROR_CODES.batchInvalid, "batch claim is invalid or expired", 409)
               if (entry) {
                 if (entry.timer) clearTimeout(entry.timer)
                 entry.state = "committing"
@@ -369,14 +423,14 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
               const current = await options.workspace.readFileWithStat!(path)
               const actual = revision(current.stat, current.content)
               if (!revisionsMatch(actual, expected)) {
-                return { statusCode: 409, body: { written: false, error: { message: "file changed since it was loaded" }, currentRevision: actual } }
+                return { statusCode: 409, body: { written: false, ...errorEnvelope(codedError(TLDRAW_AGENT_ERROR_CODES.revisionConflict, "file changed since it was loaded", 409)).body, currentRevision: actual } }
               }
               writeStarted = true
               await options.workspace.writeFileWithStat!(path, json)
               const verified = await options.workspace.readFileWithStat!(path)
               const verifiedRevision = revision(verified.stat, verified.content)
               if (verifiedRevision.sha256 !== contentHash(json)) {
-                return { statusCode: 409, body: { written: true, error: { message: "file changed during optimistic save; reload required" }, currentRevision: verifiedRevision } }
+                return { statusCode: 409, body: { written: true, ...errorEnvelope(codedError(TLDRAW_AGENT_ERROR_CODES.revisionConflict, "file changed during optimistic save; reload required", 409)).body, currentRevision: verifiedRevision } }
               }
               return { statusCode: 200, body: { ok: true, written: true, revision: verifiedRevision } }
             })
@@ -385,13 +439,20 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
             if (entry) finishBatch(entry, "committed", 200, body, result(`Applied one action batch to ${path} and saved it.`, { path, filesystem, revision: body.revision }))
             return { statusCode: 200, body }
           } catch (error) {
-            const statusCode = Number((error as { statusCode?: number }).statusCode) || 409
-            const body = (error as { commitBody?: unknown }).commitBody ?? {
+            const commitBody = (error as { commitBody?: unknown }).commitBody
+            const normalized = writeStarted
+              ? errorEnvelope(error, TLDRAW_AGENT_ERROR_CODES.unknownWriteOutcome, 409)
+              : errorEnvelope(error)
+            const statusCode = commitBody
+              ? Number((error as { statusCode?: number }).statusCode) || 409
+              : normalized.statusCode
+            const body = commitBody ?? {
               written: writeStarted ? "unknown" : false,
-              error: { message: error instanceof Error ? error.message : String(error) },
+              ...normalized.body,
             }
-            const message = (body as { error?: { message?: string } }).error?.message ?? "canvas commit failed"
-            if (entry && entry.state === "committing") finishBatch(entry, "failed", statusCode, body, result(message, { path: entry.batch.path }, true))
+            const envelope = (body as { error?: { code?: TldrawAgentErrorCode; message?: string } }).error
+            const batchError = codedError(envelope?.code ?? TLDRAW_AGENT_ERROR_CODES.internal, envelope?.message ?? "canvas commit failed", statusCode)
+            if (entry && entry.state === "committing") finishBatch(entry, "failed", statusCode, body, errorResult(batchError, { path: entry.batch.path }))
             return { statusCode, body }
           }
         })()
@@ -400,14 +461,14 @@ export function createTldrawAgentServerPlugin(options: { workspace: Workspace; b
         const outcome = await promise
         return reply.code(outcome.statusCode).send(outcome.body)
       } catch (error) {
-        const statusCode = Number((error as { statusCode?: number }).statusCode) || 400
-        return reply.code(statusCode).send({ written: false, error: { message: error instanceof Error ? error.message : String(error) } })
+        const normalized = errorEnvelope(error, TLDRAW_AGENT_ERROR_CODES.invalidRequest, 400)
+        return reply.code(normalized.statusCode).send({ written: false, ...normalized.body })
       }
     })
     app.addHook("onClose", async () => {
       for (const entry of batches.values()) {
         if (entry.timer) clearTimeout(entry.timer)
-        if (entry.state !== "committed" && entry.state !== "failed") entry.resolve(result("Canvas server stopped.", undefined, true))
+        if (entry.state !== "committed" && entry.state !== "failed") entry.resolve(errorResult(codedError(TLDRAW_AGENT_ERROR_CODES.internal, "Canvas server stopped.", 500)))
       }
       batches.clear(); commitRequests.clear(); owners.clear(); resourceWrites.clear()
     })

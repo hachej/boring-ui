@@ -1,7 +1,12 @@
 import { lstat, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
-import type { Workspace, WorkspaceRuntimeContext } from '@hachej/boring-agent/shared'
+import {
+  ReadonlyFilesystemMutationError,
+  type RuntimeFilesystemCapability,
+  type Workspace,
+  type WorkspaceRuntimeContext,
+} from '@hachej/boring-agent/shared'
 import {
   assertRealPathWithinWorkspace,
   ensureExistingWorkspacePath,
@@ -32,11 +37,11 @@ export function disposeNodeWorkspace(workspace: Workspace): void {
 export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptions = {}): Workspace {
   const runtimeContext = opts.runtimeContext ?? { runtimeCwd: root }
   const readonlyPaths = (opts.readonlyPaths ?? []).map((path) => path.replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, ''))
-  const assertWritable = async (relPath: string): Promise<void> => {
+  const assertWritable = async (relPath: string, operation: RuntimeFilesystemCapability): Promise<void> => {
     const lexical = relPath.replaceAll('\\', '/').replace(/^\.\//, '')
     const canonical = await resolveRealWorkspacePath(root, relPath)
     const blocked = readonlyPaths.find((path) => lexical === path || lexical.startsWith(`${path}/`) || canonical === path || canonical.startsWith(`${path}/`))
-    if (blocked) throw Object.assign(new Error(`${blocked} is readonly`), { code: 'readonly', statusCode: 403 })
+    if (blocked) throw new ReadonlyFilesystemMutationError('user', operation)
   }
 
   // Lazy singleton: a single chokidar instance shared by every caller
@@ -61,17 +66,17 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       return new Uint8Array(await readFile(absPath))
     },
     async writeFile(relPath, data) {
-      await assertWritable(relPath)
+      await assertWritable(relPath, 'write')
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data, 'utf-8')
     },
     async writeBinaryFile(relPath, data) {
-      await assertWritable(relPath)
+      await assertWritable(relPath, 'write')
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data)
     },
     async createBinaryFile(relPath, data) {
-      await assertWritable(relPath)
+      await assertWritable(relPath, 'create-child')
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data, { flag: 'wx' })
     },
@@ -91,7 +96,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       }
     },
     async writeFileWithStat(relPath, data) {
-      await assertWritable(relPath)
+      await assertWritable(relPath, 'write')
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data, 'utf-8')
       const fileStat = await stat(absPath)
@@ -102,7 +107,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       }
     },
     async writeBinaryFileWithStat(relPath, data) {
-      await assertWritable(relPath)
+      await assertWritable(relPath, 'write')
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data)
       const fileStat = await stat(absPath)
@@ -113,7 +118,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       }
     },
     async unlink(relPath) {
-      await assertWritable(relPath)
+      await assertWritable(relPath, 'delete')
       const absPath = await ensureExistingWorkspacePath(root, relPath)
       if (absPath === resolve(root)) {
         throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
@@ -143,7 +148,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       }
     },
     async mkdir(relPath, opts) {
-      await assertWritable(relPath)
+      await assertWritable(relPath, 'create-child')
       const absPath = validatePath(root, relPath)
       let existingAncestor = absPath
       while (true) {
@@ -162,8 +167,8 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       await mkdir(absPath, { recursive: opts?.recursive ?? false })
     },
     async rename(fromRelPath, toRelPath) {
-      await assertWritable(fromRelPath)
-      await assertWritable(toRelPath)
+      await assertWritable(fromRelPath, 'move-from')
+      await assertWritable(toRelPath, 'create-child')
       validatePath(root, toRelPath)
       const fromAbsPath = await ensureExistingWorkspacePath(root, fromRelPath)
       const toAbsPath = await ensureWritableWorkspacePath(root, toRelPath)
