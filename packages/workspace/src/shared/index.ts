@@ -82,6 +82,6 @@ export {
   parseUrlPaneOrigins,
   resolveUrlPaneTarget,
 } from "./urlPane"
-export type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from "./types/agent-tool"
+export type { AgentTool, JSONSchema, PublishedToolProvenance, RemoteCapabilityDescriptor, ToolExecContext, ToolResult } from "./types/agent-tool"
 export type { TelemetryEvent, TelemetrySink } from "./telemetry"
 export { noopTelemetry, safeCapture } from "./telemetry"

@@ -9,6 +9,7 @@ import {
   createPiCodingAgentHarness,
   mergePiPackageSources,
   projectSkillResourceLocations,
+  shouldRefreshDynamicTools,
   withPiHarnessDefaults,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
@@ -623,6 +624,31 @@ describe("projectSkillResourceLocations", () => {
       return { filesystem: "agent_resources", path: "packages/@scope/a&b/SKILL.md" };
     });
     expect(projected).toContain('{"filesystem":"agent_resources","path":"packages/@scope/a&amp;b/SKILL.md"}');
+  });
+});
+
+describe("shouldRefreshDynamicTools", () => {
+  it("refreshes for the app tool's mutating actions", () => {
+    for (const action of ["publish", "activate", "rollback", "undo_profile"]) {
+      expect(shouldRefreshDynamicTools("app", { action })).toBe(true);
+    }
+  });
+
+  it("never refreshes for the app tool's read-only actions", () => {
+    for (const action of ["versions", "logs", "usage"]) {
+      expect(shouldRefreshDynamicTools("app", { action })).toBe(false);
+    }
+  });
+
+  it("ignores unrelated tools regardless of input", () => {
+    expect(shouldRefreshDynamicTools("read_file", { action: "publish" })).toBe(false);
+  });
+
+  it("ignores malformed or missing input", () => {
+    expect(shouldRefreshDynamicTools("app", undefined)).toBe(false);
+    expect(shouldRefreshDynamicTools("app", {})).toBe(false);
+    expect(shouldRefreshDynamicTools("app", { action: 42 })).toBe(false);
+    expect(shouldRefreshDynamicTools(42, { action: "publish" })).toBe(false);
   });
 });
 

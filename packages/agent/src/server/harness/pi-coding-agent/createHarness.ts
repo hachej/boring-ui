@@ -19,7 +19,7 @@ import {
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
 import { createLogger } from "@hachej/boring-bash/server";
-import type { AgentTool } from "../../../shared/tool.js";
+import type { AgentTool, RemoteCapabilityDescriptor } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
@@ -32,6 +32,7 @@ import {
   type PiPackageSource,
 } from "../../piPackages.js";
 import { createResourceSettingsManager } from "./resourceSettingsManager.js";
+import { buildVerifiedRemoteCapability } from "./remoteCapabilities.js";
 
 interface PiRunContextState {
   queuedFollowUpContexts: WeakMap<object, RunContext>;
@@ -167,15 +168,75 @@ export interface HotReloadablePiResources {
 export type PiExtensionFactory = ExtensionFactory;
 
 function buildDynamicPromptExtension(
-  source: () => string | undefined | Promise<string | undefined>,
+  source: (ctx?: RunContext) => string | undefined | Promise<string | undefined>,
+  getRunContext: () => RunContext | undefined,
 ): ExtensionFactory {
   return (pi) => {
     pi.on("before_agent_start", async (event) => {
-      const extra = (await source())?.trim()
+      const ctx = getRunContext()
+      if (!ctx) return
+      const extra = (await source(ctx))?.trim()
       if (!extra) return
       return { systemPrompt: `${event.systemPrompt}\n\n${extra}` }
     })
   }
+}
+
+function buildDynamicToolsExtension(
+  source: (ctx?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>, 
+  sessionId: string,
+  telemetry: TelemetrySink | undefined,
+  getRunContext: () => RunContext | undefined,
+): ExtensionFactory {
+  return (pi) => {
+    let ownedNames = new Set<string>()
+    const refresh = async () => {
+      const ctx = getRunContext()
+      if (!ctx) return
+      const supplied: readonly unknown[] = [...await source(ctx)]
+      const tools = await Promise.all(supplied.map(async (entry) =>
+        await buildVerifiedRemoteCapability(entry, ctx)))
+      const adapted = adaptToolsForPi(tools, sessionId, telemetry, getRunContext)
+      const names = adapted.map((tool) => tool.name)
+      const nextNames = new Set(names)
+      if (nextNames.size !== names.length) {
+        throw new Error("dynamic agent tool providers returned duplicate tool names")
+      }
+      const active = pi.getActiveTools().filter((name) => !ownedNames.has(name))
+      const collision = names.find((name) => active.includes(name))
+      if (collision) throw new Error(`dynamic agent tool "${collision}" collides with an existing host tool`)
+      for (const tool of adapted) pi.registerTool(tool)
+      pi.setActiveTools([...active, ...names])
+      ownedNames = nextNames
+    }
+    pi.on("before_agent_start", refresh)
+    pi.on("tool_result", async (event) => {
+      const toolName = (event as { toolName?: unknown }).toolName
+      const input = (event as { input?: unknown }).input
+      if (shouldRefreshDynamicTools(toolName, input)) {
+        await refresh()
+      }
+    })
+  }
+}
+
+/**
+ * Tool/action pairs that change which published app or profile version is
+ * live, and so must trigger a dynamic-tools refresh so freshly-activated
+ * native app tools mount. Read-only actions (e.g. "versions", "logs",
+ * "usage" on the app-runner plugin's "app" tool) never refresh.
+ */
+const DYNAMIC_TOOLS_REFRESH_TRIGGERS: Record<string, ReadonlySet<string>> = {
+  app: new Set(["publish", "activate", "rollback", "undo_profile"]),
+}
+
+/** Pure predicate for the tool_result refresh trigger; exported for tests. */
+export function shouldRefreshDynamicTools(toolName: unknown, input: unknown): boolean {
+  if (typeof toolName !== "string") return false
+  const actions = DYNAMIC_TOOLS_REFRESH_TRIGGERS[toolName]
+  if (!actions) return false
+  const action = (input as { action?: unknown } | undefined)?.action
+  return typeof action === "string" && actions.has(action)
 }
 
 const PI_RELATIVE_SKILL_PATH_GUIDANCE = "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands."
@@ -443,6 +504,8 @@ function updateRunContextStateFromPiEvent(
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
+  /** Untrusted plugin descriptors. Trusted host callbacks belong in static tools. */
+  toolsDynamic?: (ctx?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>;
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
   cwd: string;
   /** Agent-visible cwd used by Pi's system prompt and native session metadata. */
@@ -453,7 +516,7 @@ export function createPiCodingAgentHarness(opts: {
    * Dynamic system-prompt source. Read on every before_agent_start, so live
    * plugin reloads land in the next agent turn without re-creating the harness.
    */
-  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>;
+  systemPromptDynamic?: (ctx?: RunContext) => string | undefined | Promise<string | undefined>;
   /** Optional pi adapter/runtime knobs. */
   pi?: PiHarnessOptions;
   /** Optional stable namespace for file-backed session storage. */
@@ -642,7 +705,10 @@ export function createPiCodingAgentHarness(opts: {
     refreshEffectiveResources()
     const composedSystemPromptAppend = composeSystemPromptAppend(opts.systemPromptAppend)
     const dynamicPromptExtension = opts.systemPromptDynamic
-      ? buildDynamicPromptExtension(opts.systemPromptDynamic)
+      ? buildDynamicPromptExtension(opts.systemPromptDynamic, () => runContextStorage.getStore())
+      : undefined
+    const dynamicToolsExtension = opts.toolsDynamic
+      ? buildDynamicToolsExtension(opts.toolsDynamic, sessionId, opts.telemetry, () => runContextStorage.getStore())
       : undefined
     const agentDir = getAgentDir()
     const toolErrorResultExtension = buildToolErrorResultExtension()
@@ -652,6 +718,7 @@ export function createPiCodingAgentHarness(opts: {
     const extensionFactories = [
       toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
+      ...(dynamicToolsExtension ? [dynamicToolsExtension] : []),
       ...(pi.extensionFactories ?? []),
       ...(skillResourceProjectionExtension ? [skillResourceProjectionExtension] : []),
     ]

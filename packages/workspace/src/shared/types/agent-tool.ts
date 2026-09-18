@@ -32,6 +32,25 @@ export interface ToolResult {
  * factories. Kept agent-runtime-neutral so only the app integration layer
  * needs to import @hachej/boring-agent.
  */
+export interface PublishedToolProvenance {
+  readonly kind: string
+  readonly address: string
+  readonly version: number
+  readonly sha: string
+}
+
+/** Serializable request for a host-built, hub-verified remote capability. */
+export interface RemoteCapabilityDescriptor {
+  readonly kind: string
+  readonly workspaceId: string
+  readonly address: string
+  readonly version: number
+  readonly sha: string
+  readonly toolName: string
+  readonly description: string
+  readonly inputSchema: JSONSchema
+}
+
 export interface AgentTool {
   name: string
   description: string

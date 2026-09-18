@@ -54,6 +54,8 @@ import {
   AgentGatewayErrorCode,
   ErrorCode,
   type AgentTool,
+  type RemoteCapabilityDescriptor,
+  type RunContext,
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
@@ -176,6 +178,7 @@ export interface WorkspaceAgentCreateOptions {
   authToken?: string
   logger?: boolean
   extraTools?: AgentTool[]
+  extraToolsDynamic?: (context?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   disableDefaultFileTools?: boolean
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -217,7 +220,7 @@ export interface WorkspaceAgentCreateOptions {
   /** Independently trusted roots for configured Pi resources outside the workspace/plugin roots. */
   piResourceAuthorizedRoots?: string[]
   beforeReload?: () => void | WorkspaceReloadHookResult | undefined | Promise<void | WorkspaceReloadHookResult | undefined>
-  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  systemPromptDynamic?: (context?: RunContext) => string | undefined | Promise<string | undefined>
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
 }
 
@@ -633,7 +636,7 @@ export interface AgentSpecPluginArtifactProjection {
   readonly runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: Pick<
     WorkspaceAgentCreateOptions,
-    "extraTools" | "systemPromptAppend" | "pi"
+    "extraTools" | "extraToolsDynamic" | "systemPromptAppend" | "systemPromptDynamic" | "pi"
   >
   readonly onSessionDelete?: (input: {
     readonly workspaceScopeId: string
@@ -937,13 +940,23 @@ export function projectAgentSpecPluginArtifacts(
     plugins: selected.map((artifact) => artifact.plugin),
   })
   const agentTools = projectWorkspaceAgentTools(agent.agentTypeId, projected, existingTools)
+  const extraToolsDynamic = projected.agentToolsDynamic.length > 0
+    ? async (context?: RunContext) => (await Promise.all(projected.agentToolsDynamic.map((provider) => provider(context)))).flat()
+    : undefined
+  const systemPromptDynamic = projected.systemPromptDynamic.length > 0
+    ? async (context?: RunContext) => (await Promise.all(projected.systemPromptDynamic.map((provider) => provider(context))))
+        .filter((value): value is string => Boolean(value?.trim()))
+        .join("\n\n") || undefined
+    : undefined
   const deleteContributions = projected.agentSessionDeleteContributions
   return {
     artifacts: selected,
     runtimePlugins: projected.runtimePlugins,
     agentOptions: {
       extraTools: agentTools,
+      extraToolsDynamic,
       systemPromptAppend: projected.systemPromptAppend || undefined,
+      systemPromptDynamic,
       pi: {
         packages: projected.piPackages,
         extensionPaths: projected.extensionPaths,
@@ -2024,10 +2037,14 @@ export async function createWorkspaceAgentServer(
             }
           }
         : undefined
-      const baseDynamicPrompt = opts.systemPromptDynamic
+      const baseDynamicPrompts = [opts.systemPromptDynamic, contribution.agentOptions.systemPromptDynamic]
+        .filter((provider): provider is NonNullable<typeof provider> => Boolean(provider))
+      const baseDynamicPrompt = baseDynamicPrompts.length > 0
+        ? async (context?: RunContext) => mergePromptContents(await Promise.all(baseDynamicPrompts.map((provider) => provider(context))))
+        : undefined
       const loadSystemPromptAppend = baseDynamicPrompt || getHotReloadableResources || getEffectivePackageResourceSnapshot()
-        ? async () => mergePromptContents([
-            await baseDynamicPrompt?.(),
+        ? async (context?: RunContext) => mergePromptContents([
+            await baseDynamicPrompt?.(context),
             getHotReloadableResources?.().systemPromptAppend,
             contribution.includeAllDiscoveredPluginResources ? aggregatePluginPrompts(boringAssetManager) : undefined,
             ...(getAgentPackageResourceView()?.systemPrompts ?? []),
@@ -2057,6 +2074,23 @@ export async function createWorkspaceAgentServer(
       const staticSystemPromptAppend = [baseSystemPromptAppend, contribution.agentOptions.systemPromptAppend]
         .filter((part): part is string => Boolean(part))
         .join("\n\n") || undefined
+      const hostDynamicTools = opts.extraToolsDynamic
+      const pluginDynamicTools = contribution.agentOptions.extraToolsDynamic
+      const loadAgentTools = hostDynamicTools || pluginDynamicTools
+        ? async (context?: RunContext) => {
+            const tools = [
+              ...(await hostDynamicTools?.(context) ?? []),
+              ...(await pluginDynamicTools?.(context) ?? []),
+            ]
+            const seen = new Set<string>()
+            for (const tool of tools) {
+              const name = `${tool.address}:${tool.toolName}`
+              if (seen.has(name)) throw new Error(`dynamic agent tool name collision: "${name}"`)
+              seen.add(name)
+            }
+            return tools
+          }
+        : undefined
       const buildResourceDigestInput = async () => {
         const hotResources = getHotReloadableResources?.()
         // Provisioned runtime skill paths are outputs of applyReload. Hash the
@@ -2178,6 +2212,7 @@ export async function createWorkspaceAgentServer(
           : {}),
         systemPromptAppend: staticSystemPromptAppend,
         loadSystemPromptAppend,
+        loadAgentTools,
       }
     },
   })

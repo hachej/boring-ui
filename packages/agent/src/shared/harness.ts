@@ -1,11 +1,13 @@
 import type { SessionCtx, SessionStore } from './session'
 import type { TelemetrySink } from './telemetry'
-import type { AgentTool } from './tool'
+import type { AgentTool, RemoteCapabilityDescriptor } from './tool'
 import type { AgentSendInput, MessageAttachment } from './events'
 import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-agent'
 
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
+  /** Untrusted plugin capability descriptors refreshed before every model turn. */
+  toolsDynamic?: (ctx?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   /** Host/storage cwd used for harness-owned filesystem resources. */
   cwd: string
   /** Agent-visible cwd used by Pi/system prompt/session metadata. */
@@ -20,7 +22,7 @@ export interface AgentHarnessFactoryInput {
    * Workspace plugin layer wires this so live-reloaded plugins can contribute
    * prompt context without a workspace-injected harness extension.
    */
-  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  systemPromptDynamic?: (ctx?: RunContext) => string | undefined | Promise<string | undefined>
   /** Host-provided telemetry sink. Optional and best-effort; harnesses may ignore it. */
   telemetry?: TelemetrySink
 }

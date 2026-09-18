@@ -1,7 +1,7 @@
 import type { PluginSkillSource, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { WorkspaceBridgeOperationDefinition } from "../../shared/workspace-bridge-rpc"
-import type { AgentTool } from "../../shared/types/agent-tool"
+import type { AgentTool, RemoteCapabilityDescriptor } from "../../shared/types/agent-tool"
 import { validateWorkspaceBridgeOperationDefinition, type WorkspaceBridgeHandler } from "../workspaceBridge/registry"
 
 import {
@@ -37,6 +37,16 @@ export interface WorkspaceAgentReloadBlock {
   code: string
   /** Human-readable action required before Agent reload can proceed. */
   message: string
+}
+
+export interface WorkspaceAgentDynamicContext {
+  readonly abortSignal: AbortSignal
+  readonly sessionId?: string
+  readonly userId?: string
+  readonly userEmail?: string
+  readonly userEmailVerified?: boolean
+  readonly workspaceId?: string
+  readonly requestId?: string
 }
 
 export interface WorkspaceAgentToolFactoryContext {
@@ -79,10 +89,14 @@ export interface WorkspaceServerPlugin {
    */
   extensionPaths?: string[]
   systemPrompt?: string
+  /** Trusted host prompt source refreshed before every model turn. */
+  systemPromptDynamic?: (context?: WorkspaceAgentDynamicContext) => string | undefined | Promise<string | undefined>
   skills?: PluginSkillSource[]
   /** Installed package resources admitted by this trusted server plugin. */
   packageResources?: WorkspacePackageResourceContribution[]
   agentTools?: AgentTool[]
+  /** Serializable remote-capability descriptors refreshed before each model turn. */
+  agentToolsDynamic?: (context?: WorkspaceAgentDynamicContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   /** Trusted boot-time factory invoked only when this preflighted plugin is selected for an Agent. */
   agentToolFactory?: (context: WorkspaceAgentToolFactoryContext) => readonly AgentTool[]
   /** Joined cleanup invoked only after a selected Agent session is successfully deleted. */
@@ -338,6 +352,9 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   if (plugin.systemPrompt !== undefined && typeof plugin.systemPrompt !== "string") {
     fail(plugin.id, "systemPrompt must be a string when provided")
   }
+  if (plugin.systemPromptDynamic !== undefined && typeof plugin.systemPromptDynamic !== "function") {
+    fail(plugin.id, "systemPromptDynamic must be a function when provided")
+  }
   if (plugin.agentConfigContract !== undefined) {
     if (
       !plugin.agentConfigContract
@@ -376,6 +393,14 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
       fail(plugin.id, "agentTools must be an array when provided")
     }
     plugin.agentTools.forEach((tool, index) => validateAgentTool(plugin.id, tool, index))
+  }
+  if (plugin.agentToolsDynamic !== undefined) {
+    if (typeof plugin.agentToolsDynamic !== "function") {
+      fail(plugin.id, "agentToolsDynamic must be a function when provided")
+    }
+    if (plugin.id !== "app-runner") {
+      fail(plugin.id, "agentToolsDynamic is reserved for app-runner capability descriptors")
+    }
   }
   if (plugin.agentToolFactory !== undefined && typeof plugin.agentToolFactory !== "function") {
     fail(plugin.id, "agentToolFactory must be a function when provided")

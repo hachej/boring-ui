@@ -6,11 +6,12 @@ import type {
   ResolveAgentAccess,
   AgentSessionRef,
   AgentTool,
+  RemoteCapabilityDescriptor,
   AuthorizedAgentScope,
   JsonValue,
   VerifiedAgentScopeClaim,
 } from '../../shared/index'
-import type { AgentHarnessFactory } from '../../shared/harness'
+import type { AgentHarnessFactory, RunContext } from '../../shared/harness'
 import type { TelemetrySink } from '../../shared/telemetry'
 import type { AgentMeteringSink } from '../pi-chat/metering'
 import type {
@@ -314,6 +315,8 @@ export interface ResolvedAgentRuntimeScope {
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
+  /** Untrusted plugin capability descriptors refreshed before each model turn. */
+  readonly loadAgentTools?: (context?: RunContext) => readonly RemoteCapabilityDescriptor[] | Promise<readonly RemoteCapabilityDescriptor[]>
   /** Joined trusted-plugin cleanup invoked after backend session deletion succeeds. */
   readonly onSessionDelete?: (input: {
     readonly workspaceScopeId: string
@@ -354,7 +357,7 @@ export interface ResolvedAgentRuntimeScope {
     readonly requestId: string
   }) => Promise<AgentSkillResourceSnapshot | undefined>
   readonly systemPromptAppend?: string
-  readonly loadSystemPromptAppend?: () => Promise<string | undefined>
+  readonly loadSystemPromptAppend?: (context?: RunContext) => Promise<string | undefined>
 }
 
 export interface AuthorizedEnvironmentIntent {
