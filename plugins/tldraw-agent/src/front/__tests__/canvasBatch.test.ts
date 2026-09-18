@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { WorkspacePluginClientRequestError } from "@hachej/boring-workspace"
 import { createTLStore, type Editor } from "tldraw"
-import { applyCanvasAction, applyCanvasBatch, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, reconcileFailedSave } from "../panels"
+import { applyCanvasAction, applyCanvasBatch, createCanvasReadinessGate, createSerializedSaveQueue, flushPendingSaveOnClose, loadCanvasStoreSnapshot, reconcileFailedSave, setCanvasOwnership } from "../panels"
 
 function editorFixture() {
   const before = { store: { "shape:before": {} }, schema: {} }
@@ -195,15 +195,30 @@ describe("applyCanvasBatch", () => {
     expect(fixture.clearHistory).toHaveBeenCalledOnce()
   })
 
-  it("rolls back a partially applied local batch even when reload would fail", async () => {
-    const fixture = editorFixture()
+  it("restores the exact real-store records after a partial remote batch failure without clearing user history", async () => {
+    const store = createTLStore()
+    const page = { id: "page:test", typeName: "page", name: "Page", index: "a1", meta: {} }
+    store.put([page as never])
+    ;(store as unknown as { ensureStoreIsUsable(): void }).ensureStoreIsUsable()
+    const before = store.getStoreSnapshot()
+    const clearHistory = vi.fn()
+    const userHistory = ["manual-user-edit"]
+    const editor = {
+      store,
+      loadSnapshot: (snapshot: typeof before) => store.loadStoreSnapshot(snapshot),
+      clearHistory,
+      getInstanceState: () => ({ isReadonly: false }),
+      updateInstanceState: vi.fn(),
+      run: (fn: () => void) => fn(),
+      getCurrentPageShapeIds: () => new Set(["page:test"]),
+      deleteShapes: (ids: string[]) => store.remove(ids as never),
+      getShape: vi.fn(() => undefined),
+    } as unknown as Editor
     const invalidBatch = { ...batch, actions: [{ type: "clear" as const }, { type: "delete" as const, ids: ["missing"] }] }
-    const reload = vi.fn(async () => { throw new Error("reload failed") })
-    const commit = vi.fn(async () => {})
-    await expect(applyCanvasBatch({ editor: fixture.editor, batch: invalidBatch, commit, reload })).rejects.toThrow("missing shapes")
-    expect(fixture.bailToMark).toHaveBeenCalledWith("mark:batch")
-    expect(commit).not.toHaveBeenCalled()
-    expect(reload).not.toHaveBeenCalled()
+    await expect(applyCanvasBatch({ editor, batch: invalidBatch, commit: vi.fn(async () => {}), reload: vi.fn(async () => {}) })).rejects.toThrow("missing shapes")
+    expect(store.getStoreSnapshot()).toEqual(before)
+    expect(userHistory).toEqual(["manual-user-edit"])
+    expect(clearHistory).not.toHaveBeenCalled()
   })
 
   it("applies all actions before committing once and preserves prior user undo history", async () => {
@@ -217,19 +232,28 @@ describe("applyCanvasBatch", () => {
     expect(fixture.bailToMark).not.toHaveBeenCalled()
   })
 
-  it("rolls back only when the server definitively reports not written", async () => {
+  it("restores the pre-batch snapshot when the server definitively reports not written", async () => {
     const fixture = editorFixture()
     const error = new WorkspacePluginClientRequestError("conflict", 409, { written: false })
     await expect(applyCanvasBatch({ editor: fixture.editor, batch, commit: async () => { throw error }, reload: vi.fn(async () => {}) })).rejects.toBe(error)
-    expect(fixture.bailToMark).toHaveBeenCalledWith("mark:batch")
+    expect(fixture.loadSnapshot).toHaveBeenCalledWith(fixture.before)
   })
 
-  it("rolls back to the history mark when ambiguous recovery reload also fails", async () => {
+  it("restores the pre-batch snapshot when ambiguous recovery reload also fails", async () => {
     const fixture = editorFixture()
     const reload = vi.fn(async () => { throw new Error("reload failed") })
     await expect(applyCanvasBatch({ editor: fixture.editor, batch, commit: async () => { throw new Error("network") }, reload })).rejects.toThrow("network")
     expect(reload).toHaveBeenCalledOnce()
-    expect(fixture.bailToMark).toHaveBeenCalledWith("mark:batch")
+    expect(fixture.loadSnapshot).toHaveBeenCalledWith(fixture.before)
+  })
+
+  it("keeps non-owners read-only and unlocks only the owning client", () => {
+    const updateInstanceState = vi.fn()
+    const editor = { updateInstanceState } as unknown as Editor
+    setCanvasOwnership(editor, false)
+    setCanvasOwnership(editor, true)
+    expect(updateInstanceState).toHaveBeenNthCalledWith(1, { isReadonly: true }, { history: "ignore" })
+    expect(updateInstanceState).toHaveBeenNthCalledWith(2, { isReadonly: false }, { history: "ignore" })
   })
 
   it("reloads instead of rolling back after an ambiguous failure", async () => {

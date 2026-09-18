@@ -186,6 +186,9 @@ export function createCanvasTool(workspace: Workspace, batches: Map<string, Batc
         }
         if (operation !== "edit") return result(`Unsupported operation: ${operation}`, undefined, true)
         const actions = validateActions(params.actions)
+        if (!bridge) return result(`Open ${path} in the workspace before editing; this host has no UI bridge.`, { path }, true)
+        const opened = await bridge.postCommand({ kind: "openFile", params: { path, filesystem: USER_FILESYSTEM } })
+        if (opened.status !== "ok") return result(`Could not open ${path}: ${opened.error?.message ?? "workspace rejected the request"}`, { path }, true)
         const id = randomUUID()
         const batch: PendingCanvasBatch = { id, path, filesystem: USER_FILESYSTEM, actions }
         return await new Promise<ToolResult>((resolveTool) => {

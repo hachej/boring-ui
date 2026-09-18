@@ -160,35 +160,51 @@ function writeOutcome(error: unknown): false | true | "unknown" | undefined {
 
 function wasDefinitelyNotWritten(error: unknown): boolean { return writeOutcome(error) === false }
 
+export function setCanvasOwnership(editor: Editor, owned: boolean): void {
+  editor.updateInstanceState({ isReadonly: !owned }, { history: "ignore" })
+}
+
+function restoreCanvasStoreSnapshot(
+  editor: Editor,
+  snapshot: ReturnType<Editor["store"]["getStoreSnapshot"]>,
+): void {
+  // Batch actions are remote changes and never enter the user's undo stack.
+  // Restore the exact pre-batch records as another remote change; unlike
+  // loadCanvasStoreSnapshot this intentionally preserves prior user history.
+  editor.store.mergeRemoteChanges(() => { editor.loadSnapshot(snapshot) })
+}
+
 export async function applyCanvasBatch(options: {
   editor: Editor
   batch: PendingCanvasBatch
   commit: () => Promise<void>
   reload: () => Promise<void>
 }): Promise<void> {
-  const historyMark = options.editor.markHistoryStoppingPoint(`tldraw-agent:${options.batch.id}`)
-  const rollbackLocal = () => { options.editor.bailToMark(historyMark) }
+  const preBatchSnapshot = options.editor.store.getStoreSnapshot()
+  const rollbackRemote = () => { restoreCanvasStoreSnapshot(options.editor, preBatchSnapshot) }
   const wasReadonly = options.editor.getInstanceState().isReadonly
-  options.editor.updateInstanceState({ isReadonly: true }, { history: "ignore" })
+  setCanvasOwnership(options.editor, false)
   try {
     try {
       options.editor.store.mergeRemoteChanges(() => {
         options.editor.run(() => { for (const action of options.batch.actions) applyCanvasAction(options.editor, action) })
       })
     } catch (error) {
-      rollbackLocal()
+      rollbackRemote()
       throw error
     }
     try {
       await options.commit()
     } catch (error) {
-      if (wasDefinitelyNotWritten(error)) options.editor.bailToMark(historyMark)
-      try { await options.reload() }
-      catch { rollbackLocal() }
+      if (wasDefinitelyNotWritten(error)) rollbackRemote()
+      else {
+        try { await options.reload() }
+        catch { rollbackRemote() }
+      }
       throw error
     }
   } finally {
-    options.editor.updateInstanceState({ isReadonly: wasReadonly }, { history: "ignore" })
+    setCanvasOwnership(options.editor, !wasReadonly)
   }
 }
 
@@ -264,7 +280,8 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           }, 500)
         }, { scope: "document", source: "user" })
         readinessRef.current.markReady()
-        editor.updateInstanceState({ isReadonly: false }, { history: "ignore" })
+        // Loading alone does not grant edit authority. The ownership heartbeat
+        // below is the sole transition out of read-only mode.
       } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Load failed") }
     }
     const wait = window.setInterval(() => {
@@ -290,7 +307,13 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
         return
       }
       try {
-        await client.postJson("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
+        const connection = await client.postJson<{ ok: boolean }>("/api/v1/plugins/tldraw-agent/connect", { path, filesystem, clientId: clientIdRef.current })
+        setCanvasOwnership(editor, connection.ok)
+        if (!connection.ok) {
+          setStatus("Read-only · another tab owns this canvas")
+          return
+        }
+        setStatus("Live · user and agent share this editor")
         const query = new URLSearchParams({ path, filesystem, clientId: clientIdRef.current })
         const payload = await client.getJson<{ batches?: PendingCanvasBatch[] }>(`/api/v1/plugins/tldraw-agent/actions?${query}`)
         for (const batch of payload.batches ?? []) {
@@ -313,13 +336,18 @@ export function TldrawAgentPanel({ params }: PaneProps<TldrawAgentParams>) {
           }
         }
       } catch (cause) {
+        setCanvasOwnership(editor, false)
         if (active) setError(cause instanceof Error ? cause.message : "Canvas connection failed")
       } finally {
         if (active) timer = window.setTimeout(() => { void drain() }, 300)
       }
     }
     void drain()
-    return () => { active = false; if (timer) window.clearTimeout(timer) }
+    return () => {
+      active = false
+      if (timer) window.clearTimeout(timer)
+      if (editorRef.current) setCanvasOwnership(editorRef.current, false)
+    }
   }, [client, commitSnapshot, filesystem, loadFile, path])
 
   return (

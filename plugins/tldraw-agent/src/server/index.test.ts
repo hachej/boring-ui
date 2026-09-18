@@ -36,15 +36,17 @@ function workspaceFixture(initial = blankNative()) {
   }
 }
 
-async function routeApp(workspace: Workspace) {
+async function routeApp(workspace: Workspace, bridge = {
+  postCommand: vi.fn(async () => ({ seq: 1, status: "ok" as const })),
+}) {
   const app = Fastify()
-  const plugin = createTldrawAgentServerPlugin({ workspace }) as unknown as {
+  const plugin = createTldrawAgentServerPlugin({ workspace, bridge: bridge as never }) as unknown as {
     routes: Parameters<typeof app.register>[0]
     agentTools: ReturnType<typeof createCanvasTool>[]
   }
   await app.register(plugin.routes)
   await app.ready()
-  return { app, tool: plugin.agentTools[0]! }
+  return { app, tool: plugin.agentTools[0]!, bridge }
 }
 
 describe("edit_tldraw_canvas", () => {
@@ -197,6 +199,42 @@ describe("edit_tldraw_canvas", () => {
     await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "c" } })
     const actions = await app.inject({ method: "GET", url: "/api/v1/plugins/tldraw-agent/actions?path=flow.tldraw&filesystem=user&clientId=c" })
     expect(actions.json().batches).toEqual([])
+    await app.close()
+  })
+
+  it("opens an existing file before waiting for its edit batch to be claimed", async () => {
+    const fixture = workspaceFixture()
+    const { app, tool, bridge } = await routeApp(fixture.workspace)
+    const abort = new AbortController()
+    const toolPromise = tool.execute(
+      { operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] },
+      { toolCallId: "open-before-edit", abortSignal: abort.signal } as never,
+    )
+    await vi.waitFor(() => expect(bridge.postCommand).toHaveBeenCalledWith({ kind: "openFile", params: { path: "flow.tldraw", filesystem: "user" } }))
+    abort.abort()
+    await expect(toolPromise).resolves.toMatchObject({ isError: true })
+    await app.close()
+  })
+
+  it("fails edit immediately with an explicit open-tab precondition when no bridge exists", async () => {
+    const fixture = workspaceFixture()
+    const tool = createCanvasTool(fixture.workspace)
+    await expect(tool.execute(
+      { operation: "edit", path: "flow.tldraw", actions: [{ type: "clear" }] },
+      { toolCallId: "no-bridge", abortSignal: new AbortController().signal } as never,
+    )).resolves.toMatchObject({ isError: true, content: [{ text: expect.stringContaining("Open flow.tldraw") }] })
+  })
+
+  it("keeps a competing client non-owner until the current lease expires", async () => {
+    const fixture = workspaceFixture()
+    const { app } = await routeApp(fixture.workspace)
+    const first = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "owner" } })
+    const second = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/connect", payload: { path: "flow.tldraw", filesystem: "user", clientId: "competitor" } })
+    expect(first.json()).toEqual({ ok: true })
+    expect(second.json()).toEqual({ ok: false })
+    const rejected = await app.inject({ method: "POST", url: "/api/v1/plugins/tldraw-agent/commit", payload: { requestId: "competitor:1", path: "flow.tldraw", filesystem: "user", clientId: "competitor", json: blankNative(), expectedRevision: fixture.revision } })
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.json()).toMatchObject({ written: false, error: { message: "canvas owner lease is invalid" } })
     await app.close()
   })
 
