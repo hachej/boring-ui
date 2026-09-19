@@ -22,8 +22,10 @@ the main server module graph.
 The styled chat UI and its building blocks. Key exports:
 
 - `ChatPanel` (alias of `PiChatPanel`) — the pane-embeddable chat component.
-  Props include `apiBaseUrl`, `sessionId`, and `toolRenderers`. See
-  `src/front/chat/PiChatPanel.tsx`.
+  Props include `apiBaseUrl`, `sessionId`, `toolRenderers`, and `composerSlot`
+  (a `ReactNode` rendered in the composer's place, e.g. a blocking question
+  card, while the panel's draft, queue, blockers and attachment state stay
+  alive). See `src/front/chat/PiChatPanel.tsx`.
 - `usePiSessions` and session helpers (`readActiveSessionId`,
   `writeActiveSessionId`, `PiSessionList`, `PiSessionBrowser`).
 - Slash-command surface: `builtinCommands`, `createCommandRegistry`,

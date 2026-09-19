@@ -185,6 +185,12 @@ export interface PiChatPanelProps<
   composerPlaceholder?: string
   /** Replaces the composer's default streaming pill when supplied. Pass `null` to hide it. */
   composerActivity?: ReactNode
+  /**
+   * When set, rendered in the composer's place; the panel's draft, queue,
+   * blockers and attachment state stay alive but the built-in input is not
+   * shown. Use it for a blocking question card.
+   */
+  composerSlot?: ReactNode
   initialDraft?: string
   autoSubmitInitialDraft?: boolean
   onDraftRestored?: () => void
@@ -261,6 +267,7 @@ export function PiChatPanel<
   emptyPlacement = 'hero',
   composerPlaceholder,
   composerActivity,
+  composerSlot,
   initialDraft,
   autoSubmitInitialDraft = false,
   onDraftRestored,
@@ -1458,7 +1465,7 @@ export function PiChatPanel<
               messagesOnlyHiddenUserPrefixes={messagesOnlyHiddenUserPrefixes}
             />
 
-            {composerSurface}
+            {composerSlot ?? composerSurface}
             {emptyHero ? (
               <div
                 data-boring-agent-part="empty-hero-suggestions"
