@@ -554,6 +554,30 @@ describe('PiChatPanel sandbox shell', () => {
     expect(document.querySelector('[data-boring-agent-part="chat-working-slot"]')?.getAttribute('aria-hidden')).toBe('true')
   })
 
+  test('renders composerSlot in place of the built-in composer and keeps the draft alive underneath', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const panelProps = {
+      serverResourcesEnabled: false,
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remoteFactory(remote),
+    }
+    const { rerender } = render(<PiChatPanel {...panelProps} />)
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'draft kept under the card' } })
+
+    rerender(<PiChatPanel {...panelProps} composerSlot={<div data-testid="host-question-card">Which tracker?</div>} />)
+    await screen.findByTestId('host-question-card')
+    expect(screen.queryByLabelText('Agent prompt')).toBeNull()
+
+    rerender(<PiChatPanel {...panelProps} />)
+    expect(screen.queryByTestId('host-question-card')).toBeNull()
+    const restored = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    expect(restored.value).toBe('draft kept under the card')
+  })
+
   test('surfaces a rejected run as one notice, re-appears after dismissal, and never reports a turn', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     // A canonical, non-billing ErrorCode — the seam is generic; the host decides the action.
