@@ -1,0 +1,725 @@
+<title>Chat-First Shell</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f2f3f5; --panel:#ffffff; --panel2:#f7f8fa; --ink:#15181d; --muted:#667085; --line:#dfe3e8;
+  --accent:#0e6f6a; --accent-ink:#ffffff; --accent-soft:#e2f1ef; --warn:#b45309; --warn-soft:#fdf1e2; --bad:#b42318; --bad-soft:#fbe9e7;
+  --code:#eef0f3; --shadow:0 1px 2px rgba(20,24,29,.06),0 8px 24px rgba(20,24,29,.08);
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1114; --panel:#171a1f; --panel2:#1d2127; --ink:#e6e8eb; --muted:#98a2b3; --line:#2a2f37;
+  --accent:#4fb3ab; --accent-ink:#0f1114; --accent-soft:#16302e; --warn:#f0a04b; --warn-soft:#332412; --bad:#f28b82; --bad-soft:#3a1c19;
+  --code:#20242b; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+}}
+:root[data-theme="dark"]{
+  --bg:#0f1114; --panel:#171a1f; --panel2:#1d2127; --ink:#e6e8eb; --muted:#98a2b3; --line:#2a2f37;
+  --accent:#4fb3ab; --accent-ink:#0f1114; --accent-soft:#16302e; --warn:#f0a04b; --warn-soft:#332412; --bad:#f28b82; --bad-soft:#3a1c19;
+  --code:#20242b; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+.wrap{max-width:1080px;margin:0 auto;padding-block:40px 80px;padding-inline:16px}
+h1{font-size:34px;line-height:1.15;font-weight:600;letter-spacing:-.01em;margin:0 0 8px;text-wrap:balance}
+h2{font-size:22px;font-weight:600;margin:56px 0 12px;letter-spacing:-.01em;text-wrap:balance}
+h3{font-size:16px;font-weight:600;margin:24px 0 8px}
+p{max-width:68ch;margin:0 0 12px}
+.lede{font-size:17px;color:var(--muted);max-width:70ch}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+code{font-family:var(--mono);font-size:.88em;background:var(--code);padding:1px 5px;border-radius:4px}
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.5;background:var(--code);padding:14px 16px;border-radius:8px;overflow-x:auto;margin:0}
+a{color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+.box h3{margin-top:0}
+.box ul{margin:0;padding-left:18px}
+.box li{margin:4px 0}
+.tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);vertical-align:middle}
+.tag.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.tag.good{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.tag.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== mockup ===== */
+.mock{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;margin:16px 0 8px}
+.mock-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel2);font-size:12px;color:var(--muted)}
+.mock-bar .dots{display:flex;gap:5px}.mock-bar .dots i{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
+.mock-bar .hint{margin-left:auto;font-family:var(--mono);font-size:11px}
+.app{display:grid;grid-template-columns:200px 1fr;height:520px}
+@media (max-width:760px){.app{grid-template-columns:150px 1fr;height:560px}}
+.nav{border-right:1px solid var(--line);background:var(--panel2);padding:12px 10px;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.nav .brand{font-weight:600;font-size:14px;padding:4px 8px 10px}
+.nav button{all:unset;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;color:var(--ink)}
+.nav button:hover{background:var(--line)}
+.nav button.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.nav button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.nav .sec{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:14px 8px 4px}
+.nav .chat-item{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.nav .chat-item.on{color:var(--ink)}
+.nav .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}
+.main{position:relative;overflow:hidden;background:var(--panel)}
+.route{position:absolute;inset:0;display:none}.route.on{display:grid}
+/* chat route */
+#r-chat{grid-template-columns:1fr 0;transition:grid-template-columns .25s ease}
+#r-chat.viewer-open{grid-template-columns:minmax(220px,38%) 1fr}
+@media (prefers-reduced-motion:reduce){#r-chat{transition:none}}
+.chat{display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);background:var(--panel)}
+.chat .ch{display:none;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);font-family:var(--mono)}
+.chat .ch .sp{margin-left:auto}
+.mock-bar .seg{display:flex;gap:2px;margin-left:12px;border:1px solid var(--line);border-radius:6px;padding:2px}
+.mock-bar .seg button{all:unset;cursor:pointer;padding:2px 8px;border-radius:4px;font-size:11px;color:var(--muted)}
+.mock-bar .seg button.on{background:var(--accent-soft);color:var(--accent)}
+.mock-bar .seg button:focus-visible{outline:2px solid var(--accent)}
+/* floating: chat is a window over the app */
+#r-chat.mount-floating,#r-chat.mount-embedded{grid-template-columns:1fr}
+#r-chat.mount-floating .viewer,#r-chat.mount-embedded .viewer{grid-column:1}
+#r-chat.mount-floating .chat{position:absolute;left:16px;bottom:16px;width:300px;height:360px;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);z-index:2}
+#r-chat.mount-floating .chat .ch{display:flex}
+/* embedded: chat is rendered inside the app's own frame */
+#r-chat.mount-embedded .chat{position:absolute;right:28px;bottom:28px;width:280px;height:300px;border:1px solid var(--accent);border-radius:10px;box-shadow:var(--shadow);z-index:2}
+#r-chat.mount-embedded .chat .ch{display:flex;background:var(--accent-soft);color:var(--accent)}
+#r-chat.mount-embedded .viewer .vb{background:#fff}
+#r-chat.mount-embedded .viewer .vb .html-art{max-width:none;box-shadow:none;min-height:100%;position:relative}
+#r-chat.mount-embedded .viewer .vb .html-art::after{content:"the app's own screen · the shell portals the conversation into a slot the app declares";position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:10px;color:#888}
+#r-chat.mount-embedded .viewer .vh .acts button[title="Close"]{visibility:hidden}
+.msgs{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px;font-size:13.5px}
+.m{max-width:92%}.m.u{align-self:flex-end;background:var(--panel2);border:1px solid var(--line);padding:8px 12px;border-radius:12px 12px 2px 12px}
+.m.a p{margin:0 0 6px}
+.card{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer;margin-top:6px;max-width:300px}
+.card:hover{border-color:var(--accent)}.card.on{border-color:var(--accent);background:var(--accent-soft)}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.card .ic{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;font-family:var(--mono);font-size:9.5px;font-weight:500;color:#fff;flex:none}
+.card .t{font-size:12.5px;line-height:1.25;min-width:0}.card .t b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.card .t span{color:var(--muted);font-size:11px}
+.composer{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+.composer .in{flex:1;border:1px solid var(--line);border-radius:999px;padding:7px 14px;background:var(--panel2)}
+.viewer{display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.viewer .vh{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel);font-size:12.5px;white-space:nowrap;overflow:hidden}
+.viewer .vh .crumb{color:var(--muted)}.viewer .vh .crumb b{color:var(--ink);font-weight:500}
+.viewer .vh .acts{margin-left:auto;display:flex;gap:4px}
+.viewer .vh button{all:unset;cursor:pointer;width:26px;height:26px;display:grid;place-items:center;border-radius:5px;color:var(--muted);font-size:12px}
+.viewer .vh button:hover{background:var(--line);color:var(--ink)}
+.viewer .vh button:focus-visible{outline:2px solid var(--accent)}
+.viewer .vb{flex:1;overflow:auto;padding:20px}
+.doc{background:#fff;color:#1a1a1a;max-width:520px;margin:0 auto;padding:28px 32px;box-shadow:var(--shadow);font-family:Georgia,"Times New Roman",serif;font-size:12px;line-height:1.5}
+.doc h4{font-size:18px;margin:0 0 4px;color:#1f3a5f;letter-spacing:-.01em}.doc .sub{font-size:10px;color:#666;border-bottom:1px solid #1f3a5f;padding-bottom:6px;margin-bottom:10px}
+.doc table{width:100%;border-collapse:collapse;font-size:11px;margin:8px 0}.doc td{padding:4px 6px;border:1px solid #e5e5e5}
+.pdf{background:#fff;color:#222;max-width:520px;margin:0 auto;padding:28px;box-shadow:var(--shadow);font-family:var(--mono);font-size:11px}
+.pdf .pg{color:#999;font-size:10px;text-align:right}
+.html-art{background:#fff;color:#111;max-width:520px;margin:0 auto;padding:20px;box-shadow:var(--shadow);font-family:var(--sans)}
+.html-art .bar{display:flex;gap:6px;align-items:flex-end;height:120px;margin:12px 0}
+.html-art .bar i{flex:1;background:#0e6f6a;display:block;border-radius:3px 3px 0 0}
+/* library route */
+#r-lib{grid-template-columns:190px 1fr}
+@media (max-width:760px){#r-lib{grid-template-columns:130px 1fr}}
+.tree{border-right:1px solid var(--line);background:var(--panel2);padding:10px 8px;font-family:var(--mono);font-size:11.5px;overflow:auto}
+.tree .th{font-family:var(--sans);font-size:11px;font-weight:600;color:var(--muted);padding:2px 6px 8px;letter-spacing:.04em}
+.tree div{padding:2px 6px;white-space:nowrap;border-radius:4px;color:var(--ink)}
+.tree div.f{cursor:pointer}.tree div.f:hover{background:var(--line)}.tree div.f.on{background:var(--accent-soft);color:var(--accent)}
+.tree .d{color:var(--muted)}
+.dock{display:flex;flex-direction:column;min-width:0}
+.tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel2);font-size:12px;overflow:hidden}
+.tabs div{padding:7px 14px;border-right:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.tabs div.on{background:var(--panel);color:var(--ink);border-bottom:2px solid var(--accent);margin-bottom:-1px}
+.dock .db{flex:1;overflow:auto;padding:18px;background:var(--bg)}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:100%}
+@media (max-width:760px){.split{grid-template-columns:1fr}}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+.pane .ph{font-size:11px;color:var(--muted);padding:5px 10px;border-bottom:1px solid var(--line);font-family:var(--mono)}
+.pane .pb{padding:12px;font-size:12px;overflow:auto;flex:1}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-bottom:24px}
+.legend span b{color:var(--ink);font-weight:500}
+
+/* ===== plan ===== */
+.phases{display:flex;flex-direction:column;gap:0;border-left:2px solid var(--line);margin:16px 0 0 8px}
+.ph{position:relative;padding:4px 0 22px 26px}
+.ph::before{content:"";position:absolute;left:-7px;top:12px;width:12px;height:12px;border-radius:50%;background:var(--panel);border:2px solid var(--accent)}
+.ph.gate::before{background:var(--accent)}
+.ph .head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ph .head b{font-size:16px;font-weight:600}
+.ph .head .num{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.ph .dur{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto}
+.ph p{margin:6px 0}
+.ph ul{margin:4px 0 0;padding-left:18px}.ph li{margin:3px 0}
+.ph .done{font-size:13px;color:var(--muted);border-top:1px dashed var(--line);margin-top:8px;padding-top:6px}
+.ph .done b{color:var(--ink);font-weight:500}
+
+table.cmp{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0}
+table.cmp th{text-align:left;font-weight:600;padding:8px 10px;border-bottom:2px solid var(--line);font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+table.cmp td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.cmp tr.pick td{background:var(--accent-soft)}
+.tablewrap{overflow-x:auto}
+.beforeafter{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.beforeafter{grid-template-columns:1fr}}
+.beforeafter .eyebrow{margin-top:0}
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);padding:10px 14px;border-radius:0 8px 8px 0;font-size:13.5px;margin:16px 0}
+.pending{border:1px dashed var(--line);border-radius:8px;padding:12px 16px;color:var(--muted);font-size:13.5px}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">boring-ui · workspace package · 18 Sep 2026</div>
+  <h1>Chat-first shell: one conversation, one artifact, a Library behind it</h1>
+  <p class="lede">The building blocks in <code>packages/workspace</code> are sound. The assembly is wrong: the chat lives inside the dock and every host has to subtract chrome to get a simple app. The fix is a new, thin shell where a Thread chooses its layout: transcript plus one artifact by default, or the app itself full screen with the conversation beside it, over it, or inside it. Today's workspace moves behind a Library entry. No rewrite of the blocks.</p>
+
+  <h2>Today versus target</h2>
+  <div class="grid2">
+    <div class="box">
+      <h3>Today <span class="tag bad">subtractive</span></h3>
+      <ul>
+        <li><code>WorkspaceAgentFront</code> (2,991 lines) is the app. It owns layout, sessions, plugins, command palette, fleet views and the artifact surface.</li>
+        <li>The chat is a pane inside dockview. The dock is responsible for the whole screen.</li>
+        <li>Two left bars exist: <code>AppLeftPane</code> (990 lines) and <code>WorkbenchLeftPane</code> (372 lines), plus a file-tree rail on the right of the surface.</li>
+        <li>one-chat needs about twenty props and ten <code>display:none</code> rules to hide what it does not want, and still keeps the filesystem plugin registered because it carries the only surface resolver.</li>
+        <li>Every new use case is a new negation prop on the same component.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Target <span class="tag good">additive</span></h3>
+      <ul>
+        <li>A small <code>AppShell</code>: left nav with New chat, Library, and the chat list. Nothing else.</li>
+        <li>Chat route: transcript plus artifact cards. One artifact opens in a viewer beside the chat. Close it and the chat is full width again. No dockview.</li>
+        <li>Library route: today's file tree plus dockview, mounted as a destination. The file tree rail sits on the left, next to the nav.</li>
+        <li>Hosts compose: pick the routes, name the labels, pass the agent. A host like one-chat should be about forty lines.</li>
+        <li>The old front stays as a legacy export until every host has moved.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Mockup</h2>
+  <p>Click an artifact card to open the viewer. Click Library to see the dock. Use the chat switch in the title bar to move the conversation from a column to a floating window to a slot inside the app. The shapes are the deliverable; the styling is placeholder.</p>
+  <div class="mock">
+    <div class="mock-bar"><div class="dots"><i></i><i></i><i></i></div><span>one-chat</span>
+      <div class="seg" role="group" aria-label="Chat mount"><span style="padding:2px 4px;font-size:11px">chat:</span><button id="mt-column" class="on" onclick="setMount('column')">column</button><button id="mt-floating" onclick="setMount('floating')">floating</button><button id="mt-embedded" onclick="setMount('embedded')">in the app</button></div>
+      <span class="hint" id="hint">route: chat · viewer: closed</span></div>
+    <div class="app">
+      <div class="nav">
+        <div class="brand">One Chat</div>
+        <button id="nav-new" onclick="go('chat',null)">✎&nbsp; New thread</button>
+        <button id="nav-lib" onclick="go('library',null)">▤&nbsp; Library</button>
+        <div class="sec">Threads</div>
+        <button class="chat-item on" onclick="go('chat',null)"><span class="dot"></span>Sous-location Delacroix</button>
+        <button class="chat-item" onclick="go('chat',null)">Facture électricien</button>
+        <button class="chat-item" onclick="go('chat',null)">Planning salle de bain</button>
+      </div>
+      <div class="main">
+        <div class="route on" id="r-chat">
+          <div class="chat">
+            <div class="ch"><span id="ch-label">conversation · floating</span><button class="sp" style="all:unset;cursor:pointer" title="Dock" onclick="setMount('column')">⇱</button></div>
+            <div class="msgs">
+              <div class="m u">Prépare le contrat de sous-location pour Jérôme, du 1er janvier au 28 mai 2027, CHF 2'200 par mois.</div>
+              <div class="m a">
+                <p>Pour la période du 1er au 28 mai 2027 inclus, le loyer est calculé au prorata : CHF 2'200 × 28 ÷ 31 = <b>CHF 1'987.10</b>. Total du 1er janvier au 28 mai : <b>CHF 10'787.10</b>, hors dépôt.</p>
+                <p>Un point à vérifier avant signature : le dépôt de CHF 6'600 dépasse peut-être le plafond vaudois de trois mois de loyer net.</p>
+                <div class="card" tabindex="0" data-art="docx" onclick="openArt('docx')" onkeydown="if(event.key==='Enter')openArt('docx')"><div class="ic" style="background:#2b579a">DOC</div><div class="t"><b>Contrat_sous_location_Delacroix_2027_PROJET.docx</b><span>Document · 4 pages</span></div></div>
+                <div class="card" tabindex="0" data-art="pdf" onclick="openArt('pdf')" onkeydown="if(event.key==='Enter')openArt('pdf')"><div class="ic" style="background:#c0392b">PDF</div><div class="t"><b>Contrat_sous_location_Delacroix_2027_PROJET.pdf</b><span>PDF · export</span></div></div>
+              </div>
+              <div class="m u">Et un petit récap des loyers par mois, en graphique.</div>
+              <div class="m a">
+                <p>Voici le récapitulatif.</p>
+                <div class="card" tabindex="0" data-art="html" onclick="openArt('html')" onkeydown="if(event.key==='Enter')openArt('html')"><div class="ic" style="background:#0e6f6a">APP</div><div class="t"><b>recap-loyers-2027.html</b><span>Écran · interactif</span></div></div>
+              </div>
+            </div>
+            <div class="composer"><div class="in">Ask…</div><span>⏎</span></div>
+          </div>
+          <div class="viewer" id="viewer">
+            <div class="vh"><span class="crumb">Library / <b id="v-name">…</b></span><div class="acts"><button title="Zoom">100%</button><button title="Download">⤓</button><button title="Open in Library" onclick="go('library',currentArt)">⤢</button><button title="Close" onclick="closeArt()">✕</button></div></div>
+            <div class="vb" id="v-body"></div>
+          </div>
+        </div>
+
+        <div class="route" id="r-lib">
+          <div class="tree">
+            <div class="th">FILES</div>
+            <div class="d">▾ sous-location/</div>
+            <div class="f" data-art="docx" onclick="openLib('docx')">&nbsp;&nbsp;Contrat_…_PROJET.docx</div>
+            <div class="f" data-art="pdf" onclick="openLib('pdf')">&nbsp;&nbsp;Contrat_…_PROJET.pdf</div>
+            <div class="f" data-art="html" onclick="openLib('html')">&nbsp;&nbsp;recap-loyers-2027.html</div>
+            <div class="d">▾ electricien/</div>
+            <div class="f">&nbsp;&nbsp;facture-08-2026.pdf</div>
+            <div class="d">▸ salle-de-bain/</div>
+            <div class="d">▸ .workspace/</div>
+          </div>
+          <div class="dock">
+            <div class="tabs" id="tabs"></div>
+            <div class="db" id="lib-body"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span><b>Nav</b> owned by AppShell</span>
+    <span><b>Chat + viewer</b> new ChatRoute, no dockview</span>
+    <span><b>Library</b> existing FileTree + DockviewShell, rail moved left</span>
+  </div>
+
+  <h2>An app and its Thread are one whole</h2>
+  <p>In one-chat an app is not a file the conversation produced. The agent, the Thread and the app are one thing with one name in the nav. That changes what "layout" means: it is a property of the Thread, chosen by the app, not a mode of the shell.</p>
+  <div class="note" style="border-color:var(--accent);background:var(--accent-soft)">In an app layout the agent is just a backend and the chat is just a frontend component. The app is the product. The shell provides both to it and keeps them durable, but the app decides where, and whether, the conversation is visible.</div>
+  <div class="grid2">
+    <div class="box">
+      <h3>What the shell always owns</h3>
+      <ul>
+        <li>The nav, the thread list, New thread, Library.</li>
+        <li>The session: transport, streaming, auth, ask_user cards, attention badges.</li>
+        <li>Artifact events and the Library dock.</li>
+        <li>The chat component itself, wherever it is mounted.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>What the app decides</h3>
+      <ul>
+        <li><code>layout: "thread" | "app"</code>. Thread = transcript plus one artifact viewer. App = the app's screen fills the main area as a full-bleed iframe, which is the existing html viewer with its header hidden.</li>
+        <li><code>chatMount: "column" | "floating" | "in-app"</code>. Column beside the screen, a window over it, or a slot the app declares.</li>
+        <li>Both persist on the Thread record, so an app reopens the way it was last used.</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Chat inside the app, in two steps</h3>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>Step</th><th>Mechanism</th><th>Cost</th><th>Limits</th></tr>
+    <tr class="pick"><td><b>Portal</b> (phase 4b)</td><td>The app declares a chat slot over the existing ui-control bridge: an anchor ("bottom right, 320 wide") or a rectangle it measures. The shell positions its own chat panel over the iframe there. Same component as the floating mount, different position.</td><td>Days, after the floating mount exists</td><td>The chat sits above the iframe. The app reports scroll and resize. It styles the chat only through a small token set.</td></tr>
+    <tr><td><b>Native</b> (phase 6)</td><td>A chat web component shipped into the sandbox. The app renders it in its own DOM. Transport relays through the bridge with a scoped token. The component owns rendering and transport only; pi keeps the conversation brain.</td><td>Weeks</td><td>Token handoff and a transport relay are new surface. Not needed for one-chat's first release.</td></tr>
+  </table></div>
+  <p>Full-screen app is realistic today because the surface already renders html artifacts in a sandboxed iframe. In-app chat is realistic because the portal reuses the floating window and a bridge that already carries ui-control commands.</p>
+
+  <h3>Fit with the UI bridge as it exists today</h3>
+  <div class="grid2">
+    <div class="box">
+      <h3>Two bridges, neither reaches the app</h3>
+      <ul>
+        <li><b>UI bridge</b>, agent to front. The agent calls <code>exec_ui</code> (openFile, openPanel, openSurface, notify). Commands post to <code>/api/v1/ui/commands</code>, the front long-polls <code>/commands/next</code> and pushes state back to <code>/api/v1/ui/state</code>, which <code>get_ui_state</code> reads.</li>
+        <li><b>Workspace bridge</b>, front plugin to server. <code>POST /api/v1/workspace-bridge/call</code> with a runtime token. Used by ask-user and bi-dashboard.</li>
+        <li><b>The app iframe is a dead end.</b> HtmlViewer renders <code>srcDoc</code> under <code>sandbox="allow-scripts …"</code> with no <code>allow-same-origin</code>, so the app runs on an opaque origin. There is no <code>postMessage</code> anywhere in the package. The app cannot talk to the shell and the shell cannot talk to the app.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>What the portal needs, and what it reuses</h3>
+      <ul>
+        <li><b>Reused as is:</b> exec_ui to open the app full screen (an <code>openSurface</code> on the html artifact with a <code>layout: "app"</code> hint). ui state gains <code>layout</code> and <code>chatMount</code> so the agent knows where the conversation is.</li>
+        <li><b>New, small:</b> one <code>postMessage</code> protocol between the app iframe and the shell: <code>chat-slot</code> (anchor or rect), <code>chat-slot-resize</code>, and later <code>open-artifact</code>. The parent trusts <code>event.source</code> equal to the viewer's own iframe window, not the origin, because a sandboxed srcDoc has origin "null". No server change, no token, no new route.</li>
+        <li><b>Alternative with zero new transport:</b> the agent declares the slot at build time with a new <code>exec_ui</code> kind. Static, but enough for a first app. The postMessage route is what makes the slot follow the app's own layout at runtime.</li>
+        <li><b>Native chat later</b> reuses the workspace bridge token model: the shell hands the iframe a scoped runtime token and the component calls the agent server directly, or every message relays through the shell by postMessage. That is the phase 6 cost, and the current bridge already has the token primitive for it.</li>
+      </ul>
+    </div>
+  </div>
+  <p>Verdict: the portal fits the current setup with one additive piece, an iframe-to-shell postMessage channel. Both server bridges stay as they are.</p>
+
+  <h2>Three options</h2>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>Option</th><th>What it means</th><th>Cost</th><th>Risk</th><th>Verdict</th></tr>
+    <tr><td><b>Patch WorkspaceAgentFront</b></td><td>Add <code>navStyle="chatgpt"</code>, <code>artifactViewer</code>, <code>railSide="left"</code> to the existing component.</td><td>Days</td><td>Adds the 25th and 26th mode props to a 3k-line file. Every host keeps paying for the whole shell. This is the road that produced today.</td><td><span class="tag bad">no</span></td></tr>
+    <tr><td><b>Rebuild from scratch</b></td><td>New package, new file tree, new dock, new session sync.</td><td>Months</td><td>Throws away the parts you said are good: FileTreeView, DockviewShell, MarkdownEditor, HtmlViewer, session store, bridge. Re-introduces bugs already fixed.</td><td><span class="tag bad">no</span></td></tr>
+    <tr class="pick"><td><b>New layout layer</b></td><td>Keep the blocks. Add <code>AppShell</code>, <code>ThreadRoute</code>, <code>ArtifactViewer</code>, <code>LibraryRoute</code> as a sibling of the legacy front. Migrate hosts one by one. Delete the legacy front last.</td><td>3 to 4 weeks to one-chat on the new shell</td><td>The audit found the blocks are cleaner than feared: FileTree is standalone, DockviewShell needs only a registry and a store. The real entanglement is in the legacy front, which this option never touches. Phase 0 still verifies before committing.</td><td><span class="tag good">recommended</span></td></tr>
+  </table></div>
+
+  <h2>Modules and how they relate</h2>
+  <p>Teal is new code. Solid black is existing code kept as is. Dashed grey is the legacy front, frozen now and deleted in phase 5. Hosts move from the dashed arrow to the solid one.</p>
+  <figure style="margin:16px 0 8px">
+  <svg viewBox="0 -18 960 718" role="img" aria-label="Module diagram: hosts mount the new AppShell, whose ThreadRoute and LibraryRoute reuse the existing chat panel, file tree, dockview and viewers through a shared surface resolver and a minimal provider, over the agent runtime, filesystem server and sessions store; the legacy WorkspaceAgentFront sits beside it, frozen." style="max-width:100%;height:auto;font-family:var(--sans);font-size:12px;color:var(--ink)">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+      <marker id="ah-new" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0e6f6a"/></marker>
+      <marker id="ah-old" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a94a3"/></marker>
+    </defs>
+
+    <g fill="#8a94a3" font-family="var(--mono)" font-size="10" letter-spacing="1">
+      <text x="12" y="38">HOSTS</text>
+      <text x="12" y="122">SHELL</text>
+      <text x="12" y="386">BLOCKS</text>
+      <text x="12" y="496">SHARED</text>
+      <text x="12" y="606">SERVER</text>
+    </g>
+
+    <!-- hosts -->
+    <g fill="none" stroke="currentColor" stroke-width="1.2">
+      <rect x="70" y="16" width="130" height="36" rx="6"/>
+      <rect x="230" y="16" width="130" height="36" rx="6"/>
+      <rect x="390" y="16" width="150" height="36" rx="6"/>
+    </g>
+    <g fill="currentColor" text-anchor="middle">
+      <text x="135" y="38">one-chat</text>
+      <text x="295" y="38">full-app · cli</text>
+      <text x="465" y="38">Meridian preset (later)</text>
+    </g>
+    <g stroke="#0e6f6a" stroke-width="1.4" fill="none" marker-end="url(#ah-new)">
+      <line x1="135" y1="52" x2="135" y2="104"/>
+      <line x1="295" y1="52" x2="295" y2="104"/>
+      <line x1="465" y1="52" x2="465" y2="104"/>
+    </g>
+    <text x="146" y="86" fill="#0e6f6a" font-size="10.5">mounts</text>
+    <path d="M295 16 V -2 H 820 V 104" fill="none" stroke="#8a94a3" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah-old)"/>
+    <text x="560" y="-6" fill="#8a94a3" font-size="10.5" text-anchor="middle">mounts today · retargeted in phase 5</text>
+
+    <!-- AppShell -->
+    <rect x="70" y="106" width="590" height="228" rx="10" fill="none" stroke="#0e6f6a" stroke-width="1.6"/>
+    <text x="84" y="128" fill="#0e6f6a" font-weight="600">AppShell</text>
+    <text x="150" y="128" fill="#0e6f6a" font-size="11">routes · labels · agentTypeId · renderNavItem</text>
+    <g fill="none" stroke="#0e6f6a" stroke-width="1.4">
+      <rect x="90" y="150" width="120" height="60" rx="6"/>
+      <rect x="240" y="150" width="190" height="164" rx="6"/>
+      <rect x="455" y="150" width="190" height="164" rx="6"/>
+    </g>
+    <g fill="#0e6f6a" text-anchor="middle" font-weight="600">
+      <text x="150" y="176">NavRail</text>
+      <text x="335" y="172">ThreadRoute</text>
+      <text x="550" y="172">LibraryRoute</text>
+    </g>
+    <text x="150" y="194" fill="currentColor" text-anchor="middle" font-size="11">new · library · threads</text>
+    <rect x="255" y="190" width="160" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <rect x="255" y="236" width="160" height="34" rx="5" fill="none" stroke="#0e6f6a" stroke-width="1.4"/>
+    <g text-anchor="middle">
+      <text x="335" y="211" fill="currentColor">Thread viewer <tspan fill="#8a94a3" font-size="10">PiChatPanel</tspan></text>
+      <text x="335" y="257" fill="#0e6f6a" font-weight="600">ArtifactViewer</text>
+    </g>
+    <text x="335" y="296" fill="#8a94a3" font-size="10.5" text-anchor="middle">two viewers: thread · artifact</text>
+    <g fill="none" stroke="currentColor" stroke-width="1.2">
+      <rect x="470" y="190" width="70" height="80" rx="5"/>
+      <rect x="552" y="190" width="78" height="80" rx="5"/>
+    </g>
+    <g fill="currentColor" text-anchor="middle">
+      <text x="505" y="226">FileTree</text>
+      <text x="505" y="242" fill="#8a94a3" font-size="10">rail left</text>
+      <text x="591" y="226">Dockview</text>
+      <text x="591" y="242">Shell</text>
+    </g>
+    <path d="M415 243 H 455" fill="none" stroke="#0e6f6a" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#ah-new)"/>
+    <text x="435" y="236" fill="#0e6f6a" font-size="10" text-anchor="middle">open in</text>
+
+    <!-- legacy -->
+    <rect x="700" y="106" width="240" height="228" rx="10" fill="none" stroke="#8a94a3" stroke-width="1.2" stroke-dasharray="5 4"/>
+    <text x="714" y="128" fill="#8a94a3" font-weight="600">Legacy front</text>
+    <text x="820" y="128" fill="#8a94a3" font-size="10.5">frozen · deleted phase 5</text>
+    <g fill="#8a94a3" font-size="11.5">
+      <text x="716" y="160">WorkspaceAgentFront</text>
+      <text x="716" y="178" font-size="10">2,991 lines · ~95 props · 13 subsystems</text>
+      <text x="716" y="204">ChatLayout · ChatPaneStageDock</text>
+      <text x="716" y="224">SurfaceShell (dock #2, rail right)</text>
+      <text x="716" y="244">AppLeftPane · WorkbenchLeftPane</text>
+      <text x="716" y="264">WorkspaceProvider (9 contexts,</text>
+      <text x="716" y="280">global store, palette, toasts…)</text>
+      <text x="716" y="310" font-size="10">still reuses the same BLOCKS below</text>
+    </g>
+
+    <!-- blocks row -->
+    <rect x="70" y="360" width="150" height="44" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <rect x="250" y="360" width="140" height="44" rx="6" fill="none" stroke="#0e6f6a" stroke-width="1.4"/>
+    <g text-anchor="middle">
+      <text x="145" y="378" fill="currentColor">Thread adapter</text>
+      <text x="145" y="394" fill="#8a94a3" font-size="10">1 Thread = 1 Session for now</text>
+      <text x="320" y="378" fill="#0e6f6a" font-weight="600">useSessionArtifacts</text>
+      <text x="320" y="394" fill="#8a94a3" font-size="10">cards for the transcript</text>
+    </g>
+
+    <!-- shared row -->
+    <rect x="325" y="470" width="130" height="44" rx="6" fill="none" stroke="#0e6f6a" stroke-width="1.4"/>
+    <rect x="480" y="470" width="150" height="44" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <rect x="690" y="470" width="200" height="44" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <g text-anchor="middle">
+      <text x="390" y="488" fill="#0e6f6a" font-weight="600">SurfaceResolver</text>
+      <text x="390" y="504" fill="#8a94a3" font-size="9.5">out of filesystem plugin</text>
+      <text x="555" y="488" fill="currentColor">File viewers</text>
+      <text x="555" y="504" fill="#8a94a3" font-size="10">Markdown · Code · Html · Pdf</text>
+      <text x="790" y="488" fill="currentColor">Minimal provider</text>
+      <text x="790" y="504" fill="#8a94a3" font-size="10">RegistryProvider · store · DataProvider</text>
+    </g>
+
+    <!-- server row -->
+    <g fill="none" stroke="currentColor" stroke-width="1.2">
+      <rect x="70" y="580" width="140" height="44" rx="6"/>
+      <rect x="230" y="580" width="240" height="44" rx="6"/>
+      <rect x="540" y="580" width="180" height="44" rx="6"/>
+    </g>
+    <g fill="currentColor" text-anchor="middle">
+      <text x="140" y="598">Sessions store</text>
+      <text x="140" y="614" fill="#8a94a3" font-size="10">durable, per workspace</text>
+      <text x="350" y="598">Agent runtime</text>
+      <text x="350" y="614" fill="#8a94a3" font-size="10">openFile · writeFile · ui-control</text>
+      <text x="630" y="598">Filesystem plugin server</text>
+      <text x="630" y="614" fill="#8a94a3" font-size="10">read · write · catalog</text>
+    </g>
+
+    <!-- NavRail -> Thread adapter -> Sessions store -->
+    <line x1="150" y1="210" x2="150" y2="358" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="158" y="290" fill="currentColor" font-size="10.5">lists threads</text>
+    <line x1="145" y1="404" x2="145" y2="578" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="152" y="500" fill="currentColor" font-size="10.5">reads · creates</text>
+
+    <!-- PiChatPanel -> Agent runtime -->
+    <path d="M255 207 H 236 V 578" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="229" y="470" fill="currentColor" font-size="10.5" text-anchor="middle" transform="rotate(-90 229 470)">streams turns</text>
+
+    <!-- Agent runtime -> useSessionArtifacts -> ArtifactViewer -->
+    <line x1="310" y1="578" x2="310" y2="406" stroke="#0e6f6a" stroke-width="1.4" marker-end="url(#ah-new)"/>
+    <text x="302" y="492" fill="#0e6f6a" font-size="10.5" text-anchor="middle" transform="rotate(-90 302 492)">artifact event (path, kind)</text>
+    <line x1="300" y1="358" x2="300" y2="272" stroke="#0e6f6a" stroke-width="1.4" marker-end="url(#ah-new)"/>
+    <text x="306" y="340" fill="#0e6f6a" font-size="10.5">cards</text>
+
+    <!-- ArtifactViewer -> SurfaceResolver -->
+    <line x1="400" y1="270" x2="400" y2="468" stroke="#0e6f6a" stroke-width="1.4" marker-end="url(#ah-new)"/>
+    <text x="406" y="340" fill="#0e6f6a" font-size="10.5">path → viewer</text>
+
+    <!-- DockviewShell -> SurfaceResolver -->
+    <path d="M591 270 V 420 H 380 V 468" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="470" y="414" fill="currentColor" font-size="10.5">path → viewer</text>
+
+    <!-- LibraryRoute -> Minimal provider -->
+    <path d="M630 314 V 440 H 790 V 468" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="782" y="436" fill="currentColor" font-size="10.5" text-anchor="end">registry · store · DataProvider</text>
+
+    <!-- SurfaceResolver -> File viewers -->
+    <path d="M455 492 H 478" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="466" y="484" fill="currentColor" font-size="10" text-anchor="middle">picks</text>
+
+    <!-- File viewers -> FS server ; Minimal provider -> FS server -->
+    <line x1="580" y1="514" x2="580" y2="578" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="586" y="556" fill="currentColor" font-size="10.5">reads files</text>
+    <path d="M700 514 V 550 H 630 V 578" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+    <text x="696" y="545" fill="currentColor" font-size="10.5" text-anchor="end">fetch client</text>
+
+    <!-- legend -->
+    <g font-size="10.5">
+      <line x1="70" y1="668" x2="110" y2="668" stroke="#0e6f6a" stroke-width="1.6"/><text x="116" y="672" fill="currentColor">new (phases 1 to 4)</text>
+      <line x1="250" y1="668" x2="290" y2="668" stroke="currentColor" stroke-width="1.2"/><text x="296" y="672" fill="currentColor">existing, reused as is</text>
+      <line x1="450" y1="668" x2="490" y2="668" stroke="#8a94a3" stroke-width="1.2" stroke-dasharray="5 4"/><text x="496" y="672" fill="currentColor">legacy, frozen then deleted</text>
+    </g>
+  </svg>
+  <figcaption style="font-size:13px;color:var(--muted);max-width:70ch">The two routes never import each other's layout. They meet only at the shared SurfaceResolver, so a file renders the same way as a card in a Thread and as a tab in the Library. The legacy front keeps working during migration because it reuses the same blocks and server.</figcaption>
+  </figure>
+
+  <h2>Package split, done in phase 5</h2>
+  <p><code>boring-workspace</code> keeps its name and becomes the shell, because every consumer already imports it for the mount and the server composition. The Library is the extraction, so it gets the new name. Dependencies point one way, the shell never imports the Library, and no React context crosses a package line: the shell passes hooks and props down, never the reverse.</p>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>Package</th><th>Holds</th><th>Depends on</th><th>Who needs it</th></tr>
+    <tr><td><b>boring-workspace</b> <span class="tag good">becomes the shell</span></td><td>AppShell, NavRail, ThreadRoute, ArtifactViewer, Thread adapter, chat mounts, iframe portal protocol, the plugin model (<code>definePlugin</code>, panels, surface resolver registry), the built-in viewer plugins (code, csv, markdown, image, pdf, html, media, url pane), minimal provider, createWorkspaceAgentServer, both bridges, ui-control tools</td><td>boring-agent, ui-kit</td><td>Every app</td></tr>
+    <tr><td><b>boring-library</b> <span class="tag good">new, extracted</span></td><td>FileTree with its data provider, DockviewShell, LibraryRoute</td><td>boring-workspace</td><td>Apps with a Library entry. The host wires it in: <code>routes={{ library: LibraryRoute }}</code></td></tr>
+    <tr><td><b>plugins/*</b> <span class="tag">unchanged</span></td><td>Heavy or domain viewers with their agent tools: deck, diagram, excalidraw, bi-dashboard. Each is one package with a server half (tools that produce the file) and a front half (panel plus surface resolver)</td><td>boring-workspace</td><td>Opt-in per host</td></tr>
+  </table></div>
+  <h3>Viewers are plugin contributions, not a package</h3>
+  <p>A viewer is a panel plus a surface resolver with patterns and a score. Diagram and deck already work this way. The filesystem plugin does not: it bundles seven viewers and the file tree behind one glob table. The split moves the seven viewers into built-in viewer plugins inside the shell package, because artifact cards in every app need them, and leaves the tree with dockview in the Library. The ArtifactViewer and the Library dock ask the same resolver registry with the same open request, so any viewer plugin works in a chat card, in the Library and in an evidence popover without knowing which. The registry already resolves several claims on one target by score, so an opt-in plugin can take over a file type while the code editor stays the fallback. One small addition: a card icon and label per kind, on the resolver's existing metadata.</p>
+  <h3>The chat is a viewer of the Thread</h3>
+  <p>The chat panel is a viewer whose target is a Thread instead of a path. It is already force-registered as a core panel and mounted as a dockview pane by the legacy front; what is missing is that it resolves through the same registry from an open request of kind <code>thread</code>. Then column, floating and in-app stop being chat-specific modes and become placements that work for any viewer, and the iframe portal declares a slot with whatever viewer it wants in it, the Thread viewer or an artifact, through one protocol: <code>slot: { viewer, rect }</code>. Two things stay special and are kept on the Thread adapter, not inside the viewer: only one instance per Thread accepts input at a time, and session lifecycle such as ask_user and attention belongs to the shell.</p>
+  <p>Consumers keep their import. one-chat without a Library entry never loads dockview. Why not earlier: while the legacy front still imports everything, a split forces the two packages to version in lockstep through the migration. Why the context rule: one-chat's attention context already broke across the package's own bundled entry points and had to be patched with a window-event mirror. A package line is a harder boundary than an entry point.</p>
+
+  <h2>Plan</h2>
+  <p>Each phase ends with something a host can render. Gates are marked with a filled dot. Durations assume one lane on Sol or Opus with you reviewing surface by surface.</p>
+  <div class="phases">
+    <div class="ph gate">
+      <div class="head"><span class="num">0</span><b>Prove the blocks are free-standing</b><span class="dur">2 days · gate</span></div>
+      <p>In a playground, render <code>FileTree</code>, <code>DockviewShell</code> and one file viewer with no <code>WorkspaceAgentFront</code> and no <code>ChatLayout</code>. The audit says this should need only <code>RegistryProvider</code>, one <code>bindStore()</code>, the filesystem <code>DataProvider</code> and the surface resolver. The gate checks that claim.</p>
+      <ul>
+        <li>Export what is already clean but hidden: <code>PluginTabsWorkspaceShell</code>, <code>AppLeftPane</code>, <code>ChatPaneStage</code>. Stop exporting the dead <code>IdeLayout</code>, <code>buildChatLayout</code> and <code>ResponsiveDockviewShell</code>.</li>
+        <li>Write down the minimal provider the blocks need. That list is the contract of the new shell, and it is smaller than <code>WorkspaceProvider</code>.</li>
+        <li>Land the one-chat branch's package changes on main first, as they are. one-chat currently runs off an unpushed worktree, which is the most urgent risk on the table.</li>
+      </ul>
+      <div class="done"><b>Gate:</b> a page shows a file tree on the left and a dock on the right, opening a markdown and an html file, with none of the legacy front imported. If this fails, the blocks are not blocks and the plan changes to extraction first.</div>
+    </div>
+    <div class="ph">
+      <div class="head"><span class="num">1</span><b>Artifact events and cards</b><span class="dur">4 days</span></div>
+      <p>An artifact is a file the agent produced or opened in a session. Today that information dies inside tool-call cards.</p>
+      <ul>
+        <li>Agent side: emit a session-scoped <code>artifact</code> event from <code>openFile</code>, <code>writeFile</code> and the ui-control open tool, carrying path, kind and title. Persist it on the session record so a reload lists the same cards.</li>
+        <li>Front side: <code>useSessionArtifacts(sessionId)</code> hook and an <code>ArtifactCard</code> component rendered by the chat panel in messages-only mode. <code>ask_user</code> stays visible as it is today.</li>
+      </ul>
+      <div class="done"><b>Done when:</b> the one-chat transcript shows a card for every file the colleague made, and the list survives a reload.</div>
+    </div>
+    <div class="ph">
+      <div class="head"><span class="num">2</span><b>ArtifactViewer</b><span class="dur">3 days</span></div>
+      <p>One component that takes a path and renders it through the same resolver the dock uses. Breadcrumb, zoom, download, open in Library, close. Exactly one open at a time.</p>
+      <ul>
+        <li>Move the surface resolver out of the filesystem plugin's front into <code>shared/</code> so the viewer does not require the explorer to be registered.</li>
+        <li>Keyboard: Escape closes, cards are focusable.</li>
+      </ul>
+      <div class="done"><b>Done when:</b> a card click opens the viewer beside the chat and close returns to full-width chat, with no dockview on the page.</div>
+    </div>
+    <div class="ph gate">
+      <div class="head"><span class="num">3</span><b>AppShell and ThreadRoute</b><span class="dur">5 days · gate</span></div>
+      <p>The new root. Left nav with New thread, Library and the thread list, reusing the session hooks that one-chat's <code>AppsColumn</code> already reads, behind a Thread adapter (one Thread = one Session until the kernel split lands). Routes: thread and library. Props are positive: <code>routes</code>, <code>labels</code>, <code>agentTypeId</code>, <code>chatPanel</code>, <code>renderNavItem</code>.</p>
+      <ul>
+        <li>ThreadRoute = chat panel + ArtifactViewer + detach. Nothing from <code>ChatLayout</code> or <code>ChatPaneStageDock</code>. Built on the exported <code>PluginTabsWorkspaceShell</code> slot frame, which already has the right shape.</li>
+        <li>The provider under it is the minimal one from phase 0, not <code>WorkspaceProvider</code>. No module-global store binding, no hardcoded "files", "skills", "plugins", "agent" ids in chrome.</li>
+        <li>Chat mounts column and floating. The floating window is the same panel positioned over the screen, with a dock control. Persisted per Thread.</li>
+        <li>Mobile: nav becomes a drawer, viewer becomes a full-screen sheet.</li>
+      </ul>
+      <div class="done"><b>Gate:</b> one-chat's <code>App.tsx</code> mounts <code>AppShell</code> in under sixty lines, with zero <code>display:none</code> rules in <code>app.css</code>. You validate the three surfaces individually.</div>
+    </div>
+    <div class="ph">
+      <div class="head"><span class="num">4</span><b>LibraryRoute</b><span class="dur">3 days</span></div>
+      <p>Today's workspace as a destination: FileTree in a left rail beside the nav, DockviewShell filling the rest. Opening from a card's "open in Library" lands on that file's tab.</p>
+      <ul>
+        <li>The rail side becomes a prop on the route, defaulting to left.</li>
+        <li>Skills, plugins, agents pages stay out unless a host adds them as extra nav entries.</li>
+      </ul>
+      <div class="done"><b>Done when:</b> the Library screen in one-chat matches the mockup, and the dock layout persists per workspace as it does today.</div>
+    </div>
+    <div class="ph">
+      <div class="head"><span class="num">4b</span><b>App layout and in-app chat (portal)</b><span class="dur">4 days</span></div>
+      <p>A Thread with <code>layout: "app"</code> renders its html artifact full bleed through the existing viewer. The app declares a chat slot over the ui-control bridge and the shell portals the floating chat panel there.</p>
+      <ul>
+        <li>Iframe to shell <code>postMessage</code>: <code>chat-slot</code> (anchor or rect), <code>chat-slot-resize</code>. Parent validates <code>event.source</code>. Nothing new on the server bridges; ui state gains <code>layout</code> and <code>chatMount</code>.</li>
+        <li>The colleague agent gets one instruction: when it builds an app, it may declare where the conversation lives.</li>
+      </ul>
+      <div class="done"><b>Done when:</b> an app built in one-chat opens full screen with the conversation inside it, and switching to column or floating is one click.</div>
+    </div>
+    <div class="ph">
+      <div class="head"><span class="num">5</span><b>Migrate first-party hosts, then delete</b><span class="dur">2 weeks, in the background</span></div>
+      <p>Move full-app and the CLI hub onto AppShell behind a flag, with the extra nav entries they need. Constellation and seneca want the default, so they move last and see no visible change. Clinic's four dist patches become upstream PRs against the new seam (upload cap, chunked upload, download). When no host imports <code>WorkspaceAgentFront</code>, delete it together with <code>ChatLayout</code>, <code>ChatPaneStageDock</code>, <code>SurfaceShell</code>'s second rail and the dead layout exports. The Meridian five-domain shell then lands as a second preset of the same AppShell.</p>
+      <div class="done"><b>Done when:</b> the package's largest front file is under 800 lines, there is one left bar, and no consumer carries a patch against dist.</div>
+    </div>
+    <div class="ph">
+      <div class="head"><span class="num">6</span><b>Native in-app chat</b><span class="dur">later, when an app needs it</span></div>
+      <p>A chat web component shipped into the sandbox, rendered by the app in its own DOM, transport relayed through the bridge with a scoped token. Rendering and transport only; the conversation brain stays in pi.</p>
+      <div class="done"><b>Trigger:</b> an app that needs the chat styled or laid out in ways the portal cannot do.</div>
+    </div>
+  </div>
+
+  <div class="note">Sequence rule: phases 1 and 2 can run in parallel with phase 0 only on the agent side (events). Nothing in phase 3 starts before the phase 0 gate passes.</div>
+
+  <h2>Benchmark: the one-chat mount</h2>
+  <div class="beforeafter">
+    <div>
+      <div class="eyebrow">Today · App.tsx, trimmed</div>
+<pre>&lt;WorkspaceAgentFront
+  workspaceLayout="plugin-tabs"
+  renderAppLeftPane={…}
+  appLeftHeaderMode="hidden"
+  appLeftLayoutMode="single-project"
+  defaultAppLeftPaneCollapsed
+  chatPanel={OneChatChatPanel}   // any-typed
+  remoteSessionsEnabled          // or sessions silently go local
+  defaultWorkbenchLeftOpen={false}
+  showSkills={debug}
+  showPlugins={debug}
+  showThemeToggle={debug}
+  navEnabled={debug}
+  hideWorkbenchOpenButton={!debug}
+  hideChatPaneChrome={!debug}
+  chatPanes="single"
+  chatLayout={debug ? 'dock' : 'solo'}
+  defaultSurfaceOpen={false}
+  autoCollapseWorkbenchWhenEmpty={!debug}
+  chatTopActions={…}             // + custom event for detach
+  plugins={plugins}              // filesystem kept for its resolver
+/&gt;
++ app.css: 10 × display:none !important</pre>
+    </div>
+    <div>
+      <div class="eyebrow">Target · App.tsx</div>
+<pre>&lt;AppShell
+  workspaceId="one-chat"
+  agentTypeId="colleague"
+  labels={{ threads: 'My apps', newThread: 'New app' }}
+  routes={{
+    thread: { transcript: 'messages-only',
+              visibleTools: ['ask_user'] },
+    library: LibraryRoute,   // from boring-library
+  }}
+  renderNavItem={AppRow}
+  plugins={[createAskUserPlugin()]}
+/&gt;
++ app.css: brand tokens only</pre>
+    </div>
+  </div>
+
+  <h2>Fit with the ratified plan: Thread, View, Library</h2>
+  <p>The ratified pack already names the pieces this shell needs. Using its nouns costs nothing now and avoids a second rename later.</p>
+  <div class="grid2">
+    <div class="box">
+      <h3>What the rulings say</h3>
+      <ul>
+        <li><b>Thread</b> is the durable job root with 0..n Sessions (RECONCILIATION §9a, 2026-08-27). One-chat's "app" is a Thread. The nav lists Threads, not sessions.</li>
+        <li><b>One workbench, many mounts</b> (§8a): the artifact surface is one component mounted inside a Thread as a canvas, under an attention item, as a popover, and standalone as the Library. The ArtifactViewer in the mockup is the "inside a Thread" mount.</li>
+        <li><b>Library</b> is already the ratified name for the standalone mount, and for the View library once Views exist.</li>
+        <li><b>Conversation is contextual</b>, beside a View or inside a Thread, never a global assistant pane (§8b). In this shell the chat lives inside the Thread route, so it complies.</li>
+        <li><b>Chat-first Experience is explicitly valid</b> (§8a scope, 2026-08-27): the five-domain Meridian shell is the flagship, not the only surface. One-chat is the "chat-first expert Agent" case.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>How the plan integrates them</h3>
+      <ul>
+        <li>Name the routes <code>ThreadRoute</code> and <code>LibraryRoute</code>. The nav model is a list of Threads. Until the Thread/Session split lands in the kernel, one Thread maps to one Session behind a small adapter, so nothing is invented in the product layer.</li>
+        <li>Artifact cards list <b>artifacts</b> (files the agent produced), not Views. §8c forbids minting a View descriptor in the product layer before the kernel View contract ships. The viewer takes a path and a kind, nothing more.</li>
+        <li>The Meridian shell later becomes a second preset of the same <code>AppShell</code>: five nav domains instead of two. The Library route is shared as is.</li>
+        <li>The spike at commit <code>08cc60523</code> already proved the IA is reachable by recomposing shipped components. This plan is the productised version of that proof.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">One tension to rule on: one-chat pins the conversation permanently beside the screen. That is allowed for a chat-first Experience, but the nav must call the items Threads or the host's own word for them, never "sessions", so the later Thread/Session split does not surface in the UI.</div>
+
+  <h2>Audit evidence</h2>
+  <p>Two code audits, one inside the package and one across every consumer, confirm the hypothesis with one correction: the left bar is a symptom. The disease is a single closed composition root.</p>
+  <h3>Inside the package</h3>
+  <ul>
+    <li><b>No slot API.</b> <code>WorkspaceAgentFrontProps</code> has about 95 props. It <code>Omit</code>s every layout slot of <code>ChatLayout</code> (nav, center, surface, sidebar, chatPanes) at <code>WorkspaceAgentFront.tsx:234-251</code>, then hardcodes them at <code>:2744-2766</code>. Seven props are typed as public API and never read.</li>
+    <li><b>Layout is owned in five places</b> with about fifteen localStorage keys and three independent resize-handle implementations. <code>ChatLayout.tsx:566-576</code> re-opens the chat whenever the workbench closes, which is why chat cannot be hidden.</li>
+    <li><b>The 2,991-line front is thirteen subsystems</b>, not a composition root: session adaptation, fleet discovery, pane transactions with optimistic-ack windows, four storage schemas with migration, pinning, archive, overlay state machine, imperative surface handle, ui-command stream, warmup gating, palette search, capabilities host, two shell trees. 167 commits in six months.</li>
+    <li><b>Two layout systems are dead but exported</b> (<code>IdeLayout</code>, <code>buildChatLayout</code>, <code>ResponsiveDockviewShell</code>) while the live, clean slot component <code>PluginTabsWorkspaceShell</code> and the pure-props <code>AppLeftPane</code> are not exported. The default <code>workspaceLayout="classic"</code> is used by no real host.</li>
+    <li><b>Plugin ids are hardcoded in chrome</b>: "files" pinned and force-selected, "skills" and "plugins" reserved, "agent" in a global shortcut, four core panels registered unconditionally.</li>
+    <li><b>Good news for phase 0.</b> <code>FileTree</code> is fully standalone. <code>DockviewShell</code> needs only <code>RegistryProvider</code> and one <code>bindStore()</code>, not the whole provider. <code>FileTreeView</code> needs only <code>DataProvider</code>. The surface-resolver indirection is clean.</li>
+  </ul>
+  <h3>Across the consumers</h3>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>App</th><th>Wants</th><th>Pays with</th></tr>
+    <tr><td><b>one-chat</b></td><td>Apps column, one conversation, one self-opening screen</td><td>Runs only off an <b>unpushed local branch</b> of the package (+1,262 lines, ten new props, 60 → 70). Six vite aliases. 102 lines of <code>!important</code>. Private types crossed via <code>any</code>. Context broken across the package's own entry points, patched with a window-event mirror. 17 of 28 commits since adopting the shell are hide/remove/drop.</td></tr>
+    <tr><td><b>boring-clinic</b></td><td>Custom nav and one workbench of clinic panes</td><td>Bypasses the front entirely for its real route. <b>Four pnpm patches, 2,210 lines against dist</b>. Version-locked at 0.1.103 because the base branch no longer builds. 23 <code>!important</code>.</td></tr>
+    <tr><td><b>seneca</b></td><td>Default shell plus a chrome-free hero</td><td>Patched <b>minified</b> <code>dist/app-front.js</code> to add a prop. Hero strips chrome with <code>!important</code> on internal data attributes.</td></tr>
+    <tr><td><b>constellation</b></td><td>The package default</td><td>Nothing. Zero patches. It wants what the package already is.</td></tr>
+    <tr><td><b>full-app, cli</b></td><td>The package default</td><td>Nothing. This is why the composition seam never grew.</td></tr>
+  </table></div>
+  <p>Prior art already points the same way. <code>docs/plans/multiagent-shell/shell-plan.md:296-330</code> diagnoses the boolean layout switch and proposes layout traits plus a composable frame, behind an open, undispatched bead. A second open bead describes "one pinned chat column beside one surface, all technical chrome hidden", which one-chat then hand-built in a private branch. The one-chat spec sheet itself asks for these to be delivered in the package, not as workarounds.</p>
+</div>
+
+<script>
+var currentArt=null, route='chat', mount='column';
+function setMount(m){
+  mount=m;
+  var r=document.getElementById('r-chat');
+  r.classList.remove('mount-floating','mount-embedded');
+  if(m!=='column'){ r.classList.add('mount-'+m); if(!currentArt||m==='embedded')openArt('html'); }
+  ['column','floating','embedded'].forEach(function(k){document.getElementById('mt-'+k).classList.toggle('on',k===m)});
+  document.getElementById('ch-label').textContent=m==='embedded'?'conversation · hosted by the app':'conversation · floating';
+  if(route!=='chat')go('chat',null);
+  hint();
+}
+var ART={
+  docx:{name:'Contrat_sous_location_meublee_Delacroix_2027_PROJET_MAJ.docx',html:'<div class="doc"><div class="sub">SOUS-LOCATION MEUBLÉE | FOUNEX</div><h4>CONTRAT DE SOUS-LOCATION MEUBLÉE</h4><div style="font-size:11px;margin-bottom:8px">Du 1er janvier au 28 mai 2027 | CHF 2\'200.– par mois, toutes charges comprises</div><table><tr><td><b>SOUS-BAILLEURS</b><br>M. V. Santos Saint Romain<br>J. J. M. Hurault<br>Chemin du Vieux Pressoir 5, 1297 Founex</td><td><b>SOUS-LOCATAIRE</b><br>M. Jérôme Delacroix<br>Adresse : [à compléter]</td></tr></table><p><b>1. Durée.</b> Début le 1er janvier 2027 à midi, fin le 28 mai 2027 à midi.</p><p><b>2. Résiliation.</b> Durée déterminée, sans reconduction automatique.</p><p><b>3. Loyer.</b> CHF 2\'200.– payable d\'avance. Mai au prorata : CHF 1\'987.10.</p></div>'},
+  pdf:{name:'Contrat_sous_location_meublee_Delacroix_2027_PROJET_MAJ.pdf',html:'<div class="pdf"><div class="pg">1 / 4</div><br>CONTRAT DE SOUS-LOCATION MEUBLÉE<br>========================================<br><br>Période : 01.01.2027 – 28.05.2027<br>Loyer   : CHF 2\'200.– / mois<br>Prorata : CHF 1\'987.10 (mai)<br>Total   : CHF 10\'787.10<br><br>Dépôt   : CHF 6\'600.– (à vérifier, plafond 3 mois net)<br><br>[export PDF du document ci-contre]</div>'},
+  html:{name:'recap-loyers-2027.html',html:'<div class="html-art"><b>Loyers 2027</b><div style="font-size:11px;color:#666">janvier → mai, CHF</div><div class="bar"><i style="height:100%"></i><i style="height:100%"></i><i style="height:100%"></i><i style="height:100%"></i><i style="height:90%;background:#b45309"></i></div><div style="display:flex;justify-content:space-between;font-size:10px;color:#666"><span>jan 2\'200</span><span>fév 2\'200</span><span>mar 2\'200</span><span>avr 2\'200</span><span>mai 1\'987</span></div><div style="margin-top:10px;font-size:12px">Total : <b>CHF 10\'787.10</b></div></div>'}
+};
+var libTabs=['docx'], libOn='docx';
+function hint(){document.getElementById('hint').textContent='route: '+route+(route==='chat'?' · chat: '+mount+' · viewer: '+(currentArt?ART[currentArt].name.slice(0,18)+'…':'closed'):' · tabs: '+libTabs.length)}
+function go(r,art){
+  route=r;
+  document.getElementById('r-chat').classList.toggle('on',r==='chat');
+  document.getElementById('r-lib').classList.toggle('on',r==='library');
+  document.getElementById('nav-lib').classList.toggle('on',r==='library');
+  document.getElementById('nav-new').classList.toggle('on',false);
+  if(r==='library'&&art){openLib(art)} else if(r==='library'){renderLib()}
+  hint();
+}
+function openArt(k){
+  currentArt=k;
+  document.getElementById('r-chat').classList.add('viewer-open');
+  document.getElementById('v-name').textContent=ART[k].name;
+  document.getElementById('v-body').innerHTML=ART[k].html;
+  document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('on',c.dataset.art===k)});
+  hint();
+}
+function closeArt(){
+  if(mount==='embedded')return; /* the app IS the screen: nothing to close */
+  currentArt=null;
+  document.getElementById('r-chat').classList.remove('viewer-open');
+  document.querySelectorAll('.card').forEach(function(c){c.classList.remove('on')});
+  hint();
+}
+function openLib(k){ if(libTabs.indexOf(k)<0)libTabs.push(k); libOn=k; renderLib(); hint(); }
+function renderLib(){
+  var t=document.getElementById('tabs'); t.innerHTML='';
+  libTabs.forEach(function(k){var d=document.createElement('div');d.textContent=ART[k].name.replace('Contrat_sous_location_meublee_','…');d.className=k===libOn?'on':'';d.onclick=function(){libOn=k;renderLib()};t.appendChild(d)});
+  document.querySelectorAll('.tree .f').forEach(function(f){f.classList.toggle('on',f.dataset.art===libOn)});
+  var b=document.getElementById('lib-body');
+  if(libTabs.length>1){b.innerHTML='<div class="split"><div class="pane"><div class="ph">'+ART[libOn].name+'</div><div class="pb">'+ART[libOn].html+'</div></div><div class="pane"><div class="ph">'+ART[libTabs[0]===libOn?libTabs[1]:libTabs[0]].name+'</div><div class="pb">'+ART[libTabs[0]===libOn?libTabs[1]:libTabs[0]].html+'</div></div></div>'}
+  else{b.innerHTML='<div class="pane" style="height:100%"><div class="ph">'+ART[libOn].name+'</div><div class="pb">'+ART[libOn].html+'</div></div>'}
+}
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&currentArt)closeArt()});
+openArt('docx'); renderLib();
+</script>

@@ -1,0 +1,418 @@
+<title>Boring v3 Capability Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f2f3f5; --panel:#ffffff; --panel2:#f7f8fa; --ink:#15181d; --muted:#667085; --line:#dfe3e8;
+  --accent:#0e6f6a; --accent-soft:#e2f1ef; --warn:#b45309; --warn-soft:#fdf1e2; --bad:#b42318; --bad-soft:#fbe9e7; --grey:#8a94a3;
+  --code:#eef0f3; --shadow:0 1px 2px rgba(20,24,29,.06),0 8px 24px rgba(20,24,29,.08);
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1114; --panel:#171a1f; --panel2:#1d2127; --ink:#e6e8eb; --muted:#98a2b3; --line:#2a2f37;
+  --accent:#4fb3ab; --accent-soft:#16302e; --warn:#f0a04b; --warn-soft:#332412; --bad:#f28b82; --bad-soft:#3a1c19; --grey:#8a94a3;
+  --code:#20242b; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+}}
+:root[data-theme="dark"]{
+  --bg:#0f1114; --panel:#171a1f; --panel2:#1d2127; --ink:#e6e8eb; --muted:#98a2b3; --line:#2a2f37;
+  --accent:#4fb3ab; --accent-soft:#16302e; --warn:#f0a04b; --warn-soft:#332412; --bad:#f28b82; --bad-soft:#3a1c19; --grey:#8a94a3;
+  --code:#20242b; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+.wrap{max-width:1080px;margin:0 auto;padding-block:40px 80px;padding-inline:16px}
+h1{font-size:34px;line-height:1.15;font-weight:600;letter-spacing:-.01em;margin:0 0 8px;text-wrap:balance}
+h2{font-size:22px;font-weight:600;margin:56px 0 12px;letter-spacing:-.01em;text-wrap:balance}
+h3{font-size:16px;font-weight:600;margin:24px 0 8px}
+p{max-width:70ch;margin:0 0 12px}
+.lede{font-size:17px;color:var(--muted);max-width:72ch}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+code{font-family:var(--mono);font-size:.88em;background:var(--code);padding:1px 5px;border-radius:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media (max-width:760px){.grid2,.grid3{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+.box h3{margin-top:0}
+.box ul{margin:0;padding-left:18px}
+.box li{margin:4px 0}
+.tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);vertical-align:middle;white-space:nowrap}
+.tag.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.tag.good{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.tag.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+table.cmp{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0}
+table.cmp th{text-align:left;font-weight:600;padding:8px 10px;border-bottom:2px solid var(--line);font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+table.cmp td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.cmp tr.pick td{background:var(--accent-soft)}
+table.cmp td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tablewrap{overflow-x:auto}
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);padding:10px 14px;border-radius:0 8px 8px 0;font-size:13.5px;margin:16px 0}
+.note.ok{border-color:var(--accent);background:var(--accent-soft)}
+.note.bad{border-color:var(--bad);background:var(--bad-soft)}
+.waves{display:flex;flex-direction:column;border-left:2px solid var(--line);margin:16px 0 0 8px}
+.wv{position:relative;padding:4px 0 22px 26px}
+.wv::before{content:"";position:absolute;left:-7px;top:12px;width:12px;height:12px;border-radius:50%;background:var(--panel);border:2px solid var(--accent)}
+.wv.gate::before{background:var(--accent)}
+.wv .head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.wv .head b{font-size:16px;font-weight:600}
+.wv .head .num{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.wv .dur{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto}
+.wv p{margin:6px 0}
+.wv ul{margin:4px 0 0;padding-left:18px}.wv li{margin:3px 0}
+.wv .done{font-size:13px;color:var(--muted);border-top:1px dashed var(--line);margin-top:8px;padding-top:6px}
+.wv .done b{color:var(--ink);font-weight:500}
+figure{margin:16px 0 8px}
+figcaption{font-size:13px;color:var(--muted);max-width:72ch}
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0}
+@media (max-width:760px){.kpi{grid-template-columns:1fr 1fr}}
+.kpi div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.kpi b{display:block;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi span{font-size:12px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">boring-ui-v3 · analysis · 18 Sep 2026</div>
+  <h1>A network of self-living apps on a hub, with the agent as a service</h1>
+  <p class="lede">v3 is not a rewrite of the workspace. It is a re-centering: apps are the product, the hub runs them, Flue runs the agents, and a small set of platform services is consumed through bindings. Most of what v3 needs already exists, split across three places: boring-hub has the app lifecycle, Flue has the durable agent, and boring-ui-v2 has the auth, payments, sandbox, filesystem and viewer code. What is missing everywhere is the wiring between them. The hub has since grown its own shell, viewers with browser-side tools and ask-user, so the remaining greenfield is smaller than four days ago, and the hub itself is now the reference for how a v3 app looks.</p>
+
+  <div class="kpi">
+    <div><b>216k</b><span>lines of v2 source to triage (190k of tests beside it)</span></div>
+    <div><b>≈125k</b><span>lines with a port verdict, trimmed on the way</span></div>
+    <div><b>≈22k</b><span>lines rewritten on Flue (harness, tools, dock)</span></div>
+    <div><b>≈40k</b><span>lines dropped outright, zero importers or dead</span></div>
+  </div>
+
+  <h2>Owner decisions already taken</h2>
+  <ul>
+    <li><b>Flue replaces boring-agent's harness layer.</b> Tools, viewers, ask-user and the session UI stay ours. Durable submissions, recovery and the render loop come from Flue. The v2 durable-streams work (P1-A) is superseded.</li>
+    <li><b>v3 supersedes the v2 ratified pack.</b> Only the nouns survive: Thread, Session, Library, artifact, one workbench many mounts. Plans and sequencing retire with v2.</li>
+    <li><b>The hub keeps being built in parallel as a standalone</b>, with no auth and no remote sandbox. v3 must consume it, not fork it.</li>
+    <li><b>Platform shape: bindings first, backends in-process in the standalone hub, extraction later.</b> Decided 18 Sep after the comparison below.</li>
+    <li><b>Viewer tools: the v2 guardrail is reversed, html/app is the first viewer with tools.</b> The agent patches the app screen directly, which is one-chat's product.</li>
+    <li><b>The wall comes down by design, not by accident.</b> Apps may trigger the agent and apps may call other apps. That makes the network contract a wave 0 deliverable, alongside the bindings.</li>
+    <li><b>Secrets: 1Password is the root of trust, the hub store is the per-tenant backend.</b> Recommended after checking the docs, see the open decisions section. Owner ruling pending.</li>
+  </ul>
+  <div class="note bad"><b>Conflict to record, not to bury.</b> The v2 ratified plan says "No integrating Flue/celld, patterns yes, dependency no" (ARCHITECTURE-PLAN.md line 324), backed by measured evidence: empty <code>process.env</code> under celld and 435 ms cold start. boring-hub has since proven Flue 2.0.8 boots on celld with facets, 37 of 37 hub e2e passing. The decision above supersedes the ruling. It needs one line in DECISIONS.md so rule 11 is honoured rather than skipped.</div>
+
+  <h2>The shape</h2>
+  <figure>
+  <svg viewBox="0 0 960 540" role="img" aria-label="v3 shape: platform services on the left provide bindings to cells in the hub; the hub runs app cells and a Flue agent cell; consumers on the right are the workspace as a Thread viewer, inbound channels, other apps and the browser." style="max-width:100%;height:auto;font-family:var(--sans);font-size:12px;color:var(--ink)">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+      <marker id="an" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0e6f6a"/></marker>
+      <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a94a3"/></marker>
+    </defs>
+    <g fill="#8a94a3" font-family="var(--mono)" font-size="10" letter-spacing="1">
+      <text x="40" y="34">PLATFORM SERVICES</text>
+      <text x="330" y="34">HUB · celld</text>
+      <text x="700" y="34">CONSUMERS</text>
+    </g>
+    <!-- platform services -->
+    <g fill="none" stroke="currentColor" stroke-width="1.2">
+      <rect x="40" y="50" width="230" height="38" rx="6"/>
+      <rect x="40" y="98" width="230" height="38" rx="6"/>
+      <rect x="40" y="146" width="230" height="38" rx="6"/>
+      <rect x="40" y="194" width="230" height="38" rx="6"/>
+      <rect x="40" y="242" width="230" height="38" rx="6"/>
+      <rect x="40" y="338" width="230" height="38" rx="6"/>
+    </g>
+    <rect x="40" y="290" width="230" height="38" rx="6" fill="none" stroke="#0e6f6a" stroke-width="1.4"/>
+    <g fill="currentColor" font-size="12">
+      <text x="52" y="69">Auth &amp; identity</text><text x="200" y="69" fill="#8a94a3" font-size="10">v2 core</text>
+      <text x="52" y="117">Payments &amp; metering</text><text x="200" y="117" fill="#8a94a3" font-size="10">v2 core</text>
+      <text x="52" y="165">Secrets</text><text x="200" y="165" fill="#8a94a3" font-size="10">v2 vault</text>
+      <text x="52" y="213">Sandbox exec + fs</text><text x="180" y="213" fill="#8a94a3" font-size="10">v2 sandbox</text>
+      <text x="52" y="261">Filesystem service</text><text x="180" y="261" fill="#8a94a3" font-size="10">v2 bash routes</text>
+      <text x="52" y="309" fill="#0e6f6a" font-weight="600">Viewers + artifact tools</text><text x="222" y="309" fill="#0e6f6a" font-size="10">new</text>
+      <text x="52" y="357">Ask-user</text><text x="200" y="357" fill="#8a94a3" font-size="10">v2 plugin</text>
+    </g>
+    <!-- bindings arrow -->
+    <path d="M270 213 H 318" fill="none" stroke="#0e6f6a" stroke-width="2" marker-end="url(#an)"/>
+    <text x="155" y="404" fill="#0e6f6a" font-size="10.5" text-anchor="middle">consumed through bindings on the cell:</text>
+    <text x="155" y="420" fill="#0e6f6a" font-family="var(--mono)" font-size="10.5" text-anchor="middle">env.db · env.files · env.secrets · env.sandbox</text>
+    <text x="155" y="436" fill="#0e6f6a" font-family="var(--mono)" font-size="10.5" text-anchor="middle">env.user · env.ask · env.views</text>
+    <text x="155" y="458" fill="#8a94a3" font-size="10.5" text-anchor="middle">today only env.db exists</text>
+
+    <!-- hub container -->
+    <rect x="320" y="50" width="330" height="440" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <!-- app cells -->
+    <g fill="none" stroke="currentColor" stroke-width="1.2">
+      <rect x="340" y="70" width="290" height="74" rx="6"/>
+      <rect x="340" y="156" width="290" height="50" rx="6"/>
+    </g>
+    <g fill="currentColor">
+      <text x="352" y="90" font-weight="600">App cell</text><text x="420" y="90" fill="#8a94a3" font-size="10.5">one facet per app, own SQLite</text>
+      <text x="352" y="108" font-size="11.5">web (index.html + assets) · routes · tools.json</text>
+      <text x="352" y="126" font-size="11.5">migrations on activate · x-app-user header</text>
+      <text x="352" y="176" font-weight="600">App cell</text><text x="420" y="176" fill="#8a94a3" font-size="10.5">fitness, clinic, guestbook…</text>
+      <text x="352" y="194" font-size="11.5" fill="#8a94a3">same contract, published by the colleague</text>
+    </g>
+    <!-- agent cell -->
+    <rect x="340" y="240" width="290" height="120" rx="6" fill="none" stroke="#0e6f6a" stroke-width="1.4"/>
+    <g fill="currentColor">
+      <text x="352" y="260" fill="#0e6f6a" font-weight="600">Agent cell · Flue</text><text x="470" y="260" fill="#8a94a3" font-size="10.5">one DO per conversation</text>
+      <text x="352" y="280" font-size="11.5">'use agent' render loop · durable submissions</text>
+      <text x="352" y="298" font-size="11.5">exactly-one terminal outcome · usePersistentState</text>
+      <text x="352" y="316" font-size="11.5">tools: v2 tool semantics as defineTool</text>
+      <text x="352" y="334" font-size="11.5">hub tools: publish · undo · versions · logs</text>
+      <text x="352" y="352" font-size="11.5" fill="#8a94a3">no auth, no tenancy: platform puts it in front</text>
+    </g>
+    <!-- app-runner -->
+    <rect x="340" y="400" width="290" height="70" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <g fill="currentColor">
+      <text x="352" y="420" font-weight="600">app-runner</text><text x="440" y="420" fill="#8a94a3" font-size="10.5">exists, 37/37 e2e</text>
+      <text x="352" y="440" font-size="11.5">publish → validate → migrate → activate · rollback</text>
+      <text x="352" y="458" font-size="11.5">versions · signed serving URLs · worker loader</text>
+    </g>
+    <!-- agent -> app cells (publish) -->
+    <path d="M618 240 V 210" fill="none" stroke="#0e6f6a" stroke-width="1.4" marker-end="url(#an)"/>
+    <path d="M618 240 V 148" fill="none" stroke="#0e6f6a" stroke-width="1.4" stroke-dasharray="3 3"/>
+    <text x="612" y="230" fill="#0e6f6a" font-size="10" text-anchor="end">publishes</text>
+    <!-- app tools -> agent (inward) -->
+    <path d="M370 206 V 238" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#a)"/>
+    <text x="376" y="226" fill="currentColor" font-size="10">tools.json mounted as agent tools</text>
+    <!-- agent -> app-runner -->
+    <path d="M400 360 V 398" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#a)"/>
+    <text x="406" y="384" fill="currentColor" font-size="10">HTTP, bearer</text>
+
+    <!-- consumers -->
+    <rect x="700" y="70" width="220" height="60" rx="6" fill="none" stroke="#0e6f6a" stroke-width="1.4"/>
+    <g fill="none" stroke="currentColor" stroke-width="1.2">
+      <rect x="700" y="190" width="220" height="60" rx="6"/>
+      <rect x="700" y="410" width="220" height="50" rx="6"/>
+    </g>
+    <g fill="currentColor">
+      <text x="712" y="90" fill="#0e6f6a" font-weight="600">Workspace</text>
+      <text x="712" y="108" font-size="11.5">Thread + artifact viewers, Library</text>
+      <text x="712" y="123" font-size="10.5" fill="#8a94a3">one consumer among others</text>
+      <text x="712" y="210" font-weight="600">Channels (inbound)</text>
+      <text x="712" y="228" font-size="11.5">Slack · GitHub · Stripe · Telegram…</text>
+      <text x="712" y="243" font-size="10.5" fill="#8a94a3">verified webhooks → dispatch. No outbound.</text>
+      <text x="712" y="330" font-weight="600">Other apps · MCP</text>
+      <text x="712" y="348" font-size="11" fill="#0e6f6a">wave 0 design: app → agent dispatch, app → app calls</text>
+      <text x="712" y="430" font-weight="600">Browser</text>
+      <text x="712" y="448" font-size="11.5">app UI via 3-minute signed URL</text>
+    </g>
+    <rect x="700" y="310" width="220" height="50" rx="6" fill="none" stroke="#0e6f6a" stroke-width="1.4"/>
+    <!-- consumer arrows -->
+    <path d="M700 100 H 660 V 290 H 632" fill="none" stroke="#0e6f6a" stroke-width="1.4" marker-end="url(#an)"/>
+    <text x="664" y="150" fill="#0e6f6a" font-size="10" transform="rotate(-90 664 150)" text-anchor="middle">Flue protocol</text>
+    <path d="M700 220 H 680 V 320 H 632" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#a)"/>
+    <text x="684" y="260" fill="currentColor" font-size="10" transform="rotate(-90 684 260)" text-anchor="middle">dispatch</text>
+    <path d="M700 335 H 632" fill="none" stroke="#0e6f6a" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#an)"/>
+    <path d="M700 435 H 632" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#a)"/>
+    
+    <text x="640" y="486" fill="#8a94a3" font-size="10" text-anchor="end">browser → signed URL → app cell (via app-runner)</text>
+    <!-- legend -->
+    <g font-size="10.5">
+      <line x1="40" y1="520" x2="80" y2="520" stroke="#0e6f6a" stroke-width="1.6"/><text x="86" y="524" fill="currentColor">new or re-centered in v3</text>
+      <line x1="260" y1="520" x2="300" y2="520" stroke="currentColor" stroke-width="1.2"/><text x="306" y="524" fill="currentColor">exists today (hub, Flue, or v2)</text>
+      <line x1="500" y1="520" x2="540" y2="520" stroke="#8a94a3" stroke-width="1.2" stroke-dasharray="5 4"/><text x="546" y="524" fill="currentColor">designed, not built</text>
+    </g>
+  </svg>
+  <figcaption>Apps and agents are cells in the hub. Platform services are consumed through bindings on the cell, of which only <code>env.db</code> exists today. The workspace becomes one consumer of the agent, as a Thread viewer over the Flue protocol, beside inbound channels and the browser. Today the wall is real: tools flow into the agent, app code cannot call the agent or other apps. The owner has decided it comes down, so app-to-agent dispatch and app-to-app calls are designed in wave 0.</figcaption>
+  </figure>
+
+  <h2>What exists, by source</h2>
+  <div class="grid3">
+    <div class="box">
+      <h3>boring-hub + celld <span class="tag good">have</span></h3>
+      <ul>
+        <li>App publish, validate, migrate, activate, rollback, versions, logs, signed serving URLs. 37 of 37 e2e.</li>
+        <li>One facet per app with its own SQLite that survives code swaps. Migrations run before <code>current</code> moves.</li>
+        <li>The app contract: default-export <code>fetch(request, env)</code>, <code>env.db</code>, <code>x-app-user</code> header. Nothing else.</li>
+        <li>App and profile as two kinds through one path. tools.json mounted into the agent as native tools.</li>
+      </ul>
+      <h3 style="margin-top:14px">added 19 to 22 Sep, on the ship branch</h3>
+      <ul>
+        <li>Its own shell, about 8,600 lines, views as URLs, a 250-line layout. Refuses the v2 composition root, Fastify server, pi host, dockview and file tree.</li>
+        <li>Viewers: file, markdown, tldraw, dashboard, ui-editor, with browser-side tools returning through a read-once result mailbox. ask_user as a compare-and-set row. Attachments, transcription.</li>
+        <li>Named filesystems code, workspace, shared. Multi-app. Multi-user identity in one function, Cloudflare Access in front, owner and editor sharing, metering. About 22 production deploys to apps.senecaapp.ai. A real clinic app imported to prod.</li>
+        <li>About 118 test files on node:test. Fitness 29 of 29, agent 61 of 61, app-runner 35 of 35.</li>
+      </ul>
+      <h3 style="margin-top:14px">lacks</h3>
+      <ul>
+        <li>CI of any kind. 266 commits exist only on this VM. Eval evidence is gitignored. main is dead since 17 Sep.</li>
+        <li>A boundary between apps: one origin, an editor can reach the owner's other apps and tokens. One role. No console capture.</li>
+        <li>The public authenticated browser path was never verified, and Access's frame policy blocked the app iframe at last record.</li>
+        <li>celld: <code>process.env</code> never populated, bucket production mode never exercised, no Cloudflare deploy ever.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Flue <span class="tag good">has</span></h3>
+      <ul>
+        <li>Durable submissions with exactly one terminal outcome, attempt leases, recovery from durable evidence.</li>
+        <li>Agent as a render function, tools as program logic, MCP connections, sandbox adapters (E2B, Daytona, Modal, Cloudflare, local, virtual).</li>
+        <li>Persistent state per conversation. Canonical append-only records.</li>
+        <li>Inbound channels for a dozen providers, signature-verified.</li>
+      </ul>
+      <h3 style="margin-top:14px">lacks</h3>
+      <ul>
+        <li>Any auth or tenancy. A conversation URL is full access.</li>
+        <li>Outbound messaging, app-to-app RPC, a plugin system, secrets beyond env, viewers, ask-user.</li>
+        <li>Durable files: sandbox files are never stored. The hub's "dev filesystem" is a string map in persistent state.</li>
+        <li>Code Mode is a parenthetical in a type file, not a feature.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>boring-ui-v2 <span class="tag good">has</span></h3>
+      <ul>
+        <li>Auth with 28 real migrations. Payments with Stripe and Lemon Squeezy, credits, metering, parked but written.</li>
+        <li>The execution stack: SandboxProviderV1, direct, bwrap, node-workspace, leases, and the filesystem HTTP service. About 12k lines, zero imports of the agent.</li>
+        <li>AgentGateway with branded scopes and a conformance suite. The admission shape Flue needs in front of it.</li>
+        <li>Ask-user, automations, tasks, MCP client, governance, secrets crypto, UI bridge, surface resolvers, ui-kit.</li>
+      </ul>
+      <h3 style="margin-top:14px">lacks</h3>
+      <ul>
+        <li>Viewers with artifact tools. None expose tools to agents, and a guardrail actively forbids it.</li>
+        <li>Publish, version, undo lifecycle for apps. one-chat hand-built it in skill files.</li>
+        <li>Two live security defects that must not cross: unsandboxed plugin import, and ambient pi auth bypassing BYOK.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>What the apps taught</h2>
+  <p>Four apps solved the same platform concerns by hand. The table is the requirement list for the services column above, with the app that paid for each lesson.</p>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>Requirement</th><th>Who paid</th><th>How it was hand-rolled</th></tr>
+    <tr><td><b>Per-user, per-app isolation as a guarantee</b>, not a convention</td><td>fitness, clinic, healio</td><td>Fitness: separate container, volume, SQLite and a pinned agent dir "to avoid discovering another app's credentials". Clinic: cross-patient chat state leaked. Healio chose Postgres RLS because app-level isolation is not trustworthy.</td></tr>
+    <tr><td><b>Tool policy per app</b></td><td>fitness</td><td>A custom pi hook blocking every tool except two. Every app on the hub will need this.</td></tr>
+    <tr><td><b>Propose then confirm writes</b> with idempotent drafts</td><td>fitness</td><td>A drafts table with request keys and hash replay. Nothing written until the human clicks Confirm. A platform primitive, not app code.</td></tr>
+    <tr><td><b>Chunked uploads, downloads, ZIP export</b></td><td>clinic</td><td>A 400 MiB chunked uploader patched across three packages to bypass a 12 MiB nginx cap. Download did not exist. ZIP still missing.</td></tr>
+    <tr><td><b>Publish, version, undo, handover as a lifecycle</b></td><td>one-chat</td><td>Spec sheet status machine, approved-revision counters, append-only CHANGES, mandatory handover note. All in skill files. The hub has publish and rollback, not the human half.</td></tr>
+    <tr><td><b>Scoped, rotatable secrets</b></td><td>healio, fitness</td><td>Healio: 1Password service accounts plus Secrets Manager, OIDC in CI. Fitness: a documented warning never to copy the clinic's secrets.</td></tr>
+    <tr><td><b>Version pins as damage control</b></td><td>fitness, clinic</td><td>Fitness pins pi to dodge an OAuth regression. Clinic is frozen on a patched fork because the base branch no longer builds. A stable platform SDK contract removes this.</td></tr>
+    <tr><td><b>Zero open ports, immutable backups, residency</b></td><td>healio</td><td>Cloudflare Tunnel plus Tailscale, Object Lock backups, EU-routed inference. Clinic has none of it while holding real health data.</td></tr>
+    <tr><td><b>Deploy with rollback and drain</b></td><td>healio, clinic</td><td>Kamal with retained containers. Clinic: a manual "no active recording" check before deploy.</td></tr>
+  </table></div>
+
+  <h2>What the hub taught in six days</h2>
+  <p>728 commits from 17 to 22 Sep, most on one branch. The verdict from the history: a very good runtime wrapped in a fragile delivery system. v3 takes the runtime primitives wholesale and none of the delivery habits.</p>
+  <div class="grid2">
+    <div class="box">
+      <h3>Take wholesale</h3>
+      <ul>
+        <li><b>Publish implies activate, migrate before switch.</b> A failing migration stores the version and leaves <code>current</code> untouched. The migrations ledger only grows, so undo never destroys data. No preview stage: publish is live, undo is the safety net. Cleanest primitive in the repo.</li>
+        <li><b>Cells as plugins.</b> "One app cell is one boring plugin." This is the answer to v2's unsandboxed plugin import and to plugins with no per-user data scope.</li>
+        <li><b>Views as URLs, layouts as pages.</b> Four nouns, View, Viewer, Chat, Layout, and a rule: no layout reaches into a viewer, no viewer assumes a layout. A 250-line layout replaces v2's 2,991-line root. For one-chat the v2 shell is redundant.</li>
+        <li><b>Identity in one function.</b> Four ordered sources, 401 on null, no default identity.</li>
+        <li><b>ask_user as a row with compare-and-set.</b> Mechanism, not prose.</li>
+        <li><b>Deletion as a deliverable.</b> The hub unbuilt about 2,000 lines of its own security theatre once per-app subdomains were dropped.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Do differently</h3>
+      <ul>
+        <li><b>Contracts drift in prose within a week.</b> The three-dependency contract held four days, then a fourth binding appeared in the kit README while the API doc still says three. v3's binding contract is a conformance test with a version, never a sentence.</li>
+        <li><b>Rules do not stop the model, mechanisms do.</b> With a capabilities file in the prompt and a closing reminder, three fresh conversations still leaked provider names. Anything that must not happen gets a refusing tool or a state machine.</li>
+        <li><b>Render-then-run is a product fact.</b> A tool published in submission N is callable at N+2. Say it in the tool result so the model self-corrects, not in a doc.</li>
+        <li><b>Name tools so they cannot read as agents.</b> Models called <code>mcp__server__tool</code> through the subagent mechanism. A tool file without frontmatter was silently invisible and the model thrashed for turns. "Got it" without a write call counted as done. Invisible registration must be a loud error.</li>
+        <li><b>Green unit tests hid two runtime breaks.</b> <code>crypto.randomUUID</code> in an insecure context and raw <code>BEGIN IMMEDIATE</code> on DO SQLite passed 22 of 22 under node:sqlite. Run the conformance suite against the real cell runtime.</li>
+        <li><b>Delivery discipline.</b> No CI, 266 commits only on this VM, evidence gitignored, two sessions redeploying the same commit to production in parallel, a build step wiping live state twice, secrets printed into a transcript and one not rotated. The process rules were written and then violated. v3 starts with CI and a pushed main on day one.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note"><b>Two things to close before v3 leans on the hub.</b> The public authenticated browser path has never been verified from outside an SSH tunnel, and at last record Access's frame policy blocked the app iframe for every visitor. And there is no boundary between apps: an editor can publish code that reaches the owner's other apps and tokens. Both are named in the hub's own docs as "must be revisited before real multi-tenant use".</div>
+
+  <h2>Two platform shapes</h2>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>Shape</th><th>What it means</th><th>For</th><th>Against</th></tr>
+    <tr><td><b>A. Extend app-runner</b></td><td>The hub is the platform. Auth, secrets, files, sandbox become hub features, added to app-runner and exposed as bindings.</td><td>Publish and run already exist there. One deploy unit. Bindings are naturally injected where the wrapper builds <code>env</code>.</td><td>app-runner is one 1,047-line file. celld is one fleet per application, so every platform service must fit in that process. Auth must sit in front of Flue anyway, which app-runner does not own. Contradicts "hub stays standalone with no auth".</td></tr>
+    <tr><td><b>B. Platform service, hub is one client</b></td><td>A separate platform layer. app-runner and the workspace both call it. Apps reach it through bindings the hub proxies.</td><td>Services testable on their own. Matches the standalone-hub decision: the hub runs without it. The workspace and any future host consume the same thing.</td><td>An extra hop for every binding call. Two deploy units on day one. Easy to over-build before any app needs it.</td></tr>
+    <tr class="pick"><td><b>Recommended: B-shaped contract, A-shaped deployment</b></td><td>Define the platform as the binding contract on the cell, <code>env.files</code>, <code>env.secrets</code>, <code>env.sandbox</code>, <code>env.user</code>, <code>env.ask</code>, <code>env.views</code>, each backed by a service interface. Implement the first backends in-process inside the standalone hub with no auth. Extract to a separate service only when a second host needs it.</td><td>Apps never learn where a service runs. The standalone hub ships now. Auth and tenancy are a front layer added later without touching apps.</td><td>Requires discipline: no app reaches past a binding, ever. The kit enforces it by construction, the wrapper passes only <code>env</code>.</td></tr>
+  </table></div>
+
+  <h2>Capability map for v3</h2>
+  <p>One row per platform capability, with where it comes from and the v2 lines involved. Verdicts follow the v2 inventory: port as is, port trimmed, rewrite on Flue, or new.</p>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>Capability</th><th>v3 provider</th><th>Source</th><th>v2 lines</th><th>Status</th></tr>
+    <tr><td><b>App run and lifecycle</b></td><td>app-runner facets, worker loader</td><td>boring-hub</td><td class="n">–</td><td><span class="tag good">exists</span></td></tr>
+    <tr><td><b>Agent runtime</b></td><td>Flue agent cell; v2 <code>AgentHarness</code> seam shape kept, pi implementation dropped</td><td>Flue + rewrite</td><td class="n">8.9k rewrite</td><td><span class="tag warn">rewrite</span></td></tr>
+    <tr><td><b>Admission and scopes in front of the agent</b></td><td>AgentGateway funnel, branded scope, conformance suite. Sits between consumers and the Flue router.</td><td>v2 port trimmed</td><td class="n">15.2k</td><td><span class="tag good">port</span></td></tr>
+    <tr><td><b>Core tools</b></td><td>read, write, edit, find, grep, ls, bash, isolated exec, upload as Flue <code>defineTool</code>. Semantics kept, pi factories dropped.</td><td>rewrite on Flue</td><td class="n">2.5k</td><td><span class="tag warn">rewrite</span></td></tr>
+    <tr><td><b>Sandbox exec + fs</b> → <code>env.sandbox</code></td><td>SandboxProviderV1, direct, bwrap, node-workspace, leases; sandbox plugin's TTL leases</td><td>v2 port as is</td><td class="n">6.3k + 1k</td><td><span class="tag good">port</span></td></tr>
+    <tr><td><b>Filesystem service</b> → <code>env.files</code></td><td>boring-bash routes: files, dirs, tree, search, events, upload; multi-filesystem bindings with bounds</td><td>v2 port trimmed</td><td class="n">7.8k</td><td><span class="tag good">port</span></td></tr>
+    <tr><td><b>Auth and identity</b> → <code>env.user</code></td><td>Hub today: Cloudflare Access in front plus one <code>resolveIdentity</code> function with four ordered sources, 401 on null. v2's better-auth with its 28 migrations is the self-hosted option behind the same function.</td><td>hub + v2 port</td><td class="n">1.7k + schema</td><td><span class="tag good">port behind hub seam</span></td></tr>
+    <tr><td><b>Authorization</b></td><td>3-role RBAC as is; governance policy trimmed to its capability model; app-on-behalf-of-user grant intersection</td><td>v2 port + new</td><td class="n">0.1k + 2.9k</td><td><span class="tag warn">port + new</span></td></tr>
+    <tr><td><b>Payments and metering</b></td><td>credits service, Stripe and Lemon Squeezy, metering sink, billing panel</td><td>v2 port trimmed</td><td class="n">3.7k</td><td><span class="tag good">port, parked</span></td></tr>
+    <tr><td><b>Secrets</b> → <code>env.secrets</code></td><td>Per-tenant secrets in the hub's encrypted SQLite store using v2's envelope crypto. 1Password as root of trust: master key, platform credentials, tenant-owned service-account tokens. The ambient-auth bypass is removed and celld's empty <code>process.env</code> stops mattering.</td><td>v2 port trimmed + 1Password at the root</td><td class="n">1.9k</td><td><span class="tag warn">port + fix</span></td></tr>
+    <tr><td><b>Viewers + artifact tools</b> → <code>env.views</code></td><td>The hub already has five viewers with browser-side tools returning through a read-once result mailbox, and views addressed as URLs. v3 takes that model. v2's seven renderers are ported behind it where the hub has none (code, csv, pdf, image, html sandbox). First viewer with agent tools by decision: html/app.</td><td>hub model + v2 renderers</td><td class="n">7.9k port</td><td><span class="tag good">exists in hub</span></td></tr>
+    <tr><td><b>Ask-user</b> → <code>env.ask</code></td><td>The hub's ask_user: a question is a row, pending to answered by compare-and-set, two answers get 200 and 409. Take it as is; v2's 4.4k plugin becomes reference only.</td><td>hub</td><td class="n">–</td><td><span class="tag good">exists in hub</span></td></tr>
+    <tr><td><b>Propose then confirm</b></td><td>The fitness drafts pattern as a platform primitive under <code>env.db</code></td><td>new, from fitness</td><td class="n">≈0.3k</td><td><span class="tag bad">new</span></td></tr>
+    <tr><td><b>UI bridge and ui tools</b></td><td>44-line UiCommand contract, exec_ui, get_ui_state, surface resolvers</td><td>v2 port trimmed</td><td class="n">3.1k</td><td><span class="tag good">port</span></td></tr>
+    <tr><td><b>Chat as Thread viewer</b></td><td>Chat panel over Flue's state-based protocol. Known cost from the spike: numeric seq and explicit session create must change on the front.</td><td>v2 port + adapt</td><td class="n">agent front</td><td><span class="tag warn">adapt</span></td></tr>
+    <tr><td><b>Library</b></td><td>FileTree, dock renderer behind a view host, Dockview types out of the plugin contract</td><td>v2 rewrite of layout, port of tree</td><td class="n">1.8k port, 9k rewrite</td><td><span class="tag warn">rewrite</span></td></tr>
+    <tr><td><b>Plugin system</b></td><td>definePlugin and defineServerPlugin as a plugin-sdk leaf, with plugin code loaded as a cell, never imported into the host</td><td>v2 port trimmed + fix</td><td class="n">5.9k</td><td><span class="tag warn">port + fix</span></td></tr>
+    <tr><td><b>Channels</b></td><td>Flue channels. Ask-user answers, app events and human intention arrive as dispatches.</td><td>Flue</td><td class="n">–</td><td><span class="tag good">exists</span></td></tr>
+    <tr><td><b>Automations, tasks, MCP client, data bridge, explorer, generated pane, deck, diagram</b></td><td>Ported as apps or viewer plugins on the hub, one at a time, tests written where under 10 percent</td><td>v2 port trimmed</td><td class="n">≈22k</td><td><span class="tag good">port later</span></td></tr>
+    <tr><td><b>App network</b> → <code>env.agent</code>, <code>env.apps</code></td><td>App dispatches a turn to its agent over Flue's existing router; app calls another app's routes under a grant. Transport exists on both sides. New: conversation resolution per user, hub-minted short-lived tokens, grants intersected with the user's.</td><td>new, on hub + Flue primitives</td><td class="n">–</td><td><span class="tag bad">new, wave 0 design</span></td></tr>
+  </table></div>
+
+  <h2>Dropped, with sizes</h2>
+  <div class="tablewrap"><table class="cmp">
+    <tr><th>What</th><th>Lines</th><th>Why</th></tr>
+    <tr><td>runsc/gVisor, remote-worker copy, blaxel providers</td><td class="n">13k</td><td>Zero importers. Firecracker superseded gVisor. Largest single deletion.</td></tr>
+    <tr><td>Dockview-as-workspace: ChatLayout, ChatPaneStageDock, SurfaceShell, dock chrome</td><td class="n">9k</td><td>Dockview becomes a renderer behind a view host. Already red-listed.</td></tr>
+    <tr><td>God-file composition roots: WorkspaceAgentFront, createWorkspaceAgentServer, createCoreWorkspaceAgentServer, modeApps</td><td class="n">9k</td><td>They encode the v2 ontology. v3 composition is the cell contract.</td></tr>
+    <tr><td>Apps: full-app, factory-playground, workspace-playground, agent-playground</td><td class="n">7.9k</td><td>Playground glue. Salvage only the credits wiring.</td></tr>
+    <tr><td>excalidraw (dead), github-pr-tracker, ccusage-dashboard, live-transcription, sharepoint stub</td><td class="n">8.3k</td><td>Unmaintained, self-declared unsupported, or descoped to nothing.</td></tr>
+    <tr><td>Factory prose and seat ontology</td><td class="n">125 KB md</td><td>Salvage three mechanisms: durable supervision timers, delegate child sessions, remote snapshots.</td></tr>
+  </table></div>
+
+  <h2>Port order: small parts, fast</h2>
+  <p>Each wave lands in the new repo as an importable piece and is proven by one app on the standalone hub. The app sequence is guestbook, fitness, one-chat, clinic: trivial, then single-user with real data patterns, then the colleague that builds apps, then real health data with uploads and transcription.</p>
+  <div class="waves">
+    <div class="wv gate">
+      <div class="head"><span class="num">0</span><b>Repo, nouns, contract</b><span class="dur">1 week · gate</span></div>
+      <p>Create boring-ui-v3 with the cell binding contract written down first: <code>env.db</code> as today plus <code>env.files</code>, <code>env.secrets</code>, <code>env.sandbox</code>, <code>env.user</code>, <code>env.ask</code>, <code>env.views</code>, each a TypeScript interface with an in-memory reference implementation and a conformance test, in the style of v2's gateway conformance suite.</p>
+      <ul>
+        <li>Record the Flue/celld ruling in DECISIONS.md. Record the reversal of the reserved-prefix viewer guardrail.</li>
+        <li><b>Network contract</b>, decided 18 Sep: <code>env.agent.dispatch(input, idempotencyKey)</code> so an app can start a turn on its own agent, and <code>env.apps.call(address, route, input)</code> under a grant the hub checks. The transport already exists: Flue's router (<code>POST /:id</code>, history, updates, abort) and server-side <code>dispatch</code>. The binding only resolves the conversation for the current user, mints a short-lived token bound to app, user and conversation, the same HMAC pattern as the signed serving URLs, and forwards. Wave 0 designs grants and addressing, not a protocol.</li>
+        <li>Port ui-kit as is. Port the theming tokens.</li>
+        <li>Copy the hub kit into v3 as the app template. The guestbook publishes on the standalone hub from the v3 repo.</li>
+      </ul>
+      <div class="done"><b>Gate:</b> guestbook published from v3 through the standalone hub, all bindings but <code>env.db</code> stubbed by the reference implementations.</div>
+    </div>
+    <div class="wv">
+      <div class="head"><span class="num">1</span><b>Execution stack behind bindings</b><span class="dur">2 weeks</span></div>
+      <p>Port the shell-free 12k: SandboxProviderV1 with direct, bwrap and node-workspace, the leases, and the filesystem HTTP service. Wire them as the first real backends of <code>env.sandbox</code> and <code>env.files</code> inside the standalone hub process. Split the 943-line file route on the way.</p>
+      <div class="done"><b>Done when:</b> an app cell reads and writes files through <code>env.files</code> and the colleague's dev filesystem stops being a string map.</div>
+    </div>
+    <div class="wv gate">
+      <div class="head"><span class="num">2</span><b>Agent on Flue, chat as Thread viewer</b><span class="dur">3 weeks · gate</span></div>
+      <p>Rewrite the nine core tools as Flue tools over <code>env.sandbox</code> and <code>env.files</code>. Put the AgentGateway funnel in front of the Flue router as the admission layer, scopes branded, auth off. Adapt the chat panel to Flue's state-based protocol: numeric seq and explicit session create change, as the wire spike showed. Ask-user becomes a durable pause on a submission id, answered by a dispatch.</p>
+      <ul>
+        <li>Tool policy per app as a first-class field on the profile, replacing fitness's pi hook.</li>
+        <li>Propose-then-confirm as a primitive under <code>env.db</code>, lifted from fitness.</li>
+      </ul>
+      <div class="done"><b>Gate:</b> fitness runs on the hub with its two tools, the drafts primitive and the chat as a Thread viewer, no pi dependency in the app.</div>
+    </div>
+    <div class="wv">
+      <div class="head"><span class="num">3</span><b>Viewers with artifact tools</b><span class="dur">3 weeks</span></div>
+      <p>The greenfield piece. Viewer plugins as designed in the workspace plan: panel plus scored resolver, seven built-ins ported from v2. Each viewer may declare agent tools, exposed through <code>env.views</code> and mounted into the agent like tools.json today. The html/app viewer goes first by decision: patch the screen, replace a region, read the DOM state back. Markdown by heading and csv by cell follow. The UI bridge and exec_ui port with it.</p>
+      <div class="done"><b>Done when:</b> the colleague edits an artifact through a viewer tool and the person sees the change in the artifact viewer and in the Library.</div>
+    </div>
+    <div class="wv gate">
+      <div class="head"><span class="num">4</span><b>one-chat on v3</b><span class="dur">2 weeks · gate</span></div>
+      <p>The colleague as an agent cell, apps as app cells, the workspace shell from the chat-first plan as the consumer. The one-chat lifecycle, spec sheet, approved revision, undo as history, handover note, moves from skill files into hub-backed primitives on <code>env.db</code>.</p>
+      <div class="done"><b>Gate:</b> a non-technical person builds and evolves an app end to end on the standalone hub.</div>
+    </div>
+    <div class="wv">
+      <div class="head"><span class="num">5</span><b>Auth, secrets, payments in front</b><span class="dur">3 weeks</span></div>
+      <p>Port better-auth core with its migrations as <code>env.user</code> and as the front layer over the Flue router. Port the secrets crypto with persistence, remove the ambient-auth bypass. Port credits and metering. The standalone hub keeps running with these off.</p>
+      <div class="done"><b>Done when:</b> a second user on the same hub cannot see the first user's threads, files or secrets, proven by a test, not a convention.</div>
+    </div>
+    <div class="wv">
+      <div class="head"><span class="num">6</span><b>Clinic and the long tail</b><span class="dur">ongoing</span></div>
+      <p>Chunked upload and download as <code>env.files</code> features. Clinic as an app cell. Then automations, tasks, MCP client, data bridge, deck, diagram, one per lane, tests first where coverage is under ten percent.</p>
+    </div>
+  </div>
+
+  <h2>Decisions needed before wave 0</h2>
+  <ul>
+    <li><b>Tenancy seam on day one.</b> The standalone hub runs without auth, but the AgentGateway funnel sits in front of Flue from wave 2 so nobody builds on "anyone with the URL". Not yet ruled.</li>
+    <li><b>Secrets backend.</b> Verified against the 1Password docs: vault-per-tenant with a scoped service account per vault is possible, but tokens are immutable at creation, the SDK is Node-only with no isolate path, and the account-wide cap is 50,000 calls per day on Business (10,000 reads and 1,000 writes per hour per token). Their "multi-tenancy" feature is the MSP parent-child model, a different thing. <b>Recommendation:</b> the hub's encrypted SQLite store, using v2's envelope crypto, is what <code>env.secrets</code> reads per tenant; 1Password holds the master key, platform credentials and any tenant-owned service-account tokens. Agent traffic never touches the rate limits, self-hosters need one root secret, and 1Password stays the human vault. Real per-tenant products if ever needed: HashiCorp Vault namespaces or Infisical, both self-hostable.</li>
+    <li><b>Network grants.</b> With the wall down, who may call whom: an app calling another app acts on behalf of a user, so the grant is the intersection of the user's and the app's. This is the design work the hub docs already named as "the only real design work".</li>
+  </ul>
+  <p>Decided 18 Sep: platform shape (bindings first, in-process), viewer guardrail reversed with html/app first, and the wall comes down by design.</p>
+
+  <div class="note ok"><b>The one-line version.</b> Hub runs apps, Flue runs agents, v2 supplies the services, and v3 is the contract that lets each of them not know about the others. The first real code in v3 is that contract and its conformance suite, then the 12k lines of execution stack that already have no dependency on anything.</div>
+</div>
