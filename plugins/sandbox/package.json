@@ -38,17 +38,17 @@
   "peerDependencies": {
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "fastify": "^5.12.1"
+    "fastify": "^5.12.4"
   },
   "devDependencies": {
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@types/node": "^22.20.0",
-    "@vercel/sandbox": "3.0.0",
-    "fastify": "^5.12.1",
+    "@vercel/sandbox": "3.3.0",
+    "fastify": "^5.12.4",
     "tsx": "^4.23.13",
     "tsup": "^8.4.0",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vitest": "^4.1.11"
   }
 }

@@ -51,14 +51,14 @@
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.4",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0",
     "@hachej/boring-agent": "workspace:*"
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.31.0",
+    "lucide-react": "^1.46.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -66,15 +66,15 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^4.0.0",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.4",
     "jsdom": "^30.0.1",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "tsup": "^8.4.0",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vitest": "^4.1.11",
     "@hachej/boring-agent": "workspace:*"
   },
