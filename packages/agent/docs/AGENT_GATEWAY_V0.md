@@ -179,12 +179,16 @@ model catalog. Reload and slash-command host effects continue to use the
 composition harness directly; they are host capabilities, not session-runtime
 operations.
 
-The Gateway request ledger is the only idempotency authority. A backend method
-may be invoked again after a crash only through a ledger-admitted request; the
-backend itself promises no deduplication. A runtime load failure before the
-effect begins records a retryable state, so the same request key and payload can
-atomically reclaim admission after recovery; completed, rejected, in-flight, and
-outcome-unknown records retain their normal replay behavior. P1-B substitutes the adapter-private
+The Gateway request ledger is the only idempotency authority. The canonical
+Gateway path stores immutable canonical-JSON request material under the derived
+RunId/complete RequestKey; callers do not supply a second queue identity. A
+backend method may be invoked again after a crash only through a freshly
+reauthorized ledger claim; the backend itself promises no deduplication. A
+runtime load failure before the effect begins records a retryable state, and an
+expired pre-effect claim can be atomically reclaimed after recovery. An expired
+in-flight claim becomes terminally outcome-unknown rather than executing twice.
+Completed, rejected, and outcome-unknown records retain their replay behavior.
+P1-B substitutes the adapter-private
 replay source below `HarnessPiChatService`, not this interface. Later operations
 may extend the interface only in their named slices (`resumePausedToolCall` in
 A3b and `markTurnInterrupted` in A4); neither is part of the current seam.
@@ -197,12 +201,14 @@ payload digest stay binding, and overlapping requests still receive
 `AGENT_REQUEST_IN_PROGRESS`. This applies to both ordinary and strict-idle
 prompt guards, with their existing idle/error admission policies.
 
-Custom `AgentRequestLedger` implementations must implement
-`markAdmissionRetryable` and atomic reclaim, and refuse `acceptAdmission` until
-the released claim has been reclaimed. A thrown admission/guard error does not
-release ownership. Reopening a durable ledger permits only an explicitly marked
-retry; unmarked pending, admission-accepted, in-flight and outcome-unknown rows
-are never automatically re-executed. This is not general crash reconciliation.
+Custom `AgentRequestLedger` implementations must implement durable claim
+heartbeats, `markAdmissionRetryable`, and atomic reclaim, and refuse transitions
+from any handle that does not own the live lease. A thrown admission/guard error
+does not release ownership. Reopening a durable ledger does not itself settle a
+live claim: pre-effect claims become reclaimable only after lease expiry, while
+expired in-flight work becomes outcome-unknown. SQLite durable implementations
+must use a filesystem path; `:memory:` is represented only by the explicit
+`in-memory` durability discriminator.
 
 CI pins the boundary in three directions: Agent Host production code cannot
 import a Pi runtime, only `harnessBackend/**` can reference the concrete Pi chat

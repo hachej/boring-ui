@@ -110,6 +110,8 @@ export interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
   readonly acceptedWork: AcceptedWorkContext
   readonly digest: string
+  /** Canonical, immutable request material retained until terminal payload pruning. */
+  readonly queuedRequest?: JsonValue
   readonly updatedAt: number
 }
 
@@ -128,41 +130,55 @@ export type AgentRequestLedgerRecord =
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'rejected'
       readonly failure: AgentRequestFailure
+      readonly settlementDigest?: string
     })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'completed'
       readonly receipt: JsonValue
+      readonly settlementDigest?: string
     })
   | (AgentRequestLedgerRecordBase & {
       readonly state: 'outcome-unknown'
       readonly error: AgentGatewayErrorDTO
+      readonly settlementDigest?: string
     })
 
 export interface AgentRequestLedger {
   /** Direct production projections require transactional durable ownership. */
   readonly durability: 'durable-transactional' | 'in-memory'
-  /** Atomically create or reclaim explicitly retryable admission across all store users. */
+  /** Durable implementations expose their claim lease so consumers can heartbeat safely. */
+  readonly claimLeaseMs?: number
+  /** Atomically create or reclaim admission using only the canonical RequestKey/RunId identity. */
   prepare(
     key: AgentRequestKey,
     digest: string,
     acceptedWork: AcceptedWorkContext,
+    queuedRequest?: JsonValue,
   ): Promise<AgentRequestLedgerPrepareResult>
+  /** Extend only the exact live attempt identified by its opaque claim token. */
+  heartbeat(key: AgentRequestKey, claimToken: string): Promise<void>
   /** Release only a pending claim whose owner has stopped before any effect. */
-  markAdmissionRetryable(key: AgentRequestKey): Promise<void>
-  /** All transitions are compare-and-swap against the exact allowed prior state. */
-  acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
-  beginEffect(key: AgentRequestKey): Promise<void>
-  reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void>
-  complete(key: AgentRequestKey, receipt: JsonValue): Promise<void>
-  markOutcomeUnknown(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void>
+  markAdmissionRetryable(key: AgentRequestKey, claimToken: string): Promise<void>
+  /** All transitions are compare-and-swap against the exact live attempt and allowed prior state. */
+  acceptAdmission(key: AgentRequestKey, claimToken: string, admissionReceipt: string): Promise<void>
+  beginEffect(key: AgentRequestKey, claimToken: string): Promise<void>
+  reject(key: AgentRequestKey, claimToken: string, failure: AgentRequestFailure): Promise<void>
+  complete(key: AgentRequestKey, claimToken: string, receipt: JsonValue): Promise<void>
+  markOutcomeUnknown(key: AgentRequestKey, claimToken: string, error: AgentGatewayErrorDTO): Promise<void>
   read(key: AgentRequestKey): Promise<AgentRequestLedgerRecord | undefined>
   close?(): void | Promise<void>
 }
 
-export interface AgentRequestLedgerPrepareResult {
-  readonly ownership: 'created' | 'reclaimed' | 'existing'
-  readonly record: AgentRequestLedgerRecord
-}
+export type AgentRequestLedgerPrepareResult =
+  | {
+      readonly ownership: 'created' | 'reclaimed'
+      readonly claimToken: string
+      readonly record: AgentRequestLedgerRecord
+    }
+  | {
+      readonly ownership: 'existing'
+      readonly record: AgentRequestLedgerRecord
+    }
 
 export type AgentEffectAdmissionResult =
   | { readonly type: 'accepted'; readonly admissionReceipt: string }
