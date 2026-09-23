@@ -23,6 +23,6 @@
     "recharts": "^2.15.0"
   },
   "devDependencies": {
-    "@types/node": "^22.20.0"
+    "@types/node": "^22.20.3"
   }
 }

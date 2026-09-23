@@ -96,11 +96,11 @@
     "@hachej/boring-agent": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.20.0",
+    "@types/node": "^22.20.3",
     "@types/proper-lockfile": "^4.1.4",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",
     "vite": "^8.2.1",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   }
 }

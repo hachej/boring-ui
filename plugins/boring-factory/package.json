@@ -47,10 +47,10 @@
     "mermaid": "11.16.1"
   },
   "devDependencies": {
-    "@types/node": "^22.20.0",
+    "@types/node": "^22.20.3",
     "tsup": "^8.4.0",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.11",
+    "vitest": "^5.0.1",
     "@hachej/boring-sandbox-plugin": "workspace:*"
   },
   "peerDependencies": {

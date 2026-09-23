@@ -50,7 +50,7 @@
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
     "tsup": "^8.4.0",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   },
   "repository": {
     "type": "git",
