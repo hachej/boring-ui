@@ -34,14 +34,14 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^22.20.0",
+    "@types/node": "^22.20.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.2.1",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   }
 }

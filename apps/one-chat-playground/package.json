@@ -30,9 +30,9 @@
     "@vitejs/plugin-react": "^4.7.0",
     "tailwindcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.2.1",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   }
 }

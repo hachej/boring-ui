@@ -39,9 +39,9 @@
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11",
+    "vitest": "^5.0.1",
     "vite": "^8.2.1"
   }
 }
