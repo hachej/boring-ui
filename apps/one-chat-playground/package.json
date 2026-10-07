@@ -19,7 +19,7 @@
     "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
