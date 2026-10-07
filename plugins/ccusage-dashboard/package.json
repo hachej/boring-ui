@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "ccusage": "^20.0.19",
+    "ccusage": "^20.0.26",
     "recharts": "^2.15.0"
   },
   "devDependencies": {
