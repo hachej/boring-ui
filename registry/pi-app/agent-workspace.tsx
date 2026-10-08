@@ -4,6 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
+import type { RevisionProvider } from '@hachej/boring-files/revision';
+import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
+import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
+import { FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
@@ -63,7 +67,7 @@ export interface WorkspaceResources {
   readonly locate?: ((path: string) => ResourceLocator) | undefined;
 }
 
-export interface AgentWorkspaceProps {
+interface AgentWorkspaceBaseProps {
   /** The open conversation's controller (`useRemoteChat`); `undefined` while connecting, when `connecting` is shown instead. */
   readonly controller: NativeChatController | undefined;
   /** The open conversation: auto-opened artifacts and the artifact view belong to it. */
@@ -85,7 +89,6 @@ export interface AgentWorkspaceProps {
   readonly connecting?: ReactNode;
   /** The sessions pane (`useConversations`). Omit it for a page without one. Replies keep their Fork button through `conversations.fork`. */
   readonly conversations?: ConversationsConfig | undefined;
-  readonly resources: WorkspaceResources;
   /** Recognise artifacts in tool results that carry no descriptor (`ArtifactsConfig.detect`). */
   readonly detect?: ArtifactsConfig['detect'] | undefined;
   /** Host viewers by artifact type or file kind, for example `{ canvas: props => <MyCanvas {...props} /> }`. */
@@ -120,6 +123,11 @@ export interface AgentWorkspaceProps {
   readonly className?: string;
 }
 
+export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
+  | { readonly revisionProvider: RevisionProvider; readonly resources?: never }
+  | { readonly resources: WorkspaceResources; readonly revisionProvider?: never }
+);
+
 const SESSIONS_WIDTH = 288;
 const readFlag = (key: string): boolean => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } };
 const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
@@ -131,7 +139,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, detect, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, detect, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 768, drawerBelow = 768, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const opened = controlled !== undefined ? controlled : own;
@@ -143,21 +151,50 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
   const chatText = useMergedText(chat.labels, chat.icons);
 
-  // One resource client and one history reader for every viewer, over the host's authenticated fetch.
-  const fetcher = useRef(resources.fetch); fetcher.current = resources.fetch;
-  const endpoint = String(resources.endpoint), historyEndpoint = resources.history === undefined ? undefined : String(resources.history);
-  const identityKey = JSON.stringify(resources.identity);
-  const client = useMemo(() => createResourceClient({ identity: resources.identity, endpoint: new URL(endpoint, globalThis.location?.href), publication: true, reconciliation: true,
-    fetch: request => fetcher.current(request) }), [endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const history = useMemo(() => historyEndpoint === undefined ? undefined : async (path: string): Promise<readonly SavedRevision[]> => {
+  const fetcher = useRef(resources?.fetch); fetcher.current = resources?.fetch;
+  const endpoint = resources ? String(resources.endpoint) : undefined;
+  const historyEndpoint = resources?.history === undefined ? undefined : String(resources.history);
+  const identity = revisionProvider?.identity ?? resources!.identity;
+  const identityKey = JSON.stringify(identity);
+  const client = useMemo(() => revisionProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
+    fetch: request => fetcher.current!(request) }), [revisionProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const history = useMemo(() => revisionProvider ? revisionProvider.history : historyEndpoint === undefined ? undefined : async (path: string): Promise<readonly SavedRevision[]> => {
     const url = new URL(historyEndpoint, globalThis.location?.href);
     url.searchParams.set('path', path);
-    const response = await fetcher.current(new Request(url));
+    const response = await fetcher.current!(new Request(url));
     if (!response.ok) throw new Error(`History: ${response.status}`);
     return (await response.json() as { saves: readonly SavedRevision[] }).saves;
-  }, [historyEndpoint]);
-  const options: ViewerOptions = useMemo(() => ({ client, identity: resources.identity, history, viewers, interactive, share }), [client, history, viewers, interactive, share]); // eslint-disable-line react-hooks/exhaustive-deps
-  const locate = resources.locate ?? defaultLocate;
+  }, [revisionProvider, historyEndpoint]);
+  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, interactive, share }), [client, identityKey, history, viewers, interactive, share]); // eslint-disable-line react-hooks/exhaustive-deps
+  const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
+  const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
+  useEffect(() => {
+    if (!revisionProvider) return;
+    const tree = createFileTreeController({ revisionProvider });
+    setFileBinding({ provider: revisionProvider, tree });
+    void tree.refresh();
+    return () => tree.dispose();
+  }, [revisionProvider]);
+  const fileTree = fileBinding?.provider === revisionProvider ? fileBinding?.tree : undefined;
+  const openFile = useCallback((path: string) => setOpened({ kind: 'file', path }), [setOpened]);
+  const mentions = useMemo(() => revisionProvider ? {
+    search: async (query: string, signal: AbortSignal) => (await revisionProvider.search({ query, limit: 8 }, signal)).entries,
+    open: openFile,
+  } : undefined, [revisionProvider, openFile]);
+  const attachments = useMemo(() => fileTree ? {
+    upload: async (files: File[], signal: AbortSignal) => {
+      const uploaded: { readonly path: string; readonly name: string }[] = [];
+      for (const file of files) {
+        const path = `uploads/${file.name}`;
+        const upload = await fileTree.upload({ path, bytes: new Uint8Array(await file.arrayBuffer()), mediaType: file.type || 'application/octet-stream', signal });
+        if (upload.state.kind !== 'settled' || upload.state.result.kind !== 'committed') {
+          throw new Error(upload.state.kind === 'settled' && 'reason' in upload.state.result ? upload.state.result.reason : 'Upload is unconfirmed. Check its status in Files.');
+        }
+        uploaded.push({ path, name: file.name });
+      }
+      return uploaded;
+    },
+  } : undefined, [fileTree]);
 
   // ---- Artifacts: cards open the panel; the agent's new ones open it too.
   const versions = useArtifactVersions(controller, detect);
@@ -226,9 +263,12 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
   const header = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
-  const chatProps: PiChatProps | undefined = controller && { ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentions ? { mentions } : {}), ...(attachments ? { attachments } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    {fileTree && <details className="max-h-[50%] shrink-0 overflow-auto border-b border-border"><summary className="cursor-pointer px-4 py-2 text-sm font-medium">Files</summary>
+      <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+    </details>}
     {chatTop}
     <div className="relative flex min-h-0 flex-1 flex-col">
       {chatProps ? <PiChat key={conversationId} {...chatProps} headerStart={<>{toggleSpace}{chat.headerStart}</>} className={cn('min-h-0 flex-1', chat.className)} />

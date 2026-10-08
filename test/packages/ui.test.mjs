@@ -456,3 +456,5 @@ test('read-only Markdown refuses edits, proposals and publication despite a writ
   assert.equal(writes, 0);
   controller.dispose();
 });
+
+await import('../ui/file-tree.mjs');
