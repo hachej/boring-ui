@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- A single-file mockup: no network, fictional data, every state behind the picker. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F-<n> · maquette</title>
+<style>
+  :root {
+    --background: #f3f5f2; --foreground: #1a211d; --card: #ffffff; --primary: #1c6b4f; --primary-foreground: #ffffff;
+    --muted: #eaeee9; --muted-foreground: #5c6b63; --border: #dce3de; --destructive: #a8322a;
+    --warn: #92620f; --warn-tint: #f6ecd9; --radius: 0.625rem;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .states { position: sticky; top: 0; display: flex; gap: .5rem; flex-wrap: wrap; padding: .5rem 1rem; background: #fff8; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .states button { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: .2rem .7rem; cursor: pointer; }
+  .states button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  main { max-width: 760px; margin: 1.5rem auto; padding: 0 1rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  .muted { color: var(--muted-foreground); }
+  .primary { background: var(--primary); color: var(--primary-foreground); border: 0; border-radius: calc(var(--radius) * .8); padding: .5rem 1rem; font: inherit; }
+  .error { border-color: var(--destructive); color: var(--destructive); }
+  .warn { background: var(--warn-tint); color: var(--warn); }
+  .skeleton { height: 1rem; border-radius: 4px; background: var(--muted); margin: .5rem 0; }
+  [data-state] { display: none; }
+</style>
+</head>
+<body>
+<nav class="states" aria-label="États">
+  <strong>États :</strong>
+  <button data-show="normal">Normal</button>
+  <button data-show="empty">Vide</button>
+  <button data-show="loading">Chargement</button>
+  <button data-show="error">Erreur</button>
+  <button data-show="long">Texte long</button>
+  <button data-show="override">Correction par l'expert</button>
+</nav>
+<main>
+  <h1>&lt;Titre de l'écran&gt;</h1>
+
+  <section data-state="normal" class="card">
+    <p>&lt;Ce que l'expert voit, avec des données fictives&gt;</p>
+    <button class="primary">&lt;Action principale&gt;</button>
+  </section>
+
+  <section data-state="empty" class="card muted">&lt;Rien encore : ce qui est affiché, et quoi faire&gt;</section>
+
+  <section data-state="loading" class="card"><div class="skeleton"></div><div class="skeleton" style="width:60%"></div></section>
+
+  <section data-state="error" class="card error">&lt;Ce qui a échoué, ce qui reste visible, réessayer ou revenir&gt;</section>
+
+  <section data-state="long" class="card"><p>&lt;Un texte très long pour voir le retour à la ligne et la troncature…&gt;</p></section>
+
+  <section data-state="override" class="card warn">&lt;Le logiciel se trompe : comment l'expert corrige, et ce qui est gardé&gt;</section>
+</main>
+<script>
+  const show = (name) => {
+    for (const s of document.querySelectorAll("[data-state]")) s.style.display = s.dataset.state === name ? "block" : "none"
+    for (const b of document.querySelectorAll("[data-show]")) b.setAttribute("aria-pressed", b.dataset.show === name)
+  }
+  for (const b of document.querySelectorAll("[data-show]")) b.addEventListener("click", () => show(b.dataset.show))
+  show("normal")
+</script>
+</body>
+</html>

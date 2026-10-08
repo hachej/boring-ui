@@ -1,0 +1,640 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  boring-ui-v4 AWS host recipe (fictional example, never deployed from this repository): the agent host in AgentCore
+  Runtime or as an ECS service, commands in an AgentCore Code Interpreter, files on one EFS file system with one folder
+  and one access point per user. Validated offline with cfn-lint; see examples/aws/README.md.
+
+Parameters:
+  HostMode:
+    Type: String
+    AllowedValues: [agentcore, ecs]
+    Default: agentcore
+    Description: Where the host process runs (the same container image either way).
+  ContainerImageUri:
+    Type: String
+    Description: ARM64 image of examples/aws (ECR URI with tag or digest).
+  EcrRepositoryArn:
+    Type: String
+    Description: ARN of the ECR repository holding the image (pull permission for the AgentCore runtime role).
+  AvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: Two Availability Zones supported by AgentCore in this Region.
+  OidcIssuer:
+    Type: String
+    Description: The token issuer (iss), for example the Cognito user pool URL.
+  OidcAudience:
+    Type: String
+    Description: The audience or app client id tokens must carry.
+  OidcJwks:
+    Type: String
+    Description: The issuer's JWKS as inline JSON (the VPC has no internet egress, so the container cannot fetch it).
+  FoundationModelId:
+    Type: String
+    Description: Bedrock foundation model id the inference profile routes to.
+  InferenceProfileId:
+    Type: String
+    Description: Bedrock inference profile id the agent calls (MODEL_ID).
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: ACM certificate for the ECS mode load balancer (required when HostMode is ecs).
+  ExampleUserId:
+    Type: String
+    Default: fictional-user
+    AllowedPattern: '^[a-z0-9][a-z0-9_-]{0,63}$'
+    Description: One user provisioned here to show the per-user access point pattern; real users are provisioned by the host.
+  ExampleUserUid:
+    Type: Number
+    Default: 2001
+    MinValue: 1001
+    Description: That user's POSIX uid (unique per user, allocated by the host).
+
+Conditions:
+  IsAgentCore: !Equals [!Ref HostMode, agentcore]
+  IsEcs: !Equals [!Ref HostMode, ecs]
+
+Resources:
+  # ---- Network: private subnets only for the workload, VPC endpoints instead of a NAT gateway.
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.40.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.1.0/24
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.2.0/24
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+  PrivateRouteA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateRouteB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  HostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      # HTTPS reaches only the VPC endpoints and the S3 gateway: the private subnets have no route to the internet.
+      GroupDescription: Agent host (runtime or ECS task) - NFS to EFS, HTTPS to the VPC endpoints
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 10.40.0.0/16
+  InterpreterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Code Interpreter sessions - NFS to EFS only, no other egress for user commands
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 10.40.0.0/16
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS mount targets - NFS from the host and the interpreter
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref HostSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref InterpreterSecurityGroup
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Interface endpoints - HTTPS from the host
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref HostSecurityGroup
+
+  # The host calls Bedrock (model), AgentCore (Code Interpreter data plane), ECR, CloudWatch Logs and S3 (image layers).
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PrivateRouteTable]
+  BedrockRuntimeEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-runtime
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+  AgentCoreEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-agentcore
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+  EcrDockerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  # ---- One EFS file system; the host's access point (root /boring) and one access point per user (root /boring/users/<id>).
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: elastic
+      BackupPolicy:
+        Status: ENABLED
+      FileSystemPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RequireTls
+            Effect: Deny
+            Principal:
+              AWS: '*'
+            Action: '*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+  MountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroups: [!Ref EfsSecurityGroup]
+  MountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Ref PrivateSubnetB
+      SecurityGroups: [!Ref EfsSecurityGroup]
+  HostAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      PosixUser:
+        Uid: '1000'
+        Gid: '1000'
+      RootDirectory:
+        Path: /boring
+        CreationInfo:
+          OwnerUid: '1000'
+          OwnerGid: '1000'
+          Permissions: '2770'
+  # The pattern for every user (efsUserLayout in @hachej/boring-execution/aws-code-interpreter computes these values); the
+  # host provisions one per user with CreateAccessPoint and records it in /mnt/efs/state/users.json.
+  ExampleUserAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      PosixUser:
+        Uid: !Ref ExampleUserUid
+        Gid: '1000'
+      RootDirectory:
+        Path: !Sub /boring/users/${ExampleUserId}
+        CreationInfo:
+          OwnerUid: !Ref ExampleUserUid
+          OwnerGid: '1000'
+          Permissions: '2770'
+      AccessPointTags:
+        - Key: boring:user
+          Value: !Ref ExampleUserId
+
+  # ---- Code Interpreter in VPC mode. Each session mounts its user's access point (StartCodeInterpreterSession filesystemConfigurations).
+  InterpreterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: mount-user-folders
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Any access point of this file system: which user's access point a session mounts is the host's choice.
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !GetAtt FileSystem.Arn
+                Condition:
+                  StringLike:
+                    elasticfilesystem:AccessPointArn: !Sub arn:${AWS::Partition}:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/fsap-*
+              # Never the host's access point, which sees every user's folder and the state directory.
+              - Effect: Deny
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: !GetAtt FileSystem.Arn
+                Condition:
+                  ArnEquals:
+                    elasticfilesystem:AccessPointArn: !GetAtt HostAccessPoint.Arn
+  CodeInterpreter:
+    Type: AWS::BedrockAgentCore::CodeInterpreterCustom
+    Properties:
+      Name: boring_interpreter
+      Description: Shell for the agent; mounts the user's EFS folder per session
+      ExecutionRoleArn: !GetAtt InterpreterRole.Arn
+      NetworkConfiguration:
+        NetworkMode: VPC
+        VpcConfig:
+          SecurityGroups: [!Ref InterpreterSecurityGroup]
+          Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+
+  # ---- The host: one role for either mode, least privilege.
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+  HostRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !If [IsAgentCore, bedrock-agentcore.amazonaws.com, ecs-tasks.amazonaws.com]
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: agent-host
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !GetAtt FileSystem.Arn
+                Condition:
+                  ArnEquals:
+                    elasticfilesystem:AccessPointArn: !GetAtt HostAccessPoint.Arn
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:StartCodeInterpreterSession
+                  - bedrock-agentcore:InvokeCodeInterpreter
+                  - bedrock-agentcore:StopCodeInterpreterSession
+                  - bedrock-agentcore:GetCodeInterpreterSession
+                Resource: !GetAtt CodeInterpreter.CodeInterpreterArn
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${InferenceProfileId}
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/${FoundationModelId}
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt LogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Ref EcrRepositoryArn
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+
+  # AgentCore Runtime: one host session (every client sends server.mjs RUNTIME_SESSION_ID: one process writes Pi's file), JWT inbound auth, EFS mounted at /mnt/efs.
+  Runtime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Condition: IsAgentCore
+    DependsOn: [MountTargetA, MountTargetB]
+    Properties:
+      AgentRuntimeName: boring_agent
+      Description: boring-ui-v4 standard agent (fictional example)
+      RoleArn: !GetAtt HostRole.Arn
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref ContainerImageUri
+      ProtocolConfiguration: HTTP
+      NetworkConfiguration:
+        NetworkMode: VPC
+        NetworkModeConfig:
+          SecurityGroups: [!Ref HostSecurityGroup]
+          Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      FilesystemConfigurations:
+        - EfsAccessPoint:
+            AccessPointArn: !GetAtt HostAccessPoint.Arn
+            MountPath: /mnt/efs
+      LifecycleConfiguration:
+        IdleRuntimeSessionTimeout: 900
+        MaxLifetime: 28800
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub ${OidcIssuer}/.well-known/openid-configuration
+          AllowedAudience: [!Ref OidcAudience]
+      # The container verifies the token again (it selects the user's folder from `sub`), so the header must reach it.
+      RequestHeaderConfiguration:
+        RequestHeaderAllowlist: [Authorization]
+      EnvironmentVariables:
+        AGENTCORE: '1'
+        EFS_ROOT: /mnt/efs
+        REGION: !Ref AWS::Region
+        CODE_INTERPRETER_ID: !GetAtt CodeInterpreter.CodeInterpreterId
+        MODEL_PROVIDER: amazon-bedrock
+        MODEL_ID: !Ref InferenceProfileId
+        OIDC_ISSUER: !Ref OidcIssuer
+        OIDC_AUDIENCE: !Ref OidcAudience
+        OIDC_JWKS: !Ref OidcJwks
+
+  # ---- ECS mode: one task (a single writer per SQLite file), never two during a deployment, behind an HTTPS load balancer.
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: IsEcs
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: IsEcs
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: IsEcs
+    Properties:
+      VpcId: !Ref Vpc
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Condition: IsEcs
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Condition: IsEcs
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.101.0/24
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Condition: IsEcs
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.102.0/24
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+  PublicRouteA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: IsEcs
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+  PublicRouteB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: IsEcs
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: IsEcs
+    Properties:
+      GroupDescription: HTTPS from browsers to the load balancer; HTTP 8080 to the task
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          DestinationSecurityGroupId: !Ref HostSecurityGroup
+  HostFromLoadBalancer:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: IsEcs
+    Properties:
+      GroupId: !Ref HostSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: IsEcs
+    Properties:
+      Scheme: internet-facing
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+      LoadBalancerAttributes:
+        # The chat watch stream sends a heartbeat every 15 s; the idle timeout stays well above twice that.
+        - Key: idle_timeout.timeout_seconds
+          Value: '120'
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: 'true'
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: IsEcs
+    Properties:
+      VpcId: !Ref Vpc
+      TargetType: ip
+      Protocol: HTTP
+      Port: 8080
+      HealthCheckPath: /ping
+      HealthCheckProtocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: IsEcs
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Condition: IsEcs
+    Properties:
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: IsEcs
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Condition: IsEcs
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt HostRole.Arn
+      Volumes:
+        - Name: efs
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref HostAccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: agent
+          Image: !Ref ContainerImageUri
+          Essential: true
+          ReadonlyRootFilesystem: false
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          MountPoints:
+            - SourceVolume: efs
+              ContainerPath: /mnt/efs
+          Environment:
+            - Name: EFS_ROOT
+              Value: /mnt/efs
+            - Name: REGION
+              Value: !Ref AWS::Region
+            - Name: CODE_INTERPRETER_ID
+              Value: !GetAtt CodeInterpreter.CodeInterpreterId
+            - Name: MODEL_PROVIDER
+              Value: amazon-bedrock
+            - Name: MODEL_ID
+              Value: !Ref InferenceProfileId
+            - Name: OIDC_ISSUER
+              Value: !Ref OidcIssuer
+            - Name: OIDC_AUDIENCE
+              Value: !Ref OidcAudience
+            - Name: OIDC_JWKS
+              Value: !Ref OidcJwks
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: agent
+  Service:
+    Type: AWS::ECS::Service
+    Condition: IsEcs
+    DependsOn: [Listener, MountTargetA, MountTargetB]
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      DeploymentConfiguration:
+        # Never two tasks at once: each SQLite file on EFS has a single writer.
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+          SecurityGroups: [!Ref HostSecurityGroup]
+      LoadBalancers:
+        - ContainerName: agent
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  FileSystemArn:
+    Value: !GetAtt FileSystem.Arn
+  FileSystemId:
+    Value: !Ref FileSystem
+  HostAccessPointArn:
+    Value: !GetAtt HostAccessPoint.Arn
+  ExampleUserAccessPointArn:
+    Value: !GetAtt ExampleUserAccessPoint.Arn
+  CodeInterpreterId:
+    Value: !GetAtt CodeInterpreter.CodeInterpreterId
+  RuntimeArn:
+    Condition: IsAgentCore
+    Value: !GetAtt Runtime.AgentRuntimeArn
+  LoadBalancerDns:
+    Condition: IsEcs
+    Value: !GetAtt LoadBalancer.DNSName

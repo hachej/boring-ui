@@ -1,0 +1,8 @@
+{
+  "repo": "hachej/boring-pm",
+  "url": "https://github.com/hachej/boring-pm",
+  "path": "skills/boring-pm",
+  "commit": "1da5e470985990b3cb110e40966e82989e7b0d0b",
+  "license": "MIT (LICENSE in this folder, copied from the same commit)",
+  "note": "Pinned verbatim copy for the feedback demo's builder agent. Do not edit here: update by copying the folder again at a new commit and changing this file."
+}

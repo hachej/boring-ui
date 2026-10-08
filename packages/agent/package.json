@@ -1,166 +1,153 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.1.111",
-  "type": "module",
+  "version": "1.0.0",
   "license": "MIT",
-  "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/hachej/boring-ui"
-  },
-  "homepage": "https://github.com/hachej/boring-ui",
+  "private": true,
+  "type": "module",
+  "description": "Native Pi attachment, the read/write/edit guard, durable questions, conditional document delivery and metering.",
+  "sideEffects": false,
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/front/index.d.ts",
-      "import": "./dist/front/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
-    "./shared": {
-      "types": "./dist/shared/index.d.ts",
-      "import": "./dist/shared/index.js"
+    "./presentation": {
+      "types": "./dist/presentation.d.ts",
+      "import": "./dist/presentation.js"
     },
-    "./core": {
-      "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js"
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js"
     },
-    "./server": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js",
-      "default": "./dist/server/index.js"
+    "./contracts": {
+      "types": "./dist/contracts.d.ts",
+      "import": "./dist/contracts.js"
     },
-    "./server/pi-session-readability": {
-      "types": "./dist/server/pi-session-readability.d.ts",
-      "import": "./dist/server/pi-session-readability.js",
-      "default": "./dist/server/pi-session-readability.js"
+    "./definitions": {
+      "types": "./dist/definitions.d.ts",
+      "import": "./dist/definitions.js"
     },
-    "./server/agent-host/testing/gatewayConformance": {
-      "types": "./dist/server/agent-host/testing/gatewayConformance.d.ts",
-      "import": "./dist/server/agent-host/testing/gatewayConformance.js",
-      "default": "./dist/server/agent-host/testing/gatewayConformance.js"
+    "./file-guard": {
+      "types": "./dist/file-guard.d.ts",
+      "import": "./dist/file-guard.js"
     },
-    "./server/agent-host/testing/compositionRouteProof": {
-      "types": "./dist/server/agent-host/testing/compositionRouteProof.d.ts",
-      "import": "./dist/server/agent-host/testing/compositionRouteProof.js",
-      "default": "./dist/server/agent-host/testing/compositionRouteProof.js"
+    "./workspaces": {
+      "types": "./dist/workspaces.d.ts",
+      "import": "./dist/workspaces.js"
     },
-    "./server/worker": {
-      "types": "./dist/server/worker/index.d.ts",
-      "import": "./dist/server/worker/index.js",
-      "default": "./dist/server/worker/index.js"
+    "./harness-pool": {
+      "types": "./dist/harness-pool.d.ts",
+      "import": "./dist/harness-pool.js"
     },
-    "./front": {
-      "types": "./dist/front/index.d.ts",
-      "import": "./dist/front/index.js"
+    "./artifacts": {
+      "types": "./dist/artifacts.d.ts",
+      "import": "./dist/artifacts.js"
     },
-    "./front/styles.css": "./dist/front/styles.css",
-    "./front/artifacts": {
-      "types": "./dist/front/artifacts.d.ts",
-      "import": "./dist/front/artifacts.js"
+    "./ask-user": {
+      "types": "./dist/ask-user.d.ts",
+      "import": "./dist/ask-user.js"
     },
-    "./eval": {
-      "types": "./dist/eval/index.d.ts",
-      "import": "./dist/eval/index.js"
+    "./browser-task": {
+      "types": "./dist/browser-task.d.ts",
+      "import": "./dist/browser-task.js"
+    },
+    "./questions": {
+      "types": "./dist/questions.d.ts",
+      "import": "./dist/questions.js"
+    },
+    "./delivery": {
+      "types": "./dist/delivery.d.ts",
+      "import": "./dist/delivery.js"
+    },
+    "./question-response": {
+      "types": "./dist/question-response.d.ts",
+      "import": "./dist/question-response.js"
+    },
+    "./projection": {
+      "types": "./dist/projection.d.ts",
+      "import": "./dist/projection.js"
+    },
+    "./agents": {
+      "types": "./dist/agents.d.ts",
+      "import": "./dist/agents.js"
+    },
+    "./chat-transport": {
+      "types": "./dist/chat-transport.d.ts",
+      "import": "./dist/chat-transport.js"
+    },
+    "./conversations": {
+      "types": "./dist/conversations.d.ts",
+      "import": "./dist/conversations.js"
+    },
+    "./mentions": {
+      "types": "./dist/mentions.d.ts",
+      "import": "./dist/mentions.js"
+    },
+    "./validation": {
+      "types": "./dist/validation.d.ts",
+      "import": "./dist/validation.js"
+    },
+    "./git": {
+      "types": "./dist/git.d.ts",
+      "import": "./dist/git.js"
+    },
+    "./approval": {
+      "types": "./dist/approval.d.ts",
+      "import": "./dist/approval.js"
+    },
+    "./memory/optchat": {
+      "types": "./dist/memory/optchat.d.ts",
+      "import": "./dist/memory/optchat.js"
+    },
+    "./model-gateway": {
+      "types": "./dist/model-gateway.d.ts",
+      "import": "./dist/model-gateway.js"
+    },
+    "./gateway-provider": {
+      "types": "./dist/gateway-provider.d.ts",
+      "import": "./dist/gateway-provider.js"
+    },
+    "./metering": {
+      "types": "./dist/metering.d.ts",
+      "import": "./dist/metering.js"
     }
-  },
-  "sideEffects": [
-    "**/*.css"
-  ],
-  "files": [
-    "dist",
-    "docs"
-  ],
-  "scripts": {
-    "build": "tsup && pnpm run build:assert",
-    "build:dev": "{ [ -d '../ui/dist' ] || pnpm --filter @hachej/boring-ui-kit build; } && tsup --config tsup.dev.config.ts && node ./scripts/build-front-css.mjs",
-    "build:assert": "node ./scripts/assert-build-artifacts.mjs",
-    "dev": "tsx src/server/dev.ts",
-    "test": "vitest run",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts",
-    "test:chat-baseline": "node ./scripts/run-chat-baseline.mjs",
-    "test:bombadil:chat": "node ./scripts/run-bombadil-chat.mjs",
-    "test:bombadil:chat:nightly": "BOMBADIL_TIME_LIMIT=5m node ./scripts/run-bombadil-chat.mjs",
-    "test:regression": "vitest run src/server/__tests__/system-prompt-size.regression.test.ts",
-    "test:watch": "vitest",
-    "eval": "tsx ./scripts/eval.ts",
-    "eval:provisioning": "tsx ./scripts/eval-provisioning-sdk.mts",
-    "eval:provisioning:agent": "tsx ./scripts/eval-provisioning-agent.mts",
-    "eval:provisioning:agent:vercel": "tsx ./scripts/eval-provisioning-agent-vercel.mts",
-    "check:isolation": "tsx ./scripts/check-agent-isolation.ts",
-    "pi-sdk:canary": "./scripts/pi-sdk-canary.sh",
-    "typecheck": "tsc --noEmit",
-    "lint": "pnpm run typecheck && pnpm run lint:invariants",
-    "lint:invariants": "bash ../../scripts/check-invariants.sh .",
-    "clean": "rm -rf dist .tsbuildinfo",
-    "smoke:vercel-sandbox": "tsx ./scripts/smoke-vercel-sandbox.mts",
-    "smoke:capability-readiness": "tsx ./scripts/smoke-capability-readiness.mts",
-    "smoke:capability-readiness:vercel": "tsx ./scripts/smoke-capability-readiness-vercel.mts"
-  },
-  "dependencies": {
-    "@hachej/boring-bash": "workspace:*",
-    "@hachej/boring-sandbox": "workspace:*",
-    "@hachej/boring-ui-kit": "workspace:*",
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.3",
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "@radix-ui/react-use-controllable-state": "^1.2.6",
-    "@streamdown/cjk": "^1.0.3",
-    "@streamdown/code": "^1.1.1",
-    "@streamdown/math": "^1.0.2",
-    "@streamdown/mermaid": "^1.0.2",
-    "ai": "^7.0.68",
-    "clsx": "^2.1.1",
-    "diff": "^9.0.0",
-    "fastify": "^5.12.1",
-    "lucide-react": "^1.31.0",
-    "motion": "^13.1.0",
-    "nanoid": "^6.0.0",
-    "postgres": "^3.4.9",
-    "proper-lockfile": "^4.1.2",
-    "shiki": "^4.4.2",
-    "streamdown": "^2.5.0",
-    "tailwind-merge": "^3.5.0",
-    "use-stick-to-bottom": "^1.1.6",
-    "yaml": "^2.9.0",
-    "zod": "^3.25.76"
-  },
-  "devDependencies": {
-    "@vercel/sandbox": "3.0.0",
-    "@antithesishq/bombadil": "0.7.2",
-    "@opentelemetry/api": "^1.9.1",
-    "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^22.20.0",
-    "@types/proper-lockfile": "^4.1.4",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@vitejs/plugin-react": "^4.7.0",
-    "ajv": "^8.20.0",
-    "esbuild": "^0.28.2",
-    "postcss": "^8.5.25",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "tsup": "^8.4.0",
-    "tsx": "^4.23.13",
-    "typescript": "^6.0.3",
-    "vite": "^8.2.1",
-    "@earendil-works/pi-ai": "0.84.3",
-    "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "react": "^18.0.0 || ^19.0.0",
-    "react-dom": "^18.0.0 || ^19.0.0",
-    "tailwindcss": ">=3.4.0 || >=4.0.0",
-    "vitest": "^4.1.11"
+    "@earendil-works/pi-durable": "1.0.1",
+    "@earendil-works/pi-ai": "1.0.1",
+    "@earendil-works/chord": "1.0.1",
+    "@hachej/boring-files": "1.0.0",
+    "@hachej/boring-ui-kit": "1.0.0"
   },
   "peerDependenciesMeta": {
-    "react": {
+    "@hachej/boring-files": {
       "optional": true
     },
-    "react-dom": {
-      "optional": true
-    },
-    "tailwindcss": {
-      "optional": true
-    },
-    "vitest": {
+    "@hachej/boring-ui-kit": {
       "optional": true
     }
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hachej/boring-ui.git",
+    "directory": "packages/agent"
+  },
+  "homepage": "https://github.com/hachej/boring-ui#readme",
+  "bugs": {
+    "url": "https://github.com/hachej/boring-ui/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

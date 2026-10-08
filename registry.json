@@ -1,0 +1,2185 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "boring-ui-v4",
+  "homepage": "https://github.com/hachej/boring-ui",
+  "items": [
+    {
+      "name": "theme",
+      "type": "registry:theme",
+      "title": "Theme",
+      "description": "The shadcn tokens every Tailwind item is styled with (neutral base, light and dark) and their Tailwind v4 `@theme inline` bindings. The CLI adds only the tokens the host does not define yet. The examples compile the same values (examples/studio/tailwind.mjs).",
+      "cssVars": {
+        "theme": {
+          "color-background": "var(--background)",
+          "color-foreground": "var(--foreground)",
+          "color-card": "var(--card)",
+          "color-card-foreground": "var(--card-foreground)",
+          "color-popover": "var(--popover)",
+          "color-popover-foreground": "var(--popover-foreground)",
+          "color-primary": "var(--primary)",
+          "color-primary-foreground": "var(--primary-foreground)",
+          "color-secondary": "var(--secondary)",
+          "color-secondary-foreground": "var(--secondary-foreground)",
+          "color-muted": "var(--muted)",
+          "color-muted-foreground": "var(--muted-foreground)",
+          "color-accent": "var(--accent)",
+          "color-accent-foreground": "var(--accent-foreground)",
+          "color-destructive": "var(--destructive)",
+          "color-border": "var(--border)",
+          "color-input": "var(--input)",
+          "color-ring": "var(--ring)",
+          "radius-sm": "calc(var(--radius) - 4px)",
+          "radius-md": "calc(var(--radius) - 2px)",
+          "radius-lg": "var(--radius)",
+          "radius-xl": "calc(var(--radius) + 4px)"
+        },
+        "light": {
+          "radius": "0.75rem",
+          "background": "oklch(1 0 0)",
+          "foreground": "oklch(0.141 0.005 285.823)",
+          "card": "oklch(1 0 0)",
+          "card-foreground": "oklch(0.141 0.005 285.823)",
+          "popover": "oklch(1 0 0)",
+          "popover-foreground": "oklch(0.141 0.005 285.823)",
+          "primary": "oklch(0.21 0.006 285.885)",
+          "primary-foreground": "oklch(0.985 0 0)",
+          "secondary": "oklch(0.967 0.001 286.375)",
+          "secondary-foreground": "oklch(0.21 0.006 285.885)",
+          "muted": "oklch(0.967 0.001 286.375)",
+          "muted-foreground": "oklch(0.52 0.016 285.938)",
+          "accent": "oklch(0.955 0.003 286.375)",
+          "accent-foreground": "oklch(0.21 0.006 285.885)",
+          "destructive": "oklch(0.577 0.245 27.325)",
+          "border": "oklch(0.92 0.004 286.32)",
+          "input": "oklch(0.89 0.005 286.32)",
+          "ring": "oklch(0.55 0.02 286.067)",
+          "shell": "oklch(0.975 0.002 286)"
+        },
+        "dark": {
+          "background": "oklch(0.175 0.006 285.885)",
+          "foreground": "oklch(0.985 0 0)",
+          "card": "oklch(0.205 0.006 285.885)",
+          "card-foreground": "oklch(0.985 0 0)",
+          "popover": "oklch(0.205 0.006 285.885)",
+          "popover-foreground": "oklch(0.985 0 0)",
+          "primary": "oklch(0.92 0.004 286.32)",
+          "primary-foreground": "oklch(0.21 0.006 285.885)",
+          "secondary": "oklch(0.274 0.006 286.033)",
+          "secondary-foreground": "oklch(0.985 0 0)",
+          "muted": "oklch(0.255 0.006 286.033)",
+          "muted-foreground": "oklch(0.72 0.015 286.067)",
+          "accent": "oklch(0.3 0.006 286.033)",
+          "accent-foreground": "oklch(0.985 0 0)",
+          "destructive": "oklch(0.704 0.191 22.216)",
+          "border": "oklch(1 0 0 / 11%)",
+          "input": "oklch(1 0 0 / 16%)",
+          "ring": "oklch(0.65 0.02 286.067)",
+          "shell": "oklch(0.13 0.005 285.823)"
+        }
+      }
+    },
+    {
+      "name": "utils",
+      "type": "registry:lib",
+      "title": "Shared helpers",
+      "description": "The class merge helper `cn` and `copyText` (host callback, Clipboard API, then a selection copy that works over plain HTTP) shared by every Tailwind item, installed once in components/utils/.",
+      "dependencies": [
+        "clsx@2.1.1",
+        "tailwind-merge@3.7.0"
+      ],
+      "files": [
+        {
+          "path": "registry/utils/utils.ts",
+          "type": "registry:lib",
+          "target": "components/utils/utils.ts"
+        }
+      ]
+    },
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "title": "Button",
+      "description": "The one shadcn-style button of the Tailwind items (chat and viewer bar sizes, touch targets of 40-44px), IconButton, and the host actions every block takes (BlockAction, BlockActions, the shared ActionMenu), installed in components/button/ so it never overwrites the host's own button.",
+      "dependencies": [
+        "react@19.3.0",
+        "lucide-react@1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "@boring-ui/utils"
+      ],
+      "files": [
+        {
+          "path": "registry/button/button.tsx",
+          "type": "registry:ui",
+          "target": "components/button/button.tsx"
+        },
+        {
+          "path": "registry/button/actions.tsx",
+          "type": "registry:ui",
+          "target": "components/button/actions.tsx"
+        }
+      ]
+    },
+    {
+      "name": "markdown-editor",
+      "type": "registry:component",
+      "title": "Markdown editor",
+      "description": "A host-owned styled wrapper over the concrete borrowed Markdown controller.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@1.0.0",
+        "@hachej/boring-files@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0",
+        "marked@17.0.6",
+        "@tiptap/core@3.31.4",
+        "@tiptap/react@3.31.4",
+        "@tiptap/pm@3.31.4",
+        "@tiptap/starter-kit@3.31.4",
+        "@tiptap/markdown@3.31.4",
+        "@tiptap/extensions@3.31.4",
+        "@tiptap/extension-list@3.31.4",
+        "@tiptap/extension-table@3.31.4",
+        "@tiptap/extension-image@3.31.4",
+        "@tiptap/extension-highlight@3.31.4",
+        "@tiptap/extension-bubble-menu@3.31.4",
+        "@tiptap/extension-floating-menu@3.31.4"
+      ],
+      "files": [
+        {
+          "path": "registry/markdown-editor/markdown-editor.tsx",
+          "type": "registry:component",
+          "target": "components/markdown-editor/markdown-editor.tsx"
+        }
+      ],
+      "css": {
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"]": {
+          "background": "var(--boring-editor-background, var(--background, #fff))",
+          "color": "var(--boring-editor-foreground, var(--foreground, #111827))",
+          "border": "1px solid var(--boring-editor-border, var(--border, #d1d5db))",
+          "border-radius": "var(--boring-editor-radius, var(--radius, 0.75rem))",
+          "padding": "1rem",
+          "display": "grid",
+          "gap": "1rem",
+          "min-width": "0",
+          "font-family": "inherit"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] > header": {
+          "display": "flex",
+          "align-items": "center",
+          "justify-content": "space-between",
+          "flex-wrap": "wrap",
+          "gap": "0.75rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] > header > strong": {
+          "margin": "0",
+          "font-size": "1.125rem",
+          "font-weight": "600"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [role=\"toolbar\"]": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "gap": "0.375rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] button": {
+          "appearance": "none",
+          "font": "inherit",
+          "font-size": "0.875rem",
+          "line-height": "1.4",
+          "background": "var(--boring-editor-control-background, var(--background, #fff))",
+          "color": "inherit",
+          "border": "1px solid var(--boring-editor-border, var(--border, #d1d5db))",
+          "border-radius": "0.375rem",
+          "padding": "0.375rem 0.625rem",
+          "cursor": "pointer"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] button[aria-pressed=\"true\"]": {
+          "background": "var(--boring-editor-accent, var(--accent, #e5e7eb))",
+          "font-weight": "600"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] button:disabled": {
+          "opacity": "0.5",
+          "cursor": "not-allowed"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] button:focus-visible, .boring-markdown-recipe[data-boring=\"markdown-editor\"] textarea:focus-visible": {
+          "outline": "2px solid var(--boring-editor-focus, var(--ring, #2563eb))",
+          "outline-offset": "2px"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [role=\"status\"]": {
+          "font-size": "0.875rem",
+          "color": "var(--boring-editor-muted, var(--muted-foreground, #4b5563))"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] nav[aria-label=\"Document outline\"]": {
+          "border-bottom": "1px solid var(--boring-editor-border, var(--border, #d1d5db))",
+          "padding-bottom": "0.75rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] nav ol": {
+          "padding-left": "1.25rem",
+          "margin": "0",
+          "display": "grid",
+          "gap": "0.25rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content": {
+          "min-height": "12rem",
+          "max-width": "75ch",
+          "width": "100%",
+          "margin-inline": "auto",
+          "line-height": "1.7",
+          "overflow-wrap": "anywhere"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content p": {
+          "margin": "0.75rem 0"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h1": {
+          "font-size": "1.875rem",
+          "line-height": "1.2",
+          "margin": "1.25rem 0 0.75rem",
+          "font-weight": "700"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h2": {
+          "font-size": "1.5rem",
+          "line-height": "1.3",
+          "margin": "1.25rem 0 0.75rem",
+          "font-weight": "650"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h3": {
+          "font-size": "1.25rem",
+          "margin": "1rem 0 0.5rem",
+          "font-weight": "600"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content ul": {
+          "list-style": "disc",
+          "padding-left": "1.5rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content ol": {
+          "list-style": "decimal",
+          "padding-left": "1.5rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content ul[data-type=\"taskList\"]": {
+          "list-style": "none",
+          "padding-left": "0"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content li[data-type=\"taskItem\"]": {
+          "display": "flex",
+          "gap": "0.5rem",
+          "align-items": "baseline"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content blockquote": {
+          "border-left": "3px solid var(--boring-editor-border, var(--border, #d1d5db))",
+          "padding-left": "1rem",
+          "margin-inline": "0",
+          "color": "var(--boring-editor-muted, var(--muted-foreground, #4b5563))"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content pre, .boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-boring=\"proposal\"] pre": {
+          "overflow-x": "auto",
+          "background": "var(--boring-editor-code-background, var(--muted, #f3f4f6))",
+          "border-radius": "0.375rem",
+          "padding": "0.75rem",
+          "font-family": "ui-monospace, monospace"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content code": {
+          "font-family": "ui-monospace, monospace",
+          "font-size": "0.9em"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] > textarea": {
+          "width": "100%",
+          "min-height": "16rem",
+          "resize": "vertical",
+          "font-family": "ui-monospace, monospace",
+          "font-size": "0.875rem",
+          "line-height": "1.6",
+          "padding": "0.75rem",
+          "background": "inherit",
+          "color": "inherit",
+          "border": "1px solid var(--boring-editor-border, var(--border, #d1d5db))",
+          "border-radius": "0.375rem",
+          "box-sizing": "border-box"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [role=\"alert\"]": {
+          "border-left": "3px solid var(--boring-editor-danger, var(--destructive, #b91c1c))",
+          "padding": "0.75rem",
+          "overflow-wrap": "anywhere"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-boring=\"proposal\"]": {
+          "border": "1px solid var(--boring-editor-border, var(--border, #d1d5db))",
+          "padding": "0.75rem",
+          "border-radius": "0.375rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-boring=\"proposal\"] summary": {
+          "cursor": "pointer",
+          "font-weight": "600"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content:focus-visible": {
+          "outline": "2px solid var(--boring-editor-focus, var(--ring, #2563eb))",
+          "outline-offset": "2px"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-boring=\"proposal-diff\"]": {
+          "font-family": "ui-monospace, monospace",
+          "font-size": "0.875rem",
+          "line-height": "1.5",
+          "overflow-x": "auto"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-diff]": {
+          "white-space": "pre-wrap",
+          "overflow-wrap": "anywhere",
+          "padding": "0.125rem 0.375rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-diff=\"add\"]": {
+          "background": "var(--boring-editor-diff-add-background, #ecfdf5)",
+          "color": "var(--boring-editor-diff-add-foreground, #065f46)"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-diff=\"remove\"]": {
+          "background": "var(--boring-editor-diff-remove-background, #fff1f2)",
+          "color": "var(--boring-editor-diff-remove-foreground, #9f1239)"
+        }
+      },
+      "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Version 1.0.0 is a private release candidate tested through local tarballs; no hosted registry or npm publication is advertised."
+    },
+    {
+      "name": "html-viewer",
+      "type": "registry:component",
+      "title": "HTML source and passive preview",
+      "description": "Exact HTML source editing with a reconstructed passive preview and borrowed controller. Browser security qualification remains separate.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@1.0.0",
+        "@hachej/boring-files@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0"
+      ],
+      "files": [
+        {
+          "path": "registry/html-viewer/html-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/html-viewer/html-viewer.tsx"
+        }
+      ],
+      "css": {
+        ".boring-html-recipe[data-boring=\"html-viewer\"]": {
+          "background": "var(--boring-html-background, var(--background, #fff))",
+          "color": "var(--boring-html-foreground, var(--foreground, #111827))",
+          "border": "1px solid var(--boring-html-border, var(--border, #d1d5db))",
+          "border-radius": "var(--boring-html-radius, var(--radius, 0.75rem))",
+          "padding": "1rem",
+          "display": "grid",
+          "gap": "0.75rem",
+          "min-width": "0",
+          "font-family": "inherit"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] > header": {
+          "display": "flex",
+          "justify-content": "space-between",
+          "align-items": "center",
+          "flex-wrap": "wrap",
+          "gap": "0.75rem"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] [role=\"toolbar\"]": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "gap": "0.375rem"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] button": {
+          "font": "inherit",
+          "background": "var(--boring-html-background, var(--background, #fff))",
+          "color": "var(--boring-html-foreground, var(--foreground, #111827))",
+          "border": "1px solid var(--boring-html-border, var(--border, #d1d5db))",
+          "border-radius": "0.375rem",
+          "padding": "0.375rem 0.625rem",
+          "cursor": "pointer"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] button[aria-pressed=\"true\"]": {
+          "font-weight": "700",
+          "text-decoration": "underline"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] button:disabled": {
+          "opacity": "0.5",
+          "cursor": "not-allowed"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] button:focus-visible, .boring-html-recipe[data-boring=\"html-viewer\"] textarea:focus-visible": {
+          "outline": "2px solid var(--boring-html-focus, var(--ring, #2563eb))",
+          "outline-offset": "2px"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] .boring-html-viewer__source": {
+          "box-sizing": "border-box",
+          "width": "100%",
+          "min-height": "18rem",
+          "font-family": "monospace",
+          "line-height": "1.5",
+          "background": "var(--boring-html-background, var(--background, #fff))",
+          "color": "var(--boring-html-foreground, var(--foreground, #111827))",
+          "padding": "0.75rem",
+          "border": "1px solid var(--boring-html-border, var(--border, #d1d5db))",
+          "border-radius": "0.375rem",
+          "resize": "vertical"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] .boring-html-viewer__frame": {
+          "box-sizing": "border-box",
+          "width": "100%",
+          "min-height": "18rem",
+          "border": "1px solid var(--boring-html-border, var(--border, #d1d5db))",
+          "border-radius": "0.375rem"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] [role=\"status\"]": {
+          "font-size": "0.875rem"
+        },
+        ".boring-html-recipe[data-boring=\"html-viewer\"] [role=\"alert\"]": {
+          "border-inline-start": "0.25rem solid currentColor",
+          "padding-inline-start": "0.75rem"
+        }
+      }
+    },
+    {
+      "name": "pi-chat",
+      "type": "registry:block",
+      "title": "Pi chat",
+      "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history, a human-in-the-loop question card, an Approve / Deny card for host tools wrapped with requireApproval optional artifact cards that open generated content in the host's panel, and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The optional pi-ambient and pi-workspace blocks build on it.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@1.0.0",
+        "@hachej/boring-feedback@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0",
+        "marked@17.0.6",
+        "entities@8.1.0",
+        "@earendil-works/pi-durable@1.0.1",
+        "@earendil-works/chord@1.0.1",
+        "@earendil-works/pi-ai@1.0.1",
+        "@modelcontextprotocol/sdk@1.32.0",
+        "lucide-react@1.51.0",
+        "use-stick-to-bottom@1.1.6"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "@boring-ui/utils",
+        "@boring-ui/button"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat/activity.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/activity.tsx"
+        },
+        {
+          "path": "registry/pi-chat/artifact-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/artifact-card.tsx"
+        },
+        {
+          "path": "registry/pi-chat/approval-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/approval-card.tsx"
+        },
+        {
+          "path": "registry/pi-chat/artifact.ts",
+          "type": "registry:lib",
+          "target": "components/pi-chat/artifact.ts"
+        },
+        {
+          "path": "registry/pi-chat/code-block.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/code-block.tsx"
+        },
+        {
+          "path": "registry/pi-chat/composer.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/composer.tsx"
+        },
+        {
+          "path": "registry/pi-chat/config.ts",
+          "type": "registry:lib",
+          "target": "components/pi-chat/config.ts"
+        },
+        {
+          "path": "registry/pi-chat/empty-state.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/empty-state.tsx"
+        },
+        {
+          "path": "registry/pi-chat/feedback-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/feedback-card.tsx"
+        },
+        {
+          "path": "registry/pi-chat/history.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/history.tsx"
+        },
+        {
+          "path": "registry/pi-chat/markdown.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/markdown.tsx"
+        },
+        {
+          "path": "registry/pi-chat/mention-menu.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/mention-menu.tsx"
+        },
+        {
+          "path": "registry/pi-chat/message.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/message.tsx"
+        },
+        {
+          "path": "registry/pi-chat/notice.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/notice.tsx"
+        },
+        {
+          "path": "registry/pi-chat/pi-chat.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/pi-chat.tsx"
+        },
+        {
+          "path": "registry/pi-chat/picker-keyboard.ts",
+          "type": "registry:lib",
+          "target": "components/pi-chat/picker-keyboard.ts"
+        },
+        {
+          "path": "registry/pi-chat/pickers.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/pickers.tsx"
+        },
+        {
+          "path": "registry/pi-chat/question-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/question-card.tsx"
+        },
+        {
+          "path": "registry/pi-chat/queue.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/queue.tsx"
+        },
+        {
+          "path": "registry/pi-chat/rows.ts",
+          "type": "registry:lib",
+          "target": "components/pi-chat/rows.ts"
+        },
+        {
+          "path": "registry/pi-chat/session.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/session.tsx"
+        },
+        {
+          "path": "registry/pi-chat/shimmer.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/shimmer.tsx"
+        },
+        {
+          "path": "registry/pi-chat/slash-menu.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/slash-menu.tsx"
+        },
+        {
+          "path": "registry/pi-chat/tool.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/tool.tsx"
+        },
+        {
+          "path": "registry/pi-chat/labels.ts",
+          "type": "registry:lib",
+          "target": "components/pi-chat/labels.ts"
+        }
+      ],
+      "css": {
+        "@layer base": {
+          ".pi-chat, .pi-chat *, .pi-chat *::before, .pi-chat *::after": {
+            "box-sizing": "border-box"
+          },
+          ".pi-chat :where(button, input, textarea)": {
+            "font": "inherit",
+            "color": "inherit",
+            "letter-spacing": "inherit"
+          },
+          ".pi-chat :where(button)": {
+            "background-color": "transparent",
+            "border": "0",
+            "padding": "0"
+          },
+          ".pi-chat :where(textarea, input)": {
+            "margin": "0"
+          },
+          ".pi-chat [hidden]": {
+            "display": "none"
+          }
+        },
+        "@layer components": {
+          ".pi-chat-shimmer": {
+            "background-image": "linear-gradient(100deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%)",
+            "background-size": "250% 100%",
+            "background-clip": "text",
+            "-webkit-background-clip": "text",
+            "color": "transparent",
+            "animation": "pi-chat-shimmer 2.2s linear infinite"
+          },
+          ".pi-chat [data-testid=\"message-text\"][data-streaming=\"true\"] > :last-child:not([data-testid=\"code-block\"])::after": {
+            "content": "\"\"",
+            "display": "inline-block",
+            "width": "0.45em",
+            "height": "1.05em",
+            "margin-inline-start": "0.2em",
+            "vertical-align": "-0.15em",
+            "border-radius": "2px",
+            "background": "color-mix(in oklab, var(--foreground) 60%, transparent)",
+            "animation": "pi-chat-caret 1s steps(2, jump-none) infinite"
+          }
+        },
+        "@keyframes pi-chat-shimmer": {
+          "from": {
+            "background-position": "100% 0"
+          },
+          "to": {
+            "background-position": "0 0"
+          }
+        },
+        "@keyframes pi-chat-caret": {
+          "0%": {
+            "opacity": "1"
+          },
+          "50%": {
+            "opacity": "0.15"
+          },
+          "100%": {
+            "opacity": "1"
+          }
+        }
+      }
+    },
+    {
+      "name": "pi-ambient",
+      "type": "registry:block",
+      "title": "Pi ambient agent",
+      "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts for finished, failed and waiting tasks (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0",
+        "@earendil-works/pi-durable@1.0.1",
+        "@earendil-works/pi-ai@1.0.1",
+        "lucide-react@1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/pi-chat",
+        "@boring-ui/pi-workspace",
+        "@boring-ui/utils",
+        "@boring-ui/button"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-ambient/ambient.tsx",
+          "type": "registry:component",
+          "target": "components/pi-ambient/ambient.tsx"
+        },
+        {
+          "path": "registry/pi-ambient/browser-notify.ts",
+          "type": "registry:hook",
+          "target": "components/pi-ambient/browser-notify.ts"
+        },
+        {
+          "path": "registry/pi-ambient/notifications.tsx",
+          "type": "registry:component",
+          "target": "components/pi-ambient/notifications.tsx"
+        }
+      ],
+      "css": {
+        "@layer components": {
+          ".pi-chat.pi-ambient[data-variant=\"contrast\"]": {
+            "color-scheme": "dark",
+            "--background": "oklch(0.262 0.004 285)",
+            "--foreground": "oklch(0.975 0.002 286)",
+            "--card": "oklch(0.262 0.004 285)",
+            "--card-foreground": "oklch(0.975 0.002 286)",
+            "--popover": "oklch(0.3 0.005 285)",
+            "--popover-foreground": "oklch(0.975 0.002 286)",
+            "--primary": "oklch(0.985 0 0)",
+            "--primary-foreground": "oklch(0.21 0.006 285.885)",
+            "--secondary": "oklch(0.33 0.006 286)",
+            "--secondary-foreground": "oklch(0.985 0 0)",
+            "--muted": "oklch(0.315 0.005 286)",
+            "--muted-foreground": "oklch(0.7 0.01 286)",
+            "--accent": "oklch(0.35 0.006 286)",
+            "--accent-foreground": "oklch(0.985 0 0)",
+            "--destructive": "oklch(0.704 0.191 22.216)",
+            "--border": "oklch(1 0 0 / 9%)",
+            "--input": "oklch(1 0 0 / 14%)",
+            "--ring": "oklch(0.75 0.02 286)"
+          }
+        }
+      }
+    },
+    {
+      "name": "pi-workspace",
+      "type": "registry:block",
+      "title": "Pi workspace layout",
+      "description": "ArtifactWorkspace: the chat with a right-hand panel that slides in at full height, a resizable divider, full screen, a full-screen sheet on a phone and an opt-in float-when-narrow (the host swaps in AmbientChat from pi-ambient). Layout only; what is open is the host's. Pair it with the viewers item for the panel contents.",
+      "dependencies": [
+        "react@19.3.0",
+        "react-dom@19.3.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/pi-chat",
+        "@boring-ui/utils"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-workspace/workspace.tsx",
+          "type": "registry:component",
+          "target": "components/pi-workspace/workspace.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-app",
+      "type": "registry:block",
+      "title": "Pi agent app",
+      "description": "AgentWorkspace: a whole agent page in one component. Left: the sessions pane (search, New, rename, archive, delete; collapsible, a drawer on a narrow screen). Center: PiChat. Right: the artifact viewers (artifact panel with versions, file viewer, auto-open of new artifacts) in the ArtifactWorkspace panel, a full-screen sheet on a phone. Props are data and callbacks; hooks for the conversations handler (useConversations), the chat transport (useRemoteChat) and saved resources (useSaved).",
+      "dependencies": [
+        "@hachej/boring-ui-kit@1.0.0",
+        "@hachej/boring-files@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0",
+        "lucide-react@1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/pi-chat",
+        "@boring-ui/pi-workspace",
+        "@boring-ui/viewers",
+        "@boring-ui/utils",
+        "@boring-ui/button"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-app/agent-workspace.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/agent-workspace.tsx"
+        },
+        {
+          "path": "registry/pi-app/sessions.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/sessions.tsx"
+        },
+        {
+          "path": "registry/pi-app/artifact-panel.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/artifact-panel.tsx"
+        },
+        {
+          "path": "registry/pi-app/file-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/file-viewer.tsx"
+        },
+        {
+          "path": "registry/pi-app/file-kinds.ts",
+          "type": "registry:lib",
+          "target": "components/pi-app/file-kinds.ts"
+        },
+        {
+          "path": "registry/pi-app/use-saved.ts",
+          "type": "registry:hook",
+          "target": "components/pi-app/use-saved.ts"
+        },
+        {
+          "path": "registry/pi-app/use-conversations.ts",
+          "type": "registry:hook",
+          "target": "components/pi-app/use-conversations.ts"
+        },
+        {
+          "path": "registry/pi-app/use-remote-chat.ts",
+          "type": "registry:hook",
+          "target": "components/pi-app/use-remote-chat.ts"
+        },
+        {
+          "path": "registry/pi-app/app-labels.ts",
+          "type": "registry:lib",
+          "target": "components/pi-app/app-labels.ts"
+        }
+      ]
+    },
+    {
+      "name": "viewers",
+      "type": "registry:component",
+      "title": "Viewers",
+      "description": "The standard viewer top bar (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu) with Tailwind panes over it: the Markdown editor with a formatting toolbar and prose styling, the passive HTML preview and source editor, an image viewer with zoom and pan, and a PDF viewer. Owned, editable source over the borrowed controllers; no AI SDK.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@1.0.0",
+        "@hachej/boring-files@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0",
+        "marked@17.0.6",
+        "@tiptap/core@3.31.4",
+        "@tiptap/react@3.31.4",
+        "@tiptap/pm@3.31.4",
+        "@tiptap/starter-kit@3.31.4",
+        "@tiptap/markdown@3.31.4",
+        "@tiptap/extensions@3.31.4",
+        "@tiptap/extension-list@3.31.4",
+        "@tiptap/extension-table@3.31.4",
+        "@tiptap/extension-image@3.31.4",
+        "@tiptap/extension-highlight@3.31.4",
+        "@tiptap/extension-bubble-menu@3.31.4",
+        "@tiptap/extension-floating-menu@3.31.4",
+        "lucide-react@1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "@boring-ui/utils",
+        "@boring-ui/button"
+      ],
+      "files": [
+        {
+          "path": "registry/viewers/download.ts",
+          "type": "registry:lib",
+          "target": "components/viewers/download.ts"
+        },
+        {
+          "path": "registry/viewers/html-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/html-pane.tsx"
+        },
+        {
+          "path": "registry/viewers/image-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/image-pane.tsx"
+        },
+        {
+          "path": "registry/viewers/interactive-html.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/interactive-html.tsx"
+        },
+        {
+          "path": "registry/viewers/markdown-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/markdown-pane.tsx"
+        },
+        {
+          "path": "registry/viewers/media.ts",
+          "type": "registry:lib",
+          "target": "components/viewers/media.ts"
+        },
+        {
+          "path": "registry/viewers/menu.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/menu.tsx"
+        },
+        {
+          "path": "registry/viewers/pdf-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/pdf-pane.tsx"
+        },
+        {
+          "path": "registry/viewers/share.ts",
+          "type": "registry:lib",
+          "target": "components/viewers/share.ts"
+        },
+        {
+          "path": "registry/viewers/viewer-frame.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/viewer-frame.tsx"
+        },
+        {
+          "path": "registry/viewers/viewer-window.ts",
+          "type": "registry:lib",
+          "target": "components/viewers/viewer-window.ts"
+        }
+      ],
+      "css": {
+        "@layer base": {
+          ".boring-viewer, .boring-viewer *, .boring-viewer *::before, .boring-viewer *::after": {
+            "box-sizing": "border-box"
+          },
+          ".boring-viewer :where(button, input, textarea)": {
+            "font": "inherit",
+            "color": "inherit",
+            "letter-spacing": "inherit"
+          },
+          ".boring-viewer :where(button)": {
+            "background-color": "transparent",
+            "border": "0",
+            "padding": "0"
+          },
+          ".boring-viewer :where(textarea, input)": {
+            "margin": "0"
+          },
+          ".boring-viewer [hidden]": {
+            "display": "none"
+          }
+        },
+        "@layer components": {
+          ".boring-viewer .boring-markdown-editor": {
+            "display": "flex",
+            "flex-direction": "column",
+            "flex": "1 1 auto",
+            "min-height": "0",
+            "min-width": "0",
+            "container-type": "inline-size"
+          },
+          ".boring-viewer .boring-markdown-surface": {
+            "flex": "1 1 auto",
+            "min-height": "0",
+            "overflow": "auto",
+            "scrollbar-width": "thin",
+            "scrollbar-color": "color-mix(in oklab, var(--foreground) 22%, transparent) transparent"
+          },
+          ".boring-viewer .boring-markdown-surface:focus-within": {
+            "box-shadow": "inset 0 0 0 1px color-mix(in oklab, var(--ring) 55%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-toolbar": {
+            "display": "flex",
+            "flex": "none",
+            "align-items": "center",
+            "gap": "0.125rem",
+            "padding": "0.375rem 0.75rem",
+            "border-bottom": "1px solid var(--border)",
+            "background": "var(--background)",
+            "overflow-x": "auto",
+            "scrollbar-width": "none"
+          },
+          ".boring-viewer .boring-markdown-toolbar::-webkit-scrollbar": {
+            "display": "none"
+          },
+          ".boring-viewer .boring-markdown-tool": {
+            "display": "inline-flex",
+            "flex": "none",
+            "align-items": "center",
+            "justify-content": "center",
+            "width": "2rem",
+            "height": "2rem",
+            "border-radius": "0.375rem",
+            "color": "var(--muted-foreground)",
+            "cursor": "pointer",
+            "transition": "background-color 0.12s, color 0.12s"
+          },
+          ".boring-viewer .boring-markdown-tool:hover:not(:disabled)": {
+            "background": "var(--muted)",
+            "color": "var(--foreground)"
+          },
+          ".boring-viewer .boring-markdown-tool[aria-pressed=\"true\"]": {
+            "background": "color-mix(in oklab, var(--primary) 12%, transparent)",
+            "color": "var(--foreground)",
+            "box-shadow": "inset 0 0 0 1px color-mix(in oklab, var(--primary) 22%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-tool:disabled": {
+            "opacity": "0.4",
+            "cursor": "not-allowed"
+          },
+          ".boring-viewer .boring-markdown-tool:focus-visible, .boring-viewer .boring-markdown-link button:focus-visible, .boring-viewer .boring-markdown-alert button:focus-visible, .boring-viewer .boring-markdown-proposal button:focus-visible": {
+            "outline": "2px solid color-mix(in oklab, var(--ring) 70%, transparent)",
+            "outline-offset": "1px"
+          },
+          ".boring-viewer .boring-markdown-separator": {
+            "flex": "none",
+            "width": "1px",
+            "height": "1rem",
+            "margin": "0 0.375rem",
+            "background": "var(--border)"
+          },
+          ".boring-viewer .boring-markdown-icon": {
+            "display": "block"
+          },
+          ".boring-viewer .boring-markdown-link": {
+            "display": "flex",
+            "flex": "none",
+            "flex-wrap": "wrap",
+            "align-items": "center",
+            "gap": "0.5rem",
+            "padding": "0.5rem 0.75rem",
+            "border-bottom": "1px solid var(--border)",
+            "background": "var(--muted)"
+          },
+          ".boring-viewer .boring-markdown-link input": {
+            "flex": "1 1 14rem",
+            "min-width": "0",
+            "height": "2rem",
+            "padding": "0 0.625rem",
+            "border": "1px solid var(--input)",
+            "border-radius": "0.375rem",
+            "background": "var(--background)",
+            "font-size": "0.875rem"
+          },
+          ".boring-viewer .boring-markdown-link input:focus-visible": {
+            "outline": "2px solid color-mix(in oklab, var(--ring) 70%, transparent)",
+            "outline-offset": "0"
+          },
+          ".boring-viewer .boring-markdown-link button, .boring-viewer .boring-markdown-alert button, .boring-viewer .boring-markdown-proposal > button": {
+            "height": "2rem",
+            "padding": "0 0.75rem",
+            "border": "1px solid var(--border)",
+            "border-radius": "0.375rem",
+            "background": "var(--background)",
+            "font-size": "0.8125rem",
+            "font-weight": "500",
+            "cursor": "pointer"
+          },
+          ".boring-viewer .boring-markdown-link button:hover:not(:disabled), .boring-viewer .boring-markdown-alert button:hover:not(:disabled), .boring-viewer .boring-markdown-proposal > button:hover:not(:disabled)": {
+            "background": "var(--muted)"
+          },
+          ".boring-viewer .boring-markdown-alert button:disabled, .boring-viewer .boring-markdown-proposal > button:disabled": {
+            "opacity": "0.45",
+            "cursor": "not-allowed"
+          },
+          ".boring-viewer .boring-markdown-notice, .boring-viewer .boring-markdown-alert, .boring-viewer .boring-markdown-proposal": {
+            "flex": "none",
+            "margin": "0.75rem 0.75rem 0",
+            "padding": "0.625rem 0.75rem",
+            "border": "1px solid var(--border)",
+            "border-radius": "0.5rem",
+            "background": "var(--muted)",
+            "font-size": "0.8125rem",
+            "line-height": "1.5"
+          },
+          ".boring-viewer .boring-markdown-notice": {
+            "border-left": "3px solid color-mix(in oklab, var(--primary) 55%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-alert": {
+            "display": "flex",
+            "flex-wrap": "wrap",
+            "align-items": "center",
+            "gap": "0.5rem",
+            "border-color": "color-mix(in oklab, var(--destructive) 40%, var(--border))",
+            "background": "color-mix(in oklab, var(--destructive) 8%, var(--background))"
+          },
+          ".boring-viewer .boring-markdown-proposal": {
+            "display": "flex",
+            "flex-wrap": "wrap",
+            "align-items": "center",
+            "gap": "0.5rem",
+            "background": "var(--background)"
+          },
+          ".boring-viewer .boring-markdown-proposal h3": {
+            "flex": "1 1 100%",
+            "margin": "0",
+            "font-size": "0.875rem"
+          },
+          ".boring-viewer .boring-markdown-proposal details": {
+            "flex": "1 1 100%",
+            "min-width": "0"
+          },
+          ".boring-viewer .boring-markdown-proposal summary": {
+            "cursor": "pointer",
+            "color": "var(--muted-foreground)"
+          },
+          ".boring-viewer .boring-markdown-proposal pre": {
+            "margin": "0.25rem 0",
+            "max-height": "12rem",
+            "overflow": "auto",
+            "padding": "0.5rem",
+            "border-radius": "0.375rem",
+            "background": "var(--muted)",
+            "font": "0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace",
+            "white-space": "pre-wrap"
+          },
+          ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"]": {
+            "display": "none"
+          },
+          "@container (min-width: 46rem)": {
+            ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"]": {
+              "display": "block",
+              "flex": "none",
+              "padding": "0.375rem 0.75rem",
+              "border-bottom": "1px solid var(--border)",
+              "overflow-x": "auto"
+            },
+            ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"] ol": {
+              "display": "flex",
+              "gap": "0.25rem",
+              "margin": "0",
+              "padding": "0",
+              "list-style": "none"
+            },
+            ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"] button": {
+              "max-width": "14rem",
+              "padding": "0.125rem 0.5rem",
+              "overflow": "hidden",
+              "border-radius": "999px",
+              "color": "var(--muted-foreground)",
+              "font-size": "0.75rem",
+              "text-overflow": "ellipsis",
+              "white-space": "nowrap",
+              "cursor": "pointer"
+            },
+            ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"] button:hover": {
+              "background": "var(--muted)",
+              "color": "var(--foreground)"
+            },
+            ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"] [data-heading-level=\"1\"] button": {
+              "font-weight": "600"
+            }
+          },
+          ".boring-viewer .boring-markdown-source, .boring-viewer .boring-html-viewer__source": {
+            "display": "block",
+            "flex": "1 1 auto",
+            "width": "100%",
+            "min-height": "0",
+            "margin": "0",
+            "padding": "1rem 1.25rem",
+            "border": "0",
+            "border-radius": "0",
+            "outline": "none",
+            "resize": "none",
+            "background": "var(--background)",
+            "color": "var(--foreground)",
+            "font": "0.8125rem/1.65 ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, monospace",
+            "tab-size": "2",
+            "caret-color": "var(--foreground)"
+          },
+          ".boring-viewer .boring-markdown-source:focus-visible, .boring-viewer .boring-html-viewer__source:focus-visible": {
+            "box-shadow": "inset 0 0 0 1px color-mix(in oklab, var(--ring) 55%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-source::selection, .boring-viewer .boring-html-viewer__source::selection, .boring-viewer .boring-markdown-content ::selection, .boring-viewer .boring-markdown-content::selection": {
+            "background": "color-mix(in oklab, var(--primary) 24%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-content": {
+            "max-width": "46rem",
+            "min-height": "100%",
+            "margin": "0 auto",
+            "padding": "1.25rem 1.25rem 3rem",
+            "outline": "none",
+            "color": "var(--foreground)",
+            "font-size": "0.9375rem",
+            "line-height": "1.7",
+            "letter-spacing": "-0.005em",
+            "overflow-wrap": "anywhere"
+          },
+          ".boring-viewer .boring-markdown-content > :first-child": {
+            "margin-top": "0"
+          },
+          ".boring-viewer .boring-markdown-content p": {
+            "margin": "0.75rem 0"
+          },
+          ".boring-viewer .boring-markdown-content p.is-editor-empty:first-child::before": {
+            "content": "attr(data-placeholder)",
+            "float": "left",
+            "height": "0",
+            "color": "var(--muted-foreground)",
+            "opacity": "0.8",
+            "pointer-events": "none"
+          },
+          ".boring-viewer .boring-markdown-content :is(h1, h2, h3, h4, h5, h6)": {
+            "color": "var(--foreground)",
+            "font-weight": "600",
+            "letter-spacing": "-0.02em",
+            "line-height": "1.25"
+          },
+          ".boring-viewer .boring-markdown-content h1": {
+            "margin": "1.75rem 0 0.75rem",
+            "font-size": "1.875rem"
+          },
+          ".boring-viewer .boring-markdown-content h2": {
+            "margin": "1.5rem 0 0.625rem",
+            "padding-bottom": "0.25rem",
+            "border-bottom": "1px solid color-mix(in oklab, var(--border) 70%, transparent)",
+            "font-size": "1.375rem"
+          },
+          ".boring-viewer .boring-markdown-content h3": {
+            "margin": "1.25rem 0 0.5rem",
+            "font-size": "1.125rem"
+          },
+          ".boring-viewer .boring-markdown-content :is(h4, h5, h6)": {
+            "margin": "1rem 0 0.4rem",
+            "font-size": "1rem"
+          },
+          ".boring-viewer .boring-markdown-content :is(ul, ol)": {
+            "margin": "0.75rem 0",
+            "padding-left": "1.5rem"
+          },
+          ".boring-viewer .boring-markdown-content ul": {
+            "list-style": "disc"
+          },
+          ".boring-viewer .boring-markdown-content ul ul": {
+            "list-style": "circle"
+          },
+          ".boring-viewer .boring-markdown-content ul ul ul": {
+            "list-style": "square"
+          },
+          ".boring-viewer .boring-markdown-content ol": {
+            "list-style": "decimal"
+          },
+          ".boring-viewer .boring-markdown-content ol ol": {
+            "list-style": "lower-alpha"
+          },
+          ".boring-viewer .boring-markdown-content ol ol ol": {
+            "list-style": "lower-roman"
+          },
+          ".boring-viewer .boring-markdown-content li": {
+            "margin": "0.25rem 0"
+          },
+          ".boring-viewer .boring-markdown-content li::marker": {
+            "color": "var(--muted-foreground)"
+          },
+          ".boring-viewer .boring-markdown-content li > p": {
+            "margin": "0"
+          },
+          ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"]": {
+            "padding-left": "0",
+            "list-style": "none"
+          },
+          ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li": {
+            "display": "flex",
+            "align-items": "flex-start",
+            "gap": "0.5rem"
+          },
+          ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li > label": {
+            "display": "inline-flex",
+            "flex": "none",
+            "align-items": "center",
+            "height": "1.7em",
+            "margin": "0",
+            "user-select": "none"
+          },
+          ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li > label input[type=\"checkbox\"]": {
+            "width": "1rem",
+            "height": "1rem",
+            "margin": "0",
+            "accent-color": "var(--primary)",
+            "cursor": "pointer"
+          },
+          ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li > div": {
+            "flex": "1 1 auto",
+            "min-width": "0"
+          },
+          ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li[data-checked=\"true\"] > div": {
+            "color": "var(--muted-foreground)",
+            "text-decoration": "line-through"
+          },
+          ".boring-viewer .boring-markdown-content strong": {
+            "font-weight": "600"
+          },
+          ".boring-viewer .boring-markdown-content code": {
+            "padding": "0.1em 0.35em",
+            "border-radius": "0.25rem",
+            "background": "color-mix(in oklab, var(--foreground) 7%, transparent)",
+            "font": "0.88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+          },
+          ".boring-viewer .boring-markdown-content pre": {
+            "margin": "1rem 0",
+            "padding": "0.875rem 1rem",
+            "overflow-x": "auto",
+            "border": "1px solid color-mix(in oklab, var(--border) 80%, transparent)",
+            "border-radius": "0.5rem",
+            "background": "color-mix(in oklab, var(--foreground) 4%, transparent)",
+            "font": "0.8125rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+          },
+          ".boring-viewer .boring-markdown-content pre code": {
+            "padding": "0",
+            "background": "transparent",
+            "font": "inherit"
+          },
+          ".boring-viewer .boring-markdown-content blockquote": {
+            "margin": "1rem 0",
+            "padding": "0.5rem 1rem",
+            "border-left": "3px solid color-mix(in oklab, var(--primary) 35%, transparent)",
+            "border-radius": "0 0.375rem 0.375rem 0",
+            "background": "color-mix(in oklab, var(--foreground) 4%, transparent)",
+            "color": "color-mix(in oklab, var(--foreground) 85%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-content blockquote > :first-child": {
+            "margin-top": "0"
+          },
+          ".boring-viewer .boring-markdown-content blockquote > :last-child": {
+            "margin-bottom": "0"
+          },
+          ".boring-viewer .boring-markdown-content a": {
+            "color": "var(--foreground)",
+            "text-decoration": "underline",
+            "text-decoration-thickness": "1px",
+            "text-underline-offset": "3px",
+            "text-decoration-color": "color-mix(in oklab, var(--foreground) 45%, transparent)",
+            "cursor": "text"
+          },
+          ".boring-viewer .boring-markdown-content hr": {
+            "margin": "1.5rem 0",
+            "border": "0",
+            "border-top": "1px solid color-mix(in oklab, var(--border) 85%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-content mark": {
+            "padding": "0 0.15em",
+            "border-radius": "0.2em",
+            "background": "color-mix(in oklab, #facc15 40%, transparent)",
+            "color": "inherit"
+          },
+          ".boring-viewer .boring-markdown-content .tableWrapper": {
+            "margin": "1rem 0",
+            "overflow-x": "auto"
+          },
+          ".boring-viewer .boring-markdown-content table": {
+            "width": "100%",
+            "border-collapse": "collapse",
+            "font-size": "0.875rem"
+          },
+          ".boring-viewer .boring-markdown-content :is(th, td)": {
+            "min-width": "4rem",
+            "padding": "0.5rem 0.75rem",
+            "border": "1px solid color-mix(in oklab, var(--border) 90%, transparent)",
+            "text-align": "left",
+            "vertical-align": "top"
+          },
+          ".boring-viewer .boring-markdown-content th": {
+            "background": "color-mix(in oklab, var(--foreground) 5%, transparent)",
+            "font-weight": "600"
+          },
+          ".boring-viewer .boring-markdown-content :is(th, td) > p": {
+            "margin": "0"
+          },
+          ".boring-viewer .boring-markdown-content .selectedCell": {
+            "background": "color-mix(in oklab, var(--primary) 12%, transparent)"
+          },
+          ".boring-viewer .boring-markdown-content img": {
+            "display": "block",
+            "max-width": "100%",
+            "height": "auto",
+            "margin": "1rem 0",
+            "border-radius": "0.5rem"
+          },
+          ".boring-viewer .boring-markdown-content .boring-markdown-image": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "gap": "0.4rem",
+            "max-width": "100%",
+            "margin": "0.125rem 0",
+            "padding": "0.125rem 0.5rem",
+            "border": "1px dashed var(--border)",
+            "border-radius": "0.375rem",
+            "background": "var(--muted)",
+            "color": "var(--muted-foreground)",
+            "font-size": "0.85em",
+            "line-height": "1.5"
+          },
+          ".boring-viewer .boring-markdown-content .boring-markdown-image::before": {
+            "content": "\"\"",
+            "flex": "none",
+            "width": "0.85em",
+            "height": "0.85em",
+            "border": "1.5px solid currentColor",
+            "border-radius": "0.15em",
+            "opacity": "0.7"
+          },
+          ".boring-viewer .boring-markdown-content .ProseMirror-selectednode": {
+            "outline": "2px solid color-mix(in oklab, var(--ring) 70%, transparent)",
+            "outline-offset": "2px"
+          },
+          ".boring-viewer .boring-html-pane": {
+            "display": "flex",
+            "flex": "1 1 auto",
+            "flex-direction": "column",
+            "min-height": "0",
+            "min-width": "0"
+          },
+          ".boring-viewer .boring-html-viewer__preview": {
+            "display": "flex",
+            "flex": "1 1 auto",
+            "flex-direction": "column",
+            "min-height": "0",
+            "background": "var(--muted)"
+          },
+          ".boring-viewer .boring-html-viewer__preview > p": {
+            "flex": "none",
+            "margin": "0",
+            "padding": "0.375rem 0.75rem",
+            "border-bottom": "1px solid var(--border)",
+            "background": "var(--background)",
+            "color": "var(--muted-foreground)",
+            "font-size": "0.75rem"
+          },
+          ".boring-viewer .boring-html-viewer__preview > p[role=\"alert\"]": {
+            "color": "var(--destructive)"
+          },
+          ".boring-viewer .boring-html-viewer__preview > div": {
+            "display": "flex",
+            "flex": "1 1 auto",
+            "min-height": "0"
+          },
+          ".boring-viewer .boring-html-viewer__frame": {
+            "flex": "1 1 auto",
+            "width": "100%",
+            "height": "100%",
+            "min-height": "0",
+            "border": "0",
+            "background": "#fff",
+            "color-scheme": "light"
+          },
+          ".boring-viewer .boring-viewer-checker": {
+            "background-color": "#fff",
+            "background-image": "linear-gradient(45deg, #d4d4d8 25%, transparent 25%, transparent 75%, #d4d4d8 75%), linear-gradient(45deg, #d4d4d8 25%, transparent 25%, transparent 75%, #d4d4d8 75%)",
+            "background-position": "0 0, 8px 8px",
+            "background-size": "16px 16px"
+          },
+          ".boring-viewer .boring-viewer-stage": {
+            "background": "var(--muted)",
+            "scrollbar-width": "thin"
+          },
+          ".boring-viewer .boring-viewer-stage:focus-visible": {
+            "outline": "2px solid color-mix(in oklab, var(--ring) 60%, transparent)",
+            "outline-offset": "-2px"
+          },
+          "@media (pointer: coarse)": {
+            ".boring-viewer .boring-markdown-tool": {
+              "width": "2.75rem",
+              "height": "2.75rem"
+            },
+            ".boring-viewer .boring-markdown-link input, .boring-viewer .boring-markdown-link button, .boring-viewer .boring-markdown-alert button, .boring-viewer .boring-markdown-proposal > button": {
+              "height": "2.75rem"
+            },
+            ".boring-viewer .boring-markdown-link input, .boring-viewer .boring-markdown-source, .boring-viewer .boring-html-viewer__source": {
+              "font-size": "1rem"
+            },
+            ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li > label input[type=\"checkbox\"]": {
+              "width": "1.25rem",
+              "height": "1.25rem"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "provider-setup",
+      "type": "registry:component",
+      "title": "Provider setup",
+      "description": "A Tailwind popover for configuring model access: pick any registered Pi provider and model, save an API key (masked, shows \"saved\"), run a device-code subscription sign-in (code, link and status), set an optional gateway and see when a provider needs one. Transport-agnostic: props in, callbacks out, no fetch. Owned, editable source; fits the pi-chat controls slot.",
+      "dependencies": [
+        "react@19.3.0",
+        "react-dom@19.3.0",
+        "lucide-react@1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "@boring-ui/utils"
+      ],
+      "files": [
+        {
+          "path": "registry/provider-setup/provider-setup.tsx",
+          "type": "registry:component",
+          "target": "components/provider-setup/provider-setup.tsx"
+        }
+      ]
+    },
+    {
+      "name": "feedback",
+      "type": "registry:component",
+      "title": "Feedback",
+      "description": "Feedback from the chat composer: one Feedback button starts feedback mode on the application page (hover, click to pin a numbered note, hold \u2325 to use the app, optional voice), and one chip carries the notes to the next message. FeedbackBar, NoteBubble, FeedbackChip with its review, useComposerFeedback for the pi-chat composer, and PickerOverlay styles. Optional, not mounted by default: PointButton, AnnotateSheet, FeedbackList and FeedbackReport. Picking, masking, anchoring and placement stay in @hachej/boring-feedback/page and /ui, so restyling cannot weaken them.",
+      "dependencies": [
+        "@hachej/boring-feedback@1.0.0",
+        "@hachej/boring-ui-kit@1.0.0",
+        "@hachej/boring-files@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0"
+      ],
+      "files": [
+        {
+          "path": "registry/feedback/feedback-session.tsx",
+          "type": "registry:component",
+          "target": "components/feedback/feedback-session.tsx"
+        },
+        {
+          "path": "registry/feedback/point-button.tsx",
+          "type": "registry:component",
+          "target": "components/feedback/point-button.tsx"
+        },
+        {
+          "path": "registry/feedback/picker-overlay.ts",
+          "type": "registry:lib",
+          "target": "components/feedback/picker-overlay.ts"
+        },
+        {
+          "path": "registry/feedback/annotate-sheet.tsx",
+          "type": "registry:component",
+          "target": "components/feedback/annotate-sheet.tsx"
+        },
+        {
+          "path": "registry/feedback/feedback-list.tsx",
+          "type": "registry:component",
+          "target": "components/feedback/feedback-list.tsx"
+        },
+        {
+          "path": "registry/feedback/feedback-report.tsx",
+          "type": "registry:component",
+          "target": "components/feedback/feedback-report.tsx"
+        },
+        {
+          "path": "registry/feedback/use-external.ts",
+          "type": "registry:hook",
+          "target": "components/feedback/use-external.ts"
+        }
+      ],
+      "css": {
+        "[data-boring=\"feedback\"]": {
+          "--boring-feedback-accent": "var(--primary, #2563eb)",
+          "--boring-feedback-reveal": "#d97706",
+          "--boring-feedback-surface": "var(--popover, var(--background, #ffffff))",
+          "--boring-feedback-text": "var(--popover-foreground, var(--foreground, #111827))",
+          "--boring-feedback-muted": "var(--muted-foreground, #6b7280)",
+          "--boring-feedback-border": "var(--border, #e5e7eb)",
+          "--boring-feedback-radius": "var(--radius, 0.625rem)",
+          "--boring-feedback-label-background": "#111827",
+          "--boring-feedback-label-foreground": "#f9fafb",
+          "font": "14px/1.45 ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif",
+          "color": "var(--boring-feedback-text)"
+        },
+        "[data-boring=\"feedback\"] *, [data-boring=\"feedback\"] *::before, [data-boring=\"feedback\"] *::after": {
+          "box-sizing": "border-box"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-button": {
+          "display": "inline-flex",
+          "align-items": "center",
+          "justify-content": "center",
+          "gap": "0.375rem",
+          "min-height": "2.25rem",
+          "padding": "0 0.875rem",
+          "border": "1px solid var(--boring-feedback-border)",
+          "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+          "background": "var(--boring-feedback-surface)",
+          "color": "var(--boring-feedback-text)",
+          "font": "inherit",
+          "font-weight": "600",
+          "cursor": "pointer"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-button:hover": {
+          "background": "var(--accent, #f3f4f6)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-button:focus-visible, [data-boring=\"feedback\"] button:focus-visible, [data-boring=\"feedback\"] textarea:focus-visible": {
+          "outline": "2px solid var(--ring, var(--boring-feedback-accent))",
+          "outline-offset": "2px"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-button[data-variant=\"primary\"]": {
+          "border-color": "transparent",
+          "background": "var(--boring-feedback-accent)",
+          "color": "var(--primary-foreground, #ffffff)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-button:disabled": {
+          "opacity": "0.6",
+          "cursor": "default"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-button[aria-pressed=\"true\"]": {
+          "background": "var(--boring-feedback-accent)",
+          "color": "var(--primary-foreground, #ffffff)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-icon": {
+          "display": "inline-flex",
+          "align-items": "center",
+          "justify-content": "center",
+          "width": "2rem",
+          "height": "2rem",
+          "border": "0",
+          "border-radius": "0.5rem",
+          "background": "transparent",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "1.25rem",
+          "line-height": "1",
+          "cursor": "pointer"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-point": {
+          "display": "inline-flex",
+          "align-items": "center",
+          "gap": "0.625rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-hint": {
+          "max-width": "32rem",
+          "overflow": "hidden",
+          "text-overflow": "ellipsis",
+          "white-space": "nowrap",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-keys": {
+          "opacity": "0.8"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-sheet, [data-boring=\"feedback\"].boring-feedback-report, [data-boring=\"feedback\"].boring-feedback-list": {
+          "display": "flex",
+          "flex-direction": "column",
+          "gap": "0.75rem",
+          "padding": "1rem",
+          "border": "1px solid var(--boring-feedback-border)",
+          "border-radius": "var(--boring-feedback-radius)",
+          "background": "var(--boring-feedback-surface)"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-sheet": {
+          "z-index": "2147483000",
+          "box-shadow": "0 16px 48px rgb(0 0 0 / 18%)",
+          "max-height": "calc(100dvh - 24px)",
+          "overflow": "auto"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-sheet[data-docked=\"bottom\"]": {
+          "position": "fixed",
+          "left": "12px",
+          "right": "12px",
+          "bottom": "12px",
+          "max-width": "32rem",
+          "margin": "0 auto"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-sheet-header": {
+          "display": "flex",
+          "align-items": "center",
+          "justify-content": "space-between",
+          "gap": "0.5rem"
+        },
+        "[data-boring=\"feedback\"] h2": {
+          "margin": "0",
+          "font-size": "1rem",
+          "font-weight": "650"
+        },
+        "[data-boring=\"feedback\"] h3": {
+          "margin": "0 0 0.25rem",
+          "font-size": "0.875rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-targets": {
+          "margin": "0",
+          "padding": "0",
+          "list-style": "none",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-field": {
+          "display": "grid",
+          "gap": "0.375rem",
+          "font-weight": "600",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] textarea": {
+          "width": "100%",
+          "padding": "0.5rem 0.625rem",
+          "border": "1px solid var(--input, var(--boring-feedback-border))",
+          "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+          "background": "var(--background, #ffffff)",
+          "color": "inherit",
+          "font": "inherit",
+          "font-size": "16px",
+          "font-weight": "400",
+          "resize": "vertical"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-actions": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "gap": "0.5rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-status": {
+          "margin": "0",
+          "min-height": "1.25em",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-warning": {
+          "margin": "0",
+          "color": "var(--destructive, #b91c1c)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-notice": {
+          "margin": "0",
+          "padding": "0.5rem 0.625rem",
+          "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+          "background": "color-mix(in srgb, var(--boring-feedback-reveal) 14%, transparent)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-copied pre, [data-boring=\"feedback\"] .boring-feedback-manual": {
+          "max-height": "12rem",
+          "overflow": "auto",
+          "margin": "0.375rem 0 0",
+          "font": "12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace",
+          "white-space": "pre-wrap"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-copied summary": {
+          "cursor": "pointer",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-list ul": {
+          "display": "flex",
+          "flex-direction": "column",
+          "gap": "0.25rem",
+          "margin": "0",
+          "padding": "0",
+          "list-style": "none"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-list li button": {
+          "display": "grid",
+          "gap": "0.125rem",
+          "width": "100%",
+          "padding": "0.5rem 0.625rem",
+          "border": "0",
+          "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+          "background": "transparent",
+          "color": "inherit",
+          "font": "inherit",
+          "text-align": "left",
+          "cursor": "pointer"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-list li button:hover, [data-boring=\"feedback\"].boring-feedback-list li button[aria-current=\"true\"]": {
+          "background": "var(--accent, #f3f4f6)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-title": {
+          "font-weight": "600"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-meta": {
+          "margin": "0",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] [data-status=\"addressed\"]": {
+          "color": "#15803d"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-empty": {
+          "margin": "0",
+          "color": "var(--boring-feedback-muted)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-said": {
+          "margin": "0",
+          "white-space": "pre-wrap"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-anchors": {
+          "display": "flex",
+          "flex-direction": "column",
+          "gap": "0.5rem",
+          "margin": "0",
+          "padding-left": "1.25rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-anchors > li": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "align-items": "center",
+          "gap": "0.5rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-anchors code": {
+          "font-size": "0.75rem",
+          "color": "var(--boring-feedback-muted)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-candidates": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "gap": "0.375rem",
+          "margin": "0.375rem 0 0",
+          "padding": "0",
+          "list-style": "none"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar": {
+          "position": "fixed",
+          "top": "12px",
+          "left": "0",
+          "right": "0",
+          "z-index": "2147483000",
+          "display": "flex",
+          "flex-wrap": "nowrap",
+          "align-items": "center",
+          "gap": "0.5rem",
+          "width": "max-content",
+          "max-width": "calc(100vw - 24px)",
+          "margin": "0 auto",
+          "padding": "0.375rem 0.5rem 0.375rem 0.875rem",
+          "border": "1px solid var(--boring-feedback-border)",
+          "border-radius": "999px",
+          "background": "var(--boring-feedback-surface)",
+          "box-shadow": "0 10px 32px rgb(0 0 0 / 16%)"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar[data-using=\"true\"]": {
+          "border-color": "var(--boring-feedback-reveal)"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar[data-docked=\"true\"]": {
+          "position": "static",
+          "width": "auto",
+          "max-width": "none",
+          "margin": "0 0.625rem 0.625rem",
+          "flex-wrap": "wrap",
+          "border-radius": "0.75rem",
+          "box-shadow": "none"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar > *": {
+          "flex": "none"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar > .boring-feedback-hint": {
+          "flex": "0 1 auto",
+          "min-width": "0",
+          "max-width": "24rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-bar-title": {
+          "display": "inline-flex",
+          "align-items": "center",
+          "gap": "0.375rem",
+          "font-weight": "650"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-dot": {
+          "width": "0.5rem",
+          "height": "0.5rem",
+          "border-radius": "50%",
+          "background": "var(--boring-feedback-accent)"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar[data-using=\"true\"] .boring-feedback-dot": {
+          "background": "var(--boring-feedback-reveal)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-bar-meta": {
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-alt": {
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.75rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-icon[aria-pressed=\"true\"]": {
+          "background": "color-mix(in srgb, #dc2626 16%, transparent)",
+          "color": "#dc2626"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-icon:disabled": {
+          "opacity": "0.45",
+          "cursor": "default"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-recording": {
+          "display": "inline-flex",
+          "align-items": "center",
+          "gap": "0.375rem",
+          "padding": "0.125rem 0.5rem",
+          "border-radius": "999px",
+          "background": "color-mix(in srgb, #dc2626 12%, transparent)",
+          "color": "#b91c1c",
+          "font-size": "0.75rem",
+          "font-weight": "650"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-rec": {
+          "width": "0.5rem",
+          "height": "0.5rem",
+          "border-radius": "50%",
+          "background": "#dc2626"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar[data-docked=\"true\"] > .boring-feedback-hint": {
+          "flex": "1 1 10rem",
+          "max-width": "none",
+          "white-space": "normal"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-record": {
+          "min-height": "2rem",
+          "padding": "0 0.625rem",
+          "gap": "0.3125rem",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-record[aria-pressed=\"true\"]": {
+          "border-color": "transparent",
+          "background": "#dc2626",
+          "color": "#ffffff"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-stop": {
+          "width": "0.625rem",
+          "height": "0.625rem",
+          "border-radius": "2px",
+          "background": "currentColor"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-timer": {
+          "font-variant-numeric": "tabular-nums"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bar[data-recording=\"true\"]": {
+          "border-color": "color-mix(in srgb, #dc2626 55%, var(--boring-feedback-border))"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-voice-problem": {
+          "flex": "1 1 100%",
+          "margin": "0",
+          "color": "var(--destructive, #b91c1c)",
+          "font-size": "0.8125rem",
+          "white-space": "normal"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-element": {
+          "display": "inline-flex",
+          "flex": "1",
+          "align-items": "baseline",
+          "gap": "0.375rem",
+          "min-width": "0",
+          "overflow": "hidden",
+          "white-space": "nowrap"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-element-name": {
+          "flex": "0 1 auto",
+          "min-width": "2rem",
+          "overflow": "hidden",
+          "text-overflow": "ellipsis",
+          "font-size": "0.8125rem",
+          "font-weight": "600"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-element-file": {
+          "flex": "0 100 auto",
+          "min-width": "0",
+          "overflow": "hidden",
+          "text-overflow": "ellipsis",
+          "color": "var(--boring-feedback-muted)",
+          "font": "0.6875rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-badge": {
+          "flex": "none",
+          "padding": "0 0.375rem",
+          "border-radius": "999px",
+          "background": "var(--muted, #f3f4f6)",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.6875rem",
+          "line-height": "1.25rem"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bubble": {
+          "z-index": "2147483001",
+          "display": "grid",
+          "gap": "0.375rem",
+          "padding": "0.5rem",
+          "border": "1px solid var(--boring-feedback-border)",
+          "border-radius": "var(--boring-feedback-radius)",
+          "background": "var(--boring-feedback-surface)",
+          "box-shadow": "0 12px 32px rgb(0 0 0 / 18%)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-bubble-head, [data-boring=\"feedback\"] .boring-feedback-note-head": {
+          "display": "flex",
+          "align-items": "center",
+          "gap": "0.375rem",
+          "min-width": "0"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-bubble-label, [data-boring=\"feedback\"] .boring-feedback-note-label": {
+          "flex": "1",
+          "min-width": "0",
+          "overflow": "hidden",
+          "text-overflow": "ellipsis",
+          "white-space": "nowrap",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.75rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-pin": {
+          "color": "var(--boring-feedback-accent)",
+          "font-weight": "700"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-chip": {
+          "position": "relative",
+          "display": "inline-flex",
+          "flex-wrap": "wrap",
+          "align-items": "center",
+          "gap": "0.125rem",
+          "max-width": "100%",
+          "padding": "0.125rem 0.125rem 0.125rem 0.625rem",
+          "border": "1px solid var(--boring-feedback-border)",
+          "border-radius": "999px",
+          "background": "color-mix(in srgb, var(--boring-feedback-accent) 8%, var(--boring-feedback-surface))",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-chip-open": {
+          "min-width": "0",
+          "padding": "0.25rem 0.25rem",
+          "border": "0",
+          "background": "transparent",
+          "color": "inherit",
+          "font": "inherit",
+          "font-weight": "600",
+          "text-align": "left",
+          "cursor": "pointer"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-chip-route": {
+          "color": "var(--boring-feedback-muted)",
+          "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace",
+          "font-weight": "500"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-chip-remove": {
+          "width": "1.5rem",
+          "height": "1.5rem",
+          "font-size": "1rem"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-review": {
+          "z-index": "2147483000",
+          "display": "flex",
+          "flex-direction": "column",
+          "gap": "0.625rem",
+          "max-height": "min(28rem, calc(100dvh - 24px))",
+          "overflow": "auto",
+          "padding": "0.875rem",
+          "border": "1px solid var(--boring-feedback-border)",
+          "border-radius": "var(--boring-feedback-radius)",
+          "background": "var(--boring-feedback-surface)",
+          "box-shadow": "0 16px 48px rgb(0 0 0 / 18%)",
+          "text-align": "left"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-notes": {
+          "display": "flex",
+          "flex-direction": "column",
+          "gap": "0.5rem",
+          "margin": "0",
+          "padding": "0",
+          "list-style": "none"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-notes > li": {
+          "display": "grid",
+          "gap": "0.25rem",
+          "padding": "0.375rem",
+          "border-radius": "calc(var(--boring-feedback-radius) - 2px)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-notes > li:hover, [data-boring=\"feedback\"] .boring-feedback-notes > li:focus-within": {
+          "background": "var(--accent, #f3f4f6)"
+        },
+        "@media (max-width: 640px), (pointer: coarse)": {
+          "[data-boring=\"feedback\"] .boring-feedback-button": {
+            "min-height": "2.75rem"
+          },
+          "[data-boring=\"feedback\"] .boring-feedback-icon": {
+            "width": "2.75rem",
+            "height": "2.75rem"
+          },
+          "[data-boring=\"feedback\"] .boring-feedback-hint": {
+            "display": "none"
+          },
+          "[data-boring=\"feedback\"] .boring-feedback-alt": {
+            "display": "none"
+          },
+          "[data-boring=\"feedback\"].boring-feedback-bar": {
+            "top": "auto",
+            "bottom": "12px",
+            "flex-wrap": "wrap",
+            "border-radius": "var(--boring-feedback-radius)"
+          }
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-mic": {
+          "flex": "none",
+          "display": "block"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-preview": {
+          "position": "fixed",
+          "top": "12px",
+          "left": "0",
+          "right": "0",
+          "z-index": "2147483001",
+          "display": "flex",
+          "flex-direction": "column",
+          "gap": "0.5rem",
+          "width": "min(40rem, calc(100vw - 24px))",
+          "margin": "0 auto",
+          "padding": "0.75rem 0.875rem",
+          "border": "2px solid var(--boring-feedback-reveal)",
+          "border-radius": "var(--boring-feedback-radius)",
+          "background": "var(--boring-feedback-surface)",
+          "box-shadow": "0 12px 36px rgb(0 0 0 / 18%)"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-head": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "align-items": "baseline",
+          "gap": "0.5rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-title": {
+          "padding": "0.125rem 0.5rem",
+          "border-radius": "999px",
+          "background": "var(--boring-feedback-reveal)",
+          "color": "#ffffff",
+          "font-size": "0.8125rem",
+          "letter-spacing": "0.02em",
+          "text-transform": "uppercase"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-notice": {
+          "font-weight": "600"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-status": {
+          "margin-left": "auto",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-summary": {
+          "margin": "0"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-changes": {
+          "margin": "0",
+          "padding-left": "1.125rem",
+          "color": "var(--boring-feedback-muted)",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-changes code": {
+          "font-size": "0.75rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-error": {
+          "margin": "0",
+          "color": "#b91c1c",
+          "font-size": "0.8125rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-actions": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "gap": "0.5rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-preview-input": {
+          "flex": "1 1 12rem",
+          "min-width": "0",
+          "min-height": "2.25rem",
+          "padding": "0 0.75rem",
+          "border": "1px solid var(--boring-feedback-border)",
+          "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+          "background": "var(--boring-feedback-surface)",
+          "color": "var(--boring-feedback-text)",
+          "font": "inherit"
+        }
+      }
+    },
+    {
+      "name": "feedback-preview",
+      "type": "registry:component",
+      "title": "Feedback preview",
+      "description": "PreviewBanner: a live, reversible preview of a change in the page (Approve / Discard) over `@hachej/boring-feedback/preview`, whose subagent calls models through a host gateway. Separate from `feedback` so annotation-only apps do not install the model SDK; install `feedback` first (its styles cover the banner).",
+      "dependencies": [
+        "@hachej/boring-feedback@1.0.0",
+        "@earendil-works/pi-ai@1.0.1",
+        "react@19.3.0"
+      ],
+      "files": [
+        {
+          "path": "registry/feedback-preview/preview-banner.tsx",
+          "type": "registry:component",
+          "target": "components/feedback-preview/preview-banner.tsx"
+        }
+      ]
+    },
+    {
+      "name": "task-list-viewer",
+      "type": "registry:component",
+      "title": "Consumer task-list viewer",
+      "description": "A consumer-defined task-list schema and controller over the shared text buffer, with a restylable borrowed React renderer.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@1.0.0",
+        "@hachej/boring-files@1.0.0",
+        "react@19.3.0",
+        "react-dom@19.3.0",
+        "zod@4.6.5"
+      ],
+      "files": [
+        {
+          "path": "registry/task-list-viewer/task-list-document.ts",
+          "type": "registry:lib",
+          "target": "components/task-list-viewer/task-list-document.ts"
+        },
+        {
+          "path": "registry/task-list-viewer/task-list-controller.ts",
+          "type": "registry:lib",
+          "target": "components/task-list-viewer/task-list-controller.ts"
+        },
+        {
+          "path": "registry/task-list-viewer/task-list-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/task-list-viewer/task-list-viewer.tsx"
+        }
+      ],
+      "css": {
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"]": {
+          "padding": "1rem",
+          "border": "1px solid var(--border, #d1d5db)",
+          "border-radius": "var(--boring-task-list-radius, 0.75rem)",
+          "background": "var(--background, #fff)",
+          "color": "var(--foreground, #111827)"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] ul": {
+          "list-style": "none",
+          "padding": "0",
+          "display": "grid",
+          "gap": "0.5rem"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] li": {
+          "display": "flex",
+          "align-items": "center",
+          "gap": "0.5rem",
+          "flex-wrap": "wrap"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] button": {
+          "min-height": "2.25rem",
+          "padding": "0.375rem 0.75rem"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] input[type=\"text\"]": {
+          "min-height": "2.25rem",
+          "max-width": "100%"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] [role=\"alert\"]": {
+          "color": "var(--destructive, #b91c1c)"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] :focus-visible": {
+          "outline": "2px solid var(--ring, #2563eb)",
+          "outline-offset": "2px"
+        }
+      },
+      "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised."
+    }
+  ]
+}

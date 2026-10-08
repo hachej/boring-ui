@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "owner": "INVARIANTS.md",
+  "packageLaws": [
+    { "owner": "packages/feedback/INVARIANTS.md", "prefix": "FEEDBACK", "package": "feedback" }
+  ],
+  "invariants": {
+    "BORING-PI-1": {
+      "appliesTo": ["agent", "execution", "browser"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "Named shadow-kernel/reserved-kind and public/dependency import mutants. Structural evidence only, not semantic execution authority or native capability parity." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/pi-native-state.test.mjs"], "reason": "The document-tool crash increment does not prove the complete native-state obligation. Prove native identities/checkpoints/usage and dynamic foreground/background graphs remain authoritative across restart. Host business obligations are distinct. Cancellation request/acknowledgement/unconfirmed termination cannot invent a terminal native outcome." }
+      ]
+    },
+    "BORING-PI-2": {
+      "appliesTo": ["agent"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "Covered direct/aliased Harness construction outside the owned factory. Workspace/observer acquisition and arbitrary lifecycle effects remain unproved." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/pi-harness-attachment.test.mjs"], "reason": "Attach/detach a real borrowed Harness without opening/closing/resetting/aborting/reconfiguring unrelated work. Extend composition evidence to shared workspaces/watchers/transports, partial acquisition rollback, safe release and verified reattachment. Closing a viewer does not stop background execution; setup closes only what it owns." }
+      ]
+    },
+    "BORING-PI-3": {
+      "appliesTo": ["agent", "execution", "browser"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "Known reserved native task/doc declarations and alternate kernel-class mutants. Optional installation, locality and deliberate native overrides remain unproved." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/pi-optional-extensions.test.mjs"], "reason": "Use plain Pi; install questions, validation/repair and delivery independently with native registration. Recover a pending question without another coordinator. Add/remove unrelated features without changing native defaults or existing work; preserve supported deliberate native overrides and fail accidental Boring collisions explicitly." }
+      ]
+    },
+    "BORING-PI-4": {
+      "appliesTo": ["files", "agent", "ui", "execution", "browser", "testing"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "Private/unexported imports, covered mutation and fork/patch/version mutants. Semantic misuse and preservation of native provider capabilities require runtime proof/review." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/pi-public-adapters.test.mjs"], "reason": "Use supported public APIs including native FileSystem/Shell/ExecutionEnv instead of duplicates. Prove host policy, truthful denial/unsupported outcomes and recovery. Missing strict admission/publication guarantees block that composition, not unrelated native features. No per-HTTP-attempt claim without a demonstrated seam." }
+      ]
+    },
+    "BORING-PI-5": {
+      "appliesTo": ["files", "agent", "ui", "execution", "browser", "testing"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "Package/type-only direction and forbidden runtime imports. Additional composition-policy fixtures run in npm test. Neither establishes installability, bundle safety or independent runtime behavior." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/pi-independent-surfaces.test.mjs"], "reason": "Prove the remote-coding, browser-absent background-app and assistant-sidecar recipes plus independent viewer/resource use. Reuse browser-safe resource types directly; no kernel/server FS in browser UI bundles (only an opt-in agent worker bundle may run the kernel) or mandatory heavy feature. Pure provider adapters need no agent startup; file-only tools need no dummy exec; swapping providers preserves required semantics or refuses qualification." }
+      ]
+    },
+    "BORING-PI-6": {
+      "appliesTo": ["files", "agent", "ui", "execution"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "Dependency boundaries keep files separate from native process imports. Namespace/view coherence, paired acquisition and publication semantics remain unproved." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/shared-workspace.test.mjs"], "reason": "Prove coherent same-view direct/native/Bash/Git access on one provider acquisition; distinct published and task-private views remain isolated. Wrong namespace/incarnation pairing fails. Shell/alias/.git writes cannot bypass grants. Working scratch writes need no false domain receipts; authoritative publication is separately conditional. Cleanup/restart cannot silently substitute workspaces or stop other consumers; no native fallback." }
+      ]
+    },
+    "FEEDBACK-1": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback.test.mjs"], "claim": "feedback@1 has one canonical serializer (seeded round-trips and golden bytes), and createRequest/resolveRequest build one single-file request for the report (creation with expected absent, resolution at the revision read; no index) that the example's SQLite workspace provider commits or refuses. Structural only: not store admission, operation identity, uncertain outcomes or root protection." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-store.test.mjs"], "claim": "WP4 store over the example's SQLite workspace provider (one file per report, no index): each create and resolve is one conditional single-file publication under a namespaced operation id; it refuses to start without conditionalPublication, operationLookup, atomicMutationAndReceipt, a folder lister or explicit protection; concurrent creators never contend; competing resolutions conflict; a lost reply reconciles by lookup without a duplicate; not-found after uncertainty and a changed binding are unknown; list skips files that are not reports and refuses an oversized folder; a fixture working provider enforcing protected refuses the native write tool. Not shell, Git or alias writes (BORING-PI-6), other providers, deletion, the agent tool or the host route." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/contracts/feedback-store-crash.test.mjs"], "claim": "SIGKILL between the SQLite workspace commit and the store's acknowledgement of a create: a replay with the same operation reconciles to the original report without publishing, and a changed binding or a revoked grant is unknown; the folder holds exactly one report. Create only, one provider." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/feedback-1.test.mjs"], "reason": "Partly discharged by WP9: concurrent creates and competing resolutions (one conflict) through the composed examples/feedback app in two browsers, a lost publication reply on the agent's resolve reconciled without a second resolution, and the Save route admitting the browser's per-draft operation id run in the Chromium journey `npm run feedback:journey:e2e` (examples/feedback/journey-e2e.mjs; manual evidence under .cache/evidence/feedback-app/, not a gate); replay with a changed binding, hard kill before the acknowledgement and the native file-tool refusal are the structural store, agent and crash tests above. Pending: shell, Git and alias protection of the feedback root (with BORING-PI-6), and other providers." }
+      ]
+    },
+    "FEEDBACK-2": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback.test.mjs"], "claim": "Every serialized report carries the preface, ## Said and ## Resolution, parsing refuses a missing section, and an anchor without a non-empty fallback is refused; a never-stored report needs no author or storage. Structural only: not the Copy journey or readability." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-ui.test.mjs"], "claim": "WP6 Copy report with annotation only on fictional HappyDOM pages: createAnnotation without a save endpoint renders the never-stored report through ./format and copyToClipboard (author absent, preface present, parseable feedback@1, manual-copy fallback), offers no Save, and the registry AnnotateSheet shows the copied text. Not a real browser clipboard or readability." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-session.test.mjs"], "claim": "The feedback session with no store and no chat: the FeedbackChip review's Copy report puts a parseable never-stored feedback@1 report (notes, steps, anchors with fallbacks) on the clipboard, and Send without a store inlines the same report in a fence longer than any backtick run. HappyDOM only; not a real clipboard or readability." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/feedback-2.test.mjs"], "reason": "Partly discharged by WP9: the Copy-only path runs in test/contracts/feedback-5.test.mjs (annotation only) and in the Chromium journey `npm run feedback:journey:e2e` (examples/feedback/journey-e2e.mjs; manual evidence under .cache/evidence/feedback-app/, not a gate). Pending: the model-judged readability check (a plain agent given only the .md answers what and where), to be recorded as evaluated behavior with a real model; it has not been run." }
+      ]
+    },
+    "FEEDBACK-3": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback.test.mjs"], "claim": "Unknown anchor kinds, unknown observed kinds and x- fields survive parse, serialize and resolveRequest as equal JSON values. Structural only: not every store operation or unsupported placement." },
+        { "scope": "runtime", "kind": "command", "command": ["node", "--test", "test/contracts/feedback-3.test.mjs"], "claim": "WP9 on the composed examples/feedback app (SQLite workspace store, Save/list/read routes over HTTP, the @ mention reader and the builder agent on its scripted model): an unknown anchor kind, an unknown observation field and an x- field survive create, list, read, the mention, the agent's list, show and resolve, and the stored report file as equal JSON, and are placed unsupported by the agent's list and show and by the page's Show. One store provider (the example's SQLite workspace)." }
+      ]
+    },
+    "FEEDBACK-4": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/ui-anchor-conformance.test.mjs"], "claim": "The @hachej/boring-ui-kit/anchor-conformance kit with the synthetic test.line@1 fixture: zero wrong spots for the named synthetic-lines@1 corpus, and nearest-candidate and Date.now() mutants fail. Structural only and bounded to that corpus: the purity trap covers fetch, timers, Date.now, Math.random and performance.now during resolve, which bounds purity without proving it; no app.element@1 placement is claimed." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-app-element.test.mjs"], "claim": "@hachej/boring-feedback/page app.element@1 resolution over the named app-dom-mutations@1 corpus (fictional HappyDOM pages serialized through the WP3 policy; test/fixtures/anchors/app/): zero wrong spots under the WP2 kit, automatic placement only through an identity unique at capture and once in a complete snapshot, never on a truncated one; nearest-candidate and truncation-trusting mutants fail. Structural only and bounded to that corpus: HappyDOM, not an actual browser, layout or the picker." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/feedback-4.test.mjs"], "reason": "Partly discharged by WP9: app.element@1 placement in real Chromium in the Chromium journey `npm run feedback:journey:e2e` (examples/feedback/journey-e2e.mjs; manual evidence under .cache/evidence/feedback-app/, not a gate) (exact Show applied, an ambiguous pin numbered with no reveal until the person chooses, a removed element reported missing) on top of the structural app-dom-mutations@1 and synthetic-lines@1 corpora with zero wrong spots. Pending: every other anchor kind (html.node, markdown.quote, canvas, image, PDF) and their corpora." }
+      ]
+    },
+    "FEEDBACK-5": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "Folder import rules inside @hachej/boring-feedback and the one-way edge from existing packages, by mutants. Structural only: not that the parts behave independently at runtime." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-ui.test.mjs"], "claim": "Annotation only: a browser bundle of @hachej/boring-feedback/ui and /page holds no store, agent, source, Pi or Node code, and Copy works with no store; annotation plus storage: the Save route admits the browser's per-draft operation id against the SQLite workspace store. Bundle and HappyDOM evidence only; the agent configuration is WP7." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-agent.test.mjs"], "claim": "WP7: with the feedback capability created and its extension installed in the registry, an agent that does not select it sends a byte-identical first model request (instructions, sections and tools) on a fake local model; the tool runs headless as native ToolTasks against the SQLite workspace store. Not the three composed configurations." },
+        { "scope": "runtime", "kind": "command", "command": ["node", "--test", "test/contracts/feedback-5.test.mjs"], "claim": "WP9: the three configurations run, each without the parts it does not need: annotation only (real capture and Copy on HappyDOM with fetch failing and no store); annotation plus storage (the composed examples/feedback app with an agent without the capability: Save through the route, no feedback call in the turn); the builder agent's tool with no browser (headless list, read, edit and resolve on the composed app). The Chromium journey `npm run feedback:journey:e2e` (examples/feedback/journey-e2e.mjs; manual evidence under .cache/evidence/feedback-app/, not a gate) runs the same three in a real browser." }
+      ]
+    },
+    "FEEDBACK-6": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/feedback-6.test.mjs"], "reason": "Partly discharged by WP9: host observations with route template, snapshot form, digest and privacy policy record are captured and stored through the composed Save route (test/contracts/feedback-3.test.mjs, feedback-5.test.mjs and the Chromium journey `npm run feedback:journey:e2e` (examples/feedback/journey-e2e.mjs; manual evidence under .cache/evidence/feedback-app/, not a gate)). Pending: asynchronous late completions bound to an id and fenced against resolution and deletion, and resource observations (Release 1b and later)." }
+      ]
+    },
+    "FEEDBACK-7": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback.test.mjs"], "claim": "Captured text in the body is reversibly escaped after the one preface constant (heading, fence, break, link, image and HTML fixtures), and a draft or input carrying its own author is refused; a parsed author is a shape check only. Structural only: not host author derivation, show or model behavior." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-ui.test.mjs"], "claim": "WP6 Show on fictional HappyDOM pages: only exact and moved placements are revealed; ambiguous candidates are numbered on the overlay without a reveal until the person chooses; a choice after the page changed, a missing element, an invalid or uninstalled kind are reported stale, missing or unsupported, never revealed. Not the agent's show offer (WP7) or a real browser." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-agent.test.mjs"], "claim": "WP7: show returns only an offer ({ kind: 'offered', id, anchor, note }) or a missing, unsupported or denied refusal, with no field or message claiming a reveal; the prompt section states the untrusted-content rule. Not the composed page or model behavior." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/contracts/pi-chat-source.test.mjs"], "claim": "pi-chat feedback card: an offer or list shows nothing until the person hovers or clicks an element line (the former Show button), displays exactly the host's applied, stale, unavailable or denied outcome inline (a throw or an unknown value is unavailable), a hover asks for a highlight only and leaving the line clears it, only a kind the page places is hoverable, and without a host callback the line is plain text and an offer says unavailable: open the application page. HappyDOM only, with a fictional callback, not WP6's resolve-and-reveal." },
+        { "scope": "runtime", "kind": "command", "command": ["node", "--test", "test/contracts/feedback-7.test.mjs"], "claim": "WP9 on the composed examples/feedback app: a draft carrying its own author is refused by the Save route and authors come from the bearer identity, resolutions from the host-bound builder principal; hostile captured text reaches the agent through read and the @ mention escaped after the preface, cannot close the attachment, forges no resolution and round-trips; the agent's show is an offer with no reveal field and the scripted reply says offered; the page's Show (examples/feedback/show-outcome.mjs over showAnchor, HappyDOM) is applied only after a reveal, waits for the person's choice, and reports missing, unsupported, unknown anchors and revoked reads honestly. The Chromium journey `npm run feedback:journey:e2e` (examples/feedback/journey-e2e.mjs; manual evidence under .cache/evidence/feedback-app/, not a gate) runs the in-page Show in real Chromium." }
+      ]
+    },
+    "FEEDBACK-8": {
+      "appliesTo": ["feedback"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-privacy.test.mjs"], "claim": "WP3 policy, app.dom@1 serializer, accessibleNameOf, routeFor and canary kit on fictional HappyDOM pages: allowlist, masking, truncation and widening-record mutants. Not the picker, report, store, authorization, deletion or a real browser." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-store.test.mjs"], "claim": "WP4 store with an injected fictional authorizeSubject: create and resolve check annotate; read and list check read on the report's subject; a cross-scope subject is denied and hidden; after revocation list hides the item, read and the mention reader are denied and a committed replay is unknown; list refuses a folder over its 5,000-report cap. Not host grant policy, retention, recorder channels or deletion (a host file operation)." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-picker.test.mjs"], "claim": "WP6 picker on fictional HappyDOM pages: the WP3 canary kit finds nothing in picker labels, hover and pinned overlay text; labels use only a kept data-source, kept structure and policy-allowed names, else masked; the overlay is excluded from snapshots. Not a real browser or layout." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-session.test.mjs"], "claim": "The feedback session (composer Feedback button UX) on fictional HappyDOM pages: the WP3 canary kit finds nothing in the registry FeedbackBar, NoteBubble, FeedbackChip and review DOM, the overlays, the steps recorded while using the app (labels, route templates and named keys only, never typed characters or form values), the pointer trail, the aligned voice notes, the draft, the report and Copy. HappyDOM and a fake voice capture and transcription only; not a real microphone, browser or provider." },
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/feedback-ui.test.mjs"], "claim": "WP6 annotate path: the canary kit finds nothing in the registry AnnotateSheet DOM, the Copy text, the Save request, anchors and the host observation (route template only, never query or fragment). HappyDOM only; recorder channels are later work." },
+        { "scope": "runtime", "kind": "pending", "command": ["node", "--test", "test/contracts/feedback-8.test.mjs"], "reason": "Partly discharged by WP9: The Chromium journey `npm run feedback:journey:e2e` (examples/feedback/journey-e2e.mjs; manual evidence under .cache/evidence/feedback-app/, not a gate) plants the WP3 canary kit in the application root and a canary route for the whole visit and finds no canary in the copied text, stored reports, list routes, agent tool results and transcripts, chat DOM and overlay; host authorization and revocation hide items from the revoked person's list, read and agent. Pending: recorder channels (console, requests, run ids), retention and deletion (a host file operation; the store does not delete), which are later work (WP13, WP14)." }
+      ]
+    }
+  },
+  "features": {
+    "SELF-1": {
+      "owner": "packages/agent/README.md",
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/agent.test.mjs"], "claim": "Prompt assembly with and without the option over the same workspace file: without selfEvolving the native instructions are last and nothing from .agent/ is shown; with it the per-workspace extension is selected." },
+        { "scope": "runtime", "kind": "journey", "command": ["npm", "run", "studio:journey:scripted"], "env": { "STUDIO_ONLY": "self-evolution" }, "claim": "A subagent (an agent without the option) over the same workspace, with .agent/AGENTS.md present, is offered no reload tool and receives no agent-written section." }
+      ]
+    },
+    "SELF-2": {
+      "owner": "packages/agent/README.md",
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "npm run check scans packages/ and examples/: no eval, Function or node:vm, and no import()/require() of a computed module; named mutants are refused. Bounded structural evidence, not data flow." },
+        { "scope": "runtime", "kind": "journey", "command": ["npm", "run", "studio:journey:scripted"], "env": { "STUDIO_ONLY": "self-evolution" }, "claim": "An agent-written tool that prints its environment runs through the virtual workspace exec and sees none of the studio process variables (a fictional secret set for the run)." }
+      ]
+    },
+    "SELF-3": {
+      "owner": "packages/agent/README.md",
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/packages/agent.test.mjs"], "claim": "Prompt assembly order: the host instructions are the first section and whole, the labelled, size-capped agent-written section is appended after them." },
+        { "scope": "runtime", "kind": "journey", "command": ["npm", "run", "studio:journey:scripted"], "env": { "STUDIO_ONLY": "self-evolution" }, "claim": "The system context the scripted model receives, and the native transcript, show the host instructions first and the labelled agent-written section last." }
+      ]
+    },
+    "SELF-4": {
+      "owner": "packages/agent/README.md",
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/pi-boundary.test.mjs"], "claim": "npm run check: the self-evolution module changes tools only through the native registry install/uninstall, with no registry of its own and no registry reads; named mutants are refused." },
+        { "scope": "runtime", "kind": "journey", "command": ["npm", "run", "studio:journey:scripted"], "env": { "STUDIO_ONLY": "self-evolution" }, "claim": "Write a tool, reload, the next turn is offered and calls it; broken JSON is reported while the other tool works; a full restart keeps it; deleting the files and reloading removes it; the person /reload gives the same report." }
+      ]
+    }
+  }
+}

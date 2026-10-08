@@ -1,0 +1,110 @@
+{
+  "name": "@hachej/boring-files",
+  "version": "1.0.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "Versioned-resource contracts and the workspace provider over a Pi FileSystem (disk, virtual or SQLite).",
+  "sideEffects": false,
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts.d.ts",
+      "import": "./dist/contracts.js"
+    },
+    "./text": {
+      "types": "./dist/text.d.ts",
+      "import": "./dist/text.js"
+    },
+    "./platform": {
+      "types": "./dist/platform.d.ts",
+      "import": "./dist/platform.js"
+    },
+    "./request-guard": {
+      "types": "./dist/request-guard.d.ts",
+      "import": "./dist/request-guard.js"
+    },
+    "./node-http": {
+      "types": "./dist/node-http.d.ts",
+      "import": "./dist/node-http.js"
+    },
+    "./publication": {
+      "types": "./dist/publication-input.d.ts",
+      "import": "./dist/publication-input.js"
+    },
+    "./journal": {
+      "types": "./dist/journal.d.ts",
+      "import": "./dist/journal.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace.d.ts",
+      "import": "./dist/workspace.js"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite.d.ts",
+      "import": "./dist/sqlite.js"
+    },
+    "./sqlite-settings": {
+      "types": "./dist/sqlite-settings.d.ts",
+      "import": "./dist/sqlite-settings.js"
+    },
+    "./sqlite-filesystem": {
+      "types": "./dist/sqlite-filesystem.d.ts",
+      "import": "./dist/sqlite-filesystem.js"
+    },
+    "./sqlite-durable-object": {
+      "types": "./dist/sqlite-durable-object.d.ts",
+      "import": "./dist/sqlite-durable-object.js"
+    },
+    "./git": {
+      "types": "./dist/git.d.ts",
+      "import": "./dist/git.js"
+    },
+    "./remote": {
+      "types": "./dist/remote.d.ts",
+      "import": "./dist/remote.js"
+    }
+  },
+  "peerDependencies": {
+    "isomorphic-git": "1.42.6",
+    "@earendil-works/pi-durable": "1.0.1",
+    "@earendil-works/chord": "1.0.1"
+  },
+  "peerDependenciesMeta": {
+    "isomorphic-git": {
+      "optional": true
+    },
+    "@earendil-works/pi-durable": {
+      "optional": true
+    },
+    "@earendil-works/chord": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hachej/boring-ui.git",
+    "directory": "packages/files"
+  },
+  "homepage": "https://github.com/hachej/boring-ui#readme",
+  "bugs": {
+    "url": "https://github.com/hachej/boring-ui/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

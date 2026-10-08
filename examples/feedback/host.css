@@ -1,0 +1,44 @@
+/* The fictional Fernhill settings page: its own layout and look. It knows nothing about feedback except the visibility marks in its
+   markup; the feedback item brings its own scoped styles. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--shell); color: var(--foreground); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+.fh-app { min-height: 100dvh; }
+.fh-header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 2rem; padding: 0.75rem clamp(1rem, 4vw, 2.5rem); border-bottom: 1px solid var(--border); background: var(--background); }
+.fh-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 650; letter-spacing: -0.01em; }
+.fh-logo { width: 1.5rem; height: 1.5rem; border-radius: 50% 50% 0.4rem 50%; background: linear-gradient(135deg, oklch(0.62 0.13 150), oklch(0.72 0.12 95)); }
+.fh-nav { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.fh-nav a { padding: 0.375rem 0.625rem; border-radius: 0.5rem; color: var(--muted-foreground); text-decoration: none; font-size: 0.9rem; }
+.fh-nav a[aria-current="page"] { background: var(--accent); color: var(--foreground); font-weight: 600; }
+.fh-body { display: grid; grid-template-columns: minmax(0, 1fr) 18rem; gap: 2rem; max-width: 72rem; padding: 2rem clamp(1rem, 4vw, 2.5rem) 10rem; }
+.fh-main h1 { margin: 0 0 0.25rem; font-size: 1.5rem; letter-spacing: -0.02em; }
+.fh-lede { margin: 0 0 1.5rem; color: var(--muted-foreground); }
+.fh-card { margin: 0 0 1.25rem; padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: 0.875rem; background: var(--background); }
+.fh-card h2, .fh-activity h2 { margin: 0 0 0.75rem; font-size: 1rem; }
+.fh-field { display: grid; gap: 0.35rem; margin: 0 0 1rem; max-width: 28rem; }
+.fh-field label { font-size: 0.8125rem; font-weight: 600; }
+.fh-field input { height: 2.5rem; padding: 0 0.75rem; border: 1px solid var(--input); border-radius: 0.5rem; background: var(--background); color: var(--foreground); font: inherit; }
+.fh-actions { display: flex; align-items: center; gap: 0.75rem; }
+.fh-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.625rem 0; border-top: 1px solid var(--border); }
+.fh-row:first-of-type { border-top: 0; }
+.fh-row small { display: block; color: var(--muted-foreground); }
+.fh-btn { height: 2.25rem; padding: 0 1rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--background); color: var(--foreground); font: inherit; font-weight: 600; cursor: pointer; }
+.fh-btn.primary { border-color: transparent; background: oklch(0.5 0.12 150); color: white; }
+.fh-btn[aria-pressed="true"] { background: var(--accent); }
+.fh-note { color: var(--muted-foreground); font-size: 0.875rem; }
+.fh-activity { align-self: start; padding: 1.25rem; border: 1px solid var(--border); border-radius: 0.875rem; background: var(--background); }
+.fh-activity ul { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; font-size: 0.875rem; }
+.fh-activity time { display: block; color: var(--muted-foreground); font-size: 0.75rem; }
+.fh-dock { position: fixed; left: 1rem; bottom: 1rem; z-index: 30; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.875rem; background: var(--background); box-shadow: 0 8px 24px oklch(0 0 0 / 12%); }
+.fh-panel { position: fixed; top: 4.5rem; right: 1rem; bottom: 7.5rem; z-index: 25; display: flex; flex-direction: column; gap: 0.75rem; width: min(26rem, calc(100vw - 2rem)); padding: 0.75rem; overflow: auto; border: 1px solid var(--border); border-radius: 0.875rem; background: var(--shell); box-shadow: 0 12px 32px oklch(0 0 0 / 14%); }
+.fh-panel-head { display: flex; align-items: center; justify-content: space-between; }
+@media (max-width: 760px) { .fh-body { grid-template-columns: 1fr; } .fh-dock { top: 0.5rem; right: 0.5rem; bottom: auto; left: auto; } .fh-panel { top: 4rem; } .fh-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; } }
+.fh-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0 0 1.25rem; padding: 0.75rem 1rem; border: 1px dashed var(--border); border-radius: 0.875rem; background: var(--background); }
+.fh-banner strong { flex: 1 1 12rem; }
+.fh-chooser { position: fixed; z-index: 60; top: 5rem; left: 50%; transform: translateX(-50%); display: grid; gap: 0.5rem; width: min(26rem, calc(100vw - 2rem)); padding: 1rem; border: 1px solid var(--border); border-radius: 0.875rem; background: var(--background); box-shadow: 0 12px 32px rgb(0 0 0 / 0.18); }
+.fh-chooser p { margin: 0; font-weight: 600; }
+.fh-tabs { display: flex; gap: 0.25rem; margin: 0 0 1.25rem; border-bottom: 1px solid var(--border); }
+.fh-tabs a { padding: 0.5rem 0.75rem; border-bottom: 2px solid transparent; color: var(--muted-foreground); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+.fh-tabs a[aria-current="page"] { border-bottom-color: oklch(0.5 0.12 150); color: var(--foreground); }
+.fh-menu { display: flex; gap: 0.5rem; justify-content: flex-end; padding: 0.5rem 0; }
+.fh-composer-dock { position: fixed; left: 1rem; bottom: 1rem; z-index: 30; }

@@ -1,0 +1,100 @@
+{
+  "name": "@hachej/boring-feedback",
+  "version": "1.0.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "Feedback people leave on what they see, usable without an agent and by agents through an opt-in capability.",
+  "sideEffects": false,
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE",
+    "INVARIANTS.md"
+  ],
+  "exports": {
+    "./format": {
+      "types": "./dist/format/index.d.ts",
+      "import": "./dist/format/index.js"
+    },
+    "./store": {
+      "types": "./dist/store/index.d.ts",
+      "import": "./dist/store/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js"
+    },
+    "./page": {
+      "types": "./dist/page/index.d.ts",
+      "import": "./dist/page/index.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "import": "./dist/ui/index.js"
+    },
+    "./preview": {
+      "types": "./dist/preview/index.d.ts",
+      "import": "./dist/preview/index.js"
+    },
+    "./tickets": {
+      "types": "./dist/tickets/index.d.ts",
+      "import": "./dist/tickets/index.js"
+    },
+    "./source": {
+      "types": "./dist/source/index.d.ts",
+      "import": "./dist/source/index.js"
+    },
+    "./source/jsx-dev-runtime": {
+      "types": "./dist/source/jsx-dev-runtime.d.ts",
+      "import": "./dist/source/jsx-dev-runtime.js"
+    }
+  },
+  "peerDependencies": {
+    "@hachej/boring-ui-kit": "1.0.0",
+    "@hachej/boring-files": "1.0.0",
+    "@hachej/boring-agent": "1.0.0",
+    "@earendil-works/pi-durable": "1.0.1",
+    "@earendil-works/pi-ai": "1.0.1",
+    "@earendil-works/chord": "1.0.1",
+    "react": "19.3.0",
+    "esbuild": "0.28.2"
+  },
+  "peerDependenciesMeta": {
+    "@hachej/boring-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-durable": {
+      "optional": true
+    },
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/chord": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "esbuild": {
+      "optional": true
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hachej/boring-ui.git",
+    "directory": "packages/feedback"
+  },
+  "homepage": "https://github.com/hachej/boring-ui#readme",
+  "bugs": {
+    "url": "https://github.com/hachej/boring-ui/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

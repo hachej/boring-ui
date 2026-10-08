@@ -1,0 +1,96 @@
+{
+  "name": "@hachej/boring-execution",
+  "version": "1.0.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "Native Pi working-environment types and independently composable workspace leases.",
+  "sideEffects": false,
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts.d.ts",
+      "import": "./dist/contracts.js"
+    },
+    "./virtual": {
+      "types": "./dist/virtual.d.ts",
+      "import": "./dist/virtual.js"
+    },
+    "./virtual-git": {
+      "types": "./dist/virtual-git.d.ts",
+      "import": "./dist/virtual-git.js"
+    },
+    "./remote-shell": {
+      "types": "./dist/remote-shell.d.ts",
+      "import": "./dist/remote-shell.js"
+    },
+    "./remote-files": {
+      "types": "./dist/remote-files.d.ts",
+      "import": "./dist/remote-files.js"
+    },
+    "./virtual-sqlite": {
+      "types": "./dist/virtual-sqlite.d.ts",
+      "import": "./dist/virtual-sqlite.js"
+    },
+    "./aws-code-interpreter": {
+      "types": "./dist/aws-code-interpreter.d.ts",
+      "import": "./dist/aws-code-interpreter.js"
+    }
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-durable": "1.0.1",
+    "@earendil-works/chord": "1.0.1",
+    "just-bash": "3.6.0",
+    "isomorphic-git": "1.42.6",
+    "@hachej/boring-files": "1.0.0",
+    "zod": "4.6.5",
+    "@aws-sdk/client-bedrock-agentcore": "3.1146.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependenciesMeta": {
+    "just-bash": {
+      "optional": true
+    },
+    "isomorphic-git": {
+      "optional": true
+    },
+    "@hachej/boring-files": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    },
+    "@aws-sdk/client-bedrock-agentcore": {
+      "optional": true
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hachej/boring-ui.git",
+    "directory": "packages/execution"
+  },
+  "homepage": "https://github.com/hachej/boring-ui#readme",
+  "bugs": {
+    "url": "https://github.com/hachej/boring-ui/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

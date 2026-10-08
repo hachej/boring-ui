@@ -1,0 +1,19 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "utils",
+  "title": "Shared helpers",
+  "description": "The class merge helper `cn` and `copyText` (host callback, Clipboard API, then a selection copy that works over plain HTTP) shared by every Tailwind item, installed once in components/utils/.",
+  "dependencies": [
+    "clsx@2.1.1",
+    "tailwind-merge@3.7.0"
+  ],
+  "files": [
+    {
+      "path": "registry/utils/utils.ts",
+      "content": "import { clsx } from 'clsx';\nimport type { ClassValue } from 'clsx';\nimport { twMerge } from 'tailwind-merge';\n\nexport function cn(...inputs: ClassValue[]): string { return twMerge(clsx(inputs)); }\n\n/** Thrown when no automatic copy worked; `text` is what the person must copy by hand (a viewer shows it selected). */\nexport class ManualCopyError extends Error {\n  constructor(readonly text: string) { super('Copy the text by hand'); this.name = 'ManualCopyError'; }\n}\n\n/**\n * Copies `text` using the host's callback when given, else the async Clipboard API (secure contexts only), else a hidden\n * textarea and `document.execCommand('copy')` (works over plain HTTP). Throws `ManualCopyError` when none worked.\n * This is the one place this item touches the clipboard; `npm run check` keeps it that way.\n */\nexport async function copyText(text: string, onCopy?: (text: string) => Promise<void>): Promise<void> {\n  if (onCopy) return onCopy(text);\n  try { const clipboard = globalThis.navigator?.clipboard; if (clipboard) { await clipboard.writeText(text); return; } }\n  catch { /* denied or unfocused: use the selection route */ }\n  const doc = globalThis.document;\n  if (doc?.body && typeof doc.execCommand === 'function') {\n    const area = doc.createElement('textarea');\n    area.value = text;\n    area.setAttribute('readonly', '');\n    area.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';\n    const focus = doc.activeElement instanceof HTMLElement ? doc.activeElement : undefined;\n    doc.body.append(area);\n    try { area.select(); area.setSelectionRange(0, text.length); if (doc.execCommand('copy')) return; }\n    catch { /* fall through */ }\n    finally { area.remove(); focus?.focus({ preventScroll: true }); }\n  }\n  throw new ManualCopyError(text);\n}\n\n/**\n * A block's `labels` or `icons`: `defaults` with each partial override on top, later ones winning. A key an override leaves `undefined`\n * keeps the value below it, so a host can pass `{ title: maybe }` safely.\n */\nexport function withDefaults<T extends object>(defaults: T, ...overrides: readonly (Partial<T> | undefined)[]): T {\n  const merged: Record<string, unknown> = { ...defaults as Record<string, unknown> };\n  for (const override of overrides) for (const [key, value] of Object.entries(override ?? {})) if (value !== undefined) merged[key] = value;\n  return merged as T;\n}\n",
+      "type": "registry:lib",
+      "target": "components/utils/utils.ts"
+    }
+  ],
+  "type": "registry:lib"
+}

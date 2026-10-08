@@ -1,0 +1,85 @@
+{
+  "name": "@hachej/boring-browser",
+  "version": "1.0.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "Opt-in agent worker for a browser tab (BORING-PI-5): page-to-worker transport, SQLite on OPFS, model access, unchanged pi-codemode in a Web Worker, and the build helper with its shims.",
+  "sideEffects": [
+    "./dist/codemode-worker.js",
+    "./dist/shims/*.js"
+  ],
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./transport": {
+      "types": "./dist/transport.d.ts",
+      "import": "./dist/transport.js"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite.d.ts",
+      "import": "./dist/sqlite.js"
+    },
+    "./models": {
+      "types": "./dist/models.d.ts",
+      "import": "./dist/models.js"
+    },
+    "./codemode": {
+      "types": "./dist/codemode.d.ts",
+      "import": "./dist/codemode.js"
+    },
+    "./codemode-worker": {
+      "types": "./dist/codemode-worker.d.ts",
+      "import": "./dist/codemode-worker.js"
+    },
+    "./build": {
+      "types": "./dist/build.d.ts",
+      "import": "./dist/build.js"
+    }
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-durable": "1.0.1",
+    "@earendil-works/pi-ai": "1.0.1",
+    "@earendil-works/chord": "1.0.1",
+    "@earendil-works/pi-codemode": "1.0.1",
+    "@hachej/boring-files": "1.0.0",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build2",
+    "buffer": "6.0.3"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-codemode": {
+      "optional": true
+    },
+    "@sqlite.org/sqlite-wasm": {
+      "optional": true
+    },
+    "buffer": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hachej/boring-ui.git",
+    "directory": "packages/browser"
+  },
+  "homepage": "https://github.com/hachej/boring-ui#readme",
+  "bugs": {
+    "url": "https://github.com/hachej/boring-ui/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

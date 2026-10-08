@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/files" },
+    { "path": "packages/agent" },
+    { "path": "packages/execution" },
+    { "path": "packages/browser" },
+    { "path": "packages/ui" },
+    { "path": "packages/feedback" },
+    { "path": "packages/testing" }
+  ]
+}

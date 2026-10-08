@@ -1,0 +1,655 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "feedback",
+  "title": "Feedback",
+  "description": "Feedback from the chat composer: one Feedback button starts feedback mode on the application page (hover, click to pin a numbered note, hold ⌥ to use the app, optional voice), and one chip carries the notes to the next message. FeedbackBar, NoteBubble, FeedbackChip with its review, useComposerFeedback for the pi-chat composer, and PickerOverlay styles. Optional, not mounted by default: PointButton, AnnotateSheet, FeedbackList and FeedbackReport. Picking, masking, anchoring and placement stay in @hachej/boring-feedback/page and /ui, so restyling cannot weaken them.",
+  "dependencies": [
+    "@hachej/boring-feedback@1.0.0",
+    "@hachej/boring-ui-kit@1.0.0",
+    "@hachej/boring-files@1.0.0",
+    "react@19.3.0",
+    "react-dom@19.3.0"
+  ],
+  "files": [
+    {
+      "path": "registry/feedback/feedback-session.tsx",
+      "content": "// The feedback session's look (FEEDBACK.md, \"UX\"): the slim bar of feedback mode, the note bubble beside a pin, and the one chip the\n// composer shows afterwards with its review. Everything they show and do is the headless `createFeedbackSession` from\n// `@hachej/boring-feedback/ui` (hover labels, pins, steps, voice, the draft and Send come from there, through the privacy policy); this file is\n// how it looks. `useComposerFeedback` adapts a session to the chat composer's optional `feedback` prop (registry/pi-chat), structurally,\n// so neither item imports the other.\nimport { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';\nimport { createPortal } from 'react-dom';\nimport { readableElement } from '@hachej/boring-feedback/format';\nimport { pinMark, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';\nimport { useExternal } from './use-external';\n\n/** A microphone outline drawn inline: emoji glyphs (🎙) are missing from some system fonts. */\nconst MicIcon = () => <svg className=\"boring-feedback-mic\" viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" strokeWidth=\"2\" strokeLinecap=\"round\" strokeLinejoin=\"round\" aria-hidden=\"true\" focusable=\"false\">\n  <rect x=\"9\" y=\"2\" width=\"6\" height=\"13\" rx=\"3\" /><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\" /><path d=\"M12 19v3\" />\n</svg>;\n\nconst plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;\n/** Notes the chip and the bar count: every note that says something (not a pin still being typed), plus the general note. */\nexport function noteCount(state: FeedbackSessionSnapshot): number {\n  return state.notes.filter(note => note.text.trim()).length + (state.general.trim() ? 1 : 0);\n}\n\nexport interface FeedbackBarProps {\n  readonly session: FeedbackSession;\n  readonly className?: string;\n  /** Docked under the chat composer (the composer's `feedback.bar`) instead of floating at the top of the page. */\n  readonly docked?: boolean;\n}\n\n/** Pins dropped while recording that have no note yet (nothing transcribed for them, or transcription failed). */\nexport function emptyPinCount(state: FeedbackSessionSnapshot): number {\n  return state.notes.filter(note => note.recorded && !note.text.trim()).length;\n}\n\n/** `mm:ss` since `since` (ms), for the recording timer. */\nexport function elapsed(ms: number): string {\n  const seconds = Math.max(0, Math.floor(ms / 1000));\n  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;\n}\n\n/** The running time of a recording, from when the bar saw it start; 00:00 when not recording. */\nfunction useRecordingTime(recording: boolean): string {\n  const [since, setSince] = useState<number | undefined>(undefined);\n  const [, tick] = useState(0);\n  useEffect(() => {\n    if (!recording) { setSince(undefined); return; }\n    setSince(Date.now());\n    const timer = setInterval(() => tick(value => value + 1), 500);\n    return () => clearInterval(timer);\n  }, [recording]);\n  return elapsed(since === undefined ? 0 : Date.now() - since);\n}\n\nfunction barHint(state: FeedbackSessionSnapshot): string {\n  if (state.phase === 'processing') return state.transcribing ? 'Transcribing…' : 'Preparing your feedback…';\n  if (state.problem) return state.problem;\n  if (state.voice.kind === 'starting') return 'Allow the microphone if your browser asks…';\n  if (state.voice.kind === 'recording') return state.using ? 'Recording — using the app' : 'Recording — point and talk';\n  return state.using ? 'Using the app: your clicks are recorded as steps' : 'Click what you want to comment on';\n}\n\n/**\n * Feedback mode's bar: `● Feedback · N notes · 🎙 Record · Hold ⌥ to use the app · Use app · Done · ✕`. While recording: a red dot, the\n * running time, \"Recording — point and talk\" and Stop. A refused microphone is said in the bar itself, never only in a tooltip.\n */\nexport function FeedbackBar({ session, className, docked = false }: FeedbackBarProps) {\n  const state = useExternal(session);\n  const recording = state.voice.kind === 'recording';\n  const time = useRecordingTime(recording && (state.phase === 'active' || state.phase === 'processing'));\n  if (state.phase !== 'active' && state.phase !== 'processing') return null;\n  const processing = state.phase === 'processing';\n  const pins = emptyPinCount(state);\n  const voiceProblem = state.voice.kind === 'refused' ? state.voice : undefined;\n  return <div data-boring=\"feedback\" data-feedback-ignore=\"\" role=\"toolbar\" aria-label=\"Feedback mode\" data-testid=\"feedback-bar\" data-docked={docked ? 'true' : 'false'}\n    data-using={state.using ? 'true' : 'false'} data-recording={recording ? 'true' : 'false'} data-transcribing={state.transcribing ? 'true' : 'false'}\n    className={['boring-feedback-bar', className].filter(Boolean).join(' ')}>\n    <span className=\"boring-feedback-bar-title\"><span className=\"boring-feedback-dot\" aria-hidden=\"true\" />Feedback</span>\n    <span className=\"boring-feedback-bar-meta\" data-testid=\"feedback-bar-count\">{plural(noteCount(state), 'note', 'notes')}{pins ? ` · ${plural(pins, 'pin', 'pins')}` : ''}</span>\n    {state.voiceAvailable && <button type=\"button\" className=\"boring-feedback-button boring-feedback-record\" data-testid=\"feedback-voice\" aria-pressed={recording}\n      disabled={processing || state.voice.kind === 'starting' || state.voice.kind === 'stopping'} title={recording ? 'Stop recording' : 'Record your voice while you point: each click drops a pin, what you say becomes its note'}\n      onClick={() => { void session.toggleVoice(); }}>\n      {recording ? <><span className=\"boring-feedback-stop\" aria-hidden=\"true\" />Stop</> : <><MicIcon />{state.voice.kind === 'starting' ? 'Starting…' : state.voice.kind === 'stopping' ? 'Stopping…' : 'Record'}</>}\n    </button>}\n    {recording && <span className=\"boring-feedback-recording\" role=\"status\" data-testid=\"feedback-recording\"><span className=\"boring-feedback-rec\" aria-hidden=\"true\" />\n      <span className=\"boring-feedback-timer\" data-testid=\"feedback-recording-time\">{time}</span></span>}\n    <span className=\"boring-feedback-hint\" role=\"status\" aria-live=\"polite\" data-testid=\"feedback-bar-hint\">{barHint(state)}</span>\n    {voiceProblem && <span className=\"boring-feedback-voice-problem\" role=\"alert\" data-testid=\"feedback-voice-problem\" data-code={voiceProblem.code}>{voiceProblem.reason}</span>}\n    {!processing && <span className=\"boring-feedback-keys boring-feedback-alt\">Hold ⌥ to use the app</span>}\n    {!processing && <button type=\"button\" className=\"boring-feedback-button\" data-testid=\"feedback-use-app\" aria-pressed={state.useToggle} onClick={() => session.setUseToggle(!state.useToggle)}>Use app</button>}\n    <button type=\"button\" className=\"boring-feedback-button\" data-variant=\"primary\" data-testid=\"feedback-done\" disabled={processing} onClick={() => { void session.done(); }}>Done</button>\n    <button type=\"button\" className=\"boring-feedback-icon\" data-testid=\"feedback-discard\" aria-label=\"Discard feedback\" title=\"Discard feedback\" disabled={processing} onClick={() => session.discard()}>×</button>\n  </div>;\n}\n\nconst BUBBLE_WIDTH = 280;\nfunction bubblePlace(element: Element): CSSProperties {\n  const view = element.ownerDocument.defaultView;\n  const width = view?.innerWidth ?? 1024, height = view?.innerHeight ?? 768;\n  const rect = element.getBoundingClientRect();\n  const left = Math.min(Math.max(8, rect.left), Math.max(8, width - BUBBLE_WIDTH - 8));\n  const below = rect.bottom + 8;\n  const top = below + 120 <= height ? below : Math.max(8, rect.top - 128);\n  return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16) };\n}\n\n/** The note bubble beside a new or reopened pin: \"What's wrong here?\", Enter saves, Shift-Enter for a new line, Esc discards the pin. */\nexport function NoteBubble({ session }: { readonly session: FeedbackSession }) {\n  const state = useExternal(session);\n  const bubble = state.bubble;\n  const field = useRef<HTMLTextAreaElement>(null);\n  const [place, setPlace] = useState<CSSProperties | undefined>(undefined);\n  const [, redraw] = useState(0);\n  useLayoutEffect(() => { if (bubble) setPlace(bubblePlace(bubble.element)); }, [bubble?.noteId, bubble?.element]);\n  useEffect(() => { if (bubble) field.current?.focus({ preventScroll: true }); }, [bubble?.noteId]);\n  useEffect(() => {\n    if (!bubble) return;\n    const view = bubble.element.ownerDocument.defaultView;\n    const follow = () => { setPlace(bubblePlace(bubble.element)); redraw(value => value + 1); };\n    view?.addEventListener('scroll', follow, { capture: true, passive: true });\n    view?.addEventListener('resize', follow);\n    return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); };\n  }, [bubble?.noteId, bubble?.element]);\n  if (!bubble || state.phase !== 'active') return null;\n  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {\n    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); session.saveBubble(); }\n    else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); session.cancelBubble(); }\n  };\n  return <div data-boring=\"feedback\" data-feedback-ignore=\"\" role=\"dialog\" aria-label={`Note ${bubble.number}`} data-testid=\"feedback-bubble\" data-note={bubble.number}\n    className=\"boring-feedback-bubble\" style={place}>\n    <span className=\"boring-feedback-bubble-head\"><span className=\"boring-feedback-pin\" aria-hidden=\"true\">{pinMark(bubble.number)}</span>\n      <span className=\"boring-feedback-bubble-label\" data-testid=\"feedback-bubble-label\">{bubble.label}</span></span>\n    <textarea ref={field} data-testid=\"feedback-bubble-input\" rows={2} placeholder=\"What's wrong here?\" aria-label=\"What's wrong here?\" value={bubble.text}\n      onChange={event => session.setBubbleText(event.target.value)} onKeyDown={onKeyDown} />\n    <span className=\"boring-feedback-keys\">Enter to save · Esc to discard</span>\n  </div>;\n}\n\nexport interface FeedbackChipProps {\n  readonly session: FeedbackSession;\n  /** Opens the review on first render (journeys). */\n  readonly defaultOpen?: boolean;\n  /** Offer Copy report in the review: the way to use feedback with no chat and no store. */\n  readonly copy?: boolean;\n}\n\n/** The one composer chip after Done: `💬 Feedback · 3 notes · /settings/:section`. Click opens the review; × discards. */\nexport function FeedbackChip({ session, defaultOpen = false, copy = false }: FeedbackChipProps) {\n  const state = useExternal(session);\n  const [open, setOpen] = useState(defaultOpen);\n  const chip = useRef<HTMLSpanElement>(null);\n  if (state.phase !== 'review') return null;\n  const count = noteCount(state);\n  const pins = emptyPinCount(state);\n  const refusal = state.send.kind !== 'idle' && state.send.kind !== 'sending' && state.send.kind !== 'saved' ? state.send.reason : undefined;\n  return <span ref={chip} data-boring=\"feedback\" data-feedback-ignore=\"\" data-testid=\"feedback-chip\" data-send={state.send.kind} className=\"boring-feedback-chip\">\n    <button type=\"button\" className=\"boring-feedback-chip-open\" data-testid=\"feedback-chip-open\" aria-expanded={open} onClick={() => setOpen(value => !value)}\n      title={refusal ?? 'Review your feedback before sending'}>\n      <span aria-hidden=\"true\">💬</span> Feedback · {plural(count, 'note', 'notes')}{pins ? ` · ${plural(pins, 'pin', 'pins')} to describe` : ''} · <span className=\"boring-feedback-chip-route\">{state.route}</span>\n    </button>\n    <button type=\"button\" className=\"boring-feedback-icon boring-feedback-chip-remove\" data-testid=\"feedback-chip-discard\" aria-label=\"Discard feedback\" onClick={() => { session.highlight(undefined); session.discard(); }}>×</button>\n    {state.problem && <span className=\"boring-feedback-warning\" role=\"alert\" data-testid=\"feedback-chip-voice\">{state.problem}</span>}\n    {refusal && <span className=\"boring-feedback-warning\" role=\"alert\" data-testid=\"feedback-chip-problem\">{refusal}</span>}\n    {/* In the page's body: the chip may sit in a transformed chat bar, where a fixed panel would not be placed against the viewport. */}\n    {open && createPortal(<FeedbackReview session={session} anchor={chip.current} copy={copy} onClose={() => setOpen(false)} />, chip.current?.ownerDocument.body ?? document.body)}\n  </span>;\n}\n\nfunction reviewPlace(anchor: Element | null): CSSProperties | undefined {\n  if (!anchor) return undefined;\n  const view = anchor.ownerDocument.defaultView;\n  const width = view?.innerWidth ?? 1024, height = view?.innerHeight ?? 768;\n  const rect = anchor.getBoundingClientRect();\n  const panel = Math.min(416, width - 24);\n  return { position: 'fixed', left: Math.min(Math.max(12, rect.left), width - panel - 12), bottom: Math.max(12, height - rect.top + 8), width: panel };\n}\n\n/** The compact review: notes in order, editable and removable; hovering a note highlights its element in the page, or says it is not here. */\nexport function FeedbackReview({ session, anchor = null, copy = false, onClose }: { readonly session: FeedbackSession; readonly anchor?: Element | null; readonly copy?: boolean; readonly onClose: () => void }) {\n  const state = useExternal(session);\n  const [where, setWhere] = useState<Readonly<Record<number, 'shown' | 'not-on-page'>>>({});\n  const [place, setPlace] = useState<CSSProperties | undefined>(undefined);\n  useLayoutEffect(() => { setPlace(reviewPlace(anchor)); }, [anchor]);\n  useEffect(() => () => { session.highlight(undefined); }, [session]);\n  const hover = (id: number | undefined): void => {\n    const result = session.highlight(id);\n    if (id !== undefined && result !== 'none') setWhere(value => ({ ...value, [id]: result }));\n  };\n  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };\n  return <section data-boring=\"feedback\" data-feedback-ignore=\"\" role=\"dialog\" aria-label=\"Review feedback\" data-testid=\"feedback-review\" className=\"boring-feedback-review\"\n    style={place} onKeyDown={onKeyDown} onMouseLeave={() => hover(undefined)}>\n    <header className=\"boring-feedback-sheet-header\"><h2>Feedback · {state.route}</h2>\n      <button type=\"button\" className=\"boring-feedback-icon\" aria-label=\"Close review\" data-testid=\"feedback-review-close\" onClick={onClose}>×</button></header>\n    {state.problem && <p className=\"boring-feedback-warning\" role=\"alert\" data-testid=\"feedback-review-problem\">{state.problem}</p>}\n    <ol className=\"boring-feedback-notes\">\n      {state.notes.map(note => <li key={note.id} data-testid=\"feedback-review-note\" data-note={note.number} data-where={where[note.id]}\n        onMouseEnter={() => hover(note.id)} onFocus={() => hover(note.id)}>\n        <span className=\"boring-feedback-note-head\"><span className=\"boring-feedback-pin\" aria-hidden=\"true\">{pinMark(note.number)}</span>\n          <ElementName note={note} />\n          {note.from === 'voice' && <span className=\"boring-feedback-badge\" data-testid=\"feedback-review-voice\">voice</span>}\n          {where[note.id] === 'not-on-page' && <span className=\"boring-feedback-badge\" data-testid=\"feedback-review-elsewhere\">not on this page</span>}\n          <button type=\"button\" className=\"boring-feedback-icon\" aria-label={`Remove note ${note.number}`} data-testid=\"feedback-review-remove\" onClick={() => session.removeNote(note.id)}>×</button></span>\n        <textarea rows={2} aria-label={`Note ${note.number}`} data-testid=\"feedback-review-text\" value={note.text} placeholder={note.recorded ? 'Nothing was said here: type a note, or remove the pin' : undefined}\n          onChange={event => session.setNoteText(note.id, event.target.value)} />\n      </li>)}\n    </ol>\n    <label className=\"boring-feedback-field\"><span>General note</span>\n      <textarea rows={2} data-testid=\"feedback-review-general\" placeholder=\"Anything else? (optional)\" value={state.general} onChange={event => session.setGeneral(event.target.value)} /></label>\n    <p className=\"boring-feedback-meta\">{state.stepCount > 1 ? `${plural(state.stepCount, 'step', 'steps')} recorded between the notes. ` : ''}{copy ? 'Copy the report and paste it anywhere.' : 'Sent with your next message.'}</p>\n    {copy && <div className=\"boring-feedback-actions\">\n      <button type=\"button\" className=\"boring-feedback-button\" data-variant=\"primary\" data-testid=\"feedback-copy\" onClick={() => { void session.copy(); }}>Copy report</button></div>}\n    {copy && <p role=\"status\" aria-live=\"polite\" className=\"boring-feedback-status\" data-testid=\"feedback-status\" data-copy={state.copy.kind}>\n      {state.copy.kind === 'copied' ? 'Report copied. Paste it anywhere.' : state.copy.kind === 'manual' ? 'The clipboard is not available here: select the report below and copy it.' : state.copy.kind === 'refused' ? state.copy.reason : ''}</p>}\n    {copy && state.copy.kind === 'manual' && <textarea readOnly className=\"boring-feedback-manual\" data-testid=\"feedback-manual-copy\" value={state.copy.text} rows={6} onFocus={event => event.currentTarget.select()} />}\n    {copy && state.copy.kind === 'copied' && <details className=\"boring-feedback-copied\"><summary>Copied report</summary><pre data-testid=\"feedback-copy-text\">{state.copy.text}</pre></details>}\n  </section>;\n}\n\n/**\n * A note's element as one calm line: the readable name (semibold) and the file basename (muted, monospace), the full path in the\n * tooltip. The same reading as the pi-chat feedback card's element line (`readableElement` from `@hachej/boring-feedback/format`).\n */\nexport function ElementName({ note }: { readonly note: SessionNote }) {\n  const readable = note.fallback ? readableElement(note.fallback, note.source) : { name: note.label };\n  return <span className=\"boring-feedback-element\" data-testid=\"feedback-review-element\" title={'path' in readable && readable.path ? readable.path : note.label}>\n    <span className=\"boring-feedback-element-name\" data-testid=\"feedback-review-name\">{readable.name}</span>\n    {'file' in readable && readable.file && <span className=\"boring-feedback-element-file\" data-testid=\"feedback-review-file\">{readable.file}</span>}\n  </span>;\n}\n\n/** What `useComposerFeedback` returns: the structural shape of pi-chat's `ComposerFeedback`. */\nexport interface ComposerFeedbackProp {\n  readonly start: () => void;\n  readonly active: boolean;\n  readonly pending: boolean;\n  readonly chip?: ReactNode;\n  readonly attach: (text: string) => Promise<{ readonly kind: 'ok'; readonly text: string } | { readonly kind: 'refused'; readonly reason: string }>;\n  readonly sent: () => void;\n}\n\n/** A Markdown fence longer than any backtick run in the text. */\nfunction fenced(text: string): string {\n  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map(match => match[0].length));\n  const fence = '`'.repeat(Math.max(3, longest + 1));\n  return `${fence}markdown\\n${text.endsWith('\\n') ? text : `${text}\\n`}${fence}`;\n}\n\n/**\n * The composer's `feedback` prop for a session: the Feedback button starts it, the chip shows the draft, and Send attaches the report:\n * a saved report as its `@` mention (the host's mention resolver inlines the stored report with the person's access), otherwise the\n * rendered report inline in a fenced block.\n */\nexport function useComposerFeedback(session: FeedbackSession | undefined): ComposerFeedbackProp | undefined {\n  const state = useSyncState(session);\n  if (!session || !state) return undefined;\n  return {\n    start: () => session.start(),\n    active: state.phase === 'active' || state.phase === 'processing',\n    pending: state.phase === 'review',\n    ...(state.phase === 'active' || state.phase === 'processing' ? { bar: <FeedbackBar session={session} docked /> } : {}),\n    ...(state.phase === 'review' ? { chip: <FeedbackChip session={session} /> } : {}),\n    attach: async text => {\n      const attached = await session.attach();\n      if (attached.kind === 'refused') return attached;\n      const body = attached.kind === 'mention' ? `@${attached.path}` : fenced(attached.text);\n      return { kind: 'ok', text: text.trim() ? `${text.trimEnd()}\\n\\n${body}` : body };\n    },\n    sent: () => session.sent(),\n  };\n}\n\nconst NO_STATE = { getSnapshot: () => undefined, subscribe: () => () => {} };\nfunction useSyncState(session: FeedbackSession | undefined): FeedbackSessionSnapshot | undefined {\n  return useExternal<FeedbackSessionSnapshot | undefined>(session ?? NO_STATE);\n}\n",
+      "type": "registry:component",
+      "target": "components/feedback/feedback-session.tsx"
+    },
+    {
+      "path": "registry/feedback/point-button.tsx",
+      "content": "// PointButton: enters pick mode on the application root. Picking itself (events captured and stopped, keys, touch, labels) is\n// `createPicker` from `@hachej/boring-feedback/page`; this file is the button and the hint people see while they point.\nimport { useEffect, useRef, useState, type ReactNode } from 'react';\nimport { createPicker, type Picker, type PickerOverlay, type PickerState, type PrivacyPolicy } from '@hachej/boring-feedback/page';\n\nexport interface PointButtonProps {\n  /** The application root; only elements inside it can be picked. */\n  readonly root: () => Element | null;\n  readonly policy: PrivacyPolicy;\n  /** The page's shared overlay (`usePickerOverlay`). */\n  readonly overlay: PickerOverlay | undefined;\n  /** Called with the pinned elements; the overlay still shows them. */\n  readonly onPinned: (elements: readonly Element[]) => void;\n  readonly onCancel?: () => void;\n  /** Shift-click pins several elements. Default true. */\n  readonly multiple?: boolean;\n  readonly children?: ReactNode;\n  readonly className?: string;\n}\n\nexport function PointButton({ root, policy, overlay, onPinned, onCancel, multiple = true, children = 'Point', className }: PointButtonProps) {\n  const picker = useRef<Picker | null>(null);\n  const [state, setState] = useState<PickerState | null>(null);\n  const callbacks = useRef({ onPinned, onCancel });\n  callbacks.current = { onPinned, onCancel };\n  useEffect(() => () => { picker.current?.dispose(); picker.current = null; }, []);\n\n  const picking = state?.mode === 'picking';\n  const toggle = (): void => {\n    if (picking) { picker.current?.cancel(); return; }\n    const element = root();\n    if (!element || !overlay) return;\n    picker.current?.dispose();\n    const created = createPicker({ root: element, policy, overlay, multiple, onChange: setState });\n    picker.current = created;\n    void created.start().then(result => {\n      if (result.kind === 'pinned') callbacks.current.onPinned(result.elements);\n      else callbacks.current.onCancel?.();\n    });\n  };\n\n  return <span data-boring=\"feedback\" data-feedback-ignore=\"\" className={['boring-feedback-point', className].filter(Boolean).join(' ')}>\n    <button type=\"button\" data-testid=\"feedback-point\" aria-pressed={picking} disabled={!overlay} onClick={toggle} className=\"boring-feedback-button\">\n      {picking ? 'Cancel' : children}\n    </button>\n    {picking && <span role=\"status\" aria-live=\"polite\" data-testid=\"feedback-point-hint\" className=\"boring-feedback-hint\">\n      {state?.label ?? state?.refusal ?? 'Point at an element'}\n      <span className=\"boring-feedback-keys\"> · Click to pin{multiple ? ', Shift-click for several' : ''} · ↑ parent ↓ child · Esc</span>\n    </span>}\n  </span>;\n}\n",
+      "type": "registry:component",
+      "target": "components/feedback/point-button.tsx"
+    },
+    {
+      "path": "registry/feedback/picker-overlay.ts",
+      "content": "// PickerOverlay: styles only. The overlay itself (its shadow root, pointer-events: none, and what it draws) is `createOverlay` from\n// `@hachej/boring-feedback/page`; this file is the editable look, passed into that shadow root. Labels come from the privacy policy there, so\n// restyling cannot change what they say. The host keeps one overlay per page and shares it between PointButton and FeedbackReport.\nimport { useEffect, useState } from 'react';\nimport { createOverlay, type PickerOverlay } from '@hachej/boring-feedback/page';\n\n/** CSS added to the overlay's shadow root. Parts: `box`, `label`, `toolbar` (and `box-<tone>`, `label-<tone>` for hover, pinned,\n * reveal and candidate). The colors read the host's `--boring-feedback-*` variables, which inherit through the shadow boundary. */\nexport const pickerOverlayStyles = `\n.box { border-radius: 6px; }\n.box[data-tone=\"hover\"] { border-width: 2px; }\n.box[data-tone=\"pinned\"] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--boring-feedback-accent, #2563eb) 25%, transparent); }\n.box[data-tone=\"reveal\"] { animation: boring-feedback-pulse 1.2s ease-out 2; }\n.label { border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }\n.toolbar { box-shadow: 0 8px 24px rgb(0 0 0 / 30%); }\n@keyframes boring-feedback-pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--boring-feedback-reveal, #d97706) 55%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }\n@media (prefers-reduced-motion: reduce) { .box[data-tone=\"reveal\"] { animation: none; } }\n`;\n\n/** One overlay for the page, created after mount and removed on unmount. */\nexport function usePickerOverlay(styles: string = pickerOverlayStyles): PickerOverlay | undefined {\n  const [overlay, setOverlay] = useState<PickerOverlay>();\n  useEffect(() => {\n    const created = createOverlay({ document, styles });\n    setOverlay(created);\n    return () => { created.dispose(); };\n  }, [styles]);\n  return overlay;\n}\n",
+      "type": "registry:lib",
+      "target": "components/feedback/picker-overlay.ts"
+    },
+    {
+      "path": "registry/feedback/annotate-sheet.tsx",
+      "content": "// AnnotateSheet: the note, Copy report and, when the host has a save endpoint, Save. The draft, its anchors and the Save operation id are\n// the headless `createAnnotation` from `@hachej/boring-feedback/ui`; this file is how the sheet looks and what it says.\nimport { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';\nimport { protectionNotice, type Annotation, type CopyState, type FeedbackProtection, type SaveState } from '@hachej/boring-feedback/ui';\nimport { useExternal } from './use-external';\n\nexport interface AnnotateSheetProps {\n  readonly annotation: Annotation;\n  readonly onClose: () => void;\n  /** The pinned element the sheet opens beside. Without it the sheet docks at the bottom. */\n  readonly near?: Element;\n  /** The store's declared protection, when the host saves. An unprotected store is stated. */\n  readonly protection?: FeedbackProtection;\n  readonly title?: string;\n}\n\nconst copyMessage = (copy: CopyState): string => {\n  switch (copy.kind) {\n    case 'copied': return 'Report copied. Paste it anywhere.';\n    case 'manual': return 'The clipboard is not available here: select the report below and copy it.';\n    case 'refused': return copy.reason;\n    default: return '';\n  }\n};\nconst saveMessage = (save: SaveState): string => {\n  switch (save.kind) {\n    case 'saving': return 'Saving…';\n    case 'saved': return 'Saved.';\n    case 'unknown': return `${save.reason} Nothing is lost: Save again uses the same operation, so it cannot be stored twice.`;\n    case 'denied': return `Not saved: ${save.reason}`;\n    case 'unavailable': return `Not saved: ${save.reason}`;\n    case 'conflict': return `Not saved: ${save.reason}`;\n    case 'invalid': return save.reason;\n    default: return '';\n  }\n};\n\nconst SHEET_WIDTH = 360;\nfunction placeNear(element: Element | undefined): CSSProperties | undefined {\n  if (!element || !element.isConnected) return undefined;\n  const view = element.ownerDocument.defaultView;\n  if (!view || view.innerWidth < 640) return undefined;\n  const rect = element.getBoundingClientRect();\n  const right = rect.right + 12;\n  const left = right + SHEET_WIDTH <= view.innerWidth - 12 ? right : Math.max(12, rect.left - SHEET_WIDTH - 12);\n  const top = Math.min(Math.max(12, rect.top), Math.max(12, view.innerHeight - 420));\n  return { position: 'fixed', top, left, width: SHEET_WIDTH };\n}\n\nexport function AnnotateSheet({ annotation, onClose, near, protection, title = 'Feedback' }: AnnotateSheetProps) {\n  const state = useExternal(annotation);\n  const note = useRef<HTMLTextAreaElement>(null);\n  const [place, setPlace] = useState<CSSProperties | undefined>(undefined);\n  useLayoutEffect(() => { setPlace(placeNear(near)); }, [near]);\n  useEffect(() => { note.current?.focus({ preventScroll: true }); }, []);\n  const notice = protection ? protectionNotice(protection) : undefined;\n  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };\n  const copyText = state.copy.kind === 'copied' || state.copy.kind === 'manual' ? state.copy.text : undefined;\n  const saved = state.save.kind === 'saved';\n\n  return <section data-boring=\"feedback\" data-feedback-ignore=\"\" role=\"dialog\" aria-label={title} data-testid=\"feedback-sheet\"\n    className=\"boring-feedback-sheet\" data-docked={place ? undefined : 'bottom'} style={place} onKeyDown={onKeyDown}>\n    <header className=\"boring-feedback-sheet-header\">\n      <h2>{title}</h2>\n      <button type=\"button\" className=\"boring-feedback-icon\" aria-label=\"Close\" data-testid=\"feedback-close\" onClick={onClose}>×</button>\n    </header>\n    <ul className=\"boring-feedback-targets\" data-testid=\"feedback-targets\">\n      {state.targets.map((target, index) => <li key={index}>{target}</li>)}\n    </ul>\n    {state.refused.length > 0 && <p role=\"alert\" className=\"boring-feedback-warning\" data-testid=\"feedback-refused\">\n      {state.refused.length === 1 ? 'One element could not be pointed at' : `${state.refused.length} elements could not be pointed at`}: {state.refused.map(item => item.reason).join('; ')}.\n    </p>}\n    <label className=\"boring-feedback-field\">\n      <span>What should change?</span>\n      <textarea ref={note} data-testid=\"feedback-note\" rows={4} value={state.said} readOnly={saved} onChange={event => annotation.setSaid(event.target.value)} />\n    </label>\n    <div className=\"boring-feedback-actions\">\n      <button type=\"button\" className=\"boring-feedback-button\" data-testid=\"feedback-copy\" onClick={() => { void annotation.copy(); }}>Copy report</button>\n      {state.canSave && <button type=\"button\" className=\"boring-feedback-button\" data-variant=\"primary\" data-testid=\"feedback-save\" disabled={state.save.kind === 'saving' || saved}\n        onClick={() => { void annotation.save(); }}>{state.save.kind === 'unknown' ? 'Save again' : saved ? 'Saved' : 'Save'}</button>}\n    </div>\n    <p role=\"status\" aria-live=\"polite\" className=\"boring-feedback-status\" data-testid=\"feedback-status\" data-copy={state.copy.kind} data-save={state.save.kind}>\n      {[copyMessage(state.copy), saveMessage(state.save)].filter(Boolean).join(' ')}\n    </p>\n    {state.copy.kind === 'manual' && copyText !== undefined && <textarea readOnly className=\"boring-feedback-manual\" data-testid=\"feedback-manual-copy\" value={copyText}\n      onFocus={event => event.currentTarget.select()} rows={6} />}\n    {state.copy.kind === 'copied' && copyText !== undefined && <details className=\"boring-feedback-copied\"><summary>Copied report</summary>\n      <pre data-testid=\"feedback-copy-text\">{copyText}</pre></details>}\n    {notice && <p className=\"boring-feedback-notice\" data-testid=\"feedback-protection\">{notice}</p>}\n  </section>;\n}\n",
+      "type": "registry:component",
+      "target": "components/feedback/annotate-sheet.tsx"
+    },
+    {
+      "path": "registry/feedback/feedback-list.tsx",
+      "content": "// FeedbackList: stored feedback, newest first, as the host's authorized list route returns it. Rows are `listRows` from\n// `@hachej/boring-feedback/ui`; an unprotected store is stated above them.\nimport type { FeedbackListItem } from '@hachej/boring-feedback/format';\nimport { listRows, protectionNotice, type FeedbackProtection } from '@hachej/boring-feedback/ui';\n\nexport interface FeedbackListProps {\n  readonly items: readonly FeedbackListItem[];\n  readonly protection: FeedbackProtection;\n  readonly onOpen: (id: string) => void;\n  /** The open item, highlighted. */\n  readonly activeId?: string;\n  /** Why the list could not be loaded (denied, unavailable). */\n  readonly problem?: string;\n  readonly now?: Date;\n}\n\nexport function FeedbackList({ items, protection, onOpen, activeId, problem, now }: FeedbackListProps) {\n  const notice = protectionNotice(protection);\n  const rows = listRows(items, now);\n  return <section data-boring=\"feedback\" data-feedback-ignore=\"\" className=\"boring-feedback-list\" aria-label=\"Feedback\" data-testid=\"feedback-list\">\n    {notice && <p className=\"boring-feedback-notice\" data-testid=\"feedback-protection\">{notice}</p>}\n    {problem !== undefined && <p role=\"alert\" className=\"boring-feedback-warning\">{problem}</p>}\n    {problem === undefined && rows.length === 0 && <p className=\"boring-feedback-empty\">No feedback yet. Point at something to leave some.</p>}\n    <ul>\n      {rows.map(row => <li key={row.id}>\n        <button type=\"button\" data-testid=\"feedback-item\" data-id={row.id} aria-current={row.id === activeId ? 'true' : undefined} onClick={() => onOpen(row.id)}>\n          <span className=\"boring-feedback-title\">{row.title}</span>\n          <span className=\"boring-feedback-meta\"><span data-status={row.status}>{row.status}</span> · {row.where} · {row.age}</span>\n        </button>\n      </li>)}\n    </ul>\n  </section>;\n}\n",
+      "type": "registry:component",
+      "target": "components/feedback/feedback-list.tsx"
+    },
+    {
+      "path": "registry/feedback/feedback-report.tsx",
+      "content": "// FeedbackReport: one stored report and Show. Show resolves each anchor against the live page now (`showAnchor` from\n// `@hachej/boring-feedback/ui`): exact and moved placements are revealed on the overlay, ambiguous ones are numbered for the person to choose,\n// and missing, stale or unsupported results are said as they are. Nothing uncertain is revealed without that choice.\nimport { useEffect, useState } from 'react';\nimport type { FeedbackReport as Report } from '@hachej/boring-feedback/format';\nimport type { PickerOverlay, PrivacyPolicy } from '@hachej/boring-feedback/page';\nimport { reportView, showAnchor, type ShowOutcome } from '@hachej/boring-feedback/ui';\n\nexport interface FeedbackReportProps {\n  readonly report: Report;\n  /** Show works only in the application page itself: pass its root, policy and overlay. Without them Show is not offered. */\n  readonly page?: { readonly root: () => Element | null; readonly policy: PrivacyPolicy; readonly overlay: PickerOverlay | undefined };\n  readonly onClose?: () => void;\n}\n\ntype Shown = { readonly anchor: number; readonly outcome: ShowOutcome | 'working' };\n\nconst outcomeText = (outcome: ShowOutcome): string => {\n  switch (outcome.kind) {\n    case 'revealed': return outcome.placement === 'chosen' ? 'Shown: the element you chose.' : outcome.placement === 'moved' ? 'Shown. It has moved since the feedback was left.' : 'Shown.';\n    case 'choose': return `${outcome.candidates.length} elements could be the one meant. Choose the right one:`;\n    case 'stale': return `Not shown: ${outcome.reason}`;\n    case 'missing': return `Not shown: ${outcome.reason}`;\n    default: return `Not shown: ${outcome.reason}`;\n  }\n};\n\nexport function FeedbackReport({ report, page, onClose }: FeedbackReportProps) {\n  const view = reportView(report);\n  const [shown, setShown] = useState<Shown | null>(null);\n  useEffect(() => () => { page?.overlay?.clear(); }, [page?.overlay]);\n  useEffect(() => { setShown(null); page?.overlay?.clear(); }, [report.id]);\n\n  const show = async (index: number): Promise<void> => {\n    const root = page?.root();\n    if (!page || !root) { setShown({ anchor: index, outcome: { kind: 'unsupported', reason: 'Open the application page to see it.' } }); return; }\n    setShown({ anchor: index, outcome: 'working' });\n    const outcome = await showAnchor({ anchor: report.anchors[index], root, policy: page.policy, ...(page.overlay ? { overlay: page.overlay } : {}), note: view.title });\n    setShown({ anchor: index, outcome });\n  };\n  const choose = (outcome: Extract<ShowOutcome, { kind: 'choose' }>, number: number, index: number): void => setShown({ anchor: index, outcome: outcome.choose(number) });\n\n  return <article data-boring=\"feedback\" data-feedback-ignore=\"\" className=\"boring-feedback-report\" data-testid=\"feedback-report\" data-id={view.id}>\n    <header className=\"boring-feedback-sheet-header\">\n      <h2>{view.title}</h2>\n      {onClose && <button type=\"button\" className=\"boring-feedback-icon\" aria-label=\"Close\" onClick={onClose}>×</button>}\n    </header>\n    <p className=\"boring-feedback-meta\">\n      <span data-status={view.status}>{view.status}</span>\n      {view.author !== undefined && <> · {view.author}</>}\n      {view.app !== undefined && <> · {view.app} {view.route}</>}\n      {view.build !== undefined && <> · build {view.build}</>}\n    </p>\n    <p className=\"boring-feedback-said\" data-testid=\"feedback-said\">{view.said}</p>\n    <ol className=\"boring-feedback-anchors\">\n      {view.anchors.map(anchor => {\n        const current = shown?.anchor === anchor.index ? shown.outcome : undefined;\n        return <li key={anchor.index} data-testid=\"feedback-anchor\">\n          <span>{anchor.fallback}</span>\n          {anchor.source !== undefined && <code>{anchor.source}</code>}\n          {page && anchor.placeable && <button type=\"button\" className=\"boring-feedback-button\" data-testid=\"feedback-show\" disabled={current === 'working'} onClick={() => { void show(anchor.index); }}>Show</button>}\n          {!anchor.placeable && <span className=\"boring-feedback-meta\">This page cannot place {anchor.kind}.</span>}\n          {current !== undefined && current !== 'working' && <div role=\"status\" className=\"boring-feedback-status\" data-testid=\"feedback-show-result\" data-kind={current.kind}>\n            {outcomeText(current)}\n            {current.kind === 'choose' && <ol className=\"boring-feedback-candidates\">\n              {current.candidates.map(candidate => <li key={candidate.number}>\n                <button type=\"button\" className=\"boring-feedback-button\" data-testid=\"feedback-candidate\" data-number={candidate.number}\n                  onClick={() => choose(current, candidate.number, anchor.index)}>{candidate.number} · {candidate.label}</button>\n              </li>)}\n            </ol>}\n          </div>}\n        </li>;\n      })}\n    </ol>\n    {view.widened.length > 0 && <p className=\"boring-feedback-meta\" data-testid=\"feedback-widened\">Privacy policy widened by the app: {view.widened.join(', ')}</p>}\n    {view.resolutions.length > 0 && <section className=\"boring-feedback-resolutions\"><h3>Resolution</h3>\n      {view.resolutions.map((entry, index) => <p key={index}><strong>{entry.by}</strong> · {entry.note}</p>)}</section>}\n  </article>;\n}\n",
+      "type": "registry:component",
+      "target": "components/feedback/feedback-report.tsx"
+    },
+    {
+      "path": "registry/feedback/use-external.ts",
+      "content": "// Subscribes a component to one of the headless states of `@hachej/boring-feedback/ui` (annotate, list, report).\nimport { useSyncExternalStore } from 'react';\nimport type { ExternalState } from '@hachej/boring-feedback/ui';\n\nexport function useExternal<State>(state: ExternalState<State>): State {\n  return useSyncExternalStore(state.subscribe, state.getSnapshot, state.getSnapshot);\n}\n",
+      "type": "registry:hook",
+      "target": "components/feedback/use-external.ts"
+    }
+  ],
+  "css": {
+    "[data-boring=\"feedback\"]": {
+      "--boring-feedback-accent": "var(--primary, #2563eb)",
+      "--boring-feedback-reveal": "#d97706",
+      "--boring-feedback-surface": "var(--popover, var(--background, #ffffff))",
+      "--boring-feedback-text": "var(--popover-foreground, var(--foreground, #111827))",
+      "--boring-feedback-muted": "var(--muted-foreground, #6b7280)",
+      "--boring-feedback-border": "var(--border, #e5e7eb)",
+      "--boring-feedback-radius": "var(--radius, 0.625rem)",
+      "--boring-feedback-label-background": "#111827",
+      "--boring-feedback-label-foreground": "#f9fafb",
+      "font": "14px/1.45 ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif",
+      "color": "var(--boring-feedback-text)"
+    },
+    "[data-boring=\"feedback\"] *, [data-boring=\"feedback\"] *::before, [data-boring=\"feedback\"] *::after": {
+      "box-sizing": "border-box"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-button": {
+      "display": "inline-flex",
+      "align-items": "center",
+      "justify-content": "center",
+      "gap": "0.375rem",
+      "min-height": "2.25rem",
+      "padding": "0 0.875rem",
+      "border": "1px solid var(--boring-feedback-border)",
+      "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+      "background": "var(--boring-feedback-surface)",
+      "color": "var(--boring-feedback-text)",
+      "font": "inherit",
+      "font-weight": "600",
+      "cursor": "pointer"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-button:hover": {
+      "background": "var(--accent, #f3f4f6)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-button:focus-visible, [data-boring=\"feedback\"] button:focus-visible, [data-boring=\"feedback\"] textarea:focus-visible": {
+      "outline": "2px solid var(--ring, var(--boring-feedback-accent))",
+      "outline-offset": "2px"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-button[data-variant=\"primary\"]": {
+      "border-color": "transparent",
+      "background": "var(--boring-feedback-accent)",
+      "color": "var(--primary-foreground, #ffffff)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-button:disabled": {
+      "opacity": "0.6",
+      "cursor": "default"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-button[aria-pressed=\"true\"]": {
+      "background": "var(--boring-feedback-accent)",
+      "color": "var(--primary-foreground, #ffffff)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-icon": {
+      "display": "inline-flex",
+      "align-items": "center",
+      "justify-content": "center",
+      "width": "2rem",
+      "height": "2rem",
+      "border": "0",
+      "border-radius": "0.5rem",
+      "background": "transparent",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "1.25rem",
+      "line-height": "1",
+      "cursor": "pointer"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-point": {
+      "display": "inline-flex",
+      "align-items": "center",
+      "gap": "0.625rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-hint": {
+      "max-width": "32rem",
+      "overflow": "hidden",
+      "text-overflow": "ellipsis",
+      "white-space": "nowrap",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-keys": {
+      "opacity": "0.8"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-sheet, [data-boring=\"feedback\"].boring-feedback-report, [data-boring=\"feedback\"].boring-feedback-list": {
+      "display": "flex",
+      "flex-direction": "column",
+      "gap": "0.75rem",
+      "padding": "1rem",
+      "border": "1px solid var(--boring-feedback-border)",
+      "border-radius": "var(--boring-feedback-radius)",
+      "background": "var(--boring-feedback-surface)"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-sheet": {
+      "z-index": "2147483000",
+      "box-shadow": "0 16px 48px rgb(0 0 0 / 18%)",
+      "max-height": "calc(100dvh - 24px)",
+      "overflow": "auto"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-sheet[data-docked=\"bottom\"]": {
+      "position": "fixed",
+      "left": "12px",
+      "right": "12px",
+      "bottom": "12px",
+      "max-width": "32rem",
+      "margin": "0 auto"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-sheet-header": {
+      "display": "flex",
+      "align-items": "center",
+      "justify-content": "space-between",
+      "gap": "0.5rem"
+    },
+    "[data-boring=\"feedback\"] h2": {
+      "margin": "0",
+      "font-size": "1rem",
+      "font-weight": "650"
+    },
+    "[data-boring=\"feedback\"] h3": {
+      "margin": "0 0 0.25rem",
+      "font-size": "0.875rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-targets": {
+      "margin": "0",
+      "padding": "0",
+      "list-style": "none",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-field": {
+      "display": "grid",
+      "gap": "0.375rem",
+      "font-weight": "600",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] textarea": {
+      "width": "100%",
+      "padding": "0.5rem 0.625rem",
+      "border": "1px solid var(--input, var(--boring-feedback-border))",
+      "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+      "background": "var(--background, #ffffff)",
+      "color": "inherit",
+      "font": "inherit",
+      "font-size": "16px",
+      "font-weight": "400",
+      "resize": "vertical"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-actions": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "gap": "0.5rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-status": {
+      "margin": "0",
+      "min-height": "1.25em",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-warning": {
+      "margin": "0",
+      "color": "var(--destructive, #b91c1c)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-notice": {
+      "margin": "0",
+      "padding": "0.5rem 0.625rem",
+      "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+      "background": "color-mix(in srgb, var(--boring-feedback-reveal) 14%, transparent)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-copied pre, [data-boring=\"feedback\"] .boring-feedback-manual": {
+      "max-height": "12rem",
+      "overflow": "auto",
+      "margin": "0.375rem 0 0",
+      "font": "12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace",
+      "white-space": "pre-wrap"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-copied summary": {
+      "cursor": "pointer",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-list ul": {
+      "display": "flex",
+      "flex-direction": "column",
+      "gap": "0.25rem",
+      "margin": "0",
+      "padding": "0",
+      "list-style": "none"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-list li button": {
+      "display": "grid",
+      "gap": "0.125rem",
+      "width": "100%",
+      "padding": "0.5rem 0.625rem",
+      "border": "0",
+      "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+      "background": "transparent",
+      "color": "inherit",
+      "font": "inherit",
+      "text-align": "left",
+      "cursor": "pointer"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-list li button:hover, [data-boring=\"feedback\"].boring-feedback-list li button[aria-current=\"true\"]": {
+      "background": "var(--accent, #f3f4f6)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-title": {
+      "font-weight": "600"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-meta": {
+      "margin": "0",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] [data-status=\"addressed\"]": {
+      "color": "#15803d"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-empty": {
+      "margin": "0",
+      "color": "var(--boring-feedback-muted)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-said": {
+      "margin": "0",
+      "white-space": "pre-wrap"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-anchors": {
+      "display": "flex",
+      "flex-direction": "column",
+      "gap": "0.5rem",
+      "margin": "0",
+      "padding-left": "1.25rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-anchors > li": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "align-items": "center",
+      "gap": "0.5rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-anchors code": {
+      "font-size": "0.75rem",
+      "color": "var(--boring-feedback-muted)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-candidates": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "gap": "0.375rem",
+      "margin": "0.375rem 0 0",
+      "padding": "0",
+      "list-style": "none"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar": {
+      "position": "fixed",
+      "top": "12px",
+      "left": "0",
+      "right": "0",
+      "z-index": "2147483000",
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "align-items": "center",
+      "gap": "0.5rem",
+      "width": "max-content",
+      "max-width": "calc(100vw - 24px)",
+      "margin": "0 auto",
+      "padding": "0.375rem 0.5rem 0.375rem 0.875rem",
+      "border": "1px solid var(--boring-feedback-border)",
+      "border-radius": "999px",
+      "background": "var(--boring-feedback-surface)",
+      "box-shadow": "0 10px 32px rgb(0 0 0 / 16%)"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar[data-using=\"true\"]": {
+      "border-color": "var(--boring-feedback-reveal)"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar[data-docked=\"true\"]": {
+      "position": "static",
+      "width": "auto",
+      "max-width": "none",
+      "margin": "0 0.625rem 0.625rem",
+      "flex-wrap": "wrap",
+      "border-radius": "0.75rem",
+      "box-shadow": "none"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar > *": {
+      "flex": "none"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar > .boring-feedback-hint": {
+      "flex": "0 1 auto",
+      "min-width": "0",
+      "max-width": "24rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-bar-title": {
+      "display": "inline-flex",
+      "align-items": "center",
+      "gap": "0.375rem",
+      "font-weight": "650"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-dot": {
+      "width": "0.5rem",
+      "height": "0.5rem",
+      "border-radius": "50%",
+      "background": "var(--boring-feedback-accent)"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar[data-using=\"true\"] .boring-feedback-dot": {
+      "background": "var(--boring-feedback-reveal)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-bar-meta": {
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-alt": {
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.75rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-icon[aria-pressed=\"true\"]": {
+      "background": "color-mix(in srgb, #dc2626 16%, transparent)",
+      "color": "#dc2626"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-icon:disabled": {
+      "opacity": "0.45",
+      "cursor": "default"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-recording": {
+      "display": "inline-flex",
+      "align-items": "center",
+      "gap": "0.375rem",
+      "padding": "0.125rem 0.5rem",
+      "border-radius": "999px",
+      "background": "color-mix(in srgb, #dc2626 12%, transparent)",
+      "color": "#b91c1c",
+      "font-size": "0.75rem",
+      "font-weight": "650"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-rec": {
+      "width": "0.5rem",
+      "height": "0.5rem",
+      "border-radius": "50%",
+      "background": "#dc2626"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar[data-docked=\"true\"] > .boring-feedback-hint": {
+      "flex": "1 1 10rem",
+      "max-width": "none",
+      "white-space": "normal"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-record": {
+      "min-height": "2rem",
+      "padding": "0 0.625rem",
+      "gap": "0.3125rem",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-record[aria-pressed=\"true\"]": {
+      "border-color": "transparent",
+      "background": "#dc2626",
+      "color": "#ffffff"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-stop": {
+      "width": "0.625rem",
+      "height": "0.625rem",
+      "border-radius": "2px",
+      "background": "currentColor"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-timer": {
+      "font-variant-numeric": "tabular-nums"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bar[data-recording=\"true\"]": {
+      "border-color": "color-mix(in srgb, #dc2626 55%, var(--boring-feedback-border))"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-voice-problem": {
+      "flex": "1 1 100%",
+      "margin": "0",
+      "color": "var(--destructive, #b91c1c)",
+      "font-size": "0.8125rem",
+      "white-space": "normal"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-element": {
+      "display": "inline-flex",
+      "flex": "1",
+      "align-items": "baseline",
+      "gap": "0.375rem",
+      "min-width": "0",
+      "overflow": "hidden",
+      "white-space": "nowrap"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-element-name": {
+      "flex": "0 1 auto",
+      "min-width": "2rem",
+      "overflow": "hidden",
+      "text-overflow": "ellipsis",
+      "font-size": "0.8125rem",
+      "font-weight": "600"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-element-file": {
+      "flex": "0 100 auto",
+      "min-width": "0",
+      "overflow": "hidden",
+      "text-overflow": "ellipsis",
+      "color": "var(--boring-feedback-muted)",
+      "font": "0.6875rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-badge": {
+      "flex": "none",
+      "padding": "0 0.375rem",
+      "border-radius": "999px",
+      "background": "var(--muted, #f3f4f6)",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.6875rem",
+      "line-height": "1.25rem"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-bubble": {
+      "z-index": "2147483001",
+      "display": "grid",
+      "gap": "0.375rem",
+      "padding": "0.5rem",
+      "border": "1px solid var(--boring-feedback-border)",
+      "border-radius": "var(--boring-feedback-radius)",
+      "background": "var(--boring-feedback-surface)",
+      "box-shadow": "0 12px 32px rgb(0 0 0 / 18%)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-bubble-head, [data-boring=\"feedback\"] .boring-feedback-note-head": {
+      "display": "flex",
+      "align-items": "center",
+      "gap": "0.375rem",
+      "min-width": "0"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-bubble-label, [data-boring=\"feedback\"] .boring-feedback-note-label": {
+      "flex": "1",
+      "min-width": "0",
+      "overflow": "hidden",
+      "text-overflow": "ellipsis",
+      "white-space": "nowrap",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.75rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-pin": {
+      "color": "var(--boring-feedback-accent)",
+      "font-weight": "700"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-chip": {
+      "position": "relative",
+      "display": "inline-flex",
+      "flex-wrap": "wrap",
+      "align-items": "center",
+      "gap": "0.125rem",
+      "max-width": "100%",
+      "padding": "0.125rem 0.125rem 0.125rem 0.625rem",
+      "border": "1px solid var(--boring-feedback-border)",
+      "border-radius": "999px",
+      "background": "color-mix(in srgb, var(--boring-feedback-accent) 8%, var(--boring-feedback-surface))",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-chip-open": {
+      "min-width": "0",
+      "padding": "0.25rem 0.25rem",
+      "border": "0",
+      "background": "transparent",
+      "color": "inherit",
+      "font": "inherit",
+      "font-weight": "600",
+      "text-align": "left",
+      "cursor": "pointer"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-chip-route": {
+      "color": "var(--boring-feedback-muted)",
+      "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace",
+      "font-weight": "500"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-chip-remove": {
+      "width": "1.5rem",
+      "height": "1.5rem",
+      "font-size": "1rem"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-review": {
+      "z-index": "2147483000",
+      "display": "flex",
+      "flex-direction": "column",
+      "gap": "0.625rem",
+      "max-height": "min(28rem, calc(100dvh - 24px))",
+      "overflow": "auto",
+      "padding": "0.875rem",
+      "border": "1px solid var(--boring-feedback-border)",
+      "border-radius": "var(--boring-feedback-radius)",
+      "background": "var(--boring-feedback-surface)",
+      "box-shadow": "0 16px 48px rgb(0 0 0 / 18%)",
+      "text-align": "left"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-notes": {
+      "display": "flex",
+      "flex-direction": "column",
+      "gap": "0.5rem",
+      "margin": "0",
+      "padding": "0",
+      "list-style": "none"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-notes > li": {
+      "display": "grid",
+      "gap": "0.25rem",
+      "padding": "0.375rem",
+      "border-radius": "calc(var(--boring-feedback-radius) - 2px)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-notes > li:hover, [data-boring=\"feedback\"] .boring-feedback-notes > li:focus-within": {
+      "background": "var(--accent, #f3f4f6)"
+    },
+    "@media (max-width: 640px), (pointer: coarse)": {
+      "[data-boring=\"feedback\"] .boring-feedback-button": {
+        "min-height": "2.75rem"
+      },
+      "[data-boring=\"feedback\"] .boring-feedback-icon": {
+        "width": "2.75rem",
+        "height": "2.75rem"
+      },
+      "[data-boring=\"feedback\"] .boring-feedback-hint": {
+        "display": "none"
+      },
+      "[data-boring=\"feedback\"] .boring-feedback-alt": {
+        "display": "none"
+      },
+      "[data-boring=\"feedback\"].boring-feedback-bar": {
+        "top": "auto",
+        "bottom": "12px",
+        "flex-wrap": "wrap",
+        "border-radius": "var(--boring-feedback-radius)"
+      }
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-mic": {
+      "flex": "none",
+      "display": "block"
+    },
+    "[data-boring=\"feedback\"].boring-feedback-preview": {
+      "position": "fixed",
+      "top": "12px",
+      "left": "0",
+      "right": "0",
+      "z-index": "2147483001",
+      "display": "flex",
+      "flex-direction": "column",
+      "gap": "0.5rem",
+      "width": "min(40rem, calc(100vw - 24px))",
+      "margin": "0 auto",
+      "padding": "0.75rem 0.875rem",
+      "border": "2px solid var(--boring-feedback-reveal)",
+      "border-radius": "var(--boring-feedback-radius)",
+      "background": "var(--boring-feedback-surface)",
+      "box-shadow": "0 12px 36px rgb(0 0 0 / 18%)"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-head": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "align-items": "baseline",
+      "gap": "0.5rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-title": {
+      "padding": "0.125rem 0.5rem",
+      "border-radius": "999px",
+      "background": "var(--boring-feedback-reveal)",
+      "color": "#ffffff",
+      "font-size": "0.8125rem",
+      "letter-spacing": "0.02em",
+      "text-transform": "uppercase"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-notice": {
+      "font-weight": "600"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-status": {
+      "margin-left": "auto",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-summary": {
+      "margin": "0"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-changes": {
+      "margin": "0",
+      "padding-left": "1.125rem",
+      "color": "var(--boring-feedback-muted)",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-changes code": {
+      "font-size": "0.75rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-error": {
+      "margin": "0",
+      "color": "#b91c1c",
+      "font-size": "0.8125rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-actions": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "gap": "0.5rem"
+    },
+    "[data-boring=\"feedback\"] .boring-feedback-preview-input": {
+      "flex": "1 1 12rem",
+      "min-width": "0",
+      "min-height": "2.25rem",
+      "padding": "0 0.75rem",
+      "border": "1px solid var(--boring-feedback-border)",
+      "border-radius": "calc(var(--boring-feedback-radius) - 2px)",
+      "background": "var(--boring-feedback-surface)",
+      "color": "var(--boring-feedback-text)",
+      "font": "inherit"
+    }
+  },
+  "type": "registry:component"
+}

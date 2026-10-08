@@ -1,418 +1,103 @@
 # Boring UI
 
-![Boring UI — bring your agent skills, get a UI](docs/assets/readme/hero.png)
+This is the breaking `1.0.0` candidate of the v4 architecture. Read the
+[migration guide](MIGRATING.md) before upgrading from the previous packages.
 
-![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+Composable application capabilities around native Pi: chat, extensible viewers with agent tools, versioned resources, optional durable application features and coherent working-environment adapters. Keep the host's application and Pi's full native engine. Add only the pieces needed.
 
-Boring UI is an opinionated framework for building agent-centric apps, built on [Pi](https://pi.dev).
+**Status: partial implementation. Tested increments include transactional documents, native tools/questions/delivery, Markdown/chat/HTML controllers and renderers, canvas controls, virtual Bash/Git, authenticated Fetch adapters and installed shadcn recipes. Browser, provider, experience and full acceptance qualifications remain incomplete.** See the [implementation checkpoint](docs/implementation/PARTIAL.md) for exact evidence and remaining qualifications.
 
-Traditional SaaS is built around workflows users drive by hand: buttons, forms, pages, dashboards.
+## Packages and runtime entries
 
-Agents change that.
+For npm artifact checks and remaining publication gates, see [Prepare an npm release](docs/implementation/NPM-RELEASE.md).
 
-When software can understand intent and act, every app collapses to two surfaces:
-
-- **Chat** — tell the agent what to do.
-- **Workbench** — inspect, steer, and refine the results.
-
-That's what the Boring UI core provides: a workbench the agent can control and reshape.
-
----
-
-# Table of Contents
-
-- [Give it a try](#give-it-a-try)
-- [Built on Pi](#built-on-pi)
-- [Make it yours](#make-it-yours)
-- [Roadmap](#roadmap)
-- [Repo map](#repo-map)
-- [Plugin shape](#plugin-shape)
-- [Built with boring-ui](#built-with-boring-ui)
-- [Architecture](#architecture)
-- [Hosting](#hosting)
-- [Working in the repo](#working-in-the-repo)
-- [Documentation](#documentation)
-
-# Give it a try
-
-Boring UI is designed for building hosted agent-centric apps.
-
-But it also runs fully locally: no auth, no database, no setup complexity.
-
-Just a stateless agent + workspace running directly on your machine.
-
-To get started:
+Seven private npm workspaces expose compiled contracts and optional runtime entries under `packages/{files,agent,execution,ui,browser,feedback,testing}`; `browser` is the opt-in agent worker for a browser tab (BORING-PI-5). Native FileSystem/Shell/ExecutionEnv and native execution/view types are aliases of the published Pi package, not copied interfaces. [SCAFFOLD.md](docs/contracts/SCAFFOLD.md) lists exports and pending work; [examples/native-compositions.ts](examples/native-compositions.ts) shows compile-checked host wiring.
 
 ```bash
-export OPENAI_API_KEY=
-npx @hachej/boring-ui-cli
+npm ci
+npm run build
+npm run typecheck
+npm test
+npm run verify
 ```
 
-Boring UI uses Pi as the agent harness (more on this in the next section), so you simply need to configure LLM access through environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) or via a Pi [LLM provider](https://pi.dev/docs/latest/providers).
+Contracts use `import type`. The [feature map](docs/implementation/FEATURES.md) links public runtime entries to executed tests and their limits. The [UI guide](packages/ui/README.md) documents concrete controllers and renderers; the [registry guide](registry/README.md) covers local source installation. The six global runtime proof obligations still block release.
 
-# Built on Pi
+### Refined composition boundaries
 
-When building Boring UI, I was heavily inspired by the [Pi](https://pi.dev/) project.
+The headless `@hachej/boring-ui-kit` root is independent of files, Pi and agent packages; optional `/resources` and `/pi` entry points add those integrations. Controllers and renderers compose separately. Workspace inputs are host-defined and recovery is an additional capability. Native tool APIs, environment factory and ConversationWatch remain exact upstream contracts. [The audit](docs/contracts/ABSTRACTION-REVIEW.md) records corrected scaffold mistakes and [the guide](docs/contracts/SCAFFOLD.md) describes current exports.
 
-It’s an open-source agent harness that is super lightweight and built to be highly extensible.
+### Incremental implementation and exact build output
 
-I also really connected with the vision and philosophy of its creator [Mario Zechner](https://mariozechner.at/), which pushed me to adopt Pi as the core harness behind Boring UI.
+Specialized viewer controllers retain their methods through feature registration. Native filesystem-only, shell-only and combined leases remain distinct. Runtime packages land with their own public-output tests; full system qualification stays deferred and release-blocking. Builds clean only validated package dist directories so deleted source cannot remain in the packed output. [Composition checks](docs/contracts/COMPOSITION-CHECKS.md) records this pass and its evidence boundaries.
 
-At a high level, the system is organized around four main components:
+### Current delivery plan
 
-- **Web Frontend** → chat + workspace UI
-- **Web Backend** → API layer shared by both the frontend and the agent tools
-- **Pi Harness** → agent runtime
-- **Sandbox** → isolated filesystem + execution runtime
-  <img src="https://substackcdn.com/image/fetch/$s_!IJgJ!,w_1456,c_limit,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F63e06506-dfdc-4b27-b77c-3eabfa9957d9_1416x910.png" width="527" height="338.67937853107344" />
+The [roadmap](docs/architecture/ROADMAP.md) now begins with a thin browser-free resource/native test and grows the editor, background agent and remote coding compositions independently. The [current hub owner map](docs/compatibility/HUB-M1.md#current-consumer-ownership) follows hub revision 6; Factory development is separate. Historical IDs/evidence remain intact and A48 adds current hub acceptance. Remote security, recovery, draft/privacy and measured performance requirements are documented, not implemented by this update.
 
-One important design axiom I had from the beginning was that the agent and the user should interact with the same core primitives through the same interfaces.
+## Three applications, one library
 
-For example, there is a single file API shared by both:
+| Use case | Composition |
+| --- | --- |
+| Remote coding agent | Native Pi tools/tasks plus one acquired workspace; file and shell interfaces share it; reviewed publication and optional evidence/chat are separate additions. |
+| Embedded background agent | Native tasks and typed app services with optional questions/validation/delivery; no browser, chat, filesystem or sandbox required. |
+| Assistant beside an app | Native conversation plus host tools/context, chat and selected viewers/resources; existing router, auth, database and UI remain. |
 
-- the frontend file tree
-- the agent filesystem tools
+Resources/viewers also work without an agent. Composition is ordinary TypeScript and explicit ownership, not a mode hierarchy, plugin engine or generic replacement runtime. [PI-COMPLEMENT.md](docs/architecture/PI-COMPLEMENT.md) describes the recipes and failure cases.
 
-The same applies to the UI itself: the agent sees the workspace the same way the user does and can interact with it through dedicated UI tools.
+## What Boring adds—and reuses
 
-# Make it yours
+Pi retains conversations, tools, scheduling, dynamic child graphs, steering, forks, compaction, recorded usage and recovery. The host retains direct native APIs. Boring borrows a Harness; an optional convenience setup owns only what it creates.
 
-Of course every app, every workflow, every use case is different.
+Reuse Pi's public FileSystem/Shell/ExecutionEnv for working environments. Boring's resource contract adds expected revisions and publication evidence, not another low-level filesystem: every file lives in a workspace and is read and conditionally written through that workspace's one provider (`createWorkspaceProvider` over disk, the virtual workspace or SQLite rows; [one place for files](docs/architecture/FILES-GIT-EXEC.md#one-place-for-files)). The AWS recipe of it ([examples/aws](examples/aws/README.md)) is built and proven offline; its live deployment is still pending. Temporary build files need no domain receipt; publishing an approved document is a separate conditional effect. File-only tools need no dummy shell; composed native files and execution cannot point at unrelated machines.
 
-Different data. Different visualisations. Different agent skills.
+Portable headless state/actions/tools power both human viewer controls and native agent adapters. Add a custom viewer or provider without changing the engine. Browser-only commands bind a live instance; saved-resource tools work without an open viewer. Mature v2 chat interactions and v3 viewer/shadcn recipes are deliberate port targets.
 
-So the real question is: how do you keep the same agent-centric shell, while adapting it to all of those different needs without rebuilding the whole app every time?
+Use just-bash/isomorphic-git over one selected virtual working view; optional code mode reuses upstream pi-codemode. Use tldraw for the selected canvas and json-render for declared layout composition. These are optional capabilities, not mandatory runtimes or permission grants. Generated content never installs executable plugins.
 
-The answer is extensibility through a plugin system.
+## Fictional morning example
 
-Fortunately, Pi’s plugin system is one of its biggest strengths: anyone can publish a package to extend it with custom prompts, skills, and tools.
+Run `npm run build` and `npm run morning`, then open `http://127.0.0.1:3000`.
+The example prepares email, calendar and todo documents through native tasks. Its cells use their owning services for Snooze, Send, Slot and Tick. Send queues a fictional outbox record; it sends no email. The Markdown reply stays outside the generated decisions region. Regenerate offers a layout; adoption is local, and Pin/Keep require a publication receipt.
 
-I wanted Boring UI to take full advantage of that ecosystem instead of reinventing it.
+`npm run morning:journey` runs the authenticated Chromium journey. `npm run test:morning-consumer` tests packed libraries in an isolated installation. See the [checkpoint](docs/implementation/PARTIAL.md#fictional-morning-experience-candidate-2026-10-08) for qualification limits.
 
-So rather than introducing yet another plugin model, Boring UI simply extends the one Pi already provides.
+## Read
 
-Pi plugins focus on the agent layer:
+For the fictional consultation workflow, run `npm run redaction:browser` after building. The [example guide](examples/redaction-browser/README.md) covers exact notes saves, source-mode dictation, human corrections, explicit record/letter adoption and a typed six-section preparation experience. `npm run redaction:journey` and `npm run redaction:preparation:journey` drive its Chromium controls; `npm run test:redaction-browser-consumer` exercises an isolated package installation.
 
-- prompts
-- skills
-- tools
-- slash commands
+| Document | Purpose |
+| --- | --- |
+| [Project invariants](INVARIANTS.md) | Native authority, owned lifecycles, optional features, independent surfaces and coherent workspace views. |
+| [Pi complement and compositions](docs/architecture/PI-COMPLEMENT.md) | What Boring adds, public native reuse and the three reference applications. |
+| [Product requirements](docs/architecture/PRODUCT-REQUIREMENTS.md) | Full P01–P14 scope. |
+| [Architecture](docs/architecture/SPEC.md) | Ownership, packages, host authority, working resources and presentation. |
+| [Contract vocabulary](docs/contracts/CONTRACTS.md) | Native attachment, resource/publication, decisions, views, viewer tools and environment binding. |
+| [Files, Git and execution](docs/architecture/FILES-GIT-EXEC.md) | Native working interfaces versus resource guarantees, coherent acquisition and optional execution. |
+| [Website and registry integration](docs/architecture/WEBSITE-INTEGRATION.md) | Existing apps, mature chat, custom viewers, styles and actual shadcn installation. |
+| [Legacy UI ledger](docs/compatibility/LEGACY-UI.md) | Pinned v2/v3 port behavior and deliberate corrections. |
+| [Experiences](docs/architecture/EXPERIENCE.md) | Cells and fixed/derived/generated layout composition. |
+| [Canvas](docs/architecture/CANVAS.md) | tldraw document/session split, assets, styles and license qualification. |
+| [Native examples](docs/architecture/UPSTREAM-EXAMPLES.md) | Pi patterns, pinned seams and bounded executed probes. |
+| [Redaction study](docs/stress-tests/REDACTION.md) | Existing-app compatibility blockers and mapping. |
+| [Evidence baseline](docs/stress-tests/BASELINE.md) | What was actually run and what remains unproved. |
+| [Hub proposal](docs/stress-tests/HUB-FACTORY.md) | Broader consumer input, not automatic defaults. |
+| [Accepted Hub M1](docs/compatibility/HUB-M1.md) | Portable obligations, host invariant specializations and qualification prerequisites. |
+| [Acceptance](docs/acceptance/ACCEPTANCE.md) | A01–A47 required future journeys; no implemented-runtime claim. |
+| [Roadmap](docs/architecture/ROADMAP.md) | Composed delivery lanes and launch-packet reconciliation. |
+| [Law index](docs/LAWS.md) | Owners and limits of evidence. |
 
-Boring UI adds a UI layer on top of them with concepts such as:
-
-- panels
-- command palette actions
-- UI events
-- catalogs
-
-The two layers are fully compatible: any Pi plugin works out of the box inside Boring UI.
-
-In practice, a plugin is simply a Node package with two manifest blocks:
-
-- `pi.*` → agent side: prompts, skills, tools
-- `boring.*` → UI side: panels, commands, catalogs, surface resolvers
-
-Example of `package.json`:
-
-```
-{
-  "name": "my-plugin",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["agent/index.ts"],
-    "skills": ["agent/skills"],
-    "prompts": ["agent/prompts"],
-    "systemPrompt": "Short agent guidance."
-  },
-  "boring": {
-    "label": "My Plugin",
-    "front": "front/index.tsx",
-    "server": "server/index.ts"
-  }
-}
-```
-
-This makes customization extremely flexible.
-
-You can install any existing Pi plugin directly to customize the agent’s behavior.
-
-And if needed, you can progressively enhance that same plugin with Boring UI capabilities like custom panels, commands, or interactive UI surfaces.
-
-Plugins also compose naturally: multiple plugins can coexist side by side, or shared primitives can be wrapped into reusable packages.
-
-I already have a few plugins in the repository:
-
-- [ask-user](https://github.com/hachej/boring-ui/tree/main/plugins/ask-user) → Agent-to-human Q&amp;A with a UI prompt
-- [data-catalog](https://github.com/hachej/boring-ui/tree/main/plugins/data-catalog) → Catalog tab built on Data Explorer
-- [deck](https://github.com/hachej/boring-ui/tree/main/plugins/deck) → Plugin to let the agent create HTML slide decks.
-
-Install them in your Boring UI project and you instantly get those capabilities.
-
-I have hundreds of ideas for plugins that could emerge from this model:
-
-- Kanban boards
-- LLM-powered wikis / second brains
-- orchestration interfaces
-- observability dashboards
-- workflow builders
-- an OpenClaw-like daemon
-
-# Roadmap
-
-Near-term priorities:
-
-- **More sandbox support** — Kube, AWS agent sandboxes
-- **Make hot reload work in CLI static mode** — so local runtime/plugin frontend iteration works cleanly in the packaged CLI.
-- **Make hot reload work in sandboxed modes** — extend the same editing and reload loop to sandbox-backed environments.
-
----
-
-# Repo map
-
-### Packages
-
-
-| Package                    | Role                             | README                                             |
-| -------------------------- | -------------------------------- | -------------------------------------------------- |
-| `@hachej/boring-agent`     | Agent runtime, tools, chat UI    | [packages/agent](packages/agent/README.md)         |
-| `@hachej/boring-workspace` | Workbench, panels, plugin system | [packages/workspace](packages/workspace/README.md) |
-| `@hachej/boring-core`      | Auth, DB, app factory            | [packages/core](packages/core/README.md)           |
-| `@hachej/boring-ui-kit`    | Shared UI primitives             | [packages/ui](packages/ui/README.md)               |
-| `@hachej/boring-ui-cli`    | Zero-setup local entrypoint      | [packages/cli](packages/cli/README.md)             |
-
-
-### Plugins
-
-
-| Plugin                         | What it adds                                                                | README                                                                                 |
-| ------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                   | [plugins/ask-user](plugins/ask-user/README.md)                                         |
-| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels   | [plugins/data-explorer](plugins/data-explorer/README.md)                               |
-| `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                           | [plugins/data-catalog](plugins/data-catalog/README.md)                                 |
-| App/internal plugin template   | Publishable package-plugin reference; create with `boring-ui-plugin create` | [packages/plugin-cli/templates/plugin](packages/plugin-cli/templates/plugin/README.md) |
-
-
-### Reference apps
-
-
-| App                         | Purpose                                                | README                                                           |
-| --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace | [apps/full-app](apps/full-app/README.md)                         |
-| `apps/agent-playground`     | `@hachej/boring-agent` alone — no workbench, no DB     | [apps/agent-playground](apps/agent-playground/README.md)         |
-| `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [apps/workspace-playground](apps/workspace-playground/README.md) |
-
-
----
-
-# Plugin shape
-
-Plugins are standard Node packages. `package.json#pi` describes hot-reloadable
-agent resources, while `package.json#boring` describes workspace UI/static app
-integration:
-
-```json
-{
-  "name": "my-plugin",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["agent/index.ts"],
-    "skills": ["agent/skills"],
-    "prompts": ["agent/prompts"],
-    "systemPrompt": "Short agent guidance."
-  },
-  "boring": {
-    "label": "My Plugin",
-    "front": "front/index.tsx",
-    "server": "server/index.ts"
-  }
-}
-```
-
-- `pi.*` — hot-reloadable agent resources loaded by Pi (`extensions`, `skills`, `prompts`, `systemPrompt`)
-- `boring.front` — workbench UI from `definePlugin({ ... })`: panels, commands, catalogs, surface resolvers, providers, bindings
-- `boring.server` — explicit static/boot-time server integration from `defineServerPlugin({ ... })`: agent tools that need backend state and HTTP routes. Restart the workspace server after changes.
-
-For a publishable package plugin, run `boring-ui-plugin create <name> --path plugins`. For a front/Pi hot-reloadable local plugin, run `boring-ui-plugin scaffold <name>`.
-
-### Current hot-reload compatibility
-
-
-| Plugin surface                                                 | Local `.pi/extensions` / CLI               | App/internal package plugins                                       | Notes                                                                                  |
-| -------------------------------------------------------------- | ------------------------------------------: | ------------------------------------------------------------------: | -------------------------------------------------------------------------------------- |
-| `pi.systemPrompt`, `pi.skills`, `pi.prompts`, `pi.extensions`  | hot-reload via `/reload`                   | hot-reload when discovered as plugin package resources             | Agent context updates without server restart.                                          |
-| `boring.front` panels/commands/catalogs/surface resolvers      | hot-reload via `/reload` in dev/playground | static by default; package front assets can be rediscovered in dev | Browser import failures are surfaced and previous version is kept.                     |
-| `boring.server` / `defineServerPlugin({ routes, agentTools })` | not hot-reloaded                           | boot-time only                                                     | Restart/redeploy after changes. Generated runtime plugins should omit `boring.server`. |
-| Runtime plugin frontend in packaged CLI static mode            | not yet                                    | n/a                                                                | Planned: local plugin-dev transform endpoint / embedded Vite for CLI.                  |
-
-
-Planned direction: keep app/internal plugins powerful and boot-composed, but keep generated/runtime plugins route-free. Generated plugins should use manifest-declared front surfaces plus brokered tools/RPC rather than custom backend routes.
-
-**What you can add:**
-
-- **Panels** — arbitrary React panes in the workbench (editors, charts, tables, anything)
-- **Left tabs** — persistent sidebars (data catalogs, file navigators, status views)
-- **Commands** — entries in the command palette, triggered by user or agent
-- **Catalogs** — searchable, faceted data explorers the agent can surface
-- **Agent tools** — new capabilities the model can call, with schema-defined parameters
-- **Skills + prompts** — domain knowledge and reasoning patterns the agent follows
-
-### Existing Plugins
-
-
-| Plugin                                                                               | Description                                                                                   |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| [ask-user](https://github.com/hachej/boring-ui/tree/main/plugins/ask-user)           | Agent-to-human Q&amp;A with a UI prompt                                                       |
-| [data-explorer](https://github.com/hachej/boring-ui/tree/main/plugins/data-explorer) | Searchable, faceted data tables                                                               |
-| [data-catalog](https://github.com/hachej/boring-ui/tree/main/plugins/data-catalog)   | Catalog tab built on data-explorer                                                            |
-| coming: llm-wiki                                                                     | [LLM powered second brain](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) |
-| coming: tasks                                                                        | Task tracking, Kanban boards the agent can read and update                                    |
-| coming: workflows                                                                    | Multi-step agent orchestration — chain steps, define branches, trigger sub-agents             |
-| coming: data-branch                                                                  | Fork, explore, and compare agent-generated datasets side by side in the workbench             |
-
-
-See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi plugin surface.
-
----
-
-# Built with boring-ui
-
-<img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="480" />
-
-**[MacroAnalyst](https://boring-macro.fly.dev/)** — an interactive macroeconomic analyst powered by Boring UI.
-
-Ask in plain English, get charts back in under a minute. Behind the scenes the agent:
-
-- Fetches live time series from a database of 800,000+ series 
-- Transforms, resamples, and joins them using Python functions it chooses and writes
-- Renders interactive decks charts in the workbench
-
-
-| App                                                | Status |
-| -------------------------------------------------- | ------ |
-| boring-accountant — accounting workflows           | Coming |
-| boring-design — design review and iteration        | Coming |
-| boring-lawyer — legal research and document review | Coming |
-
-
----
-
-# Architecture
-
-Two layers connected by a bridge.
-
-**Frontend** is React + Vite — renders chat, file tree, and workbench. The workbench is a pane container that displays files, tables, charts, or custom plugin views.
-
-**UiBridge** is the link between frontend and backend. The agent or server posts commands (`openFile`, `openPanel`, `openSurface`) and the workbench dispatches them. This is how the agent drives the UI without touching the DOM.
-
-**Backend** is Node.js.
-
-**Agent runtime** is the Pi agent loop (`AgentHarness`). It runs natively on the backend — no VMs, no containers needed. It receives user messages, streams chat responses, delegates tool calls to a `ToolCatalog`, and manages sessions. It knows nothing about files, shells, or UI — only `AgentTool[]`.
-
-`AgentHarness` is an interface, not a hardcoded dependency. The design leaves room for swapping in a different harness later. For now, Pi is the only implementation.
-
-The agent just calls the tools — we handle where they actually run. 
-
-That's why `Workspace` and `Sandbox` exist: they abstract the execution layer so the same tools (`ls`, `read`, `write`, `exec`) work identically whether hitting the local filesystem, a Linux container, or a remote VM.
-
-### Core abstractions
-
-
-| Interface      | Defined in                 | Used for                                    | Adapters                                             |
-| -------------- | -------------------------- | ------------------------------------------- | ---------------------------------------------------- |
-| `Workspace`    | `@hachej/boring-agent/shared`     | Read/write files (agent + UI filetree)      | `NodeWorkspace`, `VercelSandboxWorkspace`            |
-| `Sandbox`      | `@hachej/boring-agent/shared`     | Shell execution (agent commands)            | `DirectSandbox`, `BwrapSandbox`, `VercelSandboxExec` |
-| `UiBridge`     | `@hachej/boring-workspace/shared` | Workbench control (agent + command palette) | in-memory bridge (room for browser-side adapter)     |
-| `AgentHarness` | `@hachej/boring-agent/shared`     | Agent loop                                  | Pi (room for more)                                   |
-
-
-### Sandbox
-
-`Sandbox` abstracts isolated execution. The agent runs commands through it — the same `bash` tool works identically regardless of where the shell is:
-
-
-| Sandbox            | Implementation        | When to use                         |
-| ------------------ | --------------------- | ----------------------------------- |
-| **direct**         | `child_process.exec`  | Local dev, no isolation             |
-| **bwrap**          | Linux bubblewrap      | Local dev with filesystem isolation |
-| **vercel-sandbox** | Vercel Firecracker VM | Remote sandbox                      |
-
-
-### Workspace
-
-`Workspace` is the filesystem abstraction that both the agent tools and the frontend file routes consume. It defines operations — `readFile`, `writeFile`, `readdir`, `stat`, `watch` — and each adapter implements them for its target environment.
-
-Pi ships native tools for `read`, `write`, `edit`, `find`, `grep`, `ls`. In local mode they call `node:fs` directly. In remote mode we adapt them to call through the `Workspace` interface over HTTP. Same tools, same agent, different backend.
-
-
-| Workspace                  | Implementation                              |
-| -------------------------- | ------------------------------------------- |
-| **NodeWorkspace**          | Local filesystem via `node:fs`              |
-| **VercelSandboxWorkspace** | Remote filesystem over HTTP to a sandbox VM |
-
-
-Sandbox and Workspace are always created together as a pair so they share the same filesystem:
-
-
-| Mode               | Sandbox             | Workspace                |
-| ------------------ | ------------------- | ------------------------ |
-| **direct**         | `DirectSandbox`     | `NodeWorkspace`          |
-| **local**          | `BwrapSandbox`      | `NodeWorkspace`          |
-| **vercel-sandbox** | `VercelSandboxExec` | `VercelSandboxWorkspace` |
-
-
----
-
-# Hosting
-
-This repository publishes framework packages and local/reference applications; it
-does not own a live application deployment. Production app repositories own their
-provider configuration, images, secrets, migrations, backups, and operational proof.
-The live Seneca deployment is canonical in `hachej/seneca`.
-
-`apps/full-app/Dockerfile` remains a reference container build. Framework adapters
-such as the core Vercel entry remain available to consumers, but this repository does
-not ship provider configuration for a production app.
-
----
-
-# Working in the repo
+## Verify the specification and boundaries
 
 ```bash
-pnpm install
-pnpm build            # build all packages
-pnpm dev              # run all dev servers
-pnpm typecheck        # tsc --noEmit across all packages
-pnpm test             # vitest across all packages
-pnpm lint:invariants  # plugin contract + agent isolation lint
-pnpm ci               # lint + typecheck + test + invariants + e2e
+npm ci --ignore-scripts
+npm run check          # document links, law registry and bounded source/dependency policy
+npm test               # tooling tests, including structural composition-policy fixtures
+npm run verify         # registered evidence; runtime deferrals remain visible
+npm run verify:release # intentionally fails while required runtime proofs are pending
+node scripts/probe-redaction.mjs ../boring-clinic-redaction
+# Optional: isolated just-bash@3.6.0 + isomorphic-git@1.42.6 installation
+node scripts/probe-vfs-git.mjs /path/to/isolated-dependencies
 ```
 
-Scoped commands during development:
-
-```bash
-pnpm --filter @hachej/boring-workspace test
-pnpm --filter @hachej/boring-agent test:watch
-pnpm --filter full-app dev
-```
-
-Apps that consume `@hachej/boring-workspace` source need the workspace built once first:
-
-```bash
-pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playground test
-```
-
----
-
-# Documentation
-
-[`docs/README.md`](docs/README.md) is the documentation entry point: global
-structure, package map, and links to each package's own `docs/` (architecture,
-abstractions, decisions). Agent rules and coding guidance live in
-[`AGENTS.md`](AGENTS.md). Historical plans are archived under
-`docs/plans/archive/` and `packages/*/docs/plans/archive/`.
-
----
-
-# License
-
-MIT
+The redaction probe requires that app/dependencies and uses invented input. The VFS probe uses disposable in-memory storage and denies native processes; it is not an authorized/durable publication provider. Structural tests do not establish native capability parity, browser integration, live sandbox qualification or expert acceptance. Raw evidence stays ignored under `.cache/evidence/`. No production, private patient data or credentials belong in test fixtures.

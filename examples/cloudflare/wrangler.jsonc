@@ -1,0 +1,12 @@
+{
+  "name": "boring-ui-v4-recipe",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-10-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "ai": { "binding": "AI" },
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "durable_objects": { "bindings": [{ "name": "ASSISTANT", "class_name": "Assistant" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Assistant"] }],
+  "observability": { "enabled": true }
+}

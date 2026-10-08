@@ -1,0 +1,527 @@
+{
+  "version": 1,
+  "rootDevDependencies": {
+    "typescript": "5.9.3",
+    "@earendil-works/pi-durable": "1.0.1",
+    "@earendil-works/pi-ai": "1.0.1",
+    "@earendil-works/chord": "1.0.1",
+    "@earendil-works/pi-codemode": "1.0.1",
+    "@earendil-works/pi-mcp": "1.0.4",
+    "@vercel/sandbox": "3.5.1",
+    "@aws-sdk/client-bedrock-agentcore": "3.1146.0",
+    "agents": "0.26.0",
+    "wrangler": "4.147.0",
+    "@types/node": "22.19.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@tiptap/core": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "@tiptap/markdown": "3.31.4",
+    "@tiptap/extensions": "3.31.4",
+    "@tiptap/extension-list": "3.31.4",
+    "@tiptap/extension-table": "3.31.4",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/extension-highlight": "3.31.4",
+    "@tiptap/extension-bubble-menu": "3.31.4",
+    "@tiptap/extension-floating-menu": "3.31.4",
+    "happy-dom": "20.14.5",
+    "esbuild": "0.28.2",
+    "marked": "17.0.6",
+    "just-bash": "3.6.0",
+    "isomorphic-git": "1.42.6",
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "tldraw": "5.5.2",
+    "@tldraw/editor": "5.5.2",
+    "@tldraw/store": "5.5.2",
+    "entities": "8.1.0",
+    "shadcn": "4.21.1",
+    "tailwindcss": "4.3.3",
+    "@json-render/core": "0.21.0",
+    "@json-render/react": "0.21.0",
+    "zod": "4.6.5",
+    "clsx": "2.1.1",
+    "lucide-react": "1.51.0",
+    "tailwind-merge": "3.7.0",
+    "use-stick-to-bottom": "1.1.6",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build2",
+    "buffer": "6.0.3",
+    "@tldraw/tlschema": "5.5.2"
+  },
+  "packages": {
+    "files": {
+      "dependsOn": [],
+      "typeOnlyDependsOn": [],
+      "external": [
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:crypto",
+        "node:sqlite",
+        "isomorphic-git",
+        "isomorphic-git/http/node",
+        "isomorphic-git/http/web"
+      ],
+      "typeOnlyExternal": [
+        "node:http",
+        "@earendil-works/pi-durable",
+        "@earendil-works/pi-durable/env",
+        "@earendil-works/pi-durable/storage/sqlite",
+        "@earendil-works/chord",
+        "@earendil-works/chord/context"
+      ]
+    },
+    "agent": {
+      "dependsOn": [
+        "files"
+      ],
+      "typeOnlyDependsOn": [
+        "ui"
+      ],
+      "external": [
+        "@earendil-works/pi-durable",
+        "@earendil-works/pi-durable/*",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-ai/*",
+        "@earendil-works/chord",
+        "@earendil-works/chord/*",
+        "node:crypto"
+      ],
+      "typeOnlyExternal": [],
+      "pathRules": [
+        {
+          "prefix": "src/gateway-provider",
+          "forbidden": [
+            "node:*",
+            "@hachej/boring-*",
+            "@earendil-works/pi-durable*",
+            "@earendil-works/chord*"
+          ],
+          "forbiddenRelative": [
+            "src/"
+          ]
+        },
+        {
+          "prefix": "src/metering",
+          "forbidden": [
+            "node:*",
+            "@hachej/boring-ui-kit*",
+            "@hachej/boring-feedback*",
+            "@hachej/boring-execution*"
+          ],
+          "forbiddenRelative": [
+            "src/"
+          ]
+        },
+        {
+          "prefix": "src/model-gateway",
+          "forbidden": [
+            "node:*",
+            "@earendil-works/*",
+            "@hachej/boring-ui-kit*",
+            "@hachej/boring-feedback*",
+            "@hachej/boring-execution*"
+          ],
+          "forbiddenRelative": [
+            "src/"
+          ]
+        }
+      ]
+    },
+    "ui": {
+      "dependsOn": [
+        "files"
+      ],
+      "runtimePackageImports": {
+        "files": [
+          "@hachej/boring-files/platform",
+          "@hachej/boring-files/publication",
+          "@hachej/boring-files/text"
+        ]
+      },
+      "typeOnlyDependsOn": [
+        "files"
+      ],
+      "external": [
+        "react",
+        "react/jsx-runtime",
+        "@json-render/core",
+        "@json-render/react",
+        "zod",
+        "tldraw",
+        "tldraw/tldraw.css",
+        "@tiptap/core",
+        "@tiptap/react",
+        "@tiptap/starter-kit",
+        "@tiptap/markdown",
+        "@tiptap/extensions",
+        "@tiptap/extension-list",
+        "@tiptap/extension-table",
+        "@tiptap/extension-image",
+        "@tiptap/extension-highlight",
+        "@tiptap/pm",
+        "@tiptap/pm/state",
+        "@tiptap/extension-bubble-menu",
+        "@tiptap/extension-floating-menu",
+        "marked",
+        "react-dom",
+        "@tldraw/editor",
+        "@tldraw/store",
+        "@json-render/react/schema",
+        "@earendil-works/chord/delta",
+        "@tldraw/tlschema"
+      ],
+      "typeOnlyExternal": [
+        "@earendil-works/pi-durable",
+        "@earendil-works/pi-ai",
+        "@earendil-works/chord"
+      ]
+    },
+    "execution": {
+      "dependsOn": [
+        "files"
+      ],
+      "typeOnlyDependsOn": [],
+      "external": [
+        "@earendil-works/pi-durable",
+        "@earendil-works/pi-durable/*",
+        "just-bash",
+        "node:crypto",
+        "node:path",
+        "isomorphic-git",
+        "@earendil-works/chord/context",
+        "zod",
+        "node:fs/promises",
+        "@aws-sdk/client-bedrock-agentcore"
+      ],
+      "typeOnlyExternal": [
+        "@earendil-works/chord"
+      ],
+      "runtimePackageImports": {
+        "files": [
+          "@hachej/boring-files",
+          "@hachej/boring-files/git",
+          "@hachej/boring-files/platform",
+          "@hachej/boring-files/request-guard"
+        ]
+      }
+    },
+    "browser": {
+      "dependsOn": [
+        "files"
+      ],
+      "typeOnlyDependsOn": [],
+      "external": [
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-ai/*",
+        "@earendil-works/pi-codemode",
+        "@earendil-works/pi-codemode/worker",
+        "@sqlite.org/sqlite-wasm",
+        "buffer",
+        "node:fs",
+        "node:module",
+        "node:url"
+      ],
+      "typeOnlyExternal": [
+        "@earendil-works/pi-durable",
+        "@earendil-works/pi-durable/*",
+        "@earendil-works/chord"
+      ],
+      "runtimePackageImports": {
+        "files": [
+          "@hachej/boring-files/platform",
+          "@hachej/boring-files/request-guard",
+          "@hachej/boring-files/sqlite-settings"
+        ]
+      }
+    },
+    "feedback": {
+      "dependsOn": [
+        "ui",
+        "files",
+        "agent"
+      ],
+      "runtimePackageImports": {
+        "files": [
+          "@hachej/boring-files/platform"
+        ],
+        "ui": [],
+        "agent": [
+          "@hachej/boring-agent/browser-task"
+        ]
+      },
+      "typeOnlyDependsOn": [
+        "ui",
+        "files",
+        "agent"
+      ],
+      "external": [
+        "react",
+        "react/jsx-dev-runtime",
+        "@earendil-works/pi-durable",
+        "@earendil-works/pi-ai"
+      ],
+      "typeOnlyExternal": [
+        "esbuild",
+        "@earendil-works/pi-durable",
+        "@earendil-works/pi-ai",
+        "@earendil-works/chord"
+      ],
+      "pathRules": [
+        {
+          "prefix": "src/format/",
+          "forbidden": [
+            "@hachej/boring-agent*",
+            "@hachej/boring-files/platform",
+            "@earendil-works/*",
+            "node:*",
+            "react*"
+          ],
+          "forbiddenRelative": [
+            "src/store/",
+            "src/agent/",
+            "src/page/",
+            "src/ui/",
+            "src/source/",
+            "src/tickets/",
+            "src/preview/"
+          ]
+        },
+        {
+          "prefix": "src/page/",
+          "forbidden": [
+            "@hachej/boring-agent*",
+            "@earendil-works/*",
+            "node:*"
+          ],
+          "forbiddenRelative": [
+            "src/store/",
+            "src/agent/",
+            "src/ui/",
+            "src/source/",
+            "src/tickets/",
+            "src/preview/"
+          ]
+        },
+        {
+          "prefix": "src/ui/",
+          "forbidden": [
+            "@hachej/boring-agent*",
+            "@earendil-works/*",
+            "node:*"
+          ],
+          "forbiddenRelative": [
+            "src/store/",
+            "src/agent/",
+            "src/source/",
+            "src/tickets/",
+            "src/preview/"
+          ]
+        },
+        {
+          "prefix": "src/store/",
+          "forbidden": [
+            "@hachej/boring-agent*",
+            "@earendil-works/*",
+            "react*"
+          ],
+          "forbiddenRelative": [
+            "src/agent/",
+            "src/page/",
+            "src/ui/",
+            "src/source/",
+            "src/tickets/",
+            "src/preview/"
+          ]
+        },
+        {
+          "prefix": "src/agent/",
+          "forbidden": [
+            "react*"
+          ],
+          "forbiddenRelative": [
+            "src/page/",
+            "src/ui/",
+            "src/source/",
+            "src/tickets/",
+            "src/preview/"
+          ]
+        },
+        {
+          "prefix": "src/source/",
+          "forbidden": [
+            "react",
+            "react/jsx-runtime",
+            "react-dom*",
+            "@hachej/boring-agent*",
+            "@earendil-works/*"
+          ],
+          "forbiddenRelative": [
+            "src/format/",
+            "src/store/",
+            "src/agent/",
+            "src/page/",
+            "src/ui/",
+            "src/tickets/",
+            "src/preview/"
+          ]
+        },
+        {
+          "prefix": "src/tickets/",
+          "forbidden": [
+            "@hachej/boring-agent*",
+            "@hachej/boring-ui-kit*",
+            "@earendil-works/*",
+            "react*"
+          ],
+          "forbiddenRelative": [
+            "src/format/",
+            "src/store/",
+            "src/agent/",
+            "src/page/",
+            "src/ui/",
+            "src/source/",
+            "src/preview/"
+          ]
+        },
+        {
+          "prefix": "src/source/index",
+          "forbidden": [
+            "react*"
+          ],
+          "forbiddenRelative": [
+            "src/source/jsx-dev-runtime"
+          ]
+        },
+        {
+          "prefix": "src/source/jsx-dev-runtime",
+          "forbidden": [
+            "node:*",
+            "esbuild*",
+            "@hachej/boring-*"
+          ],
+          "forbiddenRelative": [
+            "src/source/index"
+          ]
+        },
+        {
+          "prefix": "src/preview/",
+          "forbidden": [
+            "@hachej/boring-agent*",
+            "@hachej/boring-files*",
+            "@hachej/boring-ui-kit*",
+            "@earendil-works/pi-durable*",
+            "@earendil-works/chord*",
+            "node:*",
+            "react*"
+          ],
+          "forbiddenRelative": [
+            "src/store/",
+            "src/agent/",
+            "src/ui/",
+            "src/source/",
+            "src/tickets/"
+          ]
+        }
+      ]
+    },
+    "testing": {
+      "dependsOn": [],
+      "typeOnlyDependsOn": [],
+      "external": [
+        "@earendil-works/pi-ai/models",
+        "@earendil-works/pi-ai/providers/faux",
+        "@earendil-works/pi-ai/utils/event-stream",
+        "@earendil-works/pi-ai/utils/json-parse",
+        "@earendil-works/pi-ai/utils/transcript",
+        "node:child_process",
+        "node:fs",
+        "node:net",
+        "node:os",
+        "node:path"
+      ],
+      "typeOnlyExternal": [
+        "@earendil-works/pi-ai"
+      ]
+    }
+  },
+  "upstreamExports": {
+    "@earendil-works/pi-durable": [
+      ".",
+      "./env",
+      "./env/node",
+      "./tools",
+      "./storage/memory",
+      "./storage/jsonl",
+      "./storage/jsonl/node",
+      "./storage/sqlite",
+      "./storage/sqlite/node",
+      "./testing",
+      "./package.json"
+    ],
+    "@earendil-works/pi-ai": [
+      ".",
+      "./models",
+      "./compat",
+      "./providers/*",
+      "./api/*",
+      "./utils/*",
+      "./oauth",
+      "./bedrock-provider",
+      "./bun-oauth"
+    ],
+    "@earendil-works/chord": [
+      ".",
+      "./context",
+      "./delta",
+      "./bundler",
+      "./node",
+      "./package.json"
+    ],
+    "@earendil-works/pi-codemode": [
+      ".",
+      "./worker"
+    ]
+  },
+  "upstreamExportsVersion": "1.0.1",
+  "runtimeProofs": {
+    "BORING-PI-1": "test/contracts/pi-native-state.test.mjs",
+    "BORING-PI-2": "test/contracts/pi-harness-attachment.test.mjs",
+    "BORING-PI-3": "test/contracts/pi-optional-extensions.test.mjs",
+    "BORING-PI-4": "test/contracts/pi-public-adapters.test.mjs",
+    "BORING-PI-5": "test/contracts/pi-independent-surfaces.test.mjs",
+    "BORING-PI-6": "test/contracts/shared-workspace.test.mjs",
+    "FEEDBACK-1": "test/contracts/feedback-1.test.mjs",
+    "FEEDBACK-2": "test/contracts/feedback-2.test.mjs",
+    "FEEDBACK-3": "test/contracts/feedback-3.test.mjs",
+    "FEEDBACK-4": "test/contracts/feedback-4.test.mjs",
+    "FEEDBACK-5": "test/contracts/feedback-5.test.mjs",
+    "FEEDBACK-6": "test/contracts/feedback-6.test.mjs",
+    "FEEDBACK-7": "test/contracts/feedback-7.test.mjs",
+    "FEEDBACK-8": "test/contracts/feedback-8.test.mjs"
+  },
+  "harnessFactory": "packages/agent/src/setup/createAgent.ts",
+  "sourceRoots": [
+    "packages"
+  ],
+  "reservedKinds": "pi.",
+  "blockedKernelClasses": [
+    "BoringHarness",
+    "BoringScheduler",
+    "BoringAgentLoop",
+    "BoringReplayEngine"
+  ],
+  "sourceDistribution": {
+    "manifest": "registry.json",
+    "format": "shadcn@4.21.1",
+    "runtimeImports": [
+      "@hachej/boring-ui-kit/markdown-editor",
+      "@hachej/boring-ui-kit/native-chat",
+      "@hachej/boring-ui-kit/html-viewer",
+      "@hachej/boring-ui-kit/text-buffer"
+    ]
+  }
+}

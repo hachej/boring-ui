@@ -1,0 +1,53 @@
+/* The fictional "existing app" the agent bar floats over: a settings console with its own layout and styles. It knows nothing about the agent
+   except the host wiring in browser.jsx. Light and dark follow the same shadcn tokens as the rest of the demo (prefers-color-scheme). */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--shell); color: var(--foreground); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+.nw-app { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-height: 100dvh; }
+.nw-side { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; gap: 0.25rem; padding: 1.25rem 0.75rem; border-right: 1px solid var(--border); background: var(--background); }
+.nw-brand { display: flex; align-items: center; gap: 0.6rem; padding: 0 0.5rem 1rem; font-weight: 650; letter-spacing: -0.01em; }
+.nw-logo { width: 1.5rem; height: 1.5rem; border-radius: 0.4rem; background: linear-gradient(135deg, oklch(0.62 0.17 255), oklch(0.7 0.14 190)); }
+.nw-nav { display: flex; flex-direction: column; gap: 0.125rem; margin: 0; padding: 0; list-style: none; }
+.nw-nav a { display: block; padding: 0.5rem 0.625rem; border-radius: 0.5rem; color: var(--muted-foreground); text-decoration: none; font-size: 0.9rem; }
+.nw-nav a[aria-current="page"] { background: var(--accent); color: var(--foreground); font-weight: 600; }
+.nw-nav a:hover { color: var(--foreground); }
+.nw-side h2 { margin: 1.25rem 0.5rem 0.25rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
+.nw-side .nw-task { margin: 0.25rem 0.25rem 0; height: auto; padding: 0.5rem 0.75rem; font-size: 0.8125rem; line-height: 1.3; }
+.nw-main { padding: 2rem clamp(1rem, 4vw, 3rem) 9rem; max-width: 62rem; }
+.nw-main h1 { margin: 0 0 0.25rem; font-size: 1.5rem; letter-spacing: -0.02em; }
+.nw-lede { margin: 0 0 1.5rem; color: var(--muted-foreground); }
+.nw-card { margin: 0 0 1.25rem; padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: 0.875rem; background: var(--background); }
+.nw-card h2 { margin: 0 0 0.25rem; font-size: 1rem; }
+.nw-card > p { margin: 0 0 1rem; color: var(--muted-foreground); font-size: 0.875rem; }
+.nw-field { display: grid; gap: 0.35rem; margin: 0 0 1rem; max-width: 30rem; }
+.nw-field label { font-size: 0.8125rem; font-weight: 600; }
+.nw-field input, .nw-field select { height: 2.5rem; padding: 0 0.75rem; border: 1px solid var(--input); border-radius: 0.5rem; background: var(--background); color: var(--foreground); font: inherit; }
+.nw-field input:focus, .nw-field select:focus { outline: 2px solid var(--ring); outline-offset: 1px; }
+.nw-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0; border-top: 1px solid var(--border); }
+.nw-row:first-of-type { border-top: 0; }
+.nw-row strong { display: block; font-size: 0.9rem; }
+.nw-row span { color: var(--muted-foreground); font-size: 0.8125rem; }
+.nw-switch { width: 2.5rem; height: 1.5rem; flex: none; accent-color: oklch(0.55 0.16 255); }
+.nw-btn { height: 2.25rem; padding: 0 1rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--background); color: var(--foreground); font: inherit; font-weight: 600; cursor: pointer; }
+.nw-btn.primary { border-color: transparent; background: oklch(0.55 0.16 255); color: white; }
+.nw-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.nw-saved { margin-left: 0.75rem; color: var(--muted-foreground); font-size: 0.875rem; }
+.nw-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.nw-table th, .nw-table td { padding: 0.55rem 0.5rem; border-top: 1px solid var(--border); text-align: left; }
+.nw-table th { color: var(--muted-foreground); font-weight: 600; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.nw-drawer { position: fixed; inset: 0 0 0 auto; z-index: 40; width: min(30rem, 100vw); display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--background); box-shadow: -12px 0 32px oklch(0 0 0 / 14%); }
+.nw-drawer header { display: flex; align-items: center; gap: 0.75rem; padding: 0.875rem 1.25rem; border-bottom: 1px solid var(--border); }
+.nw-drawer header h2 { flex: 1; margin: 0; font-size: 1rem; }
+.nw-drawer pre { margin: 0; padding: 1.25rem; overflow: auto; white-space: pre-wrap; font: 0.8125rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.nw-tool { display: inline-flex; width: 2.75rem; height: 2.75rem; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 9999px; background: var(--muted); color: var(--foreground); cursor: pointer; }
+.nw-tool:hover { background: var(--accent); }
+.nw-tool[aria-pressed="true"] { color: var(--foreground); background: var(--accent); }
+.nw-tool:focus-visible { outline: 2px solid var(--ring); }
+@media (max-width: 760px) {
+  .nw-app { grid-template-columns: minmax(0, 1fr); }
+  .nw-side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 0.75rem; border-right: 0; border-bottom: 1px solid var(--border); }
+  .nw-brand { padding: 0; }
+  .nw-nav { flex-direction: row; flex-wrap: wrap; }
+  .nw-side h2 { display: none; }
+  .nw-main { padding-bottom: 12rem; }
+}
