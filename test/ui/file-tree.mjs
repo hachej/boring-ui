@@ -144,3 +144,34 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.equal(preview.querySelector('textarea, [contenteditable=true]'), null);
   assert.deepEqual(opened, ['docs/note.md'], 'history did not retarget an open editor');
 });
+
+test('throwing file-tree subscribers cannot strand a publication before dispatch', async t => {
+  const f = fixture(t); let notified = 0;
+  f.controller.subscribe(() => { throw new Error('Broken presentation'); });
+  f.controller.subscribe(() => { notified++; });
+  const result = await f.controller.upload({ path: 'subscriber.txt', bytes: new Uint8Array([1]) });
+  assert.equal(result.state.result.kind, 'committed'); assert.equal(f.publishes(), 1); assert.ok(notified >= 2);
+  assert.equal(f.controller.getSnapshot().uploads[0].state.result.kind, 'committed');
+});
+
+test('revision attachments preserve image bytes and successful files beside a refused upload', async t => {
+  const { build } = await import('esbuild'); const { mkdirSync } = await import('node:fs');
+  const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
+  const output = new URL('revision-files.mjs', out);
+  await build({ entryPoints: [new URL('../../registry/pi-app/revision-files.ts', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', packages: 'external' });
+  const { uploadRevisionAttachments } = await import(output.href);
+  const f = fixture(t); const signal = new AbortController().signal;
+  await f.controller.upload({ path: 'uploads/existing.txt', bytes: new Uint8Array([5]) });
+  const image = new File([new Uint8Array([137, 80, 78, 71])], 'image.png', { type: 'image/png' });
+  const duplicate = new File(['replacement'], 'existing.txt', { type: 'text/plain' });
+  const results = await uploadRevisionAttachments(f.controller, [image, duplicate], signal);
+  assert.equal(results.length, 1); assert.equal(results[0].path, 'uploads/image.png');
+  assert.equal(results[0].image.mimeType, 'image/png'); assert.deepEqual(Buffer.from(results[0].image.data, 'base64'), Buffer.from([137, 80, 78, 71]));
+  assert.equal(f.controller.getSnapshot().uploads.at(-1).state.result.kind, 'conflict');
+  const unreadable = new File(['gone'], 'unreadable.txt');
+  Object.defineProperty(unreadable, 'arrayBuffer', { value: async () => { throw new Error('Local file is unavailable'); } });
+  const failures = [];
+  const partial = await uploadRevisionAttachments(f.controller, [new File(['ok'], 'another.txt'), unreadable], signal, (name, reason) => failures.push({ name, reason }));
+  assert.equal(partial.length, 1); assert.equal(partial[0].path, 'uploads/another.txt');
+  assert.deepEqual(failures, [{ name: 'unreadable.txt', reason: 'Local file is unavailable' }]);
+});

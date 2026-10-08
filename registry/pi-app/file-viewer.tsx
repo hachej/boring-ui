@@ -3,7 +3,7 @@
 // Opens one workspace file in the viewer that suits its type, always in the standard viewer frame (viewers item): Markdown and HTML in
 // their editors (revisioned through the host's resource client, so saves go back to the file and an edit made behind the editor's back is
 // a conflict), images and PDFs read-only from the file's bytes, anything else as text. A host viewer (`viewers[kind]`) takes precedence.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { ResourceLocator, ResourceSnapshot } from '@hachej/boring-files';
@@ -35,16 +35,29 @@ interface Common {
   readonly options: ViewerOptions;
   readonly onClose: () => void;
   readonly back: ReactNode;
+  readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
 }
 
 const subtitleOf = (locator: ResourceLocator) => <span data-testid="file-path" className="truncate">{locator.resource.path}</span>;
 
 /** Markdown or HTML: a revisioned controller over the file. A new revision remounts the pane; it starts in the mode the person chose. */
-function FileDocument({ path, kind, locator, options, onClose, back }: Common) {
+function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedChange }: Common) {
   const { client, identity } = options;
   const create = useMemo(() => (snapshot: ResourceSnapshot): MarkdownController | HtmlController => (kind === 'markdown' ? createMarkdownController : createHtmlController)({
     identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved', snapshot } }), [kind, client, identity]);
   const saved = useSaved({ client, target: locator, create });
+  useLayoutEffect(() => {
+    const controller = saved.controller;
+    if (!controller) return;
+    const notify = () => {
+      const snapshot = controller.getSnapshot();
+      onUnsavedChange?.(snapshot.dirty || snapshot.save.kind === 'pending'
+        || (snapshot.save.kind === 'settled' && snapshot.save.result.kind === 'unknown'));
+    };
+    notify();
+    const unsubscribe = controller.subscribe(notify);
+    return () => { unsubscribe(); onUnsavedChange?.(false); };
+  }, [saved.controller, onUnsavedChange]);
   const { labels } = useAppText();
   const [mode, setMode] = useState<string>(kind === 'markdown' ? 'rich' : 'preview');
   const common = { title: nameOf(path), subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', controls: back, ...(options.share ? { onShare: options.share } : {}) };
@@ -68,22 +81,31 @@ type Loaded = { readonly kind: 'loading' | 'missing' } | { readonly kind: 'ready
 /** Image, PDF and text files: read through the resource client, refreshed on demand (and followed while open, for text). */
 function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
   const { labels } = useAppText();
-  const [file, setFile] = useState<Loaded>({ kind: 'loading' });
-  const held = useRef(file);
-  held.current = file;
+  const targetKey = JSON.stringify(locator);
+  const binding = useMemo(() => ({ client: options.client, locator, path }), [options.client, targetKey, path]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly value: Loaded }>();
+  const file: Loaded = stored?.binding === binding ? stored.value : { kind: 'loading' };
+  const running = useRef<AbortController | undefined>(undefined);
   const load = useCallback(async () => {
-    const read = await options.client.read({ target: locator, revision: { kind: 'latest' } });
-    if (read.kind !== 'available') { if (held.current.kind === 'loading') setFile({ kind: 'missing' }); return; }
-    const { bytes, ref } = read.snapshot;
-    setFile(current => current.kind === 'ready' && current.revision === ref.revision ? current : { kind: 'ready', bytes, revision: ref.revision, text: decodeText(path, bytes) });
-  }, [options.client, locator, path]);
+    running.current?.abort();
+    const abort = new AbortController(); running.current = abort;
+    try {
+      const read = await binding.client.read({ target: binding.locator, revision: { kind: 'latest' } }, abort.signal);
+      if (abort.signal.aborted || running.current !== abort) return;
+      if (read.kind !== 'available') {
+        setStored(current => current?.binding === binding && current.value.kind === 'ready' ? current : { binding, value: { kind: 'missing' } });
+        return;
+      }
+      const { bytes, ref } = read.snapshot;
+      setStored({ binding, value: { kind: 'ready', bytes, revision: ref.revision, text: decodeText(binding.path, bytes) } });
+    } catch {
+      if (!abort.signal.aborted && running.current === abort) setStored(current => current?.binding === binding && current.value.kind === 'ready' ? current : { binding, value: { kind: 'missing' } });
+    }
+  }, [binding]);
   useEffect(() => {
-    let cancelled = false;
-    const run = () => load().catch(() => { if (!cancelled && held.current.kind === 'loading') setFile({ kind: 'missing' }); });
-    void run();
-    // Text follows the workspace while open; media is read again when the person presses Refresh.
-    const timer = kind === 'text' ? setInterval(run, POLL_MS) : undefined;
-    return () => { cancelled = true; clearInterval(timer); };
+    void load();
+    const timer = kind === 'text' ? setInterval(() => { void load(); }, POLL_MS) : undefined;
+    return () => { running.current?.abort(); clearInterval(timer); };
   }, [load, kind]);
   const common = { subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', controls: back, ...(options.share ? { onShare: options.share } : {}) };
   // Until the file is read the bar offers no Share: the image and PDF panes bring their own frame, so this one is replaced (remounted)
@@ -108,19 +130,21 @@ function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
  * One file in the panel. `path` is the host's name for it (shown in the share target and `data-path`); `locator` is the resource the
  * client reads. Remount per file with a `key`. `onBack` adds a back button to the bar (for example to the host's file list).
  */
-export function FileViewer({ path, locator, options, onClose, onBack, backLabel }: {
+export function FileViewer({ path, locator, options, onClose, onBack, backLabel, onUnsavedChange }: {
   readonly path: string;
   readonly locator: ResourceLocator;
   readonly options: ViewerOptions;
   readonly onClose: () => void;
   readonly onBack?: (() => void) | undefined;
   readonly backLabel?: string | undefined;
+  /** Built-in editable viewers report unsaved and unconfirmed changes for navigation guards. */
+  readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
 }) {
   const kind = kindOf(path);
   const { labels, icons } = useAppText();
   const back = onBack ? <button type="button" data-testid="file-back" onClick={onBack} className="inline-flex h-10 cursor-pointer items-center gap-1 rounded-lg border border-border bg-background px-2 text-sm md:h-8 md:text-xs"><icons.back className="size-3.5" aria-hidden="true" />{backLabel ?? labels.back}</button> : undefined;
   const custom = options.viewers?.[kind];
-  const common: Common = { path, kind, locator, options, onClose, back };
+  const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange };
   return <div data-testid="file-viewer" data-kind={kind} data-path={path} aria-label={labels.fileViewer(KIND_LABEL[kind])} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
     {custom ? custom({ target: locator, title: nameOf(path), frame: { titleTestId: 'file-title', onClose, target: { file: path }, controls: back } })
       : kind === 'markdown' || kind === 'html' ? <FileDocument {...common} />

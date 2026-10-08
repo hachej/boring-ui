@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
@@ -26,6 +26,7 @@ import type { AppIcons, AppLabels } from './app-labels';
 import { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 import type { CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 import { FileViewer } from './file-viewer';
+import { uploadRevisionAttachments } from './revision-files';
 import { SessionsPane, SessionsToggle } from './sessions';
 
 export { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
@@ -145,7 +146,16 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const opened = controlled !== undefined ? controlled : own;
   const change = useRef(onOpenedChange); change.current = onOpenedChange;
   const isControlled = controlled !== undefined;
-  const setOpened = useCallback((next: OpenedView | null) => { if (!isControlled) setOwn(next); change.current?.(next); }, [isControlled]);
+  const unsaved = useRef(false);
+  const currentView = useRef(opened); currentView.current = opened;
+  const noteUnsaved = useCallback((value: boolean) => { unsaved.current = value; }, []);
+  const setOpened = useCallback((next: OpenedView | null) => {
+    const current = currentView.current;
+    if (isFile(current) && isFile(next) && current.path === next.path) return;
+    if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and leave this file?')) return;
+    unsaved.current = false;
+    if (!isControlled) setOwn(next); change.current?.(next);
+  }, [isControlled]);
   const [fullscreen, setFullscreen] = useState(false);
   const text = useMemo(() => ({ labels: withDefaults(defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
@@ -181,18 +191,14 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     search: async (query: string, signal: AbortSignal) => (await revisionProvider.search({ query, limit: 8 }, signal)).entries,
     open: openFile,
   } : undefined, [revisionProvider, openFile]);
+  const [attachmentFailure, setAttachmentFailure] = useState<{ readonly tree: FileTreeController; readonly reasons: readonly string[] }>();
   const attachments = useMemo(() => fileTree ? {
-    upload: async (files: File[], signal: AbortSignal) => {
-      const uploaded: { readonly path: string; readonly name: string }[] = [];
-      for (const file of files) {
-        const path = `uploads/${file.name}`;
-        const upload = await fileTree.upload({ path, bytes: new Uint8Array(await file.arrayBuffer()), mediaType: file.type || 'application/octet-stream', signal });
-        if (upload.state.kind !== 'settled' || upload.state.result.kind !== 'committed') {
-          throw new Error(upload.state.kind === 'settled' && 'reason' in upload.state.result ? upload.state.result.reason : 'Upload is unconfirmed. Check its status in Files.');
-        }
-        uploaded.push({ path, name: file.name });
-      }
-      return uploaded;
+    upload: (files: File[], signal: AbortSignal) => {
+      setAttachmentFailure(undefined);
+      return uploadRevisionAttachments(fileTree, files, signal, (name, reason) => {
+        if (fileTree.getSnapshot().lifecycle === 'active') setAttachmentFailure(current => ({ tree: fileTree,
+          reasons: [...(current?.tree === fileTree ? current.reasons : []), `${name}: ${reason}`] }));
+      });
     },
   } : undefined, [fileTree]);
 
@@ -214,7 +220,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     if (!known) { seen.current.set(conversationId, new Set(keys)); return; }
     const fresh = versions.filter(version => !known.has(`${artifactKey(version)}:${version.revision}`));
     for (const key of keys) known.add(key);
-    if (!autoOpen || !fresh.length || closedInTurn.current.get(conversationId) === turn || globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches) return;
+    if (unsaved.current || !autoOpen || !fresh.length || closedInTurn.current.get(conversationId) === turn || globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches) return;
     setOpened({ kind: 'artifact', conversation: conversationId, descriptor: fresh.at(-1)!, follow: true });
   }, [versions, controller, conversationId, turn]); // eslint-disable-line react-hooks/exhaustive-deps
   /** The versions of one file that the conversation presented or saved, newest first. */
@@ -266,6 +272,8 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const chatProps: PiChatProps | undefined = controller && { ...(mentions ? { mentions } : {}), ...(attachments ? { attachments } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
+    {fileTree && <UploadNotice controller={fileTree} />}
     {fileTree && <details className="max-h-[50%] shrink-0 overflow-auto border-b border-border"><summary className="cursor-pointer px-4 py-2 text-sm font-medium">Files</summary>
       <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     </details>}
@@ -298,8 +306,14 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
                   const known = newestOf(artifactKey(active.descriptor));
                   setOpened({ kind: 'artifact', conversation: active.conversation, follow: value === 'latest', descriptor: value === 'latest' ? (known[0] ?? active.descriptor) : { ...active.descriptor, revision: value } });
                 }} />
-            : file ? <FileViewer key={file.path} path={file.path} locator={locate(file.path)} options={options} onClose={win.close} {...(fileBack ? { onBack: fileBack.onBack, backLabel: fileBack.label } : {})} />
+            : file ? <FileViewer key={JSON.stringify([revisionProvider?.workspace, identity, file.path])} onUnsavedChange={noteUnsaved} path={file.path} locator={locate(file.path)} options={options} onClose={win.close} {...(fileBack ? { onBack: fileBack.onBack, backLabel: fileBack.label } : {})} />
             : host ? panels![host.kind]!(host, win) : null}
         </div></ViewerWindowProvider>} />
   </div></ChatTextProvider></AppTextProvider>;
+}
+
+function UploadNotice({ controller }: { readonly controller: FileTreeController }) {
+  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const failures = state.uploads.filter(upload => upload.state.kind === 'settled' && upload.state.result.kind !== 'committed');
+  return failures.length ? <p role="alert" className="m-0 px-4 py-2 text-sm">{failures.length} upload{failures.length === 1 ? '' : 's'} need attention. Open Files to review the results and check unconfirmed uploads.</p> : null;
 }

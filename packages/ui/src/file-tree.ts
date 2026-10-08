@@ -48,7 +48,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
   const lifetime = new AbortController();
   const loads = new Map<string, AbortController>();
   const attempts = new Map<string, { readonly request: PublicationRequest; readonly digest: string; current: FileUpload; reconciling?: Promise<FileUpload> }>();
-  const update = (next: FileTreeState) => { if (state.lifecycle === 'active') { state = next; for (const listener of listeners) listener(); } };
+  const update = (next: FileTreeState) => { if (state.lifecycle === 'active') { state = next; for (const listener of [...listeners]) { try { listener(); } catch { /* A subscriber cannot interrupt publication or other subscribers. */ } } } };
   const active = () => { if (state.lifecycle !== 'active') throw new Error('The file tree is disposed'); };
   const directory = (path: string, listing: FileListing) => update({ ...state, directories: new Map(state.directories).set(path, listing) });
 

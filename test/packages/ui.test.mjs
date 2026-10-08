@@ -458,3 +458,4 @@ test('read-only Markdown refuses edits, proposals and publication despite a writ
 });
 
 await import('../ui/file-tree.mjs');
+await import('../ui/revision-workspace.mjs');
