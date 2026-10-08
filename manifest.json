@@ -1,0 +1,27 @@
+{
+  "repository": "hachej/boring-ui",
+  "source_main": "62eaa783257c7126dcdfe798cd09b83cf9633de8",
+  "snapshot_completed_at": "2026-10-08T18:54:04.458504+00:00",
+  "issues": 403,
+  "open": 23,
+  "closed": 380,
+  "comments": 711,
+  "timeline_events": 6394,
+  "timelines": 403,
+  "labels": 39,
+  "milestones": 0,
+  "attachment_links": 0,
+  "issue_reactions": 0,
+  "comment_reactions": 0,
+  "verification": {
+    "unique_issue_numbers": true,
+    "unique_comment_ids": true,
+    "every_issue_comment_count_matches": true,
+    "every_issue_timeline_present": true
+  },
+  "limitations": [
+    "Current bodies only; deleted content and prior body edits are not retrievable through these API responses.",
+    "External link destinations are not mirrored.",
+    "PRs themselves are not exported; linked PR references in issue timelines are retained."
+  ]
+}
