@@ -27,7 +27,8 @@ for (const withResources of [false, true]) test(`actual packed UI installs/typec
     writeFileSync(join(consumer, 'package.json'), JSON.stringify({ name: 'isolated-consumer', version: '1.0.0', private: true, type: 'module' }));
     const archives = [pack('ui', dir)]; if (withResources) archives.push(pack('files', dir));
     run('npm', ['install', ...npmInstallFlags(process.env.npm_config_cache ?? join(dir, 'npm-cache')), '--package-lock=false', ...archives], consumer);
-    assert.deepEqual(readdirSync(join(consumer, 'node_modules')).filter(name => name !== '.package-lock.json'), ['@hachej']);
+    assert.deepEqual(readdirSync(join(consumer, 'node_modules')).filter(name => name !== '.package-lock.json').sort(), withResources ? ['@hachej', 'ignore'] : ['@hachej']);
+    if (withResources) assert.equal(JSON.parse(readFileSync(join(consumer, 'node_modules/ignore/package.json'), 'utf8')).version, '5.3.2');
     assert.deepEqual(readdirSync(join(consumer, 'node_modules/@hachej')).sort(), withResources ? ['boring-files', 'boring-ui-kit'] : ['boring-ui-kit']);
     assert.equal(existsSync(join(consumer, 'node_modules/@earendil-works/pi-durable')), false);
     assert.equal(existsSync(join(consumer, 'node_modules/@hachej/boring-agent')), false);

@@ -15,7 +15,7 @@ let host, server, browser;
 const record = () => writeFileSync(join(evidence, 'journey.json'), JSON.stringify(report, null, 2));
 const step = async (name, action) => { const item = { name, status: 'running' }; report.steps.push(item); record(); await action(); item.status = 'passed'; record(); console.log(name); };
 const row = path => `[role="treeitem"][data-path=${JSON.stringify(path)}]`;
-const ready = (scope = 'first') => browser.until('file tree ready', `window.fileTreeFixture?.ready && window.fileTreeFixture.provider.identity.scopeId===${JSON.stringify(scope)} && document.querySelector('[role="treeitem"][data-path="docs"]')`);
+const ready = (scope = 'first') => browser.until('file tree ready', `window.fileTreeFixture?.ready && window.fileTreeFixture.provider.identity.scopeId===${JSON.stringify(scope)} && !!document.querySelector('[role="treeitem"][data-path="docs"]')`);
 try {
   host = await openFileTreeHost({ filename: join(directory, 'workspace.sqlite') });
   const bundle = await build({ entryPoints: [new URL('./view.jsx', import.meta.url).pathname], bundle: true, write: false, platform: 'browser', format: 'esm', metafile: true, define: { 'process.env.NODE_ENV': '"production"' } });
