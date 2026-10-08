@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { constants, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +42,8 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   return errors;
 }
 
-export function checkPackages(root, { release = false } = {}) {
+export function checkPackages(root, { release = false, outputDirectory, commit } = {}) {
+  if (outputDirectory && (!release || !/^[a-f0-9]{40}$/.test(commit ?? ''))) throw new Error('Retained release archives require --release and an exact commit SHA');
   const packages = readdirSync(join(root, 'packages')).map(name => {
     const directory = join(root, 'packages', name);
     return { directory, manifest: JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) };
@@ -50,6 +52,9 @@ export function checkPackages(root, { release = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'boring-npm-pack-'));
   const errors = [];
   const packs = [];
+  const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  if (release && (rootManifest.private !== true || packages.some(pkg => pkg.manifest.version !== rootManifest.version))) errors.push('Release requires a private root and one synchronized package version');
+  if (versions.size !== packages.length) errors.push('Duplicate package names');
   function run(command, args) {
     const result = runCaptured(command, args, { cwd: root, timeout: 120000, maxBuffer: 4 * 1024 * 1024 });
     if (result.status !== 0 || result.error || result.signal) throw new Error(`${command} failed: ${result.error?.message ?? result.stderr ?? result.signal}`);
@@ -64,7 +69,14 @@ export function checkPackages(root, { release = false } = {}) {
       if (JSON.stringify(manifest) !== JSON.stringify(pkg.manifest)) errors.push(`${pkg.manifest.name}: packed manifest differs from source`);
       errors.push(...checkPackage(manifest, paths, versions, { release }).map(error => `${manifest.name}: ${error}`));
       if (paths.includes('LICENSE') && run('tar', ['-xOzf', archive, 'package/LICENSE']) !== readFileSync(join(root, 'LICENSE'), 'utf8')) errors.push(`${manifest.name}: packed license differs from repository license`);
-      packs.push({ name: pack.name, version: pack.version, integrity: pack.integrity, size: pack.size, files: paths.length });
+      const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
+      if (integrity !== pack.integrity) errors.push(`${manifest.name}: archive integrity differs from npm pack`);
+      packs.push({ name: pack.name, version: pack.version, filename: pack.filename, integrity, size: pack.size, files: paths.length });
+    }
+    if (outputDirectory && !errors.length) {
+      mkdirSync(outputDirectory);
+      for (const pack of packs) copyFileSync(join(directory, pack.filename), join(outputDirectory, pack.filename), constants.COPYFILE_EXCL);
+      writeFileSync(join(outputDirectory, 'release.json'), JSON.stringify({ schemaVersion: 1, commit, version: rootManifest.version, packages: packs }, null, 2) + '\n', { flag: 'wx' });
     }
     return { errors, packs };
   } finally {
@@ -73,7 +85,10 @@ export function checkPackages(root, { release = false } = {}) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const result = checkPackages(fileURLToPath(new URL('../', import.meta.url)), { release: process.argv.includes('--release') });
+  const args = process.argv.slice(2);
+  const outputIndex = args.indexOf('--out');
+  if (outputIndex >= 0 && (!args[outputIndex + 1] || args[outputIndex + 1].startsWith('--'))) throw new Error('--out requires a new artifact directory');
+  const result = checkPackages(fileURLToPath(new URL('../', import.meta.url)), { release: args.includes('--release'), outputDirectory: outputIndex < 0 ? undefined : args[outputIndex + 1], commit: process.env.GITHUB_SHA });
   console.log(JSON.stringify(result, null, 2));
   process.exitCode = result.errors.length ? 1 : 0;
 }

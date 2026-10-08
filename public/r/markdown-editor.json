@@ -211,6 +211,6 @@
       "color": "var(--boring-editor-diff-remove-foreground, #9f1239)"
     }
   },
-  "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Version 1.0.0 is a private release candidate tested through local tarballs; no hosted registry or npm publication is advertised.",
+  "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Check the repository release notes for available npm versions; local tarball tests do not establish registry availability.",
   "type": "registry:component"
 }

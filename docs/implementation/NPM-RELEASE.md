@@ -27,28 +27,80 @@ the owner. The candidate names use `@hachej/boring-*`; repository ownership does
 ownership of that npm scope. Confirm that all pinned external peers are available
 to the intended consumer. The tarball audit does not contact the registry.
 
-Choose a version and update all seven package versions and internal peer versions
-together. Update the lockfile. Set package `private` fields to `false` in the
+Run `npm run release:version -- 1.1.0` (or an exact prerelease such as `1.1.0-rc.1`).
+This updates all seven packages, internal dependency pins, lockfile records and
+source/generated registry recipe pins together. It changes neither privacy flags
+nor external dependency versions. Review the changes and commit them. Build metadata
+suffixes and version aliases such as `latest` are not accepted.
+
+Set package `private` fields to `false` in the
 reviewed release commit; keep the repository root private. Run the validation
 again, including `npm run release:preflight`. This command requires both full
 release verification and publication-ready manifests. There is no override flag.
 
-## Publish only after separate authorization
+## Maintainer-triggered publishing
 
 Record the exact commit, package names, versions, npm account, and dist-tag before
 publication. Use a prerelease version and explicit prerelease tag for an approved
 prerelease. Do not put an unqualified prerelease on `latest`.
 
-Pack each reviewed package into a dedicated artifact directory. Run the tarball
-audit on that same checkout. Record archive integrity values and retain the
-archives. Perform npm's publish dry run against those archives before requesting
-publication approval. Publish the approved archives, not a later rebuild.
+The `Publish npm release` workflow in `.github/workflows/npm-publish.yml` runs
+only through manual dispatch. It admits only `hachej` as both initiating and
+rerunning actor, in `hachej/boring-ui`, on `main`. Enter the exact reviewed main
+SHA, the version already in its manifests and a distribution tag. The supplied
+SHA must match the dispatch SHA; arbitrary checkouts are refused. Merging this
+PR or pushing a tag does not publish anything.
 
-Configure npm authentication or trusted publishing in the release environment
-under the owner's policy. This PR creates no tokens, publishing workflow, tags,
-GitHub release, or npm publication. Test a fresh consumer against registry
-versions after publication; local tarball installation cannot establish that
-the registry packages are available.
+The workflow reruns the normal verification/installed-consumer, scripted-browser
+and full-history secret-scan workflows. Separately, preparation runs
+`release:preflight`, retaining all existing release blockers. It audits the actual
+tarballs, writes their package identities and SHA-512 integrity into `release.json`,
+and performs npm publish dry runs. Qualification and installation jobs have no
+OIDC publishing permission. Existing consumer scripts test separately packed
+archives from the same source commit; they are not claimed to consume the retained
+publishing archives.
+
+The publish job waits for every qualification job, enters the `npm` environment,
+and receives OIDC permission. It installs only the pinned npm CLI, without lifecycle
+scripts; it does not install project dependencies or rebuild. It downloads the exact
+artifact ID from preparation, checks all archive hashes and manifests against the
+reviewed source, and publishes only those archives with `--ignore-scripts` and an
+explicit public npm destination. Release runs are serialized without cancelling an
+active publication. Neither job changes package versions or privacy flags.
+
+### Owner setup before the first release
+
+1. Confirm control of the npm scope and all seven package names, including any
+   first-publication/bootstrap requirements with npm. GitHub ownership is insufficient.
+2. Configure the GitHub `npm` environment for the intended maintainer approval
+   and main-branch policy. This code does not create or change those settings.
+3. Configure each package's npm trusted publisher for user `hachej`, repository
+   `boring-ui`, workflow filename `npm-publish.yml`, and environment `npm`.
+   Permit direct publishing if the npm configuration defaults to staged-only access.
+   Complete setup near the first qualified release: unused new trust configurations
+   can expire. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+
+The workflow pins npm 11.5.1, which supports trusted publishing, and Node 22.22.1.
+It has no token fallback. Missing account ownership or trust configuration fails
+publication; it does not authorize weakening release gates. This change creates no
+credentials, npm packages, version tags or GitHub release, and does not dispatch the
+publishing workflow. After an authorized publication, test a fresh consumer against
+registry versions; local tarballs cannot establish registry installability.
+
+### Interrupted publication
+
+Seven package publications are not one transaction. Before any write, the publisher
+looks up every version. Registry errors are failures, not proof a version is absent.
+An existing version is skipped only when both its integrity and requested dist-tag
+match these artifacts. Different bytes or tags stop the run for manual review.
+
+The `npm-publication-*` artifact records each package as pending, unconfirmed,
+published or already-published. A failed command or lost response can leave a package
+published. Keep the original `npm-release-*` artifact and rerun only the failed publish
+job of that workflow run. It uses the original preparation artifact ID and reconciles
+registry state before retrying. Do not rebuild the release, blindly republish, delete
+published versions, or silently change distribution tags. Artifacts are retained for
+30 days; archive them before expiry if recovery is still pending.
 
 License qualification for optional tldraw use and live provider qualification
 remain host and release obligations. The shipped MIT license and third-party

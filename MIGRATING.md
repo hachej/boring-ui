@@ -64,6 +64,9 @@ this renamed and combined candidate.
 
 The previous automatic pnpm publishing workflow is removed. The replacement
 uses npm workspaces and [release preflight](docs/implementation/NPM-RELEASE.md).
+It includes synchronized version preparation and a maintainer-dispatched npm
+workflow that publishes the exact qualified tarballs through trusted publishing.
+Merges and tags do not trigger publication. Packages remain private in this PR.
 No GitHub release, npm publication, deployment or consumer modification is part
 of this PR. The [partial checkpoint](docs/implementation/PARTIAL.md) and all
 eleven global proof deferrals remain. A major version does not discharge them.

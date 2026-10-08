@@ -3,6 +3,7 @@ name: Scripted browser journeys
 # no retries). A failure here is a bug. Mark the job "Studio scripted journeys" as a required check in the repository settings.
 # The real-model layer is separate and never blocks: .github/workflows/studio-smoke.yml.
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main]

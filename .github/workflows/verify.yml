@@ -1,5 +1,6 @@
 name: Specification and boundary evidence
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main]

@@ -65,7 +65,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {
       const split = dependency.lastIndexOf('@'), name = dependency.slice(0, split), version = dependency.slice(split + 1);
-      assert.match(version, /^\d+\.\d+\.\d+$/);
+      assert.match(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
       declared.add(name);
       // Items that bring their own Tailwind source pin extra packages exactly as the repository's root tooling does.
       const expected = name.startsWith('@hachej/boring-') ? boringVersion(name) : name === '@modelcontextprotocol/sdk' || item.name in TAILWIND && architecture.rootDevDependencies[name] ? architecture.rootDevDependencies[name] : ui.peerDependencies[name];
