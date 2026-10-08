@@ -4,8 +4,8 @@
   "title": "Pi chat",
   "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history, a human-in-the-loop question card, an Approve / Deny card for host tools wrapped with requireApproval optional artifact cards that open generated content in the host's panel, and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The optional pi-ambient and pi-workspace blocks build on it.",
   "dependencies": [
-    "@hachej/boring-ui-kit@1.0.0",
-    "@hachej/boring-feedback@1.0.0",
+    "@hachej/boring-ui-kit@0.2.0",
+    "@hachej/boring-feedback@0.2.0",
     "react@19.3.0",
     "react-dom@19.3.0",
     "marked@17.0.6",

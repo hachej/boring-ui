@@ -1,7 +1,7 @@
 # Breaking migration to the native Pi library
 
 This candidate replaces the implementation in `hachej/boring-ui` with the v4
-library. Its proposed npm version is `1.0.0`, the next major after `0.1.111`.
+library. Its proposed npm version is `0.2.0`, a breaking pre-1.0 update after `0.1.111`.
 The architecture name "v4" is independent of the npm version. Packages remain
 private until release qualification and publication authorization are complete.
 
@@ -69,4 +69,4 @@ workflow that publishes the exact qualified tarballs through trusted publishing.
 Merges and tags do not trigger publication. Packages remain private in this PR.
 No GitHub release, npm publication, deployment or consumer modification is part
 of this PR. The [partial checkpoint](docs/implementation/PARTIAL.md) and all
-eleven global proof deferrals remain. A major version does not discharge them.
+eleven global proof deferrals remain. A version change does not discharge them.

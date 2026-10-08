@@ -1,6 +1,6 @@
 # Prepare an npm release
 
-The packages remain private at candidate version `1.0.0`. See the
+The packages remain private at candidate version `0.2.0`. See the
 [breaking migration](../../MIGRATING.md) for package identities and removals. Passing the tarball audit does
 not qualify the library for release. [PARTIAL.md](PARTIAL.md) records remaining
 implementation work, and [VERIFY.json](../../VERIFY.json) owns proof deferrals.
@@ -27,7 +27,7 @@ the owner. The candidate names use `@hachej/boring-*`; repository ownership does
 ownership of that npm scope. Confirm that all pinned external peers are available
 to the intended consumer. The tarball audit does not contact the registry.
 
-Run `npm run release:version -- 1.1.0` (or an exact prerelease such as `1.1.0-rc.1`).
+Run `npm run release:version -- 0.2.0` (or an exact prerelease such as `0.2.0-rc.1`).
 This updates all seven packages, internal dependency pins, lockfile records and
 source/generated registry recipe pins together. It changes neither privacy flags
 nor external dependency versions. Review the changes and commit them. Build metadata

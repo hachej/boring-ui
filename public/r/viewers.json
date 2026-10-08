@@ -4,8 +4,8 @@
   "title": "Viewers",
   "description": "The standard viewer top bar (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu) with Tailwind panes over it: the Markdown editor with a formatting toolbar and prose styling, the passive HTML preview and source editor, an image viewer with zoom and pan, and a PDF viewer. Owned, editable source over the borrowed controllers; no AI SDK.",
   "dependencies": [
-    "@hachej/boring-ui-kit@1.0.0",
-    "@hachej/boring-files@1.0.0",
+    "@hachej/boring-ui-kit@0.2.0",
+    "@hachej/boring-files@0.2.0",
     "react@19.3.0",
     "react-dom@19.3.0",
     "marked@17.0.6",

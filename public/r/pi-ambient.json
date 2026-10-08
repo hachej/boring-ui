@@ -4,7 +4,7 @@
   "title": "Pi ambient agent",
   "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts for finished, failed and waiting tasks (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
   "dependencies": [
-    "@hachej/boring-ui-kit@1.0.0",
+    "@hachej/boring-ui-kit@0.2.0",
     "react@19.3.0",
     "react-dom@19.3.0",
     "@earendil-works/pi-durable@1.0.1",

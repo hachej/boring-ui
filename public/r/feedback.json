@@ -4,9 +4,9 @@
   "title": "Feedback",
   "description": "Feedback from the chat composer: one Feedback button starts feedback mode on the application page (hover, click to pin a numbered note, hold ⌥ to use the app, optional voice), and one chip carries the notes to the next message. FeedbackBar, NoteBubble, FeedbackChip with its review, useComposerFeedback for the pi-chat composer, and PickerOverlay styles. Optional, not mounted by default: PointButton, AnnotateSheet, FeedbackList and FeedbackReport. Picking, masking, anchoring and placement stay in @hachej/boring-feedback/page and /ui, so restyling cannot weaken them.",
   "dependencies": [
-    "@hachej/boring-feedback@1.0.0",
-    "@hachej/boring-ui-kit@1.0.0",
-    "@hachej/boring-files@1.0.0",
+    "@hachej/boring-feedback@0.2.0",
+    "@hachej/boring-ui-kit@0.2.0",
+    "@hachej/boring-files@0.2.0",
     "react@19.3.0",
     "react-dom@19.3.0"
   ],

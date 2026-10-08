@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-feedback",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -52,9 +52,9 @@
     }
   },
   "peerDependencies": {
-    "@hachej/boring-ui-kit": "1.0.0",
-    "@hachej/boring-files": "1.0.0",
-    "@hachej/boring-agent": "1.0.0",
+    "@hachej/boring-ui-kit": "0.2.0",
+    "@hachej/boring-files": "0.2.0",
+    "@hachej/boring-agent": "0.2.0",
     "@earendil-works/pi-durable": "1.0.1",
     "@earendil-works/pi-ai": "1.0.1",
     "@earendil-works/chord": "1.0.1",

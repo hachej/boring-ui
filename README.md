@@ -1,6 +1,6 @@
 # Boring UI
 
-This is the breaking `1.0.0` candidate of the v4 architecture. Read the
+This is the breaking `0.2.0` candidate of the v4 architecture. Read the
 [migration guide](MIGRATING.md) before upgrading from the previous packages.
 
 Composable application capabilities around native Pi: chat, extensible viewers with agent tools, versioned resources, optional durable application features and coherent working-environment adapters. Keep the host's application and Pi's full native engine. Add only the pieces needed.
