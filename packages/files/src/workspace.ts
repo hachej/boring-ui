@@ -13,13 +13,8 @@ import { journalConnectionOf, sqliteBatchOf } from './sqlite-batch.js';
 
 const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte, index) => byte === right[index]);
 
-/** The host's identity of the workspace (the same shape as `WorkspaceIdentity` in `@hachej/boring-execution`). Pi's environment `id` is only a namespace. */
-export interface WorkspaceKey {
-  readonly providerId: string;
-  readonly instanceId: string;
-  readonly incarnation: string;
-  readonly viewId: string;
-}
+import type { WorkspaceKey } from './workspace-identity.js';
+export type { WorkspaceKey } from './workspace-identity.js';
 
 export interface WorkspaceChange {
   readonly path: string;

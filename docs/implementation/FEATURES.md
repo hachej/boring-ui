@@ -199,3 +199,17 @@ The [consultation example](../../examples/redaction-browser/README.md#preparatio
 Evidence commands: `node --test --experimental-test-isolation=none test/compatibility/redaction-preparation*.test.mjs`, `npm run test:redaction-browser-consumer`, and `npm run redaction:preparation:journey`. The installed consumer exercises real native tasks, crash recovery, DOM controls and browser bundle exclusions. Actual Chromium execution has its own required CI step. Execution results, review and local environment restrictions remain in `.cache/evidence/redaction-preparation/`; command presence is not evidence of a pass.
 
 This is partial W11/W12, P04/P11/P12 and A25-A32 work. Live clinical quality, external processing policy, real identity/provider services and clinical consumer migration remain separate qualifications. P01-P14, A01-A48, H01-H10 and all global deferrals remain in scope.
+
+## Frontend file browsing
+
+One authenticated revision provider powers listings, filename mentions, upload
+publication and retained history. The [files guide](../../packages/files/README.md#frontend-revision-provider)
+owns host setup and catalog limits; the [UI guide](../../packages/ui/README.md#file-tree-and-filename-mentions)
+owns tree and editor behavior.
+
+Public-output evidence: `test/files/revision.mjs` (loaded by the files package
+suite) and `test/ui/file-tree.mjs` (loaded by the UI package suite). Installed recipe verification
+uses `npm run test:app-registry-consumer`; real browser verification uses
+`npm run file-tree:journey`, also required in CI. Results and review remain under
+`.cache/evidence/filetree-20261008/` and `.cache/evidence/file-tree-browser/`.
+These additions do not complete global workspace or release qualifications.

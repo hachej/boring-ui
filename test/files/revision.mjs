@@ -151,3 +151,24 @@ test('catalog responses cannot be substituted between concurrent requests in one
   await client.list({});
   await assert.rejects(client.list({}), error => error.kind === 'denied');
 });
+
+test('aborting a publication retains the workspace lease until the provider settles', async t => {
+  const f = fixture(t);
+  let finish, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const pending = new Promise(resolve => { finish = resolve; });
+  f.select({ ...f.provider, publication: { publish: async () => { entered(); return pending; } } });
+  let handled;
+  const client = await connect(request => { handled = f.handler(request); return handled; });
+  const releases = f.released();
+  const stop = new AbortController();
+  const saving = client.publish(create(client, 'pending.txt', 'pending'), stop.signal);
+  await started;
+  stop.abort();
+  await saving;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.released(), releases, 'cancelled observation cannot dispose an active publication');
+  finish({ kind: 'denied', reason: 'fictional refusal' });
+  await handled;
+  assert.equal(f.released(), releases + 1);
+});

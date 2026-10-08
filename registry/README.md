@@ -261,3 +261,13 @@ The renderer supports task creation, completion, removal, exact Save, Refresh, D
 `examples/shared/task-list-tools.mjs` separately registers native `read_task_list` and `edit_task_list` tools. Supply a resolver with the original binding ID, target, current access and public reader/publisher/lookup capabilities. A binding ID identifies a provider incarnation and must change when that authority changes. The tools retain publication intent in native task memo state and recover attempted saves by lookup only. Installing the React recipe does not register tools or grant authorization.
 
 Run `npm run test:task-list-registry-consumer` after building the packages. It uses the pinned shadcn CLI, built item JSON and isolated package tarballs; checks strict declarations and browser imports; drives and restyles the installed component; then exercises the native tools and six SQLite SIGKILL cases against that installed domain/controller source. `npm run task-list:journey` drives Chromium through an authenticated local HTTP bridge, including concurrent saves and an independent Markdown provider. Loopback-restricted environments cannot qualify that browser journey. Hosted registry discovery, live identity and full A43/A46 remain separate qualifications.
+
+## File tree
+
+Install `file-tree.json` for a standalone `FileTree` wrapper. Pass the concrete
+`revisionProvider` from the [files guide](../packages/files/README.md#frontend-revision-provider).
+The `pi-app` recipe accepts the same binding and supplies the tree, `@` filename
+search and attachment uploads. See the [UI guide](../packages/ui/README.md#file-tree-and-filename-mentions)
+for publication, navigation and lifecycle behavior. `npm run file-tree:journey`
+drives the fictional SQLite-backed browser fixture; `npm run
+test:app-registry-consumer` installs the recipes in an isolated consumer.

@@ -789,6 +789,11 @@
           "path": "registry/pi-app/app-labels.ts",
           "type": "registry:lib",
           "target": "components/pi-app/app-labels.ts"
+        },
+        {
+          "path": "registry/pi-app/revision-files.ts",
+          "type": "registry:lib",
+          "target": "components/pi-app/revision-files.ts"
         }
       ]
     },
@@ -1453,7 +1458,7 @@
       "name": "feedback",
       "type": "registry:component",
       "title": "Feedback",
-      "description": "Feedback from the chat composer: one Feedback button starts feedback mode on the application page (hover, click to pin a numbered note, hold ⌥ to use the app, optional voice), and one chip carries the notes to the next message. FeedbackBar, NoteBubble, FeedbackChip with its review, useComposerFeedback for the pi-chat composer, and PickerOverlay styles. Optional, not mounted by default: PointButton, AnnotateSheet, FeedbackList and FeedbackReport. Picking, masking, anchoring and placement stay in @hachej/boring-feedback/page and /ui, so restyling cannot weaken them.",
+      "description": "Feedback from the chat composer: one Feedback button starts feedback mode on the application page (hover, click to pin a numbered note, hold \u2325 to use the app, optional voice), and one chip carries the notes to the next message. FeedbackBar, NoteBubble, FeedbackChip with its review, useComposerFeedback for the pi-chat composer, and PickerOverlay styles. Optional, not mounted by default: PointButton, AnnotateSheet, FeedbackList and FeedbackReport. Picking, masking, anchoring and placement stay in @hachej/boring-feedback/page and /ui, so restyling cannot weaken them.",
       "dependencies": [
         "@hachej/boring-feedback@0.2.0",
         "@hachej/boring-ui-kit@0.2.0",
@@ -2180,6 +2185,28 @@
         }
       },
       "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised."
+    },
+    {
+      "name": "file-tree",
+      "type": "registry:component",
+      "title": "File tree",
+      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@0.2.0",
+        "@hachej/boring-files@0.2.0",
+        "react@19.3.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme"
+      ],
+      "files": [
+        {
+          "path": "registry/file-tree/file-tree.tsx",
+          "type": "registry:component",
+          "target": "components/file-tree/file-tree.tsx"
+        }
+      ],
+      "css": {}
     }
   ]
 }

@@ -17,6 +17,28 @@ File-only agent tools close over their selected provider and use native registra
 
 ## One place for files
 
+### Frontend file browsing
+
+The frontend binds one `revisionProvider` for listing, filename search, uploads,
+history and viewer reads and writes. The host authenticates the request and selects
+the permitted workspace; the library handles the file operations. The binding
+names the provider, workspace instance, incarnation and view. A request for an old
+binding must not operate on a newly selected workspace.
+
+The catalog uses the same native filesystem and journal as conditional publication.
+Listing and mention search share a default filter for Git-ignored files, dependency
+and build folders, and internal metadata. Hosts may override presentation filtering;
+filtering grants no access. Authentication and workspace selection protect catalog
+and history requests as well as content reads and publications.
+
+Every frontend mutation, including binary upload, uses the publication contract.
+A duplicate upload name is a conflict. An unconfirmed upload keeps its operation
+identity for reconciliation and must not be retried under a different name.
+Historical viewing reads an exact retained revision without replacing a dirty
+editor buffer. Closing a file tree does not close its borrowed provider.
+
+### Workspace ownership
+
 Scope: one person and their agent per workspace now (one harness may serve many such workspaces, see [Workspace per call](#workspace-per-call)); several people and agents on one file later (a separate design). Access control is at the workspace boundary (the host); there are no per-file permissions inside a workspace. The migration to this model is done: there is no other resource store. Still pending: the AWS reference deployment (files PR 7: ECS + EFS + AgentCore, proven by a journey against a disposable deployment; see [HOST-RECIPE-AWS.md](HOST-RECIPE-AWS.md)).
 
 Every file lives in a workspace: a Pi `FileSystem`, plus exec when there is a shell. Every access (agent tools, file tree, editor saves, delivery, outside any agent turn) goes through that workspace's single provider instance. The one safe way to write is the workspace provider's conditional write (expected revision, operation id, lookup, history); "published" is a mode of writing, not a location. Hosts differ only in where bytes live: disk/EFS, a remote sandbox, or SQLite. A remote sandbox's `bash` writes to its own disk, so only the workspace's own `FileSystem` sees every write without a sync adapter. Guarantees belong to the contract (`ResourceProvider`, `PublicationRequest`, `ProviderGuarantees`), not to a store, so viewers, the text buffer and the transport do not change.

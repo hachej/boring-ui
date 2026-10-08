@@ -1,5 +1,27 @@
 # Partial implementation checkpoint
 
+## Frontend file browser
+
+The migration branch adds one authenticated `revisionProvider` for file listing,
+filename search, uploads, retained history and the file tree. Default browsing
+filters hide Git-ignored files, dependency/build folders and internal metadata;
+the host can override presentation filters. All writes use conditional
+publication. The [files guide](../../packages/files/README.md#frontend-revision-provider)
+and [UI guide](../../packages/ui/README.md#file-tree-and-filename-mentions) own the
+public behavior and limits.
+
+Provider and UI public-output tests cover concurrent edits, lost acknowledgements,
+stale workspace bindings, symlink confinement, borrowed lease lifetime,
+dirty navigation and partial attachment batches. Build/typecheck and structural
+checks pass locally. The actual browser journey is blocked here by sandbox
+`listen EPERM`; it is a required CI step. The isolated installed-recipe check and
+final full-suite results must be read from the candidate's evidence, not inferred
+from the focused tests. Raw evidence is under `.cache/evidence/filetree-20261008/`.
+
+This remains PARTIAL until browser and installed-consumer qualification pass.
+Production OAuth/storage integration and all eleven global deferrals remain
+separate. W/P/A/H completion status is unchanged.
+
 ## Document draft recovery
 
 Branch `feat/draft-recovery-20261008` builds on npm preparation PR52. Four concrete

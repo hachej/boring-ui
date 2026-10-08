@@ -269,3 +269,38 @@ then abort its signal. Aborting a signal alone cannot fence another tab's delaye
 write. Ordinary viewer disposal leaves the borrowed store available to other
 viewers. Encryption, retention enforcement and authenticated storage policy remain
 host responsibilities. This option does not implement durable chat drafts.
+
+## File tree and filename mentions
+
+Bind the authenticated [revision provider](../files/README.md#frontend-revision-provider)
+to the tree:
+
+```tsx
+import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
+
+<FileTree
+  revisionProvider={revisionProvider}
+  selectedPath={selectedPath}
+  onOpen={path => openFile(path)}
+/>
+```
+
+The tree supports folder expansion, keyboard navigation, filename search,
+pagination, uploads and read-only revision previews. Uploads go to `uploads/`
+by default (`uploadDirectory` overrides it). Duplicate names refuse publication.
+Unknown upload results show **Check upload status** and retain the operation ID;
+checking never republishes the bytes. Keep the local file until the result is
+known. Upload state is in memory and is not a durable cross-reload upload queue.
+
+For custom layouts, import `createFileTreeController` from
+`@hachej/boring-ui-kit/file-tree`; `FileTreeView` borrows that concrete controller.
+Dispose an owned controller when finished. Disposing it cancels its observations
+without disposing the shared provider. A custom `onOpen` must protect any dirty
+editor before navigating.
+
+The installed `pi-app` recipe accepts the same `revisionProvider` prop on
+`AgentWorkspace`. It supplies the Files tree, filename results for `@`, attachment
+publication and retained history without separate file callbacks. Its built-in
+text editor navigation asks before discarding unsaved content. The legacy
+`resources` binding remains available for existing hosts; use one binding at a
+time. History previews never replace the editable document.

@@ -98,3 +98,60 @@ scope in the same database:
 
 Existing store databases are not migrated: their `boring_documents` rows are not read by the workspace backend. Copy each current
 document into its workspace with a create, or start from the files.
+
+## Frontend revision provider
+
+`@hachej/boring-files/revision-handler` serves an existing workspace provider. The
+host resolves its OAuth session and selected workspace on every request:
+
+```ts
+const handleFiles = createRevisionHandler({
+  resolve: async request => {
+    const session = await authenticate(request);
+    if (!session) return null;
+    return {
+      provider: workspaces.workspace(session.workspaceId),
+      access: {
+        principalId: session.userId,
+        scopeId: session.workspaceId,
+        initiatorId: session.userId,
+      },
+    };
+  },
+});
+```
+
+`authenticate` and `workspaces` are host objects. Import `createRevisionHandler`
+from `@hachej/boring-files/revision-handler`. If acquisition returns a lease,
+include `release`; the handler retains it until underlying operations settle,
+including after request cancellation.
+
+In the browser, import `connectRevisionProvider` from
+`@hachej/boring-files/revision` and connect once per selected workspace:
+
+```ts
+const revisionProvider = await connectRevisionProvider({
+  endpoint: new URL('/api/workspace', location.origin),
+  fetch: request => fetch(request),
+});
+```
+
+The binding discovers identity and workspace incarnation from the authenticated
+server. Reconnect when the selected workspace changes. It exposes `list`,
+filename `search`, retained `history`, `locate`, `read`, `publish` and `lookup`.
+All writes use conditional publication; uploading a new file requires absence,
+and replacing one requires its exact resource revision. An unknown result must
+be reconciled by operation ID before another upload to that path.
+
+Catalog defaults hide Git-ignored files, dependency/build folders and internal
+metadata. Configure `createWorkspaceProvider({ ..., catalog: { defaults: false,
+filter: entry => ... } })` to override them. Filters govern presentation, not
+access control. The host authorizes the whole selected workspace. Listings do
+not follow symlinks. Pagination is a live, lexical view, not a frozen snapshot;
+refresh after concurrent changes. Traversal over the configured `maxEntries`
+(default 100,000) fails explicitly. History contains revisions retained by the
+workspace journal, not Git commits or an imported filesystem's prior history.
+
+The existing resource transport limits still apply: requests default to 4 MiB
+and responses to 8 MiB, including their serialized envelope. This API does not
+provide streaming uploads.

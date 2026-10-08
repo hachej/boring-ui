@@ -43,6 +43,8 @@ jobs:
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Document draft recovery with IndexedDB
         run: npm run draft-recovery:journey
+      - name: File tree, mentions, uploads and revision history
+        run: npm run file-tree:journey
       - name: Mounted canvas command geometry
         run: npm run canvas:journey:commands
       - name: Canvas proposal review and persistence
@@ -138,5 +140,13 @@ jobs:
         with:
           name: draft-recovery-evidence
           path: .cache/evidence/draft-recovery-browser
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: File tree evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: file-tree-evidence
+          path: .cache/evidence/file-tree-browser
           retention-days: 7
           if-no-files-found: ignore

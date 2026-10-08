@@ -49,7 +49,8 @@
     "use-stick-to-bottom": "1.1.6",
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "buffer": "6.0.3",
-    "@tldraw/tlschema": "5.5.2"
+    "@tldraw/tlschema": "5.5.2",
+    "ignore": "5.3.2"
   },
   "packages": {
     "files": {
@@ -63,7 +64,8 @@
         "node:sqlite",
         "isomorphic-git",
         "isomorphic-git/http/node",
-        "isomorphic-git/http/web"
+        "isomorphic-git/http/web",
+        "ignore"
       ],
       "typeOnlyExternal": [
         "node:http",
@@ -521,7 +523,9 @@
       "@hachej/boring-ui-kit/markdown-editor",
       "@hachej/boring-ui-kit/native-chat",
       "@hachej/boring-ui-kit/html-viewer",
-      "@hachej/boring-ui-kit/text-buffer"
+      "@hachej/boring-ui-kit/text-buffer",
+      "@hachej/boring-ui-kit/file-tree",
+      "@hachej/boring-ui-kit/file-tree-view"
     ]
   }
 }

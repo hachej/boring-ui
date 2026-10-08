@@ -94,6 +94,14 @@
     "./text-buffer": {
       "types": "./dist/public-text-buffer.d.ts",
       "import": "./dist/public-text-buffer.js"
+    },
+    "./file-tree": {
+      "types": "./dist/file-tree.d.ts",
+      "import": "./dist/file-tree.js"
+    },
+    "./file-tree-view": {
+      "types": "./dist/file-tree-view.d.ts",
+      "import": "./dist/file-tree-view.js"
     }
   },
   "peerDependencies": {

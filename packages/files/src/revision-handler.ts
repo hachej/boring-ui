@@ -22,6 +22,12 @@ function listRequest(value: unknown): FileListRequest {
 export function createRevisionHandler(options: RevisionHandlerOptions): (request: Request) => Promise<Response> {
   return async request => {
     let release: (() => void | Promise<void>) | undefined;
+    const operations = new Set<Promise<unknown>>();
+    const hold = <T>(pending: Promise<T>): Promise<T> => {
+      operations.add(pending);
+      void pending.then(() => operations.delete(pending), () => operations.delete(pending));
+      return pending;
+    };
     const refuse = (status: number) => new Response(null, { status, headers: { 'cache-control': 'no-store' } });
     try {
       if (request.method !== 'GET' && request.method !== 'POST') return refuse(405);
@@ -41,7 +47,12 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
       try { requested = bindingValue(binding(JSON.parse(decodeURIComponent(header)))); } catch { return refuse(403); }
       if (requested !== bindingValue(association)) return refuse(409);
       const provider = selected.provider;
-      if (!request.headers.has(catalogHeader)) return await createResourceHandler({ authenticate: async () => access, reader: provider, publisher: provider.publication, lookup: provider.reconciliation })(request);
+      if (!request.headers.has(catalogHeader)) return await createResourceHandler({
+        authenticate: async () => access,
+        reader: { read: (value, context) => hold(provider.read(value, context)) },
+        publisher: { publish: (value, context) => hold(provider.publication.publish(value, context)) },
+        lookup: { lookup: (value, context) => hold(provider.reconciliation.lookup(value, context)) },
+      })(request);
       const input = record(await readJsonBody(request, 32_768, access.signal));
       const requestId = identifier(input.requestId);
       let value: unknown;
@@ -65,6 +76,7 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
     } catch (error) {
       return refuse(error instanceof RevisionError ? error.kind === 'invalid' ? 400 : error.kind === 'denied' || error.kind === 'aborted' ? 403 : 503 : error instanceof RequestGuardError || error instanceof TypeError ? guardStatus(error) : 503);
     } finally {
+      await Promise.allSettled([...operations]);
       try { await release?.(); } catch { return refuse(503); } finally { if (!request.bodyUsed) void request.body?.cancel().catch(() => {}); }
     }
   };

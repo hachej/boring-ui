@@ -73,6 +73,14 @@
     "./remote": {
       "types": "./dist/remote.d.ts",
       "import": "./dist/remote.js"
+    },
+    "./revision": {
+      "types": "./dist/revision.d.ts",
+      "import": "./dist/revision.js"
+    },
+    "./revision-handler": {
+      "types": "./dist/revision-handler.d.ts",
+      "import": "./dist/revision-handler.js"
     }
   },
   "peerDependencies": {
@@ -106,5 +114,8 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "ignore": "5.3.2"
   }
 }

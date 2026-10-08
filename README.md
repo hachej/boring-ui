@@ -26,6 +26,8 @@ All seven packages target **0.2.0**. These are the proposed npm names; publicati
 | `@hachej/boring-feedback` | In-app feedback capture and host-controlled delivery | [Feedback](packages/feedback/README.md) |
 | `@hachej/boring-testing` | Test helpers for hosts and package consumers | [Testing](packages/testing/README.md) |
 
+A single authenticated `revisionProvider` powers a frontend file tree, filename search for `@`, uploads and retained revision previews. See the [file tree guide](packages/ui/README.md#file-tree-and-filename-mentions).
+
 The headless UI root has no files, Pi or agent dependency. Select optional resource and Pi entry points when you need them. The [feature map](docs/implementation/FEATURES.md) links public APIs to their tests and known limits.
 
 ## Try the fictional morning demo

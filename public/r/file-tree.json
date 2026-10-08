@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "file-tree",
+  "title": "File tree",
+  "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
+  "dependencies": [
+    "@hachej/boring-ui-kit@0.2.0",
+    "@hachej/boring-files@0.2.0",
+    "react@19.3.0"
+  ],
+  "registryDependencies": [
+    "@boring-ui/theme"
+  ],
+  "files": [
+    {
+      "path": "registry/file-tree/file-tree.tsx",
+      "content": "'use client';\n\nexport { FileTree } from '@hachej/boring-ui-kit/file-tree-view';\nexport type { FileTreeProps } from '@hachej/boring-ui-kit/file-tree-view';\nexport { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';\nexport type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';\n",
+      "type": "registry:component",
+      "target": "components/file-tree/file-tree.tsx"
+    }
+  ],
+  "css": {},
+  "type": "registry:component"
+}
