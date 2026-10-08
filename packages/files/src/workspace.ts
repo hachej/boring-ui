@@ -1,6 +1,10 @@
 import type { Context } from '@earendil-works/chord';
 import type { FileSystem } from '@earendil-works/pi-durable/env';
 import type { CommittedChange, PublicationLookupResult, PublicationReceipt, PublicationResult, ReadResult, ResourceAccess, ResourceCapabilities, ResourceExpectation, ResourceLocator, ResourceProvider, ResourceRead, ResourceRef, ResourceChange } from './contracts.js';
+import { createWorkspaceCatalog } from './workspace-catalog.js';
+import type { WorkspaceCatalogOptions } from './workspace-catalog.js';
+import type { WorkspaceCatalog } from './revision-contracts.js';
+export type { WorkspaceCatalogOptions } from './workspace-catalog.js';
 import { committedChanges } from './journal.js';
 import type { OperationKey, StoredOperation, WorkspaceJournal } from './journal.js';
 import { randomUUID, sha1 } from './platform.js';
@@ -30,6 +34,8 @@ export interface WorkspaceQueue {
 }
 
 export interface WorkspaceResourceProvider extends ResourceProvider {
+  readonly identity: WorkspaceKey;
+  readonly catalog: WorkspaceCatalog;
   readonly publication: { readonly publish: (request: Parameters<NonNullable<ResourceProvider['publication']>['publish']>[0], access: ResourceAccess) => Promise<PublicationResult> };
   readonly reconciliation: { readonly lookup: (operationId: string, access: ResourceAccess) => Promise<PublicationLookupResult> };
   /** The workspace's mutation queue. Native tool calls that must not interleave with a conditional write run through it. */
@@ -50,6 +56,7 @@ export interface WorkspaceProviderOptions {
   readonly identity: WorkspaceKey;
   readonly fs: FileSystem;
   readonly journal: WorkspaceJournal;
+  readonly catalog?: WorkspaceCatalogOptions;
 }
 
 const queues = new WeakMap<object, WorkspaceQueue>();
@@ -401,7 +408,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   };
 
   return {
-    providerId, read, queue, keep,
+    providerId, read, queue, keep, identity: Object.freeze(key),
+    catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path) }),
     publication: { publish }, reconciliation: { lookup }, poll,
     history: path => journal.revisions(historyScope, locator({ resource: { providerId, path }, view: { kind: 'published' } }).resource.path),
     saves: path => journal.saves(historyScope, locator({ resource: { providerId, path }, view: { kind: 'published' } }).resource.path),

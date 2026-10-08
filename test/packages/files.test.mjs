@@ -1,3 +1,4 @@
+import '../files/revision.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
