@@ -23,7 +23,10 @@ try {
   const html = '<!doctype html><meta name="viewport" content="width=device-width"><title>File tree</title><style>body{font:16px system-ui;max-width:900px;margin:24px}button,input{font:inherit;margin:4px;padding:6px}ul{list-style:none}button:focus,li:focus{outline:2px solid blue}pre{white-space:pre-wrap}section{border:1px solid #ddd;margin:12px 0;padding:12px}</style><div id="root"></div><script type="module" src="/view.js"></script>';
   server = createServer(async (incoming, outgoing) => {
     try {
-      const request = webRequest(incoming, outgoing, `http://${incoming.headers.host}`);
+      const abort = new AbortController();
+      outgoing.on('close', () => { if (!outgoing.writableFinished) abort.abort(); });
+      const request = await webRequest(incoming, new URL(incoming.url, `http://${incoming.headers.host}`), { signal: abort.signal });
+      if (!request) { await sendWebResponse(new Response(null, { status: 413 }), outgoing); return; }
       const path = new URL(request.url).pathname;
       const response = path === '/api/workspace' ? await host.handler(request) : path === '/view.js' ? new Response(bundle.outputFiles[0].contents, { headers: { 'content-type': 'text/javascript' } }) : new Response(html, { headers: { 'content-type': 'text/html' } });
       await sendWebResponse(response, outgoing);
