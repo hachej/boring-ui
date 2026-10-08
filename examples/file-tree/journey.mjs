@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
@@ -18,7 +18,7 @@ const row = path => `[role="treeitem"][data-path=${JSON.stringify(path)}]`;
 const ready = (scope = 'first') => browser.until('file tree ready', `window.fileTreeFixture?.ready && window.fileTreeFixture.provider.identity.scopeId===${JSON.stringify(scope)} && !!document.querySelector('[role="treeitem"][data-path="docs"]')`);
 try {
   host = await openFileTreeHost({ filename: join(directory, 'workspace.sqlite') });
-  const bundle = await build({ entryPoints: [new URL('./view.jsx', import.meta.url).pathname], bundle: true, write: false, platform: 'browser', format: 'esm', metafile: true, define: { 'process.env.NODE_ENV': '"production"' } });
+  const bundle = await build({ entryPoints: [new URL('./view.jsx', import.meta.url).pathname], bundle: true, write: false, platform: 'browser', format: 'esm', jsx: 'automatic', metafile: true, define: { 'process.env.NODE_ENV': '"production"' } });
   assert.ok(!Object.keys(bundle.metafile.inputs).some(path => /packages\/files\/dist\/(?:workspace|sqlite|revision-handler)|pi-durable\//.test(path)), 'Browser bundle excludes server storage and Pi runtime');
   const html = '<!doctype html><meta name="viewport" content="width=device-width"><title>File tree</title><style>body{font:16px system-ui;max-width:900px;margin:24px}button,input{font:inherit;margin:4px;padding:6px}ul{list-style:none}button:focus,li:focus{outline:2px solid blue}pre{white-space:pre-wrap}section{border:1px solid #ddd;margin:12px 0;padding:12px}</style><div id="root"></div><script type="module" src="/view.js"></script>';
   server = createServer(async (incoming, outgoing) => {
