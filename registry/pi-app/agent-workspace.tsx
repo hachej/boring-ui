@@ -92,6 +92,11 @@ interface AgentWorkspaceBaseProps {
    */
   readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey'> | undefined;
   /**
+   * How the chat's attachments are saved under `uploads/` (they exist only with a Library, `revisionProvider` or `resources`). Every file
+   * is reference-only by default: the message carries its `@path` and the agent reads it with its file tools. See `WorkspaceUploads`.
+   */
+  readonly uploads?: WorkspaceUploads | undefined;
+  /**
    * The page's agents. With two or more, a switcher at the top of the left pane chooses one; the host scopes `conversations` and the
    * controller to `activeId`. One agent (or none given) shows no switcher.
    */
@@ -157,6 +162,16 @@ interface AgentWorkspaceBaseProps {
   readonly className?: string;
 }
 
+/** The chat's attachment rules. `inlineImages` (default false) also sends a png, jpeg, gif or webp as a native image in the message: every later turn then carries its base64, so it is off by default. `maxBytes` refuses a larger file before it is uploaded (no limit by default), and the chat shows why. `accept` is the file picker's `accept` (any file by default). */
+export interface WorkspaceUploads {
+  readonly inlineImages?: boolean | undefined;
+  readonly maxBytes?: number | undefined;
+  readonly accept?: string | undefined;
+}
+
+/** A byte count for a refusal message: `2.5 MB`, `300 KB`, or `12 bytes`. */
+const sizeLabel = (bytes: number) => bytes >= 1_000_000 ? `${Number((bytes / 1_000_000).toFixed(1))} MB` : bytes >= 1_000 ? `${Math.round(bytes / 1_000)} KB` : `${bytes} bytes`;
+
 export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
   | { readonly revisionProvider: RevisionProvider; readonly resources?: never }
   | { readonly resources: WorkspaceResources; readonly revisionProvider?: never }
@@ -173,7 +188,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, libraryPlacement = 'center', locale, fileTree: treeOptions, agents, detect, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, libraryPlacement = 'center', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 768, drawerBelow = 768, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const opened = controlled !== undefined ? controlled : own;
@@ -243,15 +258,19 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     open: openFile,
   } : undefined, [revisionProvider, openFile]);
   const [attachmentFailure, setAttachmentFailure] = useState<{ readonly tree: FileTreeController; readonly reasons: readonly string[] }>();
+  // Primitives only in the memo: a host's inline `labels` object would otherwise rebuild the chat's attachments on every render.
+  const uploadAccept = uploads?.accept, inlineImages = uploads?.inlineImages === true, maxBytes = uploads?.maxBytes;
+  const tooLarge = maxBytes !== undefined ? text.labels.attachmentTooLarge(sizeLabel(maxBytes)) : undefined;
   const attachments = useMemo(() => fileTree ? {
+    ...(uploadAccept !== undefined ? { accept: uploadAccept } : {}),
     upload: (files: File[], signal: AbortSignal) => {
       setAttachmentFailure(undefined);
       return uploadRevisionAttachments(fileTree, files, signal, (name, reason) => {
         if (fileTree.getSnapshot().lifecycle === 'active') setAttachmentFailure(current => ({ tree: fileTree,
           reasons: [...(current?.tree === fileTree ? current.reasons : []), `${name}: ${reason}`] }));
-      });
+      }, { inlineImages, ...(maxBytes !== undefined ? { maxBytes, tooLarge } : {}) });
     },
-  } : undefined, [fileTree]);
+  } : undefined, [fileTree, uploadAccept, inlineImages, maxBytes, tooLarge]);
 
   // ---- Artifacts: cards open the panel; the agent's new ones open it too.
   const versions = useArtifactVersions(controller, detect);

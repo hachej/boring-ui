@@ -224,11 +224,29 @@ test('provider setup lists any registered provider with its models, key state, s
 test('the browser mention parser agrees with the agent package mention resolver', async () => {
   const { pieces } = await load('config', 'config.ts');
   const { mentionedPaths } = await import('@hachej/boring-agent/mentions');
-  const texts = ['', 'no mention', '@a.md', 'see @docs/a.md, and @b/c.txt.', 'mail me@x.com @ok', '(@paren) @q? @"quoted"', '@a @a @b', 'line\n@next\t@tab', '@', '@.', '@a/b!', 'x@y @z)', '/skill @file.md'];
+  const texts = ['', 'no mention', '@a.md', 'see @docs/a.md, and @b/c.txt.', 'mail me@x.com @ok', '(@paren) @q? @"quoted"', '@a @a @b', 'line\n@next\t@tab', '@', '@.', '@a/b!', 'x@y @z)', '/skill @file.md',
+    '@"docs/Meeting notes.md" and @docs/plan.md.', '@"say \\"hi\\".md" @"a\\\\ b" @"unterminated', '@"" @"  "x', '@"a b"c @"tail'];
   for (const text of texts) {
     const browser = [...new Set(pieces(text, { mentions: true, skills: [] }).filter(piece => piece.kind === 'mention').map(piece => piece.value))];
     assert.deepEqual(browser, mentionedPaths(text), JSON.stringify(text));
   }
+});
+
+test('a mention with whitespace or a quote is written quoted, and parses, chips and removes as one token', async () => {
+  const { pieces, mentionToken, hasMention, removeMention, mentionTrigger } = await load('config', 'config.ts');
+  assert.equal(mentionToken('docs/plan.md'), '@docs/plan.md', 'a bare path is unchanged');
+  assert.equal(mentionToken('docs/Meeting notes.md'), '@"docs/Meeting notes.md"');
+  assert.equal(mentionToken('say "hi".md'), '@"say \\"hi\\".md"');
+  const text = `see ${mentionToken('docs/Meeting notes.md')} and @docs/plan.md, ok`;
+  const parsed = pieces(text, { mentions: true, skills: [] });
+  assert.deepEqual(parsed.filter(piece => piece.kind === 'mention').map(piece => [piece.value, piece.text]), [['docs/Meeting notes.md', '@"docs/Meeting notes.md"'], ['docs/plan.md', '@docs/plan.md']]);
+  assert.equal(hasMention(text, 'docs/Meeting notes.md'), true);
+  assert.equal(hasMention(text, 'docs/Meeting'), false, 'a prefix of a path is not its mention');
+  assert.equal(removeMention(text, 'docs/Meeting notes.md'), 'see and @docs/plan.md, ok');
+  const quoted = 'x @"say \\"hi\\".md" y';
+  assert.equal(pieces(quoted, { mentions: true, skills: [] }).find(piece => piece.kind === 'mention').value, 'say "hi".md');
+  assert.equal(removeMention(quoted, 'say "hi".md'), 'x y');
+  assert.deepEqual(mentionTrigger('open @"Meet', 11), { query: 'Meet', start: 5, end: 11 }, 'a typed opening quote is not part of the search');
 });
 
 test('reused call IDs keep each invocation result, question, key and orphan failure distinct', async () => {
