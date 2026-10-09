@@ -21,20 +21,35 @@ export function normalizeMarkdownWhitespace(text: string): string {
 }
 
 const HEADING = /^ {0,3}#{1,6}(\s|$)/;
+const LIST_ITEM = /^\s*([-*+]|\d{1,9}[.)])(\s|$)/;
+/** A line that starts its own block instead of continuing the paragraph above it. */
+const BLOCK_START = /^\s*([-*+]\s|\d{1,9}[.)]\s|#{1,6}(\s|$)|>|\||```|~~~|(\*\s*){3,}$|(-\s*){3,}$|(_\s*){3,}$)/;
 
 /**
  * The comparison form for the round trip: whitespace normalised, and blank lines beside an ATX heading dropped (the serialiser always
- * puts one there, and "# Title" directly above a paragraph means the same document). Blank lines inside fenced code are kept.
+ * puts one there, and "# Title" directly above a paragraph means the same document). Blank lines inside fenced code are kept. The
+ * indentation of a wrapped line that continues a list item's paragraph is dropped too: it is a lazy continuation line, the same
+ * paragraph however far it is indented, and the serialiser writes it unindented. A line that starts a block keeps its indentation, so
+ * a change of nesting is still a rewrite. A list may interrupt a paragraph, so the blank line the serialiser puts between a top-level
+ * paragraph and the list right under it is dropped; between list items it stays, since it makes the list loose.
  */
 function comparableMarkdown(text: string): string {
   const lines = normalizeMarkdownWhitespace(text).split('\n');
   const out: string[] = [];
   let fence: string | undefined;
+  let itemParagraph = false, topParagraph = false;
   lines.forEach((line, index) => {
     const opened = FENCE.exec(line);
     if (opened && (!fence || opened[1] === fence)) fence = fence ? undefined : opened[1];
     const blank = line.trim() === '' && !fence && !opened;
+    const afterParagraph = topParagraph;
+    topParagraph = false;
+    if (fence || opened || blank) itemParagraph = false;
+    else if (LIST_ITEM.test(line)) itemParagraph = true;
+    else if (itemParagraph && !BLOCK_START.test(line)) line = line.trimStart();
+    else { itemParagraph = false; topParagraph = !/^\s/.test(line) && !BLOCK_START.test(line); }
     if (blank && (HEADING.test(lines[index - 1] ?? '') || HEADING.test(lines[index + 1] ?? ''))) return;
+    if (blank && afterParagraph && LIST_ITEM.test(lines[index + 1] ?? '') && !/^\s/.test(lines[index + 1] ?? '')) return;
     out.push(line);
   });
   return out.join('\n');

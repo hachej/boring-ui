@@ -101,6 +101,11 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.deepEqual(checkMarkdownRichSafety('a\r\nb\r\n').reasons, ['Windows line endings']);
     assert.deepEqual(checkMarkdownRichSafety('# A\nText directly under a heading.\n## B\nMore.\n'), { safe: true }, 'a heading without blank lines around it is the same document');
     assert.deepEqual(checkMarkdownRichSafety('# Notes & Highlights\n\nFish & chips, 5 < 6.\n'), { safe: true }, 'an ampersand is not rewritten as an entity');
+    assert.deepEqual(checkMarkdownRichSafety('# Notes\n\n- A first point that wraps\n  onto an indented second line.\n- Second point.\n  Wrapped as well.\n\n1. Numbered and\n   wrapped.\n'), { safe: true }, 'an indented line continuing a list item is the same paragraph');
+    assert.equal(checkMarkdownRichSafety('- parent\n  - nested\n').safe, true, 'nesting the serialiser keeps is safe');
+    assert.deepEqual(checkMarkdownRichSafety('Several situations:\n- an unpaid invoice,\n- a payment not yet matched.\n'), { safe: true }, 'a list may interrupt the paragraph above it');
+    assert.equal(checkMarkdownRichSafety('- tight\n- list\n').safe, true);
+    assert.equal(checkMarkdownRichSafety('- parent\n    - nested deeper than the serialiser writes\n').safe, false, 'a rewritten nesting indentation is still refused');
     const rewritten = checkMarkdownRichSafety('* item\n* item\n');
     assert.equal(rewritten.safe, false);
     assert.match(rewritten.reasons[0], /rewrite/);
