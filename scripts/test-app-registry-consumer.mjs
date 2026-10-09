@@ -77,7 +77,7 @@ import type { RevisionProvider } from '@hachej/boring-files/revision';
 
 export function BoundWorkspace({ revisionProvider }: { readonly revisionProvider: RevisionProvider }) {
   return <><AgentWorkspace revisionProvider={revisionProvider} controller={undefined} conversationId={undefined} /><FileTree revisionProvider={revisionProvider} />
-    <AgentWorkspace revisionProvider={revisionProvider} libraryPlacement="pane" onUnsavedChange={unsaved => { void unsaved; }} controller={undefined} conversationId={undefined}
+    <AgentWorkspace revisionProvider={revisionProvider} chat={{ showHistory: false, showConnectionStatus: false, tools: <button type="button">Mic</button> }} libraryPlacement="pane" onUnsavedChange={unsaved => { void unsaved; }} controller={undefined} conversationId={undefined}
       agents={{ items: [{ id: 'pm', label: 'PM' }, { id: 'dev', label: 'Developer' }], activeId: 'pm', onSelect: () => {} }} /></>;
 }
 

@@ -339,7 +339,8 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
       chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
-        library={<section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
+        // With the Library in the pane, the center holds only the chat (no second, hidden toggle or tree).
+        library={libraryInPane ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
             <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
           <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">Loading files…</p>}</div>
