@@ -57,6 +57,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly className?: string;
   readonly decisions?: ReactNode;
   readonly controls?: ReactNode;
+  /** Host controls at the end of the composer bar (for example a microphone), like AmbientChat's tools slot. */
+  readonly tools?: ReactNode;
   /** Rendered before the title in the header (for example a menu button on narrow screens). */
   readonly headerStart?: ReactNode;
   readonly onFiles?: FilesHandler;
@@ -70,6 +72,10 @@ export interface PiChatProps extends ChatFeatureProps {
    * conversation while replies keep their Fork button (`conversations.fork`). Default `true`: History opens the list.
    */
   readonly historyList?: boolean;
+  /** Show the header History button. Default true; paging remains available through the controller. */
+  readonly showHistory?: boolean;
+  /** Show the header connection badge. Default true; connection state still controls actions. */
+  readonly showConnectionStatus?: boolean;
   /** The optional Feedback button in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
   readonly feedback?: ComposerFeedback;
 }
@@ -94,8 +100,8 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </span>;
 }
 
-function PiChatSession({ controller, mode = 'expert', className, actions, avatar, headerActions, decisions, controls, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, feedback, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+function PiChatSession({ controller, mode = 'expert', className, actions, avatar, headerActions, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   const { title } = labels;
   const [browsingHistory, setBrowsingHistory] = useState(false);
@@ -121,13 +127,13 @@ function PiChatSession({ controller, mode = 'expert', className, actions, avatar
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
       <h2 className="m-0 min-w-0 flex-1 truncate text-[0.9375rem] font-semibold tracking-tight">{title}</h2>
-      {conversations && historyList
+      {showHistory && (conversations && historyList
         ? <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
           onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>
         : state.history.kind !== 'disabled' && !browsingHistory && <Button size="sm" data-testid="history-open" className="text-muted-foreground" disabled={state.disposed || !connected}
-          onClick={() => { setBrowsingHistory(true); act(controller.loadEarlier); }}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>}
+          onClick={() => { setBrowsingHistory(true); act(controller.loadEarlier); }}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>)}
       <BlockActions actions={headerActions} testId="chat-action" menuLabel={labels.moreActions} />
-      <ConnectionBadge kind={connectionKind} />
+      {showConnectionStatus && <ConnectionBadge kind={connectionKind} />}
       {controls}
     </header>
 
@@ -169,7 +175,7 @@ function PiChatSession({ controller, mode = 'expert', className, actions, avatar
         </div>
         <div>
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          <Composer {...composer} barStart={barStart} barNote={barNote} />
+          <Composer {...composer} barStart={barStart} barNote={barNote} barEnd={tools} />
         </div>
       </div>
     </footer>

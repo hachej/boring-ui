@@ -282,6 +282,9 @@ the conversations, or the whole pane on a single-session page without
 `conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`
 adds an agent switcher at the top of the pane when there are two or more agents;
 the host scopes the conversations and controller to the chosen one.
+`chat={{ showHistory: false, showConnectionStatus: false }}` hides the chat header's
+History button and connection badge (defaults keep both), and `chat.tools` puts host
+controls such as a microphone at the end of the composer bar.
 `onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
 it switches workspace or identity. Chat attachments are saved as
 `uploads/<name>-<8 hex>.<ext>`, so a second pasted `image.png` never collides.

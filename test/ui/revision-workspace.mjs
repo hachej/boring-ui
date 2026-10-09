@@ -135,6 +135,8 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   const agents = { items: [{ id: 'pm', label: 'PM' }, { id: 'dev', label: 'Developer' }], activeId: 'pm', onSelect: id => { chosen.push(id); } };
   await act(async () => root.render(workspace({ key: 'pane', storageKey: 'pane-proof', conversations, libraryPlacement: 'pane', agents, onUnsavedChange: value => { unsavedReports.push(value); } })));
   assert.equal(element.querySelector('[data-testid=workspace-library]'), null, 'no center Library link in pane placement');
+  assert.equal(element.querySelectorAll('[data-testid=sessions-toggle]').length, 1, 'the center holds no second toggle with the Library in the pane');
+  assert.equal(element.querySelector('[data-testid=workspace-library-view]'), null);
   const select = element.querySelector('[data-testid=agent-select]'); assert.ok(select, 'two agents show a switcher');
   await act(async () => { select.value = 'dev'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
   assert.deepEqual(chosen, ['dev']);
