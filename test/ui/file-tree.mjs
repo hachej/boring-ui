@@ -128,6 +128,11 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.ok(directory); assert.equal(directory.getAttribute('aria-expanded'), 'false');
   await act(async () => directory.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
   assert.equal(directory.getAttribute('aria-expanded'), 'true');
+  const folderButton = directory.querySelector('[data-slot=sidebar-menu-button]'); assert.ok(folderButton);
+  await act(async () => folderButton.click());
+  assert.equal(directory.getAttribute('aria-expanded'), 'false', 'the controlled shadcn trigger toggles exactly once');
+  await act(async () => folderButton.click());
+  assert.equal(directory.getAttribute('aria-expanded'), 'true');
   const file = element.querySelector('[role=treeitem][data-path="docs/note.md"]'); assert.ok(file);
   await act(async () => file.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
   assert.deepEqual(opened, ['docs/note.md']);
@@ -143,6 +148,17 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.doesNotMatch(preview.textContent, /New fictional version/);
   assert.equal(preview.querySelector('textarea, [contenteditable=true]'), null);
   assert.deepEqual(opened, ['docs/note.md'], 'history did not retarget an open editor');
+  const loading = later();
+  f.binding.list = ({ directory }) => directory === 'empty' ? loading.promise : Promise.resolve({ entries: [{ path: 'empty', kind: 'directory', size: 0 }, entry('sibling.md')] });
+  await act(async () => element.querySelector('button').click());
+  const empty = element.querySelector('[role=treeitem][data-path="empty"]'); assert.ok(empty);
+  await act(async () => { empty.focus(); empty.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
+  await act(async () => empty.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  assert.equal(window.document.activeElement, empty, 'Right stays on a loading folder');
+  await act(async () => { loading.resolve({ entries: [] }); await loading.promise; });
+  await act(async () => empty.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  assert.equal(window.document.activeElement, empty, 'Right stays on an empty folder');
+
 });
 
 test('throwing file-tree subscribers cannot strand a publication before dispatch', async t => {

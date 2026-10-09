@@ -276,6 +276,7 @@ Bind the authenticated [revision provider](../files/README.md#frontend-revision-
 to the tree:
 
 ```tsx
+import '@hachej/boring-ui-kit/file-tree.css';
 import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
 
 <FileTree
@@ -284,6 +285,10 @@ import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
   onOpen={path => openFile(path)}
 />
 ```
+
+The renderer adapts the official shadcn `sidebar-11` tree. Its shipped CSS works
+without a SidebarProvider or scanning package sources with Tailwind. Attribution
+and the pinned upstream revision are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The tree supports folder expansion, keyboard navigation, filename search,
 pagination, uploads and read-only revision previews. Uploads go to `uploads/`
@@ -296,10 +301,14 @@ For custom layouts, import `createFileTreeController` from
 `@hachej/boring-ui-kit/file-tree`; `FileTreeView` borrows that concrete controller.
 Dispose an owned controller when finished. Disposing it cancels its observations
 without disposing the shared provider. A custom `onOpen` must protect any dirty
-editor before navigating.
+editor before navigating. Both components can mount in a detached window or another
+layout. Pass that window an authenticated provider binding and route `onOpen` to
+the intended viewer; the tree does not own a workspace layout or window transport.
 
 The installed `pi-app` recipe accepts the same `revisionProvider` prop on
-`AgentWorkspace`. It supplies the Files tree, filename results for `@`, attachment
+`AgentWorkspace`. Its left-pane Library menu opens the tree in the center/chat area.
+Selecting a file opens the right artifact viewer. Chat stays mounted while Library
+is visible, preserving its draft. It also supplies filename results for `@`, attachment
 publication and retained history without separate file callbacks. Its built-in
 text editor navigation asks before discarding unsaved content. The legacy
 `resources` binding remains available for existing hosts; use one binding at a

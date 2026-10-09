@@ -264,10 +264,16 @@ Run `npm run test:task-list-registry-consumer` after building the packages. It u
 
 ## File tree
 
-Install `file-tree.json` for a standalone `FileTree` wrapper. Pass the concrete
+Install `file-tree.json` for portable `FileTree` and `FileTreeView` wrappers.
+The renderer adapts shadcn `sidebar-11`; the recipe imports its scoped stylesheet.
+It can mount in a detached window without the workspace layout. Pass the concrete
 `revisionProvider` from the [files guide](../packages/files/README.md#frontend-revision-provider).
 The `pi-app` recipe accepts the same binding and supplies the tree, `@` filename
 search and attachment uploads. See the [UI guide](../packages/ui/README.md#file-tree-and-filename-mentions)
 for publication, navigation and lifecycle behavior. `npm run file-tree:journey`
 drives the fictional SQLite-backed browser fixture; `npm run
 test:app-registry-consumer` installs the recipes in an isolated consumer.
+
+The default `pi-app` left pane includes Library when `revisionProvider` is bound.
+Library displays the tree in the center; selecting a file opens the right artifact
+viewer and keeps unsaved-change protection. Chat remains mounted across switches.

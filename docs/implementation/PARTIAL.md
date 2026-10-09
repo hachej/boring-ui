@@ -1,5 +1,20 @@
 # Partial implementation checkpoint
 
+## Portable Library tree
+
+The default workspace now offers Library in the left pane, renders the tree in
+its center and opens selected files in the right viewer. Docked and floating chat
+mounts and drafts survive Library switches. The tree adapts pinned shadcn
+`sidebar-11` and ships scoped CSS; standalone and borrowed-controller renderers
+also work without workspace or sidebar context.
+
+Focused public-output tests and build/typecheck pass. The required browser journey
+now checks Library/viewer geometry and keyboard selection in a detached page.
+Local execution remains blocked by `listen EPERM`; candidate CI must qualify that
+journey and the installed recipe. Evidence is under
+`.cache/evidence/library-20261009/`. Global W/P/A/H status and eleven release
+deferrals are unchanged.
+
 ## Frontend file browser
 
 The migration branch adds one authenticated `revisionProvider` for file listing,

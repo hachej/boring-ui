@@ -106,6 +106,8 @@ createRoot(document.getElementById('root')!).render(<App />);
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/page.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/page.js', '--metafile=dist/meta.json',
     '--define:process.env.NODE_ENV="production"', '--alias:@=./src'], isolated);
+  const bundledCss = readFileSync(join(directory, 'dist/page.css'), 'utf8');
+  assert.ok(bundledCss.includes('sidebar-menu-button') && bundledCss.includes('file-tree'), 'portable tree styles ship without scanning package internals');
   const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'dist/meta.json'), 'utf8')).inputs);
   assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
   for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx'])

@@ -1,5 +1,7 @@
 'use client';
 
+import '@hachej/boring-ui-kit/file-tree.css';
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';

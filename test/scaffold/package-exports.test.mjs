@@ -13,6 +13,14 @@ for (const name of readdirSync(join(root, 'packages'))) {
     const dir = join(root, 'packages', name);
     const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
     for (const [subpath, entry] of Object.entries(manifest.exports)) {
+      if (typeof entry === 'string') {
+        assert.equal(subpath, './file-tree.css');
+        assert.equal(manifest.name, '@hachej/boring-ui-kit');
+        assert.ok(existsSync(join(dir, entry)), entry);
+        assert.match(readFileSync(join(dir, entry), 'utf8'), /sidebar-menu-button/);
+        assert.ok(manifest.sideEffects.includes('**/*.css'));
+        continue;
+      }
       assert.ok(existsSync(join(dir, entry.types)), entry.types);
       assert.ok(existsSync(join(dir, entry.import)), entry.import);
       const source = entry.import.replace(/^\.\/dist\//, 'src/').replace(/\.js$/, '.ts');
@@ -25,7 +33,7 @@ for (const name of readdirSync(join(root, 'packages'))) {
       // Real implementations can land with their required proofs. This test
       // must not permanently freeze packages into empty interface-only output.
     }
-    assert.ok(Object.values(manifest.exports).some(entry => existsSync(join(dir, entry.types))));
+    assert.ok(Object.values(manifest.exports).some(entry => typeof entry !== 'string' && existsSync(join(dir, entry.types))));
   });
 }
 

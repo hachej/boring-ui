@@ -35,6 +35,12 @@ function App() {
     }, error => { if (active) setFailure(error.message); });
     return () => { active = false; };
   }, [scope]);
+  if (new URLSearchParams(location.search).has('detached')) return <main>
+    <h1>Detached library</h1>
+    {failure && <p role="alert">{failure}</p>}
+    {provider && <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />}
+    <output aria-label="Opened file">{opened}</output>
+  </main>;
   return <main>
     <h1>Workspace files</h1>
     <p>Fictional SQLite workspace. Uploads publish with revision checks.</p>
@@ -42,7 +48,7 @@ function App() {
     <output aria-label="Selected workspace">{scope}</output>
     {failure && <p role="alert">{failure}</p>}
     <button type="button" onClick={() => setIntegrated(true)}>Open integrated workspace</button>
-    {provider && integrated && <AgentWorkspace controller={undefined} conversationId={undefined} revisionProvider={provider} />}
+    {provider && integrated && <div style={{ height: 700 }}><AgentWorkspace controller={undefined} conversationId={undefined} revisionProvider={provider} /></div>}
     {provider && !integrated && <>
       <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />
       <output aria-label="Opened file">{opened}</output>

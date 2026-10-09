@@ -735,7 +735,8 @@
         "@hachej/boring-files@0.2.0",
         "react@19.3.0",
         "react-dom@19.3.0",
-        "lucide-react@1.51.0"
+        "lucide-react@1.51.0",
+        "@radix-ui/react-collapsible@1.1.20"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat",
@@ -2194,7 +2195,9 @@
       "dependencies": [
         "@hachej/boring-ui-kit@0.2.0",
         "@hachej/boring-files@0.2.0",
-        "react@19.3.0"
+        "react@19.3.0",
+        "@radix-ui/react-collapsible@1.1.20",
+        "lucide-react@1.51.0"
       ],
       "registryDependencies": [
         "@boring-ui/theme"

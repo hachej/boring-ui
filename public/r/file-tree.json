@@ -6,7 +6,9 @@
   "dependencies": [
     "@hachej/boring-ui-kit@0.2.0",
     "@hachej/boring-files@0.2.0",
-    "react@19.3.0"
+    "react@19.3.0",
+    "@radix-ui/react-collapsible@1.1.20",
+    "lucide-react@1.51.0"
   ],
   "registryDependencies": [
     "@boring-ui/theme"
@@ -14,7 +16,7 @@
   "files": [
     {
       "path": "registry/file-tree/file-tree.tsx",
-      "content": "'use client';\n\nexport { FileTree } from '@hachej/boring-ui-kit/file-tree-view';\nexport type { FileTreeProps } from '@hachej/boring-ui-kit/file-tree-view';\nexport { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';\nexport type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';\n",
+      "content": "'use client';\n\nimport '@hachej/boring-ui-kit/file-tree.css';\n\nexport { FileTree, FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';\nexport type { FileTreeProps, FileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';\nexport { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';\nexport type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';\n",
       "type": "registry:component",
       "target": "components/file-tree/file-tree.tsx"
     }

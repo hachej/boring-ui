@@ -50,7 +50,8 @@
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "buffer": "6.0.3",
     "@tldraw/tlschema": "5.5.2",
-    "ignore": "5.3.2"
+    "ignore": "5.3.2",
+    "@radix-ui/react-collapsible": "1.1.20"
   },
   "packages": {
     "files": {
@@ -174,7 +175,9 @@
         "@tldraw/store",
         "@json-render/react/schema",
         "@earendil-works/chord/delta",
-        "@tldraw/tlschema"
+        "@tldraw/tlschema",
+        "@radix-ui/react-collapsible",
+        "lucide-react"
       ],
       "typeOnlyExternal": [
         "@earendil-works/pi-durable",
@@ -525,7 +528,8 @@
       "@hachej/boring-ui-kit/html-viewer",
       "@hachej/boring-ui-kit/text-buffer",
       "@hachej/boring-ui-kit/file-tree",
-      "@hachej/boring-ui-kit/file-tree-view"
+      "@hachej/boring-ui-kit/file-tree-view",
+      "@hachej/boring-ui-kit/file-tree.css"
     ]
   }
 }

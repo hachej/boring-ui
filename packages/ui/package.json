@@ -5,13 +5,16 @@
   "private": true,
   "type": "module",
   "description": "Independent headless viewer contracts with optional resource and native Pi subpaths.",
-  "sideEffects": false,
+  "sideEffects": [
+    "**/*.css"
+  ],
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "README.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "styles"
   ],
   "types": "./dist/index.d.ts",
   "exports": {
@@ -102,7 +105,8 @@
     "./file-tree-view": {
       "types": "./dist/file-tree-view.d.ts",
       "import": "./dist/file-tree-view.js"
-    }
+    },
+    "./file-tree.css": "./styles/file-tree.css"
   },
   "peerDependencies": {
     "@hachej/boring-files": "0.2.0",
@@ -130,7 +134,9 @@
     "@json-render/core": "0.21.0",
     "@json-render/react": "0.21.0",
     "zod": "4.6.5",
-    "@tldraw/tlschema": "5.5.2"
+    "@tldraw/tlschema": "5.5.2",
+    "@radix-ui/react-collapsible": "1.1.20",
+    "lucide-react": "1.51.0"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-files": {
@@ -209,6 +215,12 @@
       "optional": true
     },
     "@tldraw/tlschema": {
+      "optional": true
+    },
+    "@radix-ui/react-collapsible": {
+      "optional": true
+    },
+    "lucide-react": {
       "optional": true
     }
   },

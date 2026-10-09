@@ -1,5 +1,8 @@
 'use client';
 
+import * as Collapsible from '@radix-ui/react-collapsible';
+import { ChevronRight, File, Folder } from 'lucide-react';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from './file-tree-shadcn.js';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { ResourceSnapshot } from '@hachej/boring-files';
@@ -67,7 +70,7 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
       case 'Home': focus(rows[0]?.entry.path); break;
       case 'End': focus(rows.at(-1)?.entry.path); break;
       case 'ArrowRight':
-        if (entry.kind === 'directory' && !state.query) { if (!expanded) void controller.toggle(entry.path); else focus(rows[index + 1]?.entry.path); }
+        if (entry.kind === 'directory' && !state.query) { if (!expanded) void controller.toggle(entry.path); else { const next = rows[index + 1]; if (next && next.level > (rows[index]?.level ?? 0)) focus(next.entry.path); } }
         break;
       case 'ArrowLeft':
         if (entry.kind === 'directory' && expanded && !state.query) void controller.toggle(entry.path);
@@ -90,19 +93,30 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
     {(state.directories.get(directory)?.entries ?? []).map(entry => renderEntry(entry, level))}
     {listingStatus(state.directories.get(directory), directory)}
   </>;
-  const renderEntry = (entry: FileEntry, level: number): ReactNode => <li key={entry.path} role="treeitem" data-path={entry.path}
-    aria-level={level} aria-selected={selectedPath === entry.path} aria-expanded={entry.kind === 'directory' ? state.expanded.has(entry.path) : undefined}
-    tabIndex={focusPath === entry.path ? 0 : -1} onFocus={event => { if (event.target === event.currentTarget) setFocused(entry.path); }}
-    onKeyDown={event => { if (event.target === event.currentTarget) keyboard(event, entry); }} className="outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm">
-    <div className="flex min-h-9 items-center gap-1 rounded-sm hover:bg-muted">
-      <button type="button" tabIndex={-1} className="min-w-0 flex-1 truncate px-2 py-1 text-left text-sm" title={entry.path}
-        onClick={() => { focus(entry.path); if (entry.kind === 'directory') void controller.toggle(entry.path); else onOpen?.(entry.path); }}>
-        <span aria-hidden="true">{entry.kind === 'directory' ? state.expanded.has(entry.path) ? '▾ ' : '▸ ' : '· '}</span>{state.query ? entry.path : entry.path.split('/').at(-1)}
-      </button>
-      {entry.kind === 'file' && <button type="button" aria-label={`History of ${entry.path}`} className="px-2 py-1 text-xs" onClick={() => setHistoryPath(entry.path)}>History</button>}
-    </div>
-    {entry.kind === 'directory' && state.expanded.has(entry.path) && !state.query && <ul role="group" className="m-0 list-none border-l border-border pl-3">{renderEntries(entry.path, level + 1)}</ul>}
-  </li>;
+  const renderEntry = (entry: FileEntry, level: number): ReactNode => {
+    const folder = entry.kind === 'directory';
+    const label = state.query ? entry.path : entry.path.split('/').at(-1);
+    const button = <SidebarMenuButton tabIndex={-1} title={entry.path} isActive={selectedPath === entry.path}
+      className="min-w-0 flex-1 data-[active=true]:bg-transparent"
+      onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
+      {folder ? <><ChevronRight className="transition-transform" aria-hidden="true" /><Folder aria-hidden="true" /></> : <File aria-hidden="true" />}
+      <span>{label}</span>
+    </SidebarMenuButton>;
+    const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path}
+      aria-level={level} aria-selected={selectedPath === entry.path} aria-expanded={folder ? state.expanded.has(entry.path) : undefined}
+      tabIndex={focusPath === entry.path ? 0 : -1}
+      onFocus={event => { if (event.target === event.currentTarget) setFocused(entry.path); }}
+      onKeyDown={event => { if (event.target === event.currentTarget) keyboard(event, entry); }}
+      className="group/collapsible rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring [&[data-state=open]>div>button>svg:first-child]:rotate-90">
+      <div className="flex items-center gap-1">
+        {folder ? <Collapsible.Trigger asChild>{button}</Collapsible.Trigger> : button}
+        {!folder && <button type="button" aria-label={`History of ${entry.path}`} className="px-2 py-1 text-xs" onClick={() => setHistoryPath(entry.path)}>History</button>}
+      </div>
+      {folder && !state.query && <Collapsible.Content asChild><SidebarMenuSub role="group">{renderEntries(entry.path, level + 1)}</SidebarMenuSub></Collapsible.Content>}
+    </SidebarMenuItem>;
+    return folder ? <Collapsible.Root key={entry.path} asChild open={state.expanded.has(entry.path)}
+      onOpenChange={() => { void controller.toggle(entry.path); }}>{item}</Collapsible.Root> : item;
+  };
 
   return <section data-boring="file-tree" className={className} aria-label="Workspace files">
     <div className="flex flex-wrap items-center gap-2 p-2">
@@ -120,9 +134,9 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
       }} /></label>
     </div>
     {uploadError && <p role="alert">{uploadError}</p>}
-    <ul ref={tree} role="tree" aria-label="Files" className="m-0 list-none p-2">
+    <SidebarMenu ref={tree} role="tree" aria-label="Files" className="m-0 list-none p-2">
       {state.query ? <>{state.search.entries.map(entry => renderEntry(entry, 1))}{listingStatus(state.search, '', true)}</> : renderEntries('', 1)}
-    </ul>
+    </SidebarMenu>
     {state.uploads.length > 0 && <ul aria-label="Uploads" className="list-none p-2 text-sm">{state.uploads.map(upload => <li key={upload.operationId} data-operation={upload.operationId}>
       <span>{upload.path}: {upload.state.kind === 'pending' ? 'Uploading…' : upload.state.result.kind === 'committed' ? 'Saved' : upload.state.result.kind === 'partial' ? 'Unconfirmed' : upload.state.result.reason}</span>
       {upload.state.kind === 'settled' && upload.state.result.kind === 'unknown' && <button type="button" onClick={() => { void controller.reconcile(upload.operationId).catch(error => setUploadError(error instanceof Error ? error.message : 'Upload status unavailable')); }}>Check upload status</button>}

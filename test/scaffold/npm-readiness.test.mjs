@@ -50,3 +50,12 @@ test('bare local dependency paths cannot pass release audit', () => {
     assert.deepEqual(checkPackage({ ...manifest, dependencies: { local: version } }, files, new Map(), { release: true }), ['Local dependency: local'], version);
   }
 });
+
+test('UI may ship its declared tree stylesheet without admitting arbitrary assets', () => {
+  const ui = { ...manifest, name: '@hachej/boring-ui-kit', exports: { ...manifest.exports, './file-tree.css': './styles/file-tree.css' } };
+  const packed = [...files, 'THIRD_PARTY_NOTICES.md', 'styles/file-tree.css'];
+  assert.deepEqual(checkPackage(ui, packed, new Map()), []);
+  assert.deepEqual(checkPackage(ui, [...packed, 'styles/private.json'], new Map()), ['Unexpected packed file: styles/private.json']);
+  assert.deepEqual(checkPackage(ui, packed.filter(path => !path.endsWith('.css')), new Map()), ['Missing or invalid export target: ./styles/file-tree.css']);
+  assert.ok(checkPackage({ ...ui, name: manifest.name }, packed, new Map()).includes('Unexpected packed file: styles/file-tree.css'));
+});

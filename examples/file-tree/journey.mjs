@@ -7,6 +7,7 @@ import { build } from 'esbuild';
 import { launch, q } from '@hachej/boring-testing/browser';
 import { webRequest, sendWebResponse } from '@hachej/boring-files/node-http';
 import { openFileTreeHost } from './host.mjs';
+import { buildTailwind } from '../studio/tailwind.mjs';
 
 const evidence = resolve('.cache/evidence/file-tree-browser'); mkdirSync(evidence, { recursive: true });
 const directory = mkdtempSync(join(tmpdir(), 'boring-file-tree-browser-'));
@@ -18,9 +19,10 @@ const row = path => `[role="treeitem"][data-path=${JSON.stringify(path)}]`;
 const ready = (scope = 'first') => browser.until('file tree ready', `window.fileTreeFixture?.ready && window.fileTreeFixture.provider.identity.scopeId===${JSON.stringify(scope)} && !!document.querySelector('[role="treeitem"][data-path="docs"]')`);
 try {
   host = await openFileTreeHost({ filename: join(directory, 'workspace.sqlite') });
-  const bundle = await build({ entryPoints: [new URL('./view.jsx', import.meta.url).pathname], bundle: true, write: false, platform: 'browser', format: 'esm', jsx: 'automatic', metafile: true, define: { 'process.env.NODE_ENV': '"production"' } });
+  const bundle = await build({ entryPoints: [new URL('./view.jsx', import.meta.url).pathname], bundle: true, write: false, outfile: join(directory, 'view.js'), platform: 'browser', format: 'esm', jsx: 'automatic', metafile: true, define: { 'process.env.NODE_ENV': '"production"' } });
   assert.ok(!Object.keys(bundle.metafile.inputs).some(path => /packages\/files\/dist\/(?:workspace|sqlite|revision-handler)|pi-durable\//.test(path)), 'Browser bundle excludes server storage and Pi runtime');
-  const html = '<!doctype html><meta name="viewport" content="width=device-width"><title>File tree</title><style>body{font:16px system-ui;max-width:900px;margin:24px}button,input{font:inherit;margin:4px;padding:6px}ul{list-style:none}button:focus,li:focus{outline:2px solid blue}pre{white-space:pre-wrap}section{border:1px solid #ddd;margin:12px 0;padding:12px}</style><div id="root"></div><script type="module" src="/view.js"></script>';
+  const css = [await buildTailwind(), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text)].join('\n');
+  const html = '<!doctype html><meta name="viewport" content="width=device-width"><title>File tree</title><link rel="stylesheet" href="/view.css"><style>body{font:16px system-ui;margin:0}main{padding:16px}main>button,main>section{margin:8px}main>h1{font-size:20px}</style><div id="root"></div><script type="module" src="/view.js"></script>';
   server = createServer(async (incoming, outgoing) => {
     try {
       const abort = new AbortController();
@@ -28,16 +30,19 @@ try {
       const request = await webRequest(incoming, new URL(incoming.url, `http://${incoming.headers.host}`), { signal: abort.signal });
       if (!request) { await sendWebResponse(new Response(null, { status: 413 }), outgoing); return; }
       const path = new URL(request.url).pathname;
-      const response = path === '/api/workspace' ? await host.handler(request) : path === '/view.js' ? new Response(bundle.outputFiles[0].contents, { headers: { 'content-type': 'text/javascript' } }) : new Response(html, { headers: { 'content-type': 'text/html' } });
+      const response = path === '/api/workspace' ? await host.handler(request) : path === '/view.css' ? new Response(css, { headers: { 'content-type': 'text/css' } }) : path === '/view.js' ? new Response(bundle.outputFiles.find(file => file.path.endsWith('view.js')).contents, { headers: { 'content-type': 'text/javascript' } }) : new Response(html, { headers: { 'content-type': 'text/html' } });
       await sendWebResponse(response, outgoing);
     } catch { outgoing.statusCode = 500; outgoing.end(); }
   });
   await new Promise((yes, no) => { server.once('error', no); server.listen(0, '127.0.0.1', yes); });
-  browser = await launch(`http://127.0.0.1:${server.address().port}`, { evidence }); await ready();
+  browser = await launch(`http://127.0.0.1:${server.address().port}`, { evidence }); await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }); await ready();
   await step('default filtering, folder expansion and keyboard open', async () => {
     for (const path of ['node_modules', 'dist', 'debug.log']) assert.equal(await browser.evaluate(`!!${q(row(path))}`), false);
     await browser.click(q(`${row('docs')} button`));
     await browser.until('notes visible', `!!${q(row('docs/notes.md'))}`);
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '32px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button] svg')}).width`), '16px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-sub]')}).borderLeftWidth`), '1px');
     await browser.evaluate(`${q(row('docs/notes.md'))}.focus()`); await browser.press('Enter');
     assert.equal(await browser.evaluate(`${q('output[aria-label="Opened file"]')}.textContent`), 'docs/notes.md');
   });
@@ -93,9 +98,11 @@ try {
   });
   await step('integrated workspace protects a dirty editor during tree navigation', async () => {
     await browser.click("[...document.querySelectorAll('button')].find(b=>b.textContent==='Open integrated workspace')");
-    await browser.until('integrated files', `!!${q(row('first.html'))}`);
-    await browser.click(q('summary'));
+    await browser.until('library navigation', `!!${q('[data-testid=workspace-library]')}`);
+    await browser.click(q('[data-testid=workspace-library]'));
+    await browser.until('library center', `!!${q('[data-testid=workspace-library-view]')}`);
     await browser.click(q(`${row('first.html')} button`));
+    await browser.until('three-column library layout', `(() => { const left=${q('[data-testid=conversations]')}?.getBoundingClientRect(), center=${q('[data-testid=workspace-library-view]')}?.getBoundingClientRect(), right=${q('[data-testid=workspace-panel]')}?.getBoundingClientRect(); return left && center && right && left.width>0 && center.width>200 && right.width>200 && left.right<=center.left+1 && center.right<=right.left+1; })()`);
     await browser.until('editor source mode', `!!${q('[data-testid="viewer-mode-source"]')}`);
     await browser.click(q('[data-testid="viewer-mode-source"]'));
     await browser.type(q('textarea[aria-label="HTML source"]'), '<p>Unsaved browser draft</p>');
@@ -108,6 +115,25 @@ try {
     await browser.until('second editor', `${q('[data-testid="file-viewer"]')}?.dataset.path==='second.html'`);
     const unchanged = await host.storage.workspace('second').read({ target: host.target('first.html'), revision: { kind: 'latest' } }, host.access('second'));
     assert.equal(new TextDecoder().decode(unchanged.snapshot.bytes), '<p>First file</p>');
+  });
+  await step('portable tree works in a detached page without workspace or sidebar context', async () => {
+    const detached = await browser.openTab(`http://127.0.0.1:${server.address().port}/?detached=1`);
+    try {
+      await detached.until('detached tree', `!!${q(row('docs'))}`);
+      assert.equal(await detached.evaluate(`!!${q('[data-boring="agent-workspace"]')}`), false);
+      await detached.evaluate(`${q(row('docs'))}.focus()`);
+      await detached.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+      await detached.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+      await detached.until('detached notes', `!!${q(row('docs/notes.md'))}`);
+      assert.equal(await detached.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '32px');
+      await detached.evaluate(`${q(row('docs/notes.md'))}.focus()`);
+      await detached.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await detached.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await detached.until('detached file opened', `${q('output[aria-label="Opened file"]')}.textContent==='docs/notes.md'`);
+      assert.equal(await detached.evaluate(`${q('output[aria-label="Opened file"]')}.textContent`), 'docs/notes.md');
+    } finally { await detached.close(); }
+    assert.equal(await browser.evaluate('window.fileTreeFixture.provider.identity.scopeId'), 'second');
+    assert.equal((await host.storage.workspace('first').read({ target: host.target('docs/notes.md'), revision: { kind: 'latest' } }, host.access('first'))).kind, 'available');
   });
   assert.deepEqual(browser.problems, []); report.status = 'passed';
 } catch (error) { report.status = 'failed'; report.error = String(error.stack ?? error); throw error; }

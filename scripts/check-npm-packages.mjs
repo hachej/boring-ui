@@ -12,12 +12,14 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
     if (!files.has(path)) errors.push(`Missing ${path}`);
   }
   if (manifest.name === '@hachej/boring-ui-kit' && !files.has('THIRD_PARTY_NOTICES.md')) errors.push('Missing embedded icon license notices');
+  const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && path === 'styles/file-tree.css';
   for (const path of files) {
+    if (isTreeStyles(path)) continue;
     if (!/^(package\.json|README\.md|LICENSE|INVARIANTS\.md|THIRD_PARTY_NOTICES\.md|dist\/(?:[\w.-]+\/)*[\w.-]+\.(?:js|d\.ts))$/.test(path)) errors.push(`Unexpected packed file: ${path}`);
   }
   function target(value) {
     if (typeof value === 'string') {
-      if (!value.startsWith('./dist/') || value.split('/').includes('..') || !files.has(value.slice(2))) errors.push(`Missing or invalid export target: ${value}`);
+      if ((!value.startsWith('./dist/') && !isTreeStyles(value.slice(2))) || value.split('/').includes('..') || !files.has(value.slice(2))) errors.push(`Missing or invalid export target: ${value}`);
     } else if (value && typeof value === 'object') {
       for (const child of Object.values(value)) target(child);
     } else errors.push('Invalid export target');

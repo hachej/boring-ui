@@ -213,3 +213,14 @@ uses `npm run test:app-registry-consumer`; real browser verification uses
 `npm run file-tree:journey`, also required in CI. Results and review remain under
 `.cache/evidence/filetree-20261008/` and `.cache/evidence/file-tree-browser/`.
 These additions do not complete global workspace or release qualifications.
+
+### Portable Library tree
+
+The [UI guide](../../packages/ui/README.md#file-tree-and-filename-mentions) owns
+standalone/detached tree use and the default Library navigation. The renderer
+adapts pinned shadcn `sidebar-11` with packaged scoped CSS. UI public-output tests
+cover controlled folder toggles, empty/loading folder keyboard focus, dirty file
+navigation, retained docked/floating chat and mobile navigation. The required
+`file-tree:journey` checks Library/viewer geometry and detached keyboard selection;
+`test:app-registry-consumer` checks stylesheet delivery in the installed recipe.
+See [PARTIAL](PARTIAL.md#portable-library-tree) for candidate qualifications.

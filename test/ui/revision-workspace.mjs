@@ -19,7 +19,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   const { createElement, act, useState, useEffect } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('workspace.mjs', out);
-  await build({ entryPoints: [new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external' });
+  await build({ entryPoints: [new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', plugins: [{ name: 'bundle-file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
   const { AgentWorkspace, FileViewer } = await import(output.href);
   const element = window.document.createElement('div'); window.document.body.append(element); const root = createRoot(element);
   t.after(async () => {
