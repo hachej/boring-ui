@@ -119,6 +119,45 @@ function summary(id: ConversationId, meta: Readonly<ConversationMetadata>): Conv
   return { id, title: meta.title, lastMessage: meta.lastMessage, createdAt: meta.createdAt, updatedAt: meta.updatedAt, archived: meta.archived };
 }
 
+/**
+ * The first user message and the last visible message of a conversation, read newest-first over at most `maxPages` pages of
+ * 100 entries. Both are text, as `messageText` shows them.
+ */
+async function scanTitleAndLast(conversation: Conversation, context: Context, maxPages: number): Promise<{ title?: string; last?: string }> {
+  let cursor: Cursor | undefined, first: { id: bigint; text: string } | undefined, last: string | undefined;
+  for (let pages = 0; pages < maxPages; pages++) {
+    const page = await conversation.entries({}, 100, cursor, context);
+    for (const entry of page.items) for (const message of entry.model ?? []) {
+      const text = messageText(message);
+      if (text === undefined) continue;
+      if (last === undefined) last = text;
+      if (message.role === 'user' && (!first || BigInt(entry.id) < first.id)) first = { id: BigInt(entry.id), text };
+    }
+    if (!page.next) break;
+    cursor = page.next;
+  }
+  return { ...(first ? { title: first.text } : {}), ...(last === undefined ? {} : { last }) };
+}
+
+/** A conversation's title as the list shows it: the first user message, clipped to `maxLength` characters. Undefined: no user message yet. */
+export type ConversationTitleCache = { get(key: string): string | undefined; set(key: string, title: string): unknown };
+
+/**
+ * The title of a conversation that has no stored one: its first user message, clipped to 80 characters. The first message of a
+ * conversation never changes, so a non-null title is cached (`cache`, keyed by the conversation id) and the history is read once;
+ * `null` (no user message yet) is not cached. A `Map<string, string>` is a valid cache.
+ */
+export async function conversationTitle(conversation: Conversation, context: Context, cache?: ConversationTitleCache): Promise<string | null> {
+  const key = String(conversation.id);
+  const known = cache?.get(key);
+  if (known !== undefined) return known;
+  const { title } = await scanTitleAndLast(conversation, context, Infinity);
+  if (title === undefined) return null;
+  const clipped = clip(title, 80);
+  cache?.set(key, clipped);
+  return clipped;
+}
+
 export function createConversations(options: ConversationsOptions): Conversations {
   const { harness, context } = options;
   const now = options.now ?? Date.now;
@@ -177,19 +216,8 @@ export function createConversations(options: ConversationsOptions): Conversation
   const unsubscribeClose = harness.subscribeClose(() => { unsubscribe(); });
 
   async function derive(conversation: Conversation): Promise<{ title?: string; last?: string }> {
-    let cursor: Cursor | undefined, first: { id: bigint; text: string } | undefined, last: string | undefined;
-    for (let pages = 0; pages < 20; pages++) {
-      const page = await conversation.entries({}, 100, cursor, context);
-      for (const entry of page.items) for (const message of entry.model ?? []) {
-        const text = messageText(message);
-        if (text === undefined) continue;
-        if (last === undefined) last = text;
-        if (message.role === 'user' && (!first || BigInt(entry.id) < first.id)) first = { id: BigInt(entry.id), text };
-      }
-      if (!page.next) break;
-      cursor = page.next;
-    }
-    return { ...(first ? { title: first.text } : {}), ...(last === undefined ? {} : { last }) };
+    const found = await scanTitleAndLast(conversation, context, 20);
+    return { ...(found.title === undefined ? {} : { title: found.title }), ...(found.last === undefined ? {} : { last: found.last }) };
   }
 
   const initial = (owner: string, fields: Partial<ConversationMetadata>): ConversationInit => async (tx, id) => {

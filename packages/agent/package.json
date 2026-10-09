@@ -50,6 +50,10 @@
       "types": "./dist/artifacts.d.ts",
       "import": "./dist/artifacts.js"
     },
+    "./file-convert": {
+      "types": "./dist/file-convert.d.ts",
+      "import": "./dist/file-convert.js"
+    },
     "./ask-user": {
       "types": "./dist/ask-user.d.ts",
       "import": "./dist/ask-user.js"
