@@ -157,6 +157,9 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     if (!isControlled) setOwn(next); change.current?.(next);
   }, [isControlled]);
   const [fullscreen, setFullscreen] = useState(false);
+  const [centerMode, setCenterMode] = useState<'chat' | 'library'>('chat');
+  const libraryOpen = Boolean(revisionProvider) && centerMode === 'library';
+  const openLibrary = useCallback(() => { setCenterMode('library'); setFullscreen(false); }, []);
   const text = useMemo(() => ({ labels: withDefaults(defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
   const chatText = useMergedText(chat.labels, chat.icons);
@@ -248,8 +251,9 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const [collapsed, setCollapsed] = useState(() => readFlag(`${storageKey}.sessions-hidden`));
   const [drawer, setDrawer] = useState(false);
   useEffect(() => { if (!narrow) setDrawer(false); }, [narrow]);
-  const docked = Boolean(conversations) && width > 0 && !narrow && !collapsed;
-  const toggle = conversations && <SessionsToggle open={narrow ? drawer : !collapsed} drawer={narrow}
+  const hasNavigation = Boolean(conversations || revisionProvider);
+  const docked = hasNavigation && width > 0 && !narrow && !collapsed;
+  const toggle = hasNavigation && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : !collapsed} drawer={narrow}
     onToggle={() => { if (narrow) setDrawer(value => !value); else setCollapsed(value => { writeFlag(`${storageKey}.sessions-hidden`, !value); return !value; }); }} />;
 
   // ---- The docked chat's header is replaced on every switch and connect (the `connecting` row, then a new `PiChat`). The toggle is not
@@ -273,10 +277,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
-    {fileTree && <UploadNotice controller={fileTree} />}
-    {fileTree && <details className="max-h-[50%] shrink-0 overflow-auto border-b border-border"><summary className="cursor-pointer px-4 py-2 text-sm font-medium">Files</summary>
-      <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
-    </details>}
+    {fileTree && <UploadNotice controller={fileTree} onOpen={openLibrary} />}
     {chatTop}
     <div className="relative flex min-h-0 flex-1 flex-col">
       {chatProps ? <PiChat key={conversationId} {...chatProps} headerStart={<>{toggleSpace}{chat.headerStart}</>} className={cn('min-h-0 flex-1', chat.className)} />
@@ -292,12 +293,19 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     ...(floatChat ? [{ id: 'float-chat', label: text.labels.floatChat, icon: text.icons.floatChat, placement: 'menu' as const, onSelect: floatChat }] : []),
     ...(shown ? typeof panelActions === 'function' ? panelActions(shown) : panelActions ?? [] : []),
   ];
-  return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-sessions={!conversations ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
+  return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
     className={cn('relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
-    {conversations && (docked || (narrow && drawer)) && <SessionsPane conversations={conversations} drawer={narrow} onClose={() => setDrawer(false)} />}
+    {hasNavigation && (docked || (narrow && drawer)) && <SessionsPane conversations={conversations} drawer={narrow} onClose={() => setDrawer(false)} onChat={() => setCenterMode('chat')}
+      {...(revisionProvider ? { library: { selected: libraryOpen, onSelect: openLibrary } } : {})} />}
     <ArtifactWorkspace open={panelOpen} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
-      sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined ? {} : { floatBelow })}
-      chat={layout => layout.floating && floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : docked_chat}
+      sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
+      chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
+        floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
+        library={<section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
+          <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
+            <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
+          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">Loading files…</p>}</div>
+        </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>
         <div data-testid="viewer-panel" data-kind={kind} className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
           {active
@@ -312,8 +320,27 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   </div></ChatTextProvider></AppTextProvider>;
 }
 
-function UploadNotice({ controller }: { readonly controller: FileTreeController }) {
+function UploadNotice({ controller, onOpen }: { readonly controller: FileTreeController; readonly onOpen: () => void }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const failures = state.uploads.filter(upload => upload.state.kind === 'settled' && upload.state.result.kind !== 'committed');
-  return failures.length ? <p role="alert" className="m-0 px-4 py-2 text-sm">{failures.length} upload{failures.length === 1 ? '' : 's'} need attention. Open Files to review the results and check unconfirmed uploads.</p> : null;
+  return failures.length ? <p role="alert" className="m-0 px-4 py-2 text-sm">{failures.length} upload{failures.length === 1 ? '' : 's'} need attention. <button type="button" className="underline" onClick={onOpen}>Open Library</button> to review the results and check unconfirmed uploads.</p> : null;
+}
+
+/** Keep the selected chat surface mounted while Library temporarily uses its layout space. */
+function WorkspaceCenter({ libraryOpen, floating, chat, floatingChat, library }: {
+  readonly libraryOpen: boolean;
+  readonly floating: boolean;
+  readonly chat: ReactNode;
+  readonly floatingChat: ReactNode;
+  readonly library: ReactNode;
+}) {
+  const lastFloating = useRef(floating);
+  useLayoutEffect(() => { if (!libraryOpen) lastFloating.current = floating; }, [libraryOpen, floating]);
+  const showFloating = libraryOpen ? lastFloating.current : floating;
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <div data-testid="workspace-chat-surface" hidden={libraryOpen} inert={libraryOpen} aria-hidden={libraryOpen || undefined} className={cn('min-h-0 flex-1 flex-col', libraryOpen ? 'hidden' : 'flex')}>
+      {showFloating && floatingChat ? floatingChat : chat}
+    </div>
+    <div hidden={!libraryOpen} inert={!libraryOpen} aria-hidden={!libraryOpen || undefined} className={cn('min-h-0 flex-1 flex-col', libraryOpen ? 'flex' : 'hidden')}>{library}</div>
+  </div>;
 }
