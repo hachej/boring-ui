@@ -1,0 +1,38 @@
+/* The pi-app block's words in French with its viewers', the `locale="fr"` base of `AgentWorkspace`. Typed as `AppLabels`, so a key added in English must be added here too. */
+import type { AppLabels } from './app-labels';
+import { frenchViewerLabels } from '../viewers/viewer-labels-fr';
+
+export const frenchAppLabels: AppLabels = {
+  ...frenchViewerLabels,
+  sessionsTitle: 'Conversations',
+  workspaceNavigation: 'Navigation',
+  openNavigation: 'Ouvrir la navigation',
+  closeNavigation: 'Fermer la navigation',
+  hideNavigation: 'Masquer la navigation',
+  showNavigation: 'Afficher la navigation',
+  chat: 'Discussion',
+  library: 'Bibliothèque',
+  agent: 'Agent',
+  backToChat: 'Retour à la discussion',
+  newChat: 'Nouvelle',
+  closeSessions: 'Fermer les conversations',
+  openSessions: 'Ouvrir les conversations',
+  hideSessions: 'Masquer les conversations',
+  showSessions: 'Afficher les conversations',
+  floatChat: 'Détacher la discussion',
+  floatHint: 'Relâchez pour détacher la discussion',
+  resizePanel: 'Redimensionner le panneau',
+  artifactPanel: 'Document',
+  back: 'Retour',
+  savedAt: when => `Enregistré ${when}`,
+  latestSavedAt: when => `Dernière version, enregistrée ${when}`,
+  olderVersion: 'Version précédente',
+  earlierVersion: 'Version antérieure',
+  artifactNotText: 'Ce document ne peut pas être affiché comme du texte.',
+  versionUnavailable: 'Cette version n’est pas disponible.',
+  noCanvasViewer: 'Cet espace n’a pas d’afficheur de canevas (à fournir dans `viewers.canvas`).',
+  fileMissing: 'Ce fichier n’existe plus.',
+  fileNotText: 'Ce fichier ne peut pas être affiché comme du texte.',
+  binaryFile: size => `Fichier binaire (${size}) ; il ne peut pas être affiché comme du texte.`,
+  fileViewer: kind => `Afficheur ${kind}`,
+};

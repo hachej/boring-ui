@@ -151,7 +151,7 @@ export const defaultChatLabels = {
   roleSystem: 'System',
   roleToolResult: (tool: string, failed: boolean) => `Tool result: ${tool}${failed ? ' (failed)' : ''}`,
   roleUser: 'You',
-  roleAssistant: (outcome: 'ok' | 'interrupted' | 'failed') => outcome === 'interrupted' ? 'Assistant (interrupted)' : outcome === 'failed' ? 'Assistant (failed)' : 'Assistant',
+  roleAssistant: (outcome: 'ok' | 'interrupted' | 'failed'): string => outcome === 'interrupted' ? 'Assistant (interrupted)' : outcome === 'failed' ? 'Assistant (failed)' : 'Assistant',
   roleEvent: 'Event',
   contextBoundary: 'Context boundary',
   // Messages
@@ -204,7 +204,7 @@ export const defaultChatLabels = {
   stillWritingCall: 'The agent is still writing this call…',
   decidingUnavailable: 'Deciding is not available in this view.',
   decisionSent: (approved: boolean) => `${approved ? 'Approved.' : 'Denied.'} Waiting for the agent…`,
-  decisionRefused: (kind: 'denied' | 'conflict' | 'unknown-question') => kind === 'denied' ? 'The host did not accept this answer.' : kind === 'conflict' ? 'This call was already decided.' : 'This call is no longer waiting for a decision.',
+  decisionRefused: (kind: 'denied' | 'conflict' | 'unknown-question'): string => kind === 'denied' ? 'The host did not accept this answer.' : kind === 'conflict' ? 'This call was already decided.' : 'This call is no longer waiting for a decision.',
   decisionNotSent: 'The decision could not be sent.',
   waitingForAgent: 'Waiting for the agent…',
   question: 'Question',
@@ -219,7 +219,7 @@ export const defaultChatLabels = {
   answer: 'Answer',
   stillWritingQuestion: 'The agent is still writing this question…',
   answeringUnavailable: 'Answering is not available in this view.',
-  answerRefused: (kind: 'denied' | 'conflict' | 'unknown-question') => kind === 'denied' ? 'The host did not accept this answer.' : kind === 'conflict' ? 'This question was already answered.' : 'This question is no longer waiting for an answer.',
+  answerRefused: (kind: 'denied' | 'conflict' | 'unknown-question'): string => kind === 'denied' ? 'The host did not accept this answer.' : kind === 'conflict' ? 'This question was already answered.' : 'This question is no longer waiting for an answer.',
   answerNotSent: 'The answer could not be sent.',
   yourAnswer: 'Your answer:',
   // Artifact cards
