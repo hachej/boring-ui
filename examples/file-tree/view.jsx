@@ -52,7 +52,7 @@ function App() {
     {provider && !integrated && <>
       <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />
       <output aria-label="Opened file">{opened}</output>
-      <section aria-label="Mention picker">
+      <section aria-label="Mention picker" style={{ position: 'relative', maxWidth: 480 }}>
         <label>File mention<input aria-label="File mention" value={mention} onChange={event => setMention(event.target.value)} /></label>
         {mention.startsWith('@') && <MentionMenu query={mention.slice(1)} search={(query, signal) => provider.search({ query, limit: 8 }, signal).then(page => page.entries)} onSelect={path => { setSelectedMention(path); setMention(''); }} onDismiss={() => setMention('')} />}
         <output aria-label="Selected mention">{selectedMention}</output>

@@ -50,6 +50,7 @@ try {
     await browser.type(q('input[aria-label="File mention"]'), '@notes');
     await browser.until('mention result', `!!${q('[data-testid="mention-item"]')}`);
     await browser.click(q('[data-testid="mention-item"]'));
+    await browser.until('mention selected', `${q('output[aria-label="Selected mention"]')}.textContent==='docs/notes.md'`);
     assert.equal(await browser.evaluate(`${q('output[aria-label="Selected mention"]')}.textContent`), 'docs/notes.md');
   });
   await step('binary upload publishes once and duplicate refuses', async () => {
