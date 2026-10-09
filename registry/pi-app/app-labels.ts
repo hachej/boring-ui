@@ -41,6 +41,7 @@ export const defaultAppLabels = {
   fileNotText: 'This file cannot be shown as text.',
   binaryFile: (size: string) => `This is a binary file (${size}); it cannot be shown as text.`,
   fileViewer: (kind: string) => `${kind} viewer`,
+  newVersion: 'A new version is available.',
 };
 export type AppLabels = typeof defaultAppLabels;
 
