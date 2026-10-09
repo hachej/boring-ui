@@ -19,7 +19,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   }
   function target(value) {
     if (typeof value === 'string') {
-      if ((!value.startsWith('./dist/') && !isTreeStyles(value.slice(2))) || value.split('/').includes('..') || !files.has(value.slice(2))) errors.push(`Missing or invalid export target: ${value}`);
+      if (!value.startsWith('./') || (!value.startsWith('./dist/') && !isTreeStyles(value.slice(2))) || value.split('/').includes('..') || !files.has(value.slice(2))) errors.push(`Missing or invalid export target: ${value}`);
     } else if (value && typeof value === 'object') {
       for (const child of Object.values(value)) target(child);
     } else errors.push('Invalid export target');

@@ -64,3 +64,7 @@ jobs:
             npm run "test:$name-consumer"
             echo "::endgroup::"
           done
+      - name: Install workspace and portable tree registry recipes
+        run: |
+          npm run registry:build
+          npm run test:app-registry-consumer
