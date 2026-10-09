@@ -11,3 +11,249 @@ regexes = [
   '''ghp_fictionalTokenNeverReal0000''',
   '''questions/validation/delivery''',
 ]
+
+[[allowlists]]
+description = "Historical false positive H01: WebSocket handshake nonce in a local server test, base64 for the sample nonce."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^dGhlIHNhbXBsZSBub25jZQ==$''']
+paths = [
+  '''^packages/workspace/src/server/__tests__/createWorkspaceAgentServer\.listening\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H02: Hard-coded invitation UUID in mocked authentication and URL-parsing tests."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^3fa85f64\-5717\-4562\-b3fc\-2c963f66afa6$''']
+paths = [
+  '''^packages/core/src/front/__tests__/SignInPage\.test\.tsx$''',
+  '''^packages/core/src/front/__tests__/SignUpPage\.test\.tsx$''',
+  '''^packages/core/src/front/__tests__/utils\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H03: Credential-review prose describing idempotency and concurrency, not a credential."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^idempotency/concurrency$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/c4\-credentials\-attack\.md$''',
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/c4\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H04: Literal idempotency-1 request identifier in recorded fictional task fixtures."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^idempotency\-1$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s1\.log$''',
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s1b\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H05: Literal idempotency-2 request identifier in recorded fictional task fixtures."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^idempotency\-2$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s1\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H06: Python Qwen3_5ForCausalLM class name in recorded documentation search output."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^Qwen3_5ForCausalLM$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s5\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H07: Python Qwen3ForCausalLM class name in recorded documentation search output."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^Qwen3ForCausalLM$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s5\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H08: Git diff index object ID in recorded patch output, not a Sourcegraph token."
+condition = "AND"
+ruleIDs = ["sourcegraph-access-token"]
+regexTarget = "secret"
+regexes = ['''^27cb9d9bf82d37b5d3727cab8a81d78e675743aa$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/c1\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H09: Git diff index object ID in recorded patch output, not a Sourcegraph token."
+condition = "AND"
+ruleIDs = ["sourcegraph-access-token"]
+regexTarget = "secret"
+regexes = ['''^ab5d20a8e052cb1301bf4e3b5a244111e658a1b3$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/c1\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H10: Git diff index object ID in recorded patch output, not a Sourcegraph token."
+condition = "AND"
+ruleIDs = ["sourcegraph-access-token"]
+regexTarget = "secret"
+regexes = ['''^d5fccee432cf866f397f30a823b9c6ac4fd3484f$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/w4\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H11: Local SQLite durable-pause restart-proof continuation ID in recorded test output."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^7642a312\-f0cc\-49dc\-91b9\-4480a27a50cd$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s4\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H12: Local SQLite durable-pause restart-proof continuation ID in recorded test output."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^97cf3fe3\-6637\-498b\-8dad\-492ac15b37ed$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s4\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H13: Local SQLite durable-pause restart-proof continuation ID in recorded test output."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^c58ff450\-2ad3\-487d\-ba25\-3da719d4be2c$''']
+paths = [
+  '''^docs/plans/long\-term/research/10\-raw\-worker\-reports/s4\.log$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H14: Tokenizer artifact SHA-256 in the feasibility result manifest."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^cd87dd5d17169151782ac700280ec057e5d658a9afbe238a048ea5ff318cce69$''']
+paths = [
+  '''^docs/issues/912/feasibility/2026\-07\-24\-gate\-results\.md$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H15: API.md artifact SHA-256 in the contract-proof hash manifest."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^759bd16e93ec33677bb5ffacec0d006811d10a3ada50d245699f86b75ea048e0$''']
+paths = [
+  '''^docs/issues/912/spikes/whisperlivekit/gh912\-wlk\-contract\-proof\.mjs$''',
+  '''^scripts/gh912\-wlk\-contract\-proof\.mjs$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H16: Tokenizer artifact SHA-256 in the contract-proof hash manifest."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab$''']
+paths = [
+  '''^docs/issues/912/spikes/whisperlivekit/gh912\-wlk\-contract\-proof\.mjs$''',
+  '''^scripts/gh912\-wlk\-contract\-proof\.mjs$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H17: Explicit synthetic API_KEY_CANARY in the localhost credential-vault test."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^sk_vault_canary_123456WXYZ$''']
+paths = [
+  '''^packages/core/src/server/db/stores/__tests__/PostgresCredentialVaultStore\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H18: MAX_OVH_KMS_WRAPPED_KEY_BYTES_V1 size-limit identifier in a conditional expression."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^MAX_OVH_KMS_WRAPPED_KEY_BYTES_V1$''']
+paths = [
+  '''^packages/agent/src/server/credentials/kek/ovhKms\.ts$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H19: Literal idem-compat-747 operation identifier in the SDK compatibility fixture."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^idem\-compat\-747$''']
+paths = [
+  '''^packages/agent/src/server/harness/pi\-coding\-agent/__tests__/piSdkCompatibility\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H20: D1_SECRET_UNAVAILABLE error-code enum value."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^D1_SECRET_UNAVAILABLE$''']
+paths = [
+  '''^apps/full\-app/src/server/deployment/d1Plan\.ts$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H21: D1SecretRefsEnvelopeV1 TypeScript type annotation."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^D1SecretRefsEnvelopeV1$''']
+paths = [
+  '''^apps/full\-app/src/server/deployment/hostRevisionStore\.ts$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H22: FORBIDDEN_FINANCE_SECRET_123 sentinel in the documented denied-finance fixture."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^FORBIDDEN_FINANCE_SECRET_123$''']
+paths = [
+  '''^\.beads/issues\.jsonl$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H23: docs-v5-launch browser storage key in a documentation banner example."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^docs\-v5\-launch$''']
+paths = [
+  '''^\.agents/skills/documentation\-website\-for\-software\-project/references/ADVANCED\-NEXTRA\.md$''',
+]
+
+[[allowlists]]
+description = "Historical false positive H24: Truncated JWT example ending in three literal dots, not a complete signed token."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^eyJhbGciOiJIUzI1NiJ9\.\.\.$''']
+paths = [
+  '''^\.beads/notes/bd\-sprites\-provider\.md$''',
+]
