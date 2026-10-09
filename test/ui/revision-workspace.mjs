@@ -194,6 +194,17 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   for (let n = 0; n < 50 && !pane.querySelector('[role=treeitem][data-path="Maquettes/first.html"]'); n++) await act(async () => new Promise(r => setTimeout(r, 10)));
   const result = pane.querySelector('[role=treeitem][data-path="Maquettes/first.html"]');
   assert.match(result.textContent, /^first\.htmlMaquettes/, 'a search result shows its name, then its folder');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, '');
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  // A new refreshKey while the Library tab is hidden reloads it too, so it is current when shown again.
+  await act(async () => element.querySelector('[data-testid=sessions-tab-conversations]').click());
+  assert.equal(element.querySelector('[data-testid=sessions-library]'), null);
+  const hidden = listings;
+  await act(async () => root.render(french(3)));
+  for (let n = 0; n < 50 && listings === hidden; n++) await act(async () => new Promise(r => setTimeout(r, 10)));
+  assert.ok(listings > hidden, 'the hidden Library reloads');
 
   // A single-session page (no conversations) keeps the left pane for its Library alone.
   await act(async () => root.render(workspace({ key: 'single', storageKey: 'single-proof', libraryPlacement: 'pane' })));
