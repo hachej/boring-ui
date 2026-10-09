@@ -34,6 +34,8 @@ Listing reads every conversation record (`scanConversations`) and one metadata d
 
 `@hachej/boring-agent/gateway-provider` is the browser half: `gatewayProvider({ baseUrl, models, getAuth })` returns a native Pi provider (Pi's `openai-completions` API at `<baseUrl>/v1`) whose only credential is `getAuth()`'s session headers, read on every request. Use it with `createModels().setProvider(...)` and any native model call.
 
+`@hachej/boring-agent/session-affinity` is `withSessionAffinity(provider, key)`, a wrapper around a native Pi provider whose `stream` and `streamSimple` send `sessionId: key` unless the call names one. Workers AI keeps a prompt's prefix cache on one replica and routes by the `x-session-affinity` header that pi-ai sets from `sessionId`; Pi's durable harness never passes it, so each turn can recompute the whole prompt on another replica. Wrap the provider before `models.setProvider(...)` with one key per scope that shares a prompt prefix (the Cloudflare recipe uses its object's scope). Other properties and methods pass through, bound to the target.
+
 ## Metering
 
 `@hachej/boring-agent/metering` ports the v2 credits contract onto native Pi. The host owns the ledger, the price and the policy (INVARIANTS: budgets are host data); the module decides only when to call the ledger. Pi has no hook that can hold or refuse a model request (`beforeRequest` only replaces messages, `afterResponse` observes), so the fence is submission admission, and usage is read from the durable transcript, not from a second usage store (SPEC "Model admission, usage and settings").

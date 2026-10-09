@@ -114,6 +114,10 @@
       "types": "./dist/gateway-provider.d.ts",
       "import": "./dist/gateway-provider.js"
     },
+    "./session-affinity": {
+      "types": "./dist/session-affinity.d.ts",
+      "import": "./dist/session-affinity.js"
+    },
     "./metering": {
       "types": "./dist/metering.d.ts",
       "import": "./dist/metering.js"

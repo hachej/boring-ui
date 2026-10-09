@@ -11,7 +11,7 @@ This is the **same standard agent** the studio runs (`examples/shared/standard-a
 | Workspace (files, presented files, the Shared document panel) | the SQLite workspace backend in the same SQLite: `openSqliteFileSystem` (`@hachej/boring-files/sqlite-filesystem`) over `durableObjectSqliteConnection`, one `createWorkspaceProvider` with its journal in the same database (a multi-file save and its receipt commit in one `transactionSync`), and `createVirtualWorkspace({ fs })` for Pi's native environment and just-bash over the same files |
 | Chat API | `createChatTransportHandler` from the object's `fetch`; submissions go through `PiHarness` so the object keeps a wake job |
 | Browser | `pi-chat`, `ArtifactWorkspace` and the viewers from `registry/`, bundled by `scripts/build-browser.mjs` into `public/` (Workers static assets, plus `scenarios.json`: the scenario descriptions, written at build time from the studio's scenario files), over `createRemoteChat` |
-| Model | Workers AI binding, `@cf/moonshotai/kimi-k2.7-code` (Cloudflare's own Pi example uses it for agent work); `@cf/zai-org/glm-4.7-flash` is offered in the picker. No external key. |
+| Model | Workers AI binding, `@cf/moonshotai/kimi-k2.7-code` (Cloudflare's own Pi example uses it for agent work); `@cf/zai-org/glm-4.7-flash` is offered in the picker. No external key. The provider is wrapped with `withSessionAffinity` (`@hachej/boring-agent/session-affinity`), so every turn reuses the replica that holds the prompt's prefix cache. |
 | Auth | Bearer token in the Worker secret `ACCESS_TOKEN`, checked in the Worker (constant time) before the object is woken |
 
 ## Deploy

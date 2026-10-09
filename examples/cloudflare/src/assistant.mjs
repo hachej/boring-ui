@@ -11,6 +11,7 @@ import { Harness, createRegistry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
+import { withSessionAffinity } from '@hachej/boring-agent/session-affinity';
 import { withWorkspace } from '@hachej/boring-agent/workspaces';
 import { defineStandardAgent } from '../../shared/standard-agent.mjs';
 import { EFFORTS, configureOffered, firstMessageTitle } from '../../shared/conversation-host.mjs';
@@ -69,7 +70,8 @@ export class Assistant extends DurableObject {
     harness: async ({ storage, context: opening }) => {
       this.agent.install(this.registry);
       const models = createModels();
-      models.setProvider(this.ai.provider);
+      // One affinity key for the object: Workers AI keeps the prompt's prefix cache on one replica, so every turn reuses it.
+      models.setProvider(withSessionAffinity(this.ai.provider, OWNER.scopeId));
       const env = await this.#workspaceEnv();
       // The same scan as the agent's `reload`, so what the agent wrote in `.agent/` survives the object's restarts.
       await this.agent.reload(env, opening);
