@@ -1,3 +1,4 @@
+import { randomUUID } from '@hachej/boring-files/platform';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { UploadResult } from '../pi-chat/config';
 
@@ -14,7 +15,7 @@ function imageData(bytes: Uint8Array): string {
 export function attachmentPath(name: string): string {
   const dot = name.lastIndexOf('.');
   const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
-  return `uploads/${stem}-${globalThis.crypto.randomUUID().slice(0, 8)}${extension}`;
+  return `uploads/${stem}-${randomUUID().slice(0, 8)}${extension}`;
 }
 
 /** Successful files remain attached when another file is refused; every outcome remains visible in the shared file tree. */
