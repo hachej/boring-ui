@@ -129,4 +129,40 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   assert.equal(element.querySelector('[data-testid=workspace-library]'), null, 'choosing Library closes the drawer');
   assert.equal(element.querySelector('[data-testid=workspace-library-view]').parentElement.hidden, false);
 
+  // libraryPlacement="pane": the Library is a tab of the left pane, beside the conversations; files open in the right panel.
+  measuredWidth = 1200;
+  const chosen = [], unsavedReports = [];
+  const agents = { items: [{ id: 'pm', label: 'PM' }, { id: 'dev', label: 'Developer' }], activeId: 'pm', onSelect: id => { chosen.push(id); } };
+  await act(async () => root.render(workspace({ key: 'pane', storageKey: 'pane-proof', conversations, libraryPlacement: 'pane', agents, onUnsavedChange: value => { unsavedReports.push(value); } })));
+  assert.equal(element.querySelector('[data-testid=workspace-library]'), null, 'no center Library link in pane placement');
+  const select = element.querySelector('[data-testid=agent-select]'); assert.ok(select, 'two agents show a switcher');
+  await act(async () => { select.value = 'dev'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
+  assert.deepEqual(chosen, ['dev']);
+  assert.equal(element.querySelector('[data-testid=sessions-tab-conversations]').getAttribute('aria-selected'), 'true');
+  await act(async () => element.querySelector('[data-testid=sessions-tab-library]').click());
+  for (let n = 0; n < 50 && !element.querySelector('[data-testid=sessions-library] [role=treeitem][data-path="first.html"] button'); n++) await act(async () => new Promise(r => setTimeout(r, 10)));
+  await act(async () => element.querySelector('[data-testid=sessions-library] [role=treeitem][data-path="first.html"] button').click());
+  assert.equal(element.querySelector('[data-testid=file-viewer]').dataset.path, 'first.html');
+  assert.equal(element.querySelector('[data-testid=workspace-chat-surface]').hidden, false, 'the chat stays in the center');
+  for (let n = 0; n < 100 && !element.querySelector('[data-testid="viewer-mode-source"]'); n++) await act(async () => new Promise(r => setTimeout(r, 10)));
+  await act(async () => element.querySelector('[data-testid="viewer-mode-source"]').click());
+  const paneSource = element.querySelector('textarea[aria-label="HTML source"]');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(paneSource, '<p>Pane draft</p>');
+    paneSource.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  assert.equal(unsavedReports.at(-1), true, 'the host hears about unsaved changes');
+  globalThis.confirm = () => false;
+  const closeButton = element.querySelector('[data-testid=viewer-panel] [data-testid$="-close"]'); assert.ok(closeButton, element.querySelector('[data-testid=viewer-panel]').innerHTML.slice(0, 300));
+  await act(async () => closeButton.click());
+  assert.equal(element.querySelector('[data-testid=file-viewer]')?.dataset.path, 'first.html', 'keeping the draft keeps the panel open');
+  globalThis.confirm = () => true;
+  await act(async () => root.render(workspace({ key: 'pane', storageKey: 'pane-proof', conversations, libraryPlacement: 'pane', agents: { ...agents, items: agents.items.slice(0, 1) } })));
+  assert.equal(element.querySelector('[data-testid=agent-select]'), null, 'one agent shows no switcher');
+
+  // A single-session page (no conversations) keeps the left pane for its Library alone.
+  await act(async () => root.render(workspace({ key: 'single', storageKey: 'single-proof', libraryPlacement: 'pane' })));
+  assert.equal(element.querySelector('[data-testid=sessions-tab-library]'), null);
+  assert.match(element.querySelector('[data-testid=conversations] h2').textContent, /Library/);
+  assert.ok(element.querySelector('[data-testid=sessions-library]'));
 });

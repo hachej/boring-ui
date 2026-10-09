@@ -277,3 +277,11 @@ test:app-registry-consumer` installs the recipes in an isolated consumer.
 The default `pi-app` left pane includes Library when `revisionProvider` is bound.
 Library displays the tree in the center; selecting a file opens the right artifact
 viewer and keeps unsaved-change protection. Chat remains mounted across switches.
+`libraryPlacement="pane"` shows the Library in the left pane instead: a tab beside
+the conversations, or the whole pane on a single-session page without
+`conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`
+adds an agent switcher at the top of the pane when there are two or more agents;
+the host scopes the conversations and controller to the chosen one.
+`onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
+it switches workspace or identity. Chat attachments are saved as
+`uploads/<name>-<8 hex>.<ext>`, so a second pasted `image.png` never collides.

@@ -76,7 +76,9 @@ import { FileTree } from './components/file-tree/file-tree';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 
 export function BoundWorkspace({ revisionProvider }: { readonly revisionProvider: RevisionProvider }) {
-  return <><AgentWorkspace revisionProvider={revisionProvider} controller={undefined} conversationId={undefined} /><FileTree revisionProvider={revisionProvider} /></>;
+  return <><AgentWorkspace revisionProvider={revisionProvider} controller={undefined} conversationId={undefined} /><FileTree revisionProvider={revisionProvider} />
+    <AgentWorkspace revisionProvider={revisionProvider} libraryPlacement="pane" onUnsavedChange={unsaved => { void unsaved; }} controller={undefined} conversationId={undefined}
+      agents={{ items: [{ id: 'pm', label: 'PM' }, { id: 'dev', label: 'Developer' }], activeId: 'pm', onSelect: () => {} }} /></>;
 }
 
 const identity = { runtimeId: 'app', scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };

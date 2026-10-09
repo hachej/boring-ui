@@ -18,6 +18,7 @@ export const defaultAppLabels = {
   showNavigation: 'Show navigation',
   chat: 'Chat',
   library: 'Library',
+  agent: 'Agent',
   backToChat: 'Back to chat',
   newChat: 'New',
   closeSessions: 'Close chats',
