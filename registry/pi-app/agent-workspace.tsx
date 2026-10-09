@@ -10,6 +10,10 @@ import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
+import { frenchAppLabels } from './app-labels-fr';
+import { chatTextFor } from '../pi-chat/locale';
+import type { ChatLocale } from '../pi-chat/locale';
+import type { FileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
@@ -43,6 +47,7 @@ export type { RemoteChatState } from './use-remote-chat';
 export { savedLabel, useSaved } from './use-saved';
 export { kindOf, mediaTypeOf } from './file-kinds';
 export { defaultAppIcons, defaultAppLabels } from './app-labels';
+export { frenchAppLabels } from './app-labels-fr';
 export type { AppIcons, AppLabels } from './app-labels';
 export type { FileKind } from './file-kinds';
 
@@ -79,6 +84,13 @@ interface AgentWorkspaceBaseProps {
    * whole pane on a single-session page without `conversations`; files open in the right panel as usual.
    */
   readonly libraryPlacement?: 'center' | 'pane' | undefined;
+  /** The page's language: `en` (default) or `fr`, for the chat, the panes, the viewers and the Library. `labels` and `chat.labels` override any word. */
+  readonly locale?: ChatLocale | undefined;
+  /**
+   * The Library tree's options: its words (`labels`, over `defaultFileTreeLabels`), whether it offers Upload and History, and a
+   * `refreshKey` that reloads it when it changes (for example the number of documents the agent saved).
+   */
+  readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey'> | undefined;
   /**
    * The page's agents. With two or more, a switcher at the top of the left pane chooses one; the host scopes `conversations` and the
    * controller to `activeId`. One agent (or none given) shows no switcher.
@@ -161,7 +173,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, libraryPlacement = 'center', agents, detect, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, libraryPlacement = 'center', locale, fileTree: treeOptions, agents, detect, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 768, drawerBelow = 768, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const opened = controlled !== undefined ? controlled : own;
@@ -185,9 +197,9 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const libraryInPane = Boolean(revisionProvider) && libraryPlacement === 'pane';
   const libraryOpen = Boolean(revisionProvider) && !libraryInPane && centerMode === 'library';
   const openLibrary = useCallback(() => { setCenterMode('library'); setFullscreen(false); }, []);
-  const text = useMemo(() => ({ labels: withDefaults(defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons]);
+  const text = useMemo(() => ({ labels: withDefaults(locale === 'fr' ? frenchAppLabels : defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons, locale]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
-  const chatText = useMergedText(chat.labels, chat.icons);
+  const chatText = useMergedText(chat.labels, chat.icons, chatTextFor(locale));
 
   const fetcher = useRef(resources?.fetch); fetcher.current = resources?.fetch;
   const endpoint = resources ? String(resources.endpoint) : undefined;
@@ -307,7 +319,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
   const header = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentions ? { mentions } : {}), ...(attachments ? { attachments } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentions ? { mentions } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
@@ -333,7 +345,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       agents={agents} view={paneView} onViewChange={changePaneView}
       {...(revisionProvider && !libraryInPane ? { library: { selected: libraryOpen, onSelect: openLibrary } } : {})}
       {...(libraryInPane ? { libraryContent: (onPicked: () => void) => fileTree
-        ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} controller={fileTree} onOpen={path => { openFile(path); onPicked(); }} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+        ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...treeOptions} controller={fileTree} onOpen={path => { openFile(path); onPicked(); }} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
         : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{text.labels.loading}</p> } : {})} />}
     <ArtifactWorkspace open={panelOpen} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
       sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
@@ -343,7 +355,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
         library={libraryInPane ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
             <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
-          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">Loading files…</p>}</div>
+          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...treeOptions} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">{treeOptions?.labels?.loading ?? text.labels.loading}</p>}</div>
         </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>
         <div data-testid="viewer-panel" data-kind={kind} className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">

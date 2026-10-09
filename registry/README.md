@@ -282,6 +282,12 @@ the conversations, or the whole pane on a single-session page without
 `conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`
 adds an agent switcher at the top of the pane when there are two or more agents;
 the host scopes the conversations and controller to the chosen one.
+`locale="fr"` (on `AgentWorkspace`, or `PiChat` alone) switches every word of the chat,
+the panes, the viewers and the Library to French; English stays the default. The French
+words are exported (`frenchChatLabels`, `frenchAppLabels`, `frenchFileTreeLabels`) and typed
+like the English ones, and `labels` / `chat.labels` still override any word.
+`fileTree={{ upload: false, history: false, refreshKey }}` hides the Library's Upload and
+History buttons and reloads it when `refreshKey` changes.
 `chat={{ showHistory: false, showConnectionStatus: false }}` hides the chat header's
 History button and connection badge (defaults keep both), and `chat.tools` puts host
 controls such as a microphone at the end of the composer bar.

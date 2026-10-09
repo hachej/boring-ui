@@ -25,6 +25,8 @@ import { Shimmer } from './shimmer';
 import { useChatSession, useTranscript } from './session';
 import type { ChatFeatureProps, FilesHandler, PiChatActions } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
+import { chatTextFor } from './locale';
+import type { ChatLocale } from './locale';
 import type { ChatIcons, ChatLabels } from './labels';
 import { cn } from '../utils/utils';
 
@@ -40,6 +42,9 @@ export type { Suggestion } from './empty-state';
 export { ConversationList, relativeTime } from './history';
 export { defaultChatIcons, defaultChatLabels } from './labels';
 export type { ChatIcons, ChatLabels } from './labels';
+export { frenchChatLabels } from './labels-fr';
+export { chatTextFor } from './locale';
+export type { ChatLocale } from './locale';
 export { ActionMenu, BlockActions } from '../button/actions';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, MentionResult, MentionsConfig, ModelConfig, ModelRef, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
@@ -47,6 +52,8 @@ export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortCo
 export interface PiChatProps extends ChatFeatureProps {
   readonly controller: NativeChatController;
   /** Every word the chat shows (title, placeholder, buttons, notices, empty states): a partial object over `defaultChatLabels`. */
+  /** The chat's language: `en` (default) or `fr`. `labels` override any of its words. */
+  readonly locale?: ChatLocale | undefined;
   readonly labels?: Partial<ChatLabels> | undefined;
   /** The chat's icons (send, stop, history, attach, …): any component taking `className`, over `defaultChatIcons`. */
   readonly icons?: Partial<ChatIcons> | undefined;
@@ -87,7 +94,7 @@ export function PiChat(props: PiChatProps) {
   const active = useRef(props.controller); active.current = props.controller;
   const [mount, setMount] = useState({ controller: props.controller, sequence: 0 });
   if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });
-  const text = useMergedText(props.labels, props.icons);
+  const text = useMergedText(props.labels, props.icons, chatTextFor(props.locale));
   return <ChatTextProvider value={text}><PiChatSession key={mount.sequence} {...props} activeController={active} /></ChatTextProvider>;
 }
 
