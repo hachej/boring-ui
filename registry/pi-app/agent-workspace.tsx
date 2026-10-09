@@ -104,6 +104,12 @@ interface AgentWorkspaceBaseProps {
   readonly opened?: OpenedView | null | undefined;
   readonly defaultOpened?: OpenedView | null | undefined;
   readonly onOpenedChange?: ((next: OpenedView | null) => void) | undefined;
+  /**
+   * Whether the open file has unsaved or unconfirmed changes. The workspace asks before leaving such a file itself; a host that
+   * switches the workspace or identity (a new `revisionProvider`) or changes a controlled `opened` should ask first too, since the
+   * viewer of the previous file is replaced and its local draft discarded.
+   */
+  readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
   /** Renderers for host views, by `kind`. */
   readonly panels?: Readonly<Record<string, (view: HostView, panel: WorkspacePanelApi) => ReactNode>> | undefined;
   /** Open the panel on each artifact (or new version) the agent makes, unless the person closed it during this turn. Not on a phone. Default true. */
@@ -143,21 +149,24 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
 export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, detect, viewers, interactive, share, opened: controlled,
-  defaultOpened = null, onOpenedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 768, drawerBelow = 768, floatBelow, className }: AgentWorkspaceProps) {
+  defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 768, drawerBelow = 768, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const opened = controlled !== undefined ? controlled : own;
   const change = useRef(onOpenedChange); change.current = onOpenedChange;
   const isControlled = controlled !== undefined;
   const unsaved = useRef(false);
   const currentView = useRef(opened); currentView.current = opened;
-  const noteUnsaved = useCallback((value: boolean) => { unsaved.current = value; }, []);
-  const setOpened = useCallback((next: OpenedView | null) => {
+  const unsavedChange = useRef(onUnsavedChange); unsavedChange.current = onUnsavedChange;
+  const noteUnsaved = useCallback((value: boolean) => { if (unsaved.current !== value) { unsaved.current = value; unsavedChange.current?.(value); } }, []);
+  /** Opens `next` and reports whether it did: leaving a file with unsaved changes asks first, and the person may stay. */
+  const setOpened = useCallback((next: OpenedView | null): boolean => {
     const current = currentView.current;
-    if (isFile(current) && isFile(next) && current.path === next.path) return;
-    if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and leave this file?')) return;
-    unsaved.current = false;
+    if (isFile(current) && isFile(next) && current.path === next.path) return true;
+    if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and leave this file?')) return false;
+    noteUnsaved(false);
     if (!isControlled) setOwn(next); change.current?.(next);
-  }, [isControlled]);
+    return true;
+  }, [isControlled, noteUnsaved]);
   const [fullscreen, setFullscreen] = useState(false);
   const [centerMode, setCenterMode] = useState<'chat' | 'library'>('chat');
   const libraryOpen = Boolean(revisionProvider) && centerMode === 'library';
@@ -191,7 +200,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     return () => tree.dispose();
   }, [revisionProvider]);
   const fileTree = fileBinding?.provider === revisionProvider ? fileBinding?.tree : undefined;
-  const openFile = useCallback((path: string) => setOpened({ kind: 'file', path }), [setOpened]);
+  const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
   const mentions = useMemo(() => revisionProvider ? {
     search: async (query: string, signal: AbortSignal) => (await revisionProvider.search({ query, limit: 8 }, signal)).entries,
     open: openFile,
@@ -216,7 +225,8 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const panelOpen = Boolean(active || file || host);
   const seen = useRef(new Map<string, Set<string>>());
   const closedInTurn = useRef(new Map<string, number>());
-  const close = () => { if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setOpened(null); setFullscreen(false); };
+  // Kept editing after the unsaved-changes question: the panel stays as it was, and the next artifact may still open it.
+  const close = () => { if (!setOpened(null)) return; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); };
   useEffect(() => {
     if (!controller || conversationId === undefined) return;
     const keys = versions.map(version => `${artifactKey(version)}:${version.revision}`);

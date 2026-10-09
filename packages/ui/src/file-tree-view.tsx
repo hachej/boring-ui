@@ -126,11 +126,15 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
       <label className="cursor-pointer text-sm">Upload<input aria-label="Upload files" type="file" multiple className="sr-only" onChange={event => {
         const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; setUploadError('');
         void (async () => {
+          // One refused or unreadable file does not stop the others; every refusal is reported.
+          const errors: string[] = [];
           for (const file of files) {
             const path = uploadDirectory ? `${uploadDirectory}/${file.name}` : file.name;
-            await controller.upload({ path, bytes: new Uint8Array(await file.arrayBuffer()), mediaType: file.type || 'application/octet-stream' });
+            try { await controller.upload({ path, bytes: new Uint8Array(await file.arrayBuffer()), mediaType: file.type || 'application/octet-stream' }); }
+            catch (error) { errors.push(error instanceof Error ? error.message : `${file.name}: upload failed`); }
           }
-        })().catch(error => setUploadError(error instanceof Error ? error.message : 'Upload failed'));
+          if (errors.length) setUploadError(errors.join(' '));
+        })();
       }} /></label>
     </div>
     {uploadError && <p role="alert">{uploadError}</p>}

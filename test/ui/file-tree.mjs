@@ -181,13 +181,29 @@ test('revision attachments preserve image bytes and successful files beside a re
   const image = new File([new Uint8Array([137, 80, 78, 71])], 'image.png', { type: 'image/png' });
   const duplicate = new File(['replacement'], 'existing.txt', { type: 'text/plain' });
   const results = await uploadRevisionAttachments(f.controller, [image, duplicate], signal);
-  assert.equal(results.length, 1); assert.equal(results[0].path, 'uploads/image.png');
+  assert.equal(results.length, 2); assert.match(results[0].path, /^uploads\/image-[0-9a-f]{8}\.png$/); assert.equal(results[0].name, 'image.png');
   assert.equal(results[0].image.mimeType, 'image/png'); assert.deepEqual(Buffer.from(results[0].image.data, 'base64'), Buffer.from([137, 80, 78, 71]));
-  assert.equal(f.controller.getSnapshot().uploads.at(-1).state.result.kind, 'conflict');
+  assert.match(results[1].path, /^uploads\/existing-[0-9a-f]{8}\.txt$/, 'an attachment never overwrites; a same-named one is saved beside it');
+  assert.deepEqual((await f.binding.read({ target: f.binding.locate('uploads/existing.txt'), revision: { kind: 'latest' } })).snapshot.bytes, new Uint8Array([5]));
+  const second = await uploadRevisionAttachments(f.controller, [new File([new Uint8Array([1, 2])], 'image.png', { type: 'image/png' })], signal);
+  assert.equal(second.length, 1, 'a second pasted image.png is saved too'); assert.notEqual(second[0].path, results[0].path);
   const unreadable = new File(['gone'], 'unreadable.txt');
   Object.defineProperty(unreadable, 'arrayBuffer', { value: async () => { throw new Error('Local file is unavailable'); } });
   const failures = [];
   const partial = await uploadRevisionAttachments(f.controller, [new File(['ok'], 'another.txt'), unreadable], signal, (name, reason) => failures.push({ name, reason }));
-  assert.equal(partial.length, 1); assert.equal(partial[0].path, 'uploads/another.txt');
+  assert.equal(partial.length, 1); assert.match(partial[0].path, /^uploads\/another-[0-9a-f]{8}\.txt$/);
   assert.deepEqual(failures, [{ name: 'unreadable.txt', reason: 'Local file is unavailable' }]);
+});
+
+test('a concurrent upload of different bytes to the same path is refused, the same bytes share the first upload', async t => {
+  const f = fixture(t); const publish = f.binding.publish; let release;
+  f.binding.publish = async (...args) => { await new Promise(resolve => { release = resolve; }); return publish(...args); };
+  const first = f.controller.upload({ path: 'n.txt', bytes: new Uint8Array([88]) });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await assert.rejects(f.controller.upload({ path: 'n.txt', bytes: new Uint8Array([89]) }), /already being uploaded/);
+  const repeat = f.controller.upload({ path: 'n.txt', bytes: new Uint8Array([88]) });
+  release();
+  const [done, again] = await Promise.all([first, repeat]);
+  assert.equal(done.state.result.kind, 'committed'); assert.equal(again.operationId, done.operationId);
+  assert.deepEqual((await f.binding.read({ target: f.binding.locate('n.txt'), revision: { kind: 'latest' } })).snapshot.bytes, new Uint8Array([88]));
 });

@@ -37,6 +37,7 @@ export interface FileTreeController {
 const message = (error: unknown) => error instanceof Error ? error.message : 'Files could not be loaded';
 const empty: FileListing = { kind: 'ready', entries: [] };
 const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')));
+const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte, index) => byte === right[index]);
 const sameTarget = (left: ResourceRef, right: PublicationRequest['changes'][number]['target']) =>
   left.resource.providerId === right.resource.providerId && left.resource.path === right.resource.path
   && left.view.kind === right.view.kind && (left.view.kind !== 'working' || (right.view.kind === 'working' && left.view.viewId === right.view.viewId));
@@ -47,7 +48,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
   const listeners = new Set<() => void>();
   const lifetime = new AbortController();
   const loads = new Map<string, AbortController>();
-  const attempts = new Map<string, { readonly request: PublicationRequest; readonly digest: string; current: FileUpload; reconciling?: Promise<FileUpload> }>();
+  const attempts = new Map<string, { readonly request: PublicationRequest; readonly digest: string; readonly bytes: Uint8Array; current: FileUpload; reconciling?: Promise<FileUpload> }>();
   const update = (next: FileTreeState) => { if (state.lifecycle === 'active') { state = next; for (const listener of [...listeners]) { try { listener(); } catch { /* A subscriber cannot interrupt publication or other subscribers. */ } } } };
   const active = () => { if (state.lifecycle !== 'active') throw new Error('The file tree is disposed'); };
   const directory = (path: string, listing: FileListing) => update({ ...state, directories: new Map(state.directories).set(path, listing) });
@@ -127,22 +128,30 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
     moreSearch: () => load('', true, true),
     upload: async input => {
       active();
-      const unresolved = () => [...attempts.values()].find(attempt => attempt.current.path === input.path
-        && (attempt.current.state.kind === 'pending' || attempt.current.state.result.kind === 'unknown'))?.current;
+      // An unresolved upload of the same path answers a new one, so nothing is published twice: an unconfirmed one must be checked
+      // first, and a pending one answers a repeat of its bytes (a double click or drop). Different bytes while one is still pending
+      // are refused outright: answering with the earlier upload would report them as saved when they were not.
+      const bytes = input.bytes.slice();
+      const unresolved = () => {
+        const attempt = [...attempts.values()].find(item => item.current.path === input.path
+          && (item.current.state.kind === 'pending' || item.current.state.result.kind === 'unknown'));
+        if (attempt?.current.state.kind === 'pending' && !sameBytes(attempt.bytes, bytes)) throw new Error(`${input.path} is already being uploaded; wait for it to finish`);
+        return attempt?.current;
+      };
       const earlier = unresolved();
       if (earlier) return earlier;
       const operationId = randomUUID();
       const target = revisionProvider.locate(input.path);
       if (input.replace && !sameTarget(input.replace, target)) throw new TypeError('The replacement revision belongs to another file');
       const request = publicationSnapshot({ operationId, atomicity: 'all-or-nothing', changes: [input.replace
-        ? { kind: 'replace', target: input.replace, bytes: input.bytes, mediaType: input.mediaType ?? 'application/octet-stream' }
-        : { kind: 'create', target, expected: { kind: 'absent' }, bytes: input.bytes, mediaType: input.mediaType ?? 'application/octet-stream' }] });
+        ? { kind: 'replace', target: input.replace, bytes, mediaType: input.mediaType ?? 'application/octet-stream' }
+        : { kind: 'create', target, expected: { kind: 'absent' }, bytes, mediaType: input.mediaType ?? 'application/octet-stream' }] });
       const current: FileUpload = { operationId, path: input.path, state: { kind: 'pending' } };
       const digest = await publicationDigest(request);
       active();
       const concurrent = unresolved();
       if (concurrent) return concurrent;
-      attempts.set(operationId, { request, digest, current });
+      attempts.set(operationId, { request, digest, bytes, current });
       update({ ...state, uploads: [...state.uploads, current] });
       const signal = input.signal ? AbortSignal.any([input.signal, lifetime.signal]) : lifetime.signal;
       if (signal.aborted) return uploadState(operationId, { kind: 'unavailable', reason: 'Upload cancelled before publication' });
