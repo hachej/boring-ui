@@ -8,6 +8,7 @@ import { bytes, fileInfo, line, nothing, envelope, streamFrame, schema, version,
 import type { RemoteFileSystemCall } from './remote-files-protocol.js';
 import { frameReader, readJson } from './remote-files-io.js';
 import { randomUUID } from '@hachej/boring-files/platform';
+import { snapshotReaders } from './fs-readers.js';
 export { createRemoteFileSystemHandler } from './remote-files-handler.js';
 export type { RemoteFileSystemAccess, RemoteFileSystemHandlerOptions } from './remote-files-handler.js';
 export type { RemoteFileSystemCall } from './remote-files-protocol.js';
@@ -143,8 +144,9 @@ export function createRemoteFileSystemLease(options: RemoteFileSystemOptions): W
     finally { if (!retained) await connection.dispose(); }
   };
   const release = async (): Promise<void> => { closed = true; await Promise.all([...active].map(close => close())); };
+  const readers = snapshotReaders({ readBinaryFile: (path, context) => environment.readBinaryFile(path, context), fileInfo: (path, context) => environment.fileInfo(path, context), listDir: (path, context) => environment.listDir(path, context) });
   const environment: FileSystem = {
-    id: filesystemId, get cwd() { return cwd; }, set cwd(value) { cwd = value; }, cleanup: release,
+    ...readers, id: filesystemId, get cwd() { return cwd; }, set cwd(value) { cwd = value; }, cleanup: release,
     absolutePath: (path, context) => invoke({ method: 'absolutePath', args: [path] }, z.string(), context),
     joinPath: (parts, context) => invoke({ method: 'joinPath', args: [parts] }, z.string(), context),
     readTextFile: (path, context) => invoke({ method: 'readTextFile', args: [path] }, z.string(), context),

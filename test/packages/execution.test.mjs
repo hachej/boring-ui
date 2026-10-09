@@ -141,9 +141,13 @@ test('unqualified rename/truncate/flush refuse before effects and cannot clobber
 test('native shell options work with buffered output so the stock bash tool runs; direct Bash stays useful', async t => {
   const workspace = fixture(t), env = (await acquire(workspace)).environment;
   const chunks = [];
-  // Output arrives once, after the command ends; spill thresholds are accepted and nothing is spilled.
-  assert.deepEqual(getOrThrow(await env.exec('echo out; echo diagnostic >&2', { onOutput: text => chunks.push(text), spill: { afterBytes: 1, afterLines: 1 }, timeout: 5 }, context)), { exitCode: 0 });
-  assert.deepEqual(chunks, ['out\ndiagnostic\n']);
+  // Output arrives once per stream, after the command ends, naming its stream (Pi 1.0.3); spill thresholds are accepted and nothing is spilled.
+  assert.deepEqual(getOrThrow(await env.exec('echo out; echo diagnostic >&2', { onOutput: (text, _context, info) => chunks.push(`${info.stream}:${text}`), spill: { afterBytes: 1, afterLines: 1 }, timeout: 5 }, context)), { exitCode: 0 });
+  assert.deepEqual(chunks, ['stdout:out\n', 'stderr:diagnostic\n']);
+  // Pi's argv form runs exactly those words, without the shell splitting them.
+  const argv = [];
+  assert.deepEqual(getOrThrow(await env.exec(['printf', '%s|', "it's", 'two words', '$HOME'], { onOutput: text => argv.push(text) }, context)), { exitCode: 0 });
+  assert.deepEqual(argv, ["it's|two words|$HOME|"]);
   assert.equal((await env.exec('sleep 5', { timeout: 0.05 }, context)).error.code, 'timeout');
   assert.equal((await env.exec('echo x', { onOutput: () => { throw new Error('listener failed'); } }, context)).error.code, 'callback_error');
   assert.equal(getOrThrow(await env.readTextFile('note.txt', context)), 'original\n');

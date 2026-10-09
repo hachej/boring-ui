@@ -1,4 +1,6 @@
 import type { ConversationId, EntryId, TaskId } from '@earendil-works/pi-durable';
+import { NATIVE_VERSION, isNativeVersion } from './native-version.js';
+import type { NativeVersion } from './native-version.js';
 
 export const CONVERSATION_PROJECTION_LIMITS = Object.freeze({
   maxMessages: 200, maxMessageBytes: 32768, maxWindowBytes: 196608, maxFrameBytes: 262144,
@@ -27,7 +29,7 @@ export interface ConversationTextRow extends ConversationTextKey {
 interface ProjectionFrame {
   readonly schema: 'boring.conversation-text';
   readonly version: 2;
-  readonly nativeVersion: 'pi-durable@1.0.1';
+  readonly nativeVersion: NativeVersion;
   readonly source: ProjectionIdentity;
   /** Ordering within this connection only, never a durable native cursor. */
   readonly connection: { readonly id: string; readonly frame: number; readonly observedAt: string };
@@ -93,7 +95,7 @@ function rows(value: unknown): value is readonly ConversationTextRow[] {
     && new Set(value.map(projectionKey)).size === value.length && projectionBytes(value) <= CONVERSATION_PROJECTION_LIMITS.maxWindowBytes;
 }
 function frame(value: unknown): value is ConversationTextProjection {
-  if (!record(value) || value.schema !== 'boring.conversation-text' || value.version !== 2 || value.nativeVersion !== 'pi-durable@1.0.1'
+  if (!record(value) || value.schema !== 'boring.conversation-text' || value.version !== 2 || !isNativeVersion(value.nativeVersion)
     || !projectionIdentity(value.source) || !record(value.connection) || !fields(value.connection, ['id', 'frame', 'observedAt'])
     || typeof value.connection.id !== 'string' || !value.connection.id.length || value.connection.id.length > 128 || !index(value.connection.frame)
     || typeof value.connection.observedAt !== 'string' || !Number.isFinite(Date.parse(value.connection.observedAt))

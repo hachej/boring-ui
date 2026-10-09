@@ -6,6 +6,7 @@ import type { WorkspaceIdentity, WorkspaceLease } from './contracts.js';
 import { contentType, frame, identity, nativeVersion, positiveLimit, sameIdentity, schema, version, wireOptions } from './remote-shell-protocol.js';
 import type { ShellResult } from './remote-shell-protocol.js';
 import { randomUUID } from '@hachej/boring-files/platform';
+import { shellCommand } from './fs-readers.js';
 export { createRemoteShellHandler } from './remote-shell-handler.js';
 export type { RemoteShellAccess, RemoteShellHandlerOptions } from './remote-shell-handler.js';
 
@@ -42,8 +43,8 @@ export function createRemoteShellLease(options: RemoteShellOptions): WorkspaceLe
       active.add(abort);
       try {
         const { onOutput: _callback, ...arguments_ } = options ?? {};
-        const body = JSON.stringify({ schema, version, nativeVersion, requestId, identity: selected, command, options: wireOptions(arguments_), output: onOutput !== undefined });
-        if (typeof command !== 'string' || new TextEncoder().encode(body).byteLength > maxRequestBytes) return err(new ExecutionError('shell_unavailable', 'Remote shell request is invalid or exceeds its byte limit'));
+        const body = JSON.stringify({ schema, version, nativeVersion, requestId, identity: selected, command: shellCommand(command), options: wireOptions(arguments_), output: onOutput !== undefined });
+        if ((typeof command !== 'string' && !Array.isArray(command)) || new TextEncoder().encode(body).byteLength > maxRequestBytes) return err(new ExecutionError('shell_unavailable', 'Remote shell request is invalid or exceeds its byte limit'));
         const request = new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body, redirect: 'error', signal });
         dispatched = true;
         const pending = fetch(request);
@@ -63,7 +64,7 @@ export function createRemoteShellLease(options: RemoteShellOptions): WorkspaceLe
             if (current.type !== 'header' || !sameIdentity(current.identity, selected)) throw new Error('Remote workspace identity mismatch');
             header = true;
           } else if (current.type === 'output') {
-            try { onOutput?.(current.text, context); }
+            try { onOutput?.(current.text, context, { stream: current.stream }); }
             catch { return err(new ExecutionError('callback_error', 'Local output callback failed; remote termination is unconfirmed')); }
           } else if (current.type === 'result') terminal = current.result;
           else throw new Error('Duplicate remote shell header');

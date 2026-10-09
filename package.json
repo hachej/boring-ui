@@ -88,10 +88,10 @@
   },
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1146.0",
-    "@earendil-works/chord": "1.0.1",
-    "@earendil-works/pi-ai": "1.0.1",
-    "@earendil-works/pi-codemode": "1.0.1",
-    "@earendil-works/pi-durable": "1.0.1",
+    "@earendil-works/chord": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-codemode": "1.1.0",
+    "@earendil-works/pi-durable": "1.1.0",
     "@earendil-works/pi-mcp": "1.0.4",
     "@json-render/core": "0.21.0",
     "@json-render/react": "0.21.0",
@@ -115,7 +115,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vercel/sandbox": "3.5.1",
-    "agents": "0.26.0",
+    "agents": "0.28.0",
     "buffer": "6.0.3",
     "clsx": "2.1.1",
     "entities": "8.1.0",
@@ -140,9 +140,9 @@
     "@radix-ui/react-collapsible": "1.1.20"
   },
   "overrides": {
-    "@earendil-works/pi-durable": "1.0.1",
-    "@earendil-works/pi-ai": "1.0.1",
-    "@earendil-works/chord": "1.0.1",
+    "@earendil-works/pi-durable": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/chord": "1.1.0",
     "agents": {
       "@modelcontextprotocol/sdk": "1.32.0"
     }

@@ -4,6 +4,7 @@ import type { Conversation, ConversationWatch, EntryRecord } from '@earendil-wor
 import { CONVERSATION_PROJECTION_LIMITS as limits, projectionEncoder, projectionIdentity, projectionKey } from './projection-format.js';
 import type { ProjectionIdentity, ConversationTextProjection, ConversationTextSnapshot } from './projection-format.js';
 import { projectConversationWindow } from './projection-window.js';
+import { NATIVE_VERSION } from './native-version.js';
 export { CONVERSATION_PROJECTION_LIMITS, createConversationTextReceiver } from './projection-format.js';
 export type { ProjectionIdentity, ConversationTextProjection, ConversationTextSnapshot, ConversationTextDelta, ConversationTextRow, ConversationTextKey, ConversationTextReceiver } from './projection-format.js';
 
@@ -100,7 +101,7 @@ export function createConversationProjectionHandler(options: ConversationProject
             if (previous && JSON.stringify(previous.messages) === JSON.stringify(visible.messages)
               && previous.window.truncated === visible.window.truncated) continue;
             const snapshot: ConversationTextSnapshot = {
-              schema: 'boring.conversation-text', version: 2, nativeVersion: 'pi-durable@1.0.1', source: identity,
+              schema: 'boring.conversation-text', version: 2, nativeVersion: NATIVE_VERSION, source: identity,
               connection: { id: connectionId, frame, observedAt: new Date().toISOString() }, kind: 'snapshot', ...visible,
             };
             const snapshotBytes = projectionEncoder.encode(JSON.stringify(snapshot) + '\n');

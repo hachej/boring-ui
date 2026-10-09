@@ -67,7 +67,7 @@ export function createRemoteShellHandler(options: RemoteShellHandlerOptions): (r
     async function execute(): Promise<void> {
       try {
         if (signal?.aborted || ended) return;
-        const result = await shell.exec(input.command, { ...input.options, ...(input.output ? { onOutput: (text: string) => send({ type: 'output', text }) } : {}) }, context);
+        const result = await shell.exec(input.command, { ...input.options, ...(input.output ? { onOutput: (text: string, _context: unknown, info: { readonly stream: 'stdout' | 'stderr' }) => send({ type: 'output', text, stream: info.stream }) } : {}) }, context);
         if (await awaitWithContext(Promise.resolve(authorize(input.command, structuredClone(input.options))), context) !== true || signal?.aborted || ended) { fail(); return; }
         send({ type: 'result', result: wireResult(result) });
         ended = true; signal?.removeEventListener('abort', fail); controller.close();

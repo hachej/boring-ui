@@ -8,6 +8,7 @@ import type { ExecutionEnv, FileInfo, FileSystem, Result, TextLineReader } from 
 import type { WorkspaceProvider, WorkspaceIdentity } from './contracts.js';
 import { FileSystemView, VirtualFileSystem, boundedMessage } from './virtual-filesystem.js';
 import type { VirtualFiles } from './virtual-filesystem.js';
+import { shellCommand, snapshotReaders } from './fs-readers.js';
 export { MAX_ERROR_CHARS } from './virtual-filesystem.js';
 
 export interface VirtualWorkspaceOptions {
@@ -141,8 +142,10 @@ function nativeEnvironment(fs: VirtualFiles, id: string, cwd: string, closed: ()
     await fs.createExclusive(path, { mode: directory ? 0o700 : 0o600, directory });
     return path;
   }
+  // Readers and the watcher over the memory file system's whole-file reads (see fs-readers.ts).
+  const readers = snapshotReaders({ readBinaryFile: (path, context) => environment.readBinaryFile(path, context), fileInfo: (path, context) => environment.fileInfo(path, context), listDir: (path, context) => environment.listDir(path, context) });
   const environment: ExecutionEnv = {
-    id, cwd: posix.normalize(cwd),
+    id, cwd: posix.normalize(cwd), ...readers,
     absolutePath: (path, context) => run(path, context, path => path),
     joinPath: (parts, context) => run('.', context, () => posix.join(...parts)),
     readTextFile: (path, context) => run(path, context, path => fs.readFile(path)),
@@ -216,7 +219,7 @@ function nativeEnvironment(fs: VirtualFiles, id: string, cwd: string, closed: ()
         const cwd = absolute(options?.cwd ?? '.');
         try { if (!(await fs.stat(cwd)).isDirectory) throw new Error('not a directory'); }
         catch (cause) { return err(new ExecutionError('spawn_error', `Working directory does not exist: ${cwd}\nCannot execute bash commands.`, cause instanceof Error ? cause : undefined)); }
-        const result = await createBash({ cwd, ...(options?.timeout === undefined ? {} : { executionLimits: { maxExecutionTimeMs: options.timeout * 1000 } }) }).exec(command, {
+        const result = await createBash({ cwd, ...(options?.timeout === undefined ? {} : { executionLimits: { maxExecutionTimeMs: options.timeout * 1000 } }) }).exec(shellCommand(command), {
           ...(options?.env === undefined ? {} : { env: options.env }), replaceEnv: options?.inheritEnv === false,
           signal: AbortSignal.any(signals),
         });
@@ -224,8 +227,10 @@ function nativeEnvironment(fs: VirtualFiles, id: string, cwd: string, closed: ()
         // A synchronous script never yields to the timer above; just-bash's own wall-clock limit stops it instead.
         if (timer.signal.aborted || options?.timeout !== undefined && result.exitCode !== 0 && Date.now() - started >= options.timeout * 1000) return err(new ExecutionError('timeout', 'Command timed out; prior effects may remain'));
         if (options?.onOutput) {
-          const output = `${result.stdout}${result.stderr}`;
-          if (output) { try { options.onOutput(output, context); } catch (error) { return err(new ExecutionError('callback_error', boundedMessage(error), error instanceof Error ? error : undefined)); } }
+          try {
+            if (result.stdout) options.onOutput(result.stdout, context, { stream: 'stdout' });
+            if (result.stderr) options.onOutput(result.stderr, context, { stream: 'stderr' });
+          } catch (error) { return err(new ExecutionError('callback_error', boundedMessage(error), error instanceof Error ? error : undefined)); }
         }
         return ok({ exitCode: result.exitCode });
       } catch (error) { return err(new ExecutionError('unknown', boundedMessage(error), error instanceof Error ? error : undefined)); }

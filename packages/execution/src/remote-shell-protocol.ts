@@ -4,7 +4,7 @@ import type { WorkspaceIdentity } from './contracts.js';
 
 export const schema = 'boring.remote-shell';
 export const version = 1;
-export const nativeVersion = 'pi-durable@1.0.1';
+export const nativeVersion = 'pi-durable@1.1.0';
 export const contentType = 'application/x-ndjson';
 export type WireOptions = Omit<ShellExecOptions, 'onOutput'>;
 export type ShellResult = Awaited<ReturnType<Shell['exec']>>;
@@ -106,8 +106,9 @@ export function frame(value: unknown, requestId: string, sequence: number) {
       if (data['schema'] !== schema || data['version'] !== version || data['nativeVersion'] !== nativeVersion) throw new Error('Unsupported remote shell protocol');
       return { type: 'header', identity: identity(data['identity']) } as const;
     case 'output':
-      keys(data, ['type', 'requestId', 'sequence', 'text']);
-      return { type: 'output', text: string(data['text']) } as const;
+      keys(data, ['type', 'requestId', 'sequence', 'text', 'stream']);
+      if (data['stream'] !== 'stdout' && data['stream'] !== 'stderr') throw new Error('Invalid remote shell output stream');
+      return { type: 'output', text: string(data['text']), stream: data['stream'] } as const;
     case 'result':
       keys(data, ['type', 'requestId', 'sequence', 'result']);
       return { type: 'result', result: result(data['result']) } as const;
