@@ -1,5 +1,19 @@
 {
   "compilerOptions": {
-    "customConditions": ["boring-source"]
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023", "DOM"],
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmitOnError": true,
+    "skipLibCheck": true,
+    "types": [],
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true
   }
 }

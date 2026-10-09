@@ -1,0 +1,46 @@
+/* shadcn/ui sidebar-11 adaptation; MIT. See ../THIRD_PARTY_NOTICES.md. */
+[data-boring="file-tree"] {
+  color: var(--foreground, #18181b);
+  background: var(--background, #fff);
+  font: inherit;
+  min-width: 0;
+}
+[data-boring="file-tree"] *, [data-boring="file-tree"] *::before, [data-boring="file-tree"] *::after { box-sizing: border-box; }
+[data-boring="file-tree"] ul { list-style: none; }
+[data-boring="file-tree"] button, [data-boring="file-tree"] input { font: inherit; }
+[data-boring="file-tree"] button { cursor: pointer; }
+[data-boring="file-tree"] [data-slot="sidebar-menu"] { display: flex; width: 100%; min-width: 0; flex-direction: column; gap: .25rem; margin: 0; padding: .5rem; }
+[data-boring="file-tree"] [data-slot="sidebar-menu-item"] { position: relative; border-radius: .375rem; outline: none; }
+[data-boring="file-tree"] [data-slot="sidebar-menu-item"] > div { display: flex; align-items: center; gap: .25rem; }
+[data-boring="file-tree"] [data-slot="sidebar-menu-button"] {
+  display: flex; align-items: center; gap: .5rem; flex: 1; width: 100%; min-width: 0;
+  height: 2rem; overflow: hidden; border: 0; border-radius: .375rem; padding: .5rem;
+  background: transparent; color: inherit; text-align: left; font-size: .875rem;
+  line-height: 1.25rem; outline: none; transition: width .15s, height .15s, padding .15s;
+}
+[data-boring="file-tree"] [data-slot="sidebar-menu-button"]:hover,
+[data-boring="file-tree"] [data-slot="sidebar-menu-button"]:active {
+  background: var(--sidebar-accent, var(--accent, #f4f4f5));
+  color: var(--sidebar-accent-foreground, var(--accent-foreground, #18181b));
+}
+[data-boring="file-tree"] [data-slot="sidebar-menu-button"][data-active="true"] { font-weight: 500; color: var(--sidebar-accent-foreground, var(--accent-foreground, #18181b)); }
+[data-boring="file-tree"] [data-slot="sidebar-menu-button"] > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-boring="file-tree"] [data-slot="sidebar-menu-button"] > svg { width: 1rem; height: 1rem; flex-shrink: 0; transition: transform .15s; }
+[data-boring="file-tree"] [data-slot="sidebar-menu-item"][data-state="open"] > div > button > svg:first-child { transform: rotate(90deg); }
+[data-boring="file-tree"] [data-slot="sidebar-menu-sub"] {
+  display: flex; min-width: 0; flex-direction: column; gap: .25rem;
+  margin: 0 .875rem; padding: .125rem .625rem; transform: translateX(1px);
+  border-left: 1px solid var(--sidebar-border, var(--border, #e4e4e7));
+}
+[data-boring="file-tree"] [data-slot="sidebar-menu-sub"][hidden] { display: none; }
+[data-boring="file-tree"] [data-slot="sidebar-menu-item"]:focus-visible,
+[data-boring="file-tree"] button:focus-visible,
+[data-boring="file-tree"] input:focus-visible { outline: 2px solid var(--sidebar-ring, var(--ring, #71717a)); outline-offset: 2px; }
+[data-boring="file-tree"] button:disabled { pointer-events: none; opacity: .5; }
+[data-boring="file-tree"] > div:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .5rem; }
+[data-boring="file-tree"] input[type="search"] { flex: 1; min-width: 0; padding: .375rem .5rem; border: 1px solid var(--input, #d4d4d8); border-radius: .375rem; color: inherit; background: transparent; }
+[data-boring="file-tree"] input[type="file"] { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+[data-boring="file-tree"] pre { max-height: 20rem; overflow: auto; white-space: pre-wrap; }
+@media (prefers-reduced-motion: reduce) {
+  [data-boring="file-tree"] [data-slot="sidebar-menu-button"], [data-boring="file-tree"] [data-slot="sidebar-menu-button"] > svg { transition: none; }
+}

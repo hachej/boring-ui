@@ -1,0 +1,133 @@
+name: Publish npm release
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact reviewed main commit SHA
+        required: true
+        type: string
+      version:
+        description: Version already committed in all seven packages
+        required: true
+        type: string
+      tag:
+        description: npm distribution tag
+        required: true
+        default: next
+        type: choice
+        options: [next, latest, alpha, beta, rc]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publication
+  cancel-in-progress: false
+
+jobs:
+  admit:
+    if: >-
+      github.repository == 'hachej/boring-ui' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'hachej' && github.triggering_actor == 'hachej'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bind publication to the reviewed dispatch commit
+        env:
+          REVIEWED_COMMIT: ${{ inputs.commit }}
+        run: test "$REVIEWED_COMMIT" = "$GITHUB_SHA"
+
+  verify:
+    needs: admit
+    uses: ./.github/workflows/verify.yml
+  browser:
+    needs: admit
+    uses: ./.github/workflows/studio-scripted.yml
+  secrets:
+    needs: admit
+    uses: ./.github/workflows/secrets.yml
+
+  prepare:
+    if: >-
+      github.repository == 'hachej/boring-ui' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'hachej' && github.triggering_actor == 'hachej'
+    needs: admit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.archive.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.1
+          package-manager-cache: false
+      - name: Pin the npm CLI with trusted publishing support
+        run: npm install --global npm@11.5.1 --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - name: Require full release qualification and public manifests
+        run: npm run release:preflight
+      - name: Retain the exact audited tarballs
+        run: node scripts/check-npm-packages.mjs --release --out "$RUNNER_TEMP/npm-release"
+      - name: Validate version and dry-run the retained tarballs
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node scripts/publish-npm-packages.mjs "$RUNNER_TEMP/npm-release" "$RELEASE_VERSION" "$RELEASE_TAG" --dry-run
+      - name: Confirm the reviewed source was not modified
+        run: test -z "$(git status --porcelain --untracked-files=no)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: archive
+        with:
+          name: npm-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/npm-release/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: >-
+      github.repository == 'hachej/boring-ui' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'hachej' && github.triggering_actor == 'hachej'
+    needs: [prepare, verify, browser, secrets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.1
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+      - name: Install only the pinned publishing CLI, without lifecycle scripts
+        run: npm install --global npm@11.5.1 --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: ${{ runner.temp }}/npm-release
+          merge-multiple: true
+      - name: Verify and publish the approved archives with npm OIDC
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node scripts/publish-npm-packages.mjs "$RUNNER_TEMP/npm-release" "$RELEASE_VERSION" "$RELEASE_TAG" --publish
+      - name: Preserve partial and complete publication receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/npm-release/publication.json
+          if-no-files-found: ignore
+          retention-days: 30

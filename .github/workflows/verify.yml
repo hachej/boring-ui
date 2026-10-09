@@ -1,0 +1,70 @@
+name: Specification and boundary evidence
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run verify
+      - name: Release gate distinguishes deferrals from passes
+        shell: bash
+        run: |
+          pending=$(node --input-type=module -e 'import {readFileSync} from "node:fs"; const r=JSON.parse(readFileSync("VERIFY.json")); console.log(Object.values(r.invariants).flatMap(x=>x.verifiers).filter(x=>x.kind==="pending").length)')
+          if node scripts/verify-invariants.mjs --release > "$RUNNER_TEMP/release-gate.log" 2>&1; then
+            test "$pending" -eq 0
+          else
+            test "$pending" -gt 0
+            grep -q "^Runtime verification INCOMPLETE: $pending deferred proofs" "$RUNNER_TEMP/release-gate.log"
+            if grep -q '^Evidence failed:' "$RUNNER_TEMP/release-gate.log"; then exit 1; fi
+            echo "::warning::$pending runtime proofs deferred; structural evidence is not runtime qualification"
+          fi
+      - name: Isolated shared VFS/Bash/Git feasibility (not runtime conformance)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vfs-git" --ignore-scripts --no-audit --no-fund --save-exact just-bash@3.6.0 isomorphic-git@1.42.6
+          node scripts/probe-vfs-git.mjs "$RUNNER_TEMP/vfs-git"
+  isolated-consumers:
+    # Packs the packages and installs them into a temporary app offline from the npm cache, as a real consumer would
+    # (missing peer declarations, runtime imports of optional peers, strict declarations). About 5 minutes locally; the
+    # slower registry/projection/definitions/testing consumers stay manual (each 35-130 s, testing needs Chromium).
+    name: Isolated package consumers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Audit actual npm tarballs
+        run: npm run check:pack
+      - name: Consumers
+        run: |
+          for name in document editor html virtual remote-shell remote-files question presentation experience canvas canvas-editor canvas-remote task-list-registry morning redaction-browser; do
+            echo "::group::test:$name-consumer"
+            npm run "test:$name-consumer"
+            echo "::endgroup::"
+          done
+      - name: Install workspace and portable tree registry recipes
+        run: |
+          npm run registry:build
+          npm run test:app-registry-consumer

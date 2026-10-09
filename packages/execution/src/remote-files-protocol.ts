@@ -1,0 +1,78 @@
+import { z } from 'zod';
+import { FileError, ok, err } from '@earendil-works/pi-durable/env';
+import type { FileSystem, Result } from '@earendil-works/pi-durable/env';
+import type { Context } from '@earendil-works/chord';
+import { identity, nativeVersion } from './remote-shell-protocol.js';
+export { identity, sameIdentity, positiveLimit, nativeVersion } from './remote-shell-protocol.js';
+
+export const schema = 'boring.remote-files';
+export const version = 2;
+export const streamType = 'application/x-ndjson';
+export type FileMethod = Exclude<keyof FileSystem, 'id' | 'cwd' | 'cleanup'>;
+type Arguments<Method> = Method extends (...args: [...infer Input, Context]) => unknown ? Input : never;
+export type RemoteFileSystemCall = { [Method in FileMethod]: { readonly method: Method; readonly args: Arguments<FileSystem[Method]> } }[FileMethod];
+
+const text = z.string(), number = z.number().finite();
+/** Bytes travel as canonical base64 text; JSON number arrays multiplied the size by three to four. */
+export function encodeBytes(value: Uint8Array): string {
+  let text = '';
+  for (let index = 0; index < value.length; index += 0x8000) text += String.fromCharCode(...value.subarray(index, index + 0x8000));
+  return btoa(text);
+}
+export function decodeBytes(value: string): Uint8Array {
+  let text: string;
+  try { text = atob(value); } catch { throw new TypeError('Invalid resource bytes'); }
+  const result = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index++) result[index] = text.charCodeAt(index);
+  if (encodeBytes(result) !== value) throw new TypeError('Invalid resource bytes');
+  return result;
+}
+export const bytes = z.string().transform(decodeBytes);
+const content = z.union([text, z.strictObject({ bytes }).transform(value => value.bytes)]);
+const optionalText = text.nullable().transform(value => value ?? undefined);
+const recursive = z.strictObject({ recursive: z.boolean().optional() }).nullable().transform(value => value === null ? undefined : value.recursive === undefined ? {} : { recursive: value.recursive });
+const removeOptions = z.strictObject({ recursive: z.boolean().optional(), force: z.boolean().optional() }).nullable().transform(value => value === null ? undefined : ({ ...(value.recursive === undefined ? {} : { recursive: value.recursive }), ...(value.force === undefined ? {} : { force: value.force }) }));
+const lineOptions = z.strictObject({ maxLines: number.optional() }).nullable().transform(value => value === null ? undefined : value.maxLines === undefined ? {} : { maxLines: value.maxLines });
+const tempOptions = z.strictObject({ prefix: text.optional(), suffix: text.optional() }).nullable().transform(value => value === null ? undefined : ({ ...(value.prefix === undefined ? {} : { prefix: value.prefix }), ...(value.suffix === undefined ? {} : { suffix: value.suffix }) }));
+const pathCall = <Method extends string>(method: Method) => z.strictObject({ method: z.literal(method), args: z.tuple([text]) });
+const callSchema = z.discriminatedUnion('method', [
+  pathCall('absolutePath'), pathCall('readTextFile'), pathCall('openTextLineReader'), pathCall('readBinaryFile'),
+  pathCall('flushFile'), pathCall('fileInfo'), pathCall('listDir'), pathCall('canonicalPath'), pathCall('exists'),
+  z.strictObject({ method: z.literal('joinPath'), args: z.tuple([z.array(text)]) }),
+  z.strictObject({ method: z.literal('readTextLines'), args: z.tuple([text, lineOptions]) }),
+  z.strictObject({ method: z.literal('writeFile'), args: z.tuple([text, content]) }),
+  z.strictObject({ method: z.literal('appendFile'), args: z.tuple([text, content]) }),
+  z.strictObject({ method: z.literal('truncateFile'), args: z.tuple([text, number]) }),
+  z.strictObject({ method: z.literal('renameFile'), args: z.tuple([text, text]) }),
+  z.strictObject({ method: z.literal('createDir'), args: z.tuple([text, recursive]) }),
+  z.strictObject({ method: z.literal('remove'), args: z.tuple([text, removeOptions]) }),
+  z.strictObject({ method: z.literal('createTempDir'), args: z.tuple([optionalText]) }),
+  z.strictObject({ method: z.literal('createTempFile'), args: z.tuple([tempOptions]) }),
+]);
+const binding = { schema: z.literal(schema), version: z.literal(version), nativeVersion: z.literal(nativeVersion),
+  requestId: text.min(1).max(128), identity: z.unknown().transform(identity), filesystemId: text.min(1) };
+const requestSchema = z.strictObject({ ...binding, cwd: text, call: callSchema });
+export function requestInput(value: unknown): Omit<z.infer<typeof requestSchema>, 'call'> & { readonly call: RemoteFileSystemCall } { return requestSchema.parse(value); }
+export const envelope = z.strictObject({ ...binding, result: z.unknown() });
+export const fileInfo = z.strictObject({ name: text, path: text, kind: z.enum(['file', 'directory', 'symlink']), size: number.nonnegative(), mtimeMs: number });
+export const line = z.strictObject({ text, terminated: z.boolean() });
+export const nothing = z.null().transform(() => undefined);
+const fileError = z.strictObject({ code: z.enum(['aborted', 'not_found', 'permission_denied', 'not_directory', 'is_directory', 'invalid', 'not_supported', 'unknown']), message: text, path: text.optional() });
+export function result<Value>(value: unknown, output: z.ZodType<Value>): Result<Value, FileError> {
+  const parsed = z.discriminatedUnion('ok', [z.strictObject({ ok: z.literal(true), value: output }), z.strictObject({ ok: z.literal(false), error: fileError })]).parse(value);
+  return parsed.ok ? ok(parsed.value) : err(new FileError(parsed.error.code, parsed.error.message, parsed.error.path));
+}
+export function wireResult(value: Result<unknown, FileError>): unknown {
+  if (value.ok) return { ok: true, value: value.value instanceof Uint8Array ? encodeBytes(value.value) : value.value ?? null };
+  return { ok: false, error: { code: value.error.code, message: value.error.message, ...(value.error.path === undefined ? {} : { path: value.error.path }) } };
+}
+export const streamFrame = z.discriminatedUnion('type', [
+  z.strictObject({ ...binding, sequence: z.literal(0), type: z.literal('opened') }),
+  z.strictObject({ requestId: binding.requestId, sequence: z.number().int().positive(), type: z.literal('line'), result: z.unknown() }),
+  z.strictObject({ requestId: binding.requestId, sequence: z.number().int().positive(), type: z.literal('end') }),
+]);
+export function wireCall(call: RemoteFileSystemCall): unknown {
+  // JSON has no Infinity; an unbounded line count is the same request as no limit.
+  const unbounded = call.method === 'readTextLines' && call.args[1]?.maxLines === Infinity;
+  return { method: call.method, args: call.args.map((value, index) => unbounded && index === 1 ? {} : value instanceof Uint8Array ? { bytes: encodeBytes(value) } : value ?? null) };
+}

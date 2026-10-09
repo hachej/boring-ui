@@ -1,0 +1,5 @@
+import { emailSchema, calendarSchema, todoSchema } from './documents.mjs';
+export const privateCanaries = Object.freeze({ email: 'FICTIONAL_PRIVATE_EMAIL_731', draft: 'FICTIONAL_PRIVATE_REPLY_418', calendar: 'FICTIONAL_PRIVATE_CALENDAR_925', attendee: 'FICTIONAL_PRIVATE_ATTENDEE_246', todo: 'FICTIONAL_PRIVATE_TODO_613' });
+export const initialEmail = () => emailSchema.parse({ kind: 'fictional.email', version: 1, subject: privateCanaries.email, status: 'pending', snooze: null });
+export const initialCalendar = () => calendarSchema.parse({ kind: 'fictional.calendar', version: 1, title: privateCanaries.calendar, attendees: [privateCanaries.attendee], options: [{ id: 'early', label: 'First fictional slot' }, { id: 'late', label: 'Second fictional slot' }], selected: null });
+export const initialTodo = () => todoSchema.parse({ kind: 'fictional.todo', version: 1, items: [{ id: 'reply', title: `${privateCanaries.todo}: reply`, completed: false }, { id: 'calendar', title: `${privateCanaries.todo}: choose a slot`, completed: false }] });

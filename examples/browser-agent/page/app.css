@@ -1,0 +1,36 @@
+/* Browser agent shell: chat on the left, the repository on the right; stacked on narrow screens. */
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--shell, var(--muted)); color: var(--foreground); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.ba { display: grid; grid-template-columns: minmax(0, 1fr) minmax(24rem, 0.9fr); gap: 0.75rem; height: 100%; padding: 0.75rem; box-sizing: border-box; }
+@supports (height: 100dvh) { .ba { height: 100dvh; } }
+.ba-chat, .ba-panel { min-width: 0; min-height: 0; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); }
+.ba-chat { display: flex; flex-direction: column; overflow: hidden; }
+.ba-chat > * { flex: 1; }
+.ba-panel { display: flex; flex-direction: column; padding: 0.75rem 1rem 1rem; overflow: auto; gap: 0.5rem; }
+.ba-panel header { display: flex; align-items: baseline; gap: 0.5rem; }
+.ba-panel header code { margin-left: auto; font-size: 0.6875rem; color: var(--muted-foreground); }
+.ba-panel nav { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); }
+.ba-panel nav button { font: inherit; font-size: 0.8125rem; padding: 0.375rem 0.75rem; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted-foreground); cursor: pointer; }
+.ba-panel nav button[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--foreground); }
+.ba-muted { color: var(--muted-foreground); font-size: 0.8125rem; margin: 0; }
+.ba-pad { padding: 2rem; }
+.ba-toggle { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--muted-foreground); }
+.ba-files ul, .ba-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.125rem; font-size: 0.8125rem; }
+.ba-files li { display: flex; align-items: baseline; gap: 0.5rem; }
+.ba-files li span { margin-left: auto; color: var(--muted-foreground); font-size: 0.75rem; }
+.ba-files li button { font: 0.8125rem ui-monospace, SFMono-Regular, Menlo, monospace; border: 0; background: none; color: inherit; padding: 0.125rem 0.375rem; border-radius: 0.375rem; cursor: pointer; text-align: left; }
+.ba-files li button[aria-pressed="true"], .ba-files li button:hover { background: var(--muted); }
+.ba-files pre { margin: 0.5rem 0 0; padding: 0.75rem; background: var(--muted); border-radius: 0.5rem; font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ba-panel iframe { flex: 1; min-height: 24rem; width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 0.5rem; background: #fff; }
+.ba-settings { display: grid; gap: 0.625rem; font-size: 0.8125rem; }
+.ba-settings label { display: grid; gap: 0.25rem; }
+.ba-settings input, .ba-settings select { font: inherit; padding: 0.375rem 0.5rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--background); color: inherit; }
+.ba-settings button { justify-self: start; font: inherit; padding: 0.375rem 0.875rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--background); color: inherit; cursor: pointer; }
+.ba-settings button[type="submit"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+.ba-settings hr { border: 0; border-top: 1px solid var(--border); width: 100%; }
+.ba-view { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.375rem; font-size: 0.75rem; line-height: 1.35; overflow-wrap: anywhere; }
+.ba-view code { font: 0.6875rem ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0 0.3rem; border-radius: 4px; background: color-mix(in oklab, var(--primary) 14%, transparent); white-space: nowrap; }
+.ba-danger { color: var(--destructive, #b91c1c) !important; }
+@media (max-width: 900px) {
+  .ba { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.4fr) minmax(0, 1fr); padding: 0.5rem; gap: 0.5rem; }
+}

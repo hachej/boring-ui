@@ -1,0 +1,10 @@
+import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
+import { openTextDraftSqlite } from './text-draft-sqlite.mjs';
+const [filename, identityJson, sourceJson] = process.argv.slice(2);
+const identity = JSON.parse(identityJson), source = JSON.parse(sourceJson);
+source.snapshot.bytes = Uint8Array.from(Object.values(source.snapshot.bytes));
+const session = openTextDraftSqlite({ filename, identity });
+const buffer = createTextBuffer({ identity, source, instanceId: 'crash-child', epoch: 'first', mediaType: 'text/plain', readText: snapshot => new TextDecoder().decode(snapshot.bytes), client: { read: async () => { throw Error('Unexpected read'); } }, drafts: { store: session.store, signal: session.signal, expiresAt: session.expiresAt, providerInstanceId: 'fictional-instance', retentionMs: 60_000, format: 'plain/v1' } });
+buffer.edit('Fictional checkpoint before SIGKILL');
+process.send(await buffer.checkpointDraft());
+setInterval(() => {}, 1000);

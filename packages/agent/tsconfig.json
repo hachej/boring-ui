@@ -1,49 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
-    "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "baseUrl": ".",
-    "paths": {
-      "@hachej/boring-bash/agent": ["../boring-bash/src/agent/index.ts"],
-      "@hachej/boring-bash/server": ["../boring-bash/src/server/index.ts"],
-      "@hachej/boring-agent": ["src/front/index.ts"],
-      "@hachej/boring-agent/core": ["src/core/index.ts"],
-      "@hachej/boring-agent/front": ["src/front/index.ts"],
-      "@hachej/boring-agent/server": ["src/server/index.ts"],
-      "@hachej/boring-agent/shared": ["src/shared/index.ts"],
-      "@agent-test-host": ["test-host/sandbox.ts"],
-      "@/*": ["src/*"]
-    },
-    "allowJs": true,
-    "forceConsistentCasingInFileNames": true,
-    "noEmit": true,
-    "types": [
-      "vitest/globals",
-      "node"
-    ],
-    "ignoreDeprecations": "6.0"
-  },
-  "include": [
-    "src/**/*",
-    "host/**/*",
-    "test-host/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "src/server/events/__tests__/fixtures/concurrentAppendWorker.ts",
-    "src/server/events/__tests__/fixtures/concurrentMigrationWorker.ts"
-  ]
+  "compilerOptions": { "rootDir": "src", "outDir": "dist", "tsBuildInfoFile": "dist/build.tsbuildinfo" },
+  "include": ["src/**/*.ts"],
+  "references": [{ "path": "../files" }, { "path": "../ui" }]
 }

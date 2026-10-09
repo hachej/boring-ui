@@ -1,0 +1,39 @@
+<!-- Fictional canary-dense page for the privacy policy tests. Every value is invented; tokens of the form zz<name>qq must never leave the page. -->
+<div class="app" id="zzappidqq" data-tenant="zztenantqq">
+  <header data-feedback-ignore>
+    <span>zzignoredchromeqq</span>
+    <button type="button" aria-label="zzignoredlabelqq">Menu</button>
+  </header>
+  <div data-feedback-overlay><span>zzoverlaylabelqq</span></div>
+  <nav data-feedback-visible aria-label="Primary">
+    <a href="/members/zzhrefpathqq?token=zzhrefqueryqq#zzhreffragqq" aria-current="page">Members</a>
+    <a href="/loans">Loans</a>
+  </nav>
+  <main>
+    <h1 data-feedback-visible>Member record</h1>
+    <section data-testid="member-card" data-feedback-id="member" class="zzclassqq" title="zztitleqq" style="color:zzstyleqq" onclick="zzhandlerqq()">
+      <h2>zznameheadingqq</h2>
+      <p>Card <span>zzcardnumberqq</span> issued to <em>zzmemberemailqq</em></p>
+      <img src="/photos/zzsrcqq.png" alt="zzaltqq">
+      <div role="note" aria-label="zzarialabelqq" aria-description="zzariadescqq" data-note="zzdatanoteqq">Notes</div>
+      <span data-testid="row-zzdigitsqq-12345">Digits</span>
+      <span data-feedback-id="zzatsignqq@fictional.invalid">At sign</span>
+      <button type="button" aria-expanded="false" aria-pressed="true" data-source="src/MemberCard.tsx:42">Renew</button>
+      <ul><li>zzlistoneqq</li><li>zzlisttwoqq</li></ul>
+      <template><p>zztemplateqq</p></template>
+      <script>var x = "zzscriptqq";</script>
+      <iframe src="/frame/zziframeqq" title="zziframetitleqq"></iframe>
+      <div id="shadow-host"></div>
+    </section>
+    <form action="/members/zzactionqq" data-feedback-visible>
+      <label for="email">Email</label>
+      <input id="email" type="email" value="zzinputvalueqq" placeholder="zzplaceholderqq">
+      <label>Remarks <textarea>zztextareaqq</textarea></label>
+      <label for="branch">Branch</label>
+      <select id="branch"><option value="zzoptionvalueqq" selected>zzoptiontextqq</option></select>
+      <div contenteditable="true" aria-label="Draft">zzeditableqq</div>
+      <input type="submit" value="zzsubmitvalueqq">
+      <button type="submit">Save member</button>
+    </form>
+  </main>
+</div>

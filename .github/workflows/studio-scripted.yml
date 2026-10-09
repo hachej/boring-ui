@@ -1,0 +1,152 @@
+name: Scripted browser journeys
+# The blocking browser layer: real Chromium against the studio and the ambient example with a scripted model (no key, no network model,
+# no retries). A failure here is a bug. Mark the job "Studio scripted journeys" as a required check in the repository settings.
+# The real-model layer is separate and never blocks: .github/workflows/studio-smoke.yml.
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  scripted-journeys:
+    name: Studio scripted journeys
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Playwright 1.63.0 pins chromium-headless-shell revision 1243 (Chrome 153.0.8010.12); the journeys only need the binary.
+      PLAYWRIGHT_VERSION: 1.63.0
+      CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Cache the pinned Chromium headless shell
+        id: chromium
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.cache/ms-playwright
+          key: chromium-headless-shell-1243-playwright-${{ env.PLAYWRIGHT_VERSION }}
+      - name: Install the pinned Chromium headless shell and its system libraries
+        run: npx --yes playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium-headless-shell
+      # Ubuntu 24.04 runners restrict unprivileged user namespaces through AppArmor, so Chromium aborts with
+      # "No usable sandbox". Re-allow them for this job rather than running Chromium without its sandbox.
+      - name: Allow the Chromium sandbox (user namespaces)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Document draft recovery with IndexedDB
+        run: npm run draft-recovery:journey
+      - name: File tree, mentions, uploads and revision history
+        run: npm run file-tree:journey
+      - name: Mounted canvas command geometry
+        run: npm run canvas:journey:commands
+      - name: Canvas proposal review and persistence
+        run: npm run canvas:journey:proposals
+      - name: Authenticated remote canvas commands
+        run: npm run canvas:journey:remote
+      - name: Consumer task-list viewer
+        run: npm run task-list:journey
+      - name: Fictional morning experience
+        run: npm run morning:journey
+      - name: Fictional redaction browser
+        run: npm run redaction:journey
+      - name: Fictional preparation experience
+        run: npm run redaction:preparation:journey
+      - name: Fake-model correctness journey
+        run: npm run studio:journey:correctness
+      - name: Studio journeys with the scripted model
+        run: npm run studio:journey:scripted
+        env:
+          STUDIO_EVIDENCE: ${{ runner.temp }}/evidence/studio
+      - name: Ambient journey with the scripted model
+        run: npm run ambient:journey:scripted
+        env:
+          AMBIENT_EVIDENCE: ${{ runner.temp }}/evidence/ambient
+      - name: Canvas command evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canvas-command-evidence
+          path: .cache/evidence/canvas-browser
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Canvas proposal evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canvas-proposal-evidence
+          path: .cache/evidence/canvas-proposals-browser
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remote canvas evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canvas-remote-evidence
+          path: .cache/evidence/canvas-remote-browser
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Task-list evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: task-list-evidence
+          path: .cache/evidence/task-list-browser
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Morning experience evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: morning-evidence
+          path: .cache/evidence/morning-browser
+          retention-days: 7
+      - name: Redaction browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: redaction-browser-evidence
+          path: .cache/evidence/redaction-browser-journey
+          retention-days: 7
+      - name: Evidence of a failed run
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: journey-evidence
+          path: |
+            ${{ runner.temp }}/evidence
+            .cache/evidence
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Preparation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: redaction-preparation-evidence
+          path: .cache/evidence/redaction-preparation-journey
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Draft recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: draft-recovery-evidence
+          path: .cache/evidence/draft-recovery-browser
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: File tree evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: file-tree-evidence
+          path: .cache/evidence/file-tree-browser
+          retention-days: 7
+          if-no-files-found: ignore

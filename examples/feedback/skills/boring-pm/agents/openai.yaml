@@ -1,0 +1,4 @@
+interface:
+  display_name: "Boring PM"
+  short_description: "Your product manager for a Boring Factory project"
+  default_prompt: "Use $boring-pm: I have a need for the application."

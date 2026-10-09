@@ -1,8 +1,0 @@
-{
-  "name": "factory-demo-feature",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test"
-  }
-}

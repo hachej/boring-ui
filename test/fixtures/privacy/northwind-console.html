@@ -1,0 +1,78 @@
+<!-- Fictional static copy of the Northwind Console markup (examples/ambient/browser.jsx, Console), for privacy measurement only. -->
+<div class="nw-app">
+  <aside class="nw-side">
+    <div class="nw-brand"><span class="nw-logo" aria-hidden="true"></span>Northwind</div>
+    <ul class="nw-nav">
+      <li><a href="#">Overview</a></li>
+      <li><a href="#">Projects</a></li>
+      <li><a href="#">Team</a></li>
+      <li><a href="#">Billing</a></li>
+      <li><a href="#" aria-current="page">Settings</a></li>
+    </ul>
+    <h2>Background</h2>
+    <button type="button" class="nw-btn nw-task" data-testid="host-task">Run nightly export check</button>
+    <span class="nw-saved" data-testid="host-task-note"></span>
+  </aside>
+  <main class="nw-main">
+    <h1>Workspace settings</h1>
+    <p class="nw-lede">Manage how your Northwind workspace looks, notifies and connects. An invented console for this demo.</p>
+    <p class="nw-lede" data-testid="host-note" role="status"></p>
+    <form class="nw-card">
+      <h2>General</h2>
+      <p>The name your team sees across the console.</p>
+      <div class="nw-field">
+        <label for="workspace-name">Workspace name</label>
+        <input id="workspace-name" value="Acme Harbor">
+      </div>
+      <div class="nw-field">
+        <label for="region">Region</label>
+        <select id="region">
+          <option value="eu-north" selected>Northern Europe</option>
+          <option value="us-east">US East</option>
+          <option value="ap-south">Asia Pacific</option>
+        </select>
+      </div>
+      <div class="nw-field">
+        <label for="webhook">Webhook URL</label>
+        <input id="webhook" value="https://hooks.example.test/northwind">
+      </div>
+      <button type="submit" class="nw-btn primary" data-testid="host-save">Save changes</button>
+      <span class="nw-saved" data-testid="host-saved" role="status"></span>
+    </form>
+    <section class="nw-card">
+      <h2>Notifications</h2>
+      <p>Choose what the console tells you about.</p>
+      <div class="nw-row">
+        <div><strong>Deployment failures</strong><span>Email the on-call group when a deployment fails.</span></div>
+        <input class="nw-switch" type="checkbox" role="switch" aria-label="Deployment failures" checked>
+      </div>
+      <div class="nw-row">
+        <div><strong>Weekly summary</strong><span>A Monday digest of usage and spend.</span></div>
+        <input class="nw-switch" type="checkbox" role="switch" aria-label="Weekly summary">
+      </div>
+      <div class="nw-row">
+        <div><strong>Billing alerts</strong><span>Tell the owners when spend passes 80% of budget.</span></div>
+        <input class="nw-switch" type="checkbox" role="switch" aria-label="Billing alerts" checked>
+      </div>
+    </section>
+    <section class="nw-card">
+      <h2>API keys</h2>
+      <p>Keys created for this workspace.</p>
+      <table class="nw-table">
+        <thead>
+          <tr><th>Name</th><th>Created</th><th>Last used</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ci-pipeline</td><td>12 Mar</td><td>Today</td></tr>
+          <tr><td>reporting</td><td>2 Apr</td><td>3 days ago</td></tr>
+          <tr><td>staging-bot</td><td>19 Apr</td><td>Never</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section class="nw-card">
+      <h2>Danger zone</h2>
+      <p>Archive this workspace. Members keep read access for 30 days.</p>
+      <button type="button" class="nw-btn">Archive workspace</button>
+    </section>
+  </main>
+</div>

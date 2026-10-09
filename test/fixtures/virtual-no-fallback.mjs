@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+let nativeCalls = 0, networkCalls = 0;
+for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) childProcess[name] = () => { nativeCalls++; throw new Error('Native process refused'); };
+syncBuiltinESMExports();
+globalThis.fetch = () => { networkCalls++; throw new Error('Network refused'); };
+const { createVirtualWorkspace } = await import('@hachej/boring-execution/virtual');
+const workspace = createVirtualWorkspace({ providerId: 'fictional', files: { '/repo/note': 'virtual only' } });
+const shell = workspace.createBash({ cwd: '/repo' });
+assert.equal((await shell.exec('cat note')).stdout, 'virtual only');
+for (const command of ['not-a-virtual-command', 'curl https://fictional.invalid/', 'python3 -c "print(1)"', '/bin/sh -c "uname"']) assert.notEqual((await shell.exec(command)).exitCode, 0, command);
+assert.equal(nativeCalls, 0); assert.equal(networkCalls, 0);
+workspace.dispose();
+console.log('PASS native calls=0; network calls=0');
