@@ -226,6 +226,17 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     return () => tree.dispose();
   }, [revisionProvider]);
   const fileTree = fileBinding?.provider === revisionProvider ? fileBinding?.tree : undefined;
+  // `fileTree.refreshKey` reloads the shared tree controller, shown or not: the Library may be on its other tab when a file arrives,
+  // and mounting the tree later must not show the listing from before.
+  const { refreshKey, ...viewOptions } = treeOptions ?? {};
+  const refreshedKey = useRef(refreshKey);
+  useEffect(() => {
+    if (!fileTree || Object.is(refreshedKey.current, refreshKey)) return;
+    refreshedKey.current = refreshKey;
+    const { query, expanded } = fileTree.getSnapshot();
+    if (query) void fileTree.search(query);
+    else for (const directory of ['', ...expanded]) void fileTree.refresh(directory);
+  }, [fileTree, refreshKey]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
   const mentions = useMemo(() => revisionProvider ? {
     search: async (query: string, signal: AbortSignal) => (await revisionProvider.search({ query, limit: 8 }, signal)).entries,
@@ -345,7 +356,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       agents={agents} view={paneView} onViewChange={changePaneView}
       {...(revisionProvider && !libraryInPane ? { library: { selected: libraryOpen, onSelect: openLibrary } } : {})}
       {...(libraryInPane ? { libraryContent: (onPicked: () => void) => fileTree
-        ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...treeOptions} controller={fileTree} onOpen={path => { openFile(path); onPicked(); }} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+        ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} onOpen={path => { openFile(path); onPicked(); }} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
         : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{text.labels.loading}</p> } : {})} />}
     <ArtifactWorkspace open={panelOpen} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
       sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
@@ -355,7 +366,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
         library={libraryInPane ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
             <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
-          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...treeOptions} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">{treeOptions?.labels?.loading ?? text.labels.loading}</p>}</div>
+          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">{treeOptions?.labels?.loading ?? text.labels.loading}</p>}</div>
         </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>
         <div data-testid="viewer-panel" data-kind={kind} className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
