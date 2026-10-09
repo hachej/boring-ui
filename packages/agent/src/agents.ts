@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { defineExtension } from '@earendil-works/pi-durable';
 import type { AgentChange, Conversation, ConversationCreateOptions, Extension, Harness, Registry, ToolRegistration } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord';
@@ -117,4 +118,29 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
     if (!found) { found = assemble(own, evolutionOf(name)); perWorkspace.set(name, found); }
     return found;
   });
+}
+
+/**
+ * Bring existing conversations up to the agent's current instructions and default thinking level. A conversation keeps the agent it
+ * was created with, so a changed deployment reaches it only through `configure`. The host keeps the hash of `[instructions,
+ * thinkingLevel]` (`read`/`write`); when it differs from the agent's, every conversation is configured and the new hash is written
+ * last, so a failed run is retried whole. Returns how many conversations were configured (0 when nothing changed).
+ */
+export async function refreshAgentState(options: {
+  readonly conversations: Iterable<Conversation> | AsyncIterable<Conversation>;
+  readonly agent: DefinedAgent;
+  readonly read: () => string | undefined | null | Promise<string | undefined | null>;
+  readonly write: (hash: string) => void | Promise<void>;
+  readonly context: Context;
+}): Promise<number> {
+  const instructions = options.agent.agent.instructions ?? null, thinkingLevel = options.agent.agent.thinkingLevel ?? null;
+  const hash = createHash('sha256').update(JSON.stringify([instructions, thinkingLevel])).digest('hex');
+  if ((await options.read()) === hash) return 0;
+  let configured = 0;
+  for await (const conversation of options.conversations) {
+    await conversation.configure({ instructions, thinkingLevel }, options.context);
+    configured++;
+  }
+  await options.write(hash);
+  return configured;
 }
