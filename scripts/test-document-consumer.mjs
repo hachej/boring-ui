@@ -25,9 +25,11 @@ try {
     archives.push(join(directory, 'packs', packed.filename));
   }
   const source = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  // The SQLite workspace loads Pi's portable env entry (results, errors, line scanning) at runtime; nothing else of Pi.
+  const piDurable = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'isolated-document-consumer', private: true, type: 'module' }));
-  run('npm', ['install', ...npmInstallFlags(cache), ...archives, `typescript@${source.devDependencies.typescript}`, `esbuild@${source.devDependencies.esbuild}`]);
-  for (const name of ['@earendil-works/pi-durable', '@hachej/boring-agent', 'react']) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
+  run('npm', ['install', ...npmInstallFlags(cache), ...archives, `typescript@${source.devDependencies.typescript}`, `esbuild@${source.devDependencies.esbuild}`, `@earendil-works/pi-durable@${piDurable}`]);
+  for (const name of ['@hachej/boring-agent', '@hachej/boring-execution', 'react']) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM'], strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: [] }, include: ['consumer.ts'] }));
   for (const extension of ['mjs', 'ts']) copyFileSync(join(root, `test/fixtures/isolated-document-consumer.${extension}`), join(directory, `consumer.${extension}`));
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
@@ -47,5 +49,5 @@ try {
     assert.ok(realpathSync(join(directory, path)).startsWith(realpathSync(directory) + '/'), path);
     assert.doesNotMatch(path, /pi-durable|chord|react|sqlite|git\.js|@hachej\/boring-agent|node:|@hachej\/boring-execution/u);
   }
-  console.log('PASS: installed document and remote resource tarballs, strict declarations, the SQLite workspace provider behind an authenticated controller journey and isolated browser bundle; no Pi, agent or React installed');
+  console.log('PASS: installed document and remote resource tarballs, strict declarations, the SQLite workspace provider behind an authenticated controller journey and isolated browser bundle; Pi only as the optional env peer, no agent or React, no Pi in the browser bundle');
 } finally { rmSync(directory, { recursive: true, force: true }); }

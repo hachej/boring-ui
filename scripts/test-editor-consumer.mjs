@@ -31,6 +31,8 @@ try {
   const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   const dependencies = Object.fromEntries(Object.entries(ui.peerDependencies).filter(([name]) => ['react', 'react-dom'].includes(name) || !html && (name.startsWith('@tiptap/') || name === 'marked')));
   for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild']) dependencies[name] = rootManifest.devDependencies[name];
+  // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
+  dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   const manifest = { name: 'isolated-editor-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
   const sourceLock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
@@ -57,7 +59,7 @@ try {
   writeFileSync(join(directory, 'package-lock.json'), JSON.stringify({ name: manifest.name, version: manifest.version, lockfileVersion: 3, requires: true, packages }));
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archives]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
-  for (const name of ['@earendil-works/pi-durable', '@earendil-works/chord', '@hachej/boring-agent', 'tldraw', '@tldraw/editor', ...(html ? ['@tiptap/core', 'marked', '@hachej/boring-execution'] : [])]) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
+  for (const name of ['@hachej/boring-agent', 'tldraw', '@tldraw/editor', ...(html ? ['@tiptap/core', 'marked', '@hachej/boring-execution'] : [])]) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
   writeFileSync(join(directory, 'consumer.ts'), html ? `import { HtmlViewer, type HtmlViewerProps } from '@hachej/boring-ui-kit/html-viewer';
 import { createHtmlController, type HtmlController, type HtmlOptions } from '@hachej/boring-ui-kit/html';
 import { createElement } from 'react';
