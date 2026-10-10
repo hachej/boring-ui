@@ -88,11 +88,12 @@ export function remoteReaders(invoke: Invoke, maxResponseBytes: number): Pick<Fi
   const chunk = maxRangeBytes(maxResponseBytes);
   return {
     openBinaryReader: async (requested, options, context): Promise<Result<BinaryReader, FileError>> => {
+      // Snapshot the caller's options before any await: a caller may mutate them while the open is in flight.
+      const wire: ReaderOptions | undefined = options?.noFollow === undefined ? undefined : { noFollow: options.noFollow };
       // Resolve once: the lease's cwd can change later, and every request of this reader must name the file it opened.
       const resolved = await invoke({ method: 'absolutePath', args: [requested] }, z.string(), context);
       if (!resolved.ok) return resolved;
       const path = resolved.value;
-      const wire: ReaderOptions | undefined = options?.noFollow === undefined ? undefined : { noFollow: options.noFollow };
       const info = await invoke({ method: 'binaryInfo', args: [path, wire] }, fileInfo, context);
       if (!info.ok) return info;
       const opened: FileInfo = info.value, expected: ExpectedFile = { size: opened.size, mtimeMs: opened.mtimeMs };
@@ -151,7 +152,7 @@ export function remoteReaders(invoke: Invoke, maxResponseBytes: number): Pick<Fi
               const page: Result<DirPage, FileError> = await invoke({ method: 'readDirPage', args: [path, offset, Math.min(maxEntries - entries.length, maxDirPageEntries), mtimeMs] }, dirPage, inner);
               if (!page.ok) return page;
               entries.push(...page.value.entries); offset += page.value.entries.length; done = page.value.done;
-              if (page.value.entries.length === 0 && !done) break;
+              if (page.value.entries.length === 0 && !done) return err(new FileError('unknown', 'The remote directory reader made no progress', path));
             }
             return ok({ entries, done });
           } finally { busy = false; }

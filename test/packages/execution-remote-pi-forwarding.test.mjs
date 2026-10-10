@@ -282,10 +282,12 @@ test('a terminal watcher error survives a full event queue', async t => {
   const f = await patched(t, native => { native.watch = async (_targets, onChange) => { emit = onChange; return { ok: true, value: { mode: 'native', close: async () => {} } }; }; });
   const changes = [];
   getOrThrow(await f.lease().environment.watch([{ path: '.' }], change => changes.push(change), context));
-  for (let i = 0; i < 1000; i++) emit({ paths: [`p${i}`] });
+  // Exactly fill the 256-event queue with distinct changes, synchronously, so the error arrives at a full queue.
+  for (let i = 0; i < 256; i++) emit({ paths: [`p${i}`] });
   emit({ error: new FileError('unknown', 'native watcher stopped') });
   await until(() => changes.some(change => 'error' in change), 'terminal error was discarded');
   assert.equal(changes.find(change => 'error' in change).error.message, 'native watcher stopped');
+  assert.equal(changes.filter(change => 'error' in change).length, 1);
 });
 
 test('an oversized terminal watcher error is bounded, not turned into overflow', async t => {
@@ -363,4 +365,37 @@ test('invalid window limits and watch caps refuse with descriptive errors', asyn
   const names = await fs.watch([{ path: '.', exclude: { names: Array.from({ length: 300 }, (_, i) => `n${i}`) } }], () => {}, context);
   failure(names, 'invalid'); assert.match(names.error.message, /excludes/);
   failure(await fs.watch([], () => {}, context), 'invalid');
+});
+
+test('a caller mutating reader options while the open is in flight cannot make it follow a symlink', async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.directory, 'real'), 'x'); await symlink('real', join(f.directory, 'link'));
+  const options = { noFollow: true };
+  const pending = f.lease().environment.openBinaryReader('link', options, context);
+  options.noFollow = false;
+  failure(await pending, 'invalid');
+});
+
+test('the client refuses an empty, not-done directory page instead of returning it as success', async t => {
+  const f = await fixture(t);
+  const host = new NodeExecutionEnv({ cwd: f.directory });
+  await writeFile(join(f.directory, 'a'), '1');
+  const access = { identity, filesystemId: host.id, context, revoked: new AbortController().signal, authorize: () => true,
+    bindFileSystem: async cwd => { const native = new NodeExecutionEnv({ cwd }); return { identity: { ...identity }, environment: native, ownership: 'borrowed', release: async c => { await native.cleanup(c); } }; } };
+  const handler = createRemoteFileSystemHandler({ authenticate: async () => access });
+  let forged = 0;
+  const fetch = async request => {
+    const body = await request.clone().json();
+    const response = await handler(request);
+    if (body.call?.method !== 'readDirPage' || body.call.args[2] === 0) return response;
+    forged++;
+    const json = await response.json();
+    json.result.value.entries = []; json.result.value.done = false;
+    return new Response(JSON.stringify(json), { headers: response.headers });
+  };
+  const lease = createRemoteFileSystemLease({ identity, filesystemId: host.id, cwd: f.directory, endpoint, fetch });
+  t.after(async () => { await lease.release(context); await host.cleanup(context); });
+  const reader = getOrThrow(await lease.environment.openDirReader('.', context));
+  failure(await reader.next(10, context), 'unknown');
+  assert.equal(forged, 1);
 });
