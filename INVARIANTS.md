@@ -26,6 +26,8 @@ Boring integrates through upstream package exports and supported public APIs. It
 
 A guarantee unsupported by a public seam is explicitly unavailable for the composition requiring it, or an upstream request. It is not implemented through private interception and is not silently weakened. This does not disable unrelated native workflows or impose a strict application's lifecycle on every conversation. Supported provider options/native features are not discarded merely because a smaller Boring convenience recipe does not expose them. The host can use the native API directly without bypassing the policy protecting Boring-managed resources.
 
+Conformance (owner ruling 2026-10-10): every custom environment, filesystem or shell Boring or a host supplies runs Pi's environment conformance suite (`createEnvConformance`/`registerEnvConformance` from `@earendil-works/pi-durable/testing`); that suite is the proof it behaves like Pi. A new piece names the Pi extension point it implements (ExecutionEnv/FileSystem/Shell, `HarnessOptions.env`, native tool wrap/override, Storage) or the host concern Pi does not cover.
+
 ## BORING-PI-5 — complements remain independently usable
 
 UI/controllers, viewers, versioned resource/file/Git capabilities, native extensions and workspace adapters can be used without a full Boring runtime or mandatory shell/layout. Files and agent execution are complementary, not alternatives. File-only tools/viewers do not need a dummy `exec`; execution is independently installed and granted. Resource/controller code depends on injected public contracts, not a universal agent facade.
