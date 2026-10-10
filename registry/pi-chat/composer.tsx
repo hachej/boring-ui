@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
 import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquareIcon, SlashIcon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
-import { hasMention, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
+import { hasMention, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
 import type { MentionsConfig, SlashConfig, SlashItem } from './config';
 import { MentionMenu } from './mention-menu';
 import { SlashMenu } from './slash-menu';
@@ -182,7 +182,8 @@ export function Composer(props: ComposerProps) {
   };
   const pickMention = (path: string) => {
     if (!trigger) return;
-    edit(`${text.slice(0, trigger.start)}@${path} ${text.slice(trigger.end)}`, trigger.start + path.length + 2);
+    const token = `${mentionToken(path)} `;
+    edit(`${text.slice(0, trigger.start)}${token}${text.slice(trigger.end)}`, trigger.start + token.length);
     props.onMentionPicked?.(path);
   };
   const openCommands = () => edit(`${text}${text && !/\s$/.test(text) ? ' ' : ''}/`, text.length + (text && !/\s$/.test(text) ? 2 : 1));

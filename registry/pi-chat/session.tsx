@@ -8,6 +8,7 @@ import type { ChatAttachment, NativeChatController } from '@hachej/boring-ui-kit
 import { useStickToBottom } from 'use-stick-to-bottom';
 import type { ComposerFeedback, PendingUpload } from './composer';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, SlashConfig } from './config';
+import { mentionToken } from './config';
 import { ModelEffortPicker } from './pickers';
 import type { CommandMentions } from './markdown';
 import type { RowContext } from './message';
@@ -188,7 +189,7 @@ export function useChatSession(options: ChatSessionOptions) {
   } : undefined;
   const addMentions = (paths: readonly string[]) => {
     const text = controller.getSnapshot().draft.text;
-    controller.setText(`${text}${text && !/\s$/.test(text) ? ' ' : ''}${paths.map(path => `@${path}`).join(' ')} `);
+    controller.setText(`${text}${text && !/\s$/.test(text) ? ' ' : ''}${paths.map(mentionToken).join(' ')} `);
     setPicked(value => [...new Set([...value, ...paths])]);
   };
   async function upload(files: readonly File[]) {
