@@ -36,4 +36,5 @@ export const frenchAppLabels: AppLabels = {
   fileNotText: 'Ce fichier ne peut pas être affiché comme du texte.',
   binaryFile: size => `Fichier binaire (${size}) ; il ne peut pas être affiché comme du texte.`,
   fileViewer: kind => `Afficheur ${kind}`,
+  newVersion: 'Une nouvelle version est disponible.',
 };

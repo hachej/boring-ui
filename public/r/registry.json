@@ -573,6 +573,11 @@
           "target": "components/pi-chat/tool.tsx"
         },
         {
+          "path": "registry/pi-chat/voice-input.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/voice-input.tsx"
+        },
+        {
           "path": "registry/pi-chat/labels.ts",
           "type": "registry:lib",
           "target": "components/pi-chat/labels.ts"
@@ -785,6 +790,16 @@
           "path": "registry/pi-app/use-saved.ts",
           "type": "registry:hook",
           "target": "components/pi-app/use-saved.ts"
+        },
+        {
+          "path": "registry/pi-app/use-new-version.ts",
+          "type": "registry:hook",
+          "target": "components/pi-app/use-new-version.ts"
+        },
+        {
+          "path": "registry/pi-app/new-version-notice.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/new-version-notice.tsx"
         },
         {
           "path": "registry/pi-app/use-conversations.ts",

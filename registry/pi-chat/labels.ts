@@ -95,6 +95,19 @@ export const defaultChatLabels = {
   /** A thinking level's name and short description in the picker. */
   effortName: (level: string) => EFFORT_NAMES[level] ?? level,
   effortDetail: (level: string): string | undefined => EFFORT_DETAILS[level],
+  // Voice input (the microphone button beside the composer)
+  voiceRecord: 'Record a message',
+  voiceStop: 'Stop recording',
+  voiceCancel: 'Cancel recording',
+  voiceTranscribing: 'Transcribing…',
+  voiceNothingHeard: 'Nothing was heard. Try again.',
+  voiceTranscribeFailed: 'The recording could not be transcribed. Try again.',
+  voiceDenied: 'Microphone blocked. Allow it for this site in the browser, then press record again.',
+  voiceNoMicrophone: 'No microphone found. Connect one, then press record again.',
+  voiceBusy: 'The microphone is busy or could not be opened. Close other apps using it and try again.',
+  voiceInsecure: 'Recording needs a secure page (https or localhost).',
+  voiceUnsupported: 'This browser cannot record audio here.',
+  voiceStartFailed: 'The microphone could not be started.',
   // Queue
   queuedMessages: 'Queued messages',
   steer: 'Steer',
