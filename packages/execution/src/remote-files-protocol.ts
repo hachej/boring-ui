@@ -8,7 +8,8 @@ export { identity, sameIdentity, positiveLimit, nativeVersion } from './remote-s
 export const schema = 'boring.remote-files';
 export const version = 2;
 export const streamType = 'application/x-ndjson';
-export type FileMethod = Exclude<keyof FileSystem, 'id' | 'cwd' | 'cleanup'>;
+/** Methods sent over the wire. Positional and directory readers and watchers are built by the client on `readBinaryFile` and `listDir`. */
+export type FileMethod = Exclude<keyof FileSystem, 'id' | 'cwd' | 'cleanup' | 'openBinaryReader' | 'openDirReader' | 'watch'>;
 type Arguments<Method> = Method extends (...args: [...infer Input, Context]) => unknown ? Input : never;
 export type RemoteFileSystemCall = { [Method in FileMethod]: { readonly method: Method; readonly args: Arguments<FileSystem[Method]> } }[FileMethod];
 

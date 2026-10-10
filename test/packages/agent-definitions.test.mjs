@@ -45,7 +45,11 @@ test('exact published bytes and selected revision determine the returned native 
   assert.equal(loaded.binding.scopeId, access().scopeId);
   assert.equal(loaded.binding.digest, digest(first.bytes));
   assert.equal(loaded.binding.formatVersion, 1);
-  assert.equal(loaded.binding.nativeVersion, 'pi-durable@1.0.1');
+  assert.equal(loaded.binding.nativeVersion, 'pi-durable@1.1.0');
+  // A binding recorded under the previous reviewed Pi release is still read, and reports the upgrade as a changed binding, so
+  // the host re-admits the definition instead of failing on an unreadable record.
+  await assert.rejects(loadAgentDefinition({ ...f.optionsFor(first.ref), expectedBinding: { ...loaded.binding, nativeVersion: 'pi-durable@1.0.1' } }), /compatibility binding changed/);
+  await assert.rejects(loadAgentDefinition({ ...f.optionsFor(first.ref), expectedBinding: { ...loaded.binding, nativeVersion: 'pi-durable@0.9.0' } }), /Invalid definition binding/);
   assert.equal(loaded.binding.implementationVersion, 'host-v1');
   assert.deepEqual(loaded.binding.tools, [{ name: 'alpha', implementationVersion: 'alpha-v1' }]);
   const latest = await f.provider.publication.publish({ operationId: 'replace', atomicity: 'all-or-nothing', changes: [{

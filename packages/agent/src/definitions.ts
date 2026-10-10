@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { accessSnapshot, identifier, reference } from '@hachej/boring-files/publication';
 import type { ResourceAccess, ResourceReader, ResourceRef } from '@hachej/boring-files';
 import type { AgentChange, ToolRegistration } from '@earendil-works/pi-durable';
+import { NATIVE_VERSION, isNativeVersion } from './native-version.js';
+import type { NativeVersion } from './native-version.js';
 
 export interface ResolvedDefinitionTool {
   readonly tool: ToolRegistration;
@@ -13,7 +15,7 @@ export interface AgentDefinitionBinding {
   readonly scopeId: string;
   readonly digest: string;
   readonly formatVersion: 1;
-  readonly nativeVersion: 'pi-durable@1.0.1';
+  readonly nativeVersion: NativeVersion;
   readonly implementationVersion: string;
   readonly tools: readonly { readonly name: string; readonly implementationVersion: string }[];
 }
@@ -45,7 +47,7 @@ function names(value: unknown): string[] {
 }
 function binding(value: unknown): AgentDefinitionBinding {
   const input = object(value, ['ref', 'scopeId', 'digest', 'formatVersion', 'nativeVersion', 'implementationVersion', 'tools']);
-  if (input.formatVersion !== 1 || input.nativeVersion !== 'pi-durable@1.0.1'
+  if (input.formatVersion !== 1 || !isNativeVersion(input.nativeVersion)
     || typeof input.digest !== 'string' || !/^[a-f0-9]{64}$/.test(input.digest)
     || !Array.isArray(input.tools) || input.tools.length > 64) throw new TypeError('Invalid definition binding');
   const tools = input.tools.map(value => {
@@ -54,7 +56,7 @@ function binding(value: unknown): AgentDefinitionBinding {
   });
   if (new Set(tools.map(tool => tool.name)).size !== tools.length) throw new TypeError('Duplicate bound tool');
   return { ref: reference(input.ref), scopeId: identifier(input.scopeId), digest: input.digest, formatVersion: 1,
-    nativeVersion: 'pi-durable@1.0.1', implementationVersion: identifier(input.implementationVersion), tools };
+    nativeVersion: input.nativeVersion, implementationVersion: identifier(input.implementationVersion), tools };
 }
 
 /** Load data only. Native configuration stores tool names, so the host must recheck implementations at admission. */
@@ -103,7 +105,7 @@ export async function loadAgentDefinition(options: AgentDefinitionOptions): Prom
   access.signal?.throwIfAborted();
   if (tools.some((tool, index) => tool.name !== selected[index])) throw new TypeError('Definition tool changed while loading');
   const loaded: AgentDefinitionBinding = { ref, scopeId: access.scopeId, digest, formatVersion: 1,
-    nativeVersion: 'pi-durable@1.0.1', implementationVersion, tools: versions };
+    nativeVersion: NATIVE_VERSION, implementationVersion, tools: versions };
   if (expected && JSON.stringify(expected) !== JSON.stringify(loaded)) throw new TypeError('Definition compatibility binding changed');
   return { change: { instructions: data.instructions, tools }, binding: loaded };
 }

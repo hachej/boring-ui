@@ -32,7 +32,7 @@
     }
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "1.0.1"
+    "@earendil-works/pi-ai": "1.1.0"
   },
   "engines": {
     "node": ">=22.19.0"

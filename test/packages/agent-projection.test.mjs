@@ -52,7 +52,7 @@ test('actual native watch projects allowed text and IDs without private native f
   assert.equal(value.kind, 'snapshot');
   assert.equal(value.schema, 'boring.conversation-text');
   assert.equal(value.version, 2);
-  assert.equal(value.nativeVersion, 'pi-durable@1.0.1');
+  assert.equal(value.nativeVersion, 'pi-durable@1.1.0');
   assert.deepEqual(value.source, { runtimeId: 'runtime-one', scopeId: 'fictional-project', principalId: 'alice', conversationId: f.conversation.id });
   assert.deepEqual(value.messages[0], { entryId: user.id, conversationId: f.conversation.id, messageIndex: 0, role: 'user',
     content: [{ blockIndex: 0, text: 'Fictional visible text' }], clipped: false });

@@ -3,7 +3,8 @@
 // It runs on any `SqliteConnection` (`openNodeConnection`, a Durable Object's storage, a browser's SQLite Wasm), synchronously, so a
 // write is one SQLite transaction and a rename is atomic. Regular files and directories only: no symbolic or hard links, no modes.
 import type { Context } from '@earendil-works/chord';
-import type { FileError, FileInfo, FileSystem, Result, TextLineReader } from '@earendil-works/pi-durable/env';
+import { FileError, LineScanner, err, ok } from '@earendil-works/pi-durable/env';
+import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result, TextLineReader, WatchChange, WatchTarget } from '@earendil-works/pi-durable/env';
 import { randomUUID } from './platform.js';
 import { registerSqliteBatch } from './sqlite-batch.js';
 import type { SqliteConnection } from './sqlite.js';
@@ -36,13 +37,13 @@ const dirname = (path: string) => path.slice(0, path.lastIndexOf('/')) || '/';
 const basename = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 const within = (base: string, path: string) => path === base || path.startsWith(base === '/' ? '/' : `${base}/`);
 
-// This package uses Pi's types, never its runtime: results and errors are built in Pi's shapes here (`code`, `message`, `path`).
-// They are not `instanceof FileError`; an environment over this file system (`createVirtualWorkspace({ fs })`) maps them to Pi's own.
-const fileError = (code: FileError['code'], message: string, path?: string): FileError =>
-  Object.assign(new Error(message), { name: 'FileError', code, ...(path === undefined ? {} : { path }) });
-const isFileError = (error: unknown): error is FileError => error instanceof Error && error.name === 'FileError' && typeof (error as { code?: unknown }).code === 'string';
-const ok = <Value>(value: Value): Result<Value, FileError> => ({ ok: true, value });
-const err = <Value>(error: FileError): Result<Value, FileError> => ({ ok: false, error });
+// Results, errors and line scans are Pi's own (`@earendil-works/pi-durable/env`, its portable contracts: no engine), so this file
+// system answers exactly like Pi's environments.
+const fileError = (code: FileError['code'], message: string, path?: string): FileError => new FileError(code, message, path);
+const isFileError = (error: unknown): error is FileError => error instanceof FileError;
+
+/** How often a watcher compares snapshots: SQLite reports no changes, so the watcher polls (`mode: 'polling'`). */
+const WATCH_INTERVAL_MS = 1000;
 
 /** A FileError whose message starts with the POSIX code, as shells and Git read it. */
 const failure = (code: FileError['code'], errno: string, path: string, what: string) => fileError(code, `${errno}: ${what}, '${path}'`, path);
@@ -146,6 +147,24 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
     });
   }
   const text = (path: string) => new TextDecoder().decode(bytes(path));
+  /** The size and modification time of every watched path, to compare between polls. */
+  function snapshot(targets: readonly WatchTarget[]): Map<string, string> {
+    const seen = new Map<string, string>();
+    const hidden = (name: string, target: WatchTarget) => (target.exclude?.hidden && name.startsWith('.')) || target.exclude?.names?.includes(name);
+    for (const target of targets) {
+      const root = normalize(target.path.startsWith('/') ? target.path : `${fs.cwd}/${target.path}`), found = row(root);
+      seen.set(root, found ? `${found.kind}:${found.size}:${found.mtime}` : 'missing');
+      if (found?.kind !== 'directory') continue;
+      const rows = target.recursive
+        ? db.all<{ path: string; kind: string; size: number | bigint; mtime_ms: number | bigint }>(`SELECT path, kind, coalesce(length(bytes), 0) AS size, mtime_ms FROM boring_workspace_files WHERE ${subtree(root)} AND path != ?`, ...subtreeArgs(root), root)
+        : db.all<{ path: string; kind: string; size: number | bigint; mtime_ms: number | bigint }>('SELECT path, kind, coalesce(length(bytes), 0) AS size, mtime_ms FROM boring_workspace_files WHERE workspace = ? AND parent = ?', workspace, root);
+      for (const item of rows) {
+        if (item.path.slice(root.length + (root === '/' ? 0 : 1)).split('/').some(name => hidden(name, target))) continue;
+        seen.set(item.path, `${item.kind}:${Number(item.size)}:${Number(item.mtime_ms)}`);
+      }
+    }
+    return seen;
+  }
   const encode = (content: string | Uint8Array) => typeof content === 'string' ? new TextEncoder().encode(content) : Uint8Array.from(content);
 
   const fs: SqliteFileSystem = {
@@ -158,6 +177,36 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
     },
     readTextFile: (path, context) => run(path, context, 'read', text),
     readBinaryFile: (path, context) => run(path, context, 'read', bytes),
+    // The reader holds the bytes as they were when opened: it keeps reading that file even if its path is renamed or rewritten.
+    // There are no symbolic links here, so `noFollow` changes nothing.
+    openBinaryReader: (path, _options, context) => run(path, context, 'read', absolute => {
+      const content = bytes(absolute), opened = info(absolute, existing(absolute));
+      let closed = false;
+      const guard = (inner: Context): FileError | undefined => inner.abortSignal?.aborted ? fileError('aborted', 'Operation aborted', absolute)
+        : closed ? fileError('invalid', 'Binary reader is closed', absolute) : undefined;
+      const reader: BinaryReader = {
+        info: async inner => { const failed = guard(inner); return failed ? err(failed) : ok({ ...opened }); },
+        read: async (offset, length, inner) => {
+          const failed = guard(inner);
+          if (failed) return err(failed);
+          if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0) return err(fileError('invalid', 'Offset and length must be non-negative integers', absolute));
+          return ok(content.slice(offset, offset + length));
+        },
+        scanLines: async ({ startLine, endLine }, inner) => {
+          const failed = guard(inner);
+          if (failed) return err(failed);
+          if (!Number.isSafeInteger(startLine) || startLine < 0 || (endLine !== undefined && (!Number.isSafeInteger(endLine) || endLine <= startLine))) {
+            return err(fileError('invalid', 'Line range must be non-negative integers with endLine > startLine', absolute));
+          }
+          // Pi's own scanner over the bytes held in the row: the same answer as Pi's Node environment for the same file.
+          const scanner = new LineScanner(startLine, endLine);
+          scanner.push(content);
+          return ok(scanner.finish());
+        },
+        close: async () => { closed = true; },
+      };
+      return reader;
+    }),
     readTextLines: (path, options, context) => run(path, context, 'read', absolute => {
       const lines = text(absolute).split('\n');
       if (lines.at(-1) === '') lines.pop();
@@ -217,6 +266,45 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
       directory(absolute);
       return children(absolute).map(child => info(child, existing(child)));
     }),
+    // The entries as they were when opened, in path order, paged by `next`.
+    openDirReader: (path, context) => run(path, context, 'read', absolute => {
+      directory(absolute);
+      const entries = children(absolute).map(child => info(child, existing(child)));
+      let offset = 0, closed = false;
+      const reader: DirReader = {
+        next: async (maxEntries, inner) => {
+          if (inner.abortSignal?.aborted) return err(fileError('aborted', 'Operation aborted', absolute));
+          if (closed) return err(fileError('invalid', 'Directory reader is closed', absolute));
+          if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) return err(fileError('invalid', 'maxEntries must be a positive integer', absolute));
+          const page = entries.slice(offset, offset + maxEntries);
+          offset += page.length;
+          return ok({ entries: page, done: offset >= entries.length });
+        },
+        close: async () => { closed = true; },
+      };
+      return reader;
+    }),
+    // SQLite reports no changes, so the watcher compares snapshots of the watched rows. The first snapshot is taken before the
+    // watcher is returned, so a change made after `watch` resolves is always seen.
+    watch: async (targets, onChange, context) => {
+      if (context.abortSignal?.aborted) return err(fileError('aborted', 'Operation aborted'));
+      if (!Array.isArray(targets) || targets.some(target => typeof target?.path !== 'string' || target.path.includes('\0'))) return err(fileError('invalid', 'Invalid watch target'));
+      let previous: Map<string, string>;
+      try { previous = db.transaction('read', () => snapshot(targets)); } catch (error) { return err(isFileError(error) ? error : fileError('unknown', String(error))); }
+      let stopped = false;
+      const report = (change: WatchChange) => { if (!stopped) try { onChange(change); } catch { /* the host's callback cannot stop the watcher */ } };
+      const timer = setInterval(() => {
+        if (stopped) return;
+        let next: Map<string, string>;
+        try { next = db.transaction('read', () => snapshot(targets)); }
+        catch (error) { report({ error: isFileError(error) ? error : fileError('unknown', String(error)) }); stopped = true; clearInterval(timer); return; }
+        const changed = [...new Set([...previous.keys(), ...next.keys()])].filter(path => previous.get(path) !== next.get(path));
+        previous = next;
+        if (changed.length) report({ paths: changed });
+      }, WATCH_INTERVAL_MS);
+      const watcher: FileWatcher = { mode: 'polling', close: async () => { stopped = true; clearInterval(timer); } };
+      return ok(watcher);
+    },
     canonicalPath: (path, context) => run(path, context, 'read', absolute => { existing(absolute); return absolute; }),
     exists: (path, context) => run(path, context, 'read', absolute => row(absolute) !== undefined),
     createDir: (path, options, context) => run(path, context, 'write', absolute => {

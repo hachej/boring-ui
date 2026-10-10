@@ -2,14 +2,14 @@
   "version": 1,
   "rootDevDependencies": {
     "typescript": "5.9.3",
-    "@earendil-works/pi-durable": "1.0.1",
-    "@earendil-works/pi-ai": "1.0.1",
-    "@earendil-works/chord": "1.0.1",
-    "@earendil-works/pi-codemode": "1.0.1",
+    "@earendil-works/pi-durable": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/chord": "1.1.0",
+    "@earendil-works/pi-codemode": "1.1.0",
     "@earendil-works/pi-mcp": "1.0.4",
     "@vercel/sandbox": "3.5.1",
     "@aws-sdk/client-bedrock-agentcore": "3.1146.0",
-    "agents": "0.26.0",
+    "agents": "0.28.0",
     "wrangler": "4.147.0",
     "@types/node": "22.19.0",
     "react": "19.3.0",
@@ -66,12 +66,12 @@
         "isomorphic-git",
         "isomorphic-git/http/node",
         "isomorphic-git/http/web",
-        "ignore"
+        "ignore",
+        "@earendil-works/pi-durable/env"
       ],
       "typeOnlyExternal": [
         "node:http",
         "@earendil-works/pi-durable",
-        "@earendil-works/pi-durable/env",
         "@earendil-works/pi-durable/storage/sqlite",
         "@earendil-works/chord",
         "@earendil-works/chord/context"
@@ -491,7 +491,7 @@
       "./worker"
     ]
   },
-  "upstreamExportsVersion": "1.0.1",
+  "upstreamExportsVersion": "1.1.0",
   "runtimeProofs": {
     "BORING-PI-1": "test/contracts/pi-native-state.test.mjs",
     "BORING-PI-2": "test/contracts/pi-harness-attachment.test.mjs",

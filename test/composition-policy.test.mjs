@@ -26,9 +26,13 @@ test('UI may select the browser-safe publication helper entry', () => {
   assert.deepEqual(check('ui', 'import { publicationDigest } from "@hachej/boring-files/publication";'), []);
 });
 
-test('native filesystem type reuse does not permit importing its runtime into files', () => {
-  assert.ok(check('files', 'import { FileError } from "@earendil-works/pi-durable/env";').length > 0);
+test('files may load Pi\'s portable env contracts at runtime, never its engine', () => {
+  // `@earendil-works/pi-durable/env` is Pi's contract layer (results, errors, decoders, line scanning) with no engine: the SQLite
+  // file system answers with Pi's own errors and line scans. The harness, storage and tools stay out of files.
+  assert.deepEqual(check('files', 'import { FileError, LineScanner } from "@earendil-works/pi-durable/env";'), []);
   assert.ok(check('files', 'import { Harness } from "@earendil-works/pi-durable";').length > 0);
+  assert.ok(check('files', 'import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";').length > 0);
+  assert.ok(check('files', 'import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";').length > 0);
 });
 
 test('type-only permission does not permit private native source imports', () => {

@@ -10,9 +10,9 @@
     "react-dom@19.3.0",
     "marked@17.0.6",
     "entities@8.1.0",
-    "@earendil-works/pi-durable@1.0.1",
-    "@earendil-works/chord@1.0.1",
-    "@earendil-works/pi-ai@1.0.1",
+    "@earendil-works/pi-durable@1.1.0",
+    "@earendil-works/chord@1.1.0",
+    "@earendil-works/pi-ai@1.1.0",
     "@modelcontextprotocol/sdk@1.32.0",
     "lucide-react@1.51.0",
     "use-stick-to-bottom@1.1.6"

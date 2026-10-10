@@ -55,9 +55,9 @@
     "@hachej/boring-ui-kit": "0.2.0",
     "@hachej/boring-files": "0.2.0",
     "@hachej/boring-agent": "0.2.0",
-    "@earendil-works/pi-durable": "1.0.1",
-    "@earendil-works/pi-ai": "1.0.1",
-    "@earendil-works/chord": "1.0.1",
+    "@earendil-works/pi-durable": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/chord": "1.1.0",
     "react": "19.3.0",
     "esbuild": "0.28.2"
   },

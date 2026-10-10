@@ -84,9 +84,9 @@ test('unknown package is refused', () => assert.ok(checkManifest({}, 'scheduler'
 test('nested upstream override cannot swap a fork', () => assert.ok(checkManifest({overrides:{'@earendil-works/pi-durable':{'.':'file:../fork'}}}, undefined, policy).some((p) => p.includes('local/forked/patched'))));
 test('wildcard upstream resolution cannot swap a fork', () => assert.ok(checkManifest({resolutions:{'**/@earendil-works/pi-durable':'file:../fork'}}, undefined, policy).some((p) => p.includes('local/forked/patched'))));
 test('experimental upstream version is pinned to reviewed exports', () => {
-  const manifest = { name: '@hachej/boring-agent', dependencies: { '@earendil-works/pi-durable': '1.0.1' } };
+  const manifest = { name: '@hachej/boring-agent', dependencies: { '@earendil-works/pi-durable': '1.1.0' } };
   assert.deepEqual(checkManifest(manifest, 'agent', policy), []);
-  manifest.dependencies['@earendil-works/pi-durable'] = '^1.0.1';
+  manifest.dependencies['@earendil-works/pi-durable'] = '^1.1.0';
   assert.ok(checkManifest(manifest, 'agent', policy).some((p) => p.includes('version must match')));
 });
 test('npm alias cannot swap a fork for upstream', () => {

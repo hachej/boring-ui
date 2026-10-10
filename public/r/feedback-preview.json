@@ -5,7 +5,7 @@
   "description": "PreviewBanner: a live, reversible preview of a change in the page (Approve / Discard) over `@hachej/boring-feedback/preview`, whose subagent calls models through a host gateway. Separate from `feedback` so annotation-only apps do not install the model SDK; install `feedback` first (its styles cover the banner).",
   "dependencies": [
     "@hachej/boring-feedback@0.2.0",
-    "@earendil-works/pi-ai@1.0.1",
+    "@earendil-works/pi-ai@1.1.0",
     "react@19.3.0"
   ],
   "files": [

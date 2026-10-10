@@ -4,9 +4,10 @@ import { InvokeCodeInterpreterCommand, StartCodeInterpreterSessionCommand, StopC
 import type { BedrockAgentCoreClient, CodeInterpreterResult, ToolArguments, ToolName, ToolsFileSystemConfiguration } from '@aws-sdk/client-bedrock-agentcore';
 import type { Context } from '@earendil-works/chord';
 import { ExecutionError, FileError, err, ok } from '@earendil-works/pi-durable/env';
-import type { ExecutionEnv, FileInfo, Result, ShellExecOptions, ShellExecResult } from '@earendil-works/pi-durable/env';
+import type { ExecutionEnv, FileInfo, Result, ShellExecOptions, ShellExecResult, WatchTarget } from '@earendil-works/pi-durable/env';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { boundedMessage } from './bounded-error.js';
+import { shellCommand } from './fs-readers.js';
 
 /** What the adapter sends: the host's own `BedrockAgentCoreClient` (it owns region, credentials and retries). */
 export type CodeInterpreterClient = Pick<BedrockAgentCoreClient, 'send'>;
@@ -165,7 +166,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     const assignments = variables.map(([name, value]) => `${name}=${quote(value)}`).join(' ');
     // The task API takes one command string: cwd, environment and umask become part of it.
     const runner = execOptions?.inheritEnv === false ? `env -i ${assignments} bash -c` : `${assignments ? `env ${assignments} ` : ''}bash -c`;
-    const script = `umask ${umask} && cd ${quote(directory)} && ${runner} ${quote(command)}`;
+    const script = `umask ${umask} && cd ${quote(directory)} && ${runner} ${quote(shellCommand(command))}`;
     let taskId: string | undefined;
     try {
       const started = await invoke('startCommandExecution', { command: script }, context);
@@ -180,7 +181,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       if (!value) return;
       const delta = value.startsWith(seen[stream]) ? value.slice(seen[stream].length) : value;
       seen[stream] = value.startsWith(seen[stream]) ? value : seen[stream] + value;
-      if (delta) execOptions?.onOutput?.(delta, context);
+      if (delta) execOptions?.onOutput?.(delta, context, { stream });
     };
     for (;;) {
       if (context.abortSignal?.aborted) { await stopTask(taskId); return err(new ExecutionError('aborted', 'Command aborted; stopTask was requested, termination is not confirmed')); }
@@ -258,6 +259,19 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     readBinaryFile: (path, context) => guarded([[path, true]], file => local.readBinaryFile(file, context)),
     readTextLines: (path, lines, context) => guarded([[path, true]], file => local.readTextLines(file, lines, context)),
     openTextLineReader: (path, context) => guarded([[path, true]], file => local.openTextLineReader(file, context)),
+    openBinaryReader: (path, readerOptions, context) => guarded([[path, !readerOptions?.noFollow]], file => local.openBinaryReader(file, readerOptions, context)),
+    openDirReader: (path, context) => guarded([[path, true]], directory => local.openDirReader(directory, context)),
+    // The mount's own watcher, with its paths reported in the workspace's namespace.
+    watch: async (targets, onChange, context) => {
+      const mapped: WatchTarget[] = [];
+      for (const target of targets) {
+        const path = toLocal(target.path);
+        if (path === undefined) return err(outside(target.path));
+        mapped.push({ ...target, path });
+      }
+      const watcher = await local.watch(mapped, change => onChange('paths' in change ? { paths: change.paths.map(path => fromLocal(path)) } : 'error' in change ? { error: mapError(change.error) } : change), context);
+      return watcher.ok ? watcher : err(mapError(watcher.error));
+    },
     writeFile: (path, content, context) => guarded([[path, true]], file => local.writeFile(file, content, context)),
     appendFile: (path, content, context) => guarded([[path, true]], file => local.appendFile(file, content, context)),
     truncateFile: (path, size, context) => guarded([[path, true]], file => local.truncateFile(file, size, context)),
