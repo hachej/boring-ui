@@ -38,9 +38,11 @@ export const defaultAppLabels = {
   versionUnavailable: 'This version is not available.',
   noCanvasViewer: 'This host has no canvas viewer (pass one in `viewers.canvas`).',
   fileMissing: 'This file no longer exists.',
+  attachmentTooLarge: (limit: string) => `Larger than ${limit}. Not saved.`,
   fileNotText: 'This file cannot be shown as text.',
   binaryFile: (size: string) => `This is a binary file (${size}); it cannot be shown as text.`,
   fileViewer: (kind: string) => `${kind} viewer`,
+  newVersion: 'A new version is available.',
 };
 export type AppLabels = typeof defaultAppLabels;
 

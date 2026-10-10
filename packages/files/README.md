@@ -155,3 +155,42 @@ workspace journal, not Git commits or an imported filesystem's prior history.
 The existing resource transport limits still apply: requests default to 4 MiB
 and responses to 8 MiB, including their serialized envelope. This API does not
 provide streaming uploads.
+
+### Durable Object apps
+
+A Cloudflare Durable Object keeps its workspace in its own SQLite storage, and the Library binds to it the same way as a Node host. Each
+piece is the one the Node example uses, with `durableObjectSqliteConnection(ctx.storage)` from
+`@hachej/boring-files/sqlite-durable-object` in place of `openNodeConnection`. The workspace and its journal share that one connection,
+so a multi-file save and its receipt commit in one `transactionSync`:
+
+```ts
+import { durableObjectSqliteConnection } from '@hachej/boring-files/sqlite-durable-object';
+import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
+import { createWorkspaceJournal } from '@hachej/boring-files/journal';
+import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
+import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
+
+// In the object's constructor: one connection and journal, one provider per workspace the object serves.
+const connection = durableObjectSqliteConnection(this.ctx.storage);
+const journal = createWorkspaceJournal(connection);
+const fs = openSqliteFileSystem({ connection, workspace: workspaceId, cwd: '/workspace' });
+const provider = createWorkspaceProvider({
+  identity: { providerId: 'files', instanceId: workspaceId, incarnation: fs.incarnation, viewId: 'published' },
+  fs,
+  journal,
+});
+
+// The object's HTTP route: the host authenticates the request and picks the workspace it selected.
+const handleFiles = createRevisionHandler({
+  resolve: async request => {
+    const session = await authenticate(request);
+    if (!session) return null;
+    return { provider: this.providerFor(session.workspaceId), access: { principalId: session.userId, scopeId: session.workspaceId, initiatorId: session.userId } };
+  },
+});
+```
+
+`history` is the journal's retained revisions for each file, newest first, with `savedAt` in milliseconds; a save made before this
+journal recorded times reports `savedAt: 0`. The browser connects as in the Node case: `connectRevisionProvider({ endpoint, fetch })`
+from `@hachej/boring-files/revision`. Each scope is its own workspace (rows keyed by `workspace`), so a request is served only from the
+provider its `resolve` returns.
