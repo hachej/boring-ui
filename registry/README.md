@@ -27,7 +27,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-workspace` | `... add <registry>/pi-workspace.json` (also installs `pi-chat`) | the page is the chat plus a resizable artifact panel (`ArtifactWorkspace`); add `viewers` for the panel contents and `pi-ambient` for float-when-narrow |
 | `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat`, `pi-workspace` and `viewers`) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)) |
 
-Every Tailwind item depends on `theme` (`pi-chat`, `viewers`, `provider-setup` and `button` directly, the blocks over `pi-chat` through it), imports `cn` from `utils` and, when it renders buttons, `Button` from `button`; the CLI installs each once. Checked by hand with the pinned CLI over HTTP and the namespace mapped: `pi-chat` creates 26 files (its 24, `button/button.tsx`, `utils/utils.ts`), `pi-workspace` adds `workspace.tsx` (27), `pi-ambient` its three files and `workspace.tsx` (30), `viewers` 12; each also merges the theme tokens into the CSS file, keeping tokens the host already defines.
+Every Tailwind item depends on `theme` (`pi-chat`, `viewers`, `provider-setup` and `button` directly, the blocks over `pi-chat` through it), imports `cn` from `utils` and, when it renders buttons, `Button` from `button`; the CLI installs each once. File counts, taken from the items in `registry.json` (each item's files plus those of its registry dependencies; not a fresh CLI install, which the earlier hand count of 26, 27, 30 and 12 was): `pi-chat` 31 (its 28, `button` 2, `utils` 1), `pi-workspace` 33 (its `workspace.tsx` and `dock.tsx`), `pi-ambient` 36 (its three, plus `pi-workspace`'s two), `viewers` 15 (its 12, `button`, `utils`); each also merges the theme tokens into the CSS file, keeping tokens the host already defines.
 
 `<registry>` is wherever `public/r/` is served. `pi-ambient` and `pi-workspace` name their dependencies as `@boring-ui/pi-chat` and `@boring-ui/pi-workspace`, so map the namespace once in the app's `components.json`: `"registries": { "@boring-ui": "<registry>/{name}.json" }` (a bare name would resolve against shadcn's own registry and fail). `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`examples/studio`](../examples/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
 
@@ -54,6 +54,48 @@ Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApprova
 `ArtifactWorkspace` (`pi-workspace/workspace.tsx`) lays out the chat with a right-hand panel: it slides in at full height, the divider resizes it (pointer and arrow keys, width kept for the session), the panel can go full screen (Escape leaves) and below `sheetBelow` it is a full-screen sheet. Opt in with `floatBelow={320}` and the chat can float: dragging the divider until the chat is narrower than that shows a dimmed "Release to float the chat" hint, releasing floats it, Alt+Left on the divider or "Float chat" in the viewer "…" menu (pi-app's `AgentWorkspace` turns `api.floatChat` into one of the `ViewerWindow.actions`, see [host actions](#labels-icons-and-host-actions)) does the same, and the panel takes the full width. `chat` is then a function `({ floating, dock }) => node`: return the docked `PiChat` or, while floating, `<AmbientChat controller={same} onDock={dock} defaultState="expanded" />` with the same props. Both use one controller, so transcript, queue, draft and the single watch stream carry over (`PiChat`/`AmbientChat` only borrow it). Dock returns the chat at the last width above the threshold; the floating state is remembered for the session, closing the panel docks, and the phone sheet ignores it. Off by default. It owns layout only; what is open is the host's, and the viewer inside uses `ViewerFrame`, which shows an Enter/Exit full screen button when wrapped in `ViewerWindowProvider` (viewers item). It is its own block (`pi-workspace`) because it is self-contained and driven by props; the studio uses it for artifacts and workspace files. Pass `conversations={{ items, activeId, onSelect, onNew }}` to `PiChat` and the header History button opens a searchable list of past conversations (the earlier records of the open one stay reachable from its footer). A message sent while the agent works waits in the queue, where each message offers Steer now, edit and remove (steer and edit need `actions.withdraw`); the composer has no mode toggle. Enter empties the composer at once; a message sent while the previous one is still being confirmed shows as a "Sending" row (the controller's `outbox`) until it is submitted, and a refused message comes back into the composer above what was typed since.
 
 `@` mentions name workspace files; a path with whitespace or a quote is written quoted (`@"docs/Meeting notes.md"`, with `\"` and `\\` escaped), and bare paths keep their form. `mentionToken(path)` writes the text, `pieces` and `mentionedPaths` (the agent package, which must match it) read it back, and the composer chip and `removeMention` treat the quoted form as one token. A bare mention ends at whitespace, so the composer never inserts a bare path that contains a space.
+
+## Docks (`pi-workspace`)
+
+`pi-workspace/dock.tsx` lays out any host content as a row of docks around the app. It is layout only: what a dock shows is the host's, and `ArtifactWorkspace` is unchanged (it keeps its own panel, and the two do not know about each other).
+
+- `DockLayout` is the row. It measures its own width, so it works in any container. Props: `storageKey` (default `boring.dock`), `persist` (`session`, default, or `local`), `minMain` (default 360: the main content never gets narrower while docks are beside it), `className`.
+- `DockMain` is the host's own content between the docks; it takes the remaining width.
+- `Dock` is one dock, on the `left` or `right` of `DockMain` (order the children as they appear: left docks, `DockMain`, right docks). Props: `id`, `side`, `children` (a node, or a function of the `DockApi`), `defaultWidth` (400), `minWidth` (280), `floatable`, `dragBelow`, `narrowBelow`, `narrow` (`float`, `sheet` or `hide`; default `float` for a floatable dock, otherwise `hide`), `open`/`defaultOpen`/`onOpenChange` (controlled or not), `defaultFloating`, `onPlacementChange`, `labels` (`region`, `resize`, `floatHint`, `closeHint`), `className`.
+- `useDock(id)` returns the `DockApi` of a dock from anywhere inside the layout, or `undefined` until that dock has rendered: `placement`, `open`, `floating`, `canDock`, `width`, `setOpen`, `toggle`, `float`, `dock`. A button in a chat header can open the files dock; a chat can detach itself.
+
+A dock's `placement` is on `[data-boring=dock][data-dock=<id>][data-placement]`: `docked` (beside the main content, resizable), `floating` (the content stays mounted in a zero-width slot, so a children function renders its own floating surface, for example `AmbientChat`), `sheet` (full screen, only on a narrow layout and only while open) or `closed` (mounted, hidden). Below `narrowBelow` the layout is too narrow to dock: the dock floats, becomes a sheet or is hidden, according to `narrow`.
+
+Each docked dock has a divider on its inner edge (`data-testid=dock-divider-<id>`, `role=separator`). Dragging resizes it, clamped between `minWidth` and the layout width minus `minMain` minus the other docked widths. With `dragBelow`, dragging until the dock would be narrower shows a hint (`data-testid=dock-hint-<id>`) and releasing floats a `floatable` dock or closes any other; the dock keeps the last width above the threshold. Keyboard on the divider: the arrow towards the main content widens and the one away narrows (24px; Shift 96px), Home is `minWidth`, End the maximum, Alt plus the arrow away floats or closes (with `floatable` or `dragBelow`), and double-click resets to `defaultWidth`. Width, floating and open are remembered under `<storageKey>.<id>.width|floating|open`, in `sessionStorage` or, with `persist="local"`, `localStorage`.
+
+An agent chat attached to the left of a host app that floats as `AmbientChat` when detached (the same controller, so the draft and transcript carry over):
+
+```tsx
+<DockLayout storageKey="pm">
+  <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720}>
+    {api => api.floating
+      ? <AmbientChat controller={controller} variant="surface" defaultState="expanded" onDock={api.dock} />
+      : <PiChat controller={controller} />}
+  </Dock>
+  <DockMain><HostApp /></DockMain>
+</DockLayout>
+```
+
+Sessions on the left, the chat in the main, and a files explorer on the right that a button in the chat header opens, and that is a full-screen sheet on a phone:
+
+```tsx
+function Chat() {
+  const files = useDock('files');
+  return <PiChat controller={controller} headerActions={[{ id: 'files', label: 'Files', onSelect: () => files?.toggle() }]} />;
+}
+<DockLayout>
+  <Dock id="sessions" side="left" defaultWidth={280} minWidth={200} dragBelow={160}><Sessions /></Dock>
+  <DockMain><Chat /></DockMain>
+  <Dock id="files" side="right" defaultOpen={false} dragBelow={200} narrowBelow={720} narrow="sheet"><FileExplorer /></Dock>
+</DockLayout>
+```
+
+[`examples/dock-app`](../examples/dock-app/README.md) is the first composition running (scripted model); its journey drives pointer and keyboard resize, the hint, floating, Dock, the files dock and a 390px phone in a real browser. `test/contracts/pi-workspace-dock-source.test.mjs` checks the item, strict types and the rendered structure; the behaviour above is proven by that journey, not by unit tests.
 
 ## Whole agent app (`pi-app`: `AgentWorkspace`)
 
