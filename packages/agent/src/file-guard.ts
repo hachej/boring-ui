@@ -1,6 +1,7 @@
 import { defineDoc, defineExtension, wrapTool } from '@earendil-works/pi-durable';
 import type { ToolExecutionApi, ToolExecutionResult, ToolRegistration } from '@earendil-works/pi-durable';
-import { getOrThrow } from '@earendil-works/pi-durable/env';
+import { FileError, err, getOrThrow, ok } from '@earendil-works/pi-durable/env';
+import type { ExecutionEnv, Result } from '@earendil-works/pi-durable/env';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess } from '@hachej/boring-files';
@@ -22,6 +23,11 @@ import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
  *
  * Only the exact spelling the provider observed is ever delegated: a `read` or `edit` of a missing path is refused, so Pi's
  * fallback spellings (NFD, curly apostrophe, narrow space) can never open a file the containment check did not see.
+ *
+ * The check and the open are two steps, so the native tools get the env through `confinedEnv`: each operation re-checks the path it is
+ * about to open, which closes the gap for fallback spellings. A symlink swapped inside the few microseconds between that check and the
+ * OS `open` is not closable here; keeping an untrusted agent off such a race is the host's isolation (ruling: an isolated worker env
+ * in shared-process hosts), and this guard claims no more.
  *
  * Pi's `edit` matches `oldText` exactly first and only then falls back to a fuzzy match (Unicode normalisation, trailing
  * whitespace, smart quotes, dashes and special spaces); that is Pi's behaviour and the guard does not change it. A shell write
@@ -79,32 +85,59 @@ export async function workspaceRelative(api: ToolExecutionApi, root: string, pat
   return absolute.startsWith(`${root}/`) ? { path: absolute.slice(root.length + 1), absolute } : undefined;
 }
 
+/**
+ * Whether `absolute` really lies inside `root` once links are resolved, through the env's own `canonicalPath`. A path that does not
+ * exist yet is judged by its deepest existing ancestor, so a link directory cannot lead a new file out. Any other failure to resolve
+ * is a refusal: the guard fails closed.
+ */
+async function contained(env: ExecutionEnv | undefined, root: string, absolute: string, context: Context): Promise<boolean> {
+  if (env === undefined) return false;
+  const realRoot = await env.canonicalPath(root, context);
+  if (!realRoot.ok) return false;
+  const base = realRoot.value.replace(/\/+$/, '');
+  let candidate = absolute, rest = '';
+  for (;;) {
+    const real = await env.canonicalPath(candidate, context);
+    if (real.ok) { const resolved = `${real.value.replace(/\/+$/, '')}${rest}`; return resolved === base || resolved.startsWith(`${base}/`); }
+    if (real.error.code !== 'not_found') return false;
+    const cut = candidate.lastIndexOf('/');
+    if (cut <= 0) return false;
+    rest = `${candidate.slice(cut)}${rest}`;
+    candidate = candidate.slice(0, cut);
+  }
+}
+
+const ONE_PATH = new Set(['readTextFile', 'openTextLineReader', 'readTextLines', 'readBinaryFile', 'openBinaryReader', 'writeFile', 'appendFile', 'truncateFile', 'flushFile', 'fileInfo', 'listDir', 'openDirReader', 'createDir', 'remove']);
+
+/**
+ * `env` as the native `read`, `write` and `edit` must see it: every operation that opens, changes or lists a path first re-checks the
+ * path it is ABOUT to touch (links resolved, like `contained`) and refuses outside `root` with a typed `permission_denied`. The check
+ * is on the path Pi actually opens, so a fallback spelling Pi picks after the provider's check (NFD, curly apostrophe) is judged as
+ * itself. `exists` answers false for a path outside, so Pi's fallback loop moves on instead of revealing it. A Pi extension point
+ * (`ExecutionEnv` decorator), public API only. Residual: a symlink swapped between this check and the OS `open` is not closable from
+ * here; that boundary is the host's isolation (an isolated worker env), not this guard.
+ */
+export function confinedEnv(env: ExecutionEnv, root: string): ExecutionEnv {
+  const denied = (path: string): Result<never, FileError> => err(new FileError('permission_denied', `Refused: ${path} is outside the workspace.`, path));
+  const inside = (path: string, context: Context) => contained(env, root, path, context);
+  return new Proxy(env, {
+    get(target, property) {
+      const member = Reflect.get(target, property, target) as unknown;
+      if (typeof member !== 'function') return member;
+      const method = member.bind(target) as (...args: unknown[]) => unknown;
+      if (typeof property !== 'string') return method;
+      if (ONE_PATH.has(property)) return async (path: string, ...rest: unknown[]) => await inside(path, rest[rest.length - 1] as Context) ? method(path, ...rest) : denied(path);
+      if (property === 'renameFile') return async (from: string, to: string, context: Context) => await inside(from, context) && await inside(to, context) ? method(from, to, context) : denied(`${from} -> ${to}`);
+      if (property === 'exists') return async (path: string, context: Context) => await inside(path, context) ? method(path, context) : ok(false);
+      return method;
+    },
+  });
+}
+
 /** The guard as a native extension. Select it after the extension(s) that register `read`, `write` and `edit`. */
 export function createFileGuard(options: FileGuardOptions = {}) {
   const resolver = asWorkspaceResolver(options.workspace);
 
-  /**
-   * Whether `absolute` really lies inside `root` once links are resolved, through the env's own `canonicalPath`. A path that does not
-   * exist yet is judged by its deepest existing ancestor, so a link directory cannot lead a new file out. Any other failure to resolve
-   * is a refusal: the guard fails closed.
-   */
-  async function contained(api: ToolExecutionApi, root: string, absolute: string, context: Context): Promise<boolean> {
-    const env = api.env;
-    if (env === undefined) return false;
-    const realRoot = await env.canonicalPath(root, context);
-    if (!realRoot.ok) return false;
-    const base = realRoot.value.replace(/\/+$/, '');
-    let candidate = absolute, rest = '';
-    for (;;) {
-      const real = await env.canonicalPath(candidate, context);
-      if (real.ok) { const resolved = `${real.value.replace(/\/+$/, '')}${rest}`; return resolved === base || resolved.startsWith(`${base}/`); }
-      if (real.error.code !== 'not_found') return false;
-      const cut = candidate.lastIndexOf('/');
-      if (cut <= 0) return false;
-      rest = `${candidate.slice(cut)}${rest}`;
-      candidate = candidate.slice(0, cut);
-    }
-  }
   async function observeIn(files: WorkspaceBinding['files'], path: string, access: ResourceAccess): Promise<Observed> {
     const read = await files.read({ target: { resource: { providerId: files.providerId, path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, access);
     if (read.kind === 'available') return { kind: 'file', revision: read.snapshot.ref.revision };
@@ -113,10 +146,11 @@ export function createFileGuard(options: FileGuardOptions = {}) {
   }
   function guarded<Tool extends ToolRegistration>(tool: Tool, mode: 'read' | 'write' | 'edit'): Tool {
     const execute = async (args: Args, api: ToolExecutionApi, context: Context): Promise<ToolExecutionResult> => {
-      const run = () => (tool.execute as (args: Args, api: ToolExecutionApi, context: Context) => Promise<ToolExecutionResult>)(args, api, context);
       const resolved = await workspaceFor(resolver, api, context);
       if ('refused' in resolved) return refusal(`Refused: ${resolved.refused}`);
       const { binding } = resolved;
+      // The native tool gets the env decorated to re-check what it actually opens (see `confinedEnv`); the guard's own checks use the raw one.
+      const run = () => (tool.execute as (args: Args, api: ToolExecutionApi, context: Context) => Promise<ToolExecutionResult>)(args, api.env === undefined ? api : Object.create(api, { env: { value: confinedEnv(api.env, binding.root.replace(/\/+$/, '')), enumerable: true } }) as ToolExecutionApi, context);
       const { files } = binding;
       const root = binding.root.replace(/\/+$/, '');
       const granted = options.resolveAccess ? await options.resolveAccess(api, context) : binding.access;
@@ -124,7 +158,7 @@ export function createFileGuard(options: FileGuardOptions = {}) {
       const access = { ...granted };
       const observe = (path: string) => observeIn(files, path, access);
       const located = await workspaceRelative(api, root, args.path, context);
-      if (located === undefined || !await contained(api, root, located.absolute, context)) return refusal(`Refused: ${args.path} is outside the workspace.`);
+      if (located === undefined || !await contained(api.env, root, located.absolute, context)) return refusal(`Refused: ${args.path} is outside the workspace.`);
       const { path } = located;
       const key = baselineKey(binding, path);
       return files.queue.run(async () => {

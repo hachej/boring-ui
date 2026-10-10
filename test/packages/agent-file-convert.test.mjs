@@ -4,7 +4,7 @@ import { Harness, createRegistry, defineExtension } from '@earendil-works/pi-dur
 import { ToolResultEntry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
@@ -23,14 +23,17 @@ const access = { principalId: 'editor', initiatorId: 'alice', scopeId: 'fictiona
 const PDF = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n';
 
 /** Pi's native read, wrapped by the converting read, then the guard, over a real directory. Results carry content text and diagnostics. */
-async function fixture(t, { convert, cache, maxBytes, read, guard = true } = {}) {
+async function fixture(t, { convert, cache, maxBytes, read, guard = true, onRead } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'boring-convert-'));
   const workspace = join(directory, 'workspace'), elsewhere = join(directory, 'elsewhere');
   mkdirSync(workspace); mkdirSync(elsewhere);
   const env = new NodeExecutionEnv({ cwd: workspace });
   const journal = createWorkspaceJournal(openNodeConnection(join(directory, 'journal.sqlite')));
   const base = createWorkspaceProvider({ identity: { providerId: 'files', instanceId: 'one', incarnation: 'one', viewId: 'published' }, fs: env, journal });
-  const files = read ? Object.create(base, { read: { value: read } }) : base;
+  let reads = 0;
+  // onRead(count, workspace) runs right after the provider's count-th read returned: a deterministic point between check and open.
+  const hooked = onRead ? async (...args) => { const result = await base.read(...args); await onRead(++reads, workspace); return result; } : read;
+  const files = hooked ? Object.create(base, { read: { value: hooked } }) : base;
   const binding = { files, root: workspace, access };
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fixture.files', tools: [createReadTool(), createWriteTool(), createEditTool()] }));
@@ -255,4 +258,67 @@ test('workersAiMarkdown adapts toMarkdown results to converter results', async (
   assert.deepEqual(await convert({ name: 'doc.pdf', mediaType: 'application/pdf', bytes: encoder.encode('x') }), { text: '# Title' });
   assert.deepEqual(await convert({ name: 'bad.pdf', mediaType: 'application/pdf', bytes: encoder.encode('x') }), { error: 'nope' });
   assert.equal(seen[0].blob.type, 'application/pdf');
+});
+
+// The NFC directory holds an ordinary file; the NFD spelling of the same name is a link to a directory outside the workspace.
+const NFC = 'caf\u00e9', NFD = 'cafe\u0301';
+function unicodeAlias(f) {
+  mkdirSync(join(f.workspace, NFC));
+  writeFileSync(join(f.elsewhere, 'secret.md'), 'FICTIONAL_SECRET\n');
+  symlinkSync(f.elsewhere, join(f.workspace, NFD));
+  f.put(`${NFC}/secret.md`, 'inside\n');
+}
+
+test('a file deleted between the provider check and the open cannot fall back to an outside spelling (guard only)', async t => {
+  const f = await fixture(t, { onRead: (count, workspace) => { if (count === 1) rmSync(join(workspace, NFC, 'secret.md')); } });
+  unicodeAlias(f);
+  const result = await f.run({ path: `${NFC}/secret.md` });
+  assert.doesNotMatch(result.all, /FICTIONAL_SECRET/);
+  assert.equal(result.isError, true);
+});
+
+test('a file deleted between the converting read\'s provider read and the open cannot fall back to an outside spelling', async t => {
+  const f = await fixture(t, { convert: async () => ({ text: 'x' }), onRead: (count, workspace) => { if (count === 2) rmSync(join(workspace, NFC, 'secret.md')); } });
+  unicodeAlias(f);
+  const result = await f.run({ path: `${NFC}/secret.md` });
+  assert.doesNotMatch(result.all, /FICTIONAL_SECRET/);
+  assert.equal(result.isError, true);
+});
+
+test('the converting read refuses a path the provider reports missing instead of delegating it to Pi', async t => {
+  const f = await fixture(t, { guard: false, convert: async () => ({ text: 'x' }) });
+  unicodeAlias(f);
+  rmSync(join(f.workspace, NFC, 'secret.md'));
+  const result = await f.run({ path: `${NFC}/secret.md` });
+  assert.doesNotMatch(result.all, /FICTIONAL_SECRET/);
+  assert.equal(result.isError, true);
+  assert.match(result.text, /does not exist in the workspace/);
+});
+
+test('edit and write open only paths inside the workspace: a file deleted after the check cannot be redirected through a link', async t => {
+  const f = await fixture(t, { onRead: (count, workspace) => { if (count === 2) rmSync(join(workspace, NFC, 'secret.md')); } });
+  unicodeAlias(f);
+  await f.run({ path: `${NFC}/secret.md` });
+  const edited = await f.run({ path: `${NFC}/secret.md`, oldText: 'FICTIONAL_SECRET', newText: 'CHANGED' }, 'edit');
+  assert.equal(edited.isError, true);
+  assert.equal(readFileSync(join(f.elsewhere, 'secret.md'), 'utf8'), 'FICTIONAL_SECRET\n');
+});
+
+test('a converted segment that starts with U+FEFF keeps it', async t => {
+  const text = `${'a'.repeat(51_200)}\uFEFF${'b'.repeat(100)}`;
+  const f = await fixture(t, { convert: async () => ({ text }) });
+  f.put('bom.pdf', PDF);
+  const first = await f.run({ path: 'bom.pdf' });
+  const second = await f.run({ path: 'bom.pdf', offset: 2 });
+  assert.equal(first.text + second.text, text, 'exact reconstruction');
+});
+
+test('a NUL after the sniffed head makes a text file binary: unsupported and never converted', async t => {
+  let calls = 0;
+  const f = await fixture(t, { convert: async () => { calls++; return { text: 'x' }; } });
+  f.put('late.bin', Buffer.concat([Buffer.from('a'.repeat(20)), Buffer.from([0]), Buffer.from('tail')]));
+  const result = await f.run({ path: 'late.bin' });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /unsupported/);
+  assert.equal(calls, 0);
 });

@@ -67,7 +67,7 @@ const utf8Length = (text: string) => new TextEncoder().encode(text).length;
  */
 function linesOf(text: string): { lines: string[]; split: Map<number, number> } {
   const lines: string[] = [], split = new Map<number, number>();
-  const encoder = new TextEncoder(), decoder = new TextDecoder();
+  const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', { ignoreBOM: true }); // keep a U+FEFF that starts a segment
   text.split('\n').forEach((line, index) => {
     if (utf8Length(line) <= MAX_BYTES) { lines.push(line); return; }
     const bytes = encoder.encode(line);
@@ -133,11 +133,14 @@ export function createConvertingRead(options: ConvertingReadOptions = {}) {
       const access = options.resolveAccess ? await options.resolveAccess(api, context) : resolved.binding.access;
       if (access === undefined) return failure('Refused: the host gave no access for this workspace.', 'denied');
       const read = await files.read({ target: { resource: { providerId: files.providerId, path: located.path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, { ...access });
-      if (read.kind === 'missing') return native(args, api, context);
+      // Never delegate a missing path: Pi's read would try other spellings the provider and the containment check never saw.
+      if (read.kind === 'missing') return failure(`Refused: ${args.path} does not exist in the workspace.`, 'denied');
       if (read.kind !== 'available') return failure(`Refused: ${args.path} cannot be read here (${read.reason}).`, 'denied');
       const { snapshot } = read;
       const head = snapshot.bytes.subarray(0, SNIFF_BYTES);
-      const kind: FileKind = fileKind(located.path, head);
+      let kind: FileKind = fileKind(located.path, head);
+      // The leading bytes are only a sniff: a NUL anywhere in the loaded snapshot (bounded by maxBytes) makes a text file binary.
+      if (kind === 'text' && snapshot.bytes.subarray(0, maxBytes).includes(0)) kind = 'binary';
       if (kind === 'text') return native(args, api, context);
       if (kind === 'archive' || kind === 'binary') return failure(`${args.path} is ${kind === 'archive' ? 'an archive' : 'a binary file'}; it cannot be read as text here (unsupported).`, 'unsupported');
       if (!options.convert) {
