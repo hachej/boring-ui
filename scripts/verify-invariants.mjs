@@ -37,9 +37,10 @@ export function verifyInvariants(root, { release = false, run = runCaptured } = 
   for (const pending of result.pending) logs.push(`DEFERRED ${pending.id}: ${pending.command.join(' ')}\n  ${pending.reason}`);
   if (result.pending.length) {
     logs.push(`Runtime verification INCOMPLETE: ${result.pending.length} deferred proofs are not passes.`);
-    if (release) status = 1;
+    // Owner ruling 2026-10-10: deferred proofs are backlog, not release blockers. They stay listed above and in release.json; real failures still fail.
+    if (release) logs.push(`Release: ${result.pending.length} deferred proofs recorded as backlog (owner ruling 2026-10-10); they do not block publication.`);
   } else if (!status) logs.push('Registered boundary evidence passed; scope is the claims in VERIFY.json.');
-  return { status, logs };
+  return { status, logs, deferred: result.pending.map(({ id, command, reason }) => ({ id, command, reason })) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

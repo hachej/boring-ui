@@ -40,8 +40,9 @@ test('implemented package needs its own tests, not unrelated completed runtime p
   const dev = verifyInvariants(f.root);
   assert.equal(dev.status, 0, dev.logs.join('\n'));
   const release = verifyInvariants(f.root, { release: true });
-  assert.equal(release.status, 1);
+  assert.equal(release.status, 0, release.logs.join('\n')); // deferred proofs are backlog (owner ruling 2026-10-10), not blockers
   assert.ok(release.logs.some(line => line.includes('14 deferred proofs')));
+  assert.equal(release.deferred.length, 14);
 });
 
 test('a real package regression fails development verification', t => {

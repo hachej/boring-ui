@@ -41,9 +41,16 @@ test('registered command is deduplicated across laws and executed as argv, not s
   assert.equal(result.logs.filter((line) => line.startsWith('DEFERRED')).length, 11); // six root and five feedback deferrals
   assert.ok(result.logs.some((line) => line.includes('INCOMPLETE')));
 });
-test('release rejects pending obligations even with no package source', (t) => {
+test('release lists deferred proofs as backlog without failing on them (owner ruling 2026-10-10)', (t) => {
   const f = fixture(t); const result = verifyInvariants(f.directory, { release: true, run: () => ({status:0, stdout:passing}) });
-  assert.equal(result.status, 1); assert.ok(!result.logs.some((line) => line.startsWith('Registered boundary evidence passed')));
+  assert.equal(result.status, 0, result.logs.join('\n')); assert.ok(!result.logs.some((line) => line.startsWith('Registered boundary evidence passed')));
+  assert.ok(result.logs.filter((line) => line.startsWith('DEFERRED')).length > 0);
+  assert.equal(result.deferred.length, result.logs.filter((line) => line.startsWith('DEFERRED')).length);
+  assert.ok(result.logs.some((line) => line.includes('backlog')));
+});
+test('release still fails on a real evidence failure while proofs are deferred', (t) => {
+  const f = fixture(t); const result = verifyInvariants(f.directory, { release: true, run: () => ({status:1, stderr:'failed assertion'}) });
+  assert.equal(result.status, 1); assert.ok(result.logs.some((line) => line.startsWith('DEFERRED')));
 });
 test('release accepts promoted mandatory slots only after actual fixture commands execute', (t) => {
   const f = fixture(t, true); const result = verifyInvariants(f.directory, { release: true });

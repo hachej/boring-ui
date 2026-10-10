@@ -1,9 +1,23 @@
 # Prepare an npm release
 
-The packages remain private at candidate version `0.2.0`. See the
-[breaking migration](../../MIGRATING.md) for package identities and removals. Passing the tarball audit does
-not qualify the library for release. [PARTIAL.md](PARTIAL.md) records remaining
+Candidate version is `0.2.0`. See the [breaking migration](../../MIGRATING.md)
+for package identities and removals. [PARTIAL.md](PARTIAL.md) records remaining
 implementation work, and [VERIFY.json](../../VERIFY.json) owns proof deferrals.
+
+## Release ruling (owner, 2026-10-10)
+
+Deferred proofs are backlog, not release blockers. `verify:release` and
+`release:preflight` still list every `DEFERRED` proof and `release.json` records
+them (`deferredProofs`), but they no longer fail the run. Failing tests, missing
+evidence files, missing runtime proof slots and broken verifiers still fail it.
+VERIFY.json keeps its deferrals unchanged; they remain visible backlog.
+
+Publish set, version `0.2.0`, dist-tag `latest`: `@hachej/boring-agent`,
+`@hachej/boring-ui-kit`, `@hachej/boring-files`, `@hachej/boring-execution`,
+`@hachej/boring-feedback` (`private: false`). `@hachej/boring-browser` and
+`@hachej/boring-testing` stay `private: true`: release packing, `readRelease` and
+the publisher skip them explicitly (`scripts/release-set.mjs`), and the workflow
+checks the retained artifact contains neither. No published package depends on them.
 
 ## Validate the candidate
 
@@ -16,25 +30,24 @@ implementation work, and [VERIFY.json](../../VERIFY.json) owns proof deferrals.
    are deleted after inspection. It never publishes.
 5. Run the isolated consumers in the CI workflow and the browser journeys for
    the same commit. Preserve their logs and artifact identities.
-6. Run `npm run verify:release` separately. A deferral is a failure of release
-   qualification even when ordinary verification passes. Resolve its actual
-   obligation before changing the verifier. Do not remove deferrals to publish.
+6. Run `npm run verify:release` separately. Deferrals are listed but do not fail it
+   (see the ruling above). Do not delete deferrals or weaken proofs to make it pass.
 
 ## Set the release identity
 
-After qualification, confirm the npm organization and publishing account with
+Confirm the npm organization and publishing account with
 the owner. The candidate names use `@hachej/boring-*`; repository ownership does not prove
 ownership of that npm scope. Confirm that all pinned external peers are available
 to the intended consumer. The tarball audit does not contact the registry.
 
 Run `npm run release:version -- 0.2.0` (or an exact prerelease such as `0.2.0-rc.1`).
-This updates all seven packages, internal dependency pins, lockfile records and
+This updates all seven workspace packages, internal dependency pins, lockfile records and
 source/generated registry recipe pins together. It changes neither privacy flags
 nor external dependency versions. Review the changes and commit them. Build metadata
 suffixes and version aliases such as `latest` are not accepted.
 
-Set package `private` fields to `false` in the
-reviewed release commit; keep the repository root private. Run the validation
+The five publish-set packages are `private: false` in the reviewed release
+commit; browser, testing and the repository root stay private. Run the validation
 again, including `npm run release:preflight`. This command requires both full
 release verification and publication-ready manifests. There is no override flag.
 
@@ -68,17 +81,25 @@ reviewed source, and publishes only those archives with `--ignore-scripts` and a
 explicit public npm destination. Release runs are serialized without cancelling an
 active publication. Neither job changes package versions or privacy flags.
 
-### Owner setup before the first release
+### Owner checklist before first publish
 
-1. Confirm control of the npm scope and all seven package names, including any
-   first-publication/bootstrap requirements with npm. GitHub ownership is insufficient.
-2. Configure the GitHub `npm` environment for the intended maintainer approval
-   and main-branch policy. This code does not create or change those settings.
-3. Configure each package's npm trusted publisher for user `hachej`, repository
-   `boring-ui`, workflow filename `npm-publish.yml`, and environment `npm`.
+1. `npm login` as the owner of the `@hachej` scope, with 2FA enabled. GitHub
+   ownership is insufficient.
+2. First-publish the never-published names `@hachej/boring-files`,
+   `@hachej/boring-execution` and `@hachej/boring-feedback` from the owner's 2FA
+   session, using the exact CI-audited tarballs (the retained `npm-release-*`
+   artifact, checked against `release.json`). No placeholder packages.
+3. Create the GitHub `npm` environment with the intended maintainer approval and
+   main-branch policy. This code does not create or change those settings.
+4. Configure a trusted publisher on each of the 5 packages: user `hachej`,
+   repository `boring-ui`, workflow filename `npm-publish.yml`, environment `npm`.
    Permit direct publishing if the npm configuration defaults to staged-only access.
    Complete setup near the first qualified release: unused new trust configurations
    can expire. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+5. Host `public/r` (the shadcn registry) so `npx shadcn add <url>/r/pi-app.json`
+   works. Proposal: GitHub Pages serving `public/` from a workflow on `main`, which
+   gives `https://hachej.github.io/boring-ui/r/pi-app.json`. Not created yet; the
+   owner decides the URL.
 
 The workflow pins npm 11.5.1, which supports trusted publishing, and Node 22.22.1.
 It has no token fallback. Missing account ownership or trust configuration fails
@@ -89,7 +110,7 @@ registry versions; local tarballs cannot establish registry installability.
 
 ### Interrupted publication
 
-Seven package publications are not one transaction. Before any write, the publisher
+Five package publications are not one transaction. Before any write, the publisher
 looks up every version. Registry errors are failures, not proof a version is absent.
 An existing version is skipped only when both its integrity and requested dist-tag
 match these artifacts. Different bytes or tags stop the run for manual review.
