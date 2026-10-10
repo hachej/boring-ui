@@ -98,7 +98,8 @@ void regionSnapshots; void snapshots;
     if (name === 'compose') assert.ok(inputs.every(path => !/node_modules\/react(?:-dom)?\/|@json-render\/react\/dist\/index/.test(path)), 'Validation entry must not load the React runtime');
   }
   assert.ok(filesArchive);
-  run('npm', ['install', ...npmInstallFlags(cache), filesArchive]);
+  // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
+  run('npm', ['install', ...npmInstallFlags(cache), filesArchive, `@earendil-works/pi-durable@${JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable']}`]);
   writeFileSync(join(directory, 'consumer.ts'), `import { createExperienceDocumentController, type ExperienceDocumentOptions, type ExperienceDocumentController } from '@hachej/boring-ui-kit/experience/document';
 import { ExperienceDocument } from '@hachej/boring-ui-kit/experience/document-viewer';
 import { createElement } from 'react';
