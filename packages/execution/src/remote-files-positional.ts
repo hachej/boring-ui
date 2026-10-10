@@ -5,9 +5,9 @@
 import { FileError, err, ok } from '@earendil-works/pi-durable/env';
 import type { BinaryReader, DirReader, FileInfo, FileSystem, LineScan, Result } from '@earendil-works/pi-durable/env';
 import type { Context } from '@earendil-works/chord';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { bytes, dirPage, fileInfo, lineScan, maxDirPageEntries, maxRangeBytes } from './remote-files-protocol.js';
-import type { DirPage, ExpectedFile, PositionalCall, ReaderOptions } from './remote-files-protocol.js';
+import type { DirPage, ExpectedFile, PositionalCall, ReaderOptions, RemoteFileSystemCall } from './remote-files-protocol.js';
 
 const changed = (left: ExpectedFile, right: ExpectedFile): boolean => left.size !== right.size || left.mtimeMs !== right.mtimeMs;
 const changedFile = (path: string) => new FileError('invalid', 'The file changed since it was opened', path);
@@ -72,6 +72,7 @@ async function serveDirPage(fs: FileSystem, [path, offset, maxEntries, expectedM
       const page = await reader.next(maxEntries, context);
       if (!page.ok) return page;
       entries.push(...page.value.entries); done = page.value.done;
+      if (entries.length === 0 && !done) return err(new FileError('unknown', 'The native directory reader made no progress', path));
     }
     const after = await stamp();
     if (!after.ok) return after;
@@ -80,13 +81,17 @@ async function serveDirPage(fs: FileSystem, [path, offset, maxEntries, expectedM
   } finally { await reader.close(cleanup); }
 }
 
-type Invoke = <Value>(call: PositionalCall, output: z.ZodType<Value>, context: Context) => Promise<Result<Value, FileError>>;
+type Invoke = <Value>(call: RemoteFileSystemCall, output: z.ZodType<Value>, context: Context) => Promise<Result<Value, FileError>>;
 
 /** Client side: Pi's `openBinaryReader` and `openDirReader` over `invoke`, one bounded request per call. */
 export function remoteReaders(invoke: Invoke, maxResponseBytes: number): Pick<FileSystem, 'openBinaryReader' | 'openDirReader'> {
   const chunk = maxRangeBytes(maxResponseBytes);
   return {
-    openBinaryReader: async (path, options, context): Promise<Result<BinaryReader, FileError>> => {
+    openBinaryReader: async (requested, options, context): Promise<Result<BinaryReader, FileError>> => {
+      // Resolve once: the lease's cwd can change later, and every request of this reader must name the file it opened.
+      const resolved = await invoke({ method: 'absolutePath', args: [requested] }, z.string(), context);
+      if (!resolved.ok) return resolved;
+      const path = resolved.value;
       const wire: ReaderOptions | undefined = options?.noFollow === undefined ? undefined : { noFollow: options.noFollow };
       const info = await invoke({ method: 'binaryInfo', args: [path, wire] }, fileInfo, context);
       if (!info.ok) return info;
@@ -125,23 +130,31 @@ export function remoteReaders(invoke: Invoke, maxResponseBytes: number): Pick<Fi
         close: async () => { closed = true; },
       });
     },
-    openDirReader: async (path, context): Promise<Result<DirReader, FileError>> => {
+    openDirReader: async (requested, context): Promise<Result<DirReader, FileError>> => {
+      const resolved = await invoke({ method: 'absolutePath', args: [requested] }, z.string(), context);
+      if (!resolved.ok) return resolved;
+      const path = resolved.value;
       const probe = await invoke({ method: 'readDirPage', args: [path, 0, 0, undefined] }, dirPage, context);
       if (!probe.ok) return probe;
       const mtimeMs = probe.value.mtimeMs;
-      let offset = 0, done = false, closed = false;
+      let offset = 0, done = false, closed = false, busy = false;
       return ok({
         next: async (maxEntries, inner) => {
           const failed = aborted(inner, path) ?? (closed ? closedReader('Directory reader', path) : undefined);
           if (failed) return err(failed);
           if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0) return err(new FileError('invalid', 'maxEntries must be a positive safe integer', path));
-          const entries: FileInfo[] = [];
-          while (!done && entries.length < maxEntries) {
-            const page: Result<DirPage, FileError> = await invoke({ method: 'readDirPage', args: [path, offset, Math.min(maxEntries - entries.length, maxDirPageEntries), mtimeMs] }, dirPage, inner);
-            if (!page.ok) return page;
-            entries.push(...page.value.entries); offset += page.value.entries.length; done = page.value.done;
-          }
-          return ok({ entries, done });
+          if (busy) return err(new FileError('invalid', 'A directory read is already pending', path));
+          busy = true;
+          try {
+            const entries: FileInfo[] = [];
+            while (!done && entries.length < maxEntries) {
+              const page: Result<DirPage, FileError> = await invoke({ method: 'readDirPage', args: [path, offset, Math.min(maxEntries - entries.length, maxDirPageEntries), mtimeMs] }, dirPage, inner);
+              if (!page.ok) return page;
+              entries.push(...page.value.entries); offset += page.value.entries.length; done = page.value.done;
+              if (page.value.entries.length === 0 && !done) break;
+            }
+            return ok({ entries, done });
+          } finally { busy = false; }
         },
         close: async () => { closed = true; },
       });

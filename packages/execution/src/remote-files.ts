@@ -8,6 +8,7 @@ import { bytes, fileInfo, line, nothing, envelope, streamFrame, schema, version,
 import type { RemoteFileSystemCall } from './remote-files-protocol.js';
 import { frameReader, readJson } from './remote-files-io.js';
 import { randomUUID } from '@hachej/boring-files/platform';
+import { maxWatchExcludeNames, maxWatchTargets } from './remote-files-protocol.js';
 import { remoteReaders } from './remote-files-positional.js';
 import { watcherFromFrames } from './remote-files-watch.js';
 export { createRemoteFileSystemHandler } from './remote-files-handler.js';
@@ -148,6 +149,8 @@ export function createRemoteFileSystemLease(options: RemoteFileSystemOptions): W
   // Pi's readers and watcher travel as request-bound positional calls and one streamed watch request, never as whole-file reads.
   const readers = remoteReaders(invoke, maxResponseBytes);
   const watch: FileSystem['watch'] = async (targets, onChange, context) => {
+    if (targets.length < 1 || targets.length > maxWatchTargets) return err(new FileError('invalid', `A watch needs between 1 and ${maxWatchTargets} targets`));
+    if (targets.some(target => (target.exclude?.names?.length ?? 0) > maxWatchExcludeNames)) return err(new FileError('invalid', `A watch target excludes at most ${maxWatchExcludeNames} names`));
     const connected = await connect({ method: 'watch', args: [targets] }, context);
     if (!connected.ok) return connected;
     const connection = connected.value;

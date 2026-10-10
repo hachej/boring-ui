@@ -107,8 +107,8 @@ test('a 50-line read of a large remote file transfers only bounded bytes', async
   assert.equal(text.split('\n').length, 50); assert.ok(text.startsWith('line 1000 '));
   await reader.close(context);
   assert.ok(f.traffic.bytes < 4096, `transferred ${f.traffic.bytes} bytes of ${size}`);
-  assert.ok(f.traffic.frames <= 4, `frames ${f.traffic.frames}`);
-  assert.deepEqual(f.traffic.requests.map(call => call.method), ['binaryInfo', 'scanLines', 'readRange']);
+  assert.ok(f.traffic.frames <= 5, `frames ${f.traffic.frames}`);
+  assert.deepEqual(f.traffic.requests.map(call => call.method), ['absolutePath', 'binaryInfo', 'scanLines', 'readRange']);
 });
 
 test('positional reads match the native reader, chunk large ranges and report end of file', async t => {
@@ -261,4 +261,106 @@ test('a Node worker that ignores the window still transfers only the retained ta
   assert.equal(kept.split('\n').length - 1 + skippedLines, 200000);
   assert.ok(kept.endsWith('line 200000 padding padding padding\n'));
   assert.ok(chunks < 2000);
+});
+
+// ---- review fixes ----
+async function patched(t, patch, { handlerOptions = {} } = {}) {
+  const directory = await mkdtemp(join(tmpdir(), 'boring-remote-patched-'));
+  const host = new NodeExecutionEnv({ cwd: directory }), leases = [];
+  const access = {
+    identity, filesystemId: host.id, context, revoked: new AbortController().signal, authorize: () => true,
+    bindFileSystem: async cwd => { const native = new NodeExecutionEnv({ cwd }); patch(native); return { identity: { ...identity }, environment: native, ownership: 'borrowed', release: async c => { await native.cleanup(c); } }; },
+  };
+  const handler = createRemoteFileSystemHandler({ authenticate: async () => access, ...handlerOptions });
+  const lease = (options = {}) => { const value = createRemoteFileSystemLease({ identity, filesystemId: host.id, cwd: directory, endpoint, fetch: handler, ...options }); leases.push(value); return value; };
+  t.after(async () => { for (const value of leases) await value.release(context); await host.cleanup(context); await rm(directory, { recursive: true, force: true }); });
+  return { directory, lease, host };
+}
+
+test('a terminal watcher error survives a full event queue', async t => {
+  let emit;
+  const f = await patched(t, native => { native.watch = async (_targets, onChange) => { emit = onChange; return { ok: true, value: { mode: 'native', close: async () => {} } }; }; });
+  const changes = [];
+  getOrThrow(await f.lease().environment.watch([{ path: '.' }], change => changes.push(change), context));
+  for (let i = 0; i < 1000; i++) emit({ paths: [`p${i}`] });
+  emit({ error: new FileError('unknown', 'native watcher stopped') });
+  await until(() => changes.some(change => 'error' in change), 'terminal error was discarded');
+  assert.equal(changes.find(change => 'error' in change).error.message, 'native watcher stopped');
+});
+
+test('an oversized terminal watcher error is bounded, not turned into overflow', async t => {
+  let emit;
+  const f = await patched(t, native => { native.watch = async (_targets, onChange) => { emit = onChange; return { ok: true, value: { mode: 'native', close: async () => {} } }; }; }, { handlerOptions: { maxFrameBytes: 4096 } });
+  const changes = [];
+  getOrThrow(await f.lease({ maxFrameBytes: 4096 }).environment.watch([{ path: '.' }], change => changes.push(change), context));
+  emit({ error: new FileError('invalid', 'x'.repeat(100_000), '/p'.repeat(5000)) });
+  await until(() => changes.length > 0, 'nothing delivered');
+  assert.ok('error' in changes[0], JSON.stringify(changes[0]).slice(0, 80));
+  assert.equal(changes[0].error.code, 'invalid');
+});
+
+test('a watch stream that ends without an error change reports an error', async t => {
+  const fetch = async request => {
+    const { requestId, filesystemId } = await request.json();
+    const body = [{ schema: 'boring.remote-files', version: 3, nativeVersion: 'pi-durable@1.1.0', requestId, identity, filesystemId, type: 'opened', sequence: 0, mode: 'native' }, { requestId, sequence: 1, type: 'end' }]
+      .map(frame => JSON.stringify(frame)).join('\n') + '\n';
+    return new Response(body, { headers: { 'content-type': 'application/x-ndjson' } });
+  };
+  const lease = createRemoteFileSystemLease({ identity, filesystemId: 'node:local', cwd: tmpdir(), endpoint, fetch });
+  t.after(() => lease.release(context));
+  const changes = [];
+  getOrThrow(await lease.environment.watch([{ path: '.' }], change => changes.push(change), context));
+  await until(() => changes.length > 0, 'bare end was a silent stop');
+  assert.ok('error' in changes[0]);
+});
+
+test('readers keep the path they opened after the lease cwd changes', async t => {
+  const f = await fixture(t);
+  await mkdir(join(f.directory, 'a')); await mkdir(join(f.directory, 'b'));
+  await writeFile(join(f.directory, 'a', 'f'), 'from-a'); await writeFile(join(f.directory, 'b', 'f'), 'from-b!');
+  for (const name of ['x', 'y', 'z']) { await writeFile(join(f.directory, 'a', name), '1'); }
+  const fs = f.lease().environment;
+  fs.cwd = join(f.directory, 'a');
+  const binary = getOrThrow(await fs.openBinaryReader('f', undefined, context));
+  const dir = getOrThrow(await fs.openDirReader('.', context));
+  fs.cwd = join(f.directory, 'b');
+  assert.equal(new TextDecoder().decode(getOrThrow(await binary.read(0, 6, context))), 'from-a');
+  getOrThrow(await binary.scanLines({ startLine: 0 }, context));
+  const names = []; for (;;) { const page = getOrThrow(await dir.next(2, context)); names.push(...page.entries.map(e => e.name)); if (page.done) break; }
+  assert.deepEqual(names.sort(), ['f', 'x', 'y', 'z']);
+});
+
+test('concurrent directory reads are refused instead of duplicating or skipping entries', async t => {
+  const f = await fixture(t);
+  await mkdir(join(f.directory, 'd'));
+  for (let i = 0; i < 10; i++) await writeFile(join(f.directory, 'd', `f${i}`), 'x');
+  const dir = getOrThrow(await f.lease().environment.openDirReader('d', context));
+  const [first, second] = await Promise.all([dir.next(4, context), dir.next(4, context)]);
+  assert.equal(first.ok, true); failure(second, 'invalid');
+  const rest = []; for (;;) { const page = getOrThrow(await dir.next(4, context)); rest.push(...page.entries); if (page.done) break; }
+  assert.equal(first.value.entries.length + rest.length, 10);
+});
+
+test('an empty not-done directory page is refused instead of looping', async t => {
+  const f = await patched(t, native => {
+    const open = native.openDirReader.bind(native);
+    native.openDirReader = async (path, c) => { const r = await open(path, c); if (!r.ok) return r; return { ok: true, value: { next: async () => ({ ok: true, value: { entries: [], done: false } }), close: r.value.close.bind(r.value) } }; };
+  });
+  await mkdir(join(f.directory, 'd'));
+  const dir = getOrThrow(await f.lease().environment.openDirReader('d', context));
+  failure(await dir.next(5, context), 'unknown');
+});
+
+test('invalid window limits and watch caps refuse with descriptive errors', async t => {
+  const access = { identity, context, revoked: new AbortController().signal, supports: { timeout: true, spill: true }, authorize: () => true, shell: { cleanup: async () => {}, exec: async () => ok({ exitCode: 0 }) } };
+  const lease = createRemoteShellLease({ identity, endpoint, fetch: createRemoteShellHandler({ authenticate: async () => access }) });
+  t.after(() => lease.release(context));
+  const bad = await lease.environment.exec('x', { window: { ...window, maxLines: 1.5 } }, context);
+  assert.equal(bad.ok, false); assert.equal(bad.error.code, 'shell_unavailable');
+  const f = await fixture(t), fs = f.lease().environment;
+  const many = await fs.watch(Array.from({ length: 65 }, (_, i) => ({ path: `p${i}` })), () => {}, context);
+  failure(many, 'invalid'); assert.match(many.error.message, /targets/);
+  const names = await fs.watch([{ path: '.', exclude: { names: Array.from({ length: 300 }, (_, i) => `n${i}`) } }], () => {}, context);
+  failure(names, 'invalid'); assert.match(names.error.message, /excludes/);
+  failure(await fs.watch([], () => {}, context), 'invalid');
 });

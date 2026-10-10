@@ -28,10 +28,13 @@ export interface ServeWatch {
 export async function serveWatch(o: ServeWatch): Promise<Result<Response, FileError>> {
   const queue: WatchChange[] = [];
   let wake: (() => void) | undefined, ended = false, finished = false;
+  // A native `error` ends the watcher and must reach the client whatever happened to the queued events before it.
+  let terminal: { error: FileError } | undefined;
   const signal = o.context.abortSignal;
   const push = (change: WatchChange): void => {
-    if (ended) return;
-    if (queue.length >= maxQueuedChanges) { queue.length = 0; queue.push({ overflow: true }); }
+    if (ended || terminal !== undefined) return;
+    if ('error' in change) terminal = change;
+    else if (queue.length >= maxQueuedChanges) { queue.length = 0; queue.push({ overflow: true }); }
     else queue.push(change);
     wake?.();
   };
@@ -54,7 +57,14 @@ export async function serveWatch(o: ServeWatch): Promise<Result<Response, FileEr
   const frameFor = (change: WatchChange): Uint8Array => {
     const frame = (value: WatchChange) => encode({ requestId: o.requestId, sequence, type: 'change', change: wireWatchChange(value) });
     const bytes = frame(change);
-    return bytes.length <= o.maxFrameBytes ? bytes : frame({ overflow: true });
+    if (bytes.length <= o.maxFrameBytes) return bytes;
+    if ('error' in change) {
+      // Never turn a terminal error into an event: bound its text, then fall back to a fixed message.
+      const bounded = (limit: number): WatchChange => ({ error: new FileError(change.error.code, change.error.message.slice(0, limit), change.error.path === undefined ? undefined : change.error.path.slice(0, limit)) });
+      for (const limit of [512, 64]) { const shorter = frame(bounded(limit)); if (shorter.length <= o.maxFrameBytes) return shorter; }
+      return frame({ error: new FileError('unknown', 'Watcher failed') });
+    }
+    return frame({ overflow: true });
   };
   const body = new ReadableStream<Uint8Array>({
     start(value) {
@@ -65,10 +75,10 @@ export async function serveWatch(o: ServeWatch): Promise<Result<Response, FileEr
     },
     async pull() {
       try {
-        while (!finished && queue.length === 0 && !ended) await new Promise<void>(resolve => { wake = resolve; });
+        while (!finished && queue.length === 0 && terminal === undefined && !ended) await new Promise<void>(resolve => { wake = resolve; });
         wake = undefined;
         if (finished) return;
-        const change = queue.shift();
+        const change = queue.shift() ?? terminal;
         if (change === undefined) { interrupt(); return; }
         if (!await o.permitted()) { interrupt(); return; }
         controller.enqueue(frameFor(change)); sequence++;
@@ -103,7 +113,8 @@ export function watcherFromFrames(options: {
         if (raw === undefined) throw new TypeError('Watch stream ended without a terminal frame');
         const frame = streamFrame.parse(raw);
         if (frame.requestId !== options.requestId || frame.sequence !== sequence++ || frame.type === 'opened') throw new TypeError('Watch frame sequence mismatch');
-        if (frame.type === 'end') { stopped = true; await options.dispose(); return; }
+        // The server sends `end` only after an `error` change; a bare `end` is a lost terminal error, never a quiet stop.
+        if (frame.type === 'end') throw new TypeError('Watch stream ended without an error change');
         if (frame.type !== 'change') throw new TypeError('Unexpected watch frame');
         const change = parseWatchChange(frame.change);
         deliver(change);

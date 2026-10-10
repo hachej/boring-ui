@@ -30,7 +30,7 @@ export type WatchCall = { readonly method: 'watch'; readonly args: readonly [tar
 export type RemoteFileSystemCall = NativeCall | PositionalCall | WatchCall;
 /** Largest `readRange` the response limit can carry as canonical base64 inside its envelope. */
 export function maxRangeBytes(maxResponseBytes: number): number { return Math.max(1, Math.floor((maxResponseBytes - 2048) / 4) * 3); }
-export const maxDirPageEntries = 1000, maxWatchTargets = 64;
+export const maxDirPageEntries = 1000, maxWatchTargets = 64, maxWatchExcludeNames = 256;
 
 const text = z.string(), number = z.number().finite();
 /** Bytes travel as canonical base64 text; JSON number arrays multiplied the size by three to four. */
@@ -60,7 +60,7 @@ const expectedFile = z.strictObject({ size: number.nonnegative(), mtimeMs: numbe
 const lineRange = z.strictObject({ startLine: int, endLine: int.optional() }).transform(value => value.endLine === undefined ? { startLine: value.startLine } : { startLine: value.startLine, endLine: value.endLine });
 const watchTarget = z.strictObject({
   path: text, recursive: z.boolean().optional(),
-  exclude: z.strictObject({ hidden: z.boolean().optional(), names: z.array(text).max(256).optional() }).optional(),
+  exclude: z.strictObject({ hidden: z.boolean().optional(), names: z.array(text).max(maxWatchExcludeNames).optional() }).optional(),
 }).transform((value): WatchTarget => ({
   path: value.path, ...(value.recursive === undefined ? {} : { recursive: value.recursive }),
   ...(value.exclude === undefined ? {} : { exclude: { ...(value.exclude.hidden === undefined ? {} : { hidden: value.exclude.hidden }), ...(value.exclude.names === undefined ? {} : { names: value.exclude.names }) } }),

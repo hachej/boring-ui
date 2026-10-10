@@ -63,7 +63,7 @@ export function wireOptions(value: unknown): WireOptions {
     const limits: Record<string, number> = {};
     for (const key of ['maxBytes', 'maxLines', 'minIntervalMs', 'bytesPerSecond']) {
       const limit = window[key];
-      if (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 0) throw new Error('Invalid output window');
+      if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 0) throw new Error('Invalid output window');
       limits[key] = limit;
     }
     result.window = { maxBytes: limits['maxBytes']!, maxLines: limits['maxLines']!, minIntervalMs: limits['minIntervalMs']!, bytesPerSecond: limits['bytesPerSecond']! };
