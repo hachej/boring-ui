@@ -30,6 +30,10 @@ For a conversation with a different working directory, supply `atCwd(workspace, 
 
 Listing reads every conversation record (`scanConversations`) and one metadata document each: Pi's storage has no query over document values or text index, so search is an in-memory substring match. A host with many conversations keeps its own index.
 
+## Mentions
+
+`createMentionResolver({ read, mode?, limits? })` from `@hachej/boring-agent/mentions` turns the `@path` mentions of a submitted message into parts the host adds before submission. The default `mode: 'inline'` puts the text of each file (and images) in the message; documents (PDF, office, zip, epub) are never decoded as text. With `mode: 'reference'` each mention is one `<file path type size />` part and no content, so uploads do not fill the context: the agent reads the file with its tools (Pi `read` for text, `read_converted_text` from `@hachej/boring-agent/file-convert` for PDF, office and images) when it needs to.
+
 ## Model gateway
 
 `@hachej/boring-agent/model-gateway` (server only: it holds the provider key) is `createModelGateway({ upstream, allow, budget, authorize, log?, basePath? })`, a Fetch handler for `POST <basePath>/v1/chat/completions` (OpenAI-compatible, JSON or SSE passed through) and `GET <basePath>/v1/models`. `authorize(request)` returns the person's id from the app session (else 401); `allow` lists gateway model ids or maps them to upstream ids (else 403); `budget.admit` refuses (429, `Retry-After`) or admits with the output ceiling to send (`memoryBudget({ requestsPerMinute, maxTokensPerRequest })` is the in-process reference). The forwarded body is rebuilt from an allowlist of fields and no request header is forwarded; the upstream (`openAICompatibleUpstream`, `anthropicUpstream`, keyless `scriptedUpstream`) adds the key. Upstream failures are 502 with the gateway's own message, never the upstream body. `log` receives person, model, status, code, latency and token counts only. It imports no node or Pi module, so the same code can run as a shared service.
