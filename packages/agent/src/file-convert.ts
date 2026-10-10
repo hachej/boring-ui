@@ -16,7 +16,8 @@ import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
  *  - A PDF, an office document or an image goes to the host's `convert` hook (`workersAiMarkdown` adapts Workers AI). The converted
  *    text is cached per path and saved revision and paged exactly as Pi pages a text file: `offset` is the 1-based line to start at,
  *    `limit` a count of lines, a page ends at 2000 lines or 50 KB, and the info diagnostic names the `offset` to continue from.
- *  - Without `convert`, an image goes to Pi's native behaviour and any other binary file is answered `unsupported`.
+ *  - An archive or other binary file (a NUL byte) answers `unsupported` and is never converted. Without `convert`, an image goes to
+ *    Pi's native behaviour and a PDF or office file answers `unsupported`.
  *
  * What is a text file and what is not comes from the single table in file-types.ts: the extension and the leading bytes (Pi's read
  * returns garbled text for a PDF, so the magic number decides, not only the name). The converted file is read through the workspace
@@ -58,53 +59,60 @@ type Execute = (args: ReadArgs, api: ToolExecutionApi, context: Context) => Prom
 const failure = (text: string, code: string): ToolExecutionResult => ({ content: [{ type: 'text', text }], isError: true, diagnostics: [{ severity: 'error', code, message: text }] });
 const utf8Length = (text: string) => new TextEncoder().encode(text).length;
 
-/** The text of `lines` from the 0-based `start`, cut like Pi's `truncateHead`: whole lines up to MAX_LINES / MAX_BYTES. */
+/**
+ * The converted text as pageable lines. A line longer than MAX_BYTES is split, on character boundaries, into segments of at most
+ * MAX_BYTES; each segment counts as one line for `offset` and `limit`, so every byte stays reachable with an honest offset (Pi's own
+ * read can only point at `sed` for the rest of such a line, and converted text has no file for `sed`). `split` maps the 0-based
+ * index of each segment to the 1-based number of the original line.
+ */
+function linesOf(text: string): { lines: string[]; split: Map<number, number> } {
+  const lines: string[] = [], split = new Map<number, number>();
+  const encoder = new TextEncoder(), decoder = new TextDecoder();
+  text.split('\n').forEach((line, index) => {
+    if (utf8Length(line) <= MAX_BYTES) { lines.push(line); return; }
+    const bytes = encoder.encode(line);
+    for (let start = 0; start < bytes.length;) {
+      let end = Math.min(bytes.length, start + MAX_BYTES);
+      while (end < bytes.length && end > start && (bytes[end]! & 0xc0) === 0x80) end--; // never cut inside a character
+      split.set(lines.length, index + 1);
+      lines.push(decoder.decode(bytes.subarray(start, end)));
+      start = end;
+    }
+  });
+  return { lines, split };
+}
+
+/** The lines from the 0-based `start`, cut like Pi's `truncateHead`: whole lines up to MAX_LINES / MAX_BYTES (no line exceeds MAX_BYTES). */
 function page(lines: readonly string[], start: number, count: number): { text: string; shown: number; byBytes: boolean } {
   const out: string[] = [];
   let bytes = 0, byBytes = false;
   for (let index = start; index < start + count && out.length < MAX_LINES; index++) {
     const line = lines[index]!;
     const size = utf8Length(line) + (out.length > 0 ? 1 : 0);
-    if (bytes + size > MAX_BYTES) {
-      byBytes = true;
-      if (out.length === 0) { // a single line above the byte limit: its start, on a character boundary
-        const encoded = new TextEncoder().encode(line);
-        let end = MAX_BYTES;
-        while (end > 0 && (encoded[end]! & 0xc0) === 0x80) end--;
-        out.push(new TextDecoder().decode(encoded.subarray(0, end)));
-      }
-      break;
-    }
+    if (bytes + size > MAX_BYTES) { byBytes = true; break; }
     bytes += size;
     out.push(line);
   }
   return { text: out.join('\n'), shown: out.length, byBytes };
 }
 
+type Diagnostic = { severity: 'info' | 'warn'; code?: string; message: string };
+
 /** Pi's read result for already converted text. */
 function convertedPage(text: string, offset: number | undefined, limit: number | undefined): ToolExecutionResult {
-  const lines = text.split('\n');
+  const { lines, split } = linesOf(text);
   const total = lines.length;
   const start = offset ? Math.max(0, Math.trunc(offset) - 1) : 0;
   if (start >= total) throw new Error(`Offset ${offset} is beyond end of file (${total} lines total)`);
   const wanted = limit === undefined ? total - start : Math.max(1, Math.min(Math.trunc(limit), total - start));
   const { text: shownText, shown, byBytes } = page(lines, start, wanted);
   const end = start + shown;
-  const diagnostics: { severity: 'info'; code?: string; message: string }[] = [];
-  if (shown < wanted || (shown === 0)) diagnostics.push({ severity: 'info', code: 'truncated', message: `Showing lines ${start + 1}-${end} of ${total}${byBytes ? ` (${MAX_BYTES / 1024}KB limit)` : ''}. Use offset=${end + 1} to continue.` });
+  const diagnostics: Diagnostic[] = [];
+  const cut = [...new Set([...split].filter(([index]) => index >= start && index < end).map(([, original]) => original))];
+  if (cut.length) diagnostics.push({ severity: 'warn', code: 'truncated', message: `The converted text has ${cut.length === 1 ? 'a line' : 'lines'} longer than ${MAX_BYTES / 1024}KB (original line ${cut.join(', ')}); each is split into segments of at most ${MAX_BYTES / 1024}KB and every segment counts as one line for offset and limit.` });
+  if (shown < wanted) diagnostics.push({ severity: 'info', code: 'truncated', message: `Showing lines ${start + 1}-${end} of ${total}${byBytes ? ` (${MAX_BYTES / 1024}KB limit)` : ''}. Use offset=${end + 1} to continue.` });
   else if (end < total) diagnostics.push({ severity: 'info', message: `${total - end} more lines in file. Use offset=${end + 1} to continue.` });
   return { content: shownText === '' ? [] : [{ type: 'text', text: shownText }], diagnostics };
-}
-
-/** The leading bytes of the file the call names, through the call's env (Pi's FileSystem); undefined when they cannot be read. */
-async function head(api: ToolExecutionApi, absolute: string, context: Context): Promise<Uint8Array | undefined> {
-  if (api.env === undefined) return undefined;
-  const opened = await api.env.openBinaryReader(absolute, undefined, context);
-  if (!opened.ok) return undefined;
-  try {
-    const bytes = await opened.value.read(0, SNIFF_BYTES, context);
-    return bytes.ok ? bytes.value : undefined;
-  } finally { await opened.value.close(context); }
 }
 
 /** Pi's `read`, extended to convert PDF, office and image files through the host's converter. An extension to select (after the extension that registers `read`, before the file guard). */
@@ -120,12 +128,7 @@ export function createConvertingRead(options: ConvertingReadOptions = {}) {
       const root = resolved.binding.root.replace(/\/+$/, '');
       const located = await workspaceRelative(api, root, args.path, context);
       if (located === undefined) return native(args, api, context);
-      const kind: FileKind = fileKind(located.path, await head(api, located.absolute, context));
-      if (kind === 'text') return native(args, api, context);
-      if (!options.convert) {
-        if (kind === 'image') return native(args, api, context);
-        return failure(`${args.path} is a ${kind} file; this agent has no converter, so it cannot be read as text here (unsupported).`, 'unsupported');
-      }
+      // The access check comes first, and the type is sniffed on the bytes the provider returned: nothing is read around it.
       const { files } = resolved.binding;
       const access = options.resolveAccess ? await options.resolveAccess(api, context) : resolved.binding.access;
       if (access === undefined) return failure('Refused: the host gave no access for this workspace.', 'denied');
@@ -133,11 +136,19 @@ export function createConvertingRead(options: ConvertingReadOptions = {}) {
       if (read.kind === 'missing') return native(args, api, context);
       if (read.kind !== 'available') return failure(`Refused: ${args.path} cannot be read here (${read.reason}).`, 'denied');
       const { snapshot } = read;
+      const head = snapshot.bytes.subarray(0, SNIFF_BYTES);
+      const kind: FileKind = fileKind(located.path, head);
+      if (kind === 'text') return native(args, api, context);
+      if (kind === 'archive' || kind === 'binary') return failure(`${args.path} is ${kind === 'archive' ? 'an archive' : 'a binary file'}; it cannot be read as text here (unsupported).`, 'unsupported');
+      if (!options.convert) {
+        if (kind === 'image') return native(args, api, context);
+        return failure(`${args.path} is a ${kind} file; this agent has no converter, so it cannot be read as text here (unsupported).`, 'unsupported');
+      }
       if (snapshot.bytes.byteLength > maxBytes) return failure(`${args.path} is larger than ${maxBytes} bytes and is not converted.`, 'too_large');
       const key = `${located.path}@${snapshot.ref.revision}`;
       let text = await options.cache?.get(key);
       if (text === undefined) {
-        const result = await options.convert({ name: located.path.slice(located.path.lastIndexOf('/') + 1), mediaType: mediaTypeFor(located.path, kind, snapshot.mediaType), bytes: snapshot.bytes });
+        const result = await options.convert({ name: located.path.slice(located.path.lastIndexOf('/') + 1), mediaType: mediaTypeFor(located.path, kind, snapshot.mediaType, head), bytes: snapshot.bytes });
         if ('error' in result) return failure(`${args.path} could not be converted to text: ${result.error}`, 'unavailable');
         text = result.text;
         await options.cache?.set(key, text);

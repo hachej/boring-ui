@@ -84,17 +84,84 @@ test('a PDF, an office file and an image are converted once per saved revision, 
   assert.match((await f.run({ path: 'scan.png' })).text, /^text of scan\.png/);
 });
 
-test('a PDF is detected by its magic number under a text-looking name, and a binary file under an unknown name is not read as text', async t => {
-  const f = await fixture(t, { convert: async ({ name }) => ({ text: `converted ${name}` }) });
+test('a PDF is detected by its magic number under a text-looking name and reaches convert as application/pdf', async t => {
+  const seen = [];
+  const f = await fixture(t, { convert: async ({ name, mediaType }) => { seen.push(mediaType); return { text: `converted ${name}` }; } });
   f.put('actually-a-pdf.txt', PDF);
-  f.put('blob.bin', Buffer.from([1, 2, 0, 3, 4]));
+  f.put('photo.jpg', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]));
   assert.equal((await f.run({ path: 'actually-a-pdf.txt' })).text, 'converted actually-a-pdf.txt');
-  assert.equal((await f.run({ path: 'blob.bin' })).text, 'converted blob.bin');
+  assert.equal((await f.run({ path: 'photo.jpg' })).text, 'converted photo.jpg');
+  assert.deepEqual(seen, ['application/pdf', 'image/png'], 'the signature names the media type, not the extension');
   assert.equal(fileKind('x.pdf'), 'pdf');
   assert.equal(fileKind('x.bin', encoder.encode('%PDF-1.7')), 'pdf');
   assert.equal(fileKind('x.docx', Buffer.from([0x50, 0x4b, 3, 4])), 'office');
   assert.equal(fileKind('x.dat', Buffer.from([0x50, 0x4b, 3, 4])), 'archive');
   assert.equal(fileKind('notes.md', encoder.encode('# hi')), 'text');
+});
+
+test('archives and NUL binaries answer unsupported and are never sent to convert', async t => {
+  let calls = 0;
+  const f = await fixture(t, { convert: async () => { calls++; return { text: 'x' }; } });
+  f.put('bundle.zip', Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('zip body')]));
+  f.put('blob.bin', Buffer.from([1, 2, 0, 3, 4]));
+  for (const path of ['bundle.zip', 'blob.bin']) {
+    const result = await f.run({ path });
+    assert.equal(result.isError, true, path);
+    assert.match(result.text, /unsupported/, path);
+  }
+  assert.equal(calls, 0);
+});
+
+test('the type is sniffed on the provider\'s bytes after its access check: a refused text file is not read natively', async t => {
+  const f = await fixture(t, { guard: false, read: async () => ({ kind: 'denied', reason: 'no access' }) });
+  f.put('notes.md', 'PRIVATE NOTES\n');
+  const result = await f.run({ path: 'notes.md' });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /^Refused: notes\.md cannot be read here \(no access\)/);
+  assert.doesNotMatch(result.all, /PRIVATE NOTES/);
+});
+
+test('a converted line longer than 50 KB loses nothing: it is split into segments, reported, and the offset continues inside it', async t => {
+  const line = 'x'.repeat(60_000);
+  const f = await fixture(t, { convert: async () => ({ text: `head\n${line}\ntail` }) });
+  f.put('wide.pdf', PDF);
+  const first = await f.run({ path: 'wide.pdf' });
+  assert.equal(first.text, 'head', 'the next line does not fit beside it');
+  const second = await f.run({ path: 'wide.pdf', offset: 2 });
+  assert.equal(second.text.length, 51_200);
+  assert.match(second.notes, /longer than 50KB \(original line 2\).*split into segments/);
+  assert.match(second.notes, /Use offset=3 to continue/);
+  const third = await f.run({ path: 'wide.pdf', offset: 3, limit: 1 });
+  assert.equal(third.text.length, 60_000 - 51_200);
+  assert.equal(second.text + third.text, line, 'every byte of the line is reachable');
+  assert.equal((await f.run({ path: 'wide.pdf', offset: 4 })).text, 'tail');
+});
+
+test('a long multi-byte line is split on character boundaries', async t => {
+  const line = '\u00e9\u{1F600}'.repeat(10_000); // 60 000 bytes
+  const f = await fixture(t, { convert: async () => ({ text: line }) });
+  f.put('accents.pdf', PDF);
+  const parts = [];
+  for (let offset = 1; ; offset++) {
+    const result = await f.run({ path: 'accents.pdf', offset });
+    if (result.isError) break;
+    assert.ok(Buffer.byteLength(result.text) <= 51_200);
+    assert.doesNotMatch(result.text, /\uFFFD/);
+    parts.push(result.text);
+  }
+  assert.equal(parts.length, 2);
+  assert.equal(parts.join(''), line);
+});
+
+test('many short lines stop at the 50 KB byte limit with the offset of the next line', async t => {
+  const body = Array.from({ length: 1000 }, (_, i) => `${String(i + 1).padStart(4, '0')}${'y'.repeat(95)}`).join('\n'); // 100 bytes per line
+  const f = await fixture(t, { convert: async () => ({ text: body }) });
+  f.put('rows.pdf', PDF);
+  const first = await f.run({ path: 'rows.pdf' });
+  const shown = first.text.split('\n').length;
+  assert.ok(Buffer.byteLength(first.text) <= 51_200);
+  assert.match(first.notes, new RegExp(`Showing lines 1-${shown} of 1000 \\(50KB limit\\)\\. Use offset=${shown + 1} to continue\\.`));
+  assert.ok((await f.run({ path: 'rows.pdf', offset: shown + 1 })).text.startsWith(String(shown + 1).padStart(4, '0')));
 });
 
 test('pages like Pi\'s read: offset is a 1-based line, limit a line count, and the note names the offset to continue from', async t => {

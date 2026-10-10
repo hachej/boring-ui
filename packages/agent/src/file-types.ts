@@ -71,11 +71,26 @@ const OFFICE_TYPES: Readonly<Record<string, string>> = {
   rtf: 'application/rtf', epub: 'application/epub+zip',
 };
 
-/** The media type a converter should be told for a file of this kind: the provider's when it names one, else the table's (a provider often says `application/octet-stream`). */
-export function mediaTypeFor(path: string, kind: FileKind, provided: string | undefined): string {
-  if (provided && provided !== 'application/octet-stream') return provided;
+/** The media type a file's leading bytes name (a PDF or an image signature), or undefined. */
+export function sniffedMediaType(head: Uint8Array): string | undefined {
+  if (startsWith(head, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'application/pdf';
+  if (startsWith(head, [0x89, 0x50, 0x4e, 0x47])) return 'image/png';
+  if (startsWith(head, [0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (startsWith(head, [0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+  if (startsWith(head, [0x52, 0x49, 0x46, 0x46]) && startsWith(head, [0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
+  return undefined;
+}
+
+/**
+ * The media type a converter should be told. A signature in the leading bytes wins over everything (a PDF named `.txt` is
+ * `application/pdf`, whatever the provider derived from the name); then the provider's type unless it is generic; then the table's.
+ */
+export function mediaTypeFor(path: string, kind: FileKind, provided: string | undefined, head?: Uint8Array): string {
+  const sniffed = head === undefined ? undefined : sniffedMediaType(head);
+  if (sniffed !== undefined) return sniffed;
   const extension = extensionOf(path);
-  if (kind === 'pdf') return 'application/pdf';
-  if (kind === 'image') return IMAGES[extension]?.mediaType ?? 'application/octet-stream';
-  return OFFICE_TYPES[extension] ?? 'application/octet-stream';
+  const table = kind === 'pdf' ? 'application/pdf' : kind === 'image' ? IMAGES[extension]?.mediaType : kind === 'office' ? OFFICE_TYPES[extension] : undefined;
+  const generic = !provided || provided === 'application/octet-stream' || provided.startsWith('text/') || provided === 'application/zip';
+  if (!generic) return provided;
+  return table ?? provided ?? 'application/octet-stream';
 }

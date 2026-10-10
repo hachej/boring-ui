@@ -20,6 +20,9 @@ import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
  *    last-read one. Creating a file is allowed only while it is absent. After a successful `write` or `edit` the baseline is
  *    the revision just written.
  *
+ * Only the exact spelling the provider observed is ever delegated: a `read` or `edit` of a missing path is refused, so Pi's
+ * fallback spellings (NFD, curly apostrophe, narrow space) can never open a file the containment check did not see.
+ *
  * Pi's `edit` matches `oldText` exactly first and only then falls back to a fuzzy match (Unicode normalisation, trailing
  * whitespace, smart quotes, dashes and special spaces); that is Pi's behaviour and the guard does not change it. A shell write
  * (`bash`) is not intercepted, but it changes the revision, so the next `write` or `edit` of that file is refused until read.
@@ -128,6 +131,9 @@ export function createFileGuard(options: FileGuardOptions = {}) {
         const before = await observe(path);
         if (mode === 'read') {
           if (before.kind === 'refused') return refusal(`Refused: ${path} cannot be read here (${before.reason}).`);
+          // Pi's read falls back to other spellings of a missing path (NFD, a curly apostrophe, a narrow space before AM/PM). The
+          // provider and the containment check only vouch for this spelling, so a missing one is refused here and never delegated.
+          if (before.kind === 'missing') return refusal(`Refused: ${path} does not exist in the workspace.`);
           const result = await run();
           if (result.isError || before.kind !== 'file') return result;
           // Record only the bytes the model saw: a change during the call (a shell) leaves the baseline alone.
@@ -136,6 +142,7 @@ export function createFileGuard(options: FileGuardOptions = {}) {
           return result;
         }
         if (before.kind === 'refused') return refusal(`Refused: ${path} cannot be changed here (${before.reason}).`);
+        if (mode === 'edit' && before.kind === 'missing') return refusal(`Refused: ${path} does not exist in the workspace.`);
         if (before.kind === 'file') {
           const known = await lastReadRevision(api, key, context);
           if (known === undefined) return refusal(`Refused: ${path} already exists and you have not read it in this conversation. Read it with the read tool, then make your change.`);

@@ -87,3 +87,30 @@ test('a symlink that stays inside the workspace and a new file under a real dire
   assert.equal(created.isError, false, created.text);
   assert.equal(readFileSync(join(f.workspace, 'docs/new.md'), 'utf8'), 'hello\n');
 });
+
+test('a missing spelling is refused before Pi\'s read can fall back to another one (NFC name, NFD symlink to outside)', async t => {
+  const f = await fixture(t);
+  writeFileSync(join(f.elsewhere, 'secret.md'), 'OUTSIDE SECRET\n');
+  symlinkSync(f.elsewhere, join(f.workspace, 'café'.normalize('NFD')));
+  const nfc = 'café/secret.md'.normalize('NFC');
+  for (const [name, args] of [['read', { path: nfc }], ['edit', { path: nfc, edits: [{ oldText: 'OUTSIDE', newText: 'pwned' }] }]]) {
+    const result = await f.run(name, args);
+    assert.equal(result.isError, true, name);
+    assert.match(result.text, /^Refused:/, name);
+    assert.doesNotMatch(result.text, /OUTSIDE SECRET/, name);
+  }
+  assert.equal(readFileSync(join(f.elsewhere, 'secret.md'), 'utf8'), 'OUTSIDE SECRET\n');
+});
+
+test('Pi\'s other read fallbacks (curly apostrophe, narrow space before AM/PM) cannot reach a file the provider did not observe', async t => {
+  const f = await fixture(t);
+  writeFileSync(join(f.elsewhere, 'a.md'), 'OUTSIDE A\n');
+  writeFileSync(join(f.elsewhere, 'b.md'), 'OUTSIDE B\n');
+  symlinkSync(join(f.elsewhere, 'a.md'), join(f.workspace, 'it’s.md'));
+  symlinkSync(join(f.elsewhere, 'b.md'), join(f.workspace, 'Shot 9.41 AM.md'));
+  for (const path of ['it\'s.md', 'Shot 9.41 AM.md']) {
+    const result = await f.run('read', { path });
+    assert.equal(result.isError, true, path);
+    assert.doesNotMatch(result.text, /OUTSIDE/, path);
+  }
+});
