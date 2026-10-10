@@ -135,16 +135,30 @@ export interface MentionTrigger { readonly query: string; readonly start: number
 export function mentionTrigger(text: string, caret: number): MentionTrigger | null {
   const before = text.slice(0, caret);
   const match = /(^|\s)@(\S*)$/.exec(before);
-  return match ? { query: match[2]!, start: before.length - match[2]!.length - 1, end: caret } : null;
+  // A typed opening quote (`@"Meeting`) is not part of the search; the token starts at the `@` either way.
+  return match ? { query: match[2]!.replace(/^"/, ''), start: before.length - match[2]!.length - 1, end: caret } : null;
 }
+
+/**
+ * The text of a mention of `path`. A path with whitespace or a quote is written in double quotes, `@"docs/Meeting notes.md"`, with `\`
+ * and `"` escaped, because a bare mention ends at a space. Any other path stays bare (`@docs/plan.md`), as it always was.
+ */
+export function mentionToken(path: string): string {
+  return /[\s"]/.test(path) ? `@"${path.replace(/[\\"]/g, '\\$&')}"` : `@${path}`;
+}
+/**
+ * The `@` tokens of a message, bare or quoted: group 1 is the character before the `@` (or the start), group 2 the quoted body (escapes
+ * still in it), group 3 the bare path. `test/contracts/pi-chat-source.test.mjs` keeps `mentionedPaths` in the agent package equal to this.
+ */
+export const MENTION_TOKEN = /(^|\s)@(?:"((?:[^"\\]|\\.)*)"|([^\s]+))/g;
 
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const BOUNDARY = '[^A-Za-z0-9_./-]';
 export function hasMention(text: string, path: string): boolean {
-  return new RegExp(`(^|${BOUNDARY})@${escape(path)}($|${BOUNDARY})`).test(text);
+  return new RegExp(`(^|${BOUNDARY})${escape(mentionToken(path))}($|${BOUNDARY})`).test(text);
 }
 export function removeMention(text: string, path: string): string {
-  return text.replace(new RegExp(`(^|${BOUNDARY})@${escape(path)}(?=$|${BOUNDARY})[ ]?`), '$1').replace(/^[ ]+/, '');
+  return text.replace(new RegExp(`(^|${BOUNDARY})${escape(mentionToken(path))}(?=$|${BOUNDARY})[ ]?`), '$1').replace(/^[ ]+/, '');
 }
 
 export type Piece = { readonly text: string; readonly kind?: 'mention' | 'skill'; readonly value?: string };
@@ -154,11 +168,14 @@ export function pieces(text: string, options: { readonly mentions: boolean; read
   const skill = options.skills.length ? new RegExp(`^/(${options.skills.map(escape).join('|')})(?=\\s|$)`).exec(text) : null;
   if (skill) found.push({ start: 0, end: skill[0].length, kind: 'skill', value: skill[1]! });
   if (options.mentions) {
-    for (const match of text.matchAll(/(^|\s)@([^\s]+)/g)) {
-      const path = match[2]!.replace(/[.,;:!?)\]}'"]+$/, '');
+    for (const match of text.matchAll(MENTION_TOKEN)) {
+      // A quoted path keeps its punctuation (the closing quote ends it); a bare one drops trailing punctuation, as a sentence would.
+      const quoted = match[2] !== undefined;
+      const path = quoted ? match[2]!.replace(/\\(.)/g, '$1') : match[3]!.replace(/[.,;:!?)\]}'"]+$/, '');
       if (!path) continue;
       const start = match.index! + match[1]!.length;
-      found.push({ start, end: start + 1 + path.length, kind: 'mention', value: path });
+      const end = quoted ? match.index! + match[0].length : start + 1 + path.length;
+      found.push({ start, end, kind: 'mention', value: path });
     }
   }
   const out: Piece[] = [];

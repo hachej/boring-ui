@@ -5,6 +5,7 @@ import { frenchViewerLabels } from '../viewers/viewer-labels-fr';
 export const frenchAppLabels: AppLabels = {
   ...frenchViewerLabels,
   sessionsTitle: 'Conversations',
+  attachmentTooLarge: (limit: string) => `Plus grand que ${limit}. Non enregistré.`,
   workspaceNavigation: 'Navigation',
   openNavigation: 'Ouvrir la navigation',
   closeNavigation: 'Fermer la navigation',

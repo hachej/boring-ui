@@ -27,12 +27,12 @@ export const MENTION_FILE_PREFIX = '<file path="';
 
 const IMAGE_TYPES: Readonly<Record<string, string>> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 
-/** The `@path` tokens of a message: at the start or after whitespace, trailing punctuation dropped (the syntax pi-chat produces). The registry item `pi-chat` cannot import this, so it copies the
- * parser (`pieces` in `registry/pi-chat/config.ts`); `test/contracts/pi-chat-source.test.mjs` keeps the two equal. */
+/** The `@path` tokens of a message: at the start or after whitespace; a bare path drops trailing punctuation, a quoted `@"a b.md"` (escapes `\"`, `\\`) is taken as written. The syntax pi-chat produces. The registry item `pi-chat` cannot import this, so it copies the
+ * parser (`MENTION_TOKEN` and `pieces` in `registry/pi-chat/config.ts`); `test/contracts/pi-chat-source.test.mjs` keeps the two equal. */
 export function mentionedPaths(text: string): string[] {
   const found = new Set<string>();
-  for (const match of text.matchAll(/(^|\s)@([^\s]+)/g)) {
-    const path = match[2]!.replace(/[.,;:!?)\]}'"]+$/, '');
+  for (const match of text.matchAll(/(^|\s)@(?:"((?:[^"\\]|\\.)*)"|([^\s]+))/g)) {
+    const path = match[2] !== undefined ? match[2].replace(/\\(.)/g, '$1') : match[3]!.replace(/[.,;:!?)\]}'"]+$/, '');
     if (path) found.add(path);
   }
   return [...found];

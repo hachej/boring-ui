@@ -180,7 +180,7 @@ test('revision attachments preserve image bytes and successful files beside a re
   await f.controller.upload({ path: 'uploads/existing.txt', bytes: new Uint8Array([5]) });
   const image = new File([new Uint8Array([137, 80, 78, 71])], 'image.png', { type: 'image/png' });
   const duplicate = new File(['replacement'], 'existing.txt', { type: 'text/plain' });
-  const results = await uploadRevisionAttachments(f.controller, [image, duplicate], signal);
+  const results = await uploadRevisionAttachments(f.controller, [image, duplicate], signal, undefined, { inlineImages: true });
   assert.equal(results.length, 2); assert.match(results[0].path, /^uploads\/image-[0-9a-f]{8}\.png$/); assert.equal(results[0].name, 'image.png');
   assert.equal(results[0].image.mimeType, 'image/png'); assert.deepEqual(Buffer.from(results[0].image.data, 'base64'), Buffer.from([137, 80, 78, 71]));
   assert.match(results[1].path, /^uploads\/existing-[0-9a-f]{8}\.txt$/, 'an attachment never overwrites; a same-named one is saved beside it');
@@ -193,6 +193,28 @@ test('revision attachments preserve image bytes and successful files beside a re
   const partial = await uploadRevisionAttachments(f.controller, [new File(['ok'], 'another.txt'), unreadable], signal, (name, reason) => failures.push({ name, reason }));
   assert.equal(partial.length, 1); assert.match(partial[0].path, /^uploads\/another-[0-9a-f]{8}\.txt$/);
   assert.deepEqual(failures, [{ name: 'unreadable.txt', reason: 'Local file is unavailable' }]);
+});
+
+test('chat uploads are reference-only by default, whitespace-free, and refuse files over maxBytes before saving them', async t => {
+  const { build } = await import('esbuild'); const { mkdirSync } = await import('node:fs');
+  const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
+  const output = new URL('revision-files.mjs', out);
+  await build({ entryPoints: [new URL('../../registry/pi-app/revision-files.ts', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', packages: 'external' });
+  const { uploadRevisionAttachments, attachmentPath } = await import(output.href);
+  const f = fixture(t); const signal = new AbortController().signal;
+  const png = () => new File([new Uint8Array([137, 80, 78, 71])], 'Screen shot  2026.png', { type: 'image/png' });
+  const [reference] = await uploadRevisionAttachments(f.controller, [png()], signal);
+  assert.equal(reference.image, undefined, 'no inline base64 unless inlineImages is set');
+  assert.match(reference.path, /^uploads\/Screen_shot_2026-[0-9a-f]{8}\.png$/, 'a whitespace run becomes _ so a mention ends at the name');
+  assert.doesNotMatch(attachmentPath('a\tb c.txt'), /\s/);
+  assert.match(attachmentPath('no extension'), /^uploads\/no_extension-[0-9a-f]{8}$/);
+  const before = f.controller.getSnapshot().uploads.length;
+  const refused = [];
+  await assert.rejects(uploadRevisionAttachments(f.controller, [new File(['0123456789'], 'big file.txt')], signal, (name, reason) => refused.push({ name, reason }), { maxBytes: 4, tooLarge: 'Larger than 4 bytes. Not saved.' }), /Larger than 4 bytes/);
+  assert.deepEqual(refused, [{ name: 'big file.txt', reason: 'Larger than 4 bytes. Not saved.' }]);
+  assert.equal(f.controller.getSnapshot().uploads.length, before, 'a refused file is never uploaded');
+  const kept = await uploadRevisionAttachments(f.controller, [new File(['0123456789'], 'big file.txt'), new File(['ok'], 'small.txt')], signal, undefined, { maxBytes: 4 });
+  assert.equal(kept.length, 1); assert.match(kept[0].path, /^uploads\/small-[0-9a-f]{8}\.txt$/, 'the file under the limit is still attached');
 });
 
 test('a concurrent upload of different bytes to the same path is refused, the same bytes share the first upload', async t => {
