@@ -317,11 +317,11 @@ async function codeInterpreterFixture(t, users = ['user-a', 'user-b']) {
   const fake = await startFakeCodeInterpreter({ accessPoints: Object.fromEntries(users.map(user => [arn(user), join(efs, 'users', user)])) });
   t.after(() => fake.close());
   const client = await fake.client();
-  const open = (user, uid, session) => {
+  const open = (user, uid, session, extra = {}, startExtra = {}) => {
     const layout = efsUserLayout({ userId: user, uid, runtimeMountPath: efs });
     mkdirSync(layout.runtime.root, { recursive: true });
-    return createCodeInterpreterEnv({ client, codeInterpreterIdentifier: fake.codeInterpreterIdentifier, id: layout.namespaceId, pollIntervalMs: 20,
-      session: session ?? { start: { filesystemConfigurations: [layout.filesystemConfiguration({ accessPointArn: arn(user), fileSystemArn: 'arn:aws:elasticfilesystem:us-east-1:000000000000:file-system/fs-0' })] } },
+    return createCodeInterpreterEnv({ client, codeInterpreterIdentifier: fake.codeInterpreterIdentifier, id: layout.namespaceId, pollIntervalMs: 20, ...extra,
+      session: session ?? { start: { ...startExtra, filesystemConfigurations: [layout.filesystemConfiguration({ accessPointArn: arn(user), fileSystemArn: 'arn:aws:elasticfilesystem:us-east-1:000000000000:file-system/fs-0' })] } },
       mount: { path: layout.interpreter.mountPath, root: layout.runtime.root } });
   };
   return { fake, arn, open, efsUserLayout };
@@ -329,7 +329,7 @@ async function codeInterpreterFixture(t, users = ['user-a', 'user-b']) {
 
 test('Code Interpreter env: file tools and interpreter commands share one folder; output, exit codes, timeout, abort and loss map to native results', { timeout: 30000 }, async t => {
   const { fake, open } = await codeInterpreterFixture(t);
-  const interpreter = open('user-a', 2001), env = interpreter.env;
+  const interpreter = open('user-a', 2001, undefined, { renew: 'manual' }), env = interpreter.env;
   assert.equal(interpreter.sessionId(), undefined, 'the session starts on the first command, not before');
   getOrThrow(await env.writeFile('notes/plan.md', 'draft\n', context));
   let output = '';
@@ -346,13 +346,15 @@ test('Code Interpreter env: file tools and interpreter commands share one folder
   const aborted = await env.exec('sleep 5', {}, cancelled.context);
   assert.equal(aborted.ok ? 'ok' : aborted.error.code, 'aborted');
   assert.equal(fake.calls.filter(call => call.name === 'stopTask').length, 2, 'timeout and abort both request stopTask');
-  // The service ends the session: commands report it, nothing restarts on its own, renew() is the owner's explicit choice.
+  // renew: 'manual' (the old behaviour): the service ends the session, commands report it, nothing restarts on its own, renew() is the owner's explicit choice.
   const first = interpreter.sessionId();
   fake.expire(first);
   const gone = await env.exec('true', {}, context);
   assert.equal(gone.ok ? 'ok' : gone.error.code, 'shell_unavailable');
   assert.equal(interpreter.lost(), true);
   assert.equal(getOrThrow(await env.readTextFile('notes/plan.md', context)), 'draft\nreviewed\n', 'files on the mount outlive the session');
+  const stillGone = await env.exec('true', {}, context);
+  assert.equal(stillGone.ok ? 'ok' : stillGone.error.code, 'shell_unavailable', 'manual mode never restarts by itself');
   assert.equal(interpreter.renew(), true);
   assert.equal(getOrThrow(await env.exec('cat notes/plan.md', {}, context)).exitCode, 0);
   assert.notEqual(interpreter.sessionId(), first);
@@ -369,8 +371,90 @@ test('Code Interpreter env: file tools and interpreter commands share one folder
   const borrowed = open('user-a', 2001, { sessionId: owner.sessionId() });
   assert.equal(borrowed.owned, false);
   assert.equal(getOrThrow(await borrowed.env.exec('cat notes/plan.md', {}, context)).exitCode, 0);
+  // A borrowed session is always manual, whatever renew says: the owner of the session decides.
+  const borrowedAuto = open('user-a', 2001, { sessionId: owner.sessionId() }, { renew: 'auto' });
+  fake.expire(owner.sessionId());
+  for (let i = 0; i < 2; i++) { const dead = await borrowedAuto.env.exec('true', {}, context); assert.equal(dead.ok ? 'ok' : dead.error.code, 'shell_unavailable'); }
+  assert.equal(borrowedAuto.renew(), false);
   await borrowed.stop(context);
   assert.equal(fake.calls.filter(call => call.operation === 'StopCodeInterpreterSession').length, 1);
+});
+
+const starts = fake => fake.calls.filter(call => call.operation === 'StartCodeInterpreterSession').length;
+const codeOf = result => result.ok ? 'ok' : result.error.code;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+test('Code Interpreter env (renew auto): a session lost mid-turn fails that command once, and the next command starts a new session with no host call', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2001), env = interpreter.env;
+  getOrThrow(await env.writeFile('kept.txt', 'kept\n', context));
+  assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
+  const first = interpreter.sessionId();
+  const running = env.exec('sleep 5', {}, context);
+  await delay(200); fake.expire(first);
+  assert.equal(codeOf(await running), 'shell_unavailable', 'the running command is reported, never replayed');
+  assert.equal(starts(fake), 1, 'no session was started behind the failing command');
+  assert.equal(interpreter.lost(), true);
+  assert.equal(getOrThrow(await env.exec('cat kept.txt', {}, context)).exitCode, 0, 'the next command works without renew()');
+  assert.notEqual(interpreter.sessionId(), first);
+  assert.equal(interpreter.lost(), false);
+  assert.equal(starts(fake), 2);
+});
+
+test('Code Interpreter env (renew auto): expiry under concurrent and background commands fails each of them once and starts exactly one new session', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2001), env = interpreter.env;
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  // Two long commands, as the harness's background tasks and a foreground call would be.
+  const background = [env.exec('sleep 5', {}, context), env.exec('sleep 5', {}, context)];
+  await delay(200); fake.expire(first);
+  assert.deepEqual((await Promise.all(background)).map(codeOf), ['shell_unavailable', 'shell_unavailable']);
+  // Two commands arrive together afterwards: one session, shared.
+  const next = await Promise.all([env.exec('true', {}, context), env.exec('true', {}, context)]);
+  assert.deepEqual(next.map(codeOf), ['ok', 'ok']);
+  assert.equal(starts(fake), 2);
+});
+
+test('Code Interpreter env (renew auto): a session is rotated before its time to live, never under a running command, and the old one is stopped', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2001, undefined, { rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
+  getOrThrow(await env.writeFile('kept.txt', 'kept\n', context));
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  const long = env.exec('sleep 1.6; echo done', { onOutput: () => {} }, context);
+  await delay(1200); // older than ttl - margin, but a command runs
+  assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
+  assert.equal(interpreter.sessionId(), first, 'no rotation while a command is running');
+  assert.equal(getOrThrow(await long).exitCode, 0, 'the running command was not interrupted');
+  assert.equal(starts(fake), 1);
+  assert.equal(getOrThrow(await env.exec('cat kept.txt', {}, context)).exitCode, 0);
+  assert.notEqual(interpreter.sessionId(), first, 'rotated before the next command');
+  assert.equal(starts(fake), 2);
+  await delay(100);
+  assert.ok(fake.calls.some(call => call.operation === 'StopCodeInterpreterSession' && call.sessionId === first), 'the old session is stopped best-effort');
+  assert.equal(fake.sessions.get(first).live, false);
+});
+
+test('Code Interpreter env: only listed session-ended errors count as loss; permission errors do not', { timeout: 15000 }, async t => {
+  const { createCodeInterpreterEnv, SESSION_ENDED_ERRORS } = await import('@hachej/boring-execution/aws-code-interpreter');
+  assert.ok(SESSION_ENDED_ERRORS.length > 0);
+  const make = failure => {
+    const client = { send: async command => {
+      if (command.constructor.name === 'StartCodeInterpreterSessionCommand') return { sessionId: 'fictional-session' };
+      throw Object.assign(new Error(failure.message), { name: failure.name });
+    } };
+    return createCodeInterpreterEnv({ client, codeInterpreterIdentifier: 'fictional', id: 'ns', session: { start: {} }, mount: { path: '/mnt/workspace', root: process.cwd() } });
+  };
+  const denied = make({ name: 'AccessDeniedException', message: 'session terminated' });
+  assert.equal(codeOf(await denied.env.exec('true', {}, context)), 'shell_unavailable');
+  assert.equal(denied.lost(), false, 'a permission error is not a lost session');
+  const ended = make({ name: 'ValidationException', message: 'The session has been terminated' });
+  assert.equal(codeOf(await ended.env.exec('true', {}, context)), 'shell_unavailable');
+  assert.equal(ended.lost(), true);
+  const invalid = make({ name: 'ValidationException', message: 'Invalid command argument' });
+  assert.notEqual(codeOf(await invalid.env.exec('true', {}, context)), 'shell_unavailable');
+  assert.equal(invalid.lost(), false);
 });
 
 test('Code Interpreter env: two users never see each other\'s folders (own access point, confined file tools, symlinks included)', { timeout: 30000 }, async t => {

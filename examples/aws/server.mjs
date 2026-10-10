@@ -104,7 +104,14 @@ export async function startAwsHost({ port = 8080, hostname = '0.0.0.0', efsRoot 
     open: userId => openWorkspace(userId),
     idleMs: workspaceIdleMs,
     // Pi does not report when a call stops using its env: a workspace stays open while the harness has live work.
-    busy: async () => { const inspection = await harness.inspect(context); return Boolean(inspection && (inspection.tasks.length > 0 || inspection.submissions.length > 0)); },
+    // Per workspace: only live work of this user's conversations keeps their workspace open.
+    busy: async userId => {
+      const inspection = await harness.inspect(context);
+      if (!inspection) return false;
+      const ids = new Set([...inspection.tasks.map(task => task.record.conversationId), ...inspection.submissions.map(submission => submission.conversationId)]);
+      for (const id of ids) if (await userOfConversation(id, context) === userId) return true;
+      return false;
+    },
     onError: (error, userId) => console.error(`closing the workspace of ${userId}:`, error?.message ?? error),
   });
 
@@ -180,8 +187,6 @@ export async function startAwsHost({ port = 8080, hostname = '0.0.0.0', efsRoot 
     const lease = await workspaces.acquire(userId, context);
     try {
       const { interpreter, layout, files } = lease.workspace;
-      // An expired interpreter session was reported to the running command as lost; the next request starts a new one.
-      if (interpreter.lost() && interpreter.renew()) console.error(`code interpreter session of ${userId} was lost; the next command starts a new one`);
       if (op === 'files') return json({ files: await walk(interpreter.env, layout.interpreter.mountPath) });
       if (op === 'file') {
         const path = params.path ?? '';
