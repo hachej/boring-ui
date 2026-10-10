@@ -416,29 +416,9 @@ test('Code Interpreter env (renew auto): expiry under concurrent and background 
   assert.equal(starts(fake), 2);
 });
 
-test('Code Interpreter env (renew auto): a session is rotated before its time to live, never under a running command, and the old one is stopped', { timeout: 30000 }, async t => {
-  const { fake, open } = await codeInterpreterFixture(t);
-  const interpreter = open('user-a', 2001, undefined, { rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
-  getOrThrow(await env.writeFile('kept.txt', 'kept\n', context));
-  getOrThrow(await env.exec('true', {}, context));
-  const first = interpreter.sessionId();
-  const long = env.exec('sleep 1.6; echo done', { onOutput: () => {} }, context);
-  await delay(1200); // older than ttl - margin, but a command runs
-  assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
-  assert.equal(interpreter.sessionId(), first, 'no rotation while a command is running');
-  assert.equal(getOrThrow(await long).exitCode, 0, 'the running command was not interrupted');
-  assert.equal(starts(fake), 1);
-  assert.equal(getOrThrow(await env.exec('cat kept.txt', {}, context)).exitCode, 0);
-  assert.notEqual(interpreter.sessionId(), first, 'rotated before the next command');
-  assert.equal(starts(fake), 2);
-  await delay(100);
-  assert.ok(fake.calls.some(call => call.operation === 'StopCodeInterpreterSession' && call.sessionId === first), 'the old session is stopped best-effort');
-  assert.equal(fake.sessions.get(first).live, false);
-});
-
-// A client around the fake that can fail on demand: Start (after `startDelayMs`) and getTask with a transport error.
+// A client around the fake that can fail or delay on demand: Start, getTask (transport error), StopSession, and a start acknowledgement without its task id.
 function flaky(inner) {
-  const state = { failStart: false, failPoll: false, startDelayMs: 0, starts: 0 };
+  const state = { failStart: false, failPoll: false, startDelayMs: 0, starts: 0, failStopFor: new Set(), stopDelayMs: 0, dropTaskId: false };
   return { state, send: async (command, ...rest) => {
     const name = command.constructor.name;
     if (name === 'StartCodeInterpreterSessionCommand') {
@@ -446,59 +426,135 @@ function flaky(inner) {
       if (state.startDelayMs) await delay(state.startDelayMs);
       if (state.failStart) throw Object.assign(new Error('fictional start outage'), { name: 'ServiceUnavailableException' });
     }
+    if (name === 'StopCodeInterpreterSessionCommand') {
+      if (state.stopDelayMs) await delay(state.stopDelayMs);
+      if (state.failStopFor.has(command.input.sessionId)) throw Object.assign(new Error('fictional stop outage'), { name: 'ServiceUnavailableException' });
+    }
     if (name === 'InvokeCodeInterpreterCommand' && state.failPoll && command.input.name === 'getTask') throw Object.assign(new Error('fictional network reset'), { name: 'NetworkError' });
-    return inner.send(command, ...rest);
+    const response = await inner.send(command, ...rest);
+    if (name === 'InvokeCodeInterpreterCommand' && state.dropTaskId && command.input.name === 'startCommandExecution') {
+      return { ...response, stream: (async function* () {
+        for await (const event of response.stream) yield event.result ? { result: { ...event.result, structuredContent: { ...event.result.structuredContent, taskId: undefined } } } : event;
+      })() };
+    }
+    return response;
   } };
 }
 const stoppedSessions = fake => fake.calls.filter(call => call.operation === 'StopCodeInterpreterSession').map(call => call.sessionId);
 
-test('Code Interpreter env (renew auto): a command whose outcome is unknown keeps its session: no rotation, no stop, and nothing is replayed', { timeout: 30000 }, async t => {
+test('Code Interpreter env (renew auto): rotation switches new commands to a new session; a command running on the old one finishes there and nothing stops the old session', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2001, undefined, { rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
+  getOrThrow(await env.writeFile('kept.txt', 'kept\n', context));
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  await delay(800);
+  const long = env.exec('sleep 1.2; echo done >> long.txt', {}, context); // starts on `first`, just before it is due
+  await delay(400); // now older than ttl - margin, while the command runs
+  assert.equal(getOrThrow(await env.exec('cat kept.txt', {}, context)).exitCode, 0);
+  assert.notEqual(interpreter.sessionId(), first, 'the next command rotated although another still runs');
+  assert.equal(starts(fake), 2);
+  assert.equal(getOrThrow(await long).exitCode, 0, 'the running command is never interrupted');
+  assert.equal(getOrThrow(await env.readTextFile('long.txt', context)), 'done\n');
+  assert.deepEqual(stoppedSessions(fake), [], 'rotation never stops the old session');
+});
+
+test('Code Interpreter env (renew auto): a command that arrives during a rotation waits for the one new session, and falls back to the old one when it fails', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const client = flaky(await fake.client());
+  const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  await delay(1100); // due
+  client.state.startDelayMs = 200;
+  const together = await Promise.all([env.exec('true', {}, context), delay(50).then(() => env.exec('true', {}, context))]);
+  assert.deepEqual(together.map(codeOf), ['ok', 'ok']);
+  assert.equal(client.state.starts, 2, 'one start shared by both commands');
+  assert.notEqual(interpreter.sessionId(), first);
+  const second = interpreter.sessionId();
+  await delay(1100); // due again, and Start fails
+  client.state.failStart = true;
+  const failed = await Promise.all([env.exec('true', {}, context), delay(50).then(() => env.exec('true', {}, context))]);
+  assert.deepEqual(failed.map(codeOf), ['ok', 'ok'], 'the current session serves them');
+  assert.equal(interpreter.sessionId(), second);
+  assert.equal(client.state.starts, 3, 'one attempt');
+  client.state.startDelayMs = 0;
+  for (let i = 0; i < 4; i++) assert.equal(codeOf(await env.exec('true', {}, context)), 'ok');
+  assert.equal(client.state.starts, 3, 'backed off: no new Start on every command');
+  await delay(1100);
+  assert.equal(codeOf(await env.exec('true', {}, context)), 'ok');
+  assert.equal(client.state.starts, 4, 'one retry after the backoff');
+  assert.deepEqual(stoppedSessions(fake), []);
+});
+
+test('Code Interpreter env (renew auto): a command whose outcome is unknown is not replayed and not killed, and later commands run on a new session', { timeout: 30000 }, async t => {
   const { fake, open } = await codeInterpreterFixture(t);
   const client = flaky(await fake.client());
   const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
   getOrThrow(await env.exec('true', {}, context));
   const first = interpreter.sessionId();
   client.state.failPoll = true;
-  const unknown = await env.exec('sleep 1.5; echo ran >> ran.txt', {}, context);
-  assert.equal(codeOf(unknown), 'unknown', 'the transport failure is reported, not retried');
+  assert.equal(codeOf(await env.exec('sleep 1.5; echo ran >> ran.txt', {}, context)), 'unknown', 'the transport failure is reported, not retried');
   client.state.failPoll = false;
-  await delay(1200); // older than ttl - margin, while the remote task may still run
+  await delay(1200); // older than ttl - margin
   assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
-  assert.equal(interpreter.sessionId(), first, 'an unresolved task blocks rotation');
-  assert.equal(client.state.starts, 1);
+  assert.notEqual(interpreter.sessionId(), first);
   await delay(900);
-  assert.deepEqual(stoppedSessions(fake), [], 'the session running the unresolved task is not stopped');
-  assert.equal(getOrThrow(await env.readTextFile('ran.txt', context)), 'ran\n', 'the task finished once, on its own session');
+  assert.deepEqual(stoppedSessions(fake), [], 'the session running the unknown task is not stopped');
+  assert.equal(getOrThrow(await env.readTextFile('ran.txt', context)), 'ran\n', 'the task ran exactly once, on its own session');
 });
 
-test('Code Interpreter env (renew auto): a failed rotation keeps the old session for every command, backs off, and stop() still disposes the old session', { timeout: 30000 }, async t => {
+test('Code Interpreter env (renew auto): a start acknowledgement without a task id fails that command and never leads to stopping a live session', { timeout: 30000 }, async t => {
   const { fake, open } = await codeInterpreterFixture(t);
   const client = flaky(await fake.client());
   const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
   getOrThrow(await env.exec('true', {}, context));
   const first = interpreter.sessionId();
-  await delay(1100); // due for rotation
-  client.state.failStart = true; client.state.startDelayMs = 200;
-  // The command that triggers the rotation and one that arrives during it both succeed on the old session.
-  const together = await Promise.all([env.exec('true', {}, context), delay(50).then(() => env.exec('true', {}, context))]);
-  assert.deepEqual(together.map(codeOf), ['ok', 'ok']);
-  assert.equal(interpreter.sessionId(), first);
-  assert.equal(client.state.starts, 2, 'one rotation attempt');
-  client.state.startDelayMs = 0;
-  for (let i = 0; i < 4; i++) assert.equal(codeOf(await env.exec('true', {}, context)), 'ok');
-  assert.equal(client.state.starts, 2, 'no new Start on every following command');
+  client.state.dropTaskId = true;
+  assert.equal(codeOf(await env.exec('sleep 1; echo ran >> ran.txt', {}, context)), 'spawn_error');
+  client.state.dropTaskId = false;
+  await delay(1200);
+  assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
+  assert.notEqual(interpreter.sessionId(), first, 'new commands moved on');
+  await delay(900);
+  assert.deepEqual(stoppedSessions(fake), [], 'the session of the unacknowledged command is not stopped');
+  assert.equal(getOrThrow(await env.readTextFile('ran.txt', context)), 'ran\n');
+});
+
+test('Code Interpreter env (renew auto): stop() stops the current and every rotated-away session, keeps a failed stop tracked for the next stop(), and awaits stops in flight', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const client = flaky(await fake.client());
+  const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 60 }), env = interpreter.env;
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  fake.expire(first); // lost: the next command starts a second session
+  assert.equal(codeOf(await env.exec('true', {}, context)), 'shell_unavailable');
+  assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
+  const second = interpreter.sessionId();
+  assert.notEqual(second, first);
+  // A second env that rotates: both of its sessions are live.
+  const rotating = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 });
+  getOrThrow(await rotating.env.exec('true', {}, context));
+  const a = rotating.sessionId();
   await delay(1100);
-  assert.equal(codeOf(await env.exec('true', {}, context)), 'ok');
-  assert.equal(client.state.starts, 3, 'one retry after the backoff');
-  // stop() while a rotation is failing disposes the old session.
-  await delay(1100);
-  client.state.startDelayMs = 200;
-  const pending = env.exec('true', {}, context);
-  await delay(50);
+  getOrThrow(await rotating.env.exec('true', {}, context));
+  const b = rotating.sessionId();
+  assert.notEqual(a, b);
+  assert.deepEqual(stoppedSessions(fake), [], 'rotation stopped nothing');
+  client.state.failStopFor.add(a);
+  client.state.stopDelayMs = 150;
+  await assert.rejects(rotating.stop(context), /fictional stop outage/);
+  assert.equal(fake.sessions.get(b).live, false, 'the current session is stopped although the other stop failed');
+  assert.equal(fake.sessions.get(a).live, true, 'the failed stop is not forgotten');
+  client.state.failStopFor.clear();
+  await rotating.stop(context);
+  assert.equal(fake.sessions.get(a).live, false, 'the next stop() retries it');
+  const stopsSoFar = stoppedSessions(fake).length;
+  await rotating.stop(context);
+  assert.equal(stoppedSessions(fake).length, stopsSoFar, 'nothing left to stop');
+  // Stops in flight finish before stop() resolves.
   await interpreter.stop(context);
-  await pending;
-  assert.deepEqual(stoppedSessions(fake), [first], 'the old session is stopped by stop(), once');
-  assert.equal(fake.sessions.get(first).live, false);
+  assert.equal(fake.sessions.get(second).live, false);
 });
 
 test('Code Interpreter env: only listed session-ended errors count as loss; permission errors do not', { timeout: 15000 }, async t => {

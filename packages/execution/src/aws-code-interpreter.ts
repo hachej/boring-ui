@@ -45,7 +45,9 @@ export interface CodeInterpreterEnvOptions {
    * What happens after a started session is lost or nearly expired. `'auto'` (default for `{ start }`): the failing
    * command still returns `shell_unavailable` (it is never replayed: it may have had side effects) and the NEXT command
    * starts a new session; a session older than `sessionTimeoutSeconds - rotateMarginSeconds` is replaced before the next
-   * command, never while a command runs. `'manual'`: only `renew()` starts a new session. A borrowed session is always manual.
+   * command. Rotation only switches NEW commands: a command stays on the session it started in, and the old session is
+   * never stopped by rotation (it lingers until its own `sessionTimeoutSeconds`; a host that cares sets a shorter one).
+   * `'manual'`: only `renew()` starts a new session. A borrowed session is always manual.
    */
   readonly renew?: 'auto' | 'manual';
   /** Seconds before the session time to live at which `'auto'` rotates (default 60; at most half the time to live). */
@@ -63,7 +65,11 @@ export interface CodeInterpreterEnv {
   lost(): boolean;
   /** A started session only: after a loss, the next command starts a new session. Returns false for a borrowed session. */
   renew(): boolean;
-  /** Stops a started session (idempotent). A borrowed session is left running. `env.cleanup` never stops a session. */
+  /**
+   * Stops every session this env started and has not confirmed stopped (the current one and any rotated away from),
+   * and waits for them. A failed stop stays tracked, rejects, and is retried by the next `stop()`. A borrowed session is
+   * left running. `env.cleanup` never stops a session.
+   */
   stop(context: Context): Promise<void>;
 }
 
@@ -125,22 +131,20 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   const auto = start !== undefined && (options.renew ?? 'auto') === 'auto';
   const ttlMs = (start?.sessionTimeoutSeconds ?? 900) * 1000;
   const marginMs = Math.min((options.rotateMarginSeconds ?? 60) * 1000, ttlMs / 2);
-  let sessionId = borrowed, starting: Promise<string> | undefined, lost = false, stopped = false, incarnation = 0, startedAt = 0;
-  // Rotation: the old session stays `sessionId` until the new one is up; a failed Start backs off instead of retrying on every command.
-  let rotating: Promise<void> | undefined, rotateRetryAt = 0;
-  const retired = new Set<string>();
-  // Holds per session: a command pinned to it, or a remote task started there whose end is not confirmed (a transport
-  // failure leaves the task running). A session with holds is never rotated away from and never stopped proactively.
-  const holds = new Map<string, number>();
-  const hold = (id: string): void => { holds.set(id, (holds.get(id) ?? 0) + 1); };
-  const release = (id: string): void => {
-    const left = (holds.get(id) ?? 1) - 1;
-    if (left > 0) holds.set(id, left); else holds.delete(id);
-    if (left <= 0 && retired.delete(id)) void stopSession(id).catch(() => {});
-  };
-  const stopSession = async (id: string, signal?: AbortSignal): Promise<void> => {
-    try { await client.send(new StopCodeInterpreterSessionCommand({ codeInterpreterIdentifier, sessionId: id }), signal ? { abortSignal: signal } : {}); }
-    catch (error) { if (errorName(error) !== 'ResourceNotFoundException') throw error; }
+  let sessionId = borrowed, starting: Promise<string> | undefined, lost = false, stopped = false, incarnation = 0, startedAt = 0, rotateRetryAt = 0;
+  // Every session this env started and has not confirmed stopped (rotation never stops one), and the stops in flight.
+  const owned = new Set<string>(), stopping = new Map<string, Promise<void>>();
+  const stopSession = (id: string, signal?: AbortSignal): Promise<void> => {
+    let stop = stopping.get(id);
+    if (!stop) {
+      stop = (async () => {
+        try { await client.send(new StopCodeInterpreterSessionCommand({ codeInterpreterIdentifier, sessionId: id }), signal ? { abortSignal: signal } : {}); }
+        catch (error) { if (errorName(error) !== 'ResourceNotFoundException') throw error; }
+        owned.delete(id);
+      })().finally(() => { stopping.delete(id); });
+      stopping.set(id, stop);
+    }
+    return stop;
   };
   const local = new NodeExecutionEnv({ cwd: root });
 
@@ -154,50 +158,35 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     return begin();
   }
 
-  async function startRaw(): Promise<string> {
-    if (!start) throw new ServiceError('SessionMissing', 'No Code Interpreter session');
-    const response = await client.send(new StartCodeInterpreterSessionCommand({
-      codeInterpreterIdentifier,
-      ...(start.name === undefined ? {} : { name: start.name }),
-      ...(start.sessionTimeoutSeconds === undefined ? {} : { sessionTimeoutSeconds: start.sessionTimeoutSeconds }),
-      ...(start.filesystemConfigurations === undefined ? {} : { filesystemConfigurations: [...start.filesystemConfigurations] }),
-    }));
-    if (!response.sessionId) throw new ServiceError('SessionMissing', 'StartCodeInterpreterSession returned no session id');
-    return response.sessionId;
-  }
-
+  /** Starts a session: the first one, a replacement after a loss, or a rotation. One start at a time; callers share it. */
   function begin(): Promise<string> {
     if (!start) throw new ServiceError('SessionMissing', 'No Code Interpreter session');
-    const attempt = incarnation;
+    const attempt = incarnation, { name, sessionTimeoutSeconds, filesystemConfigurations } = start;
     return starting ??= (async () => {
-      const id = await startRaw();
-      if (attempt === incarnation) { sessionId = id; startedAt = Date.now(); }
+      const response = await client.send(new StartCodeInterpreterSessionCommand({
+        codeInterpreterIdentifier,
+        ...(name === undefined ? {} : { name }),
+        ...(sessionTimeoutSeconds === undefined ? {} : { sessionTimeoutSeconds }),
+        ...(filesystemConfigurations === undefined ? {} : { filesystemConfigurations: [...filesystemConfigurations] }),
+      }));
+      const id = response.sessionId;
+      if (!id) throw new ServiceError('SessionMissing', 'StartCodeInterpreterSession returned no session id');
+      owned.add(id);
+      if (attempt === incarnation && !stopped) { sessionId = id; startedAt = Date.now(); }
       return id;
     })().finally(() => { starting = undefined; });
   }
 
   /**
-   * Before a command (`'auto'` only): a lost session is replaced, and one near its time to live is rotated when it has
-   * no holds (no pinned command, no task whose end is unconfirmed). The old session stays current until the new one is
-   * up, so a failed Start leaves everything working on the old one and backs off; once replaced, the old one is stopped
-   * when its last hold ends.
+   * Before a command (`'auto'` only): a lost session is replaced, and one near its time to live is rotated. The old
+   * session stays current until the new one is up, so a failed Start leaves everything working on the old one and backs
+   * off. Rotation never stops the old session: commands running there finish, and it expires on its own.
    */
   async function prepare(): Promise<void> {
     if (!auto || stopped) return;
     if (lost) { lost = false; sessionId = undefined; incarnation++; return; }
-    const current = sessionId;
-    if (!current || starting || rotating || holds.has(current) || Date.now() < rotateRetryAt || Date.now() - startedAt <= ttlMs - marginMs) return;
-    const attempt = incarnation;
-    rotating = (async () => {
-      try {
-        const id = await startRaw();
-        if (attempt !== incarnation) { void stopSession(id).catch(() => {}); return; }
-        sessionId = id; startedAt = Date.now(); lost = false;
-        retired.add(current);
-        if (!holds.has(current)) { retired.delete(current); void stopSession(current).catch(() => {}); }
-      } catch { rotateRetryAt = Date.now() + Math.max(1000, marginMs / 4); }
-    })().finally(() => { rotating = undefined; });
-    await rotating;
+    if (!sessionId || (!starting && (Date.now() < rotateRetryAt || Date.now() - startedAt <= ttlMs - marginMs))) return;
+    try { await begin(); } catch { rotateRetryAt = Date.now() + Math.max(1000, marginMs / 4); }
   }
 
   /** One tool call; the streamed result, or a ServiceError for an exception (thrown or streamed). */
@@ -217,7 +206,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       if (!result) throw new ServiceError('EmptyResult', `${name} returned no result`);
       return result;
     } catch (error) {
-      if (sessionEnded(error) && id === sessionId) lost = true;
+      if (sessionEnded(error)) { owned.delete(id); if (id === sessionId) lost = true; }
       throw error;
     }
   }
@@ -233,12 +222,8 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   const text = (result: CodeInterpreterResult): string => (result.content ?? []).map(block => block.text ?? '').join('');
 
   const TERMINAL = new Set(['completed', 'failed', 'canceled']);
-  const gone = (error: unknown): boolean => sessionEnded(error) || ['SessionLost', 'SessionStopped', 'SessionMissing'].includes(errorName(error));
-  /** Asks the service to stop the task; true only when it is confirmed over (or its session is gone). */
-  async function stopTask(taskId: string, id: string): Promise<boolean> {
-    try { const stopped = await invoke('stopTask', { taskId }, undefined, id); return TERMINAL.has(stopped.structuredContent?.taskStatus ?? ''); }
-    catch (error) { return gone(error); /* otherwise reported as unconfirmed termination */ }
-  }
+  /** Asks the service to stop the task; the outcome is never assumed (the command's result says it is not confirmed). */
+  const stopTask = async (taskId: string, id: string): Promise<void> => { try { await invoke('stopTask', { taskId }, undefined, id); } catch { /* reported as unconfirmed termination */ } };
 
   async function exec(command: string, execOptions: ShellExecOptions | undefined, context: Context): Promise<Result<ShellExecResult, ExecutionError>> {
     if (context.abortSignal?.aborted) return err(new ExecutionError('aborted', 'Command aborted before dispatch'));
@@ -257,17 +242,12 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     let taskId: string | undefined, pinned: string;
     try {
       await prepare();
-      // Every call of this command goes to the session it started in, even if another command renews meanwhile.
+      // Every call of this command goes to the session it started in, even if a later command rotates.
       pinned = await session();
-    } catch (error) { return err(failure(error, 'spawn_error')); }
-    hold(pinned);
-    let settled = false;
-    const settle = (): void => { if (!settled) { settled = true; release(pinned); } };
-    try {
       const started = await invoke('startCommandExecution', { command: script }, context, pinned);
       taskId = started.structuredContent?.taskId;
-      if (!taskId) { settle(); return err(new ExecutionError('spawn_error', boundedMessage(`Code Interpreter did not start the command: ${text(started) || 'no task id'}`))); }
-    } catch (error) { if (gone(error)) settle(); return err(failure(error, 'spawn_error')); }
+      if (!taskId) return err(new ExecutionError('spawn_error', boundedMessage(`Code Interpreter did not start the command: ${text(started) || 'no task id'}`)));
+    } catch (error) { return err(failure(error, 'spawn_error')); }
 
     const deadline = execOptions?.timeout && execOptions.timeout > 0 ? Date.now() + execOptions.timeout * 1000 : undefined;
     const seen = { stdout: '', stderr: '' };
@@ -279,21 +259,19 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       if (delta) execOptions?.onOutput?.(delta, context, { stream });
     };
     for (;;) {
-      if (context.abortSignal?.aborted) { if (await stopTask(taskId, pinned)) settle(); return err(new ExecutionError('aborted', 'Command aborted; stopTask was requested, termination is not confirmed')); }
-      if (deadline !== undefined && Date.now() >= deadline) { if (await stopTask(taskId, pinned)) settle(); return err(new ExecutionError('timeout', `Command exceeded ${execOptions?.timeout} s; stopTask was requested, termination is not confirmed`)); }
+      if (context.abortSignal?.aborted) { await stopTask(taskId, pinned); return err(new ExecutionError('aborted', 'Command aborted; stopTask was requested, termination is not confirmed')); }
+      if (deadline !== undefined && Date.now() >= deadline) { await stopTask(taskId, pinned); return err(new ExecutionError('timeout', `Command exceeded ${execOptions?.timeout} s; stopTask was requested, termination is not confirmed`)); }
       let status;
       try {
         const polled = await invoke('getTask', { taskId }, context, pinned);
         status = polled.structuredContent;
         try { deliver('stdout', status?.stdout); deliver('stderr', status?.stderr); }
-        catch (error) { if (await stopTask(taskId, pinned)) settle(); return err(new ExecutionError('callback_error', boundedMessage(`Output callback failed: ${errorText(error)}`))); }
+        catch (error) { await stopTask(taskId, pinned); return err(new ExecutionError('callback_error', boundedMessage(`Output callback failed: ${errorText(error)}`))); }
         if (!status?.taskStatus) return err(new ExecutionError('unknown', boundedMessage(`getTask returned no task status: ${text(polled)}`)));
       } catch (error) {
         if (context.abortSignal?.aborted) continue;
-        if (gone(error)) settle(); // otherwise the task may still run: the session stays held
         return err(failure(error, 'unknown'));
       }
-      if (TERMINAL.has(status.taskStatus)) settle();
       if (status.taskStatus === 'completed' || (status.taskStatus === 'failed' && typeof status.exitCode === 'number')) return ok({ exitCode: status.exitCode ?? 0 });
       if (status.taskStatus === 'failed') return err(new ExecutionError('unknown', 'The command failed without an exit code'));
       if (status.taskStatus === 'canceled') return err(new ExecutionError('aborted', 'The command was canceled in the Code Interpreter'));
@@ -403,14 +381,10 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       return true;
     },
     stop: async context => {
-      if (!start || stopped) return;
+      if (!start) return;
       stopped = true;
-      // Let a start or rotation in flight finish, then dispose every session this env still owns.
-      await Promise.allSettled([starting, rotating]);
-      const ids = new Set<string>(retired);
-      if (sessionId && !lost) ids.add(sessionId);
-      retired.clear();
-      const results = await Promise.allSettled([...ids].map(id => stopSession(id, context.abortSignal)));
+      await Promise.allSettled([starting]); // a start in flight still registers its session
+      const results = await Promise.allSettled([...owned].map(id => stopSession(id, context.abortSignal)));
       const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
       if (failed) throw failed.reason;
     },
