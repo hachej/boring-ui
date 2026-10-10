@@ -116,6 +116,6 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "ignore": "5.3.2"
+    "ignore": "7.0.12"
   }
 }
