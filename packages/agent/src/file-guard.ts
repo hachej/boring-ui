@@ -69,14 +69,38 @@ const refusal = (text: string): ToolExecutionResult => ({ content: [{ type: 'tex
 // The same normalisation as Pi's tool paths: a leading "@" and special spaces.
 const normalised = (path: string) => { const spaced = path.replace(/[  -   　]/g, ' '); return spaced.startsWith('@') ? spaced.slice(1) : spaced; };
 
+/** `path` as the call's env names it, and relative to `root`, or undefined when it is not lexically inside `root` (or the call has no env). Pi's path normalisation applies. */
+export async function workspaceRelative(api: ToolExecutionApi, root: string, path: string, context: Context): Promise<{ readonly path: string; readonly absolute: string } | undefined> {
+  if (api.env === undefined) return undefined;
+  const absolute = getOrThrow(await api.env.absolutePath(normalised(path), context));
+  return absolute.startsWith(`${root}/`) ? { path: absolute.slice(root.length + 1), absolute } : undefined;
+}
+
 /** The guard as a native extension. Select it after the extension(s) that register `read`, `write` and `edit`. */
 export function createFileGuard(options: FileGuardOptions = {}) {
   const resolver = asWorkspaceResolver(options.workspace);
 
-  async function relative(api: ToolExecutionApi, root: string, path: string, context: Context): Promise<string | undefined> {
-    if (api.env === undefined) return undefined;
-    const absolute = getOrThrow(await api.env.absolutePath(normalised(path), context));
-    return absolute.startsWith(`${root}/`) ? absolute.slice(root.length + 1) : undefined;
+  /**
+   * Whether `absolute` really lies inside `root` once links are resolved, through the env's own `canonicalPath`. A path that does not
+   * exist yet is judged by its deepest existing ancestor, so a link directory cannot lead a new file out. Any other failure to resolve
+   * is a refusal: the guard fails closed.
+   */
+  async function contained(api: ToolExecutionApi, root: string, absolute: string, context: Context): Promise<boolean> {
+    const env = api.env;
+    if (env === undefined) return false;
+    const realRoot = await env.canonicalPath(root, context);
+    if (!realRoot.ok) return false;
+    const base = realRoot.value.replace(/\/+$/, '');
+    let candidate = absolute, rest = '';
+    for (;;) {
+      const real = await env.canonicalPath(candidate, context);
+      if (real.ok) { const resolved = `${real.value.replace(/\/+$/, '')}${rest}`; return resolved === base || resolved.startsWith(`${base}/`); }
+      if (real.error.code !== 'not_found') return false;
+      const cut = candidate.lastIndexOf('/');
+      if (cut <= 0) return false;
+      rest = `${candidate.slice(cut)}${rest}`;
+      candidate = candidate.slice(0, cut);
+    }
   }
   async function observeIn(files: WorkspaceBinding['files'], path: string, access: ResourceAccess): Promise<Observed> {
     const read = await files.read({ target: { resource: { providerId: files.providerId, path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, access);
@@ -88,7 +112,7 @@ export function createFileGuard(options: FileGuardOptions = {}) {
     const execute = async (args: Args, api: ToolExecutionApi, context: Context): Promise<ToolExecutionResult> => {
       const run = () => (tool.execute as (args: Args, api: ToolExecutionApi, context: Context) => Promise<ToolExecutionResult>)(args, api, context);
       const resolved = await workspaceFor(resolver, api, context);
-      if ('refused' in resolved) return mode === 'read' ? run() : refusal(`Refused: ${resolved.refused}`);
+      if ('refused' in resolved) return refusal(`Refused: ${resolved.refused}`);
       const { binding } = resolved;
       const { files } = binding;
       const root = binding.root.replace(/\/+$/, '');
@@ -96,12 +120,14 @@ export function createFileGuard(options: FileGuardOptions = {}) {
       if (granted === undefined) return refusal('Refused: the host gave no access for this workspace.');
       const access = { ...granted };
       const observe = (path: string) => observeIn(files, path, access);
-      const path = await relative(api, root, args.path, context);
-      if (path === undefined) return mode === 'read' ? run() : refusal(`Refused: ${args.path} is outside the workspace.`);
+      const located = await workspaceRelative(api, root, args.path, context);
+      if (located === undefined || !await contained(api, root, located.absolute, context)) return refusal(`Refused: ${args.path} is outside the workspace.`);
+      const { path } = located;
       const key = baselineKey(binding, path);
       return files.queue.run(async () => {
         const before = await observe(path);
         if (mode === 'read') {
+          if (before.kind === 'refused') return refusal(`Refused: ${path} cannot be read here (${before.reason}).`);
           const result = await run();
           if (result.isError || before.kind !== 'file') return result;
           // Record only the bytes the model saw: a change during the call (a shell) leaves the baseline alone.

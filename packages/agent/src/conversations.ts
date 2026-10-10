@@ -120,23 +120,37 @@ function summary(id: ConversationId, meta: Readonly<ConversationMetadata>): Conv
 }
 
 /**
- * The first user message and the last visible message of a conversation, read newest-first over at most `maxPages` pages of
- * 100 entries. Both are text, as `messageText` shows them.
+ * The first user message of a conversation, as `messageText` shows it. Pi's ascending entry scan (`order: 'ascending'`) stops at
+ * the first user message, so a long transcript is never read. `maxPages` (100 entries each) bounds the scan.
  */
-async function scanTitleAndLast(conversation: Conversation, context: Context, maxPages: number): Promise<{ title?: string; last?: string }> {
-  let cursor: Cursor | undefined, first: { id: bigint; text: string } | undefined, last: string | undefined;
+async function firstUserText(conversation: Conversation, context: Context, maxPages: number): Promise<string | undefined> {
+  let cursor: Cursor | undefined;
   for (let pages = 0; pages < maxPages; pages++) {
-    const page = await conversation.entries({}, 100, cursor, context);
+    const page = await conversation.entries({ order: 'ascending' }, 100, cursor, context);
     for (const entry of page.items) for (const message of entry.model ?? []) {
+      if (message.role !== 'user') continue;
       const text = messageText(message);
-      if (text === undefined) continue;
-      if (last === undefined) last = text;
-      if (message.role === 'user' && (!first || BigInt(entry.id) < first.id)) first = { id: BigInt(entry.id), text };
+      if (text !== undefined) return text;
     }
     if (!page.next) break;
     cursor = page.next;
   }
-  return { ...(first ? { title: first.text } : {}), ...(last === undefined ? {} : { last }) };
+  return undefined;
+}
+
+/** The last visible message of a conversation: a newest-first scan that stops at the first one found. */
+async function lastVisibleText(conversation: Conversation, context: Context, maxPages: number): Promise<string | undefined> {
+  let cursor: Cursor | undefined;
+  for (let pages = 0; pages < maxPages; pages++) {
+    const page = await conversation.entries({}, 100, cursor, context);
+    for (const entry of page.items) for (const message of [...(entry.model ?? [])].reverse()) {
+      const text = messageText(message);
+      if (text !== undefined) return text;
+    }
+    if (!page.next) break;
+    cursor = page.next;
+  }
+  return undefined;
 }
 
 /** A conversation's title as the list shows it: the first user message, clipped to `maxLength` characters. Undefined: no user message yet. */
@@ -151,7 +165,7 @@ export async function conversationTitle(conversation: Conversation, context: Con
   const key = String(conversation.id);
   const known = cache?.get(key);
   if (known !== undefined) return known;
-  const { title } = await scanTitleAndLast(conversation, context, Infinity);
+  const title = await firstUserText(conversation, context, Infinity);
   if (title === undefined) return null;
   const clipped = clip(title, 80);
   cache?.set(key, clipped);
@@ -216,8 +230,8 @@ export function createConversations(options: ConversationsOptions): Conversation
   const unsubscribeClose = harness.subscribeClose(() => { unsubscribe(); });
 
   async function derive(conversation: Conversation): Promise<{ title?: string; last?: string }> {
-    const found = await scanTitleAndLast(conversation, context, 20);
-    return { ...(found.title === undefined ? {} : { title: found.title }), ...(found.last === undefined ? {} : { last: found.last }) };
+    const [title, last] = await Promise.all([firstUserText(conversation, context, 20), lastVisibleText(conversation, context, 20)]);
+    return { ...(title === undefined ? {} : { title }), ...(last === undefined ? {} : { last }) };
   }
 
   const initial = (owner: string, fields: Partial<ConversationMetadata>): ConversationInit => async (tx, id) => {

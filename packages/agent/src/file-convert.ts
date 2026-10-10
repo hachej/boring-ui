@@ -1,21 +1,32 @@
-import { defineTool } from '@earendil-works/pi-durable';
-import type { ToolExecutionApi } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
+import { defineExtension, wrapTool } from '@earendil-works/pi-durable';
+import type { ToolExecutionApi, ToolExecutionResult, ToolRegistration } from '@earendil-works/pi-durable';
+import { createReadTool } from '@earendil-works/pi-durable/tools';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess } from '@hachej/boring-files';
+import { workspaceRelative } from './file-guard.js';
+import { SNIFF_BYTES, fileKind, mediaTypeFor } from './file-types.js';
+import type { FileKind } from './file-types.js';
 import { asWorkspaceResolver, workspaceFor } from './workspaces.js';
 import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
 
 /*
- * Reading the text of a non-text workspace file (PDF, image, office document). Pi's native `read` pages text files by line and
- * refuses images; this tool fills the gap. It converts the file once per saved revision and returns the text in bounded pages:
- * the agent reads the first page, and when the reply has `next`, calls again with that offset. Text files are refused here, and
- * they belong to `read`. Nothing is written.
+ * One `read`. This wraps Pi's native `read` (public `wrapTool`, the supported way to override a native tool) and adds no tool:
+ *
+ *  - Text goes to Pi's native read untouched.
+ *  - A PDF, an office document or an image goes to the host's `convert` hook (`workersAiMarkdown` adapts Workers AI). The converted
+ *    text is cached per path and saved revision and paged exactly as Pi pages a text file: `offset` is the 1-based line to start at,
+ *    `limit` a count of lines, a page ends at 2000 lines or 50 KB, and the info diagnostic names the `offset` to continue from.
+ *  - Without `convert`, an image goes to Pi's native behaviour and any other binary file is answered `unsupported`.
+ *
+ * What is a text file and what is not comes from the single table in file-types.ts: the extension and the leading bytes (Pi's read
+ * returns garbled text for a PDF, so the magic number decides, not only the name). The converted file is read through the workspace
+ * provider, which checks access; a path this wrapper cannot place inside the workspace is left to the native read, and the file guard
+ * (`createFileGuard`) refuses it. Install this extension before the guard, so the guard stays outermost. Nothing is written.
  */
 
-const DEFAULT_PAGE = 12_000;
-const DEFAULT_MAX_BYTES = 20 * 1024 * 1024;
-const TEXT = /\.(md|markdown|txt|csv|tsv|json|html?|svg|xml|js|mjs|ts|css|py|sql|ya?ml|sh)$/i;
+const MAX_LINES = 2000;        // Pi's read page: DEFAULT_MAX_LINES
+const MAX_BYTES = 50 * 1024;   // Pi's read page: DEFAULT_MAX_BYTES
+const DEFAULT_MAX_FILE = 20 * 1024 * 1024;
 
 /** The converter: bytes to text, or `{ error }`. A failure is not cached. */
 export type FileConverter = (file: { readonly name: string; readonly mediaType: string; readonly bytes: Uint8Array }) => Promise<{ readonly text: string } | { readonly error: string }>;
@@ -26,80 +37,119 @@ export interface ConvertedTextCache {
   set(key: string, text: string): unknown;
 }
 
-export interface ConvertedTextToolOptions {
+export interface ConvertingReadOptions {
   /** The workspace of each call, resolved like the file guard's (`@hachej/boring-agent/workspaces`); absent: the env's workspace. */
   readonly workspace?: WorkspaceResolver | WorkspaceBinding | undefined;
   /** The agent's principal for the provider. Default: the binding's `access`. */
   readonly resolveAccess?: (api: ToolExecutionApi, context: Context) => ResourceAccess | Promise<ResourceAccess>;
-  /** Converts a file to text. Without it, every non-text file answers `unsupported`. */
+  /** Converts a file to text. Without it, images use Pi's native read and other binary files answer `unsupported`. */
   readonly convert?: FileConverter;
   /** Stores converted text per revision. Without it, each read converts again. */
   readonly cache?: ConvertedTextCache;
-  /** Characters per page. Default 12000. */
-  readonly pageSize?: number;
   /** Largest file converted, in bytes. Default 20 MiB. */
   readonly maxBytes?: number;
+  /** The extension name (default `boring.files.read`). */
+  readonly name?: string;
 }
 
-const reply = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
-const surrogate = (code: number) => code >= 0xD800 && code <= 0xDBFF;
+type ReadArgs = { readonly path: string; readonly offset?: number; readonly limit?: number };
+type Execute = (args: ReadArgs, api: ToolExecutionApi, context: Context) => Promise<ToolExecutionResult>;
 
-/** `read_converted_text({ path, offset? })`: one page of the converted text of a non-text workspace file. */
-export function createConvertedTextTool(options: ConvertedTextToolOptions = {}) {
+const failure = (text: string, code: string): ToolExecutionResult => ({ content: [{ type: 'text', text }], isError: true, diagnostics: [{ severity: 'error', code, message: text }] });
+const utf8Length = (text: string) => new TextEncoder().encode(text).length;
+
+/** The text of `lines` from the 0-based `start`, cut like Pi's `truncateHead`: whole lines up to MAX_LINES / MAX_BYTES. */
+function page(lines: readonly string[], start: number, count: number): { text: string; shown: number; byBytes: boolean } {
+  const out: string[] = [];
+  let bytes = 0, byBytes = false;
+  for (let index = start; index < start + count && out.length < MAX_LINES; index++) {
+    const line = lines[index]!;
+    const size = utf8Length(line) + (out.length > 0 ? 1 : 0);
+    if (bytes + size > MAX_BYTES) {
+      byBytes = true;
+      if (out.length === 0) { // a single line above the byte limit: its start, on a character boundary
+        const encoded = new TextEncoder().encode(line);
+        let end = MAX_BYTES;
+        while (end > 0 && (encoded[end]! & 0xc0) === 0x80) end--;
+        out.push(new TextDecoder().decode(encoded.subarray(0, end)));
+      }
+      break;
+    }
+    bytes += size;
+    out.push(line);
+  }
+  return { text: out.join('\n'), shown: out.length, byBytes };
+}
+
+/** Pi's read result for already converted text. */
+function convertedPage(text: string, offset: number | undefined, limit: number | undefined): ToolExecutionResult {
+  const lines = text.split('\n');
+  const total = lines.length;
+  const start = offset ? Math.max(0, Math.trunc(offset) - 1) : 0;
+  if (start >= total) throw new Error(`Offset ${offset} is beyond end of file (${total} lines total)`);
+  const wanted = limit === undefined ? total - start : Math.max(1, Math.min(Math.trunc(limit), total - start));
+  const { text: shownText, shown, byBytes } = page(lines, start, wanted);
+  const end = start + shown;
+  const diagnostics: { severity: 'info'; code?: string; message: string }[] = [];
+  if (shown < wanted || (shown === 0)) diagnostics.push({ severity: 'info', code: 'truncated', message: `Showing lines ${start + 1}-${end} of ${total}${byBytes ? ` (${MAX_BYTES / 1024}KB limit)` : ''}. Use offset=${end + 1} to continue.` });
+  else if (end < total) diagnostics.push({ severity: 'info', message: `${total - end} more lines in file. Use offset=${end + 1} to continue.` });
+  return { content: shownText === '' ? [] : [{ type: 'text', text: shownText }], diagnostics };
+}
+
+/** The leading bytes of the file the call names, through the call's env (Pi's FileSystem); undefined when they cannot be read. */
+async function head(api: ToolExecutionApi, absolute: string, context: Context): Promise<Uint8Array | undefined> {
+  if (api.env === undefined) return undefined;
+  const opened = await api.env.openBinaryReader(absolute, undefined, context);
+  if (!opened.ok) return undefined;
+  try {
+    const bytes = await opened.value.read(0, SNIFF_BYTES, context);
+    return bytes.ok ? bytes.value : undefined;
+  } finally { await opened.value.close(context); }
+}
+
+/** Pi's `read`, extended to convert PDF, office and image files through the host's converter. An extension to select (after the extension that registers `read`, before the file guard). */
+export function createConvertingRead(options: ConvertingReadOptions = {}) {
   const resolver = asWorkspaceResolver(options.workspace);
-  const pageSize = options.pageSize ?? DEFAULT_PAGE;
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
-  if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw new TypeError('pageSize must be a positive integer');
-  return defineTool({
-    name: 'read_converted_text',
-    description: [
-      'Read the text of a file that is not plain text (PDF, image, office document), converted to text, in pages of about 12000 characters.',
-      'Read only what you need: start with offset 0, and when the reply has next, call again with that next value as offset to continue.',
-      'For text files use read instead.',
-    ].join(' '),
-    parameters: Type.Object({
-      path: Type.String({ minLength: 1, maxLength: 512, description: 'The file path, relative to the workspace.' }),
-      offset: Type.Optional(Type.Integer({ minimum: 0, description: 'The character offset to read from. Default 0; use the next value of the previous reply.' })),
-    }, { additionalProperties: false }),
-    replay: 'safe',
-    execute: async (args, api, context) => {
-      const path = args.path.replace(/^\.\//, '');
-      const offset = args.offset ?? 0;
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_FILE;
+
+  function converting<Tool extends ToolRegistration>(tool: Tool): Tool {
+    const native = tool.execute as unknown as Execute;
+    const execute: Execute = async (args, api, context) => {
       const resolved = await workspaceFor(resolver, api, context);
-      if ('refused' in resolved) return reply({ kind: 'denied', reason: resolved.refused });
+      if ('refused' in resolved) return native(args, api, context);
+      const root = resolved.binding.root.replace(/\/+$/, '');
+      const located = await workspaceRelative(api, root, args.path, context);
+      if (located === undefined) return native(args, api, context);
+      const kind: FileKind = fileKind(located.path, await head(api, located.absolute, context));
+      if (kind === 'text') return native(args, api, context);
+      if (!options.convert) {
+        if (kind === 'image') return native(args, api, context);
+        return failure(`${args.path} is a ${kind} file; this agent has no converter, so it cannot be read as text here (unsupported).`, 'unsupported');
+      }
       const { files } = resolved.binding;
       const access = options.resolveAccess ? await options.resolveAccess(api, context) : resolved.binding.access;
-      if (access === undefined) return reply({ kind: 'denied', reason: 'The host gave no access for this workspace' });
-      if (TEXT.test(path)) return reply({ kind: 'denied', reason: 'This is a text file: read it with read.' });
-      const target = { resource: { providerId: files.providerId, path }, view: { kind: 'published' as const } };
-      const read = await files.read({ target, revision: { kind: 'latest' } }, { ...access });
-      if (read.kind !== 'available') return reply(read.kind === 'missing' ? { kind: 'missing' } : read);
+      if (access === undefined) return failure('Refused: the host gave no access for this workspace.', 'denied');
+      const read = await files.read({ target: { resource: { providerId: files.providerId, path: located.path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, { ...access });
+      if (read.kind === 'missing') return native(args, api, context);
+      if (read.kind !== 'available') return failure(`Refused: ${args.path} cannot be read here (${read.reason}).`, 'denied');
       const { snapshot } = read;
-      if (snapshot.bytes.byteLength > maxBytes) return reply({ kind: 'denied', reason: `The file is larger than ${maxBytes} bytes` });
-      if (!options.convert) return reply({ kind: 'unsupported', reason: 'This file type cannot be read as text here.' });
-
-      const key = `${path}@${snapshot.ref.revision}`;
+      if (snapshot.bytes.byteLength > maxBytes) return failure(`${args.path} is larger than ${maxBytes} bytes and is not converted.`, 'too_large');
+      const key = `${located.path}@${snapshot.ref.revision}`;
       let text = await options.cache?.get(key);
-      const converted = text === undefined;
       if (text === undefined) {
-        const result = await options.convert({ name: path.slice(path.lastIndexOf('/') + 1), mediaType: snapshot.mediaType, bytes: snapshot.bytes });
-        if ('error' in result) return reply({ kind: 'unavailable', reason: result.error });
+        const result = await options.convert({ name: located.path.slice(located.path.lastIndexOf('/') + 1), mediaType: mediaTypeFor(located.path, kind, snapshot.mediaType), bytes: snapshot.bytes });
+        if ('error' in result) return failure(`${args.path} could not be converted to text: ${result.error}`, 'unavailable');
         text = result.text;
         await options.cache?.set(key, text);
       }
+      return convertedPage(text, args.offset, args.limit);
+    };
+    return { ...tool, execute } as unknown as Tool;
+  }
 
-      const characters = text.length;
-      if (offset > characters) return reply({ kind: 'denied', reason: 'The offset is past the end of the converted text.' });
-      let end = Math.min(characters, offset + pageSize);
-      // Never split a surrogate pair across pages.
-      if (end < characters && end > offset && surrogate(text.charCodeAt(end - 1))) end -= 1;
-      return reply({
-        kind: 'available', path, revision: snapshot.ref.revision, characters, offset,
-        ...(end < characters ? { next: end } : {}),
-        ...(converted ? {} : { cached: true }),
-        text: text.slice(offset, end),
-      });
-    },
+  return defineExtension({
+    name: options.name ?? 'boring.files.read',
+    wraps: [wrapTool(createReadTool() as ToolRegistration, converting)],
   });
 }
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createMentionResolver, MENTION_FILE_PREFIX } from '@hachej/boring-agent/mentions';
+import { createMentionResolver, workspaceMentionReader, MENTION_FILE_PREFIX } from '@hachej/boring-agent/mentions';
+import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
 
 const enc = text => new TextEncoder().encode(text);
 const files = {
@@ -36,4 +37,26 @@ test('inline mode still inlines text and images, and never decodes a UTF-8 valid
   assert.equal(added[2], '[image]');
   assert.equal(added[3], `${MENTION_FILE_PREFIX}doc.pdf" unavailable="binary file, ${files['doc.pdf'].length} bytes; content not included" />`);
   assert.ok(!added.join('').includes('%PDF'));
+});
+
+test('workspaceMentionReader reads through the provider: the person\'s access decides, size-only in reference mode, big files by size', async t => {
+  let allowed = true;
+  const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'files', authorize: () => allowed });
+  t.after(() => provider.close());
+  const person = { scopeId: 'fictional-team', principalId: 'fictional-member', initiatorId: 'fictional-member' };
+  const publish = async (path, bytes) => {
+    const outcome = await provider.publication.publish({ operationId: `seed-${path}`, atomicity: 'all-or-nothing',
+      changes: [{ kind: 'create', target: { resource: { providerId: 'files', path }, view: { kind: 'published' } }, expected: { kind: 'absent' }, bytes, mediaType: 'text/plain' }] }, person);
+    assert.equal(outcome.kind, 'committed');
+  };
+  await publish('notes.md', enc('hello'));
+  await publish('big.txt', new Uint8Array(20));
+  const reader = workspaceMentionReader(provider, person, { maxReadBytes: 10 });
+  assert.deepEqual(await reader('notes.md'), { size: 5, bytes: enc('hello') });
+  assert.deepEqual(await reader('notes.md', { bytes: false }), { size: 5 });
+  assert.deepEqual(await reader('big.txt'), { size: 20 });
+  assert.equal(await reader('missing.md'), undefined);
+  assert.equal(await reader('../notes.md'), undefined);
+  allowed = false;
+  assert.equal(await reader('notes.md'), undefined, 'a refused read is not a mention');
 });

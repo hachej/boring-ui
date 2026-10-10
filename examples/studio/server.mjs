@@ -18,7 +18,7 @@ import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
 import { createGitTool } from '@hachej/boring-agent/git';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
 import { conversationMetadata, createConversations, createConversationsHandler } from '@hachej/boring-agent/conversations';
-import { createMentionResolver, safeMentionPath } from '@hachej/boring-agent/mentions';
+import { createMentionResolver, workspaceMentionReader } from '@hachej/boring-agent/mentions';
 import { createMeter, createSqliteLedger } from '@hachej/boring-agent/metering';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
@@ -113,13 +113,6 @@ export async function startStudio({ directory, port = 0, provider = process.env.
   }
 
   const readOf = (ws, path) => ws.files.read({ target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, ws.person);
-  /** What `@path` mentions read: the person's view of the workspace through the variant's provider. */
-  const mentionReader = (files, person) => async path => {
-    if (!safeMentionPath(path)) return undefined;
-    const read = await files.read({ target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, person);
-    if (read.kind !== 'available') return undefined;
-    return read.snapshot.bytes.byteLength > 5_000_000 ? { size: read.snapshot.bytes.byteLength } : { size: read.snapshot.bytes.byteLength, bytes: read.snapshot.bytes };
-  };
   /** Creates a file that must not exist yet, through the provider. `false` when it does. */
   async function createFile(ws, path, bytes) {
     const published = await ws.files.publication.publish({ operationId: randomUUID(), atomicity: 'all-or-nothing',
@@ -162,7 +155,7 @@ export async function startStudio({ directory, port = 0, provider = process.env.
   /** What the viewers of one workspace use: its resource handler (authenticated as the workspace's person only) and @mention reader. */
   const viewersOf = (ws, allowed) => ({ ...ws,
     resourceHandler: createResourceHandler({ authenticate: async request => allowed(principalOf(request)) ? ws.person : null, reader: ws.files, publisher: ws.files.publication, lookup: ws.files.reconciliation }),
-    mentions: createMentionResolver({ read: mentionReader(ws.files, ws.person) }) });
+    mentions: createMentionResolver({ read: workspaceMentionReader(ws.files, ws.person) }) });
 
   /** The workspace name of a person in a variant: the variant's one workspace, or the person's team workspace. */
   const workspaceName = (variant, principal = human.principalId) => variant.team ? `team-${principal}` : variant.id;
