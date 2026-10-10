@@ -15,7 +15,7 @@ const taskList = process.argv[2] === '--task-list';
 const recipe = taskList ? { name: 'task-list-viewer', exportName: 'TaskListViewer', className: 'boring-task-list-recipe', hostClass: 'host-installed-task-list', radius: '--boring-task-list-radius', fixture: 'registry-task-list.mjs' } : html ? { name: 'html-viewer', exportName: 'HtmlViewer', className: 'boring-html-recipe', hostClass: 'host-installed-html', radius: '--boring-html-radius', fixture: 'registry-html.mjs' }
   : { name: 'markdown-editor', exportName: 'MarkdownEditor', className: 'boring-markdown-recipe', hostClass: 'host-installed-editor', radius: '--boring-editor-radius', fixture: 'registry-markdown.mjs' };
 const item = JSON.parse(readFileSync(join(root, 'public/r', recipe.name + '.json'), 'utf8'));
-const excludedPackages = ['@earendil-works/pi-durable', '@earendil-works/chord', '@hachej/boring-agent', 'tldraw', '@tldraw/editor', ...((html || taskList) ? ['@tiptap/core', 'marked', '@hachej/boring-execution'] : [])];
+const excludedPackages = ['@hachej/boring-agent', 'tldraw', '@tldraw/editor', ...((html || taskList) ? ['@tiptap/core', 'marked', '@hachej/boring-execution'] : [])];
 const temporary = mkdtempSync(join(tmpdir(), 'boring-registry-consumer-'));
 // The pinned native SDK probes ten ancestor node_modules paths even when local types exist.
 const directory = temporary;
@@ -45,6 +45,8 @@ try {
     const split = pin.lastIndexOf('@'); return [pin.slice(0, split), pin.slice(split + 1)];
   }));
   for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss']) dependencies[name] = rootManifest.devDependencies[name];
+  // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
+  dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   const manifest = { name: 'isolated-registry-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
   const packages = {};

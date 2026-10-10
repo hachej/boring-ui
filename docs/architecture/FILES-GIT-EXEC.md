@@ -140,6 +140,8 @@ ResourcePublisher represents its bound commit authority, not a generic distribut
 
 ## Working writes and publication
 
+Isolation is the host's choice of environment (owner ruling, 2026-10-10): a shared-process host uses an isolated worker env (`aws-code-interpreter`, or a remote-shell/remote-files sandbox); local single-user mode may use Pi's `NodeExecutionEnv` with local bash. No "confined Node env" is built, and the file guard still fails closed on its own refusal paths.
+
 Installs, caches, builds and test output use ordinary working-file operations within granted isolation. Record command/tool admission and required logs/evidence, not a domain revision/receipt for every scratch write. A local Git commit describes working repository history, not permission to change an application's authoritative resource or deploy.
 
 Publication is an explicit admitted operation with original input/target versions, stable operation ID, canonical change digest, current authority and the provider's real outcome. Required approval concerns that exact candidate/change. Multi-file atomicity, lost-response lookup and revocation fencing are separate guarantees; preserve partial/unknown outcomes for weaker providers. Native working mutation cannot bypass protected authoritative mounts. A direct human save can use the same resource boundary without manufacturing an agent execution.
