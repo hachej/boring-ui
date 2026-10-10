@@ -46,4 +46,9 @@ test('docks render their placement, divider and content; useDock needs a layout'
   assert.ok(!html.includes('dock-divider-files'), 'a closed dock has no divider');
   assert.ok(html.includes('chat body') && html.includes('the app') && html.includes('files closed'), 'children stay mounted in every placement');
   assert.throws(() => renderToStaticMarkup(h(() => (useDock('x'), null))), /inside a DockLayout/);
+  // `contained`: a docked dock is the containing block of its content's fixed overlays; an uncontained one is not.
+  const contained = renderToStaticMarkup(h(DockLayout, {}, h(Dock, { id: 'pm', side: 'left', contained: true }, api => `${typeof api.setWidth}`), h(DockMain, {}, 'app')));
+  assert.match(contained, /data-dock="pm"[^>]*class="[^"]*\[contain:layout\]/);
+  assert.ok(contained.includes('function'), 'the api offers setWidth');
+  assert.doesNotMatch(html, /contain:layout/);
 });

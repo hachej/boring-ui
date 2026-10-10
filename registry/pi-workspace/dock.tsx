@@ -30,6 +30,8 @@ export interface DockApi {
   readonly float: () => void;
   /** Put it back beside the main content at its last docked width. Opens it if closed. */
   readonly dock: () => void;
+  /** Set the docked width (clamped and remembered like a drag), for example to widen a dock while it shows a document. */
+  readonly setWidth: (width: number) => void;
 }
 
 export interface DockLayoutProps {
@@ -66,6 +68,11 @@ export interface DockProps {
   readonly onOpenChange?: (open: boolean) => void;
   /** Floating at first, before the person docks it. */
   readonly defaultFloating?: boolean;
+  /**
+   * While docked, the dock is the containing block of its content's fixed overlays (a full-screen sheet, a drawer, a viewer's full screen):
+   * they cover the dock, not the page. Floating and sheet placements are unaffected.
+   */
+  readonly contained?: boolean;
   readonly onPlacementChange?: (placement: DockPlacement) => void;
   /** The region's and the divider's accessible names, and the hint shown while a drag would float or close the dock. */
   readonly labels?: { readonly region?: string | undefined; readonly resize?: string | undefined; readonly floatHint?: string | undefined; readonly closeHint?: string | undefined } | undefined;
@@ -152,7 +159,7 @@ export function useDock(id: string): DockApi | undefined {
 
 /** One dock beside the main content. Order the children as they should appear: left docks, `DockMain`, right docks. */
 export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, floatable = false, dragBelow, narrowBelow, narrow = floatable ? 'float' : 'hide',
-  open: controlledOpen, defaultOpen = true, onOpenChange, defaultFloating = false, onPlacementChange, labels, className }: DockProps) {
+  open: controlledOpen, defaultOpen = true, onOpenChange, defaultFloating = false, contained = false, onPlacementChange, labels, className }: DockProps) {
   const layout = useContext(Layout);
   if (!layout) throw new Error('Dock must be used inside a DockLayout');
   const { size, minMain, update, publish, occupied } = layout;
@@ -178,10 +185,11 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
     setOpen, toggle: () => setOpen(!open),
     float: () => { setFloating(true); if (!open) setOpen(true); },
     dock: () => { setFloating(false); if (!open) setOpen(true); },
+    setWidth: (next: number) => resize(next),
   };
   const latest = useRef(api); latest.current = api;
   // What `useDock` hands out: the current state, with actions that always reach this render's dock.
-  const actions = useMemo(() => ({ setOpen: (next: boolean) => latest.current.setOpen(next), toggle: () => latest.current.toggle(), float: () => latest.current.float(), dock: () => latest.current.dock() }), []);
+  const actions = useMemo(() => ({ setOpen: (next: boolean) => latest.current.setOpen(next), toggle: () => latest.current.toggle(), float: () => latest.current.float(), dock: () => latest.current.dock(), setWidth: (next: number) => latest.current.setWidth(next) }), []);
   useLayoutEffect(() => { publish(id, { ...latest.current, ...actions }); });
   useLayoutEffect(() => () => publish(id, undefined), [id, publish]);
   const reported = useRef(placement);
@@ -223,7 +231,7 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
   const panel = <section ref={section} data-boring="dock" data-dock={id} data-side={side} data-placement={placement} aria-label={labels?.region}
     {...(hidden ? { hidden: true, inert: true } : {})}
     style={docked ? { width } : undefined}
-    className={cn('relative flex min-h-0 min-w-0 flex-col', docked && 'shrink-0 overflow-hidden bg-background text-foreground',
+    className={cn('relative flex min-h-0 min-w-0 flex-col', docked && 'shrink-0 overflow-hidden bg-background text-foreground', docked && contained && '[contain:layout]',
       placement === 'floating' && 'w-0 flex-none overflow-visible', placement === 'sheet' && 'fixed inset-0 z-50 bg-background text-foreground', hidden && 'hidden',
       dragging && '[&_iframe]:pointer-events-none select-none', className)}>
     {typeof children === 'function' ? children(api) : children}
