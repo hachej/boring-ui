@@ -1,8 +1,8 @@
 import { createResourceClient } from './remote.js';
-import { binding, bindingHeader, bindingValue, catalogHeader, filePage, record, savedRevisions } from './revision-protocol.js';
+import { binding, bindingHeader, bindingValue, catalogHeader, changeEvent, filePage, record, savedRevisions, serverEvents } from './revision-protocol.js';
 import { readJsonBody } from './request-guard.js';
 import { RevisionError } from './revision-contracts.js';
-import type { RevisionProvider } from './revision-contracts.js';
+import type { ChangeFeedRequest, RevisionProvider, WorkspaceChangeEvent } from './revision-contracts.js';
 import { observe } from './remote-protocol.js';
 import { randomUUID } from './platform.js';
 import { locator } from './publication-input.js';
@@ -42,6 +42,56 @@ export async function connectRevisionProvider(options: {
     if (bindingValue(binding(result)) !== bound || result.kind !== kind || result.requestId !== requestId) throw new RevisionError('denied', 'The response belongs to another workspace');
     return result.value;
   }
+  /** One feed across reconnections: each resumes after the last seq delivered; a refused binding ends it. */
+  async function* changes(request: ChangeFeedRequest = {}): AsyncGenerator<WorkspaceChangeEvent> {
+    const signal = request.signal;
+    let cursor = request.since, delay = 500;
+    const pause = () => new Promise<void>(resolve => {
+      const timer = setTimeout(done, delay);
+      function done() { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); }
+      signal?.addEventListener('abort', done, { once: true });
+      delay = Math.min(delay * 2, 30_000);
+    });
+    while (!signal?.aborted) {
+      const url = new URL(endpoint);
+      url.searchParams.set('op', 'changes');
+      if (cursor !== undefined) url.searchParams.set('since', String(cursor));
+      const connection = new AbortController();
+      const stop = () => connection.abort();
+      signal?.addEventListener('abort', stop, { once: true });
+      try {
+        let response: Response;
+        try { response = await fetch(new Request(url, { method: 'GET', redirect: 'error', headers: { accept: 'text/event-stream', [bindingHeader]: bound }, signal: connection.signal })); }
+        catch { if (signal?.aborted) return; await pause(); continue; }
+        if (response.redirected || !response.ok || !response.body) {
+          void response.body?.cancel().catch(() => {});
+          if (response.status === 403 || response.status === 409) throw new RevisionError('denied', 'The selected workspace is unavailable or no longer authorized');
+          if (response.status === 400) throw new RevisionError('invalid', 'The change feed request was refused');
+          await pause(); continue;
+        }
+        try {
+          for await (const message of serverEvents(response.body)) {
+            if (message.event === 'ready') {
+              const seq = record(JSON.parse(message.data)).seq;
+              if (cursor === undefined && typeof seq === 'number' && Number.isSafeInteger(seq)) cursor = seq;
+              delay = 500;
+              continue;
+            }
+            if (message.event !== 'change' && message.event !== 'resnapshot') continue;
+            const event = changeEvent(JSON.parse(message.data));
+            if (event.kind === 'change' && cursor !== undefined && event.seq <= cursor) continue;
+            cursor = event.seq;
+            yield event;
+          }
+        } catch (error) { if (signal?.aborted) return; if (error instanceof RevisionError && error.kind === 'invalid') throw error; }
+      } finally {
+        signal?.removeEventListener('abort', stop);
+        connection.abort();
+      }
+      if (signal?.aborted) return;
+      await pause();
+    }
+  }
   if (!client.publish || !client.lookup) throw new Error('Publishing client lacks reconciliation');
   return {
     ...client, publish: client.publish, lookup: client.lookup, identity: Object.freeze(selected.identity), workspace: Object.freeze(selected.workspace),
@@ -49,5 +99,6 @@ export async function connectRevisionProvider(options: {
     list: async (request, signal) => filePage(await invoke('list', request, signal)),
     search: async (request, signal) => filePage(await invoke('search', request, signal)),
     history: async (path, signal) => savedRevisions(await invoke('history', path, signal)),
+    changes: request => changes(request),
   };
 }

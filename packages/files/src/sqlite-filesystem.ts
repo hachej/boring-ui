@@ -42,7 +42,10 @@ const within = (base: string, path: string) => path === base || path.startsWith(
 const fileError = (code: FileError['code'], message: string, path?: string): FileError => new FileError(code, message, path);
 const isFileError = (error: unknown): error is FileError => error instanceof FileError;
 
-/** How often a watcher compares snapshots: SQLite reports no changes, so the watcher polls (`mode: 'polling'`). */
+/**
+ * How often a watcher compares snapshots. A write through this file system (this connection) is compared at once, right after
+ * its transaction; polling remains for writes through another connection to the same database (`mode: 'polling'`).
+ */
 const WATCH_INTERVAL_MS = 1000;
 
 /** A FileError whose message starts with the POSIX code, as shells and Git read it. */
@@ -131,11 +134,23 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   const incarnation = db.get<{ incarnation: string }>('SELECT incarnation FROM boring_workspaces WHERE workspace = ?', workspace)?.incarnation;
   if (typeof incarnation !== 'string') throw new Error('The workspace has no incarnation');
 
+  /** Each open watcher's comparison, run right after a write through this file system commits. */
+  const watchers = new Set<() => void>();
+  let notifying = false;
+  function notify(): void {
+    if (notifying || watchers.size === 0) return;
+    notifying = true;
+    // After the current synchronous work: a batch write inside a caller's transaction is compared once it has committed.
+    queueMicrotask(() => { notifying = false; for (const check of [...watchers]) check(); });
+  }
   async function run<Value>(path: string, context: Context, mode: 'read' | 'write', work: (absolute: string) => Value): Promise<Result<Value, FileError>> {
     if (context.abortSignal?.aborted) return err(fileError('aborted', 'Operation aborted', path));
     if (typeof path !== 'string' || path.includes('\0')) return err(fileError('invalid', 'Invalid path', String(path)));
-    try { return ok(db.transaction(mode, () => work(normalize(path.startsWith('/') ? path : `${fs.cwd}/${path}`)))); }
-    catch (error) { return err(isFileError(error) ? error : fileError('unknown', error instanceof Error ? error.message : String(error), path)); }
+    try {
+      const value = db.transaction(mode, () => work(normalize(path.startsWith('/') ? path : `${fs.cwd}/${path}`)));
+      if (mode === 'write') notify();
+      return ok(value);
+    } catch (error) { return err(isFileError(error) ? error : fileError('unknown', error instanceof Error ? error.message : String(error), path)); }
   }
   async function temporary(prefix: string, suffix: string, kind: 'file' | 'directory', context: Context): Promise<Result<string, FileError>> {
     if (`${prefix}${suffix}`.includes('/')) return err(fileError('invalid', 'Temporary names must be basenames'));
@@ -284,8 +299,9 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
       };
       return reader;
     }),
-    // SQLite reports no changes, so the watcher compares snapshots of the watched rows. The first snapshot is taken before the
-    // watcher is returned, so a change made after `watch` resolves is always seen.
+    // SQLite reports no changes, so the watcher compares snapshots of the watched rows: at once after each write through this file
+    // system, and every second for other connections. The first snapshot is taken before the watcher is returned, so a change made
+    // after `watch` resolves is always seen.
     watch: async (targets, onChange, context) => {
       if (context.abortSignal?.aborted) return err(fileError('aborted', 'Operation aborted'));
       if (!Array.isArray(targets) || targets.some(target => typeof target?.path !== 'string' || target.path.includes('\0'))) return err(fileError('invalid', 'Invalid watch target'));
@@ -293,16 +309,19 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
       try { previous = db.transaction('read', () => snapshot(targets)); } catch (error) { return err(isFileError(error) ? error : fileError('unknown', String(error))); }
       let stopped = false;
       const report = (change: WatchChange) => { if (!stopped) try { onChange(change); } catch { /* the host's callback cannot stop the watcher */ } };
-      const timer = setInterval(() => {
+      const check = () => {
         if (stopped) return;
         let next: Map<string, string>;
         try { next = db.transaction('read', () => snapshot(targets)); }
-        catch (error) { report({ error: isFileError(error) ? error : fileError('unknown', String(error)) }); stopped = true; clearInterval(timer); return; }
+        catch (error) { report({ error: isFileError(error) ? error : fileError('unknown', String(error)) }); stop(); return; }
         const changed = [...new Set([...previous.keys(), ...next.keys()])].filter(path => previous.get(path) !== next.get(path));
         previous = next;
         if (changed.length) report({ paths: changed });
-      }, WATCH_INTERVAL_MS);
-      const watcher: FileWatcher = { mode: 'polling', close: async () => { stopped = true; clearInterval(timer); } };
+      };
+      const timer = setInterval(check, WATCH_INTERVAL_MS);
+      const stop = () => { stopped = true; clearInterval(timer); watchers.delete(check); };
+      watchers.add(check);
+      const watcher: FileWatcher = { mode: 'polling', close: async () => { stop(); } };
       return ok(watcher);
     },
     canonicalPath: (path, context) => run(path, context, 'read', absolute => { existing(absolute); return absolute; }),
@@ -326,7 +345,7 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   registerSqliteBatch(fs, {
     connection: db,
     bytes: path => { const found = row(normalize(path)); return !found ? null : found.kind === 'directory' ? undefined : bytes(normalize(path)); },
-    write: (path, content) => { const absolute = normalize(path); makeDirectory(dirname(absolute), true); write(absolute, content); },
+    write: (path, content) => { const absolute = normalize(path); makeDirectory(dirname(absolute), true); write(absolute, content); notify(); },
   });
   return fs;
 }

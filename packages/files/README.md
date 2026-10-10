@@ -10,6 +10,12 @@ Opaque resource view IDs are provider-scoped and bound to the actual backing/inc
 
 The provider accepts all-or-nothing create and replace. It refuses working views, per-change requests and deletes (files are removed with the workspace's own tools) before any effect. Logical paths are relative to the workspace root; a path whose real location leaves the root is denied. A single file is replaced atomically by every backend; a multi-file batch only by the SQLite backend, together with its receipt when the journal shares the database. Access control is the host's, at the workspace boundary: there are no per-file permissions inside a workspace, and external revocation fencing is not implemented.
 
+### Agent writes and the change feed
+
+Agent writes are observed, never receipted ([owner ruling 2](../../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files)). `provider.record({ path, before?, after, source: 'agent', conversationId? }, access)` is what the file guard (`@hachej/boring-agent/file-guard`) calls after a Pi `write` or `edit` succeeded: the file's history gains the written revision with `source: 'agent'` (and the replaced revision, `source: 'observed'`, when `before` carries its bytes), and the change feed an `agent` event. It never writes the publication journal and never mints a receipt. It does not enter the provider's queue (the guard already runs inside it), so calling it from queued work cannot deadlock. History entries (`saves`, `catalog.history`) carry `source`: `publish`, `agent` or `observed` (`keep` and replaced revisions).
+
+`provider.changes({ since?, signal }, access)` is one change feed for every file view: an `AsyncIterable` of `{ kind: 'change', path, revision | null, source: 'publish' | 'agent' | 'poll' | 'watch', seq, at }`, ordered by `seq` and replayable from `since` (the last `seq` seen; `changeHead()` is "now"). The provider retains the last `changeBuffer` events (default 1024); a cursor older than that, from another provider lifetime or ahead of this one, and a listener that falls behind get `{ kind: 'resnapshot', seq, at }`: reload everything shown, then continue. Events are invalidation hints; bytes and the journal stay authoritative. Sources: conditional writes (`publish`), `record` (`agent`), `poll` and, while someone listens (and `watchLingerMs` after, default 30 s), the file system's own `watch` (`watch`; a reported directory is `{ revision: null, directory: true }`). The SQLite file system reports writes through its own connection at once and polls every second for other connections. When the file system cannot watch (the virtual and remote environments report `not_supported`), the host calls `provider.poll()` at the end of each agent turn: without paths it hashes every file (not `.git` or `node_modules`); the first call takes the baseline, later ones report changed, new and removed files. A `bash` write gets change events only, never history.
+
 Receipts are scoped by workspace identity, principal, scope and initiator. Identical committed retries return the original receipt; changed arguments conflict. Refused operations do not reserve an ID. A receipt from an earlier incarnation of the workspace reads `unknown`. A not-found lookup is not permission to replay an uncertain operation.
 
 `@hachej/boring-files/publication` is browser-safe. It captures request bytes, computes a versioned canonical SHA-256 digest with WebCrypto, and parses result shapes. Digests carry `boring-publication-v1:sha256:` and bind that format identifier in the hashed payload. Consumers must also check operation, target, scope and index association against their own request. This module confers no authorization. The SQLite connection (`openNodeConnection` from `@hachej/boring-files/sqlite`) is a separate server entry point.
@@ -138,7 +144,19 @@ const revisionProvider = await connectRevisionProvider({
 
 The binding discovers identity and workspace incarnation from the authenticated
 server. Reconnect when the selected workspace changes. It exposes `list`,
-filename `search`, retained `history`, `locate`, `read`, `publish` and `lookup`.
+filename `search`, retained `history`, `locate`, `read`, `publish`, `lookup` and
+`changes({ since?, signal })`, the workspace's change feed.
+
+The feed is `GET <endpoint>?op=changes[&since=<seq>]` with the binding header:
+server-sent events (`event: ready` with the current seq, then `event: change` or
+`event: resnapshot` with `id:` the seq and the JSON event as `data:`), and a
+comment line every `heartbeatMs` (`createRevisionHandler({ resolve, heartbeatMs })`,
+default 15 s). It is a plain streamed response, so it runs on Node and Workers
+alike. The handler holds the workspace lease for the life of the stream and
+releases it when the client disconnects or its access signal aborts; a request
+the host refuses, or whose binding names another workspace or identity, gets no
+event (403 or 409). The client reconnects after the last seq it delivered, with
+backoff, until its `signal` aborts; a refusal ends it with a `RevisionError`.
 All writes use conditional publication; uploading a new file requires absence,
 and replacing one requires its exact resource revision. An unknown result must
 be reconciled by operation ID before another upload to that path.

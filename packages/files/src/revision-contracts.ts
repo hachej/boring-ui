@@ -29,6 +29,30 @@ export interface FileSearchRequest {
 export interface SavedRevision {
   readonly revision: string;
   readonly savedAt: number;
+  /** Who wrote it: `publish` (a conditional write), `agent` (a Pi `write` or `edit`: observed, never receipted) or `observed` (retained as found). */
+  readonly source?: 'publish' | 'agent' | 'observed';
+}
+
+/**
+ * One entry of a workspace's change feed (ruling 2 of 2026-10-10): an invalidation hint, never content or a receipt. Bytes and
+ * the publication journal stay authoritative; a viewer that receives one reads again.
+ *
+ * - `change`: something at `path` changed. `revision` is the Git blob id now there, or `null` when the path is absent or is a
+ *   directory (`directory: true`: something below it may have changed). `source`: `publish` (a conditional write), `agent` (a Pi
+ *   `write` or `edit`), `poll` (found by hashing, for example after a `bash` command) or `watch` (reported by the file system).
+ * - `resnapshot`: events were lost (the cursor is older than the retained window, from another provider lifetime, or the watcher
+ *   overflowed or restarted). Reload everything shown, then continue after this `seq`.
+ *
+ * `seq` increases strictly within one provider lifetime; `at` is milliseconds since the epoch.
+ */
+export type WorkspaceChangeEvent =
+  | { readonly kind: 'change'; readonly path: string; readonly revision: string | null; readonly source: 'publish' | 'agent' | 'poll' | 'watch'; readonly seq: number; readonly at: number; readonly directory?: true; readonly conversationId?: string }
+  | { readonly kind: 'resnapshot'; readonly seq: number; readonly at: number };
+
+export interface ChangeFeedRequest {
+  /** The last `seq` already seen: only later events are delivered (a gap is a `resnapshot`). Absent: live events only. */
+  readonly since?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export interface WorkspaceCatalog {
@@ -54,4 +78,10 @@ export interface RevisionProvider extends ResourceClient {
   readonly list: (request: FileListRequest, signal?: AbortSignal) => Promise<FilePage>;
   readonly search: (request: FileSearchRequest, signal?: AbortSignal) => Promise<FilePage>;
   readonly history: (path: string, signal?: AbortSignal) => Promise<readonly SavedRevision[]>;
+  /**
+   * The workspace's change feed (`GET ?op=changes`, server-sent events), reconnecting after the last `seq` seen until `signal`
+   * aborts; a refused binding (another workspace, revoked access) ends it with a `RevisionError`. Optional: a hand-built provider
+   * may have none, and a viewer then refreshes on its own schedule.
+   */
+  readonly changes?: (request?: ChangeFeedRequest) => AsyncIterable<WorkspaceChangeEvent>;
 }

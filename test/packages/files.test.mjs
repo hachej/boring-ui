@@ -637,7 +637,7 @@ onBoth('provider writes emit change events and polling finds a shell write', asy
   assert.deepEqual(await provider.poll(['notes.md', 'other.md']), []);
   const base = (await provider.read(wsLatest('notes.md'), access)).snapshot.ref;
   await publish(wsReplace('edit', base, 'two'));
-  assert.deepEqual(events, [{ path: 'notes.md', revision: await revisionOf('two'), source: 'provider' }]);
+  assert.deepEqual(events, [{ path: 'notes.md', revision: await revisionOf('two'), source: 'publish' }]);
   await virtual.createBash({ cwd: '/repo' }).exec('printf three > notes.md; rm other.md');
   const found = await provider.poll(['notes.md', 'other.md']);
   assert.deepEqual(found, [{ path: 'notes.md', revision: await revisionOf('three'), source: 'poll' }, { path: 'other.md', revision: null, source: 'poll' }]);

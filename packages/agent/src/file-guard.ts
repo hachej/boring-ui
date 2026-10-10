@@ -115,10 +115,17 @@ export function createFileGuard(options: FileGuardOptions = {}) {
           if (known === undefined) return refusal(`Refused: ${path} already exists and you have not read it in this conversation. Read it with the read tool, then make your change.`);
           if (known !== before.revision) return refusal(`Refused: ${path} changed since you last read it (the person or another process saved it). Read it again with the read tool, then redo your change on top of what is there now.`);
         }
+        // Ruling 2: an agent write is observed (history, change event), never receipted. History keeps the replaced bytes too, so
+        // they are read now, before the tool overwrites them, unless that revision is already retained.
+        const preimage = before.kind === 'file' && !files.history(path).includes(before.revision) ? await files.read({ target: { resource: { providerId: files.providerId, path }, view: { kind: 'published' } }, revision: { kind: 'exact', value: before.revision } }, access) : undefined;
         const result = await run();
         if (!result.isError) {
           const after = await observe(path);
-          if (after.kind === 'file') await recordRevision(api, key, after.revision, context);
+          if (after.kind === 'file') {
+            await recordRevision(api, key, after.revision, context);
+            // Not through `files.queue`: this already runs inside it. A failed history write never turns the done write into an error.
+            await files.record({ path, before: preimage?.kind === 'available' ? { revision: preimage.snapshot.ref.revision, bytes: preimage.snapshot.bytes } : null, after: after.revision, source: 'agent', conversationId: String(api.conversationId) }, access).catch(() => undefined);
+          }
         }
         return result;
       });
