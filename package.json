@@ -25,6 +25,8 @@
     "ambient:journey:scripted": "node examples/ambient/journey.mjs --scripted",
     "workspace-app": "node examples/workspace-app/server.mjs",
     "workspace-app:journey": "node examples/workspace-app/journey.mjs",
+    "dock-app": "node examples/dock-app/server.mjs",
+    "dock-app:journey": "node examples/dock-app/journey.mjs",
     "feedback": "node examples/feedback/server.mjs",
     "feedback:journey": "node examples/feedback/journey-composer.mjs",
     "feedback:journey:picker": "node examples/feedback/journey.mjs",
