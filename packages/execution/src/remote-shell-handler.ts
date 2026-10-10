@@ -3,6 +3,8 @@ import type { Context } from '@earendil-works/chord';
 import { ExecutionError, err } from '@earendil-works/pi-durable/env';
 import type { Shell, ShellExecOptions, ShellOutputInfo } from '@earendil-works/pi-durable/env';
 import { guardStatus, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
+import { windowedOutput } from './remote-shell-window.js';
+import type { WindowedOutput } from './remote-shell-window.js';
 import type { WorkspaceIdentity } from './contracts.js';
 import { contentType, identity, nativeVersion, positiveLimit, requestInput, sameIdentity, schema, version, wireResult } from './remote-shell-protocol.js';
 
@@ -67,7 +69,13 @@ export function createRemoteShellHandler(options: RemoteShellHandlerOptions): (r
     async function execute(): Promise<void> {
       try {
         if (signal?.aborted || ended) return;
-        const result = await shell.exec(input.command, { ...input.options, ...(input.output ? { onOutput: (text: string, _context: unknown, info: ShellOutputInfo) => send({ type: 'output', text, stream: info.stream, ...(info.skipped === undefined ? {} : { skipped: info.skipped }) }) } : {}) }, context);
+        const emit = (chunk: WindowedOutput) => send({ type: 'output', text: chunk.text, stream: chunk.stream, ...(chunk.skipped === undefined ? {} : { skipped: chunk.skipped }) });
+        const windowed = input.output && input.options.window !== undefined ? windowedOutput(input.options.window, emit) : undefined;
+        const onOutput = !input.output ? undefined : windowed ? (text: string, _context: unknown, info: ShellOutputInfo) => windowed.push(text, info)
+          : (text: string, _context: unknown, info: ShellOutputInfo) => emit({ text, stream: info.stream, ...(info.skipped === undefined ? {} : { skipped: info.skipped }) });
+        let result: Awaited<ReturnType<Shell['exec']>>;
+        try { result = await shell.exec(input.command, { ...input.options, ...(onOutput ? { onOutput } : {}) }, context); windowed?.finish(); }
+        finally { windowed?.cancel(); }
         if (await awaitWithContext(Promise.resolve(authorize(input.command, structuredClone(input.options))), context) !== true || signal?.aborted || ended) { fail(); return; }
         send({ type: 'result', result: wireResult(result) });
         ended = true; signal?.removeEventListener('abort', fail); controller.close();

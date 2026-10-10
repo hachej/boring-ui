@@ -233,3 +233,32 @@ test('the files protocol version moved so an old peer is refused', async t => {
     new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'boring.remote-files', version: 2, nativeVersion: 'pi-durable@1.1.0', requestId: 'r', identity, filesystemId: f.host.id, cwd: '.', call: { method: 'exists', args: ['x'] } }) }));
   assert.equal(handlerResponse.status >= 400, true);
 });
+
+test('a Node worker that ignores the window still transfers only the retained tail, with skipped counts', { timeout: 20000 }, async t => {
+  const native = new NodeExecutionEnv({ cwd: tmpdir(), shellPath: '/bin/bash', shellEnv: { PATH: '/usr/bin:/bin' } });
+  const access = { identity, context, revoked: new AbortController().signal, supports: { timeout: true, spill: true }, authorize: () => true, shell: native };
+  const handler = createRemoteShellHandler({ authenticate: async () => access });
+  let transferred = 0;
+  const counting = async request => {
+    const response = await handler(request);
+    const [count, pass] = response.body.tee();
+    void (async () => { for await (const chunk of count) transferred += chunk.length; })().catch(() => {});
+    return new Response(pass, { status: response.status, headers: response.headers });
+  };
+  const lease = createRemoteShellLease({ identity, endpoint, fetch: counting });
+  t.after(async () => { await lease.release(context); await native.cleanup(context); });
+  const command = 'for i in $(seq 1 200000); do echo "line $i padding padding padding"; done';
+  const win = { maxBytes: 2048, maxLines: 20, minIntervalMs: 20, bytesPerSecond: 1_000_000 };
+  let kept = '', skippedBytes = 0, skippedLines = 0, chunks = 0;
+  const result = await lease.environment.exec(command, { window: win, onOutput: (text, _c, info) => {
+    chunks++; kept += text; if (info.skipped) { skippedBytes += info.skipped.bytes; skippedLines += info.skipped.newlines; }
+  } }, context);
+  assert.equal(getOrThrow(result).exitCode, 0);
+  const total = Buffer.byteLength(Array.from({ length: 200000 }, (_, i) => `line ${i + 1} padding padding padding\n`).join(''));
+  assert.ok(total > 6_000_000);
+  assert.ok(transferred < 500_000, `transferred ${transferred} of ${total}`);
+  assert.equal(Buffer.byteLength(kept) + skippedBytes, total, 'kept plus skipped bytes account for all output');
+  assert.equal(kept.split('\n').length - 1 + skippedLines, 200000);
+  assert.ok(kept.endsWith('line 200000 padding padding padding\n'));
+  assert.ok(chunks < 2000);
+});
