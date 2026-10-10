@@ -8,7 +8,8 @@ import { bytes, fileInfo, line, nothing, envelope, streamFrame, schema, version,
 import type { RemoteFileSystemCall } from './remote-files-protocol.js';
 import { frameReader, readJson } from './remote-files-io.js';
 import { randomUUID } from '@hachej/boring-files/platform';
-import { snapshotReaders } from './fs-readers.js';
+import { remoteReaders } from './remote-files-positional.js';
+import { watcherFromFrames } from './remote-files-watch.js';
 export { createRemoteFileSystemHandler } from './remote-files-handler.js';
 export type { RemoteFileSystemAccess, RemoteFileSystemHandlerOptions } from './remote-files-handler.js';
 export type { RemoteFileSystemCall } from './remote-files-protocol.js';
@@ -122,7 +123,7 @@ export function createRemoteFileSystemLease(options: RemoteFileSystemOptions): W
             if (readContext.abortSignal?.aborted) return err(new FileError('aborted', 'Read wait was cancelled; the line has not been consumed'));
             if (readerClosed || connection.abort.signal.aborted) throw new TypeError('Reader closed during read');
             const frame = streamFrame.parse(value);
-            if (frame.requestId !== connection.requestId || frame.sequence !== sequence || frame.type === 'opened') throw new TypeError('Filesystem line sequence mismatch');
+            if (frame.requestId !== connection.requestId || frame.sequence !== sequence || frame.type === 'opened' || frame.type === 'change') throw new TypeError('Filesystem line sequence mismatch');
             if (frame.type === 'end') {
               pending = frames.next().then(tail => { if (tail !== undefined) throw new TypeError('Data after filesystem EOF'); return value; });
               await awaitWithContext(pending, withAbortSignal(connection.abort.signal, readContext));
@@ -144,9 +145,32 @@ export function createRemoteFileSystemLease(options: RemoteFileSystemOptions): W
     finally { if (!retained) await connection.dispose(); }
   };
   const release = async (): Promise<void> => { closed = true; await Promise.all([...active].map(close => close())); };
-  const readers = snapshotReaders({ readBinaryFile: (path, context) => environment.readBinaryFile(path, context), fileInfo: (path, context) => environment.fileInfo(path, context), listDir: (path, context) => environment.listDir(path, context) });
+  // Pi's readers and watcher travel as request-bound positional calls and one streamed watch request, never as whole-file reads.
+  const readers = remoteReaders(invoke, maxResponseBytes);
+  const watch: FileSystem['watch'] = async (targets, onChange, context) => {
+    const connected = await connect({ method: 'watch', args: [targets] }, context);
+    if (!connected.ok) return connected;
+    const connection = connected.value;
+    let retained = false;
+    try {
+      if (connection.response.headers.get('content-type')?.split(';')[0]?.trim() === 'application/json') {
+        const value = envelope.parse(await readJson(connection.response.body, connection.local, maxResponseBytes));
+        if (!matches(value, connection.requestId)) throw new TypeError('Filesystem response identity mismatch');
+        return result(value.result, z.never());
+      }
+      if (connection.response.headers.get('content-type')?.split(';')[0]?.trim() !== streamType || !connection.response.body) throw new TypeError('Invalid filesystem stream type');
+      const frames = frameReader(connection.response.body, maxFrameBytes);
+      connection.setFrames(frames.close);
+      const first = streamFrame.parse(await awaitWithContext(frames.next(), connection.local));
+      if (first.type !== 'opened' || first.mode === undefined || !matches(first, connection.requestId) || connection.abort.signal.aborted) throw new TypeError('Filesystem stream identity mismatch');
+      connection.detach();
+      retained = true;
+      return ok(watcherFromFrames({ mode: first.mode, next: frames.next, requestId: connection.requestId, onChange, dispose: connection.dispose }));
+    } catch { return err(unavailable('Remote file watcher could not be opened')); }
+    finally { if (!retained) await connection.dispose(); }
+  };
   const environment: FileSystem = {
-    ...readers, id: filesystemId, get cwd() { return cwd; }, set cwd(value) { cwd = value; }, cleanup: release,
+    ...readers, watch, id: filesystemId, get cwd() { return cwd; }, set cwd(value) { cwd = value; }, cleanup: release,
     absolutePath: (path, context) => invoke({ method: 'absolutePath', args: [path] }, z.string(), context),
     joinPath: (parts, context) => invoke({ method: 'joinPath', args: [parts] }, z.string(), context),
     readTextFile: (path, context) => invoke({ method: 'readTextFile', args: [path] }, z.string(), context),

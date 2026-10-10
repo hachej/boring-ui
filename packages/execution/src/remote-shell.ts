@@ -64,7 +64,7 @@ export function createRemoteShellLease(options: RemoteShellOptions): WorkspaceLe
             if (current.type !== 'header' || !sameIdentity(current.identity, selected)) throw new Error('Remote workspace identity mismatch');
             header = true;
           } else if (current.type === 'output') {
-            try { onOutput?.(current.text, context, { stream: current.stream }); }
+            try { onOutput?.(current.text, context, current.skipped === undefined ? { stream: current.stream } : { stream: current.stream, skipped: current.skipped }); }
             catch { return err(new ExecutionError('callback_error', 'Local output callback failed; remote termination is unconfirmed')); }
           } else if (current.type === 'result') terminal = current.result;
           else throw new Error('Duplicate remote shell header');

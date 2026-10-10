@@ -5,6 +5,8 @@ import type { FileSystem, Result, TextLineReader } from '@earendil-works/pi-dura
 import type { WorkspaceIdentity, WorkspaceLease } from './contracts.js';
 import { identity, sameIdentity, positiveLimit, nativeVersion, schema, version, streamType, requestInput, wireResult } from './remote-files-protocol.js';
 import type { RemoteFileSystemCall } from './remote-files-protocol.js';
+import { servePositional } from './remote-files-positional.js';
+import { serveWatch } from './remote-files-watch.js';
 import { guardStatus, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
 
 export interface RemoteFileSystemAccess {
@@ -44,6 +46,7 @@ function invoke(fs: FileSystem, call: RemoteFileSystemCall, context: Context): P
     case 'remove': return fs.remove(...call.args, context);
     case 'createTempDir': return fs.createTempDir(...call.args, context);
     case 'createTempFile': return fs.createTempFile(...call.args, context);
+    case 'binaryInfo': case 'readRange': case 'scanLines': case 'readDirPage': case 'watch': throw new TypeError('Not a plain native call');
   }
 }
 
@@ -84,12 +87,27 @@ export function createRemoteFileSystemHandler(options: RemoteFileSystemHandlerOp
       lease = await awaitWithContext(pending, context);
       if (!matches() || signal?.aborted) return refused(409);
       if (!await permitted() || !matches()) return reply(err(new FileError('permission_denied', 'Filesystem binding is no longer permitted')));
-      if (input.call.method !== 'openTextLineReader') {
-        const result = await invoke(lease.environment, input.call, context);
+      const call = input.call;
+      if (call.method === 'binaryInfo' || call.method === 'readRange' || call.method === 'scanLines' || call.method === 'readDirPage') {
+        const result = await servePositional(lease.environment, call, context, cleanupContext, maxResponseBytes);
         if (!await permitted() || !matches()) return refused(403);
         return reply(result);
       }
-      const opened = await lease.environment.openTextLineReader(...input.call.args, context);
+      if (call.method === 'watch') {
+        const started = await serveWatch({
+          fs: lease.environment, targets: call.args[0], binding, requestId: input.requestId, context, cleanup: cleanupContext, maxFrameBytes,
+          permitted: async () => await permitted() && matches(), release, onCleanupError: options.onCleanupError, stop: () => stop.abort(),
+        });
+        if (!started.ok) { if (!await permitted() || !matches()) return refused(403); return reply(started); }
+        transferred = true;
+        return started.value;
+      }
+      if (call.method !== 'openTextLineReader') {
+        const result = await invoke(lease.environment, call, context);
+        if (!await permitted() || !matches()) return refused(403);
+        return reply(result);
+      }
+      const opened = await lease.environment.openTextLineReader(...call.args, context);
       if (!opened.ok) { if (!await permitted() || !matches()) return refused(403); return reply(opened); }
       let reader: TextLineReader | undefined = opened.value;
       let closing: Promise<void> | undefined;

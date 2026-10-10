@@ -1,7 +1,7 @@
 import { awaitWithContext, withAbortSignal } from '@earendil-works/chord/context';
 import type { Context } from '@earendil-works/chord';
 import { ExecutionError, err } from '@earendil-works/pi-durable/env';
-import type { Shell, ShellExecOptions } from '@earendil-works/pi-durable/env';
+import type { Shell, ShellExecOptions, ShellOutputInfo } from '@earendil-works/pi-durable/env';
 import { guardStatus, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
 import type { WorkspaceIdentity } from './contracts.js';
 import { contentType, identity, nativeVersion, positiveLimit, requestInput, sameIdentity, schema, version, wireResult } from './remote-shell-protocol.js';
@@ -67,7 +67,7 @@ export function createRemoteShellHandler(options: RemoteShellHandlerOptions): (r
     async function execute(): Promise<void> {
       try {
         if (signal?.aborted || ended) return;
-        const result = await shell.exec(input.command, { ...input.options, ...(input.output ? { onOutput: (text: string, _context: unknown, info: { readonly stream: 'stdout' | 'stderr' }) => send({ type: 'output', text, stream: info.stream }) } : {}) }, context);
+        const result = await shell.exec(input.command, { ...input.options, ...(input.output ? { onOutput: (text: string, _context: unknown, info: ShellOutputInfo) => send({ type: 'output', text, stream: info.stream, ...(info.skipped === undefined ? {} : { skipped: info.skipped }) }) } : {}) }, context);
         if (await awaitWithContext(Promise.resolve(authorize(input.command, structuredClone(input.options))), context) !== true || signal?.aborted || ended) { fail(); return; }
         send({ type: 'result', result: wireResult(result) });
         ended = true; signal?.removeEventListener('abort', fail); controller.close();

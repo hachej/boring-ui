@@ -1,6 +1,7 @@
 // Pi 1.0.3 asks every `FileSystem` for positional readers, paged directory readers and watchers. Environments here that hold no open
-// file handles (an in-memory bash file system, a remote file service) build the readers on whole-file and whole-directory reads they
-// already have: a reader keeps the bytes or entries as they were when opened. They report no changes: `watch` is `not_supported`.
+// file handles (the in-memory virtual file system) build the readers on whole-file and whole-directory reads they
+// already have: a reader keeps the bytes or entries as they were when opened. They report no changes: `watch` is `not_supported`. The remote file system does not use this: its worker has native positional
+// readers, which `remote-files-positional.ts` forwards without moving the whole file.
 import { FileError, LineScanner, ok, err } from '@earendil-works/pi-durable/env';
 import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result } from '@earendil-works/pi-durable/env';
 import type { Context } from '@earendil-works/chord';

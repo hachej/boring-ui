@@ -1,9 +1,9 @@
 import { ExecutionError, ok, err } from '@earendil-works/pi-durable/env';
-import type { Shell, ShellExecOptions, ExecutionErrorCode } from '@earendil-works/pi-durable/env';
+import type { Shell, ShellExecOptions, ShellOutputSkip, ExecutionErrorCode } from '@earendil-works/pi-durable/env';
 import type { WorkspaceIdentity } from './contracts.js';
 
 export const schema = 'boring.remote-shell';
-export const version = 1;
+export const version = 2;
 export const nativeVersion = 'pi-durable@1.1.0';
 export const contentType = 'application/x-ndjson';
 export type WireOptions = Omit<ShellExecOptions, 'onOutput'>;
@@ -35,7 +35,7 @@ export function sameIdentity(left: WorkspaceIdentity, right: WorkspaceIdentity):
 }
 export function wireOptions(value: unknown): WireOptions {
   const data = record(value);
-  keys(data, ['cwd', 'env', 'inheritEnv', 'timeout', 'spill']);
+  keys(data, ['cwd', 'env', 'inheritEnv', 'timeout', 'spill', 'window']);
   const result: WireOptions = {};
   if (data['cwd'] !== undefined) result.cwd = string(data['cwd']);
   if (data['env'] !== undefined) {
@@ -58,7 +58,24 @@ export function wireOptions(value: unknown): WireOptions {
       || typeof afterLines !== 'number' || !Number.isSafeInteger(afterLines) || afterLines < 0) throw new Error('Invalid spill thresholds');
     result.spill = { afterBytes, afterLines };
   }
+  if (data['window'] !== undefined) {
+    const window = record(data['window']); keys(window, ['maxBytes', 'maxLines', 'minIntervalMs', 'bytesPerSecond']);
+    const limits: Record<string, number> = {};
+    for (const key of ['maxBytes', 'maxLines', 'minIntervalMs', 'bytesPerSecond']) {
+      const limit = window[key];
+      if (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 0) throw new Error('Invalid output window');
+      limits[key] = limit;
+    }
+    result.window = { maxBytes: limits['maxBytes']!, maxLines: limits['maxLines']!, minIntervalMs: limits['minIntervalMs']!, bytesPerSecond: limits['bytesPerSecond']! };
+  }
   return result;
+}
+/** Output the native environment omitted before a chunk (Pi `ShellOutputSkip`), validated off the wire. */
+export function skipped(value: unknown): ShellOutputSkip {
+  const data = record(value); keys(data, ['bytes', 'newlines', 'endsWithNewline']);
+  const bytes = data['bytes'], newlines = data['newlines'], endsWithNewline = data['endsWithNewline'];
+  if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0 || typeof newlines !== 'number' || !Number.isSafeInteger(newlines) || newlines < 0 || typeof endsWithNewline !== 'boolean') throw new Error('Invalid skipped output');
+  return { bytes, newlines, endsWithNewline };
 }
 export function requestInput(value: unknown) {
   const data = record(value);
@@ -106,9 +123,9 @@ export function frame(value: unknown, requestId: string, sequence: number) {
       if (data['schema'] !== schema || data['version'] !== version || data['nativeVersion'] !== nativeVersion) throw new Error('Unsupported remote shell protocol');
       return { type: 'header', identity: identity(data['identity']) } as const;
     case 'output':
-      keys(data, ['type', 'requestId', 'sequence', 'text', 'stream']);
+      keys(data, ['type', 'requestId', 'sequence', 'text', 'stream', 'skipped']);
       if (data['stream'] !== 'stdout' && data['stream'] !== 'stderr') throw new Error('Invalid remote shell output stream');
-      return { type: 'output', text: string(data['text']), stream: data['stream'] } as const;
+      return { type: 'output', text: string(data['text']), stream: data['stream'], ...(data['skipped'] === undefined ? {} : { skipped: skipped(data['skipped']) }) } as const;
     case 'result':
       keys(data, ['type', 'requestId', 'sequence', 'result']);
       return { type: 'result', result: result(data['result']) } as const;
