@@ -1,7 +1,7 @@
 // Pi's own ExecutionEnv conformance suite (`@earendil-works/pi-durable/testing`), run against every environment Boring builds:
 // the virtual env (just-bash), the SQLite file system under a virtual env, remote-shell + remote-files over their in-process
 // handlers, and the AWS Code Interpreter adapter against its offline fake. A case an environment fails is NOT skipped or weakened:
-// it is listed in KNOWN_FAILURES below and runs as a node:test `todo`, so the failure stays visible in every run.
+// it is listed in KNOWN_FAILURES below and runs as an expected failure: it stays visible in every run, and it fails loudly the day it starts passing.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -91,7 +91,7 @@ const environments = [
   { name: 'aws-code-interpreter (offline fake)', withEnv: awsProvider },
 ];
 
-/** Cases a Boring env fails today, by environment name then case name. Each runs as a `todo` so the failure stays visible. */
+/** Cases a Boring env fails today, by environment name then case name. Each is asserted to still fail. */
 const watchNames = [
   "watch reports a missing file's creation, changes, replacement and removal", 'watch reports a missing target whose ancestors are created', 'watch follows directories created together with their contents',
   'watch keeps watching a path whose parent is renamed and recreated', 'watch skips excluded entries and reports a rename out of them', 'watch keeps recursive coverage where a non-recursive target overlaps',
@@ -115,7 +115,14 @@ for (const environment of environments) {
   const cases = createEnvConformance({ assertions, withEnv: environment.withEnv, ...(environment.symlinks === undefined ? {} : { symlinks: environment.symlinks }) });
   test(`Pi env conformance: ${environment.name}`, { concurrency: false }, async t => {
     for (const entry of cases) {
-      await t.test(entry.name, { timeout: entry.timeoutMs ?? 30_000, ...(known[entry.name] ? { todo: known[entry.name] } : {}) }, () => entry.run());
+      const timeout = entry.timeoutMs ?? 30_000;
+      if (!known[entry.name]) { await t.test(entry.name, { timeout }, () => entry.run()); continue; }
+      // A known failure passes only while the case still fails; once fixed it fails loudly, so it gets removed from the list.
+      await t.test(`[known failure] ${entry.name}`, { timeout }, async sub => {
+        sub.diagnostic(known[entry.name]);
+        const outcome = await entry.run().then(() => 'passed', () => 'failed');
+        assert.equal(outcome, 'failed', `"${entry.name}" now passes on ${environment.name}: remove it from KNOWN_FAILURES`);
+      });
     }
   });
 }

@@ -436,6 +436,71 @@ test('Code Interpreter env (renew auto): a session is rotated before its time to
   assert.equal(fake.sessions.get(first).live, false);
 });
 
+// A client around the fake that can fail on demand: Start (after `startDelayMs`) and getTask with a transport error.
+function flaky(inner) {
+  const state = { failStart: false, failPoll: false, startDelayMs: 0, starts: 0 };
+  return { state, send: async (command, ...rest) => {
+    const name = command.constructor.name;
+    if (name === 'StartCodeInterpreterSessionCommand') {
+      state.starts++;
+      if (state.startDelayMs) await delay(state.startDelayMs);
+      if (state.failStart) throw Object.assign(new Error('fictional start outage'), { name: 'ServiceUnavailableException' });
+    }
+    if (name === 'InvokeCodeInterpreterCommand' && state.failPoll && command.input.name === 'getTask') throw Object.assign(new Error('fictional network reset'), { name: 'NetworkError' });
+    return inner.send(command, ...rest);
+  } };
+}
+const stoppedSessions = fake => fake.calls.filter(call => call.operation === 'StopCodeInterpreterSession').map(call => call.sessionId);
+
+test('Code Interpreter env (renew auto): a command whose outcome is unknown keeps its session: no rotation, no stop, and nothing is replayed', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const client = flaky(await fake.client());
+  const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  client.state.failPoll = true;
+  const unknown = await env.exec('sleep 1.5; echo ran >> ran.txt', {}, context);
+  assert.equal(codeOf(unknown), 'unknown', 'the transport failure is reported, not retried');
+  client.state.failPoll = false;
+  await delay(1200); // older than ttl - margin, while the remote task may still run
+  assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
+  assert.equal(interpreter.sessionId(), first, 'an unresolved task blocks rotation');
+  assert.equal(client.state.starts, 1);
+  await delay(900);
+  assert.deepEqual(stoppedSessions(fake), [], 'the session running the unresolved task is not stopped');
+  assert.equal(getOrThrow(await env.readTextFile('ran.txt', context)), 'ran\n', 'the task finished once, on its own session');
+});
+
+test('Code Interpreter env (renew auto): a failed rotation keeps the old session for every command, backs off, and stop() still disposes the old session', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const client = flaky(await fake.client());
+  const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  await delay(1100); // due for rotation
+  client.state.failStart = true; client.state.startDelayMs = 200;
+  // The command that triggers the rotation and one that arrives during it both succeed on the old session.
+  const together = await Promise.all([env.exec('true', {}, context), delay(50).then(() => env.exec('true', {}, context))]);
+  assert.deepEqual(together.map(codeOf), ['ok', 'ok']);
+  assert.equal(interpreter.sessionId(), first);
+  assert.equal(client.state.starts, 2, 'one rotation attempt');
+  client.state.startDelayMs = 0;
+  for (let i = 0; i < 4; i++) assert.equal(codeOf(await env.exec('true', {}, context)), 'ok');
+  assert.equal(client.state.starts, 2, 'no new Start on every following command');
+  await delay(1100);
+  assert.equal(codeOf(await env.exec('true', {}, context)), 'ok');
+  assert.equal(client.state.starts, 3, 'one retry after the backoff');
+  // stop() while a rotation is failing disposes the old session.
+  await delay(1100);
+  client.state.startDelayMs = 200;
+  const pending = env.exec('true', {}, context);
+  await delay(50);
+  await interpreter.stop(context);
+  await pending;
+  assert.deepEqual(stoppedSessions(fake), [first], 'the old session is stopped by stop(), once');
+  assert.equal(fake.sessions.get(first).live, false);
+});
+
 test('Code Interpreter env: only listed session-ended errors count as loss; permission errors do not', { timeout: 15000 }, async t => {
   const { createCodeInterpreterEnv, SESSION_ENDED_ERRORS } = await import('@hachej/boring-execution/aws-code-interpreter');
   assert.ok(SESSION_ENDED_ERRORS.length > 0);
@@ -521,4 +586,19 @@ test('errors leaving a virtual workspace are bounded: no stack frames reach a to
   const direct = await (await acquire(workspace)).environment.readTextFile('broken.txt', context);
   assert.equal(direct.ok, false);
   assert.ok(direct.error.message.length <= MAX_ERROR_CHARS && !/^\s+at /m.test(direct.error.message), 'the native environment\'s own error is bounded too');
+});
+
+test('AWS example: a workspace is busy only for live work of its own user', async () => {
+  const { hasLiveWork } = await import('../../examples/aws/live-work.mjs');
+  const owners = { c1: 'alice', c2: 'bob', c3: 'bob' };
+  const userOf = async id => owners[id];
+  const task = conversationId => ({ record: { conversationId } });
+  const submission = conversationId => ({ conversationId });
+  assert.equal(await hasLiveWork({ tasks: [], submissions: [] }, 'alice', userOf), false);
+  assert.equal(await hasLiveWork(undefined, 'alice', userOf), false);
+  assert.equal(await hasLiveWork({ tasks: [task('c2')], submissions: [] }, 'alice', userOf), false, "bob's task does not keep alice's workspace open");
+  assert.equal(await hasLiveWork({ tasks: [task('c2')], submissions: [] }, 'bob', userOf), true);
+  assert.equal(await hasLiveWork({ tasks: [task('c1')], submissions: [submission('c3')] }, 'bob', userOf), true, 'an unsettled submission counts');
+  assert.equal(await hasLiveWork({ tasks: [task('c1')], submissions: [] }, 'bob', userOf), false);
+  assert.equal(await hasLiveWork({ tasks: [task('unknown')], submissions: [] }, 'alice', userOf), false);
 });

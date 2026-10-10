@@ -34,6 +34,7 @@ import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
 import { conversationMetadata, createConversations } from '@hachej/boring-agent/conversations';
 import { createWorkspaceCache, rootConversation } from '@hachej/boring-agent/workspaces';
+import { hasLiveWork } from './live-work.mjs';
 import { openNodeConnection, sqliteSettings } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider, isTemporary } from '@hachej/boring-files/workspace';
@@ -105,13 +106,7 @@ export async function startAwsHost({ port = 8080, hostname = '0.0.0.0', efsRoot 
     idleMs: workspaceIdleMs,
     // Pi does not report when a call stops using its env: a workspace stays open while the harness has live work.
     // Per workspace: only live work of this user's conversations keeps their workspace open.
-    busy: async userId => {
-      const inspection = await harness.inspect(context);
-      if (!inspection) return false;
-      const ids = new Set([...inspection.tasks.map(task => task.record.conversationId), ...inspection.submissions.map(submission => submission.conversationId)]);
-      for (const id of ids) if (await userOfConversation(id, context) === userId) return true;
-      return false;
-    },
+    busy: async userId => hasLiveWork(await harness.inspect(context), userId, conversationId => userOfConversation(conversationId, context)),
     onError: (error, userId) => console.error(`closing the workspace of ${userId}:`, error?.message ?? error),
   });
 
