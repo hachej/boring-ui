@@ -2,7 +2,7 @@
   "name": "@hachej/boring-feedback",
   "version": "0.2.0",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Feedback people leave on what they see, usable without an agent and by agents through an opt-in capability.",
   "sideEffects": false,

@@ -2,7 +2,7 @@
   "name": "@hachej/boring-files",
   "version": "0.2.0",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Versioned-resource contracts and the workspace provider over a Pi FileSystem (disk, virtual or SQLite).",
   "sideEffects": false,

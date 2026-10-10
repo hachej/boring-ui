@@ -16,9 +16,9 @@ function fixture(t) {
   const main = { name: 'fixture', version: '1.0.0', private: true, workspaces: ['packages/*'] };
   write('package.json', main); write('LICENSE', 'MIT fixture license\n');
   const lock = { name: main.name, version: main.version, lockfileVersion: 3, packages: { '': main } };
-  for (const name of ['files', 'agent']) {
+  for (const name of ['files', 'agent', 'browser']) {
     const manifest = {
-      name: `@hachej/boring-${name}`, version: main.version, private: false, license: 'MIT', type: 'module',
+      name: `@hachej/boring-${name}`, version: main.version, private: name === 'browser', license: 'MIT', type: 'module',
       repository: { url: 'git+https://github.com/hachej/boring-ui.git', directory: `packages/${name}` },
       engines: { node: '>=22.19.0' }, publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
       files: ['dist', 'README.md', 'LICENSE'], exports: { '.': './dist/index.js' },
@@ -63,7 +63,7 @@ test('invalid versions and inconsistent lockfiles leave all source files untouch
 test('real audited tarballs support dry-run and reconcile partial publication without blind replay', async t => {
   const f = fixture(t);
   const checked = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
-  assert.deepEqual(checked.errors, []); assert.equal(checked.packs.length, 2);
+  assert.deepEqual(checked.errors, []); assert.equal(checked.packs.length, 2); assert.deepEqual(checked.skipped, ['@hachej/boring-browser']);
   const release = readRelease(f.directory, f.options);
   assert.deepEqual(release.packages, checked.packs);
   await t.test('actual npm publish dry-run does not contact our registry writer', async () => {
@@ -78,7 +78,7 @@ test('real audited tarballs support dry-run and reconcile partial publication wi
     assert.throws(() => readRelease(f.directory, { ...f.options, version: '1.0.0-rc.1', tag: 'latest' }), /prereleases/);
     const saved = readFileSync(join(f.directory, 'release.json'));
     f.write('archives/release.json', { ...release, packages: release.packages.slice(1) });
-    assert.throws(() => readRelease(f.directory, f.options), /every workspace/); writeFileSync(join(f.directory, 'release.json'), saved);
+    assert.throws(() => readRelease(f.directory, f.options), /every publishable workspace/); writeFileSync(join(f.directory, 'release.json'), saved);
     const pkg = f.read('packages/agent/package.json'); f.write('packages/agent/package.json', { ...pkg, private: true });
     assert.throws(() => readRelease(f.directory, f.options), /reviewed source/); f.write('packages/agent/package.json', pkg);
   });
@@ -119,4 +119,14 @@ test('private release candidates produce no retained publishable artifact', t =>
   const result = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
   assert.ok(result.errors.some(error => error.includes('private must explicitly be false')));
   assert.throws(() => readFileSync(join(f.directory, 'release.json')), { code: 'ENOENT' });
+});
+
+test('an intentionally private package that turns public is refused, and one that stays private is never packed', t => {
+  const f = fixture(t);
+  const ok = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+  assert.deepEqual(ok.errors, []); assert.ok(!ok.packs.some(pack => pack.name.endsWith('browser')));
+  assert.deepEqual(f.read('archives/release.json').skippedPrivate, ['@hachej/boring-browser']);
+  const pkg = f.read('packages/browser/package.json'); f.write('packages/browser/package.json', { ...pkg, private: false });
+  const bad = checkPackages(f.root, { release: true });
+  assert.ok(bad.errors.some(error => error.includes('must stay private')));
 });

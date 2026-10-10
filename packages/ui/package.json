@@ -2,7 +2,7 @@
   "name": "@hachej/boring-ui-kit",
   "version": "0.2.0",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Independent headless viewer contracts with optional resource and native Pi subpaths.",
   "sideEffects": [

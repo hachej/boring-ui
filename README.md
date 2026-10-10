@@ -2,7 +2,7 @@
 
 Build an AI assistant into your application with chat, document editors, canvas viewers and background tasks. Boring UI provides TypeScript libraries and React components around the native Pi runtime. Your application owns authentication, data, permissions and model credentials.
 
-**0.2.0 release candidate.** This is a breaking replacement for the 0.1.x implementation. The seven packages remain private while release qualification is pending. Read the [migration guide](MIGRATING.md) before upgrading. “v4” names the architecture, not the npm version.
+**0.2.0 release candidate.** This is a breaking replacement for the 0.1.x implementation. Five packages (agent, ui-kit, files, execution, feedback) are prepared for publication on `latest`; boring-browser and boring-testing stay private. Per the owner ruling of 2026-10-10, deferred proofs are backlog, not release blockers. Read the [migration guide](MIGRATING.md) before upgrading. “v4” names the architecture, not the npm version.
 
 ## What you can build
 
@@ -14,7 +14,7 @@ Editors and viewers also work without an agent. Choose the packages and entry po
 
 ## Packages
 
-All seven packages target **0.2.0**. These are the proposed npm names; publication is still pending.
+All seven packages target **0.2.0**. Five are in the publish set; browser and testing stay private. Nothing is published yet; publication awaits the owner checklist in the release guide.
 
 | Package | What it provides | Guide |
 | --- | --- | --- |
@@ -63,7 +63,7 @@ Pi owns conversations, tools, task execution and recovery. Boring uses its publi
 
 The repository contains working implementations and tests for document publication and recovery, chat, editors, canvas, background tasks, remote adapters and installed component recipes. Passing an individual test does not qualify every provider or deployment.
 
-Global release proofs, live-provider checks, consumer acceptance and optional dependency licensing still have outstanding qualifications. Packages remain private until the release gates pass. The [implementation checkpoint](docs/implementation/PARTIAL.md) records the remaining work; [VERIFY.json](VERIFY.json) owns the proof status.
+Global release proofs, live-provider checks, consumer acceptance and optional dependency licensing still have outstanding qualifications. Deferred proofs are backlog and do not block release (owner ruling, 2026-10-10); publication waits on the owner checklist in the release guide. The [implementation checkpoint](docs/implementation/PARTIAL.md) records the remaining work; [VERIFY.json](VERIFY.json) owns the proof status.
 
 The [npm release guide](docs/implementation/NPM-RELEASE.md) describes version synchronization, package ownership, trusted publishing and the manual publishing workflow. Merging a PR does not publish packages.
 
@@ -78,7 +78,7 @@ npm run check:pack
 npm run verify:release
 ```
 
-`check:pack` audits real package tarballs. `verify` reports deferred proofs; `verify:release` rejects them. Browser journeys and isolated consumer checks run separately in CI. Raw local evidence belongs in `.cache/evidence/`.
+`check:pack` audits real package tarballs. `verify` reports deferred proofs; `verify:release` still lists them but does not fail on them (backlog, not blockers); real failures still fail. Browser journeys and isolated consumer checks run separately in CI. Raw local evidence belongs in `.cache/evidence/`.
 
 ## Documentation
 
