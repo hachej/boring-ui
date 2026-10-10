@@ -27,7 +27,7 @@ const app = await startDockApp({ directory: mkdtempSync(join(tmpdir(), 'boring-d
 let browser;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
-  const mouse = (type, x, y) => browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
+  const mouse = (type, x, y, clickCount = 1) => browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount });
   const dragFrom = async (selector, to) => {
     const r = await browser.evaluate(rect(selector));
     const from = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
@@ -89,6 +89,13 @@ try {
     // Narrower to 400, then below the threshold: the chat keeps the last width above it (400) for the Dock button.
     const divider = await browser.evaluate(rect(DIVIDER('chat')));
     const from = { x: divider.x + divider.w / 2, y: divider.y + divider.h / 2 };
+    // A real double-click first (it resets the width): the next press must still resize, not drag a text selection.
+    await mouse('mouseMoved', from.x, from.y);
+    for (const count of [1, 2]) { await mouse('mousePressed', from.x, from.y, count); await mouse('mouseReleased', from.x, from.y, count); }
+    await browser.until('reset to 420 by the double-click', `${now('chat')} === 420`, 3000);
+    assert.equal(await browser.evaluate('String(getSelection())'), '', 'the double-click selects nothing');
+    const reset = await browser.evaluate(rect(DIVIDER('chat')));
+    from.x = reset.x + reset.w / 2;
     await mouse('mouseMoved', from.x, from.y); await mouse('mousePressed', from.x, from.y);
     await mouse('mouseMoved', 400, from.y);
     await browser.until('400 wide while held', `${now('chat')} === 400`, 3000);
