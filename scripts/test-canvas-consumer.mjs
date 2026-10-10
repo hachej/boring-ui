@@ -33,6 +33,8 @@ try {
   const dependencies = Object.fromEntries(['@tldraw/editor', '@tldraw/store', 'react', 'react-dom'].map(name => [name, ui.peerDependencies[name]]));
   if (editor) dependencies.tldraw = ui.peerDependencies.tldraw;
   if (remote) for (const name of ['@earendil-works/pi-durable', '@earendil-works/pi-ai', '@earendil-works/chord', '@modelcontextprotocol/sdk', 'zod']) dependencies[name] = rootManifest.devDependencies[name];
+  // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
+  dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   dependencies['@tldraw/tlschema'] = sourceLock.packages['node_modules/@tldraw/tlschema'].version;
   for (const name of ['typescript', '@types/react', '@types/react-dom', '@types/node', 'happy-dom', 'esbuild']) dependencies[name] = rootManifest.devDependencies[name];
   for (const [name, version] of Object.entries(dependencies)) assert.match(version, /^\d+\.\d+\.\d+$/, `Expected an exact dependency pin: ${name}`);
@@ -61,7 +63,7 @@ try {
   writeFileSync(join(directory, 'package-lock.json'), JSON.stringify({ name: manifest.name, version: manifest.version, lockfileVersion: 3, requires: true, packages }));
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archives]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
-  for (const name of [...(remote ? [] : ['@earendil-works/pi-durable', '@earendil-works/chord', '@earendil-works/pi-ai', '@hachej/boring-agent']), '@hachej/boring-execution', 'marked', ...(editor ? [] : ['tldraw'])]) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
+  for (const name of [...(remote ? [] : ['@hachej/boring-agent']), '@hachej/boring-execution', 'marked', ...(editor ? [] : ['tldraw'])]) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
   writeFileSync(join(directory, 'consumer.ts'), `import { createCanvasController, type CanvasController, type CanvasOptions, type CanvasProposal } from '@hachej/boring-ui-kit/canvas';
 import { applyCanvasEdits, parseCanvasDocument, type CanvasEdit } from '@hachej/boring-ui-kit/canvas-document';
 import type { TLStoreSchema, TLShape } from '@tldraw/tlschema';
