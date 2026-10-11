@@ -1,7 +1,7 @@
 # @hachej/boring-feedback
 
 Feedback reports, storage, placement, and optional UI and native agent adapters.
-This package is under development and is not yet qualified for npm release.
+Private plug-in used inside this repository; not published to npm.
 
 Import the capability you need. There is no root export.
 

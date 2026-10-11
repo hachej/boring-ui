@@ -2,7 +2,7 @@
   "name": "@hachej/boring-agent",
   "version": "0.2.0",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Native Pi attachment, the read/write/edit guard, durable questions, conditional document delivery and metering.",
   "sideEffects": false,

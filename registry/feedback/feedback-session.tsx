@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 import { readableElement } from '@hachej/boring-feedback/format';
 import { pinMark, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
 import { useExternal } from './use-external';
+import { withLabels, type FeedbackLabels } from './feedback-labels';
 
 /** A microphone outline drawn inline: emoji glyphs (🎙) are missing from some system fonts. */
 const MicIcon = () => <svg className="boring-feedback-mic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
@@ -25,6 +26,8 @@ export interface FeedbackBarProps {
   readonly className?: string;
   /** Docked under the chat composer (the composer's `feedback.bar`) instead of floating at the top of the page. */
   readonly docked?: boolean;
+  /** Words of the controls (`feedbackLabelsFr` for French); what is left out keeps the English default. */
+  readonly labels?: Partial<FeedbackLabels>;
 }
 
 /** Pins dropped while recording that have no note yet (nothing transcribed for them, or transcription failed). */
@@ -63,8 +66,9 @@ function barHint(state: FeedbackSessionSnapshot): string {
  * Feedback mode's bar: `● Feedback · N notes · 🎙 Record · Hold ⌥ to use the app · Use app · Done · ✕`. While recording: a red dot, the
  * running time, "Recording — point and talk" and Stop. A refused microphone is said in the bar itself, never only in a tooltip.
  */
-export function FeedbackBar({ session, className, docked = false }: FeedbackBarProps) {
+export function FeedbackBar({ session, className, docked = false, labels }: FeedbackBarProps) {
   const state = useExternal(session);
+  const words = withLabels(labels);
   const recording = state.voice.kind === 'recording';
   const time = useRecordingTime(recording && (state.phase === 'active' || state.phase === 'processing'));
   if (state.phase !== 'active' && state.phase !== 'processing') return null;
@@ -73,7 +77,8 @@ export function FeedbackBar({ session, className, docked = false }: FeedbackBarP
   const voiceProblem = state.voice.kind === 'refused' ? state.voice : undefined;
   return <div data-boring="feedback" data-feedback-ignore="" role="toolbar" aria-label="Feedback mode" data-testid="feedback-bar" data-docked={docked ? 'true' : 'false'}
     data-using={state.using ? 'true' : 'false'} data-recording={recording ? 'true' : 'false'} data-transcribing={state.transcribing ? 'true' : 'false'}
-    className={['boring-feedback-bar', className].filter(Boolean).join(' ')}>
+    className={['boring-feedback-bar', className].filter(Boolean).join(' ')}
+    onKeyDown={event => { if (event.key === 'Escape' && (state.bubble || state.generalOpen)) { event.stopPropagation(); if (state.bubble) session.cancelBubble(); else session.closeGeneral(); } }}>
     <span className="boring-feedback-bar-title"><span className="boring-feedback-dot" aria-hidden="true" />Feedback</span>
     <span className="boring-feedback-bar-meta" data-testid="feedback-bar-count">{plural(noteCount(state), 'note', 'notes')}{pins ? ` · ${plural(pins, 'pin', 'pins')}` : ''}</span>
     {state.voiceAvailable && <button type="button" className="boring-feedback-button boring-feedback-record" data-testid="feedback-voice" aria-pressed={recording}
@@ -85,6 +90,7 @@ export function FeedbackBar({ session, className, docked = false }: FeedbackBarP
       <span className="boring-feedback-timer" data-testid="feedback-recording-time">{time}</span></span>}
     <span className="boring-feedback-hint" role="status" aria-live="polite" data-testid="feedback-bar-hint">{barHint(state)}</span>
     {voiceProblem && <span className="boring-feedback-voice-problem" role="alert" data-testid="feedback-voice-problem" data-code={voiceProblem.code}>{voiceProblem.reason}</span>}
+    {!processing && <button type="button" className="boring-feedback-button" data-testid="feedback-general" aria-pressed={state.generalOpen} onClick={() => session.askGeneral()}>{words.askGeneral}</button>}
     {!processing && <span className="boring-feedback-keys boring-feedback-alt">Hold ⌥ to use the app</span>}
     {!processing && <button type="button" className="boring-feedback-button" data-testid="feedback-use-app" aria-pressed={state.useToggle} onClick={() => session.setUseToggle(!state.useToggle)}>Use app</button>}
     <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="feedback-done" disabled={processing} onClick={() => { void session.done(); }}>Done</button>
@@ -103,15 +109,36 @@ function bubblePlace(element: Element): CSSProperties {
   return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16) };
 }
 
-/** The note bubble beside a new or reopened pin: "What's wrong here?", Enter saves, Shift-Enter for a new line, Esc discards the pin. */
-export function NoteBubble({ session }: { readonly session: FeedbackSession }) {
+/** After a bubble closes with focus nowhere (the focused field left the page), focus goes back to the bar's general-question entry. */
+function useFocusReturn(open: boolean, document: Document | undefined): void {
+  const was = useRef(false);
+  useEffect(() => {
+    if (was.current && !open && document) {
+      const active = document.activeElement;
+      if (!active || active === document.body) document.querySelector<HTMLElement>('[data-testid="feedback-general"]')?.focus({ preventScroll: true });
+    }
+    was.current = open;
+  }, [open, document]);
+}
+
+/**
+ * The note bubble beside a new or reopened pin: "What's wrong here?", Enter saves, Shift-Enter for a new line, Esc discards the pin,
+ * and "Cancel selection" (also clicking the pinned element again) drops the pin and keeps what was typed for a general question.
+ * With the general question open it is a bubble with no element: the same field, docked at the bottom, Esc closes it.
+ */
+export function NoteBubble({ session, labels }: { readonly session: FeedbackSession; readonly labels?: Partial<FeedbackLabels> }) {
   const state = useExternal(session);
+  const words = withLabels(labels);
   const bubble = state.bubble;
   const field = useRef<HTMLTextAreaElement>(null);
+  const general = useRef<HTMLTextAreaElement>(null);
   const [place, setPlace] = useState<CSSProperties | undefined>(undefined);
   const [, redraw] = useState(0);
+  const [announce, setAnnounce] = useState('');
+  const generalOpen = state.generalOpen && state.phase === 'active';
   useLayoutEffect(() => { if (bubble) setPlace(bubblePlace(bubble.element)); }, [bubble?.noteId, bubble?.element]);
   useEffect(() => { if (bubble) field.current?.focus({ preventScroll: true }); }, [bubble?.noteId]);
+  useEffect(() => { if (generalOpen) { general.current?.focus({ preventScroll: true }); setAnnounce(words.generalOpened); } }, [generalOpen]);
   useEffect(() => {
     if (!bubble) return;
     const view = bubble.element.ownerDocument.defaultView;
@@ -120,19 +147,40 @@ export function NoteBubble({ session }: { readonly session: FeedbackSession }) {
     view?.addEventListener('resize', follow);
     return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); };
   }, [bubble?.noteId, bubble?.element]);
-  if (!bubble || state.phase !== 'active') return null;
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); session.saveBubble(); }
+  useFocusReturn(Boolean(bubble) || generalOpen, typeof document === 'undefined' ? undefined : document);
+  // A polite live region outlives the bubble, so the cancellation is heard even though the dialog is gone.
+  const cancel = (): void => { session.cancelSelection(); setAnnounce(words.selectionCancelled); };
+  const live = <span data-boring="feedback" data-feedback-ignore="" role="status" aria-live="polite" className="boring-feedback-sr" data-testid="feedback-bubble-announce"
+    style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>{announce}</span>;
+  if (generalOpen && !bubble) {
+    const onGeneralKey = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+      if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing)) { event.preventDefault(); event.stopPropagation(); session.closeGeneral(); }
+    };
+    return <>{live}<div data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={words.askGeneral} data-testid="feedback-general-bubble"
+      className="boring-feedback-bubble" style={{ position: 'fixed', left: 8, right: 8, bottom: 72, margin: '0 auto', maxWidth: 420 }}>
+      <span className="boring-feedback-bubble-head"><span className="boring-feedback-bubble-label">{words.askGeneral}</span></span>
+      <textarea ref={general} data-testid="feedback-general-input" rows={3} placeholder={words.generalPlaceholder} aria-label={words.generalField} value={state.general}
+        onChange={event => session.setGeneral(event.target.value)} onKeyDown={onGeneralKey} />
+      <span className="boring-feedback-keys">{words.generalHint}</span>
+    </div></>;
+  }
+  if (!bubble || state.phase !== 'active') return state.phase === 'active' ? live : null;
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.target === field.current) { event.preventDefault(); session.saveBubble(); }
     else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); session.cancelBubble(); }
   };
-  return <div data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={`Note ${bubble.number}`} data-testid="feedback-bubble" data-note={bubble.number}
-    className="boring-feedback-bubble" style={place}>
+  return <>{live}<div data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={`Note ${bubble.number}`} data-testid="feedback-bubble" data-note={bubble.number}
+    className="boring-feedback-bubble" style={place} onKeyDown={onKeyDown}>
     <span className="boring-feedback-bubble-head"><span className="boring-feedback-pin" aria-hidden="true">{pinMark(bubble.number)}</span>
       <span className="boring-feedback-bubble-label" data-testid="feedback-bubble-label">{bubble.label}</span></span>
-    <textarea ref={field} data-testid="feedback-bubble-input" rows={2} placeholder="What's wrong here?" aria-label="What's wrong here?" value={bubble.text}
-      onChange={event => session.setBubbleText(event.target.value)} onKeyDown={onKeyDown} />
-    <span className="boring-feedback-keys">Enter to save · Esc to discard</span>
-  </div>;
+    <textarea ref={field} data-testid="feedback-bubble-input" rows={2} placeholder={words.bubblePlaceholder} aria-label={words.bubblePlaceholder} value={bubble.text}
+      onChange={event => session.setBubbleText(event.target.value)} />
+    <span className="boring-feedback-bubble-actions">
+      <button type="button" className="boring-feedback-button" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</button>
+      <button type="button" className="boring-feedback-button" data-testid="feedback-bubble-general" onClick={() => session.askGeneral()}>{words.askGeneral}</button>
+    </span>
+    <span className="boring-feedback-keys">{words.bubbleHint}</span>
+  </div></>;
 }
 
 export interface FeedbackChipProps {
