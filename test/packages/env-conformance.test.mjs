@@ -103,8 +103,8 @@ const SYMLINK_READER = { 'binary reader follows symlinks unless noFollow refuses
 const KNOWN_FAILURES = {
   'virtual (just-bash)': { ...noWatch('watch is not_supported by the virtual env (the suite has no option to skip watch cases)'), ...DIR_SNAPSHOT, ...ARGV_SPAWN, ...SYMLINK_READER },
   'SQLite file system (under the virtual env)': { ...noWatch('watch is not_supported by the virtual env; the SQLite file system itself polls but the virtual env does not expose it'), ...DIR_SNAPSHOT, ...ARGV_SPAWN },
-  'remote-shell + remote-files (in-process handlers)': { ...noWatch('TODO(remote protocol lane): remote-files has no watch call'), ...DIR_SNAPSHOT, ...ARGV_SPAWN, ...SYMLINK_READER,
-    'windowed exec keeps the exact tail and counts what it skips': 'TODO(remote protocol lane): the remote shell protocol rejects the output window option ("Invalid remote shell request")' },
+  'remote-shell + remote-files (in-process handlers)': { ...DIR_SNAPSHOT, ...ARGV_SPAWN,
+    'binary reader keeps reading the file it opened after a rename': 'TODO(remote protocol lane): a remote binary reader holds no handle (remote-files-positional.ts); it names the path and the worker refuses a path that no longer matches the opened size and mtime, so it cannot keep reading a renamed file' },
   'aws-code-interpreter (offline fake)': { ...ARGV_SPAWN },
 };
 
