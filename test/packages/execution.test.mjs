@@ -342,8 +342,11 @@ test('Code Interpreter env: file tools and interpreter commands share one folder
   const timedOut = await env.exec('sleep 5', { timeout: 0.2 }, context);
   assert.equal(timedOut.ok ? 'ok' : timedOut.error.code, 'timeout');
   const cancelled = withCancel(context);
-  setTimeout(() => cancelled.cancel(), 100);
+  // Abort once the command is polled, i.e. really started (a fixed delay raced with a slow start on a loaded machine).
+  const startedBefore = fake.calls.filter(call => call.name === 'getTask').length;
+  const abortWhenStarted = setInterval(() => { if (fake.calls.filter(call => call.name === 'getTask').length > startedBefore) { clearInterval(abortWhenStarted); cancelled.cancel(); } }, 10);
   const aborted = await env.exec('sleep 5', {}, cancelled.context);
+  clearInterval(abortWhenStarted);
   assert.equal(aborted.ok ? 'ok' : aborted.error.code, 'aborted');
   assert.equal(fake.calls.filter(call => call.name === 'stopTask').length, 2, 'timeout and abort both request stopTask');
   // renew: 'manual' (the old behaviour): the service ends the session, commands report it, nothing restarts on its own, renew() is the owner's explicit choice.
