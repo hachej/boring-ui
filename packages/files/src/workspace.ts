@@ -61,11 +61,19 @@ export interface WorkspaceResourceProvider extends ResourceProvider {
    * The change feed: every write this provider makes or records, every change `poll` finds and, while someone is listening, every
    * change the file system's `watch` reports (the SQLite file system reports its own connection's writes at once). Ordered by
    * `seq` and replayable from `since` within a bounded window; a gap yields a `resnapshot` event. The iterator ends when
-   * `request.signal` or `access.signal` aborts. Events are invalidation hints: read the bytes again.
+   * `request.signal` or `access.signal` aborts, or the provider closes. Events are invalidation hints: read the bytes again.
+   *
+   * After the last listener leaves, the watcher stays open for `watchLingerMs` and then closes. Changes made while no watcher was
+   * open are unknown, so the first listener afterwards makes the feed append a `resnapshot`: a client that reconnects after a
+   * longer absence reloads everything once, and one that stays connected is never affected.
    */
   readonly changes: (request: ChangeFeedRequest, access: ResourceAccess) => AsyncIterable<WorkspaceChangeEvent>;
   /** The seq of the newest change event (the cursor of "now" for `changes({ since })`). */
   readonly changeHead: () => number;
+  /** Names this provider's lifetime; a cursor from another one (`ChangeFeedRequest.incarnation`) is answered with a `resnapshot`. */
+  readonly changeIncarnation: string;
+  /** Ends every change stream, closes the file watcher and drops the change listeners. Idempotent; the provider still reads and publishes. */
+  readonly close: () => void;
   /** Revisions still retained for a file, newest first. */
   readonly history: (path: string) => string[];
   /** The same revisions with the time each was saved (milliseconds since the epoch; 0 when unknown), newest first. */
@@ -177,6 +185,9 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   // first event and reads as a gap, never as a position in this lifetime.
   const firstSeq = Date.now() * 1000;
   let head = firstSeq;
+  // Names this provider lifetime. A cursor from another lifetime is refused by this, not only by the clock: the clock may go back.
+  const incarnationOfFeed = randomUUID();
+  const lifetime = new AbortController();
   const buffer: WorkspaceChangeEvent[] = [];
   const waiting = new Set<() => void>();
   function append(event: { readonly kind: 'change'; readonly path: string; readonly revision: string | null; readonly source: WorkspaceChange['source']; readonly directory?: true; readonly conversationId?: string } | { readonly kind: 'resnapshot' }): void {
@@ -497,6 +508,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     const path = locator({ resource: { providerId, path: write.path }, view: { kind: 'published' } }).resource.path;
     const after = identifier(write.after);
     const conversationId = write.conversationId === undefined ? undefined : identifier(write.conversationId);
+    // Known before the await: a watcher event for this same write, handled meanwhile, then finds nothing new and emits nothing twice.
+    if (!isTemporary(path)) known.set(path, after);
     // Deliberately not `queue.run`: the file guard calls this from inside the queue, and the queue runs one piece at a time.
     const now = await observe(path, access.signal);
     if (now.kind === 'outside' || now.kind === 'error') return;
@@ -550,6 +563,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     append({ kind: 'resnapshot' });
   }
   function startWatching(): void {
+    if (lifetime.signal.aborted) return;
     if (linger !== undefined) { clearTimeout(linger); linger = undefined; }
     if (watcher || watchUnsupported) return;
     // Changes made while nobody watched were not seen: a listener resuming from before that reloads.
@@ -572,7 +586,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     identifier(access.scopeId);
     const since = request.since;
     if (since !== undefined && (!Number.isSafeInteger(since) || since < 0)) throw new TypeError('Invalid change cursor');
-    const signals = [request.signal, access.signal].filter((value): value is AbortSignal => value !== undefined);
+    if (lifetime.signal.aborted) return;
+    const signals = [request.signal, access.signal, lifetime.signal].filter((value): value is AbortSignal => value !== undefined);
     const signal = signals.length ? AbortSignal.any(signals) : new AbortController().signal;
     listening += 1;
     startWatching();
@@ -580,7 +595,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
       let cursor = head;
       if (since !== undefined) {
         const oldest = buffer[0]?.seq ?? head + 1;
-        if (since > head || since < firstSeq || since < oldest - 1) yield { kind: 'resnapshot', seq: head, at: Date.now() };
+        const foreign = request.incarnation !== undefined && request.incarnation !== incarnationOfFeed;
+        if (foreign || since > head || since < firstSeq || since < oldest - 1) yield { kind: 'resnapshot', seq: head, at: Date.now() };
         else cursor = since;
       }
       while (!signal.aborted) {
@@ -604,7 +620,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
       }
     } finally {
       listening -= 1;
-      if (listening === 0 && watcher) {
+      if (listening === 0 && watcher && !lifetime.signal.aborted) {
         linger = setTimeout(() => { linger = undefined; if (listening === 0) stopWatching(); }, lingerMs);
         (linger as { unref?: () => void }).unref?.();
       }
@@ -614,7 +630,15 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   return {
     providerId, read, queue, keep, identity: Object.freeze(key),
     catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path) }),
-    publication: { publish }, reconciliation: { lookup }, poll, record, changes, changeHead: () => head,
+    publication: { publish }, reconciliation: { lookup }, poll, record, changes, changeHead: () => head, changeIncarnation: incarnationOfFeed,
+    close: () => {
+      // Every change stream ends, the watcher closes and the listeners are dropped: nothing of this provider keeps running.
+      lifetime.abort();
+      if (linger !== undefined) { clearTimeout(linger); linger = undefined; }
+      stopWatching();
+      listeners.clear();
+      for (const wake of [...waiting]) wake();
+    },
     history: path => journal.revisions(historyScope, locator({ resource: { providerId, path }, view: { kind: 'published' } }).resource.path),
     saves: path => journal.saves(historyScope, locator({ resource: { providerId, path }, view: { kind: 'published' } }).resource.path),
     onChange: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },

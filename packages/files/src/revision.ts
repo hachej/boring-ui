@@ -45,7 +45,7 @@ export async function connectRevisionProvider(options: {
   /** One feed across reconnections: each resumes after the last seq delivered; a refused binding ends it. */
   async function* changes(request: ChangeFeedRequest = {}): AsyncGenerator<WorkspaceChangeEvent> {
     const signal = request.signal;
-    let cursor = request.since, delay = 500;
+    let cursor = request.since, incarnation = request.incarnation, delay = 500;
     const pause = () => new Promise<void>(resolve => {
       const timer = setTimeout(done, delay);
       function done() { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); }
@@ -55,7 +55,7 @@ export async function connectRevisionProvider(options: {
     while (!signal?.aborted) {
       const url = new URL(endpoint);
       url.searchParams.set('op', 'changes');
-      if (cursor !== undefined) url.searchParams.set('since', String(cursor));
+      if (cursor !== undefined) { url.searchParams.set('since', String(cursor)); if (incarnation !== undefined) url.searchParams.set('incarnation', incarnation); }
       const connection = new AbortController();
       const stop = () => connection.abort();
       signal?.addEventListener('abort', stop, { once: true });
@@ -72,7 +72,8 @@ export async function connectRevisionProvider(options: {
         try {
           for await (const message of serverEvents(response.body)) {
             if (message.event === 'ready') {
-              const seq = record(JSON.parse(message.data)).seq;
+              const ready = record(JSON.parse(message.data)), seq = ready.seq;
+              if (typeof ready.incarnation === 'string') incarnation = ready.incarnation;
               if (cursor === undefined && typeof seq === 'number' && Number.isSafeInteger(seq)) cursor = seq;
               delay = 500;
               continue;

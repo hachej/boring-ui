@@ -143,7 +143,8 @@ test('the SQLite file system notifies its watchers of its own writes at once, an
   await write('pushed.md', 'now');
   await within(arrived, 500, 'the push notification (the polling interval is one second)');
   assert.ok(Date.now() - started < 500);
-  assert.deepEqual(reported, [{ paths: ['/workspace/pushed.md'] }]);
+  // The first write also creates the workspace directory, which is reported as changed too.
+  assert.deepEqual(reported, [{ paths: ['/workspace', '/workspace/pushed.md'] }]);
   // Through the provider: a write by the SQLite file system (bash in the virtual workspace writes this way) reaches the feed.
   const abort = new AbortController();
   const iterator = provider.changes({ signal: abort.signal }, access)[Symbol.asyncIterator]();
@@ -189,7 +190,7 @@ test('SSE: the client replays from since and then follows live events; the strea
   while (!/: heartbeat/.test(text) || !/event: change/.test(text)) text += new TextDecoder().decode((await within(reader.read(), 2000, 'stream bytes')).value);
   raw.abort();
   await reader.cancel();
-  assert.match(text, /^event: ready\ndata: \{"seq":\d+\}\n\n/);
+  assert.match(text, /^event: ready\ndata: \{"seq":\d+,"incarnation":"[\w-]+"\}\n\n/);
   assert.match(text, new RegExp(`id: ${since + 1}\nevent: change\ndata: \\{"kind":"change","path":"one.md"`));
 });
 
@@ -229,4 +230,110 @@ test('SSE: an unauthorized or mismatched consumer gets no events, revocation end
   const denied = [];
   await assert.rejects((async () => { for await (const event of client.changes({})) denied.push(event); })(), error => error instanceof RevisionError && error.kind === 'denied');
   assert.deepEqual(denied, []);
+});
+
+// ---- review fixes for PR #1631 --------------------------------------------------------------------------------------------------
+
+const readFrames = async (reader, ms = 400) => {
+  let text = '', ended = false;
+  for (;;) {
+    let step;
+    try { step = await within(reader.read(), ms, 'the next frame'); } catch { break; }
+    if (step.done) { ended = true; break; }
+    text += new TextDecoder().decode(step.value);
+    if (/: heartbeat/.test(text)) break; // idle: everything that was pending has been delivered
+  }
+  return { text, ended };
+};
+const count = (text, pattern) => (text.match(pattern) ?? []).length;
+
+test('SSE: a paused reader costs the bounded replay buffer and gets a resnapshot, not every frame', async t => {
+  const f = fixture(t, { changeBuffer: 2 });
+  const binding = await bindingOf(f.handler);
+  const response = await f.handler(changeRequest(binding, ''));
+  const reader = response.body.getReader();
+  await within(reader.read(), 1000, 'the ready event');
+  for (let n = 0; n < 30; n++) assert.equal((await f.publish(create(`op-${n}`, `file-${n}.md`, 'x'))).kind, 'committed');
+  const { text } = await readFrames(reader);
+  assert.match(text, /event: resnapshot/, 'the lagging client is told to reload');
+  assert.ok(count(text, /event: change/) <= 2, `at most the retained window follows (${count(text, /event: change/)} change frames)`);
+  await reader.cancel();
+});
+
+test('SSE: after revocation nothing queued is readable and the lease is released', async t => {
+  const f = fixture(t);
+  const binding = await bindingOf(f.handler);
+  const response = await f.handler(changeRequest(binding, ''));
+  const reader = response.body.getReader();
+  await within(reader.read(), 1000, 'the ready event');
+  for (let n = 0; n < 5; n++) await f.write(`queued-${n}.md`, 'secret');
+  f.revoke();
+  const { text, ended } = await readFrames(reader);
+  assert.equal(ended, true, 'the revoked stream ends');
+  assert.doesNotMatch(text, /queued-/, 'no frame produced before the revocation can be read afterwards');
+  await within((async () => { while (f.released() !== f.resolves()) await new Promise(resolve => setTimeout(resolve, 5)); })(), 1000, 'the lease release');
+});
+
+test('the SQLite watcher reports a rewrite with the same size in the same millisecond', async t => {
+  const f = fixture(t);
+  t.mock.method(Date, 'now', () => 1_800_000_000_000);
+  await f.write('same.md', 'one');
+  const seen = [];
+  const watcher = await f.fs.watch([{ path: '/workspace', recursive: true }], change => { if ('paths' in change) seen.push(...change.paths); }, BACKGROUND_CONTEXT);
+  assert.equal(watcher.ok, true);
+  await f.write('same.md', 'two');
+  await within((async () => { while (!seen.includes('/workspace/same.md')) await new Promise(resolve => setTimeout(resolve, 5)); })(), 500, 'the rewrite notification');
+  await watcher.value.close(BACKGROUND_CONTEXT);
+});
+
+test('an agent write seen by both the watcher and record is one change event', async t => {
+  const f = fixture(t);
+  const abort = new AbortController();
+  const events = [];
+  const done = (async () => { for await (const event of f.provider.changes({ signal: abort.signal }, access)) events.push(event); })();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  await f.provider.queue.run(async () => { await f.write('once.md', 'agent text'); await f.provider.record({ path: 'once.md', after: await revisionOf('agent text'), source: 'agent' }, access); });
+  await new Promise(resolve => setTimeout(resolve, 200));
+  abort.abort();
+  await done;
+  assert.deepEqual(changesOnly(events).filter(event => event.path === 'once.md').map(event => event.source), ['agent']);
+});
+
+test('a cursor from another provider incarnation is a resnapshot whatever its number', async t => {
+  const f = fixture(t);
+  await f.write('x.md', 'x');
+  await f.provider.queue.run(() => f.provider.record({ path: 'x.md', after: 'a'.repeat(40), source: 'agent' }, access));
+  const head = f.provider.changeHead();
+  const first = async request => {
+    const abort = new AbortController();
+    const iterator = f.provider.changes({ ...request, signal: abort.signal }, access)[Symbol.asyncIterator]();
+    const step = await Promise.race([iterator.next(), new Promise(resolve => setTimeout(() => resolve('quiet'), 100))]);
+    abort.abort(); await iterator.return?.();
+    return step === 'quiet' ? step : step.value;
+  };
+  assert.equal((await first({ since: head, incarnation: 'previous-process' })).kind, 'resnapshot');
+  assert.equal(await first({ since: head, incarnation: f.provider.changeIncarnation }), 'quiet');
+  const response = await f.handler(changeRequest(await bindingOf(f.handler), ''));
+  const reader = response.body.getReader();
+  const { value } = await within(reader.read(), 1000, 'the ready event');
+  assert.match(new TextDecoder().decode(value), new RegExp(`"incarnation":"${f.provider.changeIncarnation}"`));
+  await reader.cancel();
+});
+
+test('close ends every change stream, closes the watcher and releases leases', async t => {
+  const f = fixture(t, { watchLingerMs: 60_000 });
+  let closed = 0;
+  const watch = f.fs.watch;
+  f.fs.watch = async (...args) => { const result = await watch(...args); if (result.ok) { const close = result.value.close; result.value.close = async (...rest) => { closed++; return close(...rest); }; } return result; };
+  const events = (async () => { for await (const event of f.provider.changes({}, access)) void event; return 'ended'; })();
+  const response = await f.handler(changeRequest(await bindingOf(f.handler), ''));
+  const reader = response.body.getReader();
+  await within(reader.read(), 1000, 'the ready event');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  f.provider.close();
+  assert.equal(await within(events, 1000, 'the provider feed to end'), 'ended');
+  assert.equal((await readFrames(reader, 1000)).ended, true, 'the SSE stream ends');
+  await within((async () => { while (f.released() !== f.resolves() || closed < 1) await new Promise(resolve => setTimeout(resolve, 5)); })(), 1000, 'the lease release and the watcher close');
+  f.provider.close();
+  assert.equal(closed, 1);
 });

@@ -14,8 +14,9 @@ function highlight(text: string, query: string) {
 }
 
 /** The `@` file picker, ported from v2's `MentionPicker`: debounced search, one highlighted row, name over path. */
-export function MentionMenu({ query, search, onSelect, onDismiss }: {
+export function MentionMenu({ query, search, generation, onSelect, onDismiss }: {
   readonly query: string;
+  readonly generation?: MentionsConfig['generation'];
   readonly search: MentionsConfig['search'];
   readonly onSelect: (path: string) => void;
   readonly onDismiss: () => void;
@@ -34,7 +35,7 @@ export function MentionMenu({ query, search, onSelect, onDismiss }: {
         cause => { if (!abort.signal.aborted) { setResults([]); setFailure(cause instanceof Error ? cause.message : labels.searchFailed); } });
     }, 120);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [query]);
+  }, [query, generation]);
   useEffect(() => {
     const outside = (event: MouseEvent) => { if (container.current && !container.current.contains(event.target as Node)) onDismiss(); };
     document.addEventListener('mousedown', outside);

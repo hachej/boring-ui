@@ -52,6 +52,8 @@ export type WorkspaceChangeEvent =
 export interface ChangeFeedRequest {
   /** The last `seq` already seen: only later events are delivered (a gap is a `resnapshot`). Absent: live events only. */
   readonly since?: number | undefined;
+  /** The provider lifetime `since` came from (`ready` event). A cursor from another lifetime is a `resnapshot`, whatever its number. */
+  readonly incarnation?: string | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 

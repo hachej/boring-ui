@@ -5,7 +5,7 @@ import { binding, bindingHeader, bindingValue, catalogHeader, filePage, record, 
 import { guardStatus, readJsonBody, RequestGuardError } from './request-guard.js';
 import { accessSnapshot, identifier } from './publication-input.js';
 import { RevisionError } from './revision-contracts.js';
-import type { FileListRequest, FileSearchRequest } from './revision-contracts.js';
+import type { FileListRequest, FileSearchRequest, WorkspaceChangeEvent } from './revision-contracts.js';
 
 export interface RevisionHandlerOptions {
   /** The host's authentication and workspace selection, once per request. For the change feed the lease is held until the stream ends. */
@@ -21,39 +21,62 @@ export interface RevisionHandlerOptions {
 const encoder = new TextEncoder();
 
 /**
- * `GET ?op=changes[&since=<seq>]`: the workspace's change feed as server-sent events (`event: change | resnapshot`, `id:` the seq,
- * `data:` the JSON event), after an `event: ready` naming the current seq, with a comment every `heartbeatMs`. Plain streamed
- * responses, so it runs on Node and on Workers alike. The stream ends when the person disconnects or their access is revoked; the
- * workspace lease is released then.
+ * `GET ?op=changes[&since=<seq>&incarnation=<id>]`: the workspace's change feed as server-sent events (`event: change | resnapshot`,
+ * `id:` the seq, `data:` the JSON event), after an `event: ready` naming the current seq and the provider's incarnation, with a
+ * comment every `heartbeatMs` while idle. Plain streamed responses, so it runs on Node and on Workers alike.
+ *
+ * The stream is pull-based with no queue (`highWaterMark: 0`): the provider is read only while the client is reading, so a slow
+ * client costs the provider's bounded replay buffer (and a `resnapshot` when it falls behind), never unbounded memory here. The
+ * stream ends when the person disconnects or their access is revoked, discarding anything not yet read, and the workspace lease is
+ * released then.
  */
-function changeStream(provider: WorkspaceResourceProvider, access: ResourceAccess & { readonly signal: AbortSignal }, since: number | undefined, heartbeatMs: number, release: () => Promise<void>): Response {
+function changeStream(provider: WorkspaceResourceProvider, access: ResourceAccess & { readonly signal: AbortSignal }, request: { readonly since: number | undefined; readonly incarnation: string | undefined }, heartbeatMs: number, release: () => Promise<void>): Response {
   const stop = new AbortController();
   const signal = AbortSignal.any([access.signal, stop.signal]);
-  let timer: ReturnType<typeof setInterval> | undefined;
-  const finish = () => { stop.abort(); clearInterval(timer); };
+  let iterator: AsyncIterator<WorkspaceChangeEvent> | undefined;
+  let pending: Promise<IteratorResult<WorkspaceChangeEvent>> | undefined;
+  let ready = false, ended = false;
+  const finish = () => {
+    if (ended) return;
+    ended = true;
+    stop.abort();
+    void iterator?.return?.().catch(() => {});
+    void release();
+  };
   const body = new ReadableStream<Uint8Array>({
     start: controller => {
-      const send = (text: string) => { if (!signal.aborted) try { controller.enqueue(encoder.encode(text)); } catch { finish(); } };
-      timer = setInterval(() => send(': heartbeat\n\n'), heartbeatMs);
-      void (async () => {
-        try {
+      const close = () => { finish(); try { controller.close(); } catch { /* already closed or cancelled */ } };
+      signal.addEventListener('abort', close, { once: true });
+      if (signal.aborted) close();
+    },
+    pull: async controller => {
+      if (ended) return;
+      const send = (text: string) => { try { controller.enqueue(encoder.encode(text)); } catch { finish(); } };
+      const end = () => { finish(); try { controller.close(); } catch { /* already closed */ } };
+      try {
+        if (!ready) {
+          ready = true;
           // Without a cursor the feed starts at the current seq, which the client learns first and resumes from after a disconnect.
-          const start = since ?? provider.changeHead();
-          send(`event: ready\ndata: ${JSON.stringify({ seq: start })}\n\n`);
-          for await (const event of provider.changes({ since: start, signal }, { ...access, signal })) {
-            if (signal.aborted) break;
-            send(`id: ${event.seq}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`);
-          }
-        } catch { /* the stream ends; the client reconnects from its last seq */ }
-        finally {
-          finish();
-          try { controller.close(); } catch { /* already cancelled */ }
-          await release();
+          const start = request.since ?? provider.changeHead();
+          iterator = provider.changes({ since: start, ...(request.incarnation === undefined ? {} : { incarnation: request.incarnation }), signal }, { ...access, signal })[Symbol.asyncIterator]();
+          send(`event: ready\ndata: ${JSON.stringify({ seq: start, incarnation: provider.changeIncarnation })}\n\n`);
+          return;
         }
-      })();
+        pending ??= iterator!.next();
+        pending.catch(() => {});
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const beat = new Promise<'beat'>(resolve => { timer = setTimeout(() => resolve('beat'), heartbeatMs); });
+        const outcome = await Promise.race([pending, beat]).finally(() => clearTimeout(timer));
+        if (signal.aborted) return end();
+        if (outcome === 'beat') return send(': heartbeat\n\n');
+        pending = undefined;
+        if (outcome.done) return end();
+        const event = outcome.value;
+        send(`id: ${event.seq}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`);
+      } catch { end(); /* the client reconnects from its last seq */ }
     },
     cancel: () => { finish(); },
-  });
+  }, { highWaterMark: 0 });
   return new Response(body, { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
 }
 function listRequest(value: unknown): FileListRequest {
@@ -97,11 +120,13 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
         const cursor = new URL(request.url).searchParams.get('since');
         if (cursor !== null && !/^\d{1,16}$/.test(cursor)) return refuse(400);
         const since = cursor === null ? undefined : Number(cursor);
+        const incarnation = new URL(request.url).searchParams.get('incarnation') ?? undefined;
+        if (incarnation !== undefined && !/^[\w-]{1,64}$/.test(incarnation)) return refuse(400);
         if (since !== undefined && !Number.isSafeInteger(since)) return refuse(400);
         // The stream owns the lease from here: it is released when the stream ends, not when this function returns.
         const lease = release;
         release = undefined;
-        return changeStream(provider, access, since, heartbeatMs, async () => { try { await lease?.(); } catch { /* the stream already ended */ } });
+        return changeStream(provider, access, { since, incarnation }, heartbeatMs, async () => { try { await lease?.(); } catch { /* the stream already ended */ } });
       }
       if (!request.headers.has(catalogHeader)) return await createResourceHandler({
         authenticate: async () => access,

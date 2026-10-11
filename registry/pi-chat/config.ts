@@ -38,6 +38,8 @@ export interface MentionsConfig {
   readonly search: (query: string, signal: AbortSignal) => Promise<readonly MentionResult[]>;
   /** Open a mentioned workspace file (for example in the right panel). When given, a mention in a sent message is a button. */
   readonly open?: ((path: string) => void) | undefined;
+  /** Changes whenever what `search` would return may have changed (a workspace change event, another workspace). An open picker searches again. */
+  readonly generation?: string | number | undefined;
 }
 
 export interface UploadResult {

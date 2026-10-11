@@ -260,22 +260,29 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   }, [fileTree, refreshKey, feed.seq]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
   // @ search: results are reused while the feed reports nothing new (typing back and forth), and dropped at the next change event.
-  const mentionResults = useRef<{ seq: number | undefined; results: Map<string, readonly FileEntry[]> }>({ seq: undefined, results: new Map() });
+  // One cache per provider instance (one authenticated workspace binding): another binding never sees these results, and a search
+  // that completes after the binding changed returns nothing and caches nothing.
+  const bindings = useRef(0);
+  const mentionCache = useMemo(() => ({ id: ++bindings.current, seq: undefined as number | undefined, live: false, results: new Map<string, readonly FileEntry[]>() }), [revisionProvider]);
+  const currentCache = useRef(mentionCache); currentCache.current = mentionCache;
   const feedState = useRef(feed); feedState.current = feed;
+  const generation = `${mentionCache.id}:${feed.live ? feed.seq ?? '' : 'off'}`;
   const mentions = useMemo(() => revisionProvider ? {
     search: async (query: string, signal: AbortSignal) => {
       const { live, seq } = feedState.current;
-      const cache = mentionResults.current;
-      if (cache.seq !== seq || !live) { cache.seq = seq; cache.results = new Map(); }
-      const known = live ? cache.results.get(query) : undefined;
+      if (mentionCache.seq !== seq || mentionCache.live !== live || !live) { mentionCache.seq = seq; mentionCache.live = live; mentionCache.results = new Map(); }
+      const known = live ? mentionCache.results.get(query) : undefined;
       if (known) return known;
+      const results = mentionCache.results;
       const entries = (await revisionProvider.search({ query, limit: 8 }, signal)).entries;
+      if (currentCache.current !== mentionCache) return [];
       // Kept only when no change arrived meanwhile.
-      if (live && mentionResults.current === cache && cache.seq === feedState.current.seq) cache.results.set(query, entries);
+      if (live && mentionCache.results === results && mentionCache.seq === feedState.current.seq) results.set(query, entries);
       return entries;
     },
     open: openFile,
-  } : undefined, [revisionProvider, openFile]);
+    generation,
+  } : undefined, [revisionProvider, openFile, mentionCache, generation]);
   const [attachmentFailure, setAttachmentFailure] = useState<{ readonly tree: FileTreeController; readonly reasons: readonly string[] }>();
   // Primitives only in the memo: a host's inline `labels` object would otherwise rebuild the chat's attachments on every render.
   const uploadAccept = uploads?.accept, inlineImages = uploads?.inlineImages === true, maxBytes = uploads?.maxBytes;

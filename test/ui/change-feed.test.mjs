@@ -21,7 +21,7 @@ function pushFeed() {
   };
 }
 
-test('the agent workspace reloads the tree, the open history panel and the @ search from the change feed', async t => {
+async function harness(t) {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'confirm', 'sessionStorage', 'localStorage', 'ResizeObserver'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -46,6 +46,11 @@ test('the agent workspace reloads the tree, the open history panel and the @ sea
   });
   const settle = async (done, what) => { for (let n = 0; n < 100 && !done(); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10))); assert.ok(done(), what); };
 
+  return { window, element, root, chat, act, createElement, settle, AgentWorkspace };
+}
+
+test('the agent workspace reloads the tree, the open history panel and the @ search from the change feed', async t => {
+  const { window, element, root, chat, act, createElement, settle, AgentWorkspace } = await harness(t);
   const feed = pushFeed();
   const calls = { list: 0, history: 0, search: [] };
   const locate = path => ({ resource: { providerId: 'fictional', path }, view: { kind: 'published' } });
@@ -90,4 +95,53 @@ test('the agent workspace reloads the tree, the open history panel and the @ sea
   await type('@no');
   await settle(() => calls.search.length === 4, 'the earlier results were dropped by the change event');
   assert.deepEqual(calls.search, ['no', 'n', 'n', 'no']);
+
+  // The picker stays open on '@no'; a pushed change searches that query again (the open menu is invalidated, not only later typing).
+  const before = calls.search.length;
+  await act(async () => feed.push('third.md'));
+  await settle(() => calls.search.length === before + 1 && calls.search.at(-1) === 'no', 'an open picker searches again after a pushed change');
+
+  // Another workspace binding, same query, no feed event yet: it must search its own workspace and never show the first one's names.
+  const other = pushFeed();
+  const otherSearches = [];
+  const secondBinding = { ...binding, identity: { ...identity, principalId: 'bob', initiatorId: 'bob' }, workspace: { ...binding.workspace, instanceId: 'two', incarnation: 'two' },
+    search: async request => { otherSearches.push(request.query); return { entries: [{ path: 'other-workspace.md', kind: 'file', size: 1 }] }; }, changes: other.changes };
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: secondBinding })));
+  await settle(() => otherSearches.includes('no'), 'the second binding searches the open query itself');
+  await settle(() => [...element.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'other-workspace.md'), 'the second binding results show');
+  assert.ok(![...element.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'notes.md'), 'the first workspace names are never shown');
+  const [secondTextarea] = [element.querySelector('[data-testid=workspace-chat-surface] textarea')];
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(secondTextarea, '@n');
+    secondTextarea.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  await settle(() => otherSearches.length >= 2, 'the second binding keeps searching its own workspace');
+  assert.ok(![...element.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'notes.md'), 'still no names of the first workspace');
+});
+
+test('an @ search result of one workspace binding is never shown in another, even before any change event', async t => {
+  const { window, element, root, chat, act, createElement, settle, AgentWorkspace } = await harness(t);
+  const locate = path => ({ resource: { providerId: 'fictional', path }, view: { kind: 'published' } });
+  const make = (principalId, name, searches) => ({ identity: { scopeId: 'fictional', principalId, initiatorId: principalId }, workspace: { providerId: 'fictional', instanceId: principalId, incarnation: principalId, viewId: principalId }, locate,
+    read: async () => ({ kind: 'missing' }), publish: async () => ({ kind: 'unavailable', reason: 'fictional' }), lookup: async () => ({ kind: 'not-found' }),
+    list: async () => ({ entries: [] }), history: async () => [],
+    search: async request => { searches.push(request.query); return { entries: [{ path: name, kind: 'file', size: 1 }] }; },
+    changes: () => ({ async *[Symbol.asyncIterator]() { await new Promise(() => {}); } }) });
+  const first = [], second = [];
+  const a = make('alice', 'alice-secret.md', first), b = make('bob', 'bob-file.md', second);
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: a })));
+  const textarea = () => element.querySelector('[data-testid=workspace-chat-surface] textarea');
+  const type = async value => act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(textarea(), value);
+    textarea().setSelectionRange?.(value.length, value.length);
+    textarea().dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  await type('@no');
+  await settle(() => first.length === 1 && element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), 'alice sees her own result');
+  await type('');
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: b })));
+  await type('@no');
+  await settle(() => second.includes('no'), 'bob\'s workspace is searched');
+  await settle(() => element.querySelector('[data-testid=mention-item][data-path="bob-file.md"]'), 'bob sees his own result');
+  assert.equal(element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s names are never shown to bob');
 });
