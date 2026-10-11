@@ -23,6 +23,18 @@ const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej
 // (`../pi-chat/`, `../utils/`), and the host's model and chat types, which are type-only imports and never installed as a direct dependency.
 const HOST_IMPORTS = ['../pi-chat/', '../utils/'];
 const TYPE_ONLY_IMPORTS = new Set(['@earendil-works/pi-ai', '@hachej/boring-ui-kit/native-chat']);
+/** The modules a source imports or re-exports, split into type-only and value (a runtime `export ... from` counts as a value). */
+const importKinds = source => ({
+  typeOnly: new Set([...source.matchAll(/\b(?:import|export)\s+type\b[^'";]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])),
+  valued: new Set([...source.matchAll(/\b(?:import|export)\s+(?!type\s)[^'";]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])),
+});
+
+test('the type-only exception admits only type imports: a runtime re-export of a model SDK is a value import', () => {
+  const reexport = importKinds("export { stream } from '@earendil-works/pi-ai';\n");
+  assert.ok(reexport.valued.has('@earendil-works/pi-ai') && !reexport.typeOnly.has('@earendil-works/pi-ai'));
+  const typed = importKinds("import type { ToolCall } from '@earendil-works/pi-ai';\nexport type { ToolResultMessage } from '@earendil-works/pi-ai';\n");
+  assert.ok(typed.typeOnly.has('@earendil-works/pi-ai') && !typed.valued.has('@earendil-works/pi-ai'));
+});
 
 test('standard pinned CLI rebuilds the committed source registry artifact exactly', () => {
   const directory = mkdtempSync(join(tmpdir(), 'boring-registry-build-'));
@@ -123,8 +135,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       for (const file of item.files) {
         assert.match(file.target, new RegExp('^components/' + item.name + '/'), 'files install into their own folder');
         const source = readFileSync(join(root, file.path), 'utf8');
-        const typeOnly = new Set([...source.matchAll(/\bimport\s+type\b[^'";]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1]));
-        const valued = new Set([...source.matchAll(/\bimport\s+(?!type\s)[^'";]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1]));
+        const { typeOnly, valued } = importKinds(source);
         for (const imported of [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])) {
           if (imported.startsWith('./')) { assert.ok(names.includes(imported.slice(2)), `${file.path} imports missing ${imported}`); continue; }
           if (HOST_IMPORTS.some(prefix => imported.startsWith(prefix))) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat') && item.registryDependencies.includes('@boring-ui/utils'), `${file.path} imports its host ${imported} without depending on it`); continue; }

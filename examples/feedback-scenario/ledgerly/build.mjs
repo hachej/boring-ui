@@ -8,7 +8,7 @@ import { feedbackSourcePlugin } from '@hachej/boring-feedback/source';
 const root = process.cwd();
 mkdirSync('dist', { recursive: true });
 await build({
-  entryPoints: ['src/main.jsx'], bundle: true, outdir: 'dist', format: 'esm', platform: 'browser', logLevel: 'warning',
+  entryPoints: ['src/main.jsx'], bundle: true, outdir: 'dist', format: 'esm', platform: 'browser', logLevel: 'warning', conditions: ['style'],
   jsx: 'automatic', jsxDev: true, absWorkingDir: root, plugins: [feedbackSourcePlugin({ root, mode: 'development' })],
   define: { 'process.env.NODE_ENV': '"development"' }, loader: { '.js': 'jsx' }, metafile: true,
 }).then(result => writeFileSync('dist/meta.json', JSON.stringify(result.metafile)));
