@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { BlockAction } from '../button/actions';
 
 /*
@@ -38,6 +39,8 @@ export interface MentionsConfig {
   readonly search: (query: string, signal: AbortSignal) => Promise<readonly MentionResult[]>;
   /** Open a mentioned workspace file (for example in the right panel). When given, a mention in a sent message is a button. */
   readonly open?: ((path: string) => void) | undefined;
+  /** Host-supplied look for a mention in a sent message (a plug-in such as feedback). Return undefined to keep the default mention. */
+  readonly render?: ((path: string) => ReactNode | undefined) | undefined;
 }
 
 export interface UploadResult {

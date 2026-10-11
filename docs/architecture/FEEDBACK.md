@@ -714,8 +714,12 @@ builder's scripted model unless `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is set.
   - `PreviewBanner` over `@hachej/boring-feedback/preview` ("Preview");
   - optional, not mounted by default: `PointButton`, `AnnotateSheet` (note,
     Copy, Save), `FeedbackList`, `FeedbackReport`.
-- **In `pi-chat`:** the composer's optional Feedback button and chip, and a
-  feedback card for mentions, `list` results and `show` offers.
+- **In `pi-chat`:** the composer's optional Feedback button and chip (host
+  props only; `pi-chat` never imports `@hachej/boring-feedback`).
+- **Plugged into `pi-chat` by the `feedback` item:** the feedback card for
+  `list` results and `show` offers (`feedbackRenderTool`), the report mention
+  chip (`feedbackMentionRenderer`, through `mentions.render`) and the
+  microphone button (`VoiceInput`, through the `tools` slot).
 
 Masking, picking and resolution stay in the package, so restyling a screen
 cannot weaken them.
