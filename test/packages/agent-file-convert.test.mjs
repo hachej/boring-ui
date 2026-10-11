@@ -312,14 +312,27 @@ test('the converting read refuses a path the provider reports missing instead of
   assert.match(result.text, /does not exist in the workspace/);
 });
 
-test('edit and write open only paths inside the workspace: a file deleted after the check cannot be redirected through a link', async t => {
-  const f = await fixture(t, { onRead: (count, workspace) => { if (count === 2) rmSync(join(workspace, NFC, 'secret.md')); } });
-  unicodeAlias(f);
-  await f.run({ path: `${NFC}/secret.md` });
-  const edited = await f.run({ path: `${NFC}/secret.md`, oldText: 'FICTIONAL_SECRET', newText: 'CHANGED' }, 'edit');
-  assert.equal(edited.isError, true);
-  assert.equal(readFileSync(join(f.elsewhere, 'secret.md'), 'utf8'), 'FICTIONAL_SECRET\n');
-});
+for (const [name, args] of [
+  ['edit', path => ({ path, edits: [{ oldText: 'FICTIONAL_SECRET', newText: 'CHANGED' }] })],
+  ['write', path => ({ path, content: 'CHANGED\n' })],
+]) {
+  test(`${name} opens only paths inside the workspace: a file swapped for a link after the guard's check is refused`, async t => {
+    // Right after the guard's check (its provider read of the mutation), the file is replaced by a link to a file outside the workspace.
+    let armed = false;
+    const f = await fixture(t, { onRead: (_count, workspace) => {
+      if (!armed) return;
+      const file = join(workspace, NFC, 'secret.md');
+      rmSync(file, { force: true });
+      symlinkSync(join(f.elsewhere, 'secret.md'), file);
+    } });
+    unicodeAlias(f);
+    assert.equal((await f.run({ path: `${NFC}/secret.md` })).isError, false);
+    armed = true;
+    const result = await f.run(args(`${NFC}/secret.md`), name);
+    assert.equal(result.isError, true, result.all);
+    assert.equal(readFileSync(join(f.elsewhere, 'secret.md'), 'utf8'), 'FICTIONAL_SECRET\n');
+  });
+}
 
 test('a converted segment that starts with U+FEFF keeps it', async t => {
   const text = `${'a'.repeat(51_200)}\uFEFF${'b'.repeat(100)}`;
