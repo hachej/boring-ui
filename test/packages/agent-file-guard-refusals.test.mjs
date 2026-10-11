@@ -9,8 +9,10 @@ import { join } from 'node:path';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
-import { ONE_PATH, createFileGuard } from '@hachej/boring-agent/file-guard';
+import { ONE_PATH, confinedEnv, createFileGuard } from '@hachej/boring-agent/file-guard';
+import { withWorkspace, workspaceFor } from '@hachej/boring-agent/workspaces';
 import { fileURLToPath } from 'node:url';
+import { FileError, err, ok } from '@earendil-works/pi-durable/env';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
@@ -81,13 +83,38 @@ test('a symlink inside the workspace that points outside is refused for read, wr
   assert.equal(existsSync(join(f.elsewhere, 'new.md')), false);
 });
 
-test('a dangling symlink inside the workspace whose target is outside is refused for write and creates nothing outside', async t => {
-  const f = await fixture(t);
-  symlinkSync(join(f.elsewhere, 'new.md'), join(f.workspace, 'new.md'));
+test('a dangling symlink inserted after the provider reported the path missing is refused for write and creates nothing outside', async t => {
+  let planted = false, outside;
+  const f = await fixture(t, { guard: ({ files, workspace }) => {
+    // The link appears between the provider's check and the native write: only the env's own check can still stop it.
+    const racing = Object.create(files, { read: { value: async (...args) => {
+      const result = await files.read(...args);
+      if (!planted) { planted = true; symlinkSync(outside, join(workspace, 'new.md')); }
+      return result;
+    } } });
+    return createFileGuard({ workspace: { files: racing, root: workspace }, resolveAccess: () => access });
+  } });
+  outside = join(f.elsewhere, 'new.md');
   const result = await f.run('write', { path: 'new.md', content: 'pwned' });
+  assert.equal(planted, true, 'the link was planted after the provider answered');
   assert.equal(result.isError, true);
   assert.match(result.text, /outside the workspace/);
   assert.equal(existsSync(join(f.elsewhere, 'new.md')), false);
+});
+
+test('a lost answer about a missing path\'s link is refused: the underlying write never runs', async () => {
+  const lost = err(new FileError('unknown', 'reply lost'));
+  const missing = err(new FileError('not_found', 'missing'));
+  let writes = 0;
+  const env = {
+    canonicalPath: async path => path === '/ws' ? ok('/ws') : missing,
+    fileInfo: async () => lost,
+    writeFile: async () => { writes++; return ok(undefined); },
+  };
+  const result = await confinedEnv(env, '/ws').writeFile('/ws/new.md', 'x', context);
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'permission_denied');
+  assert.equal(writes, 0);
 });
 
 test('a symlink that stays inside the workspace and a new file under a real directory are still allowed', async t => {
@@ -129,12 +156,30 @@ test('confinedEnv covers every Pi FileSystem method that takes a path, so a Pi u
   // The method list comes from Pi's own typings; each name must be a function of a real NodeExecutionEnv.
   const typings = readFileSync(fileURLToPath(new URL('../../node_modules/@earendil-works/pi-durable/dist/env/index.d.ts', import.meta.url)), 'utf8');
   const fileSystem = typings.slice(typings.indexOf('export interface FileSystem {'), typings.indexOf('export interface ShellSpillOptions'));
-  const pathMethods = [...fileSystem.matchAll(/^ {4}(\w+)\((?:path|sourcePath|targets)\b/gm)].map(match => match[1]);
+  // Every declared method, whatever its parameters are called: a new one must be covered or exempted by name.
+  const methods = [...fileSystem.matchAll(/^ {4}(\w+)\(/gm)].map(match => match[1]);
   const env = new NodeExecutionEnv({ cwd: process.cwd() });
-  for (const name of pathMethods) assert.equal(typeof env[name], 'function', name);
+  for (const name of methods) assert.equal(typeof env[name], 'function', name);
   const covered = new Set([...ONE_PATH, 'renameFile', 'exists']);
-  // `absolutePath` only resolves a path lexically against `cwd`, touching no file. `watch` is never called by Pi's read, write or edit.
-  const exempt = new Set(['absolutePath', 'watch']);
-  assert.ok(pathMethods.length >= 15, `found ${pathMethods.length} path methods`);
-  assert.deepEqual(pathMethods.filter(name => !covered.has(name) && !exempt.has(name)), []);
+  // None of these opens a path: `absolutePath` and `joinPath` only compute strings, `createTempDir` and `createTempFile` make fresh names in the
+  // env's own temp area, `cleanup` closes what the env opened, and `watch` is never called by Pi's read, write or edit.
+  const exempt = new Set(['absolutePath', 'joinPath', 'createTempDir', 'createTempFile', 'cleanup', 'watch']);
+  assert.ok(methods.length >= 20, `found ${methods.length} methods`);
+  assert.deepEqual(methods.filter(name => !covered.has(name) && !exempt.has(name)), []);
+});
+
+test('a binding attached to a decorated env is found on it, and a binding attached to the env it decorates is found through the decoration', async () => {
+  const raw = new NodeExecutionEnv({ cwd: tmpdir() });
+  const binding = { files: { providerId: 'fictional' }, root: '/ws' };
+  const call = env => ({ env, conversationId: 'c', agent: async () => ({}) });
+  const view = confinedEnv(raw, '/ws');
+  withWorkspace(view, binding);
+  const own = await workspaceFor(undefined, call(view), context);
+  assert.equal(own.binding?.files.providerId, 'fictional', JSON.stringify(own));
+  const viaOption = await workspaceFor({ ...binding, env: view }, call(view), context);
+  assert.equal(viaOption.binding?.env, view, JSON.stringify(viaOption));
+  const other = new NodeExecutionEnv({ cwd: tmpdir() });
+  withWorkspace(other, binding);
+  const through = await workspaceFor(undefined, call(confinedEnv(other, '/ws')), context);
+  assert.equal(through.binding?.env, other, JSON.stringify(through));
 });

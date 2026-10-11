@@ -102,7 +102,8 @@ async function contained(env: ExecutionEnv | undefined, root: string, absolute: 
     if (real.error.code !== 'not_found') return false;
     // A dangling link resolves to nothing, but a write through it would create its target: refuse it, wherever it is.
     const link = await env.fileInfo(candidate, context);
-    if (link.ok && link.value.kind === 'symlink') return false;
+    // Only `not_found` proves nothing is there; a lost or failed answer could hide a link, so it refuses too.
+    if (link.ok ? link.value.kind === 'symlink' : link.error.code !== 'not_found') return false;
     const cut = candidate.lastIndexOf('/');
     if (cut <= 0) return false;
     rest = `${candidate.slice(cut)}${rest}`;
