@@ -86,4 +86,5 @@ Behaviour changes:
 - The file guard refuses `read` (not only `write` and `edit`) when the workspace cannot be resolved, the provider refuses access, the path or a link leads outside the root, or the path does not exist (Pi's fallback spellings are never tried). An `edit` of a missing path is refused too.
 - Archives and other binary files answer `unsupported` and are never sent to `convert`; a converter receives the media type the file's signature names when it has one.
 - A managed conversation's `lastMessage` preview, derived when a conversation is adopted, is the last visible text message of the newest entry (it was the first message of that entry). Titles are unchanged: the first user message, now found with an ascending scan.
+- New exports: `@hachej/boring-agent/file-types` (the one table of text, archive and binary kinds, and the media types), and from `@hachej/boring-agent/file-guard`, `confinedEnv` (Pi's `ExecutionEnv` re-checked per operation) and `workspaceRelative`.
 

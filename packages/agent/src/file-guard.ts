@@ -110,7 +110,7 @@ async function contained(env: ExecutionEnv | undefined, root: string, absolute: 
   }
 }
 
-export const ONE_PATH = new Set(['readTextFile', 'openTextLineReader', 'readTextLines', 'readBinaryFile', 'openBinaryReader', 'writeFile', 'appendFile', 'truncateFile', 'flushFile', 'fileInfo', 'listDir', 'openDirReader', 'createDir', 'remove']);
+export const ONE_PATH = new Set(['readTextFile', 'openTextLineReader', 'readTextLines', 'readBinaryFile', 'openBinaryReader', 'writeFile', 'appendFile', 'truncateFile', 'flushFile', 'fileInfo', 'listDir', 'openDirReader', 'createDir', 'remove', 'canonicalPath']);
 
 /**
  * `env` as the native `read`, `write` and `edit` must see it: every operation that opens, changes or lists a path first re-checks the

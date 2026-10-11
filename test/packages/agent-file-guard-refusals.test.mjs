@@ -7,9 +7,10 @@ import { mkdirSync, mkdtempSync, existsSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
-import { createFileGuard } from '@hachej/boring-agent/file-guard';
+import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { ONE_PATH, createFileGuard } from '@hachej/boring-agent/file-guard';
+import { fileURLToPath } from 'node:url';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
@@ -122,4 +123,18 @@ test('Pi\'s other read fallbacks (curly apostrophe, narrow space before AM/PM) c
     assert.equal(result.isError, true, path);
     assert.doesNotMatch(result.text, /OUTSIDE/, path);
   }
+});
+
+test('confinedEnv covers every Pi FileSystem method that takes a path, so a Pi upgrade cannot add an unchecked one silently', async () => {
+  // The method list comes from Pi's own typings; each name must be a function of a real NodeExecutionEnv.
+  const typings = readFileSync(fileURLToPath(new URL('../../node_modules/@earendil-works/pi-durable/dist/env/index.d.ts', import.meta.url)), 'utf8');
+  const fileSystem = typings.slice(typings.indexOf('export interface FileSystem {'), typings.indexOf('export interface ShellSpillOptions'));
+  const pathMethods = [...fileSystem.matchAll(/^ {4}(\w+)\((?:path|sourcePath|targets)\b/gm)].map(match => match[1]);
+  const env = new NodeExecutionEnv({ cwd: process.cwd() });
+  for (const name of pathMethods) assert.equal(typeof env[name], 'function', name);
+  const covered = new Set([...ONE_PATH, 'renameFile', 'exists']);
+  // `absolutePath` only resolves a path lexically against `cwd`, touching no file. `watch` is never called by Pi's read, write or edit.
+  const exempt = new Set(['absolutePath', 'watch']);
+  assert.ok(pathMethods.length >= 15, `found ${pathMethods.length} path methods`);
+  assert.deepEqual(pathMethods.filter(name => !covered.has(name) && !exempt.has(name)), []);
 });
