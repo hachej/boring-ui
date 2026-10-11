@@ -6,7 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
-import type { RevisionProvider } from '@hachej/boring-files/revision';
+import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
@@ -88,7 +88,9 @@ interface AgentWorkspaceBaseProps {
   readonly locale?: ChatLocale | undefined;
   /**
    * The Library tree's options: its words (`labels`, over `defaultFileTreeLabels`), whether it offers Upload and History, and a
-   * `refreshKey` that reloads it when it changes (for example the number of documents the agent saved).
+   * `refreshKey` that reloads it when it changes. Deprecated: with a `revisionProvider` that has a change feed (`connectRevisionProvider`)
+   * the tree, the Library, the history panel and the @ search reload from the workspace's own change events; `refreshKey` remains
+   * for a provider without one.
    */
   readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey'> | undefined;
   /**
@@ -241,22 +243,43 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     return () => tree.dispose();
   }, [revisionProvider]);
   const fileTree = fileBinding?.provider === revisionProvider ? fileBinding?.tree : undefined;
-  // `fileTree.refreshKey` reloads the shared tree controller, shown or not: the Library may be on its other tab when a file arrives,
-  // and mounting the tree later must not show the listing from before.
+  // The workspace's change feed: every file view below reloads when its seq moves (agent writes, saves, shell changes).
+  const feed = useChangeFeed(revisionProvider);
+  // The shared tree controller reloads, shown or not: the Library may be on its other tab when a file arrives, and mounting the tree
+  // later must not show the listing from before. `fileTree.refreshKey` (deprecated) does the same for a provider without a feed.
   const { refreshKey, ...viewOptions } = treeOptions ?? {};
   const refreshedKey = useRef(refreshKey);
+  const refreshedSeq = useRef(feed.seq);
   useEffect(() => {
-    if (!fileTree || Object.is(refreshedKey.current, refreshKey)) return;
+    if (!fileTree || (Object.is(refreshedKey.current, refreshKey) && refreshedSeq.current === feed.seq)) return;
     refreshedKey.current = refreshKey;
+    refreshedSeq.current = feed.seq;
     const { query, expanded } = fileTree.getSnapshot();
     if (query) void fileTree.search(query);
     else for (const directory of ['', ...expanded]) void fileTree.refresh(directory);
-  }, [fileTree, refreshKey]);
+  }, [fileTree, refreshKey, feed.seq]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
+  // @ search: results are reused while the feed reports nothing new (typing back and forth), and dropped at the next change event.
+  // One cache per provider instance (one workspace binding), so another binding never sees these results.
+  const mentionResults = useMemo(() => ({ seq: undefined as number | undefined, results: new Map<string, readonly FileEntry[]>() }), [revisionProvider]);
+  const feedState = useRef(feed); feedState.current = feed;
   const mentions = useMemo(() => revisionProvider ? {
-    search: async (query: string, signal: AbortSignal) => (await revisionProvider.search({ query, limit: 8 }, signal)).entries,
+    search: async (query: string, signal: AbortSignal) => {
+      const { live, seq } = feedState.current;
+      const cache = mentionResults;
+      if (cache.seq !== seq || !live) { cache.seq = seq; cache.results = new Map(); }
+      const known = live ? cache.results.get(query) : undefined;
+      if (known) return known;
+      const results = cache.results;
+      const entries = (await revisionProvider.search({ query, limit: 8 }, signal)).entries;
+      // Kept only when no change arrived meanwhile.
+      if (live && cache.results === results && cache.seq === feedState.current.seq) results.set(query, entries);
+      return entries;
+    },
     open: openFile,
-  } : undefined, [revisionProvider, openFile]);
+  } : undefined, [revisionProvider, openFile, mentionResults]);
+  // The search function changes only with the binding; the feed's seq rides along as the picker's generation.
+  const mentionsForChat = useMemo(() => mentions && { ...mentions, generation: feed.seq }, [mentions, feed.seq]);
   const [attachmentFailure, setAttachmentFailure] = useState<{ readonly tree: FileTreeController; readonly reasons: readonly string[] }>();
   // Primitives only in the memo: a host's inline `labels` object would otherwise rebuild the chat's attachments on every render.
   const uploadAccept = uploads?.accept, inlineImages = uploads?.inlineImages === true, maxBytes = uploads?.maxBytes;
@@ -349,7 +372,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
   const header = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentions ? { mentions } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
@@ -375,7 +398,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       agents={agents} view={paneView} onViewChange={changePaneView}
       {...(revisionProvider && !libraryInPane ? { library: { selected: libraryOpen, onSelect: openLibrary } } : {})}
       {...(libraryInPane ? { libraryContent: (onPicked: () => void) => fileTree
-        ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} onOpen={path => { openFile(path); onPicked(); }} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+        ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={path => { openFile(path); onPicked(); }} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
         : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{text.labels.loading}</p> } : {})} />}
     <ArtifactWorkspace open={panelOpen} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
       sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
@@ -385,7 +408,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
         library={libraryInPane ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
             <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
-          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">{treeOptions?.labels?.loading ?? text.labels.loading}</p>}</div>
+          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">{treeOptions?.labels?.loading ?? text.labels.loading}</p>}</div>
         </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>
         <div data-testid="viewer-panel" data-kind={kind} className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
@@ -424,4 +447,31 @@ function WorkspaceCenter({ libraryOpen, floating, chat, floatingChat, library }:
     </div>
     <div hidden={!libraryOpen} inert={!libraryOpen} aria-hidden={!libraryOpen || undefined} className={cn('min-h-0 flex-1 flex-col', libraryOpen ? 'flex' : 'hidden')}>{library}</div>
   </div>;
+}
+
+/**
+ * The seq of the provider's latest change event (`RevisionProvider.changes`), coalesced over `settleMs` so a burst (a shell writing
+ * many files) reloads once. `live` is false without a feed or after the feed was refused; views then keep their own refresh.
+ */
+function useChangeFeed(provider: RevisionProvider | undefined, settleMs = 150): { readonly seq: number | undefined; readonly live: boolean } {
+  const [state, setState] = useState<{ readonly provider: RevisionProvider | undefined; readonly seq: number | undefined; readonly live: boolean }>({ provider, seq: undefined, live: false });
+  useEffect(() => {
+    if (!provider?.changes) { setState({ provider, seq: undefined, live: false }); return; }
+    const stop = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined, latest: number | undefined;
+    setState({ provider, seq: undefined, live: true });
+    void (async () => {
+      try {
+        for await (const event of provider.changes!({ signal: stop.signal })) {
+          latest = event.seq;
+          timer ??= setTimeout(() => { timer = undefined; if (!stop.signal.aborted) setState({ provider, seq: latest, live: true }); }, settleMs);
+        }
+      } catch { /* refused: the views fall back to their own refresh */ }
+      clearTimeout(timer);
+      timer = undefined;
+      if (!stop.signal.aborted) setState({ provider, seq: latest, live: false });
+    })();
+    return () => { stop.abort(); clearTimeout(timer); };
+  }, [provider, settleMs]);
+  return state.provider === provider ? state : { seq: undefined, live: false };
 }

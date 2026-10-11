@@ -99,7 +99,15 @@ export interface StoredVersion {
   readonly mediaType: string;
   /** When this revision was saved, in milliseconds since the epoch. Kept the first time the revision is retained. */
   readonly savedAt?: number;
+  /**
+   * Who produced the revision: `publish` (a conditional write), `agent` (a Pi `write` or `edit`, recorded by `provider.record`: it
+   * has no receipt) or `observed` (retained as found: `keep`, or the replaced revision of a write). Default `publish`.
+   */
+  readonly source?: HistorySource;
 }
+
+export type HistorySource = 'publish' | 'agent' | 'observed';
+const historySource = (value: unknown): HistorySource => value === 'agent' || value === 'observed' ? value : 'publish';
 
 /**
  * The operation journal plus what a workspace needs beyond receipts: an intent row written before an operation's first effect
@@ -121,7 +129,7 @@ export interface WorkspaceJournal extends OperationJournal {
   /** Retained revisions of a file, newest first. */
   readonly revisions: (scope: string, path: string) => string[];
   /** Retained revisions of a file with their save times, newest first. A time of 0 is unknown (kept before times were recorded). */
-  readonly saves: (scope: string, path: string) => { readonly revision: string; readonly savedAt: number }[];
+  readonly saves: (scope: string, path: string) => { readonly revision: string; readonly savedAt: number; readonly source: HistorySource }[];
 }
 
 export function createWorkspaceJournal(db: SqliteConnection, options: { readonly historyLimit?: number } = {}): WorkspaceJournal {
@@ -138,18 +146,21 @@ export function createWorkspaceJournal(db: SqliteConnection, options: { readonly
       ) STRICT;
       CREATE TABLE IF NOT EXISTS boring_history (
         scope TEXT NOT NULL, path TEXT NOT NULL, revision TEXT NOT NULL, sequence INTEGER NOT NULL,
-        bytes BLOB NOT NULL, media_type TEXT NOT NULL, saved_at INTEGER NOT NULL DEFAULT 0,
+        bytes BLOB NOT NULL, media_type TEXT NOT NULL, saved_at INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT 'publish',
         PRIMARY KEY (scope, path, revision)
       ) STRICT;
     `);
     // A journal created before save times were recorded gets the column; its old rows read as unknown (0).
     if (!db.all("SELECT name FROM pragma_table_info('boring_history')").some(column => column.name === 'saved_at')) db.exec('ALTER TABLE boring_history ADD COLUMN saved_at INTEGER NOT NULL DEFAULT 0');
+    // A journal created before history recorded who wrote each revision: its old rows were all conditional writes.
+    if (!db.all("SELECT name FROM pragma_table_info('boring_history')").some(column => column.name === 'source')) db.exec("ALTER TABLE boring_history ADD COLUMN source TEXT NOT NULL DEFAULT 'publish'");
   });
   const remember = (scope: string, path: string, version: StoredVersion): void => {
     const last = db.get('SELECT COALESCE(MAX(sequence), 0) AS last FROM boring_history WHERE scope = ? AND path = ?', scope, path);
     const sequence = Number(last?.last ?? 0) + 1;
-    db.run('INSERT INTO boring_history (scope, path, revision, sequence, bytes, media_type, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope, path, revision) DO UPDATE SET sequence = excluded.sequence, bytes = excluded.bytes, media_type = excluded.media_type, saved_at = CASE WHEN boring_history.saved_at = 0 THEN excluded.saved_at ELSE boring_history.saved_at END',
-      scope, path, version.revision, sequence, version.bytes, version.mediaType, version.savedAt ?? 0);
+    // A revision found again (`observed`) keeps the writer it was first recorded with; a new write of the same bytes names its writer.
+    db.run("INSERT INTO boring_history (scope, path, revision, sequence, bytes, media_type, saved_at, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope, path, revision) DO UPDATE SET sequence = excluded.sequence, bytes = excluded.bytes, media_type = excluded.media_type, saved_at = CASE WHEN boring_history.saved_at = 0 THEN excluded.saved_at ELSE boring_history.saved_at END, source = CASE WHEN excluded.source = 'observed' THEN boring_history.source ELSE excluded.source END",
+      scope, path, version.revision, sequence, version.bytes, version.mediaType, version.savedAt ?? 0, historySource(version.source));
     db.run('DELETE FROM boring_history WHERE scope = ? AND path = ? AND revision NOT IN (SELECT revision FROM boring_history WHERE scope = ? AND path = ? ORDER BY sequence DESC LIMIT ?)', scope, path, scope, path, limit);
   };
   const journal: WorkspaceJournal = {
@@ -173,7 +184,7 @@ export function createWorkspaceJournal(db: SqliteConnection, options: { readonly
       return { revision, bytes: Uint8Array.from(row.bytes), mediaType: text(row.media_type) };
     },
     revisions: (scope, path) => db.all('SELECT revision FROM boring_history WHERE scope = ? AND path = ? ORDER BY sequence DESC', scope, path).map(row => text(row.revision)),
-    saves: (scope, path) => db.all('SELECT revision, saved_at FROM boring_history WHERE scope = ? AND path = ? ORDER BY sequence DESC', scope, path).map(row => ({ revision: text(row.revision), savedAt: Number(row.saved_at) })),
+    saves: (scope, path) => db.all('SELECT revision, saved_at, source FROM boring_history WHERE scope = ? AND path = ? ORDER BY sequence DESC', scope, path).map(row => ({ revision: text(row.revision), savedAt: Number(row.saved_at), source: historySource(row.source) })),
   };
   registerJournalConnection(journal, db);
   return journal;

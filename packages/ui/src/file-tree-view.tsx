@@ -96,6 +96,8 @@ export interface FileTreeProps {
   readonly history?: boolean;
   /** Reload the open folders and the current search whenever this value changes (for example after the agent saves a file). */
   readonly refreshKey?: unknown;
+  /** Reload the open history panel whenever this value changes (for example the seq of the workspace's latest change event). */
+  readonly historyKey?: unknown;
 }
 
 /** One borrowed binding powers browsing, search, upload and history. Historical previews never replace an editor's draft. */
@@ -119,7 +121,7 @@ export interface FileTreeViewProps extends Omit<FileTreeProps, 'revisionProvider
 }
 
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
-export function FileTreeView({ controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refreshKey }: FileTreeViewProps) {
+export function FileTreeView({ controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refreshKey, historyKey }: FileTreeViewProps) {
   const labels: FileTreeLabels = { ...LOCALES[locale], ...given };
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const shownKey = useRef(refreshKey);
@@ -236,11 +238,11 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
       <span>{upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.kind === 'partial' ? labels.unconfirmed : upload.state.result.reason}</span>
       {upload.state.kind === 'settled' && upload.state.result.kind === 'unknown' && <button type="button" onClick={() => { void controller.reconcile(upload.operationId).catch(error => setUploadError(error instanceof Error ? error.message : labels.uploadStatusUnavailable)); }}>{labels.checkUpload}</button>}
     </li>)}</ul>}
-    {history && historyPath !== undefined && <FileHistory key={historyPath} controller={controller} path={historyPath} labels={labels} onClose={() => setHistoryPath(undefined)} />}
+    {history && historyPath !== undefined && <FileHistory key={historyPath} controller={controller} path={historyPath} labels={labels} reload={historyKey} onClose={() => setHistoryPath(undefined)} />}
   </section>;
 }
 
-function FileHistory({ controller, path, labels, onClose }: { readonly controller: FileTreeController; readonly path: string; readonly labels: FileTreeLabels; readonly onClose: () => void }) {
+function FileHistory({ controller, path, labels, reload, onClose }: { readonly controller: FileTreeController; readonly path: string; readonly labels: FileTreeLabels; readonly reload?: unknown; readonly onClose: () => void }) {
   const [versions, setVersions] = useState<readonly SavedRevision[]>();
   const [failure, setFailure] = useState('');
   const [selected, setSelected] = useState<string>();
@@ -249,7 +251,7 @@ function FileHistory({ controller, path, labels, onClose }: { readonly controlle
     const abort = new AbortController();
     void controller.history(path, abort.signal).then(value => { if (!abort.signal.aborted) setVersions(value); }, error => { if (!abort.signal.aborted) setFailure(error instanceof Error ? error.message : labels.historyUnavailable); });
     return () => abort.abort();
-  }, [controller, path]);
+  }, [controller, path, reload]);
   useEffect(() => {
     if (selected === undefined) return;
     const abort = new AbortController(); setPreview(undefined); setFailure('');

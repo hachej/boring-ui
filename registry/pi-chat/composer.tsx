@@ -264,7 +264,7 @@ export function Composer(props: ComposerProps) {
   if (props.layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
     className={cn('relative bg-card', dragging && 'rounded-2xl ring-2 ring-ring/40', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
-    {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} onSelect={pickMention} onDismiss={dismiss} />}
+    {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {chipRows}
     {attachmentRow}
     <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-2">
@@ -286,7 +286,7 @@ export function Composer(props: ComposerProps) {
     className={cn('relative rounded-3xl border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-[3px] focus-within:ring-ring/15 motion-reduce:transition-none',
       dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
-    {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} onSelect={pickMention} onDismiss={dismiss} />}
+    {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {chipRows}
     {attachmentRow}
     {textareaEl}
