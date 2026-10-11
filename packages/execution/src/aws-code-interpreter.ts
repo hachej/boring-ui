@@ -131,7 +131,8 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   const auto = start !== undefined && (options.renew ?? 'auto') === 'auto';
   const ttlMs = (start?.sessionTimeoutSeconds ?? 900) * 1000;
   const marginMs = Math.min((options.rotateMarginSeconds ?? 60) * 1000, ttlMs / 2);
-  let sessionId = borrowed, starting: Promise<string> | undefined, lost = false, stopped = false, incarnation = 0, startedAt = 0, rotateRetryAt = 0;
+  let sessionId = borrowed, starting: Promise<string> | undefined, lost = false, stopped = false, startedAt = 0, rotateRetryAt = 0;
+  const forgetLost = (): void => { lost = false; sessionId = undefined; }; // the next command starts a new session
   // Every session this env started and has not confirmed stopped (rotation never stops one), and the stops in flight.
   const owned = new Set<string>(), stopping = new Map<string, Promise<void>>();
   const stopSession = (id: string, signal?: AbortSignal): Promise<void> => {
@@ -161,7 +162,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   /** Starts a session: the first one, a replacement after a loss, or a rotation. One start at a time; callers share it. */
   function begin(): Promise<string> {
     if (!start) throw new ServiceError('SessionMissing', 'No Code Interpreter session');
-    const attempt = incarnation, { name, sessionTimeoutSeconds, filesystemConfigurations } = start;
+    const { name, sessionTimeoutSeconds, filesystemConfigurations } = start;
     return starting ??= (async () => {
       const response = await client.send(new StartCodeInterpreterSessionCommand({
         codeInterpreterIdentifier,
@@ -172,7 +173,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       const id = response.sessionId;
       if (!id) throw new ServiceError('SessionMissing', 'StartCodeInterpreterSession returned no session id');
       owned.add(id);
-      if (attempt === incarnation && !stopped) { sessionId = id; startedAt = Date.now(); }
+      if (!stopped) { sessionId = id; startedAt = Date.now(); lost = false; }
       return id;
     })().finally(() => { starting = undefined; });
   }
@@ -184,7 +185,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
    */
   async function prepare(): Promise<void> {
     if (!auto || stopped) return;
-    if (lost) { lost = false; sessionId = undefined; incarnation++; return; }
+    if (lost) { forgetLost(); return; }
     if (!sessionId || (!starting && (Date.now() < rotateRetryAt || Date.now() - startedAt <= ttlMs - marginMs))) return;
     try { await begin(); } catch { rotateRetryAt = Date.now() + Math.max(1000, marginMs / 4); }
   }
@@ -377,7 +378,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     lost: () => lost,
     renew: () => {
       if (!start || stopped) return false;
-      if (lost) { lost = false; sessionId = undefined; incarnation++; }
+      if (lost) forgetLost();
       return true;
     },
     stop: async context => {

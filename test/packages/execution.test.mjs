@@ -421,7 +421,7 @@ test('Code Interpreter env (renew auto): expiry under concurrent and background 
 
 // A client around the fake that can fail or delay on demand: Start, getTask (transport error), StopSession, and a start acknowledgement without its task id.
 function flaky(inner) {
-  const state = { failStart: false, failPoll: false, startDelayMs: 0, starts: 0, failStopFor: new Set(), stopDelayMs: 0, dropTaskId: false };
+  const state = { failStart: false, failPoll: false, startDelayMs: 0, starts: 0, failStopFor: new Set(), stopDelayMs: 0, stopGate: undefined, dropTaskId: false };
   return { state, send: async (command, ...rest) => {
     const name = command.constructor.name;
     if (name === 'StartCodeInterpreterSessionCommand') {
@@ -430,6 +430,7 @@ function flaky(inner) {
       if (state.failStart) throw Object.assign(new Error('fictional start outage'), { name: 'ServiceUnavailableException' });
     }
     if (name === 'StopCodeInterpreterSessionCommand') {
+      if (state.stopGate) await state.stopGate;
       if (state.stopDelayMs) await delay(state.stopDelayMs);
       if (state.failStopFor.has(command.input.sessionId)) throw Object.assign(new Error('fictional stop outage'), { name: 'ServiceUnavailableException' });
     }
@@ -490,6 +491,47 @@ test('Code Interpreter env (renew auto): a command that arrives during a rotatio
   assert.deepEqual(stoppedSessions(fake), []);
 });
 
+// A rotation whose replacement start is slow; the first session expires while that start is in flight.
+async function expiryDuringReplacementStart(t) {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const client = flaky(await fake.client());
+  const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 2 }), env = interpreter.env;
+  getOrThrow(await env.exec('true', {}, context));
+  const first = interpreter.sessionId();
+  const running = env.exec('sleep 3', {}, context); // pinned to the first session
+  await delay(1100); // the first session is due for rotation
+  client.state.startDelayMs = 400;
+  const rotating = env.exec('true', {}, context); // starts the replacement, which is slow
+  await delay(150);
+  fake.expire(first); // lost while the replacement starts
+  return { fake, env, interpreter, first, running, rotating };
+}
+
+test('Code Interpreter env (renew auto): expiry during a replacement start keeps the replacement current and starts no extra session', { timeout: 30000 }, async t => {
+  const { fake, env, interpreter, first, running, rotating } = await expiryDuringReplacementStart(t);
+  assert.equal(codeOf(await running), 'shell_unavailable');
+  assert.equal(getOrThrow(await rotating).exitCode, 0, 'the command that triggered the replacement runs on it');
+  const second = interpreter.sessionId();
+  assert.notEqual(second, first);
+  assert.equal(interpreter.lost(), false, 'the replacement is current, not lost');
+  assert.equal(codeOf(await env.exec('true', {}, context)), 'ok', 'the next command runs on the replacement');
+  assert.equal(interpreter.sessionId(), second);
+  assert.equal(starts(fake), 2, 'no third session was started');
+});
+
+test('Code Interpreter env (renew auto): a command arriving during a replacement start after a loss joins that start and the replacement stays current', { timeout: 30000 }, async t => {
+  const { fake, env, interpreter, first, running, rotating } = await expiryDuringReplacementStart(t);
+  const arriving = await env.exec('true', {}, context); // mid-start, after the loss
+  assert.equal(getOrThrow(arriving).exitCode, 0, 'it runs on the replacement, not on a new session');
+  assert.equal(getOrThrow(await rotating).exitCode, 0);
+  assert.equal(codeOf(await running), 'shell_unavailable');
+  const second = interpreter.sessionId();
+  assert.notEqual(second, first);
+  assert.equal(getOrThrow(await env.exec('true', {}, context)).exitCode, 0);
+  assert.equal(interpreter.sessionId(), second, 'the replacement is still the current session');
+  assert.equal(starts(fake), 2, 'one replacement for all commands');
+});
+
 test('Code Interpreter env (renew auto): a command whose outcome is unknown is not replayed and not killed, and later commands run on a new session', { timeout: 30000 }, async t => {
   const { fake, open } = await codeInterpreterFixture(t);
   const client = flaky(await fake.client());
@@ -524,7 +566,7 @@ test('Code Interpreter env (renew auto): a start acknowledgement without a task 
   assert.equal(getOrThrow(await env.readTextFile('ran.txt', context)), 'ran\n');
 });
 
-test('Code Interpreter env (renew auto): stop() stops the current and every rotated-away session, keeps a failed stop tracked for the next stop(), and awaits stops in flight', { timeout: 30000 }, async t => {
+test('Code Interpreter env (renew auto): stop() stops the current and every rotated-away session, keeps a failed stop tracked for the next stop(), and shares stops in flight', { timeout: 30000 }, async t => {
   const { fake, open } = await codeInterpreterFixture(t);
   const client = flaky(await fake.client());
   const interpreter = open('user-a', 2001, undefined, { client, rotateMarginSeconds: 1 }, { sessionTimeoutSeconds: 60 }), env = interpreter.env;
@@ -555,8 +597,17 @@ test('Code Interpreter env (renew auto): stop() stops the current and every rota
   const stopsSoFar = stoppedSessions(fake).length;
   await rotating.stop(context);
   assert.equal(stoppedSessions(fake).length, stopsSoFar, 'nothing left to stop');
-  // Stops in flight finish before stop() resolves.
-  await interpreter.stop(context);
+  // Concurrent stop() calls share one Stop per session; neither settles while the Stop is in flight.
+  let release;
+  client.state.stopGate = new Promise(resolve => { release = resolve; });
+  const settled = [];
+  const stops = [interpreter.stop(context), interpreter.stop(context)].map(stop => stop.then(() => settled.push('ok')));
+  await delay(100);
+  assert.deepEqual(settled, [], 'neither stop() settles while the Stop is in flight');
+  release();
+  await Promise.all(stops);
+  assert.deepEqual(settled, ['ok', 'ok']);
+  assert.equal(stoppedSessions(fake).filter(id => id === second).length, 1, 'one Stop per session');
   assert.equal(fake.sessions.get(second).live, false);
 });
 
