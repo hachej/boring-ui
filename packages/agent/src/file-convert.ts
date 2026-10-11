@@ -139,8 +139,8 @@ export function createConvertingRead(options: ConvertingReadOptions = {}) {
       const { snapshot } = read;
       const head = snapshot.bytes.subarray(0, SNIFF_BYTES);
       let kind: FileKind = fileKind(located.path, head);
-      // The leading bytes are only a sniff: a NUL anywhere in the loaded snapshot (bounded by maxBytes) makes a text file binary.
-      if (kind === 'text' && snapshot.bytes.subarray(0, maxBytes).includes(0)) kind = 'binary';
+      // The leading bytes are only a sniff: a NUL anywhere in the loaded snapshot makes a text file binary.
+      if (kind === 'text' && snapshot.bytes.includes(0)) kind = 'binary';
       if (kind === 'text') return native(args, api, context);
       if (kind === 'archive' || kind === 'binary') return failure(`${args.path} is ${kind === 'archive' ? 'an archive' : 'a binary file'}; it cannot be read as text here (unsupported).`, 'unsupported');
       if (!options.convert) {

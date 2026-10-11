@@ -12,6 +12,7 @@ import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import { createConvertingRead, workersAiMarkdown } from '@hachej/boring-agent/file-convert';
 import { createFileGuard } from '@hachej/boring-agent/file-guard';
+import { withWorkspace } from '@hachej/boring-agent/workspaces';
 import { fileKind } from '@hachej/boring-agent/file-types';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
@@ -23,7 +24,7 @@ const access = { principalId: 'editor', initiatorId: 'alice', scopeId: 'fictiona
 const PDF = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n';
 
 /** Pi's native read, wrapped by the converting read, then the guard, over a real directory. Results carry content text and diagnostics. */
-async function fixture(t, { convert, cache, maxBytes, read, guard = true, onRead } = {}) {
+async function fixture(t, { convert, cache, maxBytes, read, guard = true, onRead, form = 'binding' } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'boring-convert-'));
   const workspace = join(directory, 'workspace'), elsewhere = join(directory, 'elsewhere');
   mkdirSync(workspace); mkdirSync(elsewhere);
@@ -34,11 +35,15 @@ async function fixture(t, { convert, cache, maxBytes, read, guard = true, onRead
   // onRead(count, workspace) runs right after the provider's count-th read returned: a deterministic point between check and open.
   const hooked = onRead ? async (...args) => { const result = await base.read(...args); await onRead(++reads, workspace); return result; } : read;
   const files = hooked ? Object.create(base, { read: { value: hooked } }) : base;
-  const binding = { files, root: workspace, access };
+  // How the tools get the workspace: `binding` (the option), `binding.env` (the option, naming its env), or `withWorkspace` (attached to the env).
+  const binding = { files, root: workspace, access, ...(form === 'binding.env' ? { env } : {}) };
+  const attached = form === 'withWorkspace';
+  if (attached) withWorkspace(env, binding);
+  const option = attached ? undefined : binding;
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fixture.files', tools: [createReadTool(), createWriteTool(), createEditTool()] }));
-  registry.install(createConvertingRead({ workspace: binding, convert, cache, maxBytes }));
-  if (guard) registry.install(createFileGuard({ workspace: binding }));
+  registry.install(createConvertingRead({ workspace: option, convert, cache, maxBytes }));
+  if (guard) registry.install(createFileGuard({ workspace: option }));
   const harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models: createModels(), env: () => env }, context);
   t.after(async () => { await harness.close(context); rmSync(directory, { recursive: true, force: true }); });
   const conversation = await harness.root(context);
@@ -54,6 +59,18 @@ async function fixture(t, { convert, cache, maxBytes, read, guard = true, onRead
   };
   const put = (path, content) => writeFileSync(join(workspace, path), content);
   return { workspace, elsewhere, run, put };
+}
+
+for (const form of ['binding', 'binding.env', 'withWorkspace']) {
+  test(`a PDF through the guard and the converting read is converted once and returned as text (workspace: ${form})`, async t => {
+    let calls = 0;
+    const f = await fixture(t, { form, convert: async () => { calls++; return { text: 'converted text' }; } });
+    f.put('doc.pdf', PDF);
+    const result = await f.run({ path: 'doc.pdf' });
+    assert.equal(result.isError, false, result.all);
+    assert.equal(result.text, 'converted text');
+    assert.equal(calls, 1);
+  });
 }
 
 test('text goes to Pi\'s native read untouched; the converter is never called', async t => {
@@ -318,6 +335,16 @@ test('a NUL after the sniffed head makes a text file binary: unsupported and nev
   const f = await fixture(t, { convert: async () => { calls++; return { text: 'x' }; } });
   f.put('late.bin', Buffer.concat([Buffer.from('a'.repeat(20)), Buffer.from([0]), Buffer.from('tail')]));
   const result = await f.run({ path: 'late.bin' });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /unsupported/);
+  assert.equal(calls, 0);
+});
+
+test('a NUL beyond maxBytes still makes a text file binary: unsupported, never converted', async t => {
+  let calls = 0;
+  const f = await fixture(t, { maxBytes: 32, convert: async () => { calls++; return { text: 'x' }; } });
+  f.put('late.txt', Buffer.concat([Buffer.from('a'.repeat(40)), Buffer.from([0]), Buffer.from('tail\n')]));
+  const result = await f.run({ path: 'late.txt' });
   assert.equal(result.isError, true);
   assert.match(result.text, /unsupported/);
   assert.equal(calls, 0);

@@ -80,6 +80,15 @@ test('a symlink inside the workspace that points outside is refused for read, wr
   assert.equal(existsSync(join(f.elsewhere, 'new.md')), false);
 });
 
+test('a dangling symlink inside the workspace whose target is outside is refused for write and creates nothing outside', async t => {
+  const f = await fixture(t);
+  symlinkSync(join(f.elsewhere, 'new.md'), join(f.workspace, 'new.md'));
+  const result = await f.run('write', { path: 'new.md', content: 'pwned' });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /outside the workspace/);
+  assert.equal(existsSync(join(f.elsewhere, 'new.md')), false);
+});
+
 test('a symlink that stays inside the workspace and a new file under a real directory are still allowed', async t => {
   const f = await fixture(t);
   mkdirSync(join(f.workspace, 'docs'));

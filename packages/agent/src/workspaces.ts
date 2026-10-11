@@ -60,6 +60,12 @@ export function asWorkspaceResolver(workspace?: WorkspaceResolver | WorkspaceBin
   return workspace === undefined || typeof workspace === 'function' ? workspace : constantWorkspace(workspace);
 }
 
+const decorations = new WeakMap<ExecutionEnv, ExecutionEnv>();
+/** Mark `view` as a decoration of `env` (the same workspace, for example `confinedEnv`'s): the workspace of `view` is that of `env`. Returns `view`. */
+export function decorate<E extends ExecutionEnv>(env: ExecutionEnv, view: E): E { decorations.set(view, env); return view; }
+/** The env `env` decorates, or `env` itself: the env a workspace is attached to. */
+const undecorated = (env: ExecutionEnv): ExecutionEnv => decorations.get(env) ?? env;
+
 const attached = new WeakMap<ExecutionEnv, WorkspaceBinding>();
 /**
  * Attach `binding` to `env`: the workspace that comes with that env. The host's `HarnessOptions.env(target, context)` returns such an
@@ -91,10 +97,11 @@ export async function callTarget(api: ToolExecutionApi, context: Context): Promi
  * Pi handed the call (`withWorkspace`).
  */
 export async function workspaceFor(resolver: WorkspaceResolver | WorkspaceBinding | undefined, api: ToolExecutionApi, context: Context): Promise<{ readonly binding: WorkspaceBinding } | { readonly refused: string }> {
-  const binding = resolver === undefined ? workspaceOfEnv(api.env) : typeof resolver === 'function' ? await resolver(await callTarget(api, context), context) : resolver;
+  const env = api.env === undefined ? undefined : undecorated(api.env);
+  const binding = resolver === undefined ? workspaceOfEnv(env) : typeof resolver === 'function' ? await resolver(await callTarget(api, context), context) : resolver;
   if (binding === undefined) return { refused: 'This conversation has no workspace.' };
   checked(binding);
-  if (binding.env !== undefined && binding.env !== api.env) return { refused: 'The workspace of this conversation was reopened during the call. Try again.' };
+  if (binding.env !== undefined && binding.env !== env) return { refused: 'The workspace of this conversation was reopened during the call. Try again.' };
   return { binding };
 }
 

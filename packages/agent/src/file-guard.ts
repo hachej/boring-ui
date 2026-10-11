@@ -5,7 +5,7 @@ import type { ExecutionEnv, Result } from '@earendil-works/pi-durable/env';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess } from '@hachej/boring-files';
-import { asWorkspaceResolver, workspaceFor } from './workspaces.js';
+import { asWorkspaceResolver, decorate, workspaceFor } from './workspaces.js';
 import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
 
 /*
@@ -100,6 +100,9 @@ async function contained(env: ExecutionEnv | undefined, root: string, absolute: 
     const real = await env.canonicalPath(candidate, context);
     if (real.ok) { const resolved = `${real.value.replace(/\/+$/, '')}${rest}`; return resolved === base || resolved.startsWith(`${base}/`); }
     if (real.error.code !== 'not_found') return false;
+    // A dangling link resolves to nothing, but a write through it would create its target: refuse it, wherever it is.
+    const link = await env.fileInfo(candidate, context);
+    if (link.ok && link.value.kind === 'symlink') return false;
     const cut = candidate.lastIndexOf('/');
     if (cut <= 0) return false;
     rest = `${candidate.slice(cut)}${rest}`;
@@ -107,7 +110,7 @@ async function contained(env: ExecutionEnv | undefined, root: string, absolute: 
   }
 }
 
-const ONE_PATH = new Set(['readTextFile', 'openTextLineReader', 'readTextLines', 'readBinaryFile', 'openBinaryReader', 'writeFile', 'appendFile', 'truncateFile', 'flushFile', 'fileInfo', 'listDir', 'openDirReader', 'createDir', 'remove']);
+export const ONE_PATH = new Set(['readTextFile', 'openTextLineReader', 'readTextLines', 'readBinaryFile', 'openBinaryReader', 'writeFile', 'appendFile', 'truncateFile', 'flushFile', 'fileInfo', 'listDir', 'openDirReader', 'createDir', 'remove']);
 
 /**
  * `env` as the native `read`, `write` and `edit` must see it: every operation that opens, changes or lists a path first re-checks the
@@ -120,7 +123,7 @@ const ONE_PATH = new Set(['readTextFile', 'openTextLineReader', 'readTextLines',
 export function confinedEnv(env: ExecutionEnv, root: string): ExecutionEnv {
   const denied = (path: string): Result<never, FileError> => err(new FileError('permission_denied', `Refused: ${path} is outside the workspace.`, path));
   const inside = (path: string, context: Context) => contained(env, root, path, context);
-  return new Proxy(env, {
+  return decorate(env, new Proxy(env, {
     get(target, property) {
       const member = Reflect.get(target, property, target) as unknown;
       if (typeof member !== 'function') return member;
@@ -131,7 +134,7 @@ export function confinedEnv(env: ExecutionEnv, root: string): ExecutionEnv {
       if (property === 'exists') return async (path: string, context: Context) => await inside(path, context) ? method(path, context) : ok(false);
       return method;
     },
-  });
+  }));
 }
 
 /** The guard as a native extension. Select it after the extension(s) that register `read`, `write` and `edit`. */
