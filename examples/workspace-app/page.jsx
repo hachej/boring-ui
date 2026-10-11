@@ -3,13 +3,13 @@
 // `?configured` shows the same app rebranded through the blocks' props only (labels, one icon, host actions; see CONFIGURED below).
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 
 const { token, identity } = window.__APP__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const at = path => new URL(path, location.href);
-const resources = { endpoint: at('/api/resources'), history: at('/api/history'), fetch: authorized, identity };
 const configured = new URLSearchParams(location.search).has('configured');
 
 /** A host icon: any component that takes `className` (here a fictional brand mark instead of lucide's arrow). */
@@ -41,6 +41,9 @@ function App() {
   const [logged, setLogged] = useState([]);
   const log = useMemo(() => id => setLogged(current => [...current, id]), []);
   const config = useConfiguration(log);
+  // The workspace's revision provider (identity, listing, search, history, change feed) is bound by the server's binding of /api/resources.
+  const [revisionProvider, setRevisionProvider] = useState();
+  useEffect(() => { let off = false; connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(value => { if (!off) setRevisionProvider(value); }).catch(() => {}); return () => { off = true; }; }, []);
   const listed = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: selected, onSelect: setSelected });
   const conversations = listed && config.rowActions ? { ...listed, rowActions: config.rowActions } : listed;
   // The open conversation: the one chosen, while it is listed; otherwise the most recent.
@@ -52,10 +55,11 @@ function App() {
   const floating = configured ? { floatBelow: 320, floatingChat: ({ headerStart, historyList, emptyState, decisions, controls, className, ...props }, dock) =>
     <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
-    <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations} resources={resources}
+    {revisionProvider ? <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations} revisionProvider={revisionProvider}
       chat={{ labels: { title: 'Writer' }, ...config.chat, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
       {...(config.labels ? { labels: config.labels, panelActions: config.panelActions } : {})} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
+      : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
     {configured && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
   </main>;
 }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NotebookTextIcon } from 'lucide-react';
 import { artifactKey } from '../../../registry/pi-chat/pi-chat.tsx';
+import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { AgentWorkspace, useArtifactVersions, useRemoteChat } from '../../../registry/pi-app/agent-workspace.tsx';
 import { useScenarioRun, useTyped } from '../../studio/scenarios-ui.jsx';
 import { savedResource } from '../../studio/saved-resource.mjs';
@@ -42,6 +43,9 @@ function Workspace({ token, onRejected }) {
     return response.json();
   };
   const [agent, setAgent] = useState(null);
+  // The workspace's revision provider: the binding and the change feed of /api/resources (the page's files, saves and history).
+  const [revisionProvider, setRevisionProvider] = useState();
+  useEffect(() => { let off = false; connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: authorized }).then(value => { if (!off) setRevisionProvider(value); }).catch(() => {}); return () => { off = true; }; }, [authorized]);
   const [scenarios, setScenarios] = useState([]);
   const [items, setItems] = useState(null);
   // A shared link names the conversation (and an artifact version) to open; it wins over what this tab last showed.
@@ -82,8 +86,7 @@ function Workspace({ token, onRejected }) {
     setLinked(null);
   }, [linked, controller, versions, active]); // eslint-disable-line react-hooks/exhaustive-deps
   const scenarioRun = useScenarioRun({ storageKey: 'recipe.scenario', scenarios, variants: variant ? [variant] : [], variant, controller, conversationId, typed });
-  const resources = useMemo(() => agent && { endpoint: new URL('/api/resources', location.href), fetch: authorized, identity: agent.identity, history: new URL('/api/history', location.href) }, [agent, authorized]);
-  if (!agent || !items) return <p className="cf-loading" role="status">Loading…</p>;
+  if (!agent || !items || !revisionProvider) return <p className="cf-loading" role="status">Loading…</p>;
   const newConversation = async () => { const { conversationId: created } = await api('/api/conversations', { method: 'POST' }); await reload(); setSelected(created); };
   const refuse = async change => { const result = await chat.configure(change); if (result.kind === 'refused') throw new Error(result.reason ?? 'The change was refused.'); };
   const composer = chat.status === 'ready' ? {
@@ -97,7 +100,7 @@ function Workspace({ token, onRejected }) {
   // The shared document is the workspace file notes.md: the Document button opens its latest revision.
   const notes = { schema: 'boring.artifact', version: 1, title: 'notes.md', type: 'markdown', mediaType: 'text/markdown', target: agent.notes, revision: 'latest' };
   return <main className="cf" data-testid="studio-main" data-variant={variant.id} data-conversation={conversationId}>
-    <AgentWorkspace controller={controller} conversationId={active} conversations={conversations} resources={resources} detect={detect} share={shareStudioLink}
+    <AgentWorkspace controller={controller} conversationId={active} conversations={conversations} revisionProvider={revisionProvider} detect={detect} share={shareStudioLink}
       opened={opened} onOpenedChange={setOpened} storageKey="recipe" sheetBelow={901} drawerBelow={901}
       chat={{ labels: { title: agent.title }, mode: 'developer', actions: chat.actions, ...composer, emptyState: scenarioRun.emptyState, decisions: scenarioRun.decisions }}
       connecting={<p className="cf-loading" role="status">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>}

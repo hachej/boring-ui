@@ -20,7 +20,7 @@ import { createConversations, createConversationsHandler } from '@hachej/boring-
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
-import { createResourceHandler } from '@hachej/boring-files/remote';
+import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../shared/workspace-tools.mjs';
 import { buildTailwind } from '../studio/tailwind.mjs';
@@ -59,8 +59,8 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
       const conversation = allowed(request) && Number.isSafeInteger(id) ? await conversations.open(agent.id, id) : undefined;
       return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id) } : null;
     } }),
-    '/api/resources': createResourceHandler({ authenticate: async request => allowed(request) ? person : null, reader: files, publisher: files.publication, lookup: files.reconciliation }),
-    '/api/history': async request => allowed(request) ? Response.json({ saves: files.saves(new URL(request.url).searchParams.get('path') ?? '') }) : new Response(null, { status: 401 }),
+    // The workspace's revision protocol: the binding, the change feed, listing, search, saved history and the resource calls.
+    '/api/resources': createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null }),
   };
 
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.
