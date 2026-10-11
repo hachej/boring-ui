@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { INTENTIONALLY_PRIVATE, isExcludedFromRelease } from './release-set.mjs';
-import { loadBoundary } from './check-pi-boundary.mjs';
 
 export function checkPackage(manifest, paths, versions, { release = false } = {}) {
   const errors = [];
@@ -40,6 +39,9 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
     }
   }
   if (release) {
+    for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+      for (const name of Object.keys(manifest[field] ?? {})) if (INTENTIONALLY_PRIVATE.has(name) && !INTENTIONALLY_PRIVATE.has(manifest.name)) errors.push(`Published package must not depend on private package: ${name} (${field})`);
+    }
     if (INTENTIONALLY_PRIVATE.has(manifest.name) && manifest.private !== true) errors.push('Intentionally private package must stay private');
     else if (manifest.private !== false) errors.push('Publication remains disabled: private must explicitly be false');
     if (!manifest.version || /^0\.0\.0(?:$|[-+])/.test(manifest.version)) errors.push('Choose a release version before publication');
@@ -83,8 +85,13 @@ export function checkPackages(root, { release = false, outputDirectory, commit }
       mkdirSync(outputDirectory);
       for (const pack of packs) copyFileSync(join(directory, pack.filename), join(outputDirectory, pack.filename), constants.COPYFILE_EXCL);
       // Deferred runtime proofs are backlog, not blockers (owner ruling 2026-10-10); record them with the artifact.
-      let deferredProofs = [];
-      try { deferredProofs = loadBoundary(root).pending.map(({ id, command, reason }) => ({ id, command, reason })); } catch { /* fixtures without VERIFY.json */ }
+      // Read VERIFY.json directly: this module is loaded by the publish job, which has no installed dependencies,
+      // so its import graph must stay Node built-ins only (no check-pi-boundary / typescript).
+      const deferredProofs = [];
+      try {
+        const registry = JSON.parse(readFileSync(join(root, 'VERIFY.json'), 'utf8'));
+        for (const [id, rule] of Object.entries(registry.invariants ?? {})) for (const verifier of rule.verifiers ?? []) if (verifier.kind === 'pending') deferredProofs.push({ id, command: verifier.command, reason: verifier.reason });
+      } catch { /* fixtures without VERIFY.json */ }
       writeFileSync(join(outputDirectory, 'release.json'), JSON.stringify({ schemaVersion: 1, commit, version: rootManifest.version, packages: packs, skippedPrivate: skipped, deferredProofs }, null, 2) + '\n', { flag: 'wx' });
     }
     return { errors, packs, skipped };

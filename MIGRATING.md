@@ -2,8 +2,9 @@
 
 This candidate replaces the implementation in `hachej/boring-ui` with the v4
 library. Its proposed npm version is `0.2.0`, a breaking pre-1.0 update after `0.1.111`.
-The architecture name "v4" is independent of the npm version. Packages remain
-private until release qualification and publication authorization are complete.
+The architecture name "v4" is independent of the npm version. Five packages are in the
+publish set; boring-browser and boring-testing stay private. Publication still awaits
+owner authorization ([release ruling](docs/implementation/NPM-RELEASE.md#release-ruling-owner-2026-10-10)).
 
 ## Package identities
 

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { checkPackages } from '../../scripts/check-npm-packages.mjs';
 import { setReleaseVersion, validReleaseVersion } from '../../scripts/release-version.mjs';
@@ -129,4 +131,37 @@ test('an intentionally private package that turns public is refused, and one tha
   const pkg = f.read('packages/browser/package.json'); f.write('packages/browser/package.json', { ...pkg, private: false });
   const bad = checkPackages(f.root, { release: true });
   assert.ok(bad.errors.some(error => error.includes('must stay private')));
+});
+
+test('a published package may not depend on an intentionally private package', t => {
+  for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+    const f = fixture(t), pkg = f.read('packages/files/package.json');
+    f.write('packages/files/package.json', { ...pkg, [field]: { '@hachej/boring-browser': '1.0.0' } });
+    const result = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+    assert.ok(result.errors.some(error => error.includes('must not depend on private package') && error.includes(field)), field);
+    assert.throws(() => readFileSync(join(f.directory, 'release.json')), { code: 'ENOENT' });
+  }
+});
+
+test('a private package injected into the release artifact is refused by the publisher and the workflow guard', t => {
+  const f = fixture(t);
+  checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+  const release = f.read('archives/release.json');
+  const injected = { ...release, packages: [...release.packages, { ...release.packages[0], name: '@hachej/boring-browser', filename: 'boring-browser-1.0.0.tgz' }] };
+  f.write('archives/release.json', injected);
+  assert.throws(() => readRelease(f.directory, f.options), /publishable workspace|Unexpected/);
+  const guard = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/release-set.mjs', import.meta.url)), f.directory], { encoding: 'utf8' });
+  assert.equal(guard.status, 1); assert.match(guard.stderr, /boring-browser/);
+});
+
+test('the publisher and everything it imports start with no node_modules reachable', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-publisher-isolated-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = fileURLToPath(new URL('../../scripts/', import.meta.url));
+  cpSync(source, join(dir, 'scripts'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), '{"type":"module"}\n');
+  // Bad arguments make the publisher throw its usage error, which proves its whole import graph resolved.
+  const result = spawnSync(process.execPath, [join(dir, 'scripts', 'publish-npm-packages.mjs')], { encoding: 'utf8', cwd: dir });
+  assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/);
+  assert.match(result.stderr, /Usage: node scripts\/publish-npm-packages\.mjs/);
 });
