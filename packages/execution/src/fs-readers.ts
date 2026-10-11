@@ -52,22 +52,27 @@ export function snapshotReaders(source: Source): Pick<FileSystem, 'openBinaryRea
       });
     },
     openDirReader: async (path, context): Promise<Result<DirReader, FileError>> => {
-      const listed = await source.listDir(path, context);
+      // Resolve the directory once: a later change of the environment's cwd must not move this reader to another directory.
+      const directory = await source.canonicalPath(path, context);
+      if (!directory.ok) return directory;
+      const listed = await source.listDir(directory.value, context);
       if (!listed.ok) return listed;
-      // Each page lists the directory again, so an entry removed while the reader is open is not returned.
-      const returned = new Set<string>();
-      let closed = false;
+      const prefix = directory.value === '/' ? '' : directory.value;
+      const pending = listed.value.filter(entry => entry.kind === 'file' || entry.kind === 'directory' || entry.kind === 'symlink').map(entry => `${prefix}/${entry.name}`);
+      let offset = 0, closed = false;
       return ok({
         next: async (maxEntries, inner) => {
           const failed = guard(closed, path, inner);
           if (failed) return err(failed);
           if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) return err(new FileError('invalid', 'maxEntries must be a positive integer', path));
-          const current = await source.listDir(path, inner);
-          if (!current.ok) return current;
-          const pending = current.value.filter(entry => (entry.kind === 'file' || entry.kind === 'directory' || entry.kind === 'symlink') && !returned.has(entry.name));
-          const page = pending.slice(0, maxEntries);
-          for (const entry of page) returned.add(entry.name);
-          return ok({ entries: page, done: pending.length <= maxEntries });
+          // Stat only the entries this page consumes; an entry removed since the open is skipped, as Pi's readers allow.
+          const page: FileInfo[] = [];
+          while (page.length < maxEntries && offset < pending.length) {
+            const info = await source.fileInfo(pending[offset++]!, inner);
+            if (info.ok) page.push(info.value);
+            else if (info.error.code !== 'not_found') return err(info.error);
+          }
+          return ok({ entries: page, done: offset >= pending.length });
         },
         close: async () => { closed = true; },
       });

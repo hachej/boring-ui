@@ -219,12 +219,8 @@ function nativeEnvironment(fs: VirtualFiles, id: string, cwd: string, closed: ()
         const cwd = absolute(options?.cwd ?? '.');
         try { if (!(await fs.stat(cwd)).isDirectory) throw new Error('not a directory'); }
         catch (cause) { return err(new ExecutionError('spawn_error', `Working directory does not exist: ${cwd}\nCannot execute bash commands.`, cause instanceof Error ? cause : undefined)); }
-        // An argv runs its program directly: an empty argv or a program the shell cannot find is a spawn error, not a shell exit code.
-        if (typeof command !== 'string') {
-          if (command.length === 0) return err(new ExecutionError('spawn_error', 'Empty argv: there is no program to run'));
-          const found = await createBash({ cwd }).exec(`command -v ${shellCommand([command[0]!])}`, { signal: AbortSignal.any(signals) });
-          if (found.exitCode !== 0) return err(new ExecutionError('spawn_error', boundedMessage(`Program not found: ${command[0]}`)));
-        }
+        // An argv with no program is a spawn error; nothing runs.
+        if (typeof command !== 'string' && command.length === 0) return err(new ExecutionError('spawn_error', 'Empty argv: there is no program to run'));
         const result = await createBash({ cwd, ...(options?.timeout === undefined ? {} : { executionLimits: { maxExecutionTimeMs: options.timeout * 1000 } }) }).exec(shellCommand(command), {
           ...(options?.env === undefined ? {} : { env: options.env }), replaceEnv: options?.inheritEnv === false,
           signal: AbortSignal.any(signals),
