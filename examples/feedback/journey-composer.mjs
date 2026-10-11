@@ -78,6 +78,44 @@ try {
     await shot('02-feedback-mode-hover');
   });
 
+  await step('cancel a selection (Esc, a second click on the zone, the Cancel selection button) and ask a general question with no element: never stuck on a zone', async () => {
+    const count = () => browser.evaluate(`${q('feedback-bar-count')}.textContent`);
+    // Esc from the note.
+    await clickAt(SAVE);
+    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    await browser.type(q('feedback-bubble-input'), 'never mind');
+    await browser.press('Escape');
+    await browser.until('the pin is gone', `!${q('feedback-bubble')} && !(${DRAWN}).some(item => item.tone === 'pinned')`, 5000);
+    assert.equal(await count(), '0 notes');
+    assert.equal(await browser.evaluate('document.querySelector(\'[data-testid=feedback-bar]\') !== null'), true, 'Esc did not end feedback mode');
+    // The zone again: a second click clears the selection.
+    await clickAt(SAVE);
+    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    await clickAt(SAVE);
+    await browser.until('the selection is cleared', `!${q('feedback-bubble')} && !(${DRAWN}).some(item => item.tone === 'pinned')`, 5000);
+    // The button; focus returns to the general-question entry.
+    await clickAt(SAVE);
+    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    assert.equal(await browser.evaluate(`${q('feedback-cancel-selection')}.textContent`), 'Cancel selection');
+    await browser.click(q('feedback-cancel-selection'));
+    await browser.until('the selection is cleared', `!${q('feedback-bubble')} && !(${DRAWN}).some(item => item.tone === 'pinned')`, 5000);
+    assert.equal(await browser.evaluate(`document.activeElement === ${q('feedback-general')}`), true, 'focus returns to the general-question entry');
+    assert.deepEqual(await browser.evaluate('window.__journeyHits'), { save: 0, submit: 0, plan: 0 }, 'the zone was never pressed');
+    // A general question: a note with no element; Esc closes it and keeps the text.
+    await browser.click(q('feedback-general'));
+    await browser.until('the general question', `document.activeElement === ${q('feedback-general-input')}`, 5000);
+    await browser.type(q('feedback-general-input'), 'x');
+    await shot('02b-general-question');
+    await browser.press('Escape');
+    await browser.until('closed', `!${q('feedback-general-bubble')} && ${q('feedback-bar-count')}.textContent === '1 note'`, 5000);
+    await browser.click(q('feedback-general'));
+    await browser.until('reopened with the text', `${q('feedback-general-input')}?.value === 'x'`, 5000);
+    await browser.evaluate(`${q('feedback-general-input')}.select()`);
+    await browser.press('Backspace');
+    await browser.press('Escape');
+    await browser.until('nothing left', `!${q('feedback-general-bubble')} && ${q('feedback-bar-count')}.textContent === '0 notes'`, 5000);
+  });
+
   await step('click Save: a numbered pin and a note bubble right there; the page never reacts', async () => {
     await clickAt(SAVE);
     await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
