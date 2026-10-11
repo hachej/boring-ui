@@ -390,7 +390,12 @@ test('SSE: a write made after the client reads the ready frame is delivered, eve
   // The client pauses after `ready`; the write lands on the SQLite file system while nothing is pulling the stream.
   await new Promise(resolve => setTimeout(resolve, 30));
   await f.write('after-ready.md', 'written after ready');
-  while (!/event: change/.test(text)) text += new TextDecoder().decode((await within(reader.read(), 2000, 'the change frame after ready')).value);
+  // Heartbeats keep the reads coming, so the deadline is checked per frame, not only by a single read's timeout.
+  const deadline = Date.now() + 2000;
+  while (!/event: change/.test(text)) {
+    assert.ok(Date.now() < deadline, `no change frame after the write; the stream sent: ${JSON.stringify(text.slice(-200))}`);
+    text += new TextDecoder().decode((await within(reader.read(), 2000, 'the next frame')).value);
+  }
   assert.match(text, /event: change\ndata: \{"kind":"change","path":"after-ready\.md"/);
   await reader.cancel();
 });
