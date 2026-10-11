@@ -1542,6 +1542,11 @@
           "path": "registry/feedback/use-external.ts",
           "type": "registry:hook",
           "target": "components/feedback/use-external.ts"
+        },
+        {
+          "path": "registry/feedback/feedback-labels.ts",
+          "type": "registry:lib",
+          "target": "components/feedback/feedback-labels.ts"
         }
       ],
       "css": {
@@ -2139,6 +2144,16 @@
           "background": "var(--boring-feedback-surface)",
           "color": "var(--boring-feedback-text)",
           "font": "inherit"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-bubble-actions": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "gap": "0.375rem"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-bubble-actions .boring-feedback-button": {
+          "min-height": "2rem",
+          "padding": "0 0.625rem",
+          "font-size": "0.8125rem"
         }
       }
     },
