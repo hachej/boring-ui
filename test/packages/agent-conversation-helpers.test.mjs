@@ -41,25 +41,25 @@ test('refreshAgentState keeps the old hash when a conversation fails, so the nex
   assert.equal(stored, undefined);
 });
 
-test('conversationTitle reads the first user message once and memoizes a non-null title', async () => {
+test('conversationTitle scans ascending, stops at the first user message and memoizes a non-null title', async () => {
   const messages = [];
   for (let i = 0; i < 250; i++) messages.push({ id: i + 1, model: [{ role: i % 2 === 0 ? 'user' : 'assistant', content: [{ type: 'text', text: i === 0 ? 'Fictional first question' : `m${i}` }] }] });
   let pages = 0;
   const conversation = {
     id: 7,
-    entries: async (_query, limit, cursor) => {
+    entries: async (query, limit, cursor) => {
       pages++;
-      const newestFirst = [...messages].reverse();
+      const ordered = query.order === 'ascending' ? messages : [...messages].reverse();
       const start = cursor ?? 0;
-      const items = newestFirst.slice(start, start + limit);
-      return { items, next: start + limit < newestFirst.length ? start + limit : undefined };
+      const items = ordered.slice(start, start + limit);
+      return { items, next: start + limit < ordered.length ? start + limit : undefined };
     },
   };
   const cache = new Map();
   assert.equal(await conversationTitle(conversation, context, cache), 'Fictional first question');
   assert.equal(cache.get('7'), 'Fictional first question');
   const readAfterFirst = pages;
-  assert.ok(readAfterFirst >= 3, 'the whole history is read once');
+  assert.equal(readAfterFirst, 1, 'only the first page of a 250-entry history is read');
   assert.equal(await conversationTitle(conversation, context, cache), 'Fictional first question');
   assert.equal(pages, readAfterFirst, 'a cached title reads no history');
 });

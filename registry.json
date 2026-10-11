@@ -434,7 +434,6 @@
       "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history, a human-in-the-loop question card, an Approve / Deny card for host tools wrapped with requireApproval optional artifact cards that open generated content in the host's panel, and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The optional pi-ambient and pi-workspace blocks build on it.",
       "dependencies": [
         "@hachej/boring-ui-kit@0.2.0",
-        "@hachej/boring-feedback@0.2.0",
         "react@19.3.0",
         "react-dom@19.3.0",
         "marked@17.0.6",
@@ -491,11 +490,6 @@
           "path": "registry/pi-chat/empty-state.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/empty-state.tsx"
-        },
-        {
-          "path": "registry/pi-chat/feedback-card.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/feedback-card.tsx"
         },
         {
           "path": "registry/pi-chat/history.tsx",
@@ -571,11 +565,6 @@
           "path": "registry/pi-chat/tool.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/tool.tsx"
-        },
-        {
-          "path": "registry/pi-chat/voice-input.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/voice-input.tsx"
         },
         {
           "path": "registry/pi-chat/labels.ts",
@@ -1505,7 +1494,8 @@
         "@hachej/boring-ui-kit@0.2.0",
         "@hachej/boring-files@0.2.0",
         "react@19.3.0",
-        "react-dom@19.3.0"
+        "react-dom@19.3.0",
+        "lucide-react@1.51.0"
       ],
       "files": [
         {
@@ -1542,6 +1532,16 @@
           "path": "registry/feedback/use-external.ts",
           "type": "registry:hook",
           "target": "components/feedback/use-external.ts"
+        },
+        {
+          "path": "registry/feedback/feedback-card.tsx",
+          "type": "registry:component",
+          "target": "components/feedback/feedback-card.tsx"
+        },
+        {
+          "path": "registry/feedback/voice-input.tsx",
+          "type": "registry:component",
+          "target": "components/feedback/voice-input.tsx"
         },
         {
           "path": "registry/feedback/feedback-labels.ts",
@@ -2155,7 +2155,11 @@
           "padding": "0 0.625rem",
           "font-size": "0.8125rem"
         }
-      }
+      },
+      "registryDependencies": [
+        "@boring-ui/pi-chat",
+        "@boring-ui/utils"
+      ]
     },
     {
       "name": "feedback-preview",

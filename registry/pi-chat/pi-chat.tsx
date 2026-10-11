@@ -36,8 +36,6 @@ export type { AnswerOutcome } from './question-card';
 export { artifactKey, collectArtifacts, detectArtifact, parseArtifact } from './artifact';
 export type { ArtifactDescriptor, ArtifactsConfig, ArtifactTarget, ArtifactType } from './artifact';
 export type { CommandMention, CommandMentions } from './markdown';
-export { FeedbackCard, FeedbackMention, feedbackMentionId, feedbackRenderTool, feedbackResultView } from './feedback-card';
-export type { FeedbackCardConfig, FeedbackShowOutcome, FeedbackShowRequest } from './feedback-card';
 export type { Suggestion } from './empty-state';
 export { ConversationList, relativeTime } from './history';
 export { defaultChatIcons, defaultChatLabels } from './labels';

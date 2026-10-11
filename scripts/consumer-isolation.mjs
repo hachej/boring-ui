@@ -25,7 +25,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   return result;
 } });
 `);
-  return { ...process.env, NODE_OPTIONS: `--import=${path}` };
+  return { ...process.env, NODE_OPTIONS: `--import=${path} --max-old-space-size=4096` };
 }
 
 export function assertConsumerTypeFiles(output, directory) {

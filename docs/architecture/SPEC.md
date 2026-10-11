@@ -208,7 +208,7 @@ ViewerFeature is parameterized by its descriptor and complete concrete controlle
 
 Workspace acquisition can expose native FileSystem, Shell or their ExecutionEnv composition. Shell-only use calls the separately injected native Shell from a tool; it does not satisfy the native env factory. Reuse one backing workspace but return per-call facades that respect native target/cwd; mutating one shared cwd during concurrent calls is invalid.
 
-Implementation evidence is composable too. Every package with runtime source requires a test/packages/<package>.test.mjs entry that exercises its public output. The verifier runs it and rejects failed, skipped, empty or todo results. This wiring rule cannot prove coverage or honest assertions; review and targeted fault tests still matter. Global native/consumer proof slots remain unchanged, and release still fails on any deferral. No second feature/evidence registry is introduced. See [COMPOSITION-CHECKS.md](../contracts/COMPOSITION-CHECKS.md).
+Implementation evidence is composable too. Every package with runtime source requires a test/packages/<package>.test.mjs entry that exercises its public output. The verifier runs it and rejects failed, skipped, empty or todo results. This wiring rule cannot prove coverage or honest assertions; review and targeted fault tests still matter. Global native/consumer proof slots remain unchanged, and release lists deferrals as backlog without failing on them ([release ruling](../implementation/NPM-RELEASE.md#release-ruling-owner-2026-10-10)); real evidence failures still fail it. No second feature/evidence registry is introduced. See [COMPOSITION-CHECKS.md](../contracts/COMPOSITION-CHECKS.md).
 
 ## Migration and upstream risk
 
