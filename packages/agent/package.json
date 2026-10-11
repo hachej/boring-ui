@@ -54,6 +54,10 @@
       "types": "./dist/file-convert.d.ts",
       "import": "./dist/file-convert.js"
     },
+    "./file-types": {
+      "types": "./dist/file-types.d.ts",
+      "import": "./dist/file-types.js"
+    },
     "./ask-user": {
       "types": "./dist/ask-user.d.ts",
       "import": "./dist/ask-user.js"

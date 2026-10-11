@@ -140,7 +140,7 @@ ResourcePublisher represents its bound commit authority, not a generic distribut
 
 ## Working writes and publication
 
-Isolation is the host's choice of environment (owner ruling, 2026-10-10): a shared-process host uses an isolated worker env (`aws-code-interpreter`, or a remote-shell/remote-files sandbox); local single-user mode may use Pi's `NodeExecutionEnv` with local bash. No "confined Node env" is built, and the file guard still fails closed on its own refusal paths.
+Isolation is the host's choice of environment (owner ruling, 2026-10-10): a shared-process host uses an isolated worker env (`aws-code-interpreter`, or a remote-shell/remote-files sandbox); local single-user mode may use Pi's `NodeExecutionEnv` with local bash. No "confined Node env" is built, and the file guard still fails closed on its own refusal paths. The guard gives Pi's native `read`/`write`/`edit` an `ExecutionEnv` decorator (`confinedEnv`, public Pi API) that re-checks, with links resolved, the path each operation is about to open, so a fallback spelling Pi picks after the provider's check is judged as itself; a missing path is refused, never delegated. A symlink swapped between that check and the OS `open` is not closable inside a shared process: it is the isolated env's job, and the guard claims no more.
 
 Installs, caches, builds and test output use ordinary working-file operations within granted isolation. Record command/tool admission and required logs/evidence, not a domain revision/receipt for every scratch write. A local Git commit describes working repository history, not permission to change an application's authoritative resource or deploy.
 
