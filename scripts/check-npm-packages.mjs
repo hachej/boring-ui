@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
+import { INTENTIONALLY_PRIVATE, isExcludedFromRelease } from './release-set.mjs';
 
 export function checkPackage(manifest, paths, versions, { release = false } = {}) {
   const errors = [];
@@ -38,7 +39,11 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
     }
   }
   if (release) {
-    if (manifest.private !== false) errors.push('Publication remains disabled: private must explicitly be false');
+    for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+      for (const name of Object.keys(manifest[field] ?? {})) if (INTENTIONALLY_PRIVATE.has(name) && !INTENTIONALLY_PRIVATE.has(manifest.name)) errors.push(`Published package must not depend on private package: ${name} (${field})`);
+    }
+    if (INTENTIONALLY_PRIVATE.has(manifest.name) && manifest.private !== true) errors.push('Intentionally private package must stay private');
+    else if (manifest.private !== false) errors.push('Publication remains disabled: private must explicitly be false');
     if (!manifest.version || /^0\.0\.0(?:$|[-+])/.test(manifest.version)) errors.push('Choose a release version before publication');
   }
   return errors;
@@ -53,7 +58,7 @@ export function checkPackages(root, { release = false, outputDirectory, commit }
   const versions = new Map(packages.map(({ manifest }) => [manifest.name, manifest.version]));
   const directory = mkdtempSync(join(tmpdir(), 'boring-npm-pack-'));
   const errors = [];
-  const packs = [];
+  const packs = [], skipped = [];
   const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   if (release && (rootManifest.private !== true || packages.some(pkg => pkg.manifest.version !== rootManifest.version))) errors.push('Release requires a private root and one synchronized package version');
   if (versions.size !== packages.length) errors.push('Duplicate package names');
@@ -64,6 +69,7 @@ export function checkPackages(root, { release = false, outputDirectory, commit }
   }
   try {
     for (const pkg of packages) {
+      if (release && isExcludedFromRelease(pkg.manifest)) { skipped.push(pkg.manifest.name); continue; }
       const [pack] = JSON.parse(run('npm', ['pack', pkg.directory, '--ignore-scripts', '--json', '--pack-destination', directory]));
       const archive = join(directory, pack.filename);
       const paths = run('tar', ['-tzf', archive]).trim().split('\n').map(path => path.replace(/^package\//, ''));
@@ -78,9 +84,17 @@ export function checkPackages(root, { release = false, outputDirectory, commit }
     if (outputDirectory && !errors.length) {
       mkdirSync(outputDirectory);
       for (const pack of packs) copyFileSync(join(directory, pack.filename), join(outputDirectory, pack.filename), constants.COPYFILE_EXCL);
-      writeFileSync(join(outputDirectory, 'release.json'), JSON.stringify({ schemaVersion: 1, commit, version: rootManifest.version, packages: packs }, null, 2) + '\n', { flag: 'wx' });
+      // Deferred runtime proofs are backlog, not blockers (owner ruling 2026-10-10); record them with the artifact.
+      // Read VERIFY.json directly: this module is loaded by the publish job, which has no installed dependencies,
+      // so its import graph must stay Node built-ins only (no check-pi-boundary / typescript).
+      const deferredProofs = [];
+      try {
+        const registry = JSON.parse(readFileSync(join(root, 'VERIFY.json'), 'utf8'));
+        for (const [id, rule] of Object.entries(registry.invariants ?? {})) for (const verifier of rule.verifiers ?? []) if (verifier.kind === 'pending') deferredProofs.push({ id, command: verifier.command, reason: verifier.reason });
+      } catch { /* fixtures without VERIFY.json */ }
+      writeFileSync(join(outputDirectory, 'release.json'), JSON.stringify({ schemaVersion: 1, commit, version: rootManifest.version, packages: packs, skippedPrivate: skipped, deferredProofs }, null, 2) + '\n', { flag: 'wx' });
     }
-    return { errors, packs };
+    return { errors, packs, skipped };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

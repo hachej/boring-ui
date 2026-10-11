@@ -2,8 +2,9 @@
 
 This candidate replaces the implementation in `hachej/boring-ui` with the v4
 library. Its proposed npm version is `0.2.0`, a breaking pre-1.0 update after `0.1.111`.
-The architecture name "v4" is independent of the npm version. Packages remain
-private until release qualification and publication authorization are complete.
+The architecture name "v4" is independent of the npm version. Five packages are in the
+publish set; boring-browser and boring-testing stay private. Publication still awaits
+owner authorization ([release ruling](docs/implementation/NPM-RELEASE.md#release-ruling-owner-2026-10-10)).
 
 ## Package identities
 
@@ -66,7 +67,7 @@ The previous automatic pnpm publishing workflow is removed. The replacement
 uses npm workspaces and [release preflight](docs/implementation/NPM-RELEASE.md).
 It includes synchronized version preparation and a maintainer-dispatched npm
 workflow that publishes the exact qualified tarballs through trusted publishing.
-Merges and tags do not trigger publication. Packages remain private in this PR.
+Merges and tags do not trigger publication. Publication is gated by the owner checklist in docs/implementation/NPM-RELEASE.md.
 No GitHub release, npm publication, deployment or consumer modification is part
 of this PR. The [partial checkpoint](docs/implementation/PARTIAL.md) and all
 eleven global proof deferrals remain. A version change does not discharge them.

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { checkPackage } from './check-npm-packages.mjs';
 import { validReleaseVersion } from './release-version.mjs';
 import { runCaptured } from './run-captured.mjs';
+import { isExcludedFromRelease } from './release-set.mjs';
 
 const registry = 'https://registry.npmjs.org/';
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -14,11 +15,13 @@ export function readRelease(directory, { version, tag, commit, root = projectRoo
   if (!/^[a-f0-9]{40}$/.test(commit ?? '')) throw new Error('An exact reviewed commit SHA is required');
   const release = JSON.parse(readFileSync(join(directory, 'release.json'), 'utf8'));
   if (release.schemaVersion !== 1 || release.commit !== commit || release.version !== version || !Array.isArray(release.packages)) throw new Error('Release artifact does not match the selected commit/version');
-  const manifests = readdirSync(join(root, 'packages'), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => JSON.parse(readFileSync(join(root, 'packages', entry.name, 'package.json'), 'utf8')));
+  const all = readdirSync(join(root, 'packages'), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => JSON.parse(readFileSync(join(root, 'packages', entry.name, 'package.json'), 'utf8')));
+  // Intentionally private packages (owner ruling 2026-10-10) are excluded explicitly, never published.
+  const manifests = all.filter(manifest => !isExcludedFromRelease(manifest));
   const expected = new Map(manifests.map(manifest => [manifest.name, manifest]));
-  const versions = new Map(manifests.map(manifest => [manifest.name, version]));
+  const versions = new Map(all.map(manifest => [manifest.name, version]));
   const names = new Set(), filenames = new Set();
-  if (release.packages.length !== manifests.length || !manifests.length) throw new Error('Release artifact must contain every workspace package');
+  if (release.packages.length !== manifests.length || !manifests.length) throw new Error('Release artifact must contain every publishable workspace package');
   for (const pack of release.packages) {
     if (!expected.has(pack.name) || names.has(pack.name) || pack.version !== version) throw new Error('Unexpected, duplicate or mismatched release package');
     if (!/^[a-z0-9][A-Za-z0-9._-]*\.tgz$/.test(pack.filename) || filenames.has(pack.filename)) throw new Error('Invalid or duplicate archive filename');
