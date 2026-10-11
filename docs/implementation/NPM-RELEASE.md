@@ -13,11 +13,11 @@ evidence files, missing runtime proof slots and broken verifiers still fail it.
 VERIFY.json keeps its deferrals unchanged; they remain visible backlog.
 
 Publish set, version `0.2.0`, dist-tag `latest`: `@hachej/boring-agent`,
-`@hachej/boring-ui-kit`, `@hachej/boring-files`, `@hachej/boring-execution`,
-`@hachej/boring-feedback` (`private: false`). `@hachej/boring-browser` and
+`@hachej/boring-ui-kit`, `@hachej/boring-files`, `@hachej/boring-execution`.
+`@hachej/boring-feedback` (owner ruling 2026-10-11), `@hachej/boring-browser` and
 `@hachej/boring-testing` stay `private: true`: release packing, `readRelease` and
 the publisher skip them explicitly (`scripts/release-set.mjs`), and the workflow
-checks the retained artifact contains neither. No published package depends on them.
+checks the retained artifact contains none of them. No published package depends on them.
 
 ## Validate the candidate
 
@@ -85,13 +85,13 @@ active publication. Neither job changes package versions or privacy flags.
 
 1. `npm login` as the owner of the `@hachej` scope, with 2FA enabled. GitHub
    ownership is insufficient.
-2. First-publish the never-published names `@hachej/boring-files`,
-   `@hachej/boring-execution` and `@hachej/boring-feedback` from the owner's 2FA
+2. First-publish the never-published names `@hachej/boring-files` and
+   `@hachej/boring-execution` from the owner's 2FA
    session, using the exact CI-audited tarballs (the retained `npm-release-*`
    artifact, checked against `release.json`). No placeholder packages.
 3. Create the GitHub `npm` environment with the intended maintainer approval and
    main-branch policy. This code does not create or change those settings.
-4. Configure a trusted publisher on each of the 5 packages: user `hachej`,
+4. Configure a trusted publisher on each of the 4 packages: user `hachej`,
    repository `boring-ui`, workflow filename `npm-publish.yml`, environment `npm`.
    Permit direct publishing if the npm configuration defaults to staged-only access.
    Complete setup near the first qualified release: unused new trust configurations

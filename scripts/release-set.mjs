@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Owner ruling 2026-10-10: these workspace packages stay private and are never packed for release or published.
-export const INTENTIONALLY_PRIVATE = new Set(['@hachej/boring-browser', '@hachej/boring-testing']);
+export const INTENTIONALLY_PRIVATE = new Set(['@hachej/boring-browser', '@hachej/boring-testing', '@hachej/boring-feedback']);
 
 export const isExcludedFromRelease = manifest => manifest.private === true && INTENTIONALLY_PRIVATE.has(manifest.name);
 
