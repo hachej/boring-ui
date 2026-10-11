@@ -530,6 +530,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   // ---- The watcher: open while someone listens to the feed (and `lingerMs` after), when the file system can watch ----------------
   let listening = 0;
   let watcher: Promise<FileWatcher | undefined> | undefined;
+  // True once the current watcher is open: every change from then on reaches the feed (the search index relies on it).
+  let armed = false;
   let watchUnsupported = false, watchedBefore = false;
   let linger: ReturnType<typeof setTimeout> | undefined;
   let watchWork: Promise<void> = Promise.resolve();
@@ -561,7 +563,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     }
     // Overflow or a failed watcher: what changed is unknown, so every listener reloads. A failed watcher is not reopened (it would
     // fail again, for example on a tree past the environment's limit); the host's `poll()` at turn end remains.
-    if ('error' in change) { watcher = undefined; watchUnsupported = true; }
+    if ('error' in change) { watcher = undefined; armed = false; watchUnsupported = true; }
     append({ kind: 'resnapshot' });
   }
   function startWatching(): void {
@@ -571,15 +573,17 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     // Changes made while nobody watched were not seen: a listener resuming from before that reloads.
     if (watchedBefore) append({ kind: 'resnapshot' });
     watchedBefore = true;
-    watcher = fs.watch([{ path: root, recursive: true, exclude: { names: ['.git', 'node_modules'] } }], onWatch, fsContext()).then(result => {
-      if (result.ok) return result.value;
+    const opening: Promise<FileWatcher | undefined> = fs.watch([{ path: root, recursive: true, exclude: { names: ['.git', 'node_modules'] } }], onWatch, fsContext()).then(result => {
+      if (result.ok) { armed = watcher === opening; return result.value; }
       watchUnsupported = true;
       return undefined;
     }, () => { watchUnsupported = true; return undefined; });
+    watcher = opening;
   }
   function stopWatching(): void {
     const current = watcher;
     watcher = undefined;
+    armed = false;
     void current?.then(value => value?.close(fsContext()));
   }
 
@@ -631,7 +635,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
 
   return {
     providerId, read, queue, keep, identity: Object.freeze(key),
-    catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path) }),
+    catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path), feed: { version: () => head, live: () => armed } }),
     publication: { publish }, reconciliation: { lookup }, poll, record, changes, changeHead: () => head, changeIncarnation: incarnationOfFeed,
     lifetime: lifetime.signal,
     close: () => {

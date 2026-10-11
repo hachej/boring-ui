@@ -15,9 +15,21 @@ export interface WorkspaceCatalogOptions {
   /** A traversal exceeding this bound fails explicitly; it never returns a silently incomplete page. */
   readonly maxEntries?: number;
 }
+/** The change feed of the provider that owns the workspace: the search index is rebuilt only when it reports something new. */
+export interface CatalogFeed {
+  /** Moves on every event the feed reports, resnapshots included. */
+  readonly version: () => number;
+  /** True only while a watcher is armed, so every change reaches the feed. Without it the index is never reused. */
+  readonly live: () => boolean;
+}
 const hidden = new Set(['.git', '.boring', 'node_modules', 'dist', 'build', '.cache', '.next', 'coverage', '__pycache__']);
 const temporary = /^\.boring-[0-9a-f-]{36}\.tmp$/;
 const inside = (root: string, path: string) => path === root || path.startsWith(root === '/' ? '/' : `${root}/`);
+/** Basename first: a name that starts with the query, then one that contains it, then a match in the directories only. */
+const rank = (path: string, query: string) => {
+  const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
+  return name.startsWith(query) ? '0' : name.includes(query) ? '1' : '2';
+};
 export function catalogPath(path: string, allowRoot = false): string {
   if (allowRoot && path === '') return path;
   return locator({ resource: { providerId: 'catalog', path }, view: { kind: 'published' } }).resource.path;
@@ -26,6 +38,7 @@ export function createWorkspaceCatalog(options: {
   readonly fs: FileSystem;
   readonly config?: WorkspaceCatalogOptions;
   readonly saves: (path: string) => readonly SavedRevision[];
+  readonly feed?: CatalogFeed;
 }): WorkspaceCatalog {
   const { fs } = options, config = options.config ?? {};
   const maximum = config.maxEntries ?? 100_000;
@@ -108,7 +121,25 @@ export function createWorkspaceCatalog(options: {
     if (recursive) return entries;
     return entries.filter(entry => entry.path.slice(0, entry.path.lastIndexOf('/') + 1) === (directory ? `${directory}/` : ''));
   }
-  function page(entries: FileEntry[], key: string, cursor: string | undefined, limit: number | undefined): FilePage {
+  // The path index of every file: built once, reused until the change feed reports something new (never by polling).
+  let index: { readonly version: number; readonly files: Promise<FileEntry[]> } | undefined;
+  const filesOf = (entries: FileEntry[]) => entries.filter(entry => entry.kind === 'file');
+  const unsignaled = (access: ResourceAccess): ResourceAccess => ({ principalId: access.principalId, scopeId: access.scopeId, initiatorId: access.initiatorId, ...(access.authorizationRef === undefined ? {} : { authorizationRef: access.authorizationRef }) });
+  async function files(access: ResourceAccess): Promise<FileEntry[]> {
+    const feed = options.feed;
+    if (!feed?.live()) return filesOf(await collect('', true, access));
+    let current = index;
+    if (current?.version !== feed.version()) {
+      // Built without the caller's signal: another caller may still be waiting on this index.
+      const built = collect('', true, unsignaled(access)).then(filesOf);
+      current = index = { version: feed.version(), files: built };
+      built.catch(() => { if (index === current) index = undefined; });
+    }
+    const found = await current.files;
+    check(access);
+    return found;
+  }
+  function page(entries: FileEntry[], key: string, cursor: string | undefined, limit: number | undefined, order?: (entry: FileEntry) => string): FilePage {
     const count = limit ?? 100;
     if (!Number.isSafeInteger(count) || count < 1 || count > 500) throw new RevisionError('invalid', 'Page limit must be between 1 and 500');
     let after = '';
@@ -116,12 +147,12 @@ export function createWorkspaceCatalog(options: {
       try {
         const value: unknown = JSON.parse(decodeURIComponent(cursor));
         if (!Array.isArray(value) || value.length !== 2 || value[0] !== key || typeof value[1] !== 'string') throw new Error();
-        after = catalogPath(value[1]);
+        after = order ? value[1] : catalogPath(value[1]);
       } catch { throw new RevisionError('invalid', 'Invalid catalog cursor'); }
     }
-    const sorted = entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0).filter(entry => entry.path > after);
+    const sorted = entries.map(entry => ({ entry, sort: order ? order(entry) : entry.path })).sort((a, b) => a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0).filter(item => item.sort > after);
     const selected = sorted.slice(0, count), last = selected.at(-1);
-    return { entries: selected, ...(last && sorted.length > count ? { cursor: encodeURIComponent(JSON.stringify([key, last.path])) } : {}) };
+    return { entries: selected.map(item => item.entry), ...(last && sorted.length > count ? { cursor: encodeURIComponent(JSON.stringify([key, last.sort])) } : {}) };
   }
   return {
     list: async (request, access) => {
@@ -131,7 +162,8 @@ export function createWorkspaceCatalog(options: {
     search: async (request, access) => {
       if (typeof request.query !== 'string' || request.query.length > 1024) throw new RevisionError('invalid', 'Invalid filename query');
       const query = request.query.toLowerCase();
-      return page((await collect('', true, access)).filter(entry => entry.kind === 'file' && entry.path.toLowerCase().includes(query)), `search:${query}`, request.cursor, request.limit);
+      const matches = (await files(access)).filter(entry => entry.path.toLowerCase().includes(query));
+      return page(matches, `search:${query}`, request.cursor, request.limit, entry => rank(entry.path, query) + entry.path);
     },
     history: async (path, access) => { check(access); identifier(access.scopeId); return options.saves(catalogPath(path)); },
   };
