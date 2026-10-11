@@ -99,9 +99,8 @@ const watchNames = [
 const noWatch = why => Object.fromEntries(watchNames.map(name => [name, why]));
 const DIR_SNAPSHOT = { 'directory reader skips entries removed during enumeration': 'TODO(remote protocol lane): the directory reader lists a snapshot taken when it opens (fs-readers.ts snapshotReaders), so entries removed afterwards are still returned' };
 const ARGV_SPAWN = { 'argv exec reports missing programs and empty argv as spawn errors': 'TODO(remote protocol lane): argv commands run through a shell (shellCommand in fs-readers.ts), so a missing program is exit 127 and an empty argv runs nothing, never spawn_error' };
-const SYMLINK_READER = { 'binary reader follows symlinks unless noFollow refuses the final one': 'TODO(remote protocol lane): the snapshot binary reader (fs-readers.ts) refuses a symbolic link with "Not a regular file" instead of following it' };
 const KNOWN_FAILURES = {
-  'virtual (just-bash)': { ...noWatch('watch is not_supported by the virtual env (the suite has no option to skip watch cases)'), ...DIR_SNAPSHOT, ...ARGV_SPAWN, ...SYMLINK_READER },
+  'virtual (just-bash)': { ...noWatch('watch is not_supported by the virtual env (the suite has no option to skip watch cases)'), ...DIR_SNAPSHOT, ...ARGV_SPAWN },
   'SQLite file system (under the virtual env)': { ...noWatch('watch is not_supported by the virtual env; the SQLite file system itself polls but the virtual env does not expose it'), ...DIR_SNAPSHOT, ...ARGV_SPAWN },
   'remote-shell + remote-files (in-process handlers)': { ...DIR_SNAPSHOT, ...ARGV_SPAWN,
     'binary reader keeps reading the file it opened after a rename': 'TODO(remote protocol lane): a remote binary reader holds no handle (remote-files-positional.ts); it names the path and the worker refuses a path that no longer matches the opened size and mtime, so it cannot keep reading a renamed file' },

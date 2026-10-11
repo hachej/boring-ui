@@ -6,18 +6,27 @@ import { FileError, LineScanner, ok, err } from '@earendil-works/pi-durable/env'
 import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result } from '@earendil-works/pi-durable/env';
 import type { Context } from '@earendil-works/chord';
 
-type Source = Pick<FileSystem, 'readBinaryFile' | 'fileInfo' | 'listDir'>;
+type Source = Pick<FileSystem, 'readBinaryFile' | 'fileInfo' | 'listDir' | 'canonicalPath'>;
 
 export function snapshotReaders(source: Source): Pick<FileSystem, 'openBinaryReader' | 'openDirReader' | 'watch'> {
   const guard = (closed: boolean, path: string, context: Context): FileError | undefined =>
     context.abortSignal?.aborted ? new FileError('aborted', 'Operation aborted', path) : closed ? new FileError('invalid', 'Reader is closed', path) : undefined;
   return {
-    openBinaryReader: async (path, _options, context): Promise<Result<BinaryReader, FileError>> => {
-      const info = await source.fileInfo(path, context);
+    openBinaryReader: async (path, options, context): Promise<Result<BinaryReader, FileError>> => {
+      // `fileInfo` describes the final path itself. A symbolic link is followed unless the caller refuses it (`noFollow`).
+      const link = await source.fileInfo(path, context);
+      if (!link.ok) return link;
+      let resolved = path;
+      if (link.value.kind === 'symlink' && !options?.noFollow) {
+        const canonical = await source.canonicalPath(path, context);
+        if (!canonical.ok) return canonical;
+        resolved = canonical.value;
+      }
+      const info = resolved === path ? link : await source.fileInfo(resolved, context);
       if (!info.ok) return info;
       if (info.value.kind === 'directory') return err(new FileError('is_directory', 'EISDIR: illegal operation on a directory', path));
       if (info.value.kind !== 'file') return err(new FileError('invalid', 'Not a regular file', path));
-      const content = await source.readBinaryFile(path, context);
+      const content = await source.readBinaryFile(resolved, context);
       if (!content.ok) return content;
       const bytes = content.value, opened: FileInfo = { ...info.value, size: bytes.length };
       let closed = false;

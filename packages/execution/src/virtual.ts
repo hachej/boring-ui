@@ -143,7 +143,7 @@ function nativeEnvironment(fs: VirtualFiles, id: string, cwd: string, closed: ()
     return path;
   }
   // Readers and the watcher over the memory file system's whole-file reads (see fs-readers.ts).
-  const readers = snapshotReaders({ readBinaryFile: (path, context) => environment.readBinaryFile(path, context), fileInfo: (path, context) => environment.fileInfo(path, context), listDir: (path, context) => environment.listDir(path, context) });
+  const readers = snapshotReaders({ readBinaryFile: (path, context) => environment.readBinaryFile(path, context), fileInfo: (path, context) => environment.fileInfo(path, context), listDir: (path, context) => environment.listDir(path, context), canonicalPath: (path, context) => environment.canonicalPath(path, context) });
   const environment: ExecutionEnv = {
     id, cwd: posix.normalize(cwd), ...readers,
     absolutePath: (path, context) => run(path, context, path => path),
