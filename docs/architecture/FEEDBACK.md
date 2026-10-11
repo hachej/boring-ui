@@ -560,7 +560,7 @@ no ticket tool:
   the file guard reports each successful `write`/`edit` to the provider's `record`
   (a change event with source `agent`, never a receipt), and the change feed
   (`provider.changes`) also carries shell writes found by the watcher or `poll`.
-  Events are invalidation hints, so the trigger still reads the file; the host wraps the native `write` tool instead
+  Events are invalidation hints, so the trigger still reads the file; the host wraps the native `write` tool
   (after the file guard; `ticketsOnWrite` in `examples/feedback/tickets.mjs`).
   When a write **created** `tickets/<id>.md`, it calls
   `createTicketSinks({ files, project, sinks }).mirror(path, access, revision)`,

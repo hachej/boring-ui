@@ -35,7 +35,7 @@ export function MentionMenu({ query, search, generation, onSelect, onDismiss }: 
         cause => { if (!abort.signal.aborted) { setResults([]); setFailure(cause instanceof Error ? cause.message : labels.searchFailed); } });
     }, 120);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [query, generation]);
+  }, [query, search, generation]);
   useEffect(() => {
     const outside = (event: MouseEvent) => { if (container.current && !container.current.contains(event.target as Node)) onDismiss(); };
     document.addEventListener('mousedown', outside);

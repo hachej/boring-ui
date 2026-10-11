@@ -52,8 +52,8 @@ export interface WorkspaceResourceProvider extends ResourceProvider {
   /**
    * Record a write the agent already made through the native tools (Pi `write`/`edit`, called by the file guard right after the
    * tool succeeded): the file's history gains the written revision (source `agent`, and the replaced one when `before` carries its
-   * bytes) and the change feed an `agent` event. It never touches the publication journal and never mints a receipt: agent writes
-   * are observed, not published. It does not enter `queue` (the guard already runs inside it), so it is safe to call from queued work.
+   * bytes) and the change feed an `agent` event. It writes history rows only: no publish, no receipt, no operation or intent rows,
+   * so agent writes are observed, not published. It does not enter `queue` (the guard already runs inside it), so it is safe to call from queued work.
    * When the bytes there no longer have the `after` revision (a shell wrote in between), only the change event is recorded.
    */
   readonly record: (write: AgentWrite, access: ResourceAccess) => Promise<void>;
