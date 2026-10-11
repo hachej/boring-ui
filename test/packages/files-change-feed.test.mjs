@@ -267,6 +267,7 @@ test('SSE: after revocation nothing queued is readable and the lease is released
   const reader = response.body.getReader();
   await within(reader.read(), 1000, 'the ready event');
   for (let n = 0; n < 5; n++) await f.write(`queued-${n}.md`, 'secret');
+  await new Promise(resolve => setTimeout(resolve, 150)); // the feed has produced them; the client has not read
   f.revoke();
   const { text, ended } = await readFrames(reader);
   assert.equal(ended, true, 'the revoked stream ends');
