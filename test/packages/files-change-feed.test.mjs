@@ -392,7 +392,8 @@ test('SSE: a write made after the client reads the ready frame is delivered, eve
   await f.write('after-ready.md', 'written after ready');
   // Heartbeats keep the reads coming, so the deadline is checked per frame, not only by a single read's timeout.
   const deadline = Date.now() + 2000;
-  while (!/event: change/.test(text)) {
+  // The write also creates its directory, which is reported first as a change with an empty path.
+  while (!/after-ready\.md/.test(text)) {
     assert.ok(Date.now() < deadline, `no change frame after the write; the stream sent: ${JSON.stringify(text.slice(-200))}`);
     text += new TextDecoder().decode((await within(reader.read(), 2000, 'the next frame')).value);
   }
