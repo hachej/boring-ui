@@ -54,16 +54,20 @@ export function snapshotReaders(source: Source): Pick<FileSystem, 'openBinaryRea
     openDirReader: async (path, context): Promise<Result<DirReader, FileError>> => {
       const listed = await source.listDir(path, context);
       if (!listed.ok) return listed;
-      const entries = listed.value.filter(entry => entry.kind === 'file' || entry.kind === 'directory' || entry.kind === 'symlink');
-      let offset = 0, closed = false;
+      // Each page lists the directory again, so an entry removed while the reader is open is not returned.
+      const returned = new Set<string>();
+      let closed = false;
       return ok({
         next: async (maxEntries, inner) => {
           const failed = guard(closed, path, inner);
           if (failed) return err(failed);
           if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) return err(new FileError('invalid', 'maxEntries must be a positive integer', path));
-          const page = entries.slice(offset, offset + maxEntries);
-          offset += page.length;
-          return ok({ entries: page, done: offset >= entries.length });
+          const current = await source.listDir(path, inner);
+          if (!current.ok) return current;
+          const pending = current.value.filter(entry => (entry.kind === 'file' || entry.kind === 'directory' || entry.kind === 'symlink') && !returned.has(entry.name));
+          const page = pending.slice(0, maxEntries);
+          for (const entry of page) returned.add(entry.name);
+          return ok({ entries: page, done: pending.length <= maxEntries });
         },
         close: async () => { closed = true; },
       });
