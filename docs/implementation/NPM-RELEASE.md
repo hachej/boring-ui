@@ -73,7 +73,7 @@ OIDC publishing permission. Existing consumer scripts test separately packed
 archives from the same source commit; they are not claimed to consume the retained
 publishing archives.
 
-The publish job waits for every qualification job, enters the `npm` environment,
+The publish job waits for every qualification job, enters the `release` environment,
 and receives OIDC permission. It installs only the pinned npm CLI, without lifecycle
 scripts; it does not install project dependencies or rebuild. It downloads the exact
 artifact ID from preparation, checks all archive hashes and manifests against the
@@ -89,10 +89,10 @@ active publication. Neither job changes package versions or privacy flags.
    `@hachej/boring-execution` from the owner's 2FA
    session, using the exact CI-audited tarballs (the retained `npm-release-*`
    artifact, checked against `release.json`). No placeholder packages.
-3. Create the GitHub `npm` environment with the intended maintainer approval and
+3. Create the GitHub `release` environment with the intended maintainer approval and
    main-branch policy. This code does not create or change those settings.
 4. Configure a trusted publisher on each of the 4 packages: user `hachej`,
-   repository `boring-ui`, workflow filename `npm-publish.yml`, environment `npm`.
+   repository `boring-ui`, workflow filename `npm-publish.yml`, environment `release`.
    Permit direct publishing if the npm configuration defaults to staged-only access.
    Complete setup near the first qualified release: unused new trust configurations
    can expire. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
