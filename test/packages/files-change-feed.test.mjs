@@ -338,3 +338,45 @@ test('close ends every change stream, closes the watcher and releases leases', a
   f.provider.close();
   assert.equal(closed, 1);
 });
+
+test('closing the provider releases the lease of a change stream that is paused and not being read', async t => {
+  const f = fixture(t);
+  const binding = await bindingOf(f.handler);
+  const leasesBefore = f.released();
+  const response = await f.handler(changeRequest(binding, ''));
+  const reader = response.body.getReader();
+  await within(reader.read(), 1000, 'the ready event');
+  assert.equal(f.released(), leasesBefore, 'the stream is open and holds its lease');
+  f.provider.close();
+  await within((async () => { while (f.released() !== f.resolves()) await new Promise(resolve => setTimeout(resolve, 5)); })(), 1000, 'the lease release after close, before the reader resumes');
+  await reader.cancel().catch(() => {});
+});
+
+test('a disconnect between the ready and resnapshot frames keeps the old incarnation, so the next connect is a resnapshot again', async t => {
+  const f = fixture(t);
+  const head = f.provider.changeHead();
+  const incarnations = [];
+  let cut = true;
+  const fetchFeed = async request => {
+    const url = new URL(request.url);
+    if (url.searchParams.get('op') !== 'changes') return f.handler(request);
+    incarnations.push(url.searchParams.get('incarnation'));
+    const response = await f.handler(request);
+    if (!cut) return response;
+    // The first connection delivers only the ready frame, then ends: a disconnect before the resnapshot.
+    cut = false;
+    const reader = response.body.getReader();
+    let text = '';
+    while (!text.includes('\n\n')) text += new TextDecoder().decode((await within(reader.read(), 1000, 'the ready frame')).value);
+    await reader.cancel();
+    return new Response(text.slice(0, text.indexOf('\n\n') + 2), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  const client = await connect(fetchFeed);
+  const abort = new AbortController();
+  const iterator = client.changes({ since: head, incarnation: 'previous-process', signal: abort.signal })[Symbol.asyncIterator]();
+  const first = await within(iterator.next(), 3000, 'the resnapshot after the reconnect');
+  abort.abort();
+  await iterator.return?.();
+  assert.equal(first.value.kind, 'resnapshot', 'the reconnect still asks for a reload');
+  assert.deepEqual(incarnations.slice(0, 2), ['previous-process', 'previous-process'], 'the reconnect keeps the old incarnation until the resnapshot is processed');
+});

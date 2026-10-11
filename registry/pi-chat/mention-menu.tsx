@@ -22,8 +22,11 @@ export function MentionMenu({ query, search, generation, onSelect, onDismiss }: 
   readonly onDismiss: () => void;
 }) {
   const { labels } = useChatText();
-  const [results, setResults] = useState<readonly MentionResult[]>([]);
-  const [failure, setFailure] = useState<string | null>(null);
+  // Results are tagged with the search function that produced them: a binding switch hides the previous binding's rows at once.
+  const [outcome, setOutcome] = useState<{ readonly search: MentionsConfig['search']; readonly results: readonly MentionResult[]; readonly failure: string | null }>();
+  const shown = outcome?.search === search ? outcome : undefined;
+  const results = shown?.results ?? [];
+  const failure = shown?.failure ?? null;
   const [active, setActive] = useState(0);
   const list = useRef<HTMLUListElement>(null), container = useRef<HTMLDivElement>(null);
   const searcher = useRef(search); searcher.current = search;
@@ -31,8 +34,8 @@ export function MentionMenu({ query, search, generation, onSelect, onDismiss }: 
     setActive(0);
     const abort = new AbortController();
     const timer = setTimeout(() => {
-      searcher.current(query, abort.signal).then(found => { if (!abort.signal.aborted) { setResults(found.slice(0, 8)); setFailure(null); } },
-        cause => { if (!abort.signal.aborted) { setResults([]); setFailure(cause instanceof Error ? cause.message : labels.searchFailed); } });
+      searcher.current(query, abort.signal).then(found => { if (!abort.signal.aborted) setOutcome({ search, results: found.slice(0, 8), failure: null }); },
+        cause => { if (!abort.signal.aborted) setOutcome({ search, results: [], failure: cause instanceof Error ? cause.message : labels.searchFailed }); });
     }, 120);
     return () => { clearTimeout(timer); abort.abort(); };
   }, [query, search, generation]);

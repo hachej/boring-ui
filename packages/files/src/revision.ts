@@ -45,7 +45,7 @@ export async function connectRevisionProvider(options: {
   /** One feed across reconnections: each resumes after the last seq delivered; a refused binding ends it. */
   async function* changes(request: ChangeFeedRequest = {}): AsyncGenerator<WorkspaceChangeEvent> {
     const signal = request.signal;
-    let cursor = request.since, incarnation = request.incarnation, delay = 500;
+    let cursor = request.since, incarnation = request.incarnation, staged: string | undefined, delay = 500;
     const pause = () => new Promise<void>(resolve => {
       const timer = setTimeout(done, delay);
       function done() { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); }
@@ -73,7 +73,9 @@ export async function connectRevisionProvider(options: {
           for await (const message of serverEvents(response.body)) {
             if (message.event === 'ready') {
               const ready = record(JSON.parse(message.data)), seq = ready.seq;
-              if (typeof ready.incarnation === 'string') incarnation = ready.incarnation;
+              // A new provider lifetime is adopted with its resnapshot, not with `ready`: a disconnect in between must reconnect with the
+              // old cursor and incarnation, which the server answers with a resnapshot again.
+              if (typeof ready.incarnation === 'string') { if (cursor === undefined || incarnation === undefined) incarnation = ready.incarnation; else staged = ready.incarnation; }
               if (cursor === undefined && typeof seq === 'number' && Number.isSafeInteger(seq)) cursor = seq;
               delay = 500;
               continue;
@@ -81,6 +83,7 @@ export async function connectRevisionProvider(options: {
             if (message.event !== 'change' && message.event !== 'resnapshot') continue;
             const event = changeEvent(JSON.parse(message.data));
             if (event.kind === 'change' && cursor !== undefined && event.seq <= cursor) continue;
+            if (event.kind === 'resnapshot' && staged !== undefined) { incarnation = staged; staged = undefined; }
             cursor = event.seq;
             yield event;
           }

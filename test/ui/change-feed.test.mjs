@@ -145,3 +145,28 @@ test('an @ search result of one workspace binding is never shown in another, eve
   await settle(() => element.querySelector('[data-testid=mention-item][data-path="bob-file.md"]'), 'bob sees his own result');
   assert.equal(element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s names are never shown to bob');
 });
+
+test('switching the binding while the picker is open hides the previous binding\'s results before the new search settles', async t => {
+  const { window, element, root, chat, act, createElement, settle, AgentWorkspace } = await harness(t);
+  const quiet = () => ({ async *[Symbol.asyncIterator]() { await new Promise(() => {}); } });
+  const locate = path => ({ resource: { providerId: 'fictional', path }, view: { kind: 'published' } });
+  const make = (principalId, search) => ({ identity: { scopeId: 'fictional', principalId, initiatorId: principalId }, workspace: { providerId: 'fictional', instanceId: principalId, incarnation: principalId, viewId: principalId }, locate,
+    read: async () => ({ kind: 'missing' }), publish: async () => ({ kind: 'unavailable', reason: 'fictional' }), lookup: async () => ({ kind: 'not-found' }),
+    list: async () => ({ entries: [] }), history: async () => [], search, changes: quiet });
+  const alice = make('alice', async () => ({ entries: [{ path: 'alice-secret.md', kind: 'file', size: 1 }] }));
+  const bobSearches = [];
+  const bob = make('bob', async request => { bobSearches.push(request.query); return new Promise(() => {}); });
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: alice })));
+  const textarea = () => element.querySelector('[data-testid=workspace-chat-surface] textarea');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(textarea(), '@no');
+    textarea().setSelectionRange?.(3, 3);
+    textarea().dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  await settle(() => element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), 'alice sees her own result');
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: bob })));
+  await settle(() => bobSearches.includes('no'), 'bob\'s search starts and stays pending');
+  await act(async () => new Promise(resolve => setTimeout(resolve, 200)));
+  assert.equal(element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s rows are not displayed while bob\'s search is pending');
+  assert.equal(element.querySelectorAll('[data-testid=mention-item]').length, 0, 'nothing from alice is selectable');
+});

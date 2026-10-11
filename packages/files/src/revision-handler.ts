@@ -32,7 +32,7 @@ const encoder = new TextEncoder();
  */
 function changeStream(provider: WorkspaceResourceProvider, access: ResourceAccess & { readonly signal: AbortSignal }, request: { readonly since: number | undefined; readonly incarnation: string | undefined }, heartbeatMs: number, release: () => Promise<void>): Response {
   const stop = new AbortController();
-  const signal = AbortSignal.any([access.signal, stop.signal]);
+  const signal = AbortSignal.any([access.signal, stop.signal, provider.lifetime]);
   let iterator: AsyncIterator<WorkspaceChangeEvent> | undefined;
   let pending: Promise<IteratorResult<WorkspaceChangeEvent>> | undefined;
   let ready = false, ended = false;

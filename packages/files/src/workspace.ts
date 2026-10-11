@@ -74,6 +74,8 @@ export interface WorkspaceResourceProvider extends ResourceProvider {
   readonly changeIncarnation: string;
   /** Ends every change stream, closes the file watcher and drops the change listeners. Idempotent; the provider still reads and publishes. */
   readonly close: () => void;
+  /** Aborts when the provider closes, so a change stream nobody is reading still ends and releases its lease. */
+  readonly lifetime: AbortSignal;
   /** Revisions still retained for a file, newest first. */
   readonly history: (path: string) => string[];
   /** The same revisions with the time each was saved (milliseconds since the epoch; 0 when unknown), newest first. */
@@ -631,6 +633,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     providerId, read, queue, keep, identity: Object.freeze(key),
     catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path) }),
     publication: { publish }, reconciliation: { lookup }, poll, record, changes, changeHead: () => head, changeIncarnation: incarnationOfFeed,
+    lifetime: lifetime.signal,
     close: () => {
       // Every change stream ends, the watcher closes and the listeners are dropped: nothing of this provider keeps running.
       lifetime.abort();
