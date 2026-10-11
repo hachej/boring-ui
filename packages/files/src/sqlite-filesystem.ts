@@ -5,6 +5,7 @@
 import type { Context } from '@earendil-works/chord';
 import { FileError, LineScanner, err, ok } from '@earendil-works/pi-durable/env';
 import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result, TextLineReader, WatchChange, WatchTarget } from '@earendil-works/pi-durable/env';
+import { SQLITE_MAX_FILE_BYTES, fileTooLarge } from './file-limits.js';
 import { randomUUID } from './platform.js';
 import { registerSqliteBatch } from './sqlite-batch.js';
 import type { SqliteConnection } from './sqlite.js';
@@ -16,6 +17,8 @@ export interface SqliteFileSystemOptions {
   readonly workspace: string;
   /** The absolute working directory, created when missing (for example `/workspace`). Relative paths resolve against `cwd`. */
   readonly cwd: string;
+  /** The largest file a write may store (default `SQLITE_MAX_FILE_BYTES`, the row limit of a Durable Object). A larger write fails with `EFBIG`. */
+  readonly maxFileBytes?: number;
 }
 
 /** A Pi `FileSystem` plus the incarnation of its rows: new when the workspace was first created in this database. */
@@ -57,6 +60,8 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   if (typeof workspace !== 'string' || workspace === '') throw new TypeError('A workspace name is required');
   if (typeof options.cwd !== 'string' || !options.cwd.startsWith('/')) throw new TypeError('An absolute working directory is required');
   const now = () => Date.now();
+  const maxFileBytes = options.maxFileBytes ?? SQLITE_MAX_FILE_BYTES;
+  if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 0) throw new TypeError('maxFileBytes must be a non-negative safe integer');
 
   function row(path: string): Row | undefined {
     if (path === '/') return { kind: 'directory', size: 0, mtime: 0 };
@@ -100,6 +105,7 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   }
   function write(path: string, content: Uint8Array): void {
     if (path === '/') throw failure('is_directory', 'EISDIR', path, 'illegal operation on a directory');
+    if (content.length > maxFileBytes) throw fileTooLarge(path, content.length, maxFileBytes);
     const found = row(path);
     if (found?.kind === 'directory') throw failure('is_directory', 'EISDIR', path, 'illegal operation on a directory');
     // Like Pi's own environments (NodeExecutionEnv), a write creates the missing parent directories; a parent that is a file still fails.

@@ -10,6 +10,7 @@ import { committedChanges } from './journal.js';
 import type { HistorySource, OperationKey, StoredOperation, WorkspaceJournal } from './journal.js';
 import { randomUUID, sha1 } from './platform.js';
 import { accessSnapshot, identifier, locator, publicationDigest, publicationSnapshot } from './publication-input.js';
+import { SQLITE_MAX_FILE_BYTES, fileTooLarge } from './file-limits.js';
 import { journalConnectionOf, sqliteBatchOf } from './sqlite-batch.js';
 
 const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte, index) => byte === right[index]);
@@ -102,6 +103,11 @@ export interface WorkspaceProviderOptions {
   readonly changeBuffer?: number;
   /** How long the watcher stays open after the last change-feed listener leaves, in milliseconds (default 30 000). */
   readonly watchLingerMs?: number;
+  /**
+   * The largest file a publication may write. Larger changes are refused before any effect. Default: `SQLITE_MAX_FILE_BYTES` over
+   * the SQLite file system (the SQLite and Durable Object providers), none over any other file system.
+   */
+  readonly maxFileBytes?: number;
 }
 
 const queues = new WeakMap<object, WorkspaceQueue>();
@@ -164,6 +170,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   const queue = queueFor(fs);
   /** Present when `fs` is the SQLite file system (`@hachej/boring-files/sqlite-filesystem`): multi-file batches then commit in one transaction. */
   const batch = sqliteBatchOf(fs);
+  const maxFileBytes = options.maxFileBytes ?? (batch ? SQLITE_MAX_FILE_BYTES : undefined);
   const historyScope = JSON.stringify([key.providerId, key.instanceId, key.incarnation, key.viewId]);
   const listeners = new Set<(change: WorkspaceChange) => void>();
   const known = new Map<string, string | null>();
@@ -315,6 +322,11 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     const digest = await publicationDigest(request);
     if (request.atomicity !== 'all-or-nothing') return { kind: 'unavailable', reason: 'This provider accepts all-or-nothing publication only' };
     if (request.changes.length !== 1 && !batch) return { kind: 'unavailable', reason: 'This provider cannot apply a multi-file batch atomically; only a single-file change is accepted' };
+    if (maxFileBytes !== undefined) {
+      const written = request.changes.flatMap(change => change.kind === 'delete' ? [] : [change]);
+      const oversized = written.find(change => change.bytes.length > maxFileBytes);
+      if (oversized) return { kind: 'unavailable', reason: fileTooLarge(oversized.target.resource.path, oversized.bytes.length, maxFileBytes).message };
+    }
     const changes: Exclude<ResourceChange, { kind: 'delete' }>[] = [];
     for (const change of request.changes) {
       if (change.kind === 'delete') return { kind: 'unavailable', reason: 'This provider does not delete files through publication' };
