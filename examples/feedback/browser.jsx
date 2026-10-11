@@ -23,7 +23,7 @@ import { GATEWAY_PROVIDER } from '@hachej/boring-agent/gateway-provider';
 import { PREVIEW_MODEL, previewModels } from './model-preview.mjs';
 import { PreviewBanner } from '../../registry/feedback-preview/preview-banner.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
-import { feedbackRenderTool } from '../../registry/pi-chat/feedback-card.tsx';
+import { feedbackMentionRenderer, feedbackRenderTool } from '../../registry/feedback/feedback-card.tsx';
 import { PointButton } from '../../registry/feedback/point-button.tsx';
 import { pickerOverlayStyles, usePickerOverlay } from '../../registry/feedback/picker-overlay.ts';
 import { NoteBubble, useComposerFeedback } from '../../registry/feedback/feedback-session.tsx';
@@ -79,6 +79,7 @@ const mentions = {
     const needle = query.toLowerCase();
     return listed.items.filter(item => !needle || item.id.toLowerCase().includes(needle) || item.title.toLowerCase().includes(needle)).map(item => ({ path: `feedback/${item.id}.md`, kind: 'file' }));
   },
+  render: feedbackMentionRenderer(),
 };
 
 /** The page's state the builder's `edit_page` changes (polled). */
