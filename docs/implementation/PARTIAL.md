@@ -60,8 +60,9 @@ publication gates. All seven packages now include repository metadata and the MI
 license. The UI package includes the embedded icon notices. The files package
 declares its existing optional native type peers. `npm run check:pack` inspects
 actual archives and all exports, including feedback and testing. CI and package
-tests run this audit. Packages remain private at `0.0.0`; `release:preflight`
-requires both release verification and publishable manifests. No global proof
+tests run this audit. Release version, publish set and the status of deferred proofs (backlog, not blockers)
+are owned by the [npm release ruling](NPM-RELEASE.md#release-ruling-owner-2026-10-10).
+`release:preflight` requires publishable manifests for the publish set. No global proof
 deferral is removed, and no registry availability, scope ownership, or production
 release is claimed. Evidence belongs under `.cache/evidence/npm-release/`.
 
