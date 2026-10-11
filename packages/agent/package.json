@@ -2,7 +2,7 @@
   "name": "@hachej/boring-agent",
   "version": "0.2.0",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Native Pi attachment, the read/write/edit guard, durable questions, conditional document delivery and metering.",
   "sideEffects": false,
@@ -53,6 +53,10 @@
     "./file-convert": {
       "types": "./dist/file-convert.d.ts",
       "import": "./dist/file-convert.js"
+    },
+    "./file-types": {
+      "types": "./dist/file-types.d.ts",
+      "import": "./dist/file-types.js"
     },
     "./ask-user": {
       "types": "./dist/ask-user.d.ts",

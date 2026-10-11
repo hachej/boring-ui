@@ -3,7 +3,8 @@
 // Used by scripts/test-feedback-registry-consumer.mjs and scripts/feedback-scenario.mjs.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
@@ -89,4 +90,32 @@ export function localRegistryItem(root, item, archiveByName, packs, cache, run) 
     return name + '@file:' + archive;
   });
   return local;
+}
+
+/** An item and every item it needs through registryDependencies (`@boring-ui/<name>`), read from public/r. */
+export function registryClosure(root, name) {
+  const closure = new Map();
+  const visit = item => {
+    if (closure.has(item)) return;
+    const read = JSON.parse(readFileSync(join(root, 'public/r', `${item}.json`), 'utf8'));
+    closure.set(item, read);
+    for (const dependency of read.registryDependencies ?? []) visit(dependency.replace('@boring-ui/', ''));
+  };
+  visit(name);
+  return closure;
+}
+
+/**
+ * Serves every item of the closure over HTTP from the consumer's own registry/r directory, with each item's pins pointed at its checked
+ * archive, so the CLI resolves `@boring-ui/*` dependencies the way it would from a hosted registry. Returns the base URL and the server
+ * process (the caller stops it).
+ */
+export async function serveRegistry(root, directory, closure, archiveByName, packs, cache, run) {
+  mkdirSync(join(directory, 'registry/r'), { recursive: true });
+  for (const [name, item] of closure) writeFileSync(join(directory, 'registry/r', `${name}.json`), JSON.stringify(item.dependencies ? localRegistryItem(root, item, archiveByName, packs, cache, run) : item));
+  const server = spawn(process.execPath, ['-e', `const { createServer } = require('node:http'); const { readFile } = require('node:fs/promises'); const { join } = require('node:path');
+createServer(async (req, res) => { try { const body = await readFile(join(${JSON.stringify(join(directory, 'registry'))}, new URL(req.url, 'http://x').pathname.replace(/\\.\\./g, ''))); res.writeHead(200, { 'content-type': 'application/json' }).end(body); } catch { res.writeHead(404).end(); } })
+  .listen(0, '127.0.0.1', function () { console.log('port ' + this.address().port); });`], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const port = await new Promise((done, fail) => { server.stdout.on('data', chunk => { const found = /port (\d+)/.exec(String(chunk)); if (found) done(Number(found[1])); }); server.once('exit', code => fail(new Error(`registry server exited ${code}`))); });
+  return { url: `http://127.0.0.1:${port}/r`, server };
 }

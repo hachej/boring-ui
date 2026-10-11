@@ -58,6 +58,9 @@ export async function captureAnnotation(host: AnnotateHost, elements: readonly E
   return Object.freeze({ observed, anchors: Object.freeze(anchors), refused: Object.freeze(refused), snapshot });
 }
 
+/** A general note's capture: the page observed, NO element (a question that is not about a zone). Same as `captureAnnotation(host, [])`. */
+export const captureGeneral = (host: AnnotateHost): Promise<AnnotationCapture> => captureAnnotation(host, []);
+
 export type CopyState =
   | { readonly kind: 'idle' }
   /** On the clipboard. The text is kept so the sheet can show what was copied. */
@@ -84,10 +87,18 @@ export interface AnnotationSnapshot {
   readonly canSave: boolean;
   /** The operation id the next Save sends; it stays the same across retries of this draft. */
   readonly operationId: string;
+  /** True while the note is about pinned element(s). False after `clearSelection`, or when it was made without any: a general note. */
+  readonly selected: boolean;
 }
 
 export interface Annotation extends ExternalState<AnnotationSnapshot> {
   readonly setSaid: (said: string) => void;
+  /**
+   * Cancels the selection: the note stops being about the pinned element(s) and becomes a general note, with NO anchor (the
+   * `feedback@1` report allows it: `anchors: []` and the text in `## Said`). What was typed is kept. Returns false, and changes
+   * nothing, when there is no selection or the draft is being saved or already saved.
+   */
+  readonly clearSelection: () => boolean;
   readonly draft: () => FeedbackDraft;
   /** Copy report: the never-stored report rendered through `./format`, on the clipboard. Needs no store, route or agent. */
   readonly copy: () => Promise<CopyState>;
@@ -127,6 +138,7 @@ export function createAnnotation({ capture, save, said = '', now = () => new Dat
     said, anchors: capture.anchors, refused: capture.refused, observed: capture.observed,
     targets: Object.freeze(capture.anchors.map(anchor => String(anchor['fallback'] ?? ''))),
     copy: { kind: 'idle' }, save: { kind: 'idle' }, canSave: save !== undefined, operationId: operationId(),
+    selected: capture.anchors.length > 0 || capture.refused.length > 0,
   });
   // Whether the current operation id may have reached the store with some text: then it is kept even when the text changes, and the
   // store answers honestly (the original report for the same draft, a conflict for a changed one). Only definite refusals free it.
@@ -139,7 +151,8 @@ export function createAnnotation({ capture, save, said = '', now = () => new Dat
   const problem = (): string | undefined => {
     const current = state.getSnapshot();
     if (!current.said.trim()) return 'Write what you want to say first.';
-    if (!current.anchors.length) return 'No element could be anchored.';
+    // A general note (no element pinned) is a note; pinned elements that all failed to anchor are not, or it would silently lose the zone.
+    if (!current.anchors.length && current.refused.length) return 'No element could be anchored.';
     return undefined;
   };
 
@@ -156,6 +169,17 @@ export function createAnnotation({ capture, save, said = '', now = () => new Dat
         ...(settled ? {} : { save: { kind: 'idle' } as SaveState }),
         ...(!sent && !settled ? { operationId: operationId() } : {}),
       });
+    },
+    clearSelection: () => {
+      const current = state.getSnapshot();
+      if (!current.selected || current.save.kind === 'saving' || current.save.kind === 'saved') return false;
+      state.set({
+        anchors: Object.freeze([]), refused: Object.freeze([]), targets: Object.freeze([]), selected: false,
+        copy: { kind: 'idle' }, save: { kind: 'idle' },
+        // The draft changed: a fresh operation id, unless the current one may already have reached the store.
+        ...(!sent ? { operationId: operationId() } : {}),
+      });
+      return true;
     },
     copy: async () => {
       const refused = problem();

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { checkPackages } from '../../scripts/check-npm-packages.mjs';
 import { setReleaseVersion, validReleaseVersion } from '../../scripts/release-version.mjs';
@@ -16,9 +18,9 @@ function fixture(t) {
   const main = { name: 'fixture', version: '1.0.0', private: true, workspaces: ['packages/*'] };
   write('package.json', main); write('LICENSE', 'MIT fixture license\n');
   const lock = { name: main.name, version: main.version, lockfileVersion: 3, packages: { '': main } };
-  for (const name of ['files', 'agent']) {
+  for (const name of ['files', 'agent', 'browser']) {
     const manifest = {
-      name: `@hachej/boring-${name}`, version: main.version, private: false, license: 'MIT', type: 'module',
+      name: `@hachej/boring-${name}`, version: main.version, private: name === 'browser', license: 'MIT', type: 'module',
       repository: { url: 'git+https://github.com/hachej/boring-ui.git', directory: `packages/${name}` },
       engines: { node: '>=22.19.0' }, publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
       files: ['dist', 'README.md', 'LICENSE'], exports: { '.': './dist/index.js' },
@@ -63,7 +65,7 @@ test('invalid versions and inconsistent lockfiles leave all source files untouch
 test('real audited tarballs support dry-run and reconcile partial publication without blind replay', async t => {
   const f = fixture(t);
   const checked = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
-  assert.deepEqual(checked.errors, []); assert.equal(checked.packs.length, 2);
+  assert.deepEqual(checked.errors, []); assert.equal(checked.packs.length, 2); assert.deepEqual(checked.skipped, ['@hachej/boring-browser']);
   const release = readRelease(f.directory, f.options);
   assert.deepEqual(release.packages, checked.packs);
   await t.test('actual npm publish dry-run does not contact our registry writer', async () => {
@@ -78,7 +80,7 @@ test('real audited tarballs support dry-run and reconcile partial publication wi
     assert.throws(() => readRelease(f.directory, { ...f.options, version: '1.0.0-rc.1', tag: 'latest' }), /prereleases/);
     const saved = readFileSync(join(f.directory, 'release.json'));
     f.write('archives/release.json', { ...release, packages: release.packages.slice(1) });
-    assert.throws(() => readRelease(f.directory, f.options), /every workspace/); writeFileSync(join(f.directory, 'release.json'), saved);
+    assert.throws(() => readRelease(f.directory, f.options), /every publishable workspace/); writeFileSync(join(f.directory, 'release.json'), saved);
     const pkg = f.read('packages/agent/package.json'); f.write('packages/agent/package.json', { ...pkg, private: true });
     assert.throws(() => readRelease(f.directory, f.options), /reviewed source/); f.write('packages/agent/package.json', pkg);
   });
@@ -119,4 +121,47 @@ test('private release candidates produce no retained publishable artifact', t =>
   const result = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
   assert.ok(result.errors.some(error => error.includes('private must explicitly be false')));
   assert.throws(() => readFileSync(join(f.directory, 'release.json')), { code: 'ENOENT' });
+});
+
+test('an intentionally private package that turns public is refused, and one that stays private is never packed', t => {
+  const f = fixture(t);
+  const ok = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+  assert.deepEqual(ok.errors, []); assert.ok(!ok.packs.some(pack => pack.name.endsWith('browser')));
+  assert.deepEqual(f.read('archives/release.json').skippedPrivate, ['@hachej/boring-browser']);
+  const pkg = f.read('packages/browser/package.json'); f.write('packages/browser/package.json', { ...pkg, private: false });
+  const bad = checkPackages(f.root, { release: true });
+  assert.ok(bad.errors.some(error => error.includes('must stay private')));
+});
+
+test('a published package may not depend on an intentionally private package', t => {
+  for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+    const f = fixture(t), pkg = f.read('packages/files/package.json');
+    f.write('packages/files/package.json', { ...pkg, [field]: { '@hachej/boring-browser': '1.0.0' } });
+    const result = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+    assert.ok(result.errors.some(error => error.includes('must not depend on private package') && error.includes(field)), field);
+    assert.throws(() => readFileSync(join(f.directory, 'release.json')), { code: 'ENOENT' });
+  }
+});
+
+test('a private package injected into the release artifact is refused by the publisher and the workflow guard', t => {
+  const f = fixture(t);
+  checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+  const release = f.read('archives/release.json');
+  const injected = { ...release, packages: [...release.packages, { ...release.packages[0], name: '@hachej/boring-browser', filename: 'boring-browser-1.0.0.tgz' }] };
+  f.write('archives/release.json', injected);
+  assert.throws(() => readRelease(f.directory, f.options), /publishable workspace|Unexpected/);
+  const guard = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/release-set.mjs', import.meta.url)), f.directory], { encoding: 'utf8' });
+  assert.equal(guard.status, 1); assert.match(guard.stderr, /boring-browser/);
+});
+
+test('the publisher and everything it imports start with no node_modules reachable', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-publisher-isolated-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = fileURLToPath(new URL('../../scripts/', import.meta.url));
+  cpSync(source, join(dir, 'scripts'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), '{"type":"module"}\n');
+  // Bad arguments make the publisher throw its usage error, which proves its whole import graph resolved.
+  const result = spawnSync(process.execPath, [join(dir, 'scripts', 'publish-npm-packages.mjs')], { encoding: 'utf8', cwd: dir });
+  assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/);
+  assert.match(result.stderr, /Usage: node scripts\/publish-npm-packages\.mjs/);
 });
