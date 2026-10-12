@@ -118,7 +118,7 @@ export function createWorkspaceCatalog(options: {
   let walking: Promise<void> = Promise.resolve();
   function files(access: ResourceAccess): Promise<FileEntry[]> {
     const run = walking.then(() => collect('', true, access));
-    walking = run.then(() => undefined, () => undefined);
+    walking = run.then(() => undefined);
     return run.then(entries => entries.filter(entry => entry.kind === 'file'));
   }
   function page(entries: FileEntry[], key: string, cursor: string | undefined, limit: number | undefined, order?: (entry: FileEntry) => string): FilePage {
