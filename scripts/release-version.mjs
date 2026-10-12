@@ -40,6 +40,8 @@ export function setReleaseVersion(root, version) {
     pins(pkg, range); pins(record, range);
   }
   lock.version = version;
+  // Absolute item URLs of this package (scripts/build-registry.mjs) name the release version too.
+  const itemUrl = /^https:\/\/cdn\.jsdelivr\.net\/npm\/@hachej\/boring-ui-kit@[^/]+\/r\//;
   const registryPins = value => {
     if (!value || typeof value !== 'object') return;
     for (const [key, child] of Object.entries(value)) {
@@ -47,6 +49,7 @@ export function setReleaseVersion(root, version) {
         const name = spec.slice(0, spec.lastIndexOf('@'));
         return names.has(name) ? `${name}@${registryRange}` : spec;
       });
+      else if (key === 'registryDependencies' && Array.isArray(child)) value[key] = child.map(spec => itemUrl.test(spec) ? spec.replace(itemUrl, `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@${version}/r/`) : spec);
       else registryPins(child);
     }
   };

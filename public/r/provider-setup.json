@@ -9,8 +9,8 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "@boring-ui/theme",
-    "@boring-ui/utils"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json"
   ],
   "files": [
     {

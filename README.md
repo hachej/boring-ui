@@ -61,23 +61,13 @@ Pi owns conversations, tools, task execution and recovery. Boring uses its publi
 
 ## Install components
 
-The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each published version carries its own copy. Map the `@boring-ui` namespace once in your application's `components.json` (shadcn 3 or later), pinned to the version you installed:
-
-```json
-{
-  "registries": {
-    "@boring-ui": "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/{name}.json"
-  }
-}
-```
-
-Then add a component, for example the chat:
+The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each published version carries its own copy. Add a component by its URL, pinned to the version you installed (shadcn 3 or later), for example the chat:
 
 ```sh
-npx shadcn@latest add @boring-ui/pi-chat
+npx shadcn@latest add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-chat.json
 ```
 
-Item dependencies such as `@boring-ui/theme` resolve through the same pinned URL. The version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version, change the version in the URL and re-add the components. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/{name}.json` also works. See the [registry guide](registry/README.md) for the available items.
+Nothing else needs configuring: each item's dependencies are absolute URLs of the same version, so there is no `registries` entry in `components.json`. The version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version and re-add the components with the new version in the URL. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/<item>.json` also works. See the [registry guide](registry/README.md) for the available items.
 
 ## Release status
 

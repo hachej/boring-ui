@@ -2,7 +2,7 @@
 
 ## Embedding an agent beside an existing site
 
-A fictional settings console (the "existing app") with the agent floating over it. It installs only `pi-chat` and `pi-ambient` (plus `pi-workspace`, which `pi-ambient` needs for its in-window artifact panel, and two hook files of `pi-app`: `useRemoteChat` and `useSaved`); the host page keeps its own layout. Install commands and when to pick which block: [registry/README.md](../../registry/README.md#blocks-what-to-install). The component's behaviour, props and states: [Ambient agent](../../registry/README.md#ambient-agent-pi-ambient-ambientchat-agentnotifications). Integration levels: [WEBSITE-INTEGRATION.md](../../docs/architecture/WEBSITE-INTEGRATION.md).
+A fictional settings console (the "existing app") with the agent floating over it. It installs only `pi-chat` and `pi-ambient` (plus `pi-workspace`, which `pi-ambient` needs for its in-window artifact panel, and `useRemoteChat` (in `pi-chat`) and the `useSaved` hook file of `pi-app`); the host page keeps its own layout. Install commands and when to pick which block: [registry/README.md](../../registry/README.md#blocks-what-to-install). The component's behaviour, props and states: [Ambient agent](../../registry/README.md#ambient-agent-pi-ambient-ambientchat-agentnotifications). Integration levels: [WEBSITE-INTEGRATION.md](../../docs/architecture/WEBSITE-INTEGRATION.md).
 
 ```sh
 npm run ambient            # the console with the bar over it

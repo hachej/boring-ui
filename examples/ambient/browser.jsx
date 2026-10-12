@@ -6,7 +6,7 @@ import { MicIcon } from 'lucide-react';
 import { AmbientChat, createNotificationStore, watchConversation } from '../../registry/pi-ambient/ambient.tsx';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
-import { useRemoteChat } from '../../registry/pi-app/use-remote-chat.ts';
+import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 import { createArtifactPanel } from './artifact-panel.jsx';
 import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { micSupported, openMicrophone } from './mic.mjs';

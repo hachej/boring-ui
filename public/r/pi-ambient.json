@@ -12,10 +12,10 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "@boring-ui/pi-chat",
-    "@boring-ui/pi-workspace",
-    "@boring-ui/utils",
-    "@boring-ui/button"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-workspace.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/button.json"
   ],
   "files": [
     {

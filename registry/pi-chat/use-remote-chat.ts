@@ -3,7 +3,7 @@ import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import type { RemoteChat } from '@hachej/boring-ui-kit/remote-chat';
-import type { PiChatActions } from '../pi-chat/pi-chat';
+import type { PiChatActions } from './pi-chat';
 
 export type RemoteChatState =
   | { readonly status: 'connecting'; readonly conversationId: string | undefined }
