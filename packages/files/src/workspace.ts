@@ -12,6 +12,8 @@ import { randomUUID, sha1 } from './platform.js';
 import { accessSnapshot, identifier, locator, publicationDigest, publicationSnapshot } from './publication-input.js';
 import { assertLimit, fileTooLarge } from './file-limits.js';
 import { journalConnectionOf, sqliteBatchOf } from './sqlite-batch.js';
+import { isTemporary, mediaTypeOf, temporaryFileName } from './file-types.js';
+export { isTemporary } from './file-types.js';
 
 const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte, index) => byte === right[index]);
 
@@ -140,21 +142,8 @@ export async function blobRevision(bytes: Uint8Array): Promise<string> {
   return hex(await sha1(whole));
 }
 
-const mediaTypes: Record<string, string> = {
-  md: 'text/markdown', markdown: 'text/markdown', html: 'text/html', htm: 'text/html', json: 'application/json', svg: 'image/svg+xml', txt: 'text/plain', tldraw: 'application/vnd.tldraw+json',
-};
-
-function mediaTypeOf(path: string): string {
-  return mediaTypes[path.slice(path.lastIndexOf('.') + 1).toLowerCase()] ?? 'application/octet-stream';
-}
-
 type Observed = { readonly kind: 'file'; readonly bytes: Uint8Array; readonly revision: string } | { readonly kind: 'missing' } | { readonly kind: 'error'; readonly reason: string }
   | { readonly kind: 'outside'; readonly reason: string };
-
-/** The provider's own temporary files. They are removed when the provider opens and are never a resource. */
-const temporaryPattern = /^\.boring-[0-9a-f-]{36}\.tmp$/;
-/** Whether a path is one of the provider's temporary files (a lister hides them). */
-export const isTemporary = (path: string) => temporaryPattern.test(path.slice(path.lastIndexOf('/') + 1));
 
 export function createWorkspaceProvider(options: WorkspaceProviderOptions): WorkspaceResourceProvider {
   const { fs, journal } = options;
@@ -434,7 +423,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           if (!unchanged) {
             applying = true;
             const target = absolute(path);
-            const temporary = `${target.slice(0, target.lastIndexOf('/'))}/.boring-${randomUUID()}.tmp`;
+            const temporary = `${target.slice(0, target.lastIndexOf('/'))}/${temporaryFileName(randomUUID())}`;
             const ctx = fsContext(access.signal);
             const failure = async (reason: string) => { await fs.remove(temporary, { force: true }, fsContext()); return refuse(reason); };
             if (change.kind === 'create') {
