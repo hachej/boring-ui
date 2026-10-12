@@ -46,6 +46,36 @@ export interface ArtifactsConfig {
 
 export const PRESENT_TOOL = 'present';
 
+/** A `present` call with no result yet, while its conversation runs: its answer ID (`[assistantEntryId, callId]`) and the path it names. */
+export interface PendingPresent { readonly id: string; readonly callId: string; readonly path: string }
+
+/** The path a `present` call or a page acknowledgement names, as the server compares it (a leading `./` is the same file). */
+export const presentPath = (path: string): string => path.replace(/^\.\//, '');
+
+/**
+ * The `present` calls still waiting for the page (the server's view-open record, `@hachej/boring-agent/artifacts`). Mirrors
+ * the preview's pending-call scan (the feedback plug-in's `pendingBrowserTasks`): a call with no result, in a conversation that is running.
+ */
+export function pendingPresents(view: { readonly entries: readonly { readonly id: number | bigint | string; readonly model?: readonly unknown[] | undefined }[]; readonly docs?: Readonly<Record<string, unknown>> } | undefined): readonly PendingPresent[] {
+  if (!view) return [];
+  const live = view.docs?.['pi.live'] as { readonly run?: unknown } | undefined;
+  if (!live?.run) return [];
+  const calls = new Map<string, PendingPresent>();
+  for (const entry of view.entries) for (const message of entry.model ?? []) {
+    const item = message as { readonly role?: string; readonly content?: unknown; readonly toolCallId?: string };
+    if (item.role === 'assistant' && Array.isArray(item.content)) {
+      for (const part of item.content as { type?: string; id?: string; name?: string; arguments?: Record<string, unknown> }[]) {
+        const path = part.arguments?.['path'];
+        if (part.type === 'toolCall' && part.name === PRESENT_TOOL && typeof part.id === 'string' && typeof path === 'string') {
+          calls.set(part.id, { id: JSON.stringify([Number(entry.id), part.id]), callId: part.id, path: presentPath(path) });
+        }
+      }
+    }
+    if (item.role === 'toolResult' && typeof item.toolCallId === 'string') calls.delete(item.toolCallId);
+  }
+  return [...calls.values()];
+}
+
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const LANGUAGE = /^[A-Za-z0-9+#._-]{1,32}$/;
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);

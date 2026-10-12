@@ -21,6 +21,7 @@ import { formatBytes } from '../viewers/media';
 import { copyText } from '../utils/utils';
 import { KIND_LABEL, decodeText, kindOf, mediaTypeOf } from './file-kinds';
 import type { FileKind } from './file-kinds';
+import { useReportShown } from './artifact-panel';
 import type { ViewerOptions } from './artifact-panel';
 import { useSaved } from './use-saved';
 import { useAppText } from './app-labels';
@@ -60,6 +61,7 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   }, [saved.controller, onUnsavedChange]);
   const { labels } = useAppText();
   const [mode, setMode] = useState<string>(kind === 'markdown' ? 'rich' : 'preview');
+  useReportShown(options.onShown, path, saved.kind === 'open' && saved.controller ? saved.snapshot.ref.revision : undefined);
   const common = { title: nameOf(path), subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', controls: back, ...(options.share ? { onShare: options.share } : {}) };
   // Until the document is open the bar offers no Share, Copy or menu actions of its own: they would act on a document that is not shown.
   if (saved.kind !== 'open' || !saved.controller) {
@@ -85,6 +87,7 @@ function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
   const binding = useMemo(() => ({ client: options.client, locator, path }), [options.client, targetKey, path]); // eslint-disable-line react-hooks/exhaustive-deps
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly value: Loaded }>();
   const file: Loaded = stored?.binding === binding ? stored.value : { kind: 'loading' };
+  useReportShown(options.onShown, path, file.kind === 'ready' ? file.revision : undefined);
   const running = useRef<AbortController | undefined>(undefined);
   const load = useCallback(async () => {
     running.current?.abort();
