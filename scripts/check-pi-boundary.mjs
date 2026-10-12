@@ -153,7 +153,7 @@ function scanFile(file, text) {
   const lines = [];
   const report = (node, message) => lines.push(`ONE_HARNESS ${file}:${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}: ${message}`);
   const values = new Set(); // symbols bound to a pi-ai value: namespace, generation function, factory or a Models value
-  const factories = new Set(); // symbols of pi-ai's createModels
+  const factories = new Set(); // symbols bound to pi-ai's createModels, directly or by a lexical alias
   const namespaces = new Set(); // symbols of pi-ai namespace imports
   const piTypes = new Set(); // symbols of pi-ai Models types
 
@@ -169,35 +169,67 @@ function scanFile(file, text) {
       if (PI_MODEL_TYPES.has(name)) piTypes.add(symbol(element.name));
     }
   }
-  // Does a type name a pi-ai Models type? A local interface or alias is followed, so `options: Options` with `models: Models` counts.
-  const declaresModels = (typeNode, seen = new Set()) => {
+  // A Models type, directly or through a local alias. Interfaces are not followed: they are not Models values.
+  const isModelsType = (typeNode, seen = new Set()) => {
     if (!typeNode) return false;
-    let found = false;
-    walk(typeNode, (n) => {
-      if (found) return;
-      if (ts.isIdentifier(n) && piTypes.has(symbol(n))) found = true;
-      else if (ts.isQualifiedName(n) && PI_MODEL_TYPES.has(n.right.text) && namespaces.has(symbol(n.left))) found = true;
-      else if (ts.isIdentifier(n)) for (const declaration of symbol(n)?.declarations ?? []) {
-        if ((ts.isInterfaceDeclaration(declaration) || ts.isTypeAliasDeclaration(declaration)) && !seen.has(declaration)) {
-          seen.add(declaration);
-          if (declaresModels(declaration, seen)) found = true;
-        }
-      }
-    });
-    return found;
+    if (ts.isParenthesizedTypeNode(typeNode)) return isModelsType(typeNode.type, seen);
+    if (ts.isUnionTypeNode(typeNode)) return typeNode.types.some((t) => isModelsType(t, seen));
+    if (!ts.isTypeReferenceNode(typeNode)) return false;
+    const name = typeNode.typeName;
+    if (ts.isQualifiedName(name)) return PI_MODEL_TYPES.has(name.right.text) && namespaces.has(symbol(name.left));
+    if (piTypes.has(symbol(name))) return true;
+    for (const d of symbol(name)?.declarations ?? []) {
+      if (ts.isTypeAliasDeclaration(d) && !seen.has(d)) { seen.add(d); if (isModelsType(d.type, seen)) return true; }
+    }
+    return false;
   };
+  // The declared type of member `key`: a type literal, a local interface or alias, or a union of those. Other types are opaque.
+  const memberIn = (members, key) => members.find((m) => ts.isPropertySignature(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && m.name.text === key)?.type;
+  const memberType = (typeNode, key, seen = new Set()) => {
+    if (!typeNode) return undefined;
+    if (ts.isParenthesizedTypeNode(typeNode)) return memberType(typeNode.type, key, seen);
+    if (ts.isUnionTypeNode(typeNode) || ts.isIntersectionTypeNode(typeNode)) return typeNode.types.map((t) => memberType(t, key, seen)).find(Boolean);
+    if (ts.isTypeLiteralNode(typeNode)) return memberIn(typeNode.members, key);
+    if (ts.isTypeReferenceNode(typeNode) && ts.isIdentifier(typeNode.typeName)) for (const d of symbol(typeNode.typeName)?.declarations ?? []) {
+      if (seen.has(d)) continue;
+      seen.add(d);
+      const found = ts.isInterfaceDeclaration(d) ? memberIn(d.members, key) : ts.isTypeAliasDeclaration(d) ? memberType(d.type, key, seen) : undefined;
+      if (found) return found;
+    }
+    return undefined;
+  };
+  // The declared type of an expression, followed through declared or initialized parameters and variables and member accesses.
+  const typeOf = (node, depth = 0) => {
+    node = unwrap(node);
+    if (!node || depth > 8) return undefined;
+    if (ts.isIdentifier(node)) {
+      for (const d of symbol(node)?.declarations ?? []) {
+        if (!ts.isParameter(d) && !ts.isVariableDeclaration(d)) continue;
+        if (d.type) return d.type;
+        if (d.initializer) return typeOf(d.initializer, depth + 1);
+      }
+      return undefined;
+    }
+    if (ts.isPropertyAccessExpression(node)) return memberType(typeOf(node.expression, depth + 1), node.name.text);
+    return undefined;
+  };
+  const memberDeclaresModels = (base, key) => isModelsType(memberType(typeOf(base), key));
   // `import()` or `require()` of pi-ai is the namespace itself, so it is a value like a namespace import.
   const isPiLoad = (call) => (call.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(call.expression) && call.expression.text === 'require'))
     && call.arguments[0] && ts.isStringLiteralLike(call.arguments[0]) && PI_AI_MODULE.test(call.arguments[0].text);
-  const isFactoryCall = (call) => {
-    const callee = unwrap(call.expression);
-    return ts.isIdentifier(callee) ? factories.has(symbol(callee)) : ts.isPropertyAccessExpression(callee) && callee.name.text === 'createModels' && valueOf(callee.expression);
+  // createModels itself, a lexical alias of it, or `ai.createModels` of a pi-ai value.
+  const isFactoryRef = (node) => {
+    node = unwrap(node);
+    return ts.isIdentifier(node) ? factories.has(symbol(node)) : ts.isPropertyAccessExpression(node) && node.name.text === 'createModels' && valueOf(node.expression);
   };
-  // Is this expression a pi-ai value? Member access follows its base only; a call yields a Models value only as a pi-ai factory call.
+  // Is this expression a pi-ai value? Member access yields a value through its base or a Models-typed member; a call only as a factory or load.
   const rootIsValue = (node) => {
     node = unwrap(node);
     if (ts.isIdentifier(node)) return values.has(symbol(node));
-    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) return rootIsValue(node.expression);
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const key = literalKey(node);
+      return (key !== undefined && memberDeclaresModels(node.expression, key)) || rootIsValue(node.expression);
+    }
     return ts.isCallExpression(node) && valueOf(node); // only a pi-ai factory or load yields a value; other calls do not
   };
   const valueOf = (node) => {
@@ -205,25 +237,34 @@ function scanFile(file, text) {
     if (!node) return false;
     if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(node.operatorToken.kind)) return valueOf(node.left) || valueOf(node.right);
     if (ts.isConditionalExpression(node)) return valueOf(node.whenTrue) || valueOf(node.whenFalse);
-    if (ts.isCallExpression(node)) return isPiLoad(node) || isFactoryCall(node);
+    if (ts.isCallExpression(node)) return isPiLoad(node) || isFactoryRef(node.expression);
     // An object that carries a value (`return { models, ... }`) is an export of that value.
     if (ts.isObjectLiteralExpression(node)) return node.properties.some((p) => ts.isShorthandPropertyAssignment(p) ? values.has(checker.getShorthandAssignmentValueSymbol(p)) : ts.isPropertyAssignment(p) && valueOf(p.initializer));
     return rootIsValue(node);
   };
-  // Bindings: a declaration typed with a Models type, or initialized from a pi-ai value, is a pi-ai value. Repeats until stable.
+  // Bindings: a declaration typed as a Models value, or initialized from a pi-ai value, is one; so is a destructured member of one.
   const learn = (n) => {
     if (ts.isVariableDeclaration(n) || ts.isParameter(n)) {
-      const bound = (n.initializer && valueOf(n.initializer)) || declaresModels(n.type);
-      if (!bound) return;
-      if (ts.isIdentifier(n.name)) values.add(symbol(n.name));
-      else if (ts.isObjectBindingPattern(n.name)) for (const element of n.name.elements) if (ts.isIdentifier(element.name)) {
-        values.add(symbol(element.name));
-        if ((element.propertyName ?? element.name).getText(sf) === 'createModels') factories.add(symbol(element.name));
+      const init = n.initializer && unwrap(n.initializer);
+      const whole = init && valueOf(init);
+      if (ts.isIdentifier(n.name)) {
+        if (whole || isModelsType(n.type)) values.add(symbol(n.name));
+        if (init && isFactoryRef(init)) factories.add(symbol(n.name));
+      } else if (ts.isObjectBindingPattern(n.name)) {
+        const parent = n.type ?? typeOf(init);
+        for (const element of n.name.elements) if (ts.isIdentifier(element.name)) {
+          const key = (element.propertyName ?? element.name).text;
+          if (whole || isModelsType(memberType(parent, key))) values.add(symbol(element.name));
+          if (key === 'createModels') factories.add(symbol(element.name));
+        }
       }
     }
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(unwrap(n.left)) && valueOf(n.right)) values.add(symbol(unwrap(n.left)));
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(unwrap(n.left))) {
+      if (valueOf(n.right)) values.add(symbol(unwrap(n.left)));
+      if (isFactoryRef(n.right)) factories.add(symbol(unwrap(n.left)));
+    }
   };
-  for (let size = -1; size !== values.size;) { size = values.size; walk(sf, learn); }
+  for (let size = -1; size !== values.size + factories.size;) { size = values.size + factories.size; walk(sf, learn); }
 
   // Returns a pi-ai value: an arrow or function whose result is one.
   const returnsValue = (fn) => fn.body && !ts.isBlock(fn.body) ? valueOf(fn.body) : (() => {
@@ -231,6 +272,14 @@ function scanFile(file, text) {
     walk(fn.body ?? fn, (n) => { if (ts.isReturnStatement(n) && n.expression && valueOf(n.expression)) found = true; });
     return found;
   })();
+  const isFunction = (node) => ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node);
+  // A local function, or a variable initialized with one, whose result is a pi-ai value.
+  const localFunctionReturns = (sym) => (sym?.declarations ?? []).some((d) => ts.isFunctionDeclaration(d) ? returnsValue(d)
+    : ts.isVariableDeclaration(d) && d.initializer && isFunction(unwrap(d.initializer)) && returnsValue(unwrap(d.initializer)));
+  const exportsValue = (expr) => {
+    const node = unwrap(expr);
+    return valueOf(node) || (isFunction(node) ? returnsValue(node) : ts.isIdentifier(node) && localFunctionReturns(symbol(node)));
+  };
   walk(sf, (n) => {
     // Reference: a generation function is read from a pi-ai value.
     if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && GENERATION.has(literalKey(n)) && rootIsValue(n.expression)) {
@@ -241,7 +290,7 @@ function scanFile(file, text) {
       if (GENERATION.has(key)) report(element, `destructures pi-ai ${key} from a pi-ai value`);
     }
   });
-  // Boundary: no export of a pi-ai value, a generation function, a factory or a pi-ai namespace.
+  // Boundary: no export of a pi-ai value, a generation function, a factory or a pi-ai namespace, directly or through a function.
   for (const statement of sf.statements) {
     if (ts.isExportDeclaration(statement)) {
       const from = statement.moduleSpecifier;
@@ -250,16 +299,18 @@ function scanFile(file, text) {
         if (!clause || ts.isNamespaceExport(clause)) report(statement, `re-exports pi-ai ${clause ? 'namespace' : 'in full'}`);
         else for (const element of clause.elements) if (PI_VALUES.has((element.propertyName ?? element.name).text)) report(element, `re-exports pi-ai ${(element.propertyName ?? element.name).text}`);
       } else if (!from && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-        for (const element of statement.exportClause.elements) if (values.has(checker.getExportSpecifierLocalTargetSymbol(element))) report(element, `exports a pi-ai value: ${element.name.text}`);
+        for (const element of statement.exportClause.elements) {
+          const sym = checker.getExportSpecifierLocalTargetSymbol(element);
+          if (values.has(sym) || localFunctionReturns(sym)) report(element, `exports a pi-ai value: ${element.name.text}`);
+        }
       }
-    } else if (ts.isExportAssignment(statement) && valueOf(statement.expression)) report(statement, 'exports a pi-ai value as default');
+    } else if (ts.isExportAssignment(statement) && exportsValue(statement.expression)) report(statement, 'exports a pi-ai value as default');
     else if (ts.isVariableStatement(statement) && statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
       for (const declaration of statement.declarationList.declarations) {
-        const init = unwrap(declaration.initializer);
-        if (init && (valueOf(init) || ((ts.isArrowFunction(init) || ts.isFunctionExpression(init)) && returnsValue(init)))) report(declaration, `exports a pi-ai value: ${declaration.name.getText(sf)}`);
+        if (declaration.initializer && exportsValue(declaration.initializer)) report(declaration, `exports a pi-ai value: ${declaration.name.getText(sf)}`);
       }
-    } else if (ts.isFunctionDeclaration(statement) && statement.name && statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) && returnsValue(statement)) {
-      report(statement, `exports a function that returns a pi-ai value: ${statement.name.text}`);
+    } else if (ts.isFunctionDeclaration(statement) && statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) && returnsValue(statement)) {
+      report(statement, `exports a function that returns a pi-ai value: ${statement.name?.text ?? 'default'}`);
     }
   }
   return lines;
