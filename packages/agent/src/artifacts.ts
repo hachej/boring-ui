@@ -6,6 +6,11 @@ import type { ResourceAccess, ResourceLocator } from '@hachej/boring-files';
 import { workspacePath } from '@hachej/boring-files/file-types';
 import { asWorkspaceResolver, workspaceFor } from './workspaces.js';
 import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
+import { PRESENT_TOOL, awaitViewOpen } from './view-open.js';
+import type { ViewOpenOptions, ViewOpenOutcome } from './view-open.js';
+
+export { answerViewOpen, parseViewOpenAnswer, VIEW_OPEN_TIMEOUT_MS } from './view-open.js';
+export type { ViewOpenAnswer, ViewOpenOptions, ViewOpenOutcome } from './view-open.js';
 
 /*
  * Artifacts: substantial, self-contained content (a document, an HTML page, an SVG, code) that a chat shows as a card
@@ -99,6 +104,22 @@ export interface PresentToolOptions {
   readonly resolveAccess?: (api: ToolExecutionApi, context: Context) => ResourceAccess | Promise<ResourceAccess>;
   /** Largest file shown, in bytes. Defaults to 256 KiB. */
   readonly maxBytes?: number;
+  /**
+   * Opt-in: wait until a page has mounted the presented revision (`answerViewOpen`, the chat transport's `?op=answer`) and report
+   * `opened`, `refused`, `unconfirmed` (no answer in time) or `viewer: 'none'` (no page watches the conversation). Absent: the result
+   * is the file kept, as before, with no wait.
+   */
+  readonly ack?: ViewOpenOptions;
+}
+
+/** The `present` result fields for a view outcome (see ./view-open.ts): `opened` true, false (refused or no viewer) or 'unconfirmed'. */
+function viewFields(outcome: ViewOpenOutcome): Record<string, unknown> {
+  switch (outcome.kind) {
+    case 'opened': return { opened: true, viewer: outcome.viewer };
+    case 'refused': return { opened: false, refused: outcome.reason };
+    case 'unconfirmed': return { opened: 'unconfirmed', timeoutMs: outcome.timeoutMs };
+    case 'none': return { opened: false, viewer: 'none' };
+  }
 }
 
 /**
@@ -109,7 +130,7 @@ export function createPresentTool(options: PresentToolOptions = {}) {
   const resolver = asWorkspaceResolver(options.workspace);
   const maxBytes = options.maxBytes ?? 256 * 1024;
   return defineTool({
-    name: 'present',
+    name: PRESENT_TOOL,
     // How to use it travels with the tool, so every host that offers `present` gets the same rules without repeating them in its prompt.
     description: [
       'Show a file of the workspace to the person in a side panel instead of pasting it in your reply.',
@@ -141,9 +162,12 @@ export function createPresentTool(options: PresentToolOptions = {}) {
       if (kind.type === 'svg' && !/<svg[\s>]/i.test(text)) return reply({ kind: 'denied', reason: 'An SVG file must contain an <svg> element' });
       const kept = await files.keep(path, access);
       if (kept.kind !== 'available') return reply(kept);
-      const artifact = createArtifactDescriptor({ title: path.slice(path.lastIndexOf('/') + 1), type: kind.type, mediaType: kind.mediaType, ...(kind.language ? { language: kind.language } : {}),
-        target, revision: kept.snapshot.ref.revision });
-      return reply({ kind: 'presented', artifact });
+      const describe = (revision: string) => createArtifactDescriptor({ title: path.slice(path.lastIndexOf('/') + 1), type: kind.type, mediaType: kind.mediaType,
+        ...(kind.language ? { language: kind.language } : {}), target, revision });
+      if (!options.ack) return reply({ kind: 'presented', artifact: describe(kept.snapshot.ref.revision) });
+      // A replay reports the revision the call recorded (and the page acknowledged), even if the file has changed since.
+      const { outcome, revision } = await awaitViewOpen(api, context, { tool: PRESENT_TOOL, path, revision: kept.snapshot.ref.revision }, options.ack);
+      return reply({ kind: 'presented', artifact: describe(revision), ...viewFields(outcome) });
     },
   });
 }

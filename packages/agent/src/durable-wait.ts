@@ -44,21 +44,31 @@ export async function ownBindingKey(tx: Tx, api: Pick<ToolExecutionApi, 'taskId'
 }
 
 /**
+ * A deadline on the wait (ms since the epoch): at `at`, `expire` settles the document in a background commit and returns its value.
+ * It is stored state, so a re-attached wait keeps the same `at`.
+ */
+export interface WaitDeadline<T> { readonly at: number; readonly expire: (tx: Tx) => Promise<Readonly<T> | null | undefined> }
+
+/**
  * Waits until `settled(value)` holds for the document `key` of `family`, without holding a model request. When the call is aborted,
  * `cancel` runs in a background commit (`label` names the waiting thing in errors) (the answer path also refuses a call whose task has ended) and the abort is rethrown.
+ * With a `deadline`, the wait ends when `expire` has settled the document (the value it returns is the result).
  */
 export async function waitForDocument<T extends JsonObject>(api: ToolExecutionApi, family: ConversationDocFamilyToken<T, null>, key: string, context: Context,
-  settled: (value: Readonly<T> | null | undefined) => boolean, cancel: (tx: Tx) => Promise<void>, label: string): Promise<Readonly<T> | null | undefined> {
+  settled: (value: Readonly<T> | null | undefined) => boolean, cancel: (tx: Tx) => Promise<void>, label: string,
+  deadline?: WaitDeadline<T>): Promise<Readonly<T> | null | undefined> {
   const watch = await api.watchDoc(family, api.conversationId, key, context);
   if (!watch) throw new Error(`${label} record is missing`);
   const signal = context.abortSignal;
   let final: Readonly<T> | null | undefined = watch.value;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     if (!settled(final)) {
-      final = await new Promise<typeof final>((resolve, reject) => {
+      final = await new Promise<Readonly<T> | null | undefined>((resolve, reject) => {
         if (signal?.aborted) return reject(signal.reason ?? new Error(`${label} cancelled`));
         signal?.addEventListener('abort', () => reject(signal.reason ?? new Error(`${label} cancelled`)), { once: true });
         void watch.closed.then(() => reject(new Error(`${label} observation closed`)));
+        if (deadline) timer = setTimeout(() => { void api.commit(deadline.expire, BACKGROUND_CONTEXT).then(value => resolve(value), reject); }, Math.max(0, deadline.at - Date.now()));
         watch.start(async value => { if (settled(value)) resolve(value); });
       });
     }
@@ -68,6 +78,6 @@ export async function waitForDocument<T extends JsonObject>(api: ToolExecutionAp
       catch { /* the answer path also refuses a call whose task has ended */ }
     }
     throw error;
-  } finally { await watch.stop(); }
+  } finally { clearTimeout(timer); await watch.stop(); }
   return final;
 }

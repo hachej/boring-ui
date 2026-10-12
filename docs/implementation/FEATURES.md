@@ -226,3 +226,9 @@ navigation, retained docked/floating chat and mobile navigation. The required
 `file-tree:journey` checks Library/viewer geometry and detached keyboard selection;
 `test:app-registry-consumer` checks stylesheet delivery in the installed recipe.
 See [PARTIAL](PARTIAL.md#portable-library-tree) for candidate qualifications.
+
+## View-open acknowledgement
+
+A `present` call can wait until the page has shown the file: `createPresentTool({ ack: { timeoutMs?, viewers? } })`. The page confirms the revision it mounted, or refuses (for example when the person closed the panel on purpose), and the result says so. A timeout is `unconfirmed`, not an error, and a headless conversation without a page returns `viewer: 'none'` at once. The [agent README](../../packages/agent/README.md) owns the contract and the [registry README](../../registry/README.md) owns the page side.
+
+`test/packages/agent-view-open.test.mjs` covers ack off, opened, refused, no viewer, timeout, two answers, invalid and mismatched answers, abort, and a restart that keeps the deadline. `test/packages/ui-present-ack.test.mjs` covers the page scan and the mount report. This is a partial increment: custom viewers and the canvas do not confirm, and a browser journey is not part of this change.

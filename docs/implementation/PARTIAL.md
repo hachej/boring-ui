@@ -591,3 +591,9 @@ Branch `feat/redaction-preparation-20261008` starts at reviewed PR50 commit `202
 The [feature entry](FEATURES.md#fictional-preparation-experience) names native, crash, installed-consumer and browser gates. Raw results and independent review belong under ignored `.cache/evidence/redaction-preparation/`. Local loopback EPERM prevents actual Chromium execution in this environment; CI execution is recorded separately. Final checks compare local test failures with the same-base baseline rather than treating an environment failure as a pass.
 
 W00 remains reconciled; W01-W08/W10-W13 partial; W09 a public-seam probe. Full P01-P14/A01-A48/H01-H10 remain the target. Eleven global VERIFY.json deferrals remain unchanged. Live model/transcription quality, clinical expert acceptance, production identity and processing policy, licenses and consumer migrations are not established by fictional preparation fixtures.
+
+## View-open acknowledgement, 2026-10-12
+
+Branch `feat/view-open-ack` adds an opt-in acknowledgement to `present` (`createPresentTool({ ack })`). The result says `opened`, `refused`, `unconfirmed` or `viewer: 'none'`; without `ack` nothing changes. The wait reuses the `ask_user` durable wait with a stored deadline, and `AgentWorkspace` confirms only after a built-in viewer mounts the revision.
+
+`test/packages/agent-view-open.test.mjs` runs a real native Harness with SQLite across a restart and the chat transport. `test/packages/ui-present-ack.test.mjs` covers the page scan and the mount report in happy-dom. The full `AgentWorkspace` answer path is not driven in a browser: a host viewer or canvas never confirms (it ends `unconfirmed`), and a presented file that is already on screen is confirmed from the last mount report. Chromium journeys remain separate qualification.

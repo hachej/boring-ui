@@ -92,7 +92,7 @@ Evaluate supported public Pi client/protocol/server components at the tested ver
 
 Authorize opening, initial snapshot, subsequent delivery, assets and commands; enforce declared mid-stream revocation semantics. Scope/source/view partition caches and clear restricted presentation on identity change. Version mismatch is explicit and may request reload without discarding drafts. A connection close neither confirms task termination nor automatically retries admitted work.
 
-A projection can omit private fields and present connection errors while native state remains authoritative. This is a transport/security boundary, not another execution lifecycle or a universal Boring message model. Native outcomes, publication outcomes and presentation outcomes keep their distinct meaning; display adapters may share wording but must not merge them into one engine-constraining result union.
+A projection can omit private fields and present connection errors while native state remains authoritative. This is a transport/security boundary, not another execution lifecycle or a universal Boring message model. Native outcomes, publication outcomes and presentation outcomes keep their distinct meaning; display adapters may share wording but must not merge them into one engine-constraining result union. A view acknowledgement of `present` (`@hachej/boring-agent/artifacts`, opt-in `ack`) is a separate outcome again: `opened`, `refused`, `unconfirmed` (no answer in time, which means not confirmed, never not opened) or `viewer: 'none'`. It is not a presentation outcome and does not share the `applied`/`denied` union above.
 
 
 ## Artifact and viewer
