@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Harness, MemoryStorage, createRegistry, defineExtension, defineTool } from '@earendil-works/pi-durable';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Harness, MemoryStorage, ToolResultEntry, createRegistry, defineExtension, defineTool } from '@earendil-works/pi-durable';
+import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
+import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { createReadTool } from '@earendil-works/pi-durable/tools';
+import { createModels } from '@earendil-works/pi-ai/models';
+import { openNodeConnection } from '@hachej/boring-files/sqlite';
+import { createWorkspaceJournal } from '@hachej/boring-files/journal';
+import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
+import { createConvertingRead } from '@hachej/boring-agent/file-convert';
+import { admitDocumentTool } from '../fixtures/native-document.mjs';
 import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
@@ -105,4 +117,63 @@ test('a sandbox installed after an approval gate wraps outermost: no question is
   assert.equal(await say('run the fictional tools'), 'done', 'the run settles without a person answering');
   assert.deepEqual(ran, []);
   assert.deepEqual(simulatedCalls(await results()).map(call => call.toolName), ['write_note']);
+});
+
+test('a sandbox followed by a converting read refuses the recorded read: the PDF is never converted', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-sandbox-convert-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const workspace = join(directory, 'workspace');
+  mkdirSync(workspace);
+  writeFileSync(join(workspace, 'doc.pdf'), '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n');
+  const env = new NodeExecutionEnv({ cwd: workspace });
+  const journal = createWorkspaceJournal(openNodeConnection(join(directory, 'journal.sqlite')));
+  const files = createWorkspaceProvider({ identity: { providerId: 'files', instanceId: 'one', incarnation: 'one', viewId: 'published' }, fs: env, journal });
+  const access = { principalId: 'editor', initiatorId: 'alice', scopeId: 'fictional-project' };
+  const converted = [];
+  const registry = createRegistry();
+  registry.install(defineExtension({ name: 'fixture.files', tools: [createReadTool()] }));
+  // The sandbox is selected first; the converting read is a later wrap of the same `read` tool.
+  registry.install(createSandboxExtension({ tools: ['read'] }));
+  registry.install(createConvertingRead({ workspace: { files, root: workspace, access }, convert: async () => { converted.push('pdf'); return { text: 'converted' }; } }));
+  const harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models: createModels(), env: () => env }, context);
+  t.after(() => harness.close(context).catch(() => {}));
+  const conversation = await harness.root(context);
+  const terminal = await harness.waitForTask(await admitDocumentTool(conversation, { path: 'doc.pdf' }, 'read'), context);
+  const entryId = terminal.state.outcome.result?.entryId;
+  assert.notEqual(entryId, undefined, JSON.stringify(terminal.state.outcome));
+  const message = (await conversation.commit(tx => tx.entry(ToolResultEntry, entryId), context)).model[0];
+  assert.equal(message.isError, true);
+  assert.match(message.content.map(part => part.text ?? '').join(''), /a later extension wraps it/);
+  assert.deepEqual(converted, [], 'the recorded read must not convert the PDF');
+});
+
+test('a tool added mid-run by addTools is offered to the next round and refused by the sandbox, never executed', async t => {
+  const ran = [];
+  const discover = defineTool({ name: 'discover_note', description: 'Fictional discovery.', parameters: Type.Object({}),
+    execute: async () => ({ content: [{ type: 'text', text: 'discovered' }], control: { addTools: ['late_write'] } }) });
+  const late = defineTool({ name: 'late_write', description: 'Fictional late write.', parameters: Type.Object({ note: Type.String() }),
+    execute: async args => { ran.push(`late_write:${args.note}`); return { content: [{ type: 'text', text: 'late ran' }] }; } });
+  const offered = [];
+  const scripted = createScriptedModel({ script: { 'discover, then write late': [
+    { tools: [{ name: 'discover_note', args: {} }] },
+    ctx => { offered.push(ctx.tools); return { tools: [{ name: 'late_write', args: { note: 'late' } }] }; },
+    'Done.',
+  ] } });
+  const agent = defineAgent({ id: 'discovering', model: scripted.model, tools: [discover, late], extensions: [createSandboxExtension({ tools: ['discover_note'], flags: { discover_note: { sandboxSafe: true } } })], instructions: 'Fictional agent.' });
+  const registry = createRegistry();
+  agent.install(registry);
+  const harness = await Harness.open(new MemoryStorage(), { registry, models: scripted.models }, context);
+  t.after(() => harness.close(context).catch(() => {}));
+  const conversation = await agent.createConversation(harness, context);
+  // Offered at the start: the discovery tool only. addTools must add late_write later in the run.
+  await conversation.configure({ tools: [discover] }, context);
+  const submission = await conversation.submit({ type: 'input', content: 'discover, then write late' }, context);
+  assert.equal((await submission.wait(context)).status, 'done');
+  assert.equal(offered[0].includes('late_write'), true, 'addTools made late_write offered to the next round');
+  assert.deepEqual(ran, [], 'the late write was refused and never executed');
+  const [refused] = (await conversation.watch(context)).value.entries.flatMap(entry => entry.model ?? [])
+    .filter(message => message.role === 'toolResult' && message.toolName === 'late_write');
+  assert.equal(refused?.isError, true);
+  assert.match(refused.content[0].text, /not covered by the sandbox/);
+  assert.deepEqual(scripted.misses, []);
 });
