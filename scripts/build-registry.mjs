@@ -23,13 +23,19 @@ export function kitVersion(root) {
   throw new Error(`Missing workspace package ${kit}`);
 }
 
-/** Rewrites the `@boring-ui/<item>` dependencies of every item in `directory` to this release's URLs. Files keep a trailing newline, as committed. */
+/** Rewrites the `@boring-ui/<item>` dependencies of an item, and of each item the registry index lists, to this release's URLs. */
+export function releaseDependencies(item, version) {
+  const rewrite = entry => { if (entry.registryDependencies) entry.registryDependencies = entry.registryDependencies.map(dependency => dependency.startsWith(namespace) ? `${releaseItemBase(version)}/${dependency.slice(namespace.length)}.json` : dependency); };
+  rewrite(item);
+  for (const entry of item.items ?? []) rewrite(entry);
+  return item;
+}
+
+/** Finishes every JSON file of `directory` for the release. Files keep a trailing newline, as committed. */
 export function finishRegistry(directory, version) {
   for (const file of readdirSync(directory).filter(name => name.endsWith('.json'))) {
     const path = join(directory, file);
-    const item = JSON.parse(readFileSync(path, 'utf8'));
-    if (item.registryDependencies) item.registryDependencies = item.registryDependencies.map(dependency => dependency.startsWith(namespace) ? `${releaseItemBase(version)}/${dependency.slice(namespace.length)}.json` : dependency);
-    writeFileSync(path, JSON.stringify(item, null, 2) + '\n');
+    writeFileSync(path, JSON.stringify(releaseDependencies(JSON.parse(readFileSync(path, 'utf8')), version), null, 2) + '\n');
   }
 }
 

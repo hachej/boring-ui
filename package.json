@@ -61,6 +61,7 @@
     "test:remote-shell-consumer": "node scripts/test-remote-shell-consumer.mjs",
     "registry:build": "node scripts/build-registry.mjs",
     "test:registry-consumer": "node scripts/test-registry-consumer.mjs",
+    "test:pi-chat-consumer": "node scripts/test-pi-chat-consumer.mjs",
     "test:app-registry-consumer": "node scripts/test-app-registry-consumer.mjs",
     "test:html-consumer": "node scripts/test-editor-consumer.mjs --html",
     "test:html-registry-consumer": "node scripts/test-registry-consumer.mjs --html",

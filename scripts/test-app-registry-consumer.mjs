@@ -16,7 +16,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => JSON.parse(readFileSync(join(root, 'public/r', `${name}.json`), 'utf8'));
 // The block and every item it needs, through registryDependencies.
 const closure = new Map();
-const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) visit(registryItemName(dependency)); };
+const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) visit(registryItemName(root, dependency)); };
 visit('pi-app');
 visit('file-tree');
 const directory = mkdtempSync(join(tmpdir(), 'boring-app-consumer-'));

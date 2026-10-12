@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import semver from 'semver';
+import { kitVersion, releaseItemBase } from './build-registry.mjs';
 
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
 
@@ -99,16 +100,17 @@ export function localRegistryItem(root, item, archiveByName, packs, cache, run) 
   return local;
 }
 
-/** The item name of a registry dependency: the release's absolute URL (scripts/build-registry.mjs), `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/<item>.json`. */
-export function registryItemName(dependency) {
-  const match = /^https:\/\/cdn\.jsdelivr\.net\/npm\/@hachej\/boring-ui-kit@[^/]+\/r\/([\w.-]+)\.json$/.exec(dependency);
-  if (!match) throw new Error(`Not a release registry item URL: ${dependency}`);
-  return match[1];
+/** The item name of a registry dependency: this workspace's release URL (scripts/build-registry.mjs), `<releaseItemBase>/<item>.json`. Another version is refused. */
+export function registryItemName(root, dependency) {
+  const base = releaseItemBase(kitVersion(root)) + '/';
+  const name = dependency.startsWith(base) && dependency.endsWith('.json') ? dependency.slice(base.length, -'.json'.length) : '';
+  if (!/^[\w.-]+$/.test(name)) throw new Error(`Not a registry item URL of this release: ${dependency}`);
+  return name;
 }
 
 /** The item with its registryDependencies served from `base` (the harness's stand-in for the CDN), so the CLI never leaves the machine. */
-export function localRegistryDependencies(item, base) {
-  return item.registryDependencies ? { ...item, registryDependencies: item.registryDependencies.map(dependency => `${base}/${registryItemName(dependency)}.json`) } : item;
+export function localRegistryDependencies(root, item, base) {
+  return item.registryDependencies ? { ...item, registryDependencies: item.registryDependencies.map(dependency => `${base}/${registryItemName(root, dependency)}.json`) } : item;
 }
 
 /** An item and every item it needs through registryDependencies, read from public/r. */
@@ -118,7 +120,7 @@ export function registryClosure(root, name) {
     if (closure.has(item)) return;
     const read = JSON.parse(readFileSync(join(root, 'public/r', `${item}.json`), 'utf8'));
     closure.set(item, read);
-    for (const dependency of read.registryDependencies ?? []) visit(registryItemName(dependency));
+    for (const dependency of read.registryDependencies ?? []) visit(registryItemName(root, dependency));
   };
   visit(name);
   return closure;
@@ -136,6 +138,11 @@ createServer(async (req, res) => { try { const body = await readFile(join(${JSON
   .listen(0, '127.0.0.1', function () { console.log('port ' + this.address().port); });`], { stdio: ['ignore', 'pipe', 'inherit'] });
   const port = await new Promise((done, fail) => { server.stdout.on('data', chunk => { const found = /port (\d+)/.exec(String(chunk)); if (found) done(Number(found[1])); }); server.once('exit', code => fail(new Error(`registry server exited ${code}`))); });
   const url = `http://127.0.0.1:${port}/r`;
-  for (const [name, item] of closure) writeFileSync(join(directory, 'registry/r', `${name}.json`), JSON.stringify(localRegistryDependencies(item.dependencies ? localRegistryItem(root, item, archiveByName, packs, cache, run) : item, url)));
+  try {
+    for (const [name, item] of closure) writeFileSync(join(directory, 'registry/r', `${name}.json`), JSON.stringify(localRegistryDependencies(root, item.dependencies ? localRegistryItem(root, item, archiveByName, packs, cache, run) : item, url)));
+  } catch (error) {
+    server.kill();
+    throw error;
+  }
   return { url, server };
 }

@@ -79,14 +79,18 @@ export function checkShippedRegistry(manifest, paths, { items = [], read } = {})
       for (const [, name, range] of value.matchAll(hachejPin)) if (!accepted(name, range)) errors.push(`Registry pin mismatch in r/${file}.json: ${name}@${range} (release ${manifest.version})`);
     } else if (value && typeof value === 'object') for (const child of Object.values(value)) pins(child, file);
   };
+  // Each item, and each item the registry index lists, names its dependencies as this release's URLs of shipped items.
+  const dependencies = (owner, item) => {
+    for (const dependency of item.registryDependencies ?? []) {
+      const local = releaseItem.exec(dependency)?.[2];
+      if (!local || !shipped.has(local)) errors.push(`Registry dependency not shipped in r/: ${owner} -> ${dependency}`);
+    }
+  };
   for (const name of shipped) {
     const json = read(`r/${name}.json`);
     pins(json, name);
-    if (name === 'registry') continue;
-    for (const dependency of json.registryDependencies ?? []) {
-      const local = releaseItem.exec(dependency)?.[2];
-      if (!local || !shipped.has(local)) errors.push(`Registry dependency not shipped in r/: ${name} -> ${dependency}`);
-    }
+    if (name === 'registry') for (const entry of json.items ?? []) dependencies(`registry index ${entry.name}`, entry);
+    else dependencies(name, json);
   }
   return errors;
 }
