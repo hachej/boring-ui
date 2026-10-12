@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
+import { workspacePath } from '@hachej/boring-files/file-types';
 import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
@@ -182,7 +183,7 @@ export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
 const SESSIONS_WIDTH = 288;
 const readFlag = (key: string): boolean => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } };
 const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
-const defaultLocate = (path: string): ResourceLocator => ({ resource: { providerId: 'workspace', path: path.replace(/^\/+/, '') }, view: { kind: 'published' } });
+const defaultLocate = (path: string): ResourceLocator => ({ resource: { providerId: 'workspace', path: workspacePath(path) }, view: { kind: 'published' } });
 
 /**
  * A complete agent page in one component: the sessions pane on the left (search, New, rename, archive, delete; collapsible, a drawer on

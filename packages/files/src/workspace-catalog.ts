@@ -4,6 +4,7 @@ import type { FileSystem } from '@earendil-works/pi-durable/env';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess } from './contracts.js';
 import { identifier, locator } from './publication-input.js';
+import { HIDDEN_NAMES, isTemporary } from './file-types.js';
 import { RevisionError } from './revision-contracts.js';
 import type { FileEntry, FilePage, WorkspaceCatalog, SavedRevision } from './revision-contracts.js';
 
@@ -15,8 +16,6 @@ export interface WorkspaceCatalogOptions {
   /** A traversal exceeding this bound fails explicitly; it never returns a silently incomplete page. */
   readonly maxEntries?: number;
 }
-const hidden = new Set(['.git', '.boring', 'node_modules', 'dist', 'build', '.cache', '.next', 'coverage', '__pycache__']);
-const temporary = /^\.boring-[0-9a-f-]{36}\.tmp$/;
 const inside = (root: string, path: string) => path === root || path.startsWith(root === '/' ? '/' : `${root}/`);
 export function catalogPath(path: string, allowRoot = false): string {
   if (allowRoot && path === '') return path;
@@ -58,9 +57,9 @@ export function createWorkspaceCatalog(options: {
   }
   function visible(entry: FileEntry, rules: Rules): boolean {
     const name = entry.path.slice(entry.path.lastIndexOf('/') + 1);
-    if (temporary.test(name)) return false;
+    if (isTemporary(name)) return false;
     if (config.defaults !== false) {
-      if (hidden.has(name)) return false;
+      if (HIDDEN_NAMES.has(name)) return false;
       let ignored = false;
       for (const rule of rules) {
         const relative = entry.path.slice(rule.directory ? rule.directory.length + 1 : 0) + (entry.kind === 'directory' ? '/' : '');

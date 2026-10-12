@@ -1,6 +1,7 @@
 /*
- * The one table of file types the agent package routes by. `read` (file-convert.ts) decides whether Pi's native read or the host's
- * converter handles a file; the mention resolver (mentions.ts) decides what to put in a message. Both ask `fileKind`.
+ * The file kinds the agent package routes by. `read` (file-convert.ts) decides whether Pi's native read or the host's converter
+ * handles a file; the mention resolver (mentions.ts) decides what to put in a message. Both ask `fileKind`.
+ * Media types, extensions and magic numbers come from `@hachej/boring-files/file-types`; this file only says which kind each is.
  *
  *  - `text`: Pi's native read, untouched.
  *  - `pdf`, `office`, `image`: a host converter can turn them into text; Pi's read cannot (it returns garbage for a PDF).
@@ -11,17 +12,15 @@
  * wrong name.
  */
 
+import { MEDIA_TYPES, extensionOf, sniffMediaType } from '@hachej/boring-files/file-types';
+
 export type FileKind = 'text' | 'pdf' | 'office' | 'image' | 'archive' | 'binary';
 
 const TEXT = ['md', 'markdown', 'txt', 'csv', 'tsv', 'json', 'jsonl', 'html', 'htm', 'svg', 'xml', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'css', 'py', 'sql', 'yaml', 'yml', 'sh', 'toml', 'ini', 'log', 'rst', 'tex'];
 const OFFICE = ['doc', 'docx', 'odt', 'rtf', 'xls', 'xlsx', 'ods', 'ppt', 'pptx', 'odp', 'epub'];
 
-/** Image extensions and their media types; `native` ones a model reads as an image part without conversion. */
-const IMAGES: Readonly<Record<string, { readonly mediaType: string; readonly native: boolean }>> = {
-  png: { mediaType: 'image/png', native: true }, jpg: { mediaType: 'image/jpeg', native: true }, jpeg: { mediaType: 'image/jpeg', native: true },
-  gif: { mediaType: 'image/gif', native: true }, webp: { mediaType: 'image/webp', native: true },
-  bmp: { mediaType: 'image/bmp', native: false }, tif: { mediaType: 'image/tiff', native: false }, tiff: { mediaType: 'image/tiff', native: false },
-};
+/** Image extensions; `native` ones a model reads as an image part without conversion. Their media types are `MEDIA_TYPES`. */
+const IMAGES: Readonly<Record<string, boolean>> = { png: true, jpg: true, jpeg: true, gif: true, webp: true, bmp: false, tif: false, tiff: false };
 
 const BY_EXTENSION: ReadonlyMap<string, FileKind> = new Map<string, FileKind>([
   ...TEXT.map(extension => [extension, 'text'] as const),
@@ -30,11 +29,8 @@ const BY_EXTENSION: ReadonlyMap<string, FileKind> = new Map<string, FileKind>([
   ['pdf', 'pdf'], ['zip', 'archive'],
 ]);
 
-/** The lower-case extension of the last path segment, or ''. */
-export const extensionOf = (path: string): string => { const dot = path.lastIndexOf('.'); return dot > path.lastIndexOf('/') ? path.slice(dot + 1).toLowerCase() : ''; };
-
 /** The media type of a native image (png, jpeg, gif, webp) by extension, or undefined. */
-export const nativeImageType = (path: string): string | undefined => { const image = IMAGES[extensionOf(path)]; return image?.native ? image.mediaType : undefined; };
+export const nativeImageType = (path: string): string | undefined => IMAGES[extensionOf(path)] ? MEDIA_TYPES[extensionOf(path)] : undefined;
 
 /** How many leading bytes `fileKind` looks at. */
 export const SNIFF_BYTES = 16;
@@ -43,9 +39,9 @@ const startsWith = (bytes: Uint8Array, signature: readonly number[], at = 0) => 
 
 /** The kind a magic number names, or undefined. A ZIP signature is an office document only under an office extension. */
 function kindByMagic(bytes: Uint8Array, extension: string): FileKind | undefined {
-  if (startsWith(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'pdf';
-  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47]) || startsWith(bytes, [0xff, 0xd8, 0xff]) || startsWith(bytes, [0x47, 0x49, 0x46, 0x38])
-    || (startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8)) || startsWith(bytes, [0x42, 0x4d]) && extension === 'bmp') return 'image';
+  const sniffed = sniffMediaType(bytes);
+  if (sniffed === 'application/pdf') return 'pdf';
+  if (sniffed?.startsWith('image/') || (startsWith(bytes, [0x42, 0x4d]) && extension === 'bmp')) return 'image';
   if (startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) return OFFICE.includes(extension) ? 'office' : 'archive';
   if (startsWith(bytes, [0xd0, 0xcf, 0x11, 0xe0])) return 'office';
   return undefined;
@@ -63,33 +59,15 @@ export function fileKind(path: string, head?: Uint8Array): FileKind {
   return named ?? 'text';
 }
 
-const OFFICE_TYPES: Readonly<Record<string, string>> = {
-  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation',
-  rtf: 'application/rtf', epub: 'application/epub+zip',
-};
-
-/** The media type a file's leading bytes name (a PDF or an image signature), or undefined. */
-export function sniffedMediaType(head: Uint8Array): string | undefined {
-  if (startsWith(head, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'application/pdf';
-  if (startsWith(head, [0x89, 0x50, 0x4e, 0x47])) return 'image/png';
-  if (startsWith(head, [0xff, 0xd8, 0xff])) return 'image/jpeg';
-  if (startsWith(head, [0x47, 0x49, 0x46, 0x38])) return 'image/gif';
-  if (startsWith(head, [0x52, 0x49, 0x46, 0x46]) && startsWith(head, [0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
-  return undefined;
-}
-
 /**
  * The media type a converter should be told. A signature in the leading bytes wins over everything (a PDF named `.txt` is
  * `application/pdf`, whatever the provider derived from the name); then the provider's type unless it is generic; then the table's.
  */
 export function mediaTypeFor(path: string, kind: FileKind, provided: string | undefined, head?: Uint8Array): string {
-  const sniffed = head === undefined ? undefined : sniffedMediaType(head);
+  const sniffed = head === undefined ? undefined : sniffMediaType(head);
   if (sniffed !== undefined) return sniffed;
   const extension = extensionOf(path);
-  const table = kind === 'pdf' ? 'application/pdf' : kind === 'image' ? IMAGES[extension]?.mediaType : kind === 'office' ? OFFICE_TYPES[extension] : undefined;
+  const table = kind === 'pdf' ? MEDIA_TYPES.pdf : kind === 'image' && IMAGES[extension] !== undefined ? MEDIA_TYPES[extension] : kind === 'office' && OFFICE.includes(extension) ? MEDIA_TYPES[extension] : undefined;
   const generic = !provided || provided === 'application/octet-stream' || provided.startsWith('text/') || provided === 'application/zip';
   if (!generic) return provided;
   return table ?? provided ?? 'application/octet-stream';

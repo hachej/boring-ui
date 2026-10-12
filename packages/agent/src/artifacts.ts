@@ -3,6 +3,7 @@ import type { ToolExecutionApi } from '@earendil-works/pi-durable';
 import { Type } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess, ResourceLocator } from '@hachej/boring-files';
+import { workspacePath } from '@hachej/boring-files/file-types';
 import { asWorkspaceResolver, workspaceFor } from './workspaces.js';
 import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
 
@@ -118,7 +119,7 @@ export function createPresentTool(options: PresentToolOptions = {}) {
     parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 512, description: 'The file path, relative to the workspace.' }) }, { additionalProperties: false }),
     replay: 'safe',
     execute: async (args, api, context) => {
-      const path = args.path.replace(/^\.\//, '');
+      const path = workspacePath(args.path);
       const resolved = await workspaceFor(resolver, api, context);
       if ('refused' in resolved) return reply({ kind: 'denied', reason: resolved.refused });
       const { files } = resolved.binding;

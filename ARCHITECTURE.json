@@ -208,6 +208,7 @@
       "runtimePackageImports": {
         "files": [
           "@hachej/boring-files",
+          "@hachej/boring-files/file-types",
           "@hachej/boring-files/git",
           "@hachej/boring-files/platform",
           "@hachej/boring-files/request-guard"

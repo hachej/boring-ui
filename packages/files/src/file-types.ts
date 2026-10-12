@@ -1,6 +1,7 @@
 /**
- * The one place boring-files says what a file is: its extension, its media type, the viewer that opens it, the rule for the
- * provider's own temporary files and the name of a new upload. Callers import these; none keeps a copy.
+ * The one place boring-files says what a file is: its extension, its media type (by name and by leading bytes), the viewer that
+ * opens it, the provider's temporary and hidden names, the workspace path a user or agent typed, and the name of a new upload.
+ * Callers import these; none keeps a copy. Pure: no Node, no DOM.
  */
 
 /** The lower-case extension of the last path segment, or ''. */
@@ -21,6 +22,17 @@ export const MEDIA_TYPES: Readonly<Record<string, string>> = {
 /** The IANA media type of a path, `application/octet-stream` when unknown. */
 export const mediaTypeOf = (path: string): string => MEDIA_TYPES[extensionOf(path)] ?? 'application/octet-stream';
 
+/** The media type a file's leading bytes name (a PDF, PNG, JPEG, GIF or WebP signature), or undefined. */
+export function sniffMediaType(head: Uint8Array): string | undefined {
+  const at = (signature: readonly number[], offset = 0) => signature.every((byte, index) => head[offset + index] === byte);
+  if (at([0x25, 0x50, 0x44, 0x46, 0x2d])) return 'application/pdf';
+  if (at([0x89, 0x50, 0x4e, 0x47])) return 'image/png';
+  if (at([0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (at([0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+  if (at([0x52, 0x49, 0x46, 0x46]) && at([0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
+  return undefined;
+}
+
 /** Which viewer opens a file. Anything not listed is shown as text when it decodes. */
 export type ViewerKind = 'markdown' | 'html' | 'canvas' | 'image' | 'pdf' | 'text';
 
@@ -33,10 +45,21 @@ const VIEWER_KINDS: Readonly<Record<string, ViewerKind>> = {
 /** The viewer kind of a path: `markdown`, `html`, `canvas`, `image`, `pdf` or `text`. */
 export const viewerKindOf = (path: string): ViewerKind => VIEWER_KINDS[extensionOf(path)] ?? 'text';
 
-/** The provider's own temporary files. They are removed when the provider opens and are never a resource. */
+/** Binary viewers never decode a file as text, whatever its bytes look like (an SVG is text). */
+export const isBinaryKind = (path: string): boolean => ['image', 'pdf'].includes(viewerKindOf(path)) && extensionOf(path) !== 'svg';
+
+/** The provider's temporary files are named `.boring-<uuid>.tmp` beside their target. They are removed when the provider opens and are never a resource. */
 const temporaryPattern = /^\.boring-[0-9a-f-]{36}\.tmp$/;
-/** Whether a path is one of the provider's temporary files (a lister hides them). */
-export const isTemporary = (path: string) => temporaryPattern.test(path.slice(path.lastIndexOf('/') + 1));
+/** The basename of a new temporary file, for a provider's `uuid`. */
+export const temporaryFileName = (uuid: string): string => `.boring-${uuid}.tmp`;
+/** Whether a path's last segment is one of the provider's temporary files (a lister hides them). */
+export const isTemporary = (path: string): boolean => temporaryPattern.test(path.slice(path.lastIndexOf('/') + 1));
+
+/** Names a presentation listing hides by default (dependency, build and internal folders, and the provider's own). Not an access policy. */
+export const HIDDEN_NAMES: ReadonlySet<string> = new Set(['.git', '.boring', 'node_modules', 'dist', 'build', '.cache', '.next', 'coverage', '__pycache__']);
+
+/** A path as a person or agent typed it, as a workspace-relative resource path: leading `./` and `/` segments removed. */
+export const workspacePath = (path: string): string => path.replace(/^(\.?\/)+/, '');
 
 /** A new upload's workspace path: `uploads/<stem>-<8 hex>.<ext>`, so a second `image.png` (every pasted screenshot has that name) is a new file beside the first. Whitespace becomes `_`, because a chat mention ends at a space. */
 export function uploadPath(name: string, randomSuffix: string): string {
@@ -45,6 +68,3 @@ export function uploadPath(name: string, randomSuffix: string): string {
   const safe = (part: string) => part.replace(/\s+/g, '_');
   return `uploads/${safe(stem)}-${randomSuffix}${safe(extension)}`;
 }
-
-/** Binary viewers never decode a file as text, whatever its bytes look like (an SVG is text). */
-export const isBinaryKind = (path: string): boolean => ['image', 'pdf'].includes(viewerKindOf(path)) && extensionOf(path) !== 'svg';
