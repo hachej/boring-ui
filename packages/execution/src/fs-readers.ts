@@ -6,18 +6,27 @@ import { FileError, LineScanner, ok, err } from '@earendil-works/pi-durable/env'
 import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result } from '@earendil-works/pi-durable/env';
 import type { Context } from '@earendil-works/chord';
 
-type Source = Pick<FileSystem, 'readBinaryFile' | 'fileInfo' | 'listDir'>;
+type Source = Pick<FileSystem, 'readBinaryFile' | 'fileInfo' | 'listDir' | 'canonicalPath'>;
 
 export function snapshotReaders(source: Source): Pick<FileSystem, 'openBinaryReader' | 'openDirReader' | 'watch'> {
   const guard = (closed: boolean, path: string, context: Context): FileError | undefined =>
     context.abortSignal?.aborted ? new FileError('aborted', 'Operation aborted', path) : closed ? new FileError('invalid', 'Reader is closed', path) : undefined;
   return {
-    openBinaryReader: async (path, _options, context): Promise<Result<BinaryReader, FileError>> => {
-      const info = await source.fileInfo(path, context);
+    openBinaryReader: async (path, options, context): Promise<Result<BinaryReader, FileError>> => {
+      // `fileInfo` describes the final path itself. A symbolic link is followed unless the caller refuses it (`noFollow`).
+      const link = await source.fileInfo(path, context);
+      if (!link.ok) return link;
+      let resolved = path;
+      if (link.value.kind === 'symlink' && !options?.noFollow) {
+        const canonical = await source.canonicalPath(path, context);
+        if (!canonical.ok) return canonical;
+        resolved = canonical.value;
+      }
+      const info = resolved === path ? link : await source.fileInfo(resolved, context);
       if (!info.ok) return info;
       if (info.value.kind === 'directory') return err(new FileError('is_directory', 'EISDIR: illegal operation on a directory', path));
       if (info.value.kind !== 'file') return err(new FileError('invalid', 'Not a regular file', path));
-      const content = await source.readBinaryFile(path, context);
+      const content = await source.readBinaryFile(resolved, context);
       if (!content.ok) return content;
       const bytes = content.value, opened: FileInfo = { ...info.value, size: bytes.length };
       let closed = false;
@@ -43,18 +52,27 @@ export function snapshotReaders(source: Source): Pick<FileSystem, 'openBinaryRea
       });
     },
     openDirReader: async (path, context): Promise<Result<DirReader, FileError>> => {
-      const listed = await source.listDir(path, context);
+      // Resolve the directory once: a later change of the environment's cwd must not move this reader to another directory.
+      const directory = await source.canonicalPath(path, context);
+      if (!directory.ok) return directory;
+      const listed = await source.listDir(directory.value, context);
       if (!listed.ok) return listed;
-      const entries = listed.value.filter(entry => entry.kind === 'file' || entry.kind === 'directory' || entry.kind === 'symlink');
+      const prefix = directory.value === '/' ? '' : directory.value;
+      const pending = listed.value.filter(entry => entry.kind === 'file' || entry.kind === 'directory' || entry.kind === 'symlink').map(entry => `${prefix}/${entry.name}`);
       let offset = 0, closed = false;
       return ok({
         next: async (maxEntries, inner) => {
           const failed = guard(closed, path, inner);
           if (failed) return err(failed);
           if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) return err(new FileError('invalid', 'maxEntries must be a positive integer', path));
-          const page = entries.slice(offset, offset + maxEntries);
-          offset += page.length;
-          return ok({ entries: page, done: offset >= entries.length });
+          // Stat only the entries this page consumes; an entry removed since the open is skipped, as Pi's readers allow.
+          const page: FileInfo[] = [];
+          while (page.length < maxEntries && offset < pending.length) {
+            const info = await source.fileInfo(pending[offset++]!, inner);
+            if (info.ok) page.push(info.value);
+            else if (info.error.code !== 'not_found') return err(info.error);
+          }
+          return ok({ entries: page, done: offset >= pending.length });
         },
         close: async () => { closed = true; },
       });
