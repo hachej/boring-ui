@@ -49,7 +49,7 @@
 [data-boring="feedback"].boring-feedback-list li button:hover, [data-boring="feedback"].boring-feedback-list li button[aria-current="true"] { background: var(--accent); }
 [data-boring="feedback"] .boring-feedback-title { font-weight: var(--font-weight-semibold, 600); }
 [data-boring="feedback"] .boring-feedback-meta { margin: 0; color: var(--boring-feedback-muted); font-size: var(--text-sm, 0.875rem); }
-[data-boring="feedback"] [data-status="addressed"] { color: var(--success); }
+[data-boring="feedback"] [data-status="addressed"] { color: var(--success, var(--primary)); }
 [data-boring="feedback"] .boring-feedback-empty { margin: 0; color: var(--boring-feedback-muted); }
 [data-boring="feedback"] .boring-feedback-said { margin: 0; white-space: pre-wrap; }
 [data-boring="feedback"] .boring-feedback-anchors { display: flex; flex-direction: column; gap: 0.5rem; margin: 0; padding-left: 1.25rem; }

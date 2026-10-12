@@ -73,9 +73,9 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
   const approved = state === 'approved' || state === 'approved-sent', denied = state === 'denied' || state === 'denied-sent';
 
   return <section data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded}
-    className={cn('my-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs', open ? 'border-warning/60' : 'border-border')}>
+    className={cn('my-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs', open ? 'border-(--chat-warning)/60' : 'border-border')}>
     <div className="flex items-start gap-3">
-      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', open ? 'bg-warning-soft text-warning-soft-foreground' : denied ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
+      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', open ? 'bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)' : denied ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
         {approved ? <CheckIcon className="size-4" aria-hidden="true" /> : denied ? <XIcon className="size-4" aria-hidden="true" /> : <ShieldAlertIcon className="size-4" aria-hidden="true" />}
       </span>
       <div className="min-w-0 flex-1">

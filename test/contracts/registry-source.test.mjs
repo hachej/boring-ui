@@ -64,13 +64,10 @@ test('registry dependency pins and scoped styles preserve the declared source di
       assert.equal(item.type, 'registry:theme');
       assert.equal(item.files, undefined); assert.equal(item.dependencies, undefined); assert.equal(item.css, undefined);
       const { theme, light, dark } = item.cssVars;
-      // Shape and motion tokens (boring-app web/src/index.css) are the same in light and dark.
-      const SCHEME_FREE = ['radius', 'border-width', 'duration-fast', 'duration-normal', 'duration-slow', 'ease-standard'];
-      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => !SCHEME_FREE.includes(name)).sort(), 'dark redefines every color token');
+      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius').sort(), 'dark redefines every color token');
       for (const [name, value] of Object.entries(theme)) {
         const used = /^var\(--([\w-]+)\)$/.exec(value)?.[1] ?? /var\(--([\w-]+)\)/.exec(value)?.[1];
-        // `font-display` binds Tailwind's own `--font-sans`, as the app does.
-        assert.ok(used && (used in light || used === 'font-sans'), `${name} binds a token of the theme`);
+        assert.ok(used && used in light, `${name} binds a token of the theme`);
       }
       for (const token of ['background', 'foreground', 'muted', 'muted-foreground', 'border', 'ring', 'primary', 'primary-foreground', 'destructive', 'radius']) assert.ok(token in light, token);
       continue;

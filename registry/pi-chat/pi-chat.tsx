@@ -100,7 +100,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   const { labels } = useChatText();
   const live = kind === 'connected';
   return <span data-testid="connection" data-state={kind} role="status" className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
-    <span aria-hidden="true" className={cn('size-1.5 rounded-full', live ? 'bg-success' : 'animate-pulse bg-warning motion-reduce:animate-none')} />
+    <span aria-hidden="true" className={cn('size-1.5 rounded-full', live ? 'bg-(--chat-success)' : 'animate-pulse bg-(--chat-warning) motion-reduce:animate-none')} />
     {live ? labels.live : kind === 'connecting' || kind === 'idle' ? labels.connecting : labels.reconnecting}
   </span>;
 }
@@ -131,7 +131,7 @@ function PiChatSession({ controller, mode = 'expert', className, actions, avatar
     <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
-      <h2 className="m-0 min-w-0 flex-1 truncate font-display text-sm font-semibold tracking-tight">{title}</h2>
+      <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{title}</h2>
       {showHistory && (conversations && historyList
         ? <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
           onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>
@@ -173,7 +173,7 @@ function PiChatSession({ controller, mode = 'expert', className, actions, avatar
     <footer className="shrink-0 px-3 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4">
       <div className="mx-auto w-full max-w-3xl space-y-2">
         <div aria-live="polite" className="space-y-2 empty:hidden">
-          {working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground"><span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-success motion-reduce:animate-none" />
+          {working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground"><span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-(--chat-success) motion-reduce:animate-none" />
             <Shimmer active={!waitingForAnswer}>{waitingForAnswer ? labels.waitingForAnswer : retry ? labels.retryPending : labels.agentWorking}</Shimmer></p>}
           {derived.compacting && <p role="status" className="m-0 px-1 text-xs text-muted-foreground">{labels.compacting}</p>}
           <ChatNotices state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />

@@ -170,7 +170,7 @@ function ElementLine({ request, label, source, onShowFeedback, onHideFeedback, i
   const readable = readableElement(label, source);
   const badge = state === 'showing' ? <span data-testid="feedback-outcome" role="status" className="shrink-0 text-xs text-muted-foreground">looking…</span>
     : outcome ? <span data-testid="feedback-outcome" role="status" title={outcome.reason ?? 'Shown in the page.'} data-outcome={outcome.kind}
-      className={cn('inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 text-xs leading-normal font-normal', outcome.kind === 'applied' ? 'text-success' : 'bg-muted text-muted-foreground')}>
+      className={cn('inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 text-xs leading-normal font-normal', outcome.kind === 'applied' ? 'text-(--chat-success)' : 'bg-muted text-muted-foreground')}>
       {outcome.kind === 'applied' ? <><CheckIcon className="size-3" aria-hidden="true" />{outcomeBadge(outcome).slice(1).trim() || <span className="sr-only">shown in the page</span>}</> : outcomeBadge(outcome)}</span>
       : children;
   const text = <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">

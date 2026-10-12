@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readdirSync, readFileSync } from 'node:fs';
 
-// The chat and feedback items take every visual value from the app's token set (hachej/boring-app web/src/index.css at f57053e):
-// the Tailwind type scale, weights, leading and tracking, the --radius tiers, --shadow-*, --border-width, --font-display/--font-mono,
-// --duration-*/--ease-standard and the --success/--warning/--info colours. Fallbacks are the shadcn defaults.
+// The chat and feedback items inherit the app's style from its shadcn roles and Tailwind's token-backed utilities only (type scale,
+// weights, leading, tracking, the --radius tiers, --shadow-*, font-sans/mono, default border width and transition). The template
+// extras of hachej/boring-app (web/src/index.css at f57053e: --success/--warning/--info and their soft variants, --font-display,
+// --border-width) are optional: read only through a kit derivation whose fallback is a shadcn role, so an app that sets only its
+// shadcn roles gets a matching chat.
 const root = new URL('../../', import.meta.url);
 const read = path => readFileSync(new URL(path, root), 'utf8');
 const ITEMS = ['pi-chat', 'pi-ambient', 'pi-workspace', 'feedback', 'feedback-preview', 'button'];
@@ -42,17 +44,33 @@ test('rounded-full only on pills (text with horizontal padding), status dots and
   }
 });
 
-test('the status colours are the app tokens: success/warning/info with foreground and soft variants, in the theme item', () => {
-  const theme = JSON.parse(read('registry.json')).items.find(item => item.name === 'theme').cssVars;
-  for (const status of ['success', 'warning', 'info']) for (const part of ['', '-foreground', '-soft', '-soft-foreground']) {
-    assert.ok(theme.light[status + part] && theme.dark[status + part], `${status}${part} light and dark`);
-    assert.equal(theme.theme[`color-${status}${part}`], `var(--${status}${part})`);
+test('template extras are optional: the kit derives them from shadcn roles and the theme item requires none', () => {
+  const registry = JSON.parse(read('registry.json'));
+  const theme = registry.items.find(item => item.name === 'theme').cssVars;
+  const EXTRA = /^(success|warning|info)|^(font-display|border-width|duration-|ease-standard|default-)/;
+  for (const scope of ['light', 'dark', 'theme']) for (const name of Object.keys(theme[scope])) assert.doesNotMatch(name.replace(/^color-/, ''), EXTRA, `theme item ${scope} adds ${name}`);
+  // Core extras fall back to a shadcn role; the soft variants mirror hachej/boring-app web/src/theme.derived.css (ec044d6) exactly.
+  const layer = registry.items.find(item => item.name === 'pi-chat').css['@layer components'];
+  const light = layer['.pi-chat'], dark = layer['.pi-chat:is(.dark, .dark *)'];
+  assert.deepEqual(light, {
+    '--chat-success': 'var(--success, var(--primary))',
+    '--chat-warning': 'var(--warning, var(--muted-foreground))',
+    '--chat-warning-soft': 'var(--warning-soft, color-mix(in oklab, var(--chat-warning) 15%, var(--background)))',
+    '--chat-warning-soft-foreground': 'var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 75%, var(--foreground)))',
+    '--chat-display': 'var(--font-display, var(--font-sans))',
+  });
+  assert.deepEqual(dark, {
+    '--chat-warning-soft': 'var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))',
+    '--chat-warning-soft-foreground': 'var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 55%, var(--foreground)))',
+  });
+  const derived = light;
+  for (const path of sources) {
+    const source = read(path);
+    assert.doesNotMatch(source, /\b(bg|text|border|ring|fill)-(success|warning|info)(-soft)?(-foreground)?\b|\bfont-display\b/, `${path} reads a template extra without a fallback (use --chat-*)`);
+    for (const [, name] of source.matchAll(/\(--(?:family-name:)?(?:--)?([\w-]+)\)/g)) if (name.startsWith('chat-')) assert.ok(`--${name}` in derived, `${path}: --${name} is derived in the pi-chat css`);
   }
-  for (const [token, value] of Object.entries({ 'border-width': '1px', 'duration-fast': '100ms', 'duration-normal': '150ms', 'duration-slow': '300ms', 'ease-standard': 'cubic-bezier(0.4, 0, 0.2, 1)' })) assert.equal(theme.light[token], value, token);
-  assert.equal(theme.theme['font-display'], 'var(--font-sans)');
-  assert.equal(theme.theme['default-border-width'], 'var(--border-width)');
-  assert.equal(theme.theme['default-transition-duration'], 'var(--duration-normal)');
-  assert.equal(theme.theme['default-transition-timing-function'], 'var(--ease-standard)');
+  const css = `${read('registry/feedback/feedback.css')}\n${read('registry/feedback/picker-overlay.ts')}`;
+  for (const [use, name] of css.matchAll(/var\(--(success|warning|info|font-display|border-width|shadow-\w+|radius-\w+|text-\w+|font-weight-\w+|leading-\w+|tracking-\w+|font-mono|ease-standard)\b[^,)]*\)/g)) assert.fail(`${use}: --${name} is read without a fallback`);
 });
 
 test('feedback.css reads the scale with shadcn-default fallbacks: no px text, fixed weights, literal shadows or 1px borders', () => {
@@ -61,7 +79,7 @@ test('feedback.css reads the scale with shadcn-default fallbacks: no px text, fi
   for (const declaration of css.match(/font-weight:[^;]+/g)) assert.match(declaration, /^font-weight: var\(--font-weight-(normal|medium|semibold|bold), \d00\)$/, declaration);
   for (const declaration of css.match(/box-shadow:[^;]+/g)) assert.match(declaration, /^box-shadow: (none|var\(--boring-feedback-shadow\)|0 0 0 0 .*)$/, declaration);
   assert.doesNotMatch(css, /border: 1px|ui-monospace, SFMono-Regular, Menlo, monospace;|\bfont: \d/, 'borders and fonts come from --border-width and --font-mono');
-  assert.match(css, /\[data-status="addressed"\] \{ color: var\(--success\); \}/);
+  assert.match(css, /\[data-status="addressed"\] \{ color: var\(--success, var\(--primary\)\); \}/);
   assert.doesNotMatch(`${css}\n${overlay}`, /--(control-height|touch-target-min|ring-width|ring-offset)\b/);
   assert.doesNotMatch(overlay, /box-shadow: (?!var\(--shadow-|0 0 0 )|\bease-out\b|border-radius: \d/, 'the overlay reads --shadow-*, --ease-standard and --radius-sm');
 });

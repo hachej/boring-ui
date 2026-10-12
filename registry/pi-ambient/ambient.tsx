@@ -401,7 +401,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
     !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
   const rootClass = cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
-    : cn('transition-[width] duration-(--duration-normal) motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
+    : cn('transition-[width] motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
   const rootStyle = phone ? undefined : { right: placed.right, bottom: placed.bottom };
 
   if (minimized) return <div ref={root} data-boring="ambient-chat" data-state="minimized" data-variant={variant} className={cn(rootClass, phone && 'flex justify-end')} style={rootStyle} onKeyDown={onKeyDown}>
@@ -442,7 +442,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
         </span>
         {avatar && <span data-testid="ambient-avatar" className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
         <button ref={titleButton} type="button" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
-          className="min-w-0 max-w-full cursor-pointer truncate rounded-md px-1 py-1 text-left font-display text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
+          className="min-w-0 max-w-full cursor-pointer truncate rounded-md px-1 py-1 text-left font-(family-name:--chat-display) text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
         {conversations && <button type="button" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}
           className={cn(iconButton, 'size-7 max-sm:size-11')}><icons.switchConversation className="size-3.5" aria-hidden="true" /></button>}
         {expanded ? <span className="flex-1" /> : <button type="button" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="h-full min-w-2 flex-1 cursor-pointer" />}

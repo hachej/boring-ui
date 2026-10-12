@@ -79,7 +79,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
   return <div data-testid="activity" data-boring="activity" data-state={state} data-open={open ? 'true' : 'false'} className="my-1.5">
     <button type="button" aria-expanded={open} onClick={() => setChosen(!open)}
       className="flex h-9 w-full cursor-pointer items-center gap-2 max-sm:h-10 pointer-coarse:h-10 rounded-lg border border-border bg-muted/40 px-3 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:transition-none">
-      {Icon ? <Icon aria-hidden="true" className={cn('size-3.5 shrink-0', state === 'failed' ? 'text-destructive' : state === 'done' ? 'text-success' : '')} />
+      {Icon ? <Icon aria-hidden="true" className={cn('size-3.5 shrink-0', state === 'failed' ? 'text-destructive' : state === 'done' ? 'text-(--chat-success)' : '')} />
         : <Loader2Icon aria-hidden="true" className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />}
       <span data-testid="activity-label" aria-live={state === 'running' ? 'off' : undefined} className={cn('min-w-0 flex-1 truncate', state === 'failed' && 'text-destructive')}>
         <Shimmer active={state === 'running'}>{label}</Shimmer></span>

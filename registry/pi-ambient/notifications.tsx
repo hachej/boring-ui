@@ -123,8 +123,8 @@ export function watchConversation(controller: NativeChatController, store: Notif
 }
 
 const ICONS = {
-  done: { Icon: CircleCheckIcon, label: 'finished', tone: 'text-success' },
-  input: { Icon: MessageCircleQuestionIcon, label: 'needsInput', tone: 'text-warning' },
+  done: { Icon: CircleCheckIcon, label: 'finished', tone: 'text-(--chat-success)' },
+  input: { Icon: MessageCircleQuestionIcon, label: 'needsInput', tone: 'text-(--chat-warning)' },
   error: { Icon: CircleAlertIcon, label: 'failedRun', tone: 'text-destructive' },
 } as const;
 

@@ -25,7 +25,7 @@ export function preview(args: ToolCall['arguments']): string {
 export function StatusIcon({ status, className }: { readonly status: ToolStatus; readonly className?: string }) {
   const cls = cn('size-4 shrink-0', className);
   if (status === 'running') return <Loader2Icon aria-hidden="true" className={cn(cls, 'animate-spin text-muted-foreground motion-reduce:animate-none')} />;
-  if (status === 'completed') return <CheckCircle2Icon aria-hidden="true" className={cn(cls, 'text-success')} />;
+  if (status === 'completed') return <CheckCircle2Icon aria-hidden="true" className={cn(cls, 'text-(--chat-success)')} />;
   if (status === 'failed') return <AlertCircleIcon aria-hidden="true" className={cn(cls, 'text-destructive')} />;
   return <CircleDashedIcon aria-hidden="true" className={cn(cls, 'text-muted-foreground')} />;
 }

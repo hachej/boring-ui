@@ -152,7 +152,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       </div>}
       <aside data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
-        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-[transform,opacity] duration-(--duration-normal) ease-(--ease-standard) motion-reduce:transition-none',
+        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-[transform,opacity] motion-reduce:transition-none',
           sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : 'shrink-0 border-l border-border',
           entered ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0', dragging && 'pointer-events-none select-none')}>
         {typeof panel === 'function' ? panel(api) : panel}

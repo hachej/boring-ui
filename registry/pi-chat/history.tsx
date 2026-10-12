@@ -194,7 +194,7 @@ export function ConversationHistory({ conversations, onClose, onBrowseEarlier, p
         placement === 'above' ? 'sm:bottom-full sm:left-0 sm:mb-2 sm:max-h-[min(26rem,60dvh)]' : 'sm:top-12 sm:right-3 sm:max-h-[min(34rem,calc(100%-4rem))]')}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5 max-sm:pt-[max(0.625rem,env(safe-area-inset-top))]">
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="sm:hidden"><ArrowLeftIcon className="size-4" aria-hidden="true" /></Button>
-        <h3 className="m-0 min-w-0 flex-1 font-display text-sm font-semibold tracking-tight">{labels.history}</h3>
+        <h3 className="m-0 min-w-0 flex-1 font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{labels.history}</h3>
         {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew!(); onClose(); }}><icons.newChat className="size-3.5" aria-hidden="true" />{labels.newConversation}</Button>}
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-sm:hidden"><XIcon className="size-4" aria-hidden="true" /></Button>
       </header>
@@ -233,7 +233,7 @@ export function HistoryPanel({ history, developer, connected, onLoad, onClose, r
   return <section aria-label={labels.earlierMessages} data-testid="history" aria-live="off" className="shrink-0 border-b border-border bg-muted/20">
     <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2">
       <icons.history className="size-4 text-muted-foreground" aria-hidden="true" />
-      <h3 className="m-0 min-w-0 flex-1 truncate font-display text-sm font-medium">{labels.earlierMessages} <span className="font-normal text-muted-foreground">{labels.readOnly}</span></h3>
+      <h3 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium">{labels.earlierMessages} <span className="font-normal text-muted-foreground">{labels.readOnly}</span></h3>
       <Button size="sm" variant="outline" data-testid="history-load" onClick={onLoad} disabled={!connected || history.kind === 'loading' || history.kind === 'disabled' || exhausted}>
         {history.kind === 'error' ? labels.retry : history.kind === 'loading' ? labels.loadingShort : labels.loadEarlier}</Button>
       <Button size="icon-sm" aria-label={labels.returnToConversation} title={labels.returnToConversation} onClick={onClose}><XIcon className="size-4" aria-hidden="true" /></Button>

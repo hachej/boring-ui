@@ -7,7 +7,7 @@
       "name": "theme",
       "type": "registry:theme",
       "title": "Theme",
-      "description": "The shadcn tokens every Tailwind item is styled with (neutral base, light and dark, plus the status colours, border width and motion tokens of the app design system) and their Tailwind v4 `@theme inline` bindings. The CLI adds only the tokens the host does not define yet. The examples compile the same values (examples/studio/tailwind.mjs).",
+      "description": "The shadcn tokens every Tailwind item is styled with (neutral base, light and dark) and their Tailwind v4 `@theme inline` bindings. The CLI adds only the tokens the host does not define yet. The examples compile the same values (examples/studio/tailwind.mjs).",
       "cssVars": {
         "theme": {
           "color-background": "var(--background)",
@@ -31,23 +31,7 @@
           "radius-sm": "calc(var(--radius) - 4px)",
           "radius-md": "calc(var(--radius) - 2px)",
           "radius-lg": "var(--radius)",
-          "radius-xl": "calc(var(--radius) + 4px)",
-          "color-success": "var(--success)",
-          "color-success-foreground": "var(--success-foreground)",
-          "color-success-soft": "var(--success-soft)",
-          "color-success-soft-foreground": "var(--success-soft-foreground)",
-          "color-warning": "var(--warning)",
-          "color-warning-foreground": "var(--warning-foreground)",
-          "color-warning-soft": "var(--warning-soft)",
-          "color-warning-soft-foreground": "var(--warning-soft-foreground)",
-          "color-info": "var(--info)",
-          "color-info-foreground": "var(--info-foreground)",
-          "color-info-soft": "var(--info-soft)",
-          "color-info-soft-foreground": "var(--info-soft-foreground)",
-          "font-display": "var(--font-sans)",
-          "default-border-width": "var(--border-width)",
-          "default-transition-duration": "var(--duration-normal)",
-          "default-transition-timing-function": "var(--ease-standard)"
+          "radius-xl": "calc(var(--radius) + 4px)"
         },
         "light": {
           "radius": "0.75rem",
@@ -69,24 +53,7 @@
           "border": "oklch(0.92 0.004 286.32)",
           "input": "oklch(0.89 0.005 286.32)",
           "ring": "oklch(0.55 0.02 286.067)",
-          "shell": "oklch(0.975 0.002 286)",
-          "success": "oklch(0.527 0.154 150.069)",
-          "success-foreground": "oklch(0.985 0 0)",
-          "success-soft": "oklch(0.962 0.044 156.743)",
-          "success-soft-foreground": "oklch(0.448 0.119 151.328)",
-          "warning": "oklch(0.555 0.163 48.998)",
-          "warning-foreground": "oklch(0.985 0 0)",
-          "warning-soft": "oklch(0.962 0.059 95.617)",
-          "warning-soft-foreground": "oklch(0.473 0.137 46.201)",
-          "info": "oklch(0.488 0.243 264.376)",
-          "info-foreground": "oklch(0.985 0 0)",
-          "info-soft": "oklch(0.932 0.032 255.585)",
-          "info-soft-foreground": "oklch(0.424 0.199 265.638)",
-          "border-width": "1px",
-          "duration-fast": "100ms",
-          "duration-normal": "150ms",
-          "duration-slow": "300ms",
-          "ease-standard": "cubic-bezier(0.4, 0, 0.2, 1)"
+          "shell": "oklch(0.975 0.002 286)"
         },
         "dark": {
           "background": "oklch(0.175 0.006 285.885)",
@@ -107,19 +74,7 @@
           "border": "oklch(1 0 0 / 11%)",
           "input": "oklch(1 0 0 / 16%)",
           "ring": "oklch(0.65 0.02 286.067)",
-          "shell": "oklch(0.13 0.005 285.823)",
-          "success": "oklch(0.627 0.194 149.214)",
-          "success-foreground": "oklch(0.145 0 0)",
-          "success-soft": "oklch(0.266 0.065 152.934)",
-          "success-soft-foreground": "oklch(0.871 0.15 154.449)",
-          "warning": "oklch(0.769 0.188 70.08)",
-          "warning-foreground": "oklch(0.145 0 0)",
-          "warning-soft": "oklch(0.279 0.077 45.635)",
-          "warning-soft-foreground": "oklch(0.924 0.12 95.746)",
-          "info": "oklch(0.707 0.165 254.624)",
-          "info-foreground": "oklch(0.145 0 0)",
-          "info-soft": "oklch(0.282 0.091 267.935)",
-          "info-soft-foreground": "oklch(0.882 0.059 254.128)"
+          "shell": "oklch(0.13 0.005 285.823)"
         }
       }
     },
@@ -650,6 +605,17 @@
           }
         },
         "@layer components": {
+          ".pi-chat": {
+            "--chat-success": "var(--success, var(--primary))",
+            "--chat-warning": "var(--warning, var(--muted-foreground))",
+            "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 15%, var(--background)))",
+            "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 75%, var(--foreground)))",
+            "--chat-display": "var(--font-display, var(--font-sans))"
+          },
+          ".pi-chat:is(.dark, .dark *)": {
+            "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))",
+            "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 55%, var(--foreground)))"
+          },
           ".pi-chat-shimmer": {
             "background-image": "linear-gradient(100deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%)",
             "background-size": "250% 100%",
@@ -1789,7 +1755,7 @@
           "font-size": "var(--text-sm, 0.875rem)"
         },
         "[data-boring=\"feedback\"] [data-status=\"addressed\"]": {
-          "color": "var(--success)"
+          "color": "var(--success, var(--primary))"
         },
         "[data-boring=\"feedback\"] .boring-feedback-empty": {
           "margin": "0",
