@@ -532,6 +532,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   let watcher: Promise<FileWatcher | undefined> | undefined;
   // True once the current watcher is open: every change from then on reaches the feed (the search index relies on it).
   let armed = false;
+  // Raw watcher notifications so far: the search index is invalidated at once, before the watcher's events are processed below.
+  let noticed = 0;
   let watchUnsupported = false, watchedBefore = false;
   let linger: ReturnType<typeof setTimeout> | undefined;
   let watchWork: Promise<void> = Promise.resolve();
@@ -556,6 +558,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     emit({ path, revision, source: 'watch' });
   }
   function onWatch(change: WatchChange): void {
+    noticed += 1;
     if ('paths' in change) {
       const paths = [...change.paths];
       watchWork = watchWork.then(async () => { for (const path of paths) await watched(path).catch(() => undefined); });
@@ -573,7 +576,9 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     // Changes made while nobody watched were not seen: a listener resuming from before that reloads.
     if (watchedBefore) append({ kind: 'resnapshot' });
     watchedBefore = true;
-    const opening: Promise<FileWatcher | undefined> = fs.watch([{ path: root, recursive: true, exclude: { names: ['.git', 'node_modules'] } }], onWatch, fsContext()).then(result => {
+    // `.git/info/exclude` is watched by name: the tree watch skips `.git`, and the search index reads that file's ignore rules.
+    const targets = [{ path: root, recursive: true, exclude: { names: ['.git', 'node_modules'] } }, { path: absolute('.git/info/exclude') }];
+    const opening: Promise<FileWatcher | undefined> = fs.watch(targets, onWatch, fsContext()).then(result => {
       if (result.ok) { armed = watcher === opening; return result.value; }
       watchUnsupported = true;
       return undefined;
@@ -635,7 +640,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
 
   return {
     providerId, read, queue, keep, identity: Object.freeze(key),
-    catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path), feed: { version: () => head, live: () => armed } }),
+    catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path), feed: { version: () => head + noticed, live: () => armed } }),
     publication: { publish }, reconciliation: { lookup }, poll, record, changes, changeHead: () => head, changeIncarnation: incarnationOfFeed,
     lifetime: lifetime.signal,
     close: () => {
