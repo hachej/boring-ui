@@ -45,11 +45,11 @@ export { useConversations } from './use-conversations';
 export { useRemoteChat } from './use-remote-chat';
 export type { RemoteChatState } from './use-remote-chat';
 export { savedLabel, useSaved } from './use-saved';
-export { kindOf, mediaTypeOf } from './file-kinds';
+export { viewerKindOf as kindOf, mediaTypeOf } from '@hachej/boring-files/file-types';
 export { defaultAppIcons, defaultAppLabels } from './app-labels';
 export { frenchAppLabels } from './app-labels-fr';
 export type { AppIcons, AppLabels } from './app-labels';
-export type { FileKind } from './file-kinds';
+export type { ViewerKind as FileKind } from '@hachej/boring-files/file-types';
 
 /** An artifact version in the panel: `follow` shows the latest saved revision, otherwise `descriptor.revision` is pinned and read-only. */
 export interface ArtifactView { readonly kind: 'artifact'; readonly conversation: string; readonly descriptor: ArtifactDescriptor; readonly follow: boolean }

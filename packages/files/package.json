@@ -81,6 +81,10 @@
     "./revision-handler": {
       "types": "./dist/revision-handler.d.ts",
       "import": "./dist/revision-handler.js"
+    },
+    "./file-types": {
+      "types": "./dist/file-types.d.ts",
+      "import": "./dist/file-types.js"
     }
   },
   "peerDependencies": {
