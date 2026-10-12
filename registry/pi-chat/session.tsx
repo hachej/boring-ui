@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -59,6 +59,8 @@ export interface ChatFeatureProps {
    * `reply-action-<id>`, the menu `reply-action-more`.
    */
   readonly messageActions?: ((reply: ReplyRef) => readonly BlockAction[]) | undefined;
+  /** A line under each settled reply (for example the model that answered and the time it took), for the host to show to some people only. */
+  readonly replyFooter?: ((reply: ReplyRef) => ReactNode) | undefined;
 }
 
 
@@ -82,7 +84,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, afterSend, rowExtras, feedback } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
@@ -245,10 +247,11 @@ export function useChatSession(options: ChatSessionOptions) {
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen } : undefined,
     messageActions,
+    replyFooter,
     pieces: slash?.skills?.length || mentions ? { mentions: Boolean(mentions), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [developer, groupTool, onOpenImage, onCopy, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, artifacts?.open, artifacts?.isOpen, messageActions, rowExtras]);
+  }), [developer, groupTool, onOpenImage, onCopy, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, artifacts?.open, artifacts?.isOpen, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {

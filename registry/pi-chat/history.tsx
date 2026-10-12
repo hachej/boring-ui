@@ -1,16 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
-import type { Message } from '@earendil-works/pi-ai';
+import type { AssistantMessage, Message } from '@earendil-works/pi-ai';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
 import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
 import { ActionButton, ActionMenu, actionMenuItem, headerActions, menuActions } from '../button/actions';
-import type { ConversationItem, ConversationsConfig } from './config';
+import type { ConversationItem, ConversationsConfig, ReplyRef } from './config';
 import { Markdown } from './markdown';
 import { cn } from '../utils/utils';
-import { isFileBlock } from './rows';
+import { isFileBlock, replyMeta } from './rows';
 import { defaultChatLabels, useChatText } from './labels';
 import type { ChatLabels } from './labels';
 
@@ -206,23 +207,28 @@ export function ConversationHistory({ conversations, onClose, onBrowseEarlier, p
   </>;
 }
 
-function line(message: Message, developer: boolean, labels: ChatLabels): { readonly role: string; readonly body: string } | undefined {
+function line(message: Message, developer: boolean, labels: ChatLabels): { readonly role: string; readonly body: string; readonly assistant?: AssistantMessage } | undefined {
   if (message.role === 'system') return developer ? { role: labels.roleSystem, body: typeof message.content === 'string' ? message.content : message.content.map(part => part.text).join('\n') } : undefined;
   if (message.role === 'toolResult') return { role: labels.roleToolResult(message.toolName, message.isError), body: message.content.map(part => part.type === 'text' ? part.text : '[image result]').join('\n') };
   if (message.role === 'user') return { role: labels.roleUser, body: typeof message.content === 'string' ? message.content : message.content.filter(part => part.type !== 'text' || !isFileBlock(part.text)).map(part => part.type === 'text' ? part.text : '[image attachment]').join('\n') };
   const body = message.content.map(part => part.type === 'text' ? part.text : part.type === 'toolCall' ? `[tool call: ${part.name}]` : developer ? `[reasoning]\n${part.thinking}` : '').filter(Boolean).join('\n\n');
-  return { role: labels.roleAssistant(message.stopReason === 'aborted' ? 'interrupted' : message.stopReason === 'error' ? 'failed' : 'ok'), body };
+  return { role: labels.roleAssistant(message.stopReason === 'aborted' ? 'interrupted' : message.stopReason === 'error' ? 'failed' : 'ok'), body, ...(message.stopReason === 'error' || message.stopReason === 'aborted' ? {} : { assistant: message }) };
 }
 
+type HistoryRow = { readonly key: string; readonly role: string; readonly body: string; readonly entryId: string; readonly assistant: AssistantMessage | undefined };
+const replyText = (message: AssistantMessage) => message.content.flatMap(part => part.type === 'text' && part.text ? [part.text] : []).join('\n\n');
+
 /** Read-only older records of the open conversation, paged in by the controller. Historical tool results are not current actions. */
-export function HistoryPanel({ history, developer, connected, onLoad, onClose }: {
+export function HistoryPanel({ history, developer, connected, onLoad, onClose, replyFooter }: {
   readonly history: ChatHistoryState; readonly developer: boolean; readonly connected: boolean; readonly onLoad: () => void; readonly onClose: () => void;
+  /** The host's reply footer, shown under each earlier reply that has text. Earlier records get no actions. */
+  readonly replyFooter?: ((reply: ReplyRef) => ReactNode) | undefined;
 }) {
   const { labels, icons } = useChatText();
   const entries: readonly EntryRecord[] = 'entries' in history ? history.entries : [];
-  const rows = entries.flatMap(entry => entry.model?.length
-    ? entry.model.flatMap((message, index) => { const made = line(message, developer, labels); return made ? [{ key: `history:${entry.id}:${index}`, ...made }] : []; })
-    : [{ key: `history:${entry.id}`, role: labels.roleEvent, body: entry.head === undefined ? entry.kind : labels.contextBoundary }]);
+  const rows = entries.flatMap((entry): HistoryRow[] => entry.model?.length
+    ? entry.model.flatMap((message, index) => { const made = line(message, developer, labels); return made ? [{ key: `history:${entry.id}:${index}`, entryId: String(entry.id), assistant: undefined, ...made }] : []; })
+    : [{ key: `history:${entry.id}`, role: labels.roleEvent, body: entry.head === undefined ? entry.kind : labels.contextBoundary, entryId: String(entry.id), assistant: undefined }]);
   const exhausted = history.kind === 'ready' && !history.hasMore;
   return <section aria-label={labels.earlierMessages} data-testid="history" aria-live="off" className="shrink-0 border-b border-border bg-muted/20">
     <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2">
@@ -237,7 +243,8 @@ export function HistoryPanel({ history, developer, connected, onLoad, onClose }:
       {history.kind === 'idle' && <p className="m-0 text-sm text-muted-foreground">{labels.loadPage}</p>}
       {rows.map(row => <article key={row.key} data-history-row-id={row.key} className="rounded-lg border border-border bg-background/60 px-3 py-2">
         <p className="m-0 mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{row.role}</p>
-        <div className="text-sm opacity-90"><Markdown text={row.body} /></div></article>)}
+        <div className="text-sm opacity-90"><Markdown text={row.body} /></div>
+        {replyFooter && row.assistant && replyText(row.assistant) && replyFooter({ key: row.key, text: replyText(row.assistant), entryId: row.entryId, ...replyMeta(row.assistant) })}</article>)}
       {history.kind === 'ready' && !rows.length && <p className="m-0 text-sm text-muted-foreground">{labels.noRecords}</p>}
       {exhausted && <p className="m-0 text-center text-xs text-muted-foreground">{labels.beginning}</p>}
     </div>

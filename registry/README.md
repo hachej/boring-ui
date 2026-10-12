@@ -35,6 +35,15 @@ Every Tailwind item depends on `theme` (`pi-chat`, `viewers`, `provider-setup` a
 
 Pass `artifacts={{ open, isOpen?, detect? }}` to `PiChat` and a tool result whose JSON text carries a valid `boring.artifact` descriptor (the result of `present`) becomes a card outside the activity block: icon, title, type, a real button calling `open` (and the version number for a descriptor that has one; a presented file's descriptor points at the file and has none). A running `present` shows an opening card, a failed call shows none, and presenting one file several times in a turn shows its last version once. The host owns the panel; `collectArtifacts(view, detect)` lists the versions a conversation produced. The copied `artifact.ts` repeats the descriptor validator of `@hachej/boring-agent/artifacts` because a registry item cannot import it; a source test keeps them equal. The item is also usable in a narrow container: touch targets of at least 40px on small or coarse-pointer screens, 16px composer text, Enter inserts a newline on touch devices, and pickers and menus open as a bottom sheet or full-width popover.
 
+## Reply footer in `pi-chat`
+
+Pass `replyFooter={reply => <small>…</small>}` to `PiChat` or `AmbientChat` and every finished reply gets that node under its actions, including replies listed under earlier records (which have no actions). `reply` is the
+same `ReplyRef` `messageActions` receives, now with `timestamp` (the last model round's message timestamp, ms), `model`
+(`{provider, modelId}` as that message names them, so it is the model that really answered after a fallback, even when that last round
+shows nothing) and `durationMs` (Pi's own `AssistantMessage.durationMs`: how long the last round took to answer, excluding queue time, earlier rounds, tools and retry delays;
+absent for messages written before Pi recorded it; never computed at render). The host decides who sees it (for example only the editors of the app).
+Not rendered while the reply streams, runs a tool or waits to retry.
+
 ## Approval cards in `pi-chat`
 
 Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApproval` from `@hachej/boring-agent/approval` shows an Approve / Deny card while it waits: the wrapper publishes a one-line summary under `APPROVAL_DETAILS` in the call's details, which is how `derive` recognizes it (no list of tool names); the person's click goes through `actions.answer`, the same operation as `ask_user` questions. The card shows the summary as the headline and folds the raw arguments under an "Arguments" disclosure. A denied call (a result starting `Denied by the person.`) shows as denied, any other result as approved, and the call stays a step of the activity block. Without `actions.answer` the card is read-only.

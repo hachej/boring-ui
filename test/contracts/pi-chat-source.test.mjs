@@ -472,3 +472,83 @@ test('the pi-chat registry item never imports @hachej/boring-feedback (feedback 
   for (const file of published.files) assert.ok(!file.content.includes(FEEDBACK), `published ${file.path} imports ${FEEDBACK}`);
   for (const dependency of [...item.dependencies ?? [], ...published.dependencies ?? []]) assert.ok(!String(dependency).startsWith(FEEDBACK), `pi-chat depends on ${dependency}`);
 });
+
+test('a host reply footer sees the model and timestamp of the last round of a settled reply, and only settled replies get one', async () => {
+  const { derive } = await load('rows', 'rows.ts');
+  const { RowView } = await load('message', 'message.tsx');
+  const rounds = [assistant([call('1', 'read')], { provider: 'openai-codex', model: 'gpt-6-sol', timestamp: 100 }), assistant([{ type: 'text', text: 'done' }], { provider: 'cloudflare-workers-ai', model: '@cf/moonshotai/kimi-k2.7-code', timestamp: 250 })];
+  const view = { entries: entries([user('go')], [rounds[0]], [result('1', 'read', 'A')], [rounds[1]]), docs: {} };
+  const row = derive(view, options('expert')).rows[1];
+  assert.deepEqual(row.model, { provider: 'cloudflare-workers-ai', modelId: '@cf/moonshotai/kimi-k2.7-code' });
+  assert.equal(row.timestamp, 250);
+  const seen = [];
+  const context = { developer: false, groupTool: undefined, commandMentions: undefined, onOpenImage: undefined, onCopy: undefined, pieces: undefined, answer: undefined, artifacts: undefined,
+    replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model.modelId} ${reply.timestamp}`); } };
+  const html = renderToStaticMarkup(createElement(RowView, { row, context }));
+  assert.match(html, /data-testid="footer">@cf\/moonshotai\/kimi-k2\.7-code 250</);
+  assert.equal(seen[0].text, 'done');
+  const streaming = renderToStaticMarkup(createElement(RowView, { row: { ...row, streaming: true }, context }));
+  assert.ok(!streaming.includes('data-testid="footer"'));
+  assert.ok(!renderToStaticMarkup(createElement(RowView, { row, context: { ...context, replyFooter: undefined } })).includes('footer'));
+});
+
+const footerContext = seen => ({ developer: false, groupTool: undefined, commandMentions: undefined, onOpenImage: undefined, onCopy: undefined, pieces: undefined, answer: undefined, artifacts: undefined,
+  replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model?.modelId} ${reply.durationMs}`); } });
+
+test('a reply footer waits for the whole turn: no footer while a tool runs or a retry waits, and the last round reports its own durationMs', async () => {
+  const { derive } = await load('rows', 'rows.ts');
+  const { RowView } = await load('message', 'message.tsx');
+  const rounds = [assistant([{ type: 'text', text: 'let me look' }, call('1', 'read')], { model: 'a', timestamp: 100, durationMs: 700 }), assistant([{ type: 'text', text: 'done' }], { model: 'b', timestamp: 250, durationMs: 1200 })];
+  const settledView = { entries: entries([user('go')], [rounds[0]], [result('1', 'read', 'A')], [rounds[1]]), docs: {} };
+  const html = (view, seen = []) => { const row = derive(view, options('expert')).rows[1]; return { row, seen, html: renderToStaticMarkup(createElement(RowView, { row, context: footerContext(seen) })) }; };
+  // A tool round: the run is active, nothing is streaming.
+  const tool = html({ entries: entries([user('go')], [rounds[0]]), docs: { 'pi.live': { run: { taskId: 1 } } } });
+  assert.equal(tool.row.active, true); assert.equal(tool.row.streaming, false);
+  assert.ok(!tool.html.includes('data-testid="footer"'));
+  // Retry backoff: the run is active, the generation holds a retry and no message.
+  const retrying = html({ entries: entries([user('go')], [rounds[0]]), docs: { 'pi.live': { run: { taskId: 1 }, generation: { retry: { attempt: 1 } } } } });
+  assert.equal(retrying.row.active, true);
+  assert.ok(!retrying.html.includes('data-testid="footer"'));
+  // Finished: the footer shows the last round's model and Pi's own duration.
+  const done = html(settledView);
+  assert.match(done.html, /data-testid="footer">b 1200</);
+  assert.equal(done.seen[0].durationMs, 1200);
+  // A message Pi wrote before it recorded durations has none.
+  const legacy = derive({ entries: entries([user('go')], [assistant([{ type: 'text', text: 'ok' }])]), docs: {} }, options('expert')).rows[1];
+  assert.ok(!('durationMs' in legacy));
+});
+
+test('an empty final round still names the model, time and duration of the round that ended the reply', async () => {
+  const { derive } = await load('rows', 'rows.ts');
+  const view = { entries: entries([user('go')], [assistant([{ type: 'text', text: 'checking' }, call('1', 'read')], { model: 'a', timestamp: 100, durationMs: 5 })], [result('1', 'read', 'A')], [assistant([], { model: 'b', timestamp: 300, durationMs: 9 })]), docs: {} };
+  const rows = derive(view, options('expert')).rows;
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[1].model, { provider: 'x', modelId: 'b' });
+  assert.equal(rows[1].timestamp, 300); assert.equal(rows[1].durationMs, 9);
+  assert.equal(rows[1].entryId, '4');
+  assert.equal(rows[1].text, 'checking');
+});
+
+test('earlier records show the reply footer without actions, and the ambient window forwards it', async () => {
+  const { HistoryPanel } = await load('history', 'history.tsx');
+  const history = { kind: 'ready', hasMore: false, entries: entries([user('go')], [assistant([{ type: 'text', text: 'old answer' }], { model: 'old', timestamp: 5, durationMs: 42 })]) };
+  const seen = [];
+  const html = renderToStaticMarkup(createElement(HistoryPanel, { history, developer: false, connected: true, onLoad() {}, onClose() {}, replyFooter: footerContext(seen).replyFooter }));
+  assert.match(html, /data-testid="footer">old 42</);
+  assert.equal(seen.length, 1); assert.equal(seen[0].text, 'old answer'); assert.equal(seen[0].timestamp, 5);
+  assert.ok(!renderToStaticMarkup(createElement(HistoryPanel, { history, developer: false, connected: true, onLoad() {}, onClose() {} })).includes('footer'));
+});
+
+
+test('the expanded ambient window shows the host reply footer under a settled reply', async () => {
+  const { AmbientChat } = await load('ambient', 'ambient.tsx', 'pi-ambient');
+  const view = { entries: entries([user('go')], [assistant([{ type: 'text', text: 'all done' }], { model: 'amb', timestamp: 9, durationMs: 77 })]), docs: {} };
+  const snapshot = { identity: {}, conversationId: 'c1', connection: { kind: 'connected' }, view, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' },
+    send: { kind: 'idle' }, stop: 'idle', disposed: false };
+  const controller = new Proxy({ getSnapshot: () => snapshot, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : async () => {} });
+  const seen = [];
+  const html = renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded', replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model.modelId} ${reply.durationMs}`); } }));
+  assert.match(html, /data-testid="footer">amb 77</);
+  assert.equal(seen[0].text, 'all done');
+  assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('footer'));
+});

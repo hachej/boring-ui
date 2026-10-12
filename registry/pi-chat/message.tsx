@@ -40,9 +40,13 @@ export interface RowContext {
   readonly replyActions?: ((reply: { readonly key: string; readonly text: string; readonly timestamp?: number | undefined }, host: ReactNode) => ReactNode) | undefined;
   /** The host's actions for a settled reply (`messageActions`). */
   readonly messageActions?: ((reply: ReplyRef) => readonly BlockAction[]) | undefined;
+  /** A line under a finished reply (not while it streams, runs a tool or waits to retry), after its actions (a host shows which model answered and how long it took). */
+  readonly replyFooter?: ((reply: ReplyRef) => ReactNode) | undefined;
   /** Fork the conversation after a settled reply (its last native entry): adds a Fork button next to Copy. */
   readonly onFork?: ((entryId: string) => void) | undefined;
 }
+
+const replyRef = (row: Extract<Row, { type: 'assistant' }>): ReplyRef => ({ key: row.key, text: row.text, entryId: row.entryId, timestamp: row.timestamp, model: row.model, durationMs: row.durationMs });
 
 function Image({ image, onOpenImage }: { readonly image: ImageContent; readonly onOpenImage: RowContext['onOpenImage'] }) {
   const { labels } = useChatText();
@@ -104,7 +108,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
       const host = settled && row.text && context.messageActions
-        ? <BlockActions actions={context.messageActions({ key: row.key, text: row.text, entryId: row.entryId })} testId="reply-action" menuLabel={labels.moreActions} className="text-muted-foreground" />
+        ? <BlockActions actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} className="text-muted-foreground" />
         : null;
       return <article data-row-id={row.key} data-role="assistant" data-streaming={row.streaming ? 'true' : undefined} className="group/message">
         <div className="space-y-3">
@@ -135,6 +139,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             className="text-muted-foreground" onClick={() => context.onFork!(row.entryId!)}><icons.fork className="size-3.5" aria-hidden="true" /></Button>}
           {host}</div>}
+        {settled && !row.active && row.text && context.replyFooter?.(replyRef(row))}
       </article>;
     }
   }
