@@ -128,6 +128,8 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   if (!/^[0-7]{3,4}$/.test(umask)) throw new TypeError('umask must be octal');
   const pollMs = options.pollIntervalMs ?? 500;
   const serviceDeadlineMs = options.serviceDeadlineMs ?? 30_000;
+  /** The one deadline for every service call that could otherwise wait forever (the SDK sets no timeout): start, begin, polls and stop. */
+  const serviceDeadline = (): AbortSignal => AbortSignal.timeout(serviceDeadlineMs);
   const borrowed = 'sessionId' in options.session ? options.session.sessionId : undefined;
   const start = 'start' in options.session ? options.session.start : undefined;
   const auto = start !== undefined && (options.renew ?? 'auto') === 'auto';
@@ -166,12 +168,19 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     if (!start) throw new ServiceError('SessionMissing', 'No Code Interpreter session');
     const { name, sessionTimeoutSeconds, filesystemConfigurations } = start;
     return starting ??= (async () => {
-      const response = await client.send(new StartCodeInterpreterSessionCommand({
-        codeInterpreterIdentifier,
-        ...(name === undefined ? {} : { name }),
-        ...(sessionTimeoutSeconds === undefined ? {} : { sessionTimeoutSeconds }),
-        ...(filesystemConfigurations === undefined ? {} : { filesystemConfigurations: [...filesystemConfigurations] }),
-      }));
+      const deadline = serviceDeadline();
+      let response;
+      try {
+        response = await client.send(new StartCodeInterpreterSessionCommand({
+          codeInterpreterIdentifier,
+          ...(name === undefined ? {} : { name }),
+          ...(sessionTimeoutSeconds === undefined ? {} : { sessionTimeoutSeconds }),
+          ...(filesystemConfigurations === undefined ? {} : { filesystemConfigurations: [...filesystemConfigurations] }),
+        }), { abortSignal: deadline });
+      } catch (error) {
+        if (deadline.aborted) throw new ServiceError('StartTimeout', `The Code Interpreter did not answer the session start within ${serviceDeadlineMs / 1000} s: whether a session started is unknown`);
+        throw error;
+      }
       const id = response.sessionId;
       if (!id) throw new ServiceError('SessionMissing', 'StartCodeInterpreterSession returned no session id');
       owned.add(id);
@@ -227,7 +236,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   const TERMINAL = new Set(['completed', 'failed', 'canceled']);
   /** Asks the service to stop the task; the outcome is never assumed (the command's result says it is not confirmed). */
   // Bounded like the start call: the SDK has no request timeout, so a stop answer that never comes must not hang the command.
-  const stopTask = async (taskId: string, id: string): Promise<void> => { try { await invoke('stopTask', { taskId }, AbortSignal.timeout(serviceDeadlineMs), id); } catch { /* reported as unconfirmed termination */ } };
+  const stopTask = async (taskId: string, id: string): Promise<void> => { try { await invoke('stopTask', { taskId }, serviceDeadline(), id); } catch { /* reported as unconfirmed termination */ } };
 
   async function exec(command: string, execOptions: ShellExecOptions | undefined, context: Context): Promise<Result<ShellExecResult, ExecutionError>> {
     if (context.abortSignal?.aborted) return err(new ExecutionError('aborted', 'Command aborted before dispatch'));
@@ -252,7 +261,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     // The start call is not aborted by the caller: a task it started must always come back with its id, so the polling loop
     // below can stop it. It has its own deadline instead, covering the whole response, because the SDK sets none. Nothing is
     // replayed when it expires: the task may or may not exist, and only a stop with its id could end it.
-    const startDeadline = AbortSignal.timeout(serviceDeadlineMs);
+    const startDeadline = serviceDeadline();
     let started: CodeInterpreterResult;
     try {
       started = await invoke('startCommandExecution', { command: script }, startDeadline, pinned);
@@ -278,14 +287,17 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       if (context.abortSignal?.aborted) { await stopTask(taskId, pinned); return err(new ExecutionError('aborted', 'Command aborted; stopTask was requested, termination is not confirmed')); }
       if (deadline !== undefined && Date.now() >= deadline) { await stopTask(taskId, pinned); return err(new ExecutionError('timeout', `Command exceeded ${execOptions?.timeout} s; stopTask was requested, termination is not confirmed`)); }
       let status;
+      const pollDeadline = serviceDeadline();
       try {
-        const polled = await invoke('getTask', { taskId }, context.abortSignal, pinned);
+        const polled = await invoke('getTask', { taskId }, context.abortSignal ? AbortSignal.any([context.abortSignal, pollDeadline]) : pollDeadline, pinned);
         status = polled.structuredContent;
         try { deliver('stdout', status?.stdout); deliver('stderr', status?.stderr); }
         catch (error) { await stopTask(taskId, pinned); return err(new ExecutionError('callback_error', boundedMessage(`Output callback failed: ${errorText(error)}`))); }
         if (!status?.taskStatus) return err(new ExecutionError('unknown', boundedMessage(`getTask returned no task status: ${text(polled)}`)));
       } catch (error) {
         if (context.abortSignal?.aborted) continue;
+        // A poll that never answers is a transient poll failure: the state is unknown, and nothing is stopped or replayed.
+        if (pollDeadline.aborted) return err(new ExecutionError('unknown', boundedMessage(`The Code Interpreter did not answer a status poll within ${serviceDeadlineMs / 1000} s: the command's state is unknown`)));
         return err(failure(error, 'unknown'));
       }
       if (status.taskStatus === 'completed' || (status.taskStatus === 'failed' && typeof status.exitCode === 'number')) return ok({ exitCode: status.exitCode ?? 0 });

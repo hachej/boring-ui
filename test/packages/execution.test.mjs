@@ -741,7 +741,7 @@ test('Code Interpreter env: abort while startCommandExecution is in flight stops
   const { fake, open } = await codeInterpreterFixture(t);
   const interpreter = open('user-a', 2002, undefined, { renew: 'manual' }), env = interpreter.env;
   // The fake starts the task, then holds the start response: the abort fires while the start call is in flight.
-  const hold = fake.holdNextStart();
+  const hold = fake.hold('startCommandExecution');
   const cancelled = withCancel(context);
   const pending = env.exec('sleep 5', {}, cancelled.context);
   await hold.started;
@@ -761,7 +761,7 @@ test('Code Interpreter env: a start response that never arrives returns within t
   const { fake, open } = await codeInterpreterFixture(t);
   const interpreter = open('user-a', 2003, undefined, { serviceDeadlineMs: 300 }), env = interpreter.env;
   // The fake starts the task and then never answers: the SDK sets no request timeout of its own.
-  const hold = fake.holdNextStart();
+  const hold = fake.hold('startCommandExecution');
   t.after(() => hold.release());
   const began = Date.now();
   const result = await env.exec('sleep 5', {}, context);
@@ -771,5 +771,21 @@ test('Code Interpreter env: a start response that never arrives returns within t
   assert.ok(elapsed < 5000, `the start call returned after ${elapsed} ms, not at the deadline`);
   assert.equal(fake.calls.filter(call => call.name === 'startCommandExecution').length, 1, 'the start is not replayed');
   assert.equal(fake.calls.filter(call => call.name === 'stopTask').length, 0, 'no task id, so nothing is stopped');
+  hold.release();
+});
+
+test('Code Interpreter env: a status poll that never answers returns within the service deadline as an unknown outcome', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2004, undefined, { serviceDeadlineMs: 300 }), env = interpreter.env;
+  // The command starts, then its first getTask never answers.
+  const hold = fake.hold('getTask');
+  t.after(() => hold.release());
+  const began = Date.now();
+  const result = await env.exec('sleep 5', {}, context);
+  const elapsed = Date.now() - began;
+  assert.equal(result.ok ? 'ok' : result.error.code, 'unknown');
+  assert.match(result.error.message, /did not answer a status poll within/);
+  assert.ok(elapsed < 5000, `the command returned after ${elapsed} ms`);
+  assert.equal(fake.calls.filter(call => call.name === 'stopTask').length, 0, 'an unknown poll stops nothing and replays nothing');
   hold.release();
 });
