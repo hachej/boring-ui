@@ -44,6 +44,16 @@ try {
   const say = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
   const live = () => browser.until('the chat is live', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${INPUT}`, 20000);
 
+  await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
+    app.faults.resources = 1;
+    await browser.reload();
+    await browser.until('the alert with Retry', `!!${q('p[role="alert"] button')}`, 20000);
+    assert.match(await browser.evaluate(`${q('p[role="alert"]')}.innerText`), /could not be reached/);
+    await browser.click(q('p[role="alert"] button'));
+    await live();
+    assert.equal(app.faults.resources, 0, 'the refused discovery was the one retried');
+  });
+
   await step('the page is the block: sessions pane, chat, no studio code', async () => {
     await live();
     assert.equal(await browser.evaluate(`${q('[data-boring=agent-workspace]')}.dataset.sessions`), 'docked');

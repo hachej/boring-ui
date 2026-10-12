@@ -52,6 +52,9 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
 
   // ---- The host handlers the block talks to. Authentication (here one bearer token) and the owner key are the host's.
   const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
+  // Journey fault: the next N discovery requests are refused with a 503 (the page then shows its Retry).
+  const faults = { resources: 0 };
+  const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
   const handlers = {
     '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agent.id, start } : null }),
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
@@ -60,7 +63,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
       return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id) } : null;
     } }),
     // The workspace's revision protocol: the binding, the change feed, listing, search, saved history and the resource calls.
-    '/api/resources': createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null }),
+    '/api/resources': async request => { if (faults.resources > 0) { faults.resources--; return new Response(null, { status: 503 }); } return resources(request); },
   };
 
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.
@@ -91,7 +94,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, owner: agent.id,
+    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, owner: agent.id, faults,
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }

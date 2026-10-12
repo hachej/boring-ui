@@ -50,7 +50,7 @@ function Workspace({ token, onRejected }) {
   useEffect(() => {
     let off = false;
     setDiscovery(current => ({ ...current, failed: false }));
-    const checked = async request => { const response = await authorized(request); if (response.status === 401) onRejected(); return response; };
+    const checked = async request => { const response = await authorized(request); if (response.status === 401 && !off) onRejected(); return response; };
     connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: checked }).then(value => { if (!off) setRevisionProvider(value); }, () => { if (!off) setDiscovery(current => ({ ...current, failed: true })); });
     return () => { off = true; };
   }, [authorized, discovery.attempt]); // eslint-disable-line react-hooks/exhaustive-deps
