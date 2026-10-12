@@ -12,7 +12,8 @@
 // Continuous picking (`onPick`, used by the feedback session): a click or Enter hands the element to `onPick` and pick mode stays on,
 // so the person can pin one element after another. `wheel: false` leaves scrolling to the page, `keys: 'outside-ignored'` lets keys
 // typed inside ignored subtrees (a note bubble) reach them, and `suspend(true)` lets every event through to the page until
-// `suspend(false)` (the session's "hold Alt to use the app").
+// `suspend(false)` (the session's "hold Alt to use the app"). `tap: 'pick'` (point mode on phones) hands a tap straight to `onPick`
+// with no toolbar: one tap, one pick; a finger that moved (a scroll) is not a tap.
 import { isExcluded, type PrivacyPolicy } from '../privacy/policy.js';
 import { pickerLabel } from './label.js';
 import { createOverlay, type OverlayBox, type PickerOverlay } from './overlay.js';
@@ -55,6 +56,8 @@ export interface PickerOptions {
   readonly wheel?: boolean;
   /** `'all'` (default): every key belongs to the picker. `'outside-ignored'`: keys inside ignored subtrees reach them. */
   readonly keys?: 'all' | 'outside-ignored';
+  /** `'select'` (default): a tap selects and the touch toolbar pins. `'pick'`, with `onPick`: a tap picks at once and no toolbar shows. */
+  readonly tap?: 'select' | 'pick';
 }
 
 export interface Picker {
@@ -83,6 +86,8 @@ export interface Picker {
 const TAB_STOPS = 'a[href],button,input,select,textarea,summary,[tabindex],[role],[contenteditable],h1,h2,h3,h4,h5,h6,label,img,table,[data-feedback-id],[data-testid]';
 const POINTER_EVENTS = ['pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'touchstart', 'touchend', 'dragstart', 'selectstart'] as const;
 const KEY_EVENTS = ['keydown', 'keyup', 'keypress'] as const;
+/** How far (CSS px) a finger may move and still tap. */
+const TAP_SLOP = 10;
 
 /** Why an element cannot be picked, or undefined when it can. */
 export function pickRefusal(element: Element, root: Element): string | undefined {
@@ -96,6 +101,7 @@ export function pickRefusal(element: Element, root: Element): string | undefined
 
 export function createPicker(options: PickerOptions): Picker {
   const { root, policy, onPick, wheel = true, keys = 'all' } = options;
+  const tapPicks = options.tap === 'pick' && onPick !== undefined;
   const multiple = onPick ? false : options.multiple ?? true;
   const document = root.ownerDocument;
   const view = document.defaultView;
@@ -111,6 +117,9 @@ export function createPicker(options: PickerOptions): Picker {
   let touch = false;
   let suspended = false;
   let lastPointer = 'mouse';
+  /** Where the finger went down, and whether this gesture already picked (pointerup and touchend of one tap count once). */
+  let fingerDown: { x: number; y: number } | undefined;
+  let tapDone = false;
   /** Children left by ↑, so ↓ returns along the same path. */
   let trail: Element[] = [];
   let focus: Element | null = null;
@@ -127,7 +136,7 @@ export function createPicker(options: PickerOptions): Picker {
     const boxes: OverlayBox[] = pins.map(element => ({ element, label: pickerLabel(element, policy), tone: 'pinned' }));
     if (mode === 'picking' && !suspended && current && !pins.includes(current)) boxes.push({ element: current, label: pickerLabel(current, policy), tone: 'hover' });
     overlay.draw(boxes);
-    overlay.toolbar(mode === 'picking' && !suspended && touch ? {
+    overlay.toolbar(mode === 'picking' && !suspended && touch && !tapPicks ? {
       parent: () => move('up'), child: () => move('down'), pin: () => pin(), cancel: () => end({ kind: 'cancelled' }),
       ...(pins.length ? { done: () => finish() } : {}),
     } : undefined);
@@ -246,10 +255,22 @@ export function createPicker(options: PickerOptions): Picker {
     const pointerType = (event as PointerEvent).pointerType;
     if (type === 'pointerdown' && pointerType) lastPointer = pointerType;
     if (type === 'touchstart') lastPointer = 'touch';
+    if ((type === 'pointerdown' && pointerType === 'touch') || type === 'touchstart') { fingerDown = point(event); tapDone = false; }
+    if (type === 'pointercancel') tapDone = true;
     const tapped = type === 'pointerup' && pointerType === 'touch';
     if (tapped || (type === 'touchend' && lastPointer === 'touch')) {
       const where = point(event);
-      if (where) { touch = true; const found = at(where.x, where.y); trail = []; current = found.element ?? current; refusal = found.refusal; changed(); }
+      if (where && tapPicks) {
+        const moved = fingerDown !== undefined && Math.hypot(where.x - fingerDown.x, where.y - fingerDown.y) > TAP_SLOP;
+        if (!tapDone && !moved && !suspended) {
+          tapDone = true;
+          touch = true;
+          const found = at(where.x, where.y);
+          trail = [];
+          refusal = found.refusal;
+          if (found.element) { current = found.element; changed(); pin(); } else changed();
+        }
+      } else if (where) { touch = true; const found = at(where.x, where.y); trail = []; current = found.element ?? current; refusal = found.refusal; changed(); }
     } else if (type === 'click' && lastPointer !== 'touch') {
       const where = point(event);
       const mouse = event as MouseEvent;

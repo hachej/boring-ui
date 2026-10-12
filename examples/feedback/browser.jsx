@@ -12,6 +12,9 @@
 // Preview (FEEDBACK.md, "Preview"): when the builder's `browser_preview` call is pending in this person's conversation, the page runs
 // the preview subagent (`@hachej/boring-feedback/preview`) on the `/api/llm` gateway models (model-preview.mjs, no key in the page) over the
 // report's pins, shows PreviewBanner, and answers the call through the chat transport (`remote.answer`) on Approve or Discard.
+// `?mobile=1` is a phone layout (FEEDBACK.md, "Point mode"): a bottom tab bar and the assistant as a full-screen panel (PiChat, in
+// French) whose composer offers « Montrer dans l'app ». The panel binds `usePointing`: it is hidden (kept mounted) while the person
+// taps elements in the app over PointBar, and comes back with the picks as the composer's chip.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPrivacyPolicy, createVoiceCapture, runPrivacyCanaries } from '@hachej/boring-feedback/page';
@@ -27,6 +30,9 @@ import { feedbackMentionRenderer, feedbackRenderTool } from '../../registry/feed
 import { PointButton } from '../../registry/feedback/point-button.tsx';
 import { pickerOverlayStyles, usePickerOverlay } from '../../registry/feedback/picker-overlay.ts';
 import { NoteBubble, useComposerFeedback } from '../../registry/feedback/feedback-session.tsx';
+import { PointBar, usePointing } from '../../registry/feedback/point-mode.tsx';
+import { feedbackLabelsFr } from '../../registry/feedback/feedback-labels.ts';
+import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AnnotateSheet } from '../../registry/feedback/annotate-sheet.tsx';
 import { FeedbackList } from '../../registry/feedback/feedback-list.tsx';
 import { FeedbackReport } from '../../registry/feedback/feedback-report.tsx';
@@ -232,6 +238,48 @@ function App() {
   </>;
 }
 
+/** The tab bar's height: PointBar sits above it. */
+const TABBAR = '64px';
+
+/**
+ * `?mobile=1`: the phone layout. The assistant is a full-screen panel (the host's Sheet stand-in) over the page; its composer offers
+ * « Montrer dans l'app ». While `usePointing` is true the panel is hidden but stays mounted (the typed text is kept), PointBar sits
+ * above the tab bar, and the tab bar (marked `data-feedback-ignore`) still navigates between the two sections.
+ */
+function PhoneApp() {
+  const [path, navigate] = usePath();
+  const copy = usePageCopy();
+  const chat = useChat();
+  const [session, setSession] = useState(null);
+  const [panel, setPanel] = useState(false);
+  useEffect(() => {
+    const created = createFeedbackSession({
+      app: config.app, build: config.build, root: appRoot(), policy, styles: pickerOverlayStyles,
+      ...(saveEndpoint ? { save: saveEndpoint, mention: id => `feedback/${id}.md` } : {}),
+    });
+    window.__feedbackSession = created;
+    setSession(created);
+    return () => { created.dispose(); delete window.__feedbackSession; };
+  }, []);
+  const composerFeedback = useComposerFeedback(session ?? undefined, { entry: 'point' });
+  const pointing = usePointing(session ?? undefined);
+  const section = sectionOf(path);
+  return <>
+    <SettingsPage saveLabel={copy.saveLabel} section={section} onNavigate={navigate} />
+    {session && <NoteBubble session={session} labels={feedbackLabelsFr} />}
+    {session && <PointBar session={session} labels={feedbackLabelsFr} bottomOffset={TABBAR} />}
+    <nav className="fh-tabbar" data-feedback-ignore="" data-testid="tabbar" aria-label="Sections" style={{ height: TABBAR }}>
+      {[['profile', 'Profil'], ['billing', 'Facturation']].map(([id, name]) => <button key={id} type="button" data-testid={`tab-${id}`}
+        aria-current={(!panel || pointing) && section === id ? 'page' : undefined} onClick={() => { if (!pointing) setPanel(false); navigate(`/settings/${id}`); }}>{name}</button>)}
+      <button type="button" data-testid="tab-assistant" aria-current={panel && !pointing ? 'page' : undefined} onClick={() => setPanel(true)}>Assistant</button>
+    </nav>
+    <div className="fh-sheet" data-feedback-ignore="" data-testid="assistant-panel" role="dialog" aria-label="Assistant" hidden={!panel || pointing}>
+      <div className="fh-sheet-head"><strong>Assistant</strong><button type="button" className="fh-btn" data-testid="assistant-close" onClick={() => setPanel(false)}>Fermer</button></div>
+      {chat && <PiChat controller={chat.controller} locale="fr" mentions={mentions} feedback={composerFeedback} showHistory={false} showConnectionStatus={false} className="min-h-0 flex-1" />}
+    </div>
+  </>;
+}
+
 /** The Release 1 surfaces (`?ui=classic`): Point, the annotate sheet, the Feedback list and the report with Show. Optional components. */
 function ClassicApp() {
   const overlay = usePickerOverlay();
@@ -266,4 +314,4 @@ function ClassicApp() {
   </>;
 }
 
-createRoot(document.getElementById('root')).render(config.outside ? <Outside /> : classic ? <ClassicApp /> : <App />);
+createRoot(document.getElementById('root')).render(config.outside ? <Outside /> : classic ? <ClassicApp /> : params.get('mobile') === '1' ? <PhoneApp /> : <App />);

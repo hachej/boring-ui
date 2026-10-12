@@ -15,7 +15,7 @@ export {
   type FeedbackProtection, type FeedbackRow, type ReportView, type ReportAnchorView,
 } from './report.js';
 export {
-  createFeedbackSession, pinMark,
-  type FeedbackSession, type FeedbackSessionOptions, type FeedbackSessionSnapshot, type FeedbackAttachment, type SessionPhase, type SessionNote,
+  createFeedbackSession, isPointing, pinMark,
+  type FeedbackSession, type SessionMode, type SessionStartOptions, type FeedbackSessionOptions, type FeedbackSessionSnapshot, type FeedbackAttachment, type SessionPhase, type SessionNote,
   type SessionBubble, type SendState, type VoiceState, type Transcribe, type TranscribeResult,
 } from './session.js';

@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
-import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquareIcon, SlashIcon, XIcon } from 'lucide-react';
+import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquareIcon, MousePointerClickIcon, SlashIcon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
 import { hasMention, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
 import type { MentionsConfig, SlashConfig, SlashItem } from './config';
@@ -26,8 +26,13 @@ export function thumbnail(mimeType: string, data: string): string | undefined {
  * `useComposerFeedback` returns this shape). Absent: the composer is unchanged.
  */
 export interface ComposerFeedback {
-  /** Enters feedback mode on the page. */
-  readonly start: () => void;
+  /** Enters feedback mode on the page: the Feedback button. Absent: no Feedback button. */
+  readonly start?: () => void;
+  /**
+   * Point mode for phones: the « Show in app » action. The host hides its panel while the person taps elements in the app, and the
+   * draft comes back as the chip. Absent: no action.
+   */
+  readonly point?: () => void;
   /** Feedback mode is on: the button shows pressed. */
   readonly active?: boolean;
   /** Feedback is waiting to be sent with the next message: Send is allowed with no text. */
@@ -90,14 +95,25 @@ export interface ComposerProps {
 /** Round bar buttons share one look: a tinted circle, 44px so a thumb can hit it. */
 const ROUND = 'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
-/** The Feedback button, a round bar button beside the "+" menu in both layouts. */
+/** A bar button with a word: the same tint and 44px height as ROUND. */
+const PILL = 'inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full bg-muted px-3.5 text-sm font-medium text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
+
+/** The Feedback button (a round bar button beside the "+" menu in both layouts) and « Show in app », each when the host offers it. */
 function FeedbackButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
   const { labels } = useChatText();
-  return <button type="button" data-testid="composer-feedback" aria-pressed={feedback.active === true} disabled={disabled || feedback.active === true || feedback.pending === true}
-    title={labels.feedbackHint} onClick={feedback.start}
-    className={cn(ROUND, feedback.active && 'bg-accent')}>
-    <MessageSquareIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.feedback}</span>
-  </button>;
+  const busy = disabled || feedback.active === true || feedback.pending === true;
+  const { start, point } = feedback;
+  return <>
+    {start && <button type="button" data-testid="composer-feedback" aria-pressed={feedback.active === true} disabled={busy}
+      title={labels.feedbackHint} onClick={() => start()}
+      className={cn(ROUND, feedback.active && 'bg-accent')}>
+      <MessageSquareIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.feedback}</span>
+    </button>}
+    {point && <button type="button" data-testid="composer-point" disabled={busy} title={labels.pointHint} onClick={() => point()}
+      className={PILL}>
+      <MousePointerClickIcon className="size-4" aria-hidden="true" /><span className="whitespace-nowrap">{labels.point}</span>
+    </button>}
+  </>;
 }
 
 /** The "+" button and its small menu (Attach files, Commands). Arrow keys move, Enter picks, Escape and outside clicks close. */

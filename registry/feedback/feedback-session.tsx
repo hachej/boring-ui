@@ -99,13 +99,25 @@ export function FeedbackBar({ session, className, docked = false, labels }: Feed
 }
 
 const BUBBLE_WIDTH = 280;
-function bubblePlace(element: Element): CSSProperties {
+/** Pixels at the bottom of the viewport taken by point mode's bar (PointBar, `data-feedback-point-bar`), plus a gap; 0 without it. */
+export function pointBarInset(document: Document): number {
+  const bar = document.querySelector('[data-feedback-point-bar]');
+  const height = document.defaultView?.innerHeight ?? 768;
+  return bar ? Math.max(0, height - bar.getBoundingClientRect().top + 8) : 0;
+}
+
+/**
+ * Beside the element: below it when the bubble (`size`, its measured height once drawn) fits above point mode's bar (if any), else
+ * above it, else as low as it fits.
+ */
+function bubblePlace(element: Element, size = 120): CSSProperties {
   const view = element.ownerDocument.defaultView;
-  const width = view?.innerWidth ?? 1024, height = view?.innerHeight ?? 768;
+  const width = view?.innerWidth ?? 1024, height = (view?.innerHeight ?? 768) - pointBarInset(element.ownerDocument);
   const rect = element.getBoundingClientRect();
   const left = Math.min(Math.max(8, rect.left), Math.max(8, width - BUBBLE_WIDTH - 8));
   const below = rect.bottom + 8;
-  const top = below + 120 <= height ? below : Math.max(8, rect.top - 128);
+  const above = rect.top - size - 8;
+  const top = below + size <= height ? below : above >= 8 ? above : Math.max(8, height - size);
   return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16) };
 }
 
@@ -124,7 +136,8 @@ function useFocusReturn(open: boolean, document: Document | undefined): void {
 /**
  * The note bubble beside a new or reopened pin: "What's wrong here?", Enter saves, Shift-Enter for a new line, Esc discards the pin,
  * and "Cancel selection" (also clicking the pinned element again) drops the pin and keeps what was typed for a general question.
- * With the general question open it is a bubble with no element: the same field, docked at the bottom, Esc closes it.
+ * With the general question open it is a bubble with no element: the same field, docked at the bottom, Esc closes it. In point mode
+ * it keeps clear of the PointBar. One NoteBubble serves both modes.
  */
 export function NoteBubble({ session, labels }: { readonly session: FeedbackSession; readonly labels?: Partial<FeedbackLabels> }) {
   const state = useExternal(session);
@@ -136,13 +149,21 @@ export function NoteBubble({ session, labels }: { readonly session: FeedbackSess
   const [, redraw] = useState(0);
   const [announce, setAnnounce] = useState('');
   const generalOpen = state.generalOpen && state.phase === 'active';
-  useLayoutEffect(() => { if (bubble) setPlace(bubblePlace(bubble.element)); }, [bubble?.noteId, bubble?.element]);
+  const box = useRef<HTMLDivElement>(null);
+  const size = (): number | undefined => box.current?.offsetHeight || undefined;
+  useLayoutEffect(() => { if (bubble) setPlace(bubblePlace(bubble.element, size())); }, [bubble?.noteId, bubble?.element]);
+  // Once drawn, place it again with its real height (taller with 44px touch targets and wrapped buttons).
+  useLayoutEffect(() => {
+    if (!bubble || !place || !box.current) return;
+    const next = bubblePlace(bubble.element, size());
+    if (next.top !== place.top || next.left !== place.left) setPlace(next);
+  });
   useEffect(() => { if (bubble) field.current?.focus({ preventScroll: true }); }, [bubble?.noteId]);
   useEffect(() => { if (generalOpen) { general.current?.focus({ preventScroll: true }); setAnnounce(words.generalOpened); } }, [generalOpen]);
   useEffect(() => {
     if (!bubble) return;
     const view = bubble.element.ownerDocument.defaultView;
-    const follow = () => { setPlace(bubblePlace(bubble.element)); redraw(value => value + 1); };
+    const follow = () => { setPlace(bubblePlace(bubble.element, size())); redraw(value => value + 1); };
     view?.addEventListener('scroll', follow, { capture: true, passive: true });
     view?.addEventListener('resize', follow);
     return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); };
@@ -157,7 +178,7 @@ export function NoteBubble({ session, labels }: { readonly session: FeedbackSess
       if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing)) { event.preventDefault(); event.stopPropagation(); session.closeGeneral(); }
     };
     return <>{live}<div data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={words.askGeneral} data-testid="feedback-general-bubble"
-      className="boring-feedback-bubble" style={{ position: 'fixed', left: 8, right: 8, bottom: 72, margin: '0 auto', maxWidth: 420 }}>
+      className="boring-feedback-bubble" style={{ position: 'fixed', left: 8, right: 8, bottom: Math.max(72, typeof document === 'undefined' ? 0 : pointBarInset(document)), margin: '0 auto', maxWidth: 420 }}>
       <span className="boring-feedback-bubble-head"><span className="boring-feedback-bubble-label">{words.askGeneral}</span></span>
       <textarea ref={general} data-testid="feedback-general-input" rows={3} placeholder={words.generalPlaceholder} aria-label={words.generalField} value={state.general}
         onChange={event => session.setGeneral(event.target.value)} onKeyDown={onGeneralKey} />
@@ -170,7 +191,7 @@ export function NoteBubble({ session, labels }: { readonly session: FeedbackSess
     else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); session.cancelBubble(); }
   };
   return <>{live}<div data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={`Note ${bubble.number}`} data-testid="feedback-bubble" data-note={bubble.number}
-    className="boring-feedback-bubble" style={place} onKeyDown={onKeyDown}>
+    ref={box} className="boring-feedback-bubble" style={place} onKeyDown={onKeyDown}>
     <span className="boring-feedback-bubble-head"><span className="boring-feedback-pin" aria-hidden="true">{pinMark(bubble.number)}</span>
       <span className="boring-feedback-bubble-label" data-testid="feedback-bubble-label">{bubble.label}</span></span>
     <textarea ref={field} data-testid="feedback-bubble-input" rows={2} placeholder={words.bubblePlaceholder} aria-label={words.bubblePlaceholder} value={bubble.text}
@@ -277,7 +298,8 @@ export function ElementName({ note }: { readonly note: SessionNote }) {
 
 /** What `useComposerFeedback` returns: the structural shape of pi-chat's `ComposerFeedback`. */
 export interface ComposerFeedbackProp {
-  readonly start: () => void;
+  readonly start?: () => void;
+  readonly point?: () => void;
   readonly active: boolean;
   readonly pending: boolean;
   readonly chip?: ReactNode;
@@ -292,19 +314,31 @@ function fenced(text: string): string {
   return `${fence}markdown\n${text.endsWith('\n') ? text : `${text}\n`}${fence}`;
 }
 
+export interface ComposerFeedbackOptions {
+  /**
+   * Which entry points the composer offers: `feedback` (default) the Feedback button and feedback mode docked in the composer; `point`
+   * the « Show in app » action for phones (point mode: the host hides its panel while `usePointing` is true and mounts `PointMode`);
+   * `both` offers the two.
+   */
+  readonly entry?: 'feedback' | 'point' | 'both';
+}
+
 /**
- * The composer's `feedback` prop for a session: the Feedback button starts it, the chip shows the draft, and Send attaches the report:
- * a saved report as its `@` mention (the host's mention resolver inlines the stored report with the person's access), otherwise the
- * rendered report inline in a fenced block.
+ * The composer's `feedback` prop for a session: the Feedback button (or « Show in app ») starts it, the chip shows the draft, and Send
+ * attaches the report: a saved report as its `@` mention (the host's mention resolver inlines the stored report with the person's
+ * access), otherwise the rendered report inline in a fenced block.
  */
-export function useComposerFeedback(session: FeedbackSession | undefined): ComposerFeedbackProp | undefined {
+export function useComposerFeedback(session: FeedbackSession | undefined, { entry = 'feedback' }: ComposerFeedbackOptions = {}): ComposerFeedbackProp | undefined {
   const state = useSyncState(session);
   if (!session || !state) return undefined;
+  const on = state.phase === 'active' || state.phase === 'processing';
   return {
-    start: () => session.start(),
-    active: state.phase === 'active' || state.phase === 'processing',
+    ...(entry !== 'point' ? { start: () => session.start() } : {}),
+    ...(entry !== 'feedback' ? { point: () => session.start({ mode: 'point' }) } : {}),
+    active: on,
     pending: state.phase === 'review',
-    ...(state.phase === 'active' || state.phase === 'processing' ? { bar: <FeedbackBar session={session} docked /> } : {}),
+    // Point mode's bar is PointMode, mounted by the host outside its (hidden) panel.
+    ...(on && state.mode === 'feedback' ? { bar: <FeedbackBar session={session} docked /> } : {}),
     ...(state.phase === 'review' ? { chip: <FeedbackChip session={session} /> } : {}),
     attach: async text => {
       const attached = await session.attach();
