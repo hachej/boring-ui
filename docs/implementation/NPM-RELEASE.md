@@ -96,17 +96,16 @@ active publication. Neither job changes package versions or privacy flags.
    Permit direct publishing if the npm configuration defaults to staged-only access.
    Complete setup near the first qualified release: unused new trust configurations
    can expire. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
-5. Host `public/r` (the shadcn registry) so `npx shadcn add <url>/r/pi-app.json`
-   works. Proposal: GitHub Pages serving `public/` from a workflow on `main`, which
-   gives `https://hachej.github.io/boring-ui/r/pi-app.json`. Not created yet; the
-   owner decides the URL.
-
-The workflow pins npm 11.5.1, which supports trusted publishing, and Node 22.22.1.
-It has no token fallback. Missing account ownership or trust configuration fails
-publication; it does not authorize weakening release gates. This change creates no
-credentials, npm packages, version tags or GitHub release, and does not dispatch the
-publishing workflow. After an authorized publication, test a fresh consumer against
-registry versions; local tarballs cannot establish registry installability.
+5. Nothing to host separately: the registry is in the `@hachej/boring-ui-kit` archive
+   under `r/`. `npm run build` copies the committed `public/r` into `packages/ui/r`
+   (gitignored, generated), and `check:pack` fails if `r/registry.json`, any item
+   listed in `registry.json`, or any `@hachej/*` pin inside `r/*.json` is missing or
+   differs from the released version. Consumers pin the version in the URL, which must
+   equal the installed npm version:
+   `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/{name}.json`
+   (`unpkg.com` works too). Consumer setup is in the [README](../../README.md#install-components).
+   After publication, verify the pinned URL serves `r/registry.json` and that
+   `npx shadcn@latest add @boring-ui/pi-chat` installs from a fresh project.
 
 ### Interrupted publication
 

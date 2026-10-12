@@ -14,8 +14,9 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   }
   if (manifest.name === '@hachej/boring-ui-kit' && !files.has('THIRD_PARTY_NOTICES.md')) errors.push('Missing embedded icon license notices');
   const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && path === 'styles/file-tree.css';
+  const isRegistryFile = path => manifest.name === '@hachej/boring-ui-kit' && /^r\/[\w.-]+\.json$/.test(path);
   for (const path of files) {
-    if (isTreeStyles(path)) continue;
+    if (isTreeStyles(path) || isRegistryFile(path)) continue;
     if (!/^(package\.json|README\.md|LICENSE|INVARIANTS\.md|THIRD_PARTY_NOTICES\.md|dist\/(?:[\w.-]+\/)*[\w.-]+\.(?:js|d\.ts))$/.test(path)) errors.push(`Unexpected packed file: ${path}`);
   }
   function target(value) {
@@ -49,6 +50,35 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   return errors;
 }
 
+const registryItemFile = /^r\/([\w.-]+)\.json$/;
+const hachejPin = /(@hachej\/[a-z0-9-]+)@([^\s"'`,;()[\]{}]+)/g;
+
+/** The UI archive ships the shadcn registry under r/. Every item of registry.json must be present, every item's
+ * registryDependencies must name a shipped item in the @boring-ui namespace, and every @hachej/* pin in the shipped JSON
+ * must equal the version being released. `read(path)` returns the parsed JSON of a shipped file. */
+export function checkShippedRegistry(manifest, paths, { items = [], read } = {}) {
+  if (manifest.name !== '@hachej/boring-ui-kit') return [];
+  const errors = [];
+  const shipped = new Set(paths.filter(path => registryItemFile.test(path)).map(path => path.match(registryItemFile)[1]));
+  if (!shipped.has('registry')) errors.push('Missing r/registry.json');
+  for (const name of items) if (!shipped.has(name)) errors.push(`Missing registry item: r/${name}.json`);
+  const pins = (value, file) => {
+    if (typeof value === 'string') {
+      for (const [, name, version] of value.matchAll(hachejPin)) if (version !== manifest.version) errors.push(`Registry pin mismatch in r/${file}.json: ${name}@${version} (release ${manifest.version})`);
+    } else if (value && typeof value === 'object') for (const child of Object.values(value)) pins(child, file);
+  };
+  for (const name of shipped) {
+    const json = read(`r/${name}.json`);
+    pins(json, name);
+    if (name === 'registry') continue;
+    for (const dependency of json.registryDependencies ?? []) {
+      const local = dependency.startsWith('@boring-ui/') ? dependency.slice('@boring-ui/'.length) : undefined;
+      if (!local || !shipped.has(local)) errors.push(`Registry dependency not shipped in r/: ${name} -> ${dependency}`);
+    }
+  }
+  return errors;
+}
+
 export function checkPackages(root, { release = false, outputDirectory, commit } = {}) {
   if (outputDirectory && (!release || !/^[a-f0-9]{40}$/.test(commit ?? ''))) throw new Error('Retained release archives require --release and an exact commit SHA');
   const packages = readdirSync(join(root, 'packages')).map(name => {
@@ -76,6 +106,11 @@ export function checkPackages(root, { release = false, outputDirectory, commit }
       const manifest = JSON.parse(run('tar', ['-xOzf', archive, 'package/package.json']));
       if (JSON.stringify(manifest) !== JSON.stringify(pkg.manifest)) errors.push(`${pkg.manifest.name}: packed manifest differs from source`);
       errors.push(...checkPackage(manifest, paths, versions, { release }).map(error => `${manifest.name}: ${error}`));
+      if (manifest.name === '@hachej/boring-ui-kit') {
+        const items = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.map(item => item.name);
+        const read = path => JSON.parse(run('tar', ['-xOzf', archive, `package/${path}`]));
+        errors.push(...checkShippedRegistry(manifest, paths, { items, read }).map(error => `${manifest.name}: ${error}`));
+      }
       if (paths.includes('LICENSE') && run('tar', ['-xOzf', archive, 'package/LICENSE']) !== readFileSync(join(root, 'LICENSE'), 'utf8')) errors.push(`${manifest.name}: packed license differs from repository license`);
       const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
       if (integrity !== pack.integrity) errors.push(`${manifest.name}: archive integrity differs from npm pack`);

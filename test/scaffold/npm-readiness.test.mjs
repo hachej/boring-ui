@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkPackage } from '../../scripts/check-npm-packages.mjs';
+import { checkPackage, checkShippedRegistry } from '../../scripts/check-npm-packages.mjs';
 
 const manifest = {
   name: '@hachej/boring-example', version: '0.1.0', private: false, license: 'MIT',
@@ -59,4 +59,24 @@ test('UI may ship its declared tree stylesheet without admitting arbitrary asset
   assert.deepEqual(checkPackage(ui, [...packed, 'styles/private.json'], new Map()), ['Unexpected packed file: styles/private.json']);
   assert.deepEqual(checkPackage(ui, packed.filter(path => !path.endsWith('.css')), new Map()), ['Missing or invalid export target: ./styles/file-tree.css']);
   assert.ok(checkPackage({ ...ui, name: manifest.name }, packed, new Map()).includes('Unexpected packed file: styles/file-tree.css'));
+});
+
+test('UI archive ships the shadcn registry under r/ and nothing else may', () => {
+  const ui = { ...manifest, name: '@hachej/boring-ui-kit', version: '0.2.2' };
+  const packed = [...files, 'THIRD_PARTY_NOTICES.md', 'r/registry.json', 'r/theme.json', 'r/button.json'];
+  const items = { registry: { items: [{ name: 'theme' }, { name: 'button' }] }, theme: { dependencies: ['@hachej/boring-ui-kit@0.2.2'], registryDependencies: [] }, button: { dependencies: ['react@19.3.0'], registryDependencies: ['@boring-ui/theme'] } };
+  const read = path => structuredClone(items[path.slice(2, -5)]);
+  assert.deepEqual(checkPackage(ui, packed, new Map()), []);
+  assert.deepEqual(checkPackage(manifest, [...files, 'r/theme.json'], new Map()), ['Unexpected packed file: r/theme.json']);
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read }), []);
+  assert.deepEqual(checkShippedRegistry(manifest, [...files, 'r/theme.json'], { items: ['theme'], read }), [], 'non-UI packages carry no registry');
+  assert.deepEqual(checkShippedRegistry(ui, packed.filter(path => path !== 'r/registry.json'), { items: ['theme'], read }), ['Missing r/registry.json']);
+  assert.deepEqual(checkShippedRegistry(ui, packed.filter(path => path !== 'r/button.json'), { items: ['theme', 'button'], read }), ['Missing registry item: r/button.json']);
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-files@0.2.1'] } : read(path) }), [
+    'Registry pin mismatch in r/theme.json: @hachej/boring-files@0.2.1 (release 0.2.2)',
+  ]);
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('button.json') ? { registryDependencies: ['@boring-ui/utils', 'theme'] } : read(path) }), [
+    'Registry dependency not shipped in r/: button -> @boring-ui/utils',
+    'Registry dependency not shipped in r/: button -> theme',
+  ]);
 });

@@ -1,5 +1,5 @@
-import { lstatSync, readFileSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { copyFileSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
@@ -36,7 +36,17 @@ export function build(root, { stdio = 'inherit' } = {}) {
   cleanOutputs(root);
   const result = spawnSync(process.execPath, [compiler, '--build', '--force', resolve(root, 'tsconfig.json')], { cwd: root, stdio });
   if (result.error) throw result.error;
+  if (result.status === 0) syncRegistryArchive(root);
   return result.status ?? 1;
+}
+
+/** The shadcn registry is committed once under public/r (release-version rewrites its pins there). The UI package ships a
+ * generated copy at packages/ui/r so the npm archive carries the registry; the copy is gitignored, never edited by hand. */
+export function syncRegistryArchive(root) {
+  const source = resolve(root, 'public/r'), target = resolve(root, 'packages/ui/r');
+  rmSync(target, { recursive: true, force: true });
+  mkdirSync(target, { recursive: true });
+  for (const name of readdirSync(source)) if (name.endsWith('.json')) copyFileSync(join(source, name), join(target, name));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -11,6 +11,7 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
+    "r/*.json",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
