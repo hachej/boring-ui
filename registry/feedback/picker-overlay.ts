@@ -15,7 +15,7 @@ export const pickerOverlayStyles = `
 .label { border-radius: var(--radius-sm, calc(var(--radius, 0.625rem) * 0.6)); box-shadow: var(--shadow-sm, 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)); font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif); font-size: var(--text-xs, 0.75rem); font-weight: var(--font-weight-medium, 500); line-height: var(--leading-normal, 1.5); }
 .label[data-tone="candidate"] { font-weight: var(--font-weight-bold, 700); }
 .toolbar { border-radius: var(--radius-xl, calc(var(--radius, 0.625rem) * 1.4)); box-shadow: var(--shadow-lg, 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)); }
-.toolbar button { border-radius: var(--radius-md, calc(var(--radius, 0.625rem) * 0.8)); font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif); font-size: var(--text-sm, 0.875rem); font-weight: var(--font-weight-semibold, 600); }
+.toolbar button { border-radius: var(--radius-md, calc(var(--radius, 0.625rem) * 0.8)); font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif); font-size: var(--text-sm, 0.875rem); font-weight: var(--font-weight-semibold, 600); line-height: var(--leading-tight, 1.25); }
 @keyframes boring-feedback-pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--boring-feedback-reveal, var(--ring)) 55%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
 @media (prefers-reduced-motion: reduce) { .box[data-tone="reveal"] { animation: none; } }
 `;
