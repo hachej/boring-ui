@@ -115,10 +115,10 @@ export function createWorkspaceCatalog(options: {
   }
   // One traversal at a time, each started after its search was called: a search never reuses a walk that began before it, so its
   // result reflects every change made before the call, and no two walks overlap.
-  let walking: Promise<unknown> = Promise.resolve();
+  let walking: Promise<void> = Promise.resolve();
   function files(access: ResourceAccess): Promise<FileEntry[]> {
     const run = walking.then(() => collect('', true, access));
-    walking = run.catch(() => undefined);
+    walking = run.then(() => undefined, () => undefined);
     return run.then(entries => entries.filter(entry => entry.kind === 'file'));
   }
   function page(entries: FileEntry[], key: string, cursor: string | undefined, limit: number | undefined, order?: (entry: FileEntry) => string): FilePage {
