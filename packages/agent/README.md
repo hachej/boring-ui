@@ -118,6 +118,20 @@ Deviations, honestly:
 - Cost: the compactor makes about two calls per message, each carrying the view as context. Choose a cheap summarizer model; the browser-agent example uses the chat model only because it has one.
 - The package runs in Node and in a browser (no Node-only imports). Fictional-data tests are in `test/packages/agent.test.mjs`; `examples/bot` and `examples/browser-agent` have journeys.
 
+## Per-request prompt context
+
+`@hachej/boring-agent/prompt-context` (`createPromptContext({ context })`) is one ordinary native extension whose `GenerationHooks.beforeRequest` (registered with `hook(GenerationTask, ...)`) runs before every request attempt, retries and crash recovery included. The hook's text is used for that request only: it is recomputed each time and never appended to the transcript. The text is one user-role `<request-context>...</request-context>` message placed immediately before the round's final user message; system messages and earlier messages are unchanged, so the stable prefix stays cacheable.
+
+Choose the seam by how the text changes and who should see it:
+
+- Stable per-agent text (instructions, a fixed section): `AgentSpec.instructions` or a `PromptSection`. Pi stores a system entry whenever a section's text changes, so use it only for text that changes rarely.
+- Volatile or private text (the open document, the time, a permission snapshot): this hook. Nothing is stored and the person does not see it in the history.
+- Text the person should see and keep: `prepareInput` on the submit route, which becomes the user message.
+
+`context({ conversationId, messages, signal })` returns the text (`undefined` or `''` adds nothing). The host keeps request-scoped state in its own store keyed by `conversationId` and reads it there; Pi's hook context carries no caller values. Install several extensions to compose independent contexts (they apply in install order).
+
+Failure is fail-open: a throwing `context` is reported (`onError`, or the Harness reporter) and the request goes out without the context. An aborted turn rethrows. This is advisory text, not policy or authorization; do not use it to enforce a decision. The text is sent to the model provider and gateways or telemetry that log request bodies may see it; the model can quote it into a stored assistant message. Compaction summarizes the stored transcript only, so the context is not folded into summaries. After a crash the hook runs again at recovery, so the value is fresh per attempt, not replayed. Tests: `test/packages/agent-prompt-context.test.mjs`.
+
 ## Native questions
 
 `createQuestions` from `@hachej/boring-agent/questions` exposes a native task, session document family and extension. Install the extension explicitly. Call `admit(tx, question, ownership, context)` in a native commit to persist a single-choice question and its task together. `resolve` and `consume` take the caller's native transaction so host writes can share that atomic commit. Call them before host table writes: native task reads after a table write are unavailable and the operation returns conflict. Host authentication and current subject/policy checks run at both boundaries. A resolved answer is clarification, never publication permission.
