@@ -64,3 +64,35 @@ test('ambient bar keeps the sessionStorage default when storage is omitted', asy
   assert.deepEqual(JSON.parse(session), { right: 16, bottom: 32 });
   assert.equal(local, null, 'nothing is written to localStorage by default');
 });
+
+/** Presses an arrow key on the grip, the same write path a drag uses. */
+async function press(window, act, element, key) {
+  const grip = element.querySelector('[data-testid="ambient-grip"]');
+  assert.ok(grip, 'the bar shows its grip');
+  await act(async () => { grip.focus(); grip.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true })); });
+}
+
+test('ambient bar restores a position saved in localStorage with storage="local"', async t => {
+  const { window, element, root, chat, act, createElement, AmbientChat } = await harness(t);
+  const key = 'test.ambient.position';
+  window.localStorage.setItem(key, JSON.stringify({ right: 100, bottom: 200 }));
+  await act(async () => root.render(createElement(AmbientChat, { controller: chat, storageKey: key, storage: 'local' })));
+  // One step up from the restored corner: the write proves the restored origin (100, 200) was used.
+  await press(window, act, element, 'ArrowUp');
+  assert.deepEqual(JSON.parse(window.localStorage.getItem(key)), { right: 100, bottom: 216 });
+  assert.equal(window.sessionStorage.getItem(key), null, 'the restored position is not read from sessionStorage');
+});
+
+test('ambient bar follows a storage prop change after mount for the next move', async t => {
+  const { window, element, root, chat, act, createElement, AmbientChat } = await harness(t);
+  const key = 'test.ambient.position';
+  await act(async () => root.render(createElement(AmbientChat, { controller: chat, storageKey: key, storage: 'local' })));
+  await press(window, act, element, 'ArrowUp');
+  const afterLocal = JSON.parse(window.localStorage.getItem(key));
+  assert.deepEqual(afterLocal, { right: 16, bottom: 32 });
+  // Switch to sessionStorage while mounted: the next move writes there and leaves localStorage as it was.
+  await act(async () => root.render(createElement(AmbientChat, { controller: chat, storageKey: key, storage: 'session' })));
+  await press(window, act, element, 'ArrowUp');
+  assert.deepEqual(JSON.parse(window.sessionStorage.getItem(key)), { right: 16, bottom: 48 });
+  assert.deepEqual(JSON.parse(window.localStorage.getItem(key)), afterLocal, 'localStorage is not written after the switch');
+});
