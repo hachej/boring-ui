@@ -65,7 +65,7 @@ function MountedHtmlViewer({ controller, title = 'HTML document', className, hea
   const perform = (action: () => Promise<ReadResult | SaveResult>) => {
     setError(undefined);
     void Promise.resolve().then(action).then(result => {
-      if (active.current && (result.kind === 'denied' || result.kind === 'unavailable')) setError(result.reason);
+      if (active.current && (result.kind === 'denied' || result.kind === 'unavailable' || result.kind === 'file_too_large')) setError(result.reason);
     }).catch(() => { if (active.current) setError('The document operation failed. Your source has been retained.'); });
   };
   const status = disposed ? 'Viewer disposed' : snapshot.readOnly ? 'Read only' : pending ? 'Saving selected source' : unknown ? 'Save unconfirmed. Reconcile before saving again.' : snapshot.save.kind === 'settled' && snapshot.save.result.kind !== 'saved'

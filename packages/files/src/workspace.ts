@@ -10,7 +10,7 @@ import { committedChanges } from './journal.js';
 import type { HistorySource, OperationKey, StoredOperation, WorkspaceJournal } from './journal.js';
 import { randomUUID, sha1 } from './platform.js';
 import { accessSnapshot, identifier, locator, publicationDigest, publicationSnapshot } from './publication-input.js';
-import { fileTooLarge } from './file-limits.js';
+import { assertLimit, fileTooLarge } from './file-limits.js';
 import { journalConnectionOf, sqliteBatchOf } from './sqlite-batch.js';
 
 const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte, index) => byte === right[index]);
@@ -171,7 +171,10 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   const queue = queueFor(fs);
   /** Present when `fs` is the SQLite file system (`@hachej/boring-files/sqlite-filesystem`): multi-file batches then commit in one transaction. */
   const batch = sqliteBatchOf(fs);
-  if (batch && options.maxFileBytes !== undefined) batch.setMaxFileBytes(options.maxFileBytes);
+  if (options.maxFileBytes !== undefined) {
+    assertLimit(options.maxFileBytes);
+    batch?.setMaxFileBytes(options.maxFileBytes);
+  }
   const limitOf = (): number | undefined => batch ? batch.maxFileBytes() : options.maxFileBytes;
   const historyScope = JSON.stringify([key.providerId, key.instanceId, key.incarnation, key.viewId]);
   const listeners = new Set<(change: WorkspaceChange) => void>();

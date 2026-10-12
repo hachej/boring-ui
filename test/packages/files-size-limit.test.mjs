@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -69,18 +69,23 @@ test('SQLite file system: a write at the default limit is stored and one byte mo
   assert.equal((await fs.exists('/workspace/too-big.bin', context)).value, false);
 });
 
-test('SQLite file system: multibyte UTF-8 counts bytes, not characters, at the boundary', async t => {
+test('SQLite provider: multibyte UTF-8 counts bytes, not characters, at the provider limit', async t => {
   const connection = tempDatabase();
   t.after(() => connection.close());
-  const { fs } = sqliteWorkspace(connection, { fs: { maxFileBytes: 10 } });
-  // Five two-byte characters are exactly 10 bytes: accepted. Six characters with one more ASCII byte are 11 bytes: refused.
-  assert.equal((await fs.writeFile('/workspace/accents.txt', 'é'.repeat(5), context)).ok, true);
-  const over = await fs.writeFile('/workspace/accents.txt', 'é'.repeat(5) + 'a', context);
-  assert.equal(over.ok, false);
-  assert.equal((await fs.readTextFile('/workspace/accents.txt', context)).value, 'é'.repeat(5));
+  const { fs, provider } = sqliteWorkspace(connection, { provider: { maxFileBytes: 10 } });
+  const publishText = (name, text) => provider.publication.publish({
+    operationId: name, atomicity: 'all-or-nothing',
+    changes: [{ kind: 'create', target: locate(`${name}.txt`), expected: { kind: 'absent' }, bytes: new TextEncoder().encode(text), mediaType: 'text/plain' }],
+  }, access);
+  // Five two-byte characters are exactly 10 bytes: accepted. Five characters and one ASCII byte are 11 bytes (6 characters): refused.
+  assert.equal((await publishText('exact', 'é'.repeat(5))).kind, 'committed');
+  const over = await publishText('over', 'é'.repeat(5) + 'a');
+  assert.equal(over.kind, 'file_too_large');
+  assert.equal(over.size, 11);
+  assert.equal((await fs.exists('/workspace/over.txt', context)).value, false);
 });
 
-test('SQLite file system: append and truncate past the limit fail before allocating, and an unchanged file stays as it was', async t => {
+test('SQLite file system: a truncate to a huge size is a size refusal, not an allocation failure, and a refused append leaves the file as it was', async t => {
   const connection = tempDatabase();
   t.after(() => connection.close());
   const { fs } = sqliteWorkspace(connection, { fs: { maxFileBytes: 10 } });
@@ -216,4 +221,30 @@ test('disk provider: no default limit, and an explicit maxFileBytes refuses an o
   assert.equal(refused.kind, 'file_too_large');
   assert.equal(existsSync(join(root, 'small.txt')), false);
   assert.equal(readFileSync(join(root, 'big.bin')).length, LIMIT + 1);
+});
+
+test('a pending intent replayed under a lower limit stays unknown, not a size refusal, and writes nothing', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'size-limit-intent-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, 'note.md'), 'OLD');
+  const fs = new NodeExecutionEnv({ cwd: root });
+  const database = join(root, 'journal.sqlite');
+  let connection = openNodeConnection(database);
+  t.after(() => connection.close());
+  const open = maxFileBytes => createWorkspaceProvider({ identity, fs, journal: createWorkspaceJournal(connection), ...(maxFileBytes === undefined ? {} : { maxFileBytes }) });
+  const provider = open();
+  // The acknowledgement of the rename is lost, so the first attempt leaves an intent with no recorded outcome.
+  const rename = fs.renameFile.bind(fs);
+  fs.renameFile = async () => { throw new Error('The rename acknowledgement was lost'); };
+  const ref = (await provider.read({ target: locate('note.md'), revision: { kind: 'latest' } }, access)).snapshot.ref;
+  const request = { operationId: 'pending-note', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: ref, bytes: bytes(3), mediaType: 'text/plain' }] };
+  assert.equal((await provider.publication.publish(request, access)).kind, 'unknown');
+  fs.renameFile = rename;
+  // Reopened with a lower limit that the retry would exceed: the unresolved attempt is reported first, as before.
+  connection.close();
+  connection = openNodeConnection(database);
+  const reopened = open(2);
+  assert.equal((await reopened.publication.publish(request, access)).kind, 'unknown');
+  assert.equal((await reopened.reconciliation.lookup('pending-note', access)).kind, 'unknown');
+  assert.equal(readFileSync(join(root, 'note.md'), 'utf8'), 'OLD');
 });

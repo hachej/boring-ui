@@ -68,7 +68,7 @@ export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document
   const disposed = state.lifecycle === 'disposed';
   const perform = (action: () => Promise<{ readonly kind: string; readonly reason?: string }>) => {
     setError(undefined);
-    void Promise.resolve().then(action).then(result => { if ((result.kind === 'denied' || result.kind === 'unavailable') && result.reason) setError(result.reason); })
+    void Promise.resolve().then(action).then(result => { if ((result.kind === 'denied' || result.kind === 'unavailable' || result.kind === 'file_too_large') && result.reason) setError(result.reason); })
       .catch(() => setError(labels.operationFailed));
   };
   const filename = useMemo(() => fileNameFor(title, 'html'), [title]);
