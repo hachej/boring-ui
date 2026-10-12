@@ -210,7 +210,7 @@ export function AgentNotifications({ store, max = 3, autoDismissMs = 8000, onAct
   }, [items, systemNotifications, activate, labels]);
   const shown = items.slice(-max);
   return <div data-boring="agent-notifications" data-variant={variant} role="status" aria-live="polite" aria-relevant="additions" aria-label={labels.notifications}
-    className={cn('pi-chat pi-ambient pointer-events-none z-50', placement === 'fixed' && 'fixed right-4 bottom-4 w-[min(26rem,calc(100vw-2rem))]', className)}>
+    className={cn('pi-chat pi-ambient pointer-events-none z-50', variant === 'contrast' && 'dark scheme-dark', placement === 'fixed' && 'fixed right-4 bottom-4 w-[min(26rem,calc(100vw-2rem))]', className)}>
     <ul className="m-0 flex list-none flex-col gap-3 p-0">
       {shown.map(item => <Toast key={`${item.id}:${item.createdAt}`} item={item} autoDismissMs={autoDismissMs} onActivate={activate} onDismiss={dismiss} labels={labels} />)}
     </ul>

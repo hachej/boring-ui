@@ -111,7 +111,7 @@ export interface AmbientChatProps extends ChatFeatureProps {
   readonly avatar?: ReactNode;
   /** Host actions in the bar, before Dock: `header` ones as buttons, `menu` ones in a "…" menu. Test ids `ambient-action-<id>`, the menu `ambient-action-more`. */
   readonly headerActions?: readonly BlockAction[] | undefined;
-  /** `contrast` is a dark window on any page; `surface` follows the host's background. */
+  /** `contrast` is a dark window on any page: the root carries `.dark`, so it shows the host's own dark tokens; `surface` follows the host's theme. */
   readonly variant?: 'contrast' | 'surface';
   /** Controlled window state; otherwise `defaultState` starts it and the window keeps it. */
   readonly state?: AmbientState;
@@ -400,7 +400,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   const surface = cn('relative flex flex-col border border-border bg-background text-foreground shadow-2xl', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
     !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
-  const rootClass = cn('pi-chat pi-ambient fixed z-50', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
+  const rootClass = cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
     : cn('transition-[width] duration-200 motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
   const rootStyle = phone ? undefined : { right: placed.right, bottom: placed.bottom };
 
