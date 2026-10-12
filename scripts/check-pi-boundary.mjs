@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { posix, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkManifest, checkSource, hasDeclaredTests } from './pi-policy.mjs';
 import { isContractOnly } from './is-contract-only.mjs';
@@ -106,54 +106,41 @@ export function checkHostExecution(root) {
 }
 
 /**
- * BORING-PI-1 one harness: no host calls a pi-ai model function outside the native Harness. In packages/ and examples/, a reference to
- * pi-ai generation is refused unless its file is in ONE_HARNESS_ALLOWED with a reason. References are:
- *  - importing `complete`, `stream` or `streamSimple` from pi-ai;
- *  - `complete`, `stream` or `streamSimple` read from a Models value (a pi-ai `createModels()` result, a binding typed `Models`, a property
- *    typed `Models`, or any alias, `.bind` or destructuring of one), or from a pi-ai namespace;
- *  - exporting a Models value or a generation function, so that another file can call it.
- * Bindings are resolved per file with the TypeScript checker (no dependency resolution beyond repository paths); a consumer of a
- * model-bearing export is tracked through its import. Unrelated `.complete()` receivers are not flagged. Bounded structural evidence:
- * it cannot follow values through arbitrary functions or dynamic property names; the runtime proof is the native Harness turn.
+ * BORING-PI-1 one harness: no host calls a pi-ai model function outside the native Harness. In packages/ and examples/ a file is
+ * refused for a pi-ai reference unless it is in ONE_HARNESS_ALLOWED with a reason. Two rules, both lexical (one file, checker-resolved
+ * bindings, no cross-file or property-name lookup):
+ *  - Reference: `complete`, `stream` or `streamSimple` is imported from pi-ai, or read from a value bound to pi-ai: a namespace, a
+ *    `createModels()` result, a binding declared with a pi-ai Models type (a local interface or alias is followed), or an alias,
+ *    `??`/`||`/`&&`/`?:` fallback or destructuring of one.
+ *  - Boundary: a file does not export a pi-ai value, a generation function, a factory or a namespace re-export of pi-ai. Another file
+ *    can then reach the model only through a file the review has allowed.
+ * Limits: a value that reaches a binding through an arbitrary function call is not followed; an untyped parameter is not known to be a
+ * Models value. The runtime proof is the native Harness turn.
  */
 export const ONE_HARNESS_ALLOWED = Object.freeze({
   'packages/agent/src/memory/optchat.ts': 'OptChat memory summarizer: a plain model call with no tools that compresses transcript lines. It is not an agent turn and runs no tool loop.',
   'packages/feedback/src/preview/agent.ts': 'Legacy debt (BORING-PI-1): the in-page preview subagent is a hand-rolled tool loop on Pi Models in the browser. It moves onto the native Harness; remove this entry in that change. See docs/architecture/FEEDBACK.md.',
   'packages/browser/src/models.ts': 'Browser model registry for settings (API keys, device-code sign-in): exports a Models value for the native Harness and calls no model.',
   'examples/feedback/model-preview.mjs': 'Gateway proof: builds the Models object over the host gateway and makes one-shot completions (previewComplete) outside any agent turn.',
+  'packages/testing/src/model.ts': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
+  'examples/bot/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
+  'examples/feedback/builder.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
+  'examples/feedback/server.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
+  'examples/redaction/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
+  'examples/validated-output/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
 });
 const PI_AI_MODULE = /^@earendil-works\/pi-ai(?:\/|$)/;
 const GENERATION = new Set(['complete', 'stream', 'streamSimple']);
-const PI_MODELS = new Set([...GENERATION, 'createModels']);
+const PI_VALUES = new Set([...GENERATION, 'createModels']);
 const PI_MODEL_TYPES = new Set(['Models', 'MutableModels']);
-const MODULE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.mjs', '.js', '.jsx', '/index.ts', '/index.js', '/index.mjs'];
-
 const unwrap = (node) => {
   while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node) || ts.isAwaitExpression(node) || ts.isSatisfiesExpression(node) || ts.isTypeAssertionExpression(node))) node = node.expression;
   return node;
 };
-const keyOf = (node) => ts.isPropertyAccessExpression(node) ? node.name.text
-  : ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteralLike(node.argumentExpression) ? node.argumentExpression.text : undefined;
-const nameOf = (node) => node && (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isPrivateIdentifier(node)) ? node.text : undefined;
+const literalKey = (node) => ts.isPropertyAccessExpression(node) ? node.name.text : ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) ? node.argumentExpression.text : undefined;
 
-/** 'pi' for pi-ai, a repository file for a package or relative module we can read, null for anything else. */
-function resolveModule(from, spec, files) {
-  if (PI_AI_MODULE.test(spec)) return 'pi';
-  let base;
-  if (spec.startsWith('.')) base = posix.normalize(posix.join(posix.dirname(from), spec));
-  else {
-    const match = /^@hachej\/boring-([\w-]+)(?:\/(.+))?$/.exec(spec);
-    if (!match) return null;
-    base = `packages/${match[1]}/src/${match[2] ?? 'index'}`;
-  }
-  const stem = base.replace(/\.(?:[cm]?jsx?|tsx?)$/, '');
-  return MODULE_EXTENSIONS.map((suffix) => stem + suffix).find((candidate) => files.has(candidate)) ?? null;
-}
-
-function walk(node, visit) { visit(node); ts.forEachChild(node, (child) => walk(child, visit)); }
-
-/** One file: its checker-resolved symbols and its static imports. */
-function readUnit(file, text, files) {
+/** Findings for one file, from its own bindings only. */
+function scanFile(file, text) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2023, true, /x$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const host = {
     getSourceFile: (name) => name === file || name === `/${file}` ? sf : undefined,
@@ -163,172 +150,131 @@ function readUnit(file, text, files) {
   };
   const checker = ts.createProgram([file], { noLib: true, noResolve: true, allowJs: true }, host).getTypeChecker();
   const symbol = (node) => checker.getSymbolAtLocation(node);
-  const unit = { file, sf, checker, symbol, named: new Map(), spaces: new Map(), piTypes: new Set() };
+  const lines = [];
+  const report = (node, message) => lines.push(`ONE_HARNESS ${file}:${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}: ${message}`);
+  const values = new Set(); // symbols bound to a pi-ai value: namespace, generation function, factory or a Models value
+  const factories = new Set(); // symbols of pi-ai's createModels
+  const namespaces = new Set(); // symbols of pi-ai namespace imports
+  const piTypes = new Set(); // symbols of pi-ai Models types
+
   for (const statement of sf.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || !statement.importClause) continue;
-    const source = resolveModule(file, statement.moduleSpecifier.text, files);
-    const clause = statement.importClause;
-    if (clause.name) unit.named.set(symbol(clause.name), { source, name: 'default' });
-    const bindings = clause.namedBindings;
-    if (bindings && ts.isNamespaceImport(bindings)) unit.spaces.set(symbol(bindings.name), source);
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || !PI_AI_MODULE.test(statement.moduleSpecifier.text)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) { namespaces.add(symbol(bindings.name)); values.add(symbol(bindings.name)); }
     if (bindings && ts.isNamedImports(bindings)) for (const element of bindings.elements) {
-      const entry = { source, name: (element.propertyName ?? element.name).text, node: element };
-      unit.named.set(symbol(element.name), entry);
-      if (source === 'pi' && PI_MODEL_TYPES.has(entry.name)) unit.piTypes.add(symbol(element.name));
+      const name = (element.propertyName ?? element.name).text;
+      if (GENERATION.has(name)) report(element, `imports pi-ai ${name}`);
+      if (PI_VALUES.has(name)) values.add(symbol(element.name));
+      if (name === 'createModels') factories.add(symbol(element.name));
+      if (PI_MODEL_TYPES.has(name)) piTypes.add(symbol(element.name));
     }
   }
-  return unit;
-}
-
-/**
- * The analysis of one file given the model-bearing export names of every file. Tracked values: pi-ai generation and factory
- * imports, model-bearing imports, declarations typed with a pi-ai Models type, and any alias, bind or destructuring of them.
- */
-function analyzeUnit(unit, bearing, modelProps, files) {
-  const { symbol } = unit;
-  const tracked = new Set(); // symbols holding a Models value or a generation function
-  const spaces = new Map(unit.spaces); // namespace symbols -> 'pi' | repository file | null (external)
-  for (const [sym, { source, name }] of unit.named) {
-    if ((source === 'pi' && PI_MODELS.has(name)) || (source && source !== 'pi' && bearing.get(source).has(name))) tracked.add(sym);
-  }
-  const namespaceOf = (node) => {
-    node = unwrap(node);
-    if (ts.isIdentifier(node)) return spaces.get(symbol(node));
-    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
-      const spec = node.arguments[0];
-      return spec && ts.isStringLiteralLike(spec) ? resolveModule(unit.file, spec.text, files) : undefined;
-    }
-    return undefined;
-  };
-  // The declared type IS a pi-ai Models type (or a union or parenthesis of one). An object that merely contains one is not a Models value.
-  const isPiTypeRef = (node) => {
-    if (!node) return false;
-    if (ts.isParenthesizedTypeNode(node)) return isPiTypeRef(node.type);
-    if (ts.isUnionTypeNode(node)) return node.types.some(isPiTypeRef);
-    if (!ts.isTypeReferenceNode(node)) return false;
-    const name = node.typeName;
-    if (ts.isIdentifier(name)) return unit.piTypes.has(symbol(name));
-    return ts.isQualifiedName(name) && PI_MODEL_TYPES.has(name.right.text) && spaces.get(symbol(name.left)) === 'pi';
-  };
-  const trackedMember = (base, key) => {
-    const source = namespaceOf(base);
-    if (source !== undefined) return source === 'pi' ? PI_MODELS.has(key) : Boolean(source && bearing.get(source).has(key));
-    return (!GENERATION.has(key) && modelProps.has(key)) || tracked_(base);
-  };
-  const tracked_ = (node) => {
-    node = unwrap(node);
-    if (!node) return false;
-    if (ts.isIdentifier(node)) return tracked.has(symbol(node));
-    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-      const key = keyOf(node);
-      return key !== undefined && trackedMember(node.expression, key);
-    }
-    if (ts.isCallExpression(node)) {
-      if (namespaceOf(node) !== undefined) return false;
-      return tracked_(node.expression);
-    }
-    // Value flow: a fallback or choice between values is a value of either side (`summarizer.models ?? runtimeModels`).
-    if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(node.operatorToken.kind)) return tracked_(node.left) || tracked_(node.right);
-    if (ts.isConditionalExpression(node)) return tracked_(node.whenTrue) || tracked_(node.whenFalse);
-    return false;
-  };
-  const learn = (n) => {
-    if (ts.isVariableDeclaration(n)) {
-      const init = n.initializer && unwrap(n.initializer);
-      if (ts.isIdentifier(n.name)) {
-        if (init && namespaceOf(init) !== undefined) spaces.set(symbol(n.name), namespaceOf(init));
-        if ((init && tracked_(init)) || isPiTypeRef(n.type)) tracked.add(symbol(n.name));
-      } else if (ts.isObjectBindingPattern(n.name) && init) for (const element of n.name.elements) {
-        const key = nameOf(element.propertyName ?? element.name);
-        if (key !== undefined && ts.isIdentifier(element.name) && (modelProps.has(key) || trackedMember(init, key))) tracked.add(symbol(element.name));
-      }
-    }
-    if (ts.isParameter(n)) {
-      if (ts.isIdentifier(n.name) && isPiTypeRef(n.type)) tracked.add(symbol(n.name));
-      if (ts.isObjectBindingPattern(n.name)) for (const element of n.name.elements) {
-        const key = nameOf(element.propertyName ?? element.name);
-        if (key !== undefined && ts.isIdentifier(element.name) && modelProps.has(key)) tracked.add(symbol(element.name));
-      }
-    }
-    if ((ts.isPropertySignature(n) || ts.isPropertyDeclaration(n)) && isPiTypeRef(n.type)) { const key = nameOf(n.name); if (key !== undefined && !GENERATION.has(key)) modelProps.add(key); }
-    // An object literal property that is directly a Models value (`{ models: createModels() }`). Only direct values: a member access
-    // is never a property source, so the set cannot feed itself.
-    if (ts.isPropertyAssignment(n)) {
-      const init = unwrap(n.initializer);
-      const direct = ts.isIdentifier(init) ? tracked.has(symbol(init)) : ts.isCallExpression(init) && ts.isIdentifier(unwrap(init.expression)) && tracked.has(symbol(unwrap(init.expression)));
-      const key = nameOf(n.name);
-      if (direct && key !== undefined && !GENERATION.has(key)) modelProps.add(key);
-    }
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(unwrap(n.left)) && tracked_(n.right)) tracked.add(symbol(unwrap(n.left)));
-  };
-  // Pure growth to a fixpoint: every set only gains members.
-  let size = -1;
-  while (size !== tracked.size + modelProps.size + spaces.size) { size = tracked.size + modelProps.size + spaces.size; walk(unit.sf, learn); }
-  const exported = new Set();
-  for (const statement of unit.sf.statements) {
-    if (ts.isExportDeclaration(statement)) {
-      const source = statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) ? resolveModule(unit.file, statement.moduleSpecifier.text, files) : undefined;
-      if (!statement.exportClause) {
-        if (source === 'pi') for (const name of PI_MODELS) exported.add(name);
-        else if (source) for (const name of bearing.get(source)) exported.add(name);
-      } else if (ts.isNamedExports(statement.exportClause)) for (const element of statement.exportClause.elements) {
-        const exportedName = element.name.text;
-        if (statement.moduleSpecifier) {
-          const local = (element.propertyName ?? element.name).text;
-          if (source === 'pi' ? PI_MODELS.has(local) : source && bearing.get(source).has(local)) exported.add(exportedName);
-        } else if (tracked.has(unit.checker.getExportSpecifierLocalTargetSymbol(element))) exported.add(exportedName);
-      }
-    } else if (ts.isExportAssignment(statement)) {
-      if (tracked_(statement.expression)) exported.add('default');
-    } else if (ts.isVariableStatement(statement) && statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
-      for (const declaration of statement.declarationList.declarations) if (ts.isIdentifier(declaration.name) && declaration.initializer && tracked_(declaration.initializer)) exported.add(declaration.name.text);
-    } else if (ts.isFunctionDeclaration(statement) && statement.name && statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
-      let returns = false;
-      walk(statement, (n) => { if (ts.isReturnStatement(n) && n.expression && tracked_(n.expression)) returns = true; });
-      if (returns) exported.add(statement.name.text);
-    }
-  }
-  return { exported, tracked_, trackedMember };
-}
-
-/** Every file's findings. `texts` maps repository paths to source; an empty allowlist reports every site. */
-export function analyzeOneHarness(texts) {
-  const files = new Set(texts.keys());
-  const units = new Map([...texts].map(([file, text]) => [file, readUnit(file, text, files)]));
-  const bearing = new Map([...files].map((file) => [file, new Set()]));
-  // Model-bearing exports and property names holding Models grow to a fixpoint: re-exports, cross-file consumers and a
-  // Models-typed property declared in another file are all seen.
-  const modelProps = new Set();
-  let size = -1;
-  while (size !== [...bearing.values()].reduce((sum, set) => sum + set.size, 0) + modelProps.size) {
-    size = [...bearing.values()].reduce((sum, set) => sum + set.size, 0) + modelProps.size;
-    for (const unit of units.values()) for (const name of analyzeUnit(unit, bearing, modelProps, files).exported) bearing.get(unit.file).add(name);
-  }
-  const findings = new Map();
-  for (const unit of units.values()) {
-    const { exported, trackedMember } = analyzeUnit(unit, bearing, modelProps, files);
-    const lines = [];
-    const at = (node) => unit.sf.getLineAndCharacterOfPosition(node.getStart(unit.sf)).line + 1;
-    const report = (node, message) => lines.push(`ONE_HARNESS ${unit.file}:${at(node)}: ${message}`);
-    for (const { source, name, node } of unit.named.values()) if (source === 'pi' && GENERATION.has(name)) report(node, `imports pi-ai ${name}`);
-    walk(unit.sf, (n) => {
-      if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && GENERATION.has(keyOf(n)) && trackedMember(n.expression, keyOf(n))) {
-        report(n, `${n.getText(unit.sf)} reads a pi-ai model call outside the native Harness`);
-      }
-      if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && n.initializer) for (const element of n.name.elements) {
-        const key = nameOf(element.propertyName ?? element.name);
-        if (GENERATION.has(key) && trackedMember(n.initializer, key)) report(element, `destructures pi-ai ${key} from a Models value`);
+  // Does a type name a pi-ai Models type? A local interface or alias is followed, so `options: Options` with `models: Models` counts.
+  const declaresModels = (typeNode, seen = new Set()) => {
+    if (!typeNode) return false;
+    let found = false;
+    walk(typeNode, (n) => {
+      if (found) return;
+      if (ts.isIdentifier(n) && piTypes.has(symbol(n))) found = true;
+      else if (ts.isQualifiedName(n) && PI_MODEL_TYPES.has(n.right.text) && namespaces.has(symbol(n.left))) found = true;
+      else if (ts.isIdentifier(n)) for (const declaration of symbol(n)?.declarations ?? []) {
+        if ((ts.isInterfaceDeclaration(declaration) || ts.isTypeAliasDeclaration(declaration)) && !seen.has(declaration)) {
+          seen.add(declaration);
+          if (declaresModels(declaration, seen)) found = true;
+        }
       }
     });
-    for (const name of exported) report(unit.sf, `exports a Models value or pi-ai generation: ${name}`);
-    findings.set(unit.file, lines);
+    return found;
+  };
+  // `import()` or `require()` of pi-ai is the namespace itself, so it is a value like a namespace import.
+  const isPiLoad = (call) => (call.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(call.expression) && call.expression.text === 'require'))
+    && call.arguments[0] && ts.isStringLiteralLike(call.arguments[0]) && PI_AI_MODULE.test(call.arguments[0].text);
+  const isFactoryCall = (call) => {
+    const callee = unwrap(call.expression);
+    return ts.isIdentifier(callee) ? factories.has(symbol(callee)) : ts.isPropertyAccessExpression(callee) && callee.name.text === 'createModels' && valueOf(callee.expression);
+  };
+  // Is this expression a pi-ai value? Member access follows its base only; a call yields a Models value only as a pi-ai factory call.
+  const rootIsValue = (node) => {
+    node = unwrap(node);
+    if (ts.isIdentifier(node)) return values.has(symbol(node));
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) return rootIsValue(node.expression);
+    return ts.isCallExpression(node) && valueOf(node); // only a pi-ai factory or load yields a value; other calls do not
+  };
+  const valueOf = (node) => {
+    node = unwrap(node);
+    if (!node) return false;
+    if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(node.operatorToken.kind)) return valueOf(node.left) || valueOf(node.right);
+    if (ts.isConditionalExpression(node)) return valueOf(node.whenTrue) || valueOf(node.whenFalse);
+    if (ts.isCallExpression(node)) return isPiLoad(node) || isFactoryCall(node);
+    // An object that carries a value (`return { models, ... }`) is an export of that value.
+    if (ts.isObjectLiteralExpression(node)) return node.properties.some((p) => ts.isShorthandPropertyAssignment(p) ? values.has(checker.getShorthandAssignmentValueSymbol(p)) : ts.isPropertyAssignment(p) && valueOf(p.initializer));
+    return rootIsValue(node);
+  };
+  // Bindings: a declaration typed with a Models type, or initialized from a pi-ai value, is a pi-ai value. Repeats until stable.
+  const learn = (n) => {
+    if (ts.isVariableDeclaration(n) || ts.isParameter(n)) {
+      const bound = (n.initializer && valueOf(n.initializer)) || declaresModels(n.type);
+      if (!bound) return;
+      if (ts.isIdentifier(n.name)) values.add(symbol(n.name));
+      else if (ts.isObjectBindingPattern(n.name)) for (const element of n.name.elements) if (ts.isIdentifier(element.name)) {
+        values.add(symbol(element.name));
+        if ((element.propertyName ?? element.name).getText(sf) === 'createModels') factories.add(symbol(element.name));
+      }
+    }
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(unwrap(n.left)) && valueOf(n.right)) values.add(symbol(unwrap(n.left)));
+  };
+  for (let size = -1; size !== values.size;) { size = values.size; walk(sf, learn); }
+
+  // Returns a pi-ai value: an arrow or function whose result is one.
+  const returnsValue = (fn) => fn.body && !ts.isBlock(fn.body) ? valueOf(fn.body) : (() => {
+    let found = false;
+    walk(fn.body ?? fn, (n) => { if (ts.isReturnStatement(n) && n.expression && valueOf(n.expression)) found = true; });
+    return found;
+  })();
+  walk(sf, (n) => {
+    // Reference: a generation function is read from a pi-ai value.
+    if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && GENERATION.has(literalKey(n)) && rootIsValue(n.expression)) {
+      report(n, `${n.getText(sf)} is a pi-ai generation call outside the native Harness`);
+    }
+    if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && n.initializer && valueOf(n.initializer)) for (const element of n.name.elements) {
+      const key = (element.propertyName ?? element.name).text;
+      if (GENERATION.has(key)) report(element, `destructures pi-ai ${key} from a pi-ai value`);
+    }
+  });
+  // Boundary: no export of a pi-ai value, a generation function, a factory or a pi-ai namespace.
+  for (const statement of sf.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      const from = statement.moduleSpecifier;
+      if (from && ts.isStringLiteral(from) && PI_AI_MODULE.test(from.text)) {
+        const clause = statement.exportClause;
+        if (!clause || ts.isNamespaceExport(clause)) report(statement, `re-exports pi-ai ${clause ? 'namespace' : 'in full'}`);
+        else for (const element of clause.elements) if (PI_VALUES.has((element.propertyName ?? element.name).text)) report(element, `re-exports pi-ai ${(element.propertyName ?? element.name).text}`);
+      } else if (!from && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) if (values.has(checker.getExportSpecifierLocalTargetSymbol(element))) report(element, `exports a pi-ai value: ${element.name.text}`);
+      }
+    } else if (ts.isExportAssignment(statement) && valueOf(statement.expression)) report(statement, 'exports a pi-ai value as default');
+    else if (ts.isVariableStatement(statement) && statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const init = unwrap(declaration.initializer);
+        if (init && (valueOf(init) || ((ts.isArrowFunction(init) || ts.isFunctionExpression(init)) && returnsValue(init)))) report(declaration, `exports a pi-ai value: ${declaration.name.getText(sf)}`);
+      }
+    } else if (ts.isFunctionDeclaration(statement) && statement.name && statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) && returnsValue(statement)) {
+      report(statement, `exports a function that returns a pi-ai value: ${statement.name.text}`);
+    }
   }
-  return { findings, files: files.size };
+  return lines;
+}
+
+function walk(node, visit) { visit(node); ts.forEachChild(node, (child) => walk(child, visit)); }
+
+/** Findings per repository file, each from that file's own bindings. */
+export function analyzeOneHarness(texts) {
+  return { findings: new Map([...texts].map(([file, text]) => [file, scanFile(file, text)])) };
 }
 
 /** One source text, analyzed alone (the fixture form used by tests). */
 export function scanOneHarness(file, source) {
-  return analyzeOneHarness(new Map([[file, source]])).findings.get(file);
+  return scanFile(file, source);
 }
 
 /** Every package and example source file. The allowlist is exact in both directions: an entry must still have a finding. */
