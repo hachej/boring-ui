@@ -15,13 +15,6 @@ export interface WorkspaceCatalogOptions {
   /** A traversal exceeding this bound fails explicitly; it never returns a silently incomplete page. */
   readonly maxEntries?: number;
 }
-/** The change feed of the provider that owns the workspace: the search index is rebuilt only when it reports something new. */
-export interface CatalogFeed {
-  /** Moves on every event the feed reports, resnapshots included, and on every raw watcher notification (before the feed processes it). */
-  readonly version: () => number;
-  /** True only while a watcher is armed, so every change reaches the feed. Without it the index is never reused. */
-  readonly live: () => boolean;
-}
 const hidden = new Set(['.git', '.boring', 'node_modules', 'dist', 'build', '.cache', '.next', 'coverage', '__pycache__']);
 const temporary = /^\.boring-[0-9a-f-]{36}\.tmp$/;
 const inside = (root: string, path: string) => path === root || path.startsWith(root === '/' ? '/' : `${root}/`);
@@ -38,7 +31,6 @@ export function createWorkspaceCatalog(options: {
   readonly fs: FileSystem;
   readonly config?: WorkspaceCatalogOptions;
   readonly saves: (path: string) => readonly SavedRevision[];
-  readonly feed?: CatalogFeed;
 }): WorkspaceCatalog {
   const { fs } = options, config = options.config ?? {};
   const maximum = config.maxEntries ?? 100_000;
@@ -85,13 +77,6 @@ export function createWorkspaceCatalog(options: {
     }
     return config.filter?.(entry) !== false;
   }
-  /** Repository links are refused before any read through them. Checked on every search, since the watcher does not report `.git`. */
-  async function repositoryLinks(access: ResourceAccess): Promise<void> {
-    for (const path of ['.git', '.git/info']) {
-      const info = await fs.fileInfo(absolute(path), context(access));
-      if (info.ok && info.value.kind === 'symlink') throw new RevisionError('denied', 'Repository ignore rules cannot use symbolic links');
-    }
-  }
   async function collect(directory: string, recursive: boolean, access: ResourceAccess): Promise<FileEntry[]> {
     check(access);
     if (!await contained(directory, access)) throw new RevisionError('denied', 'The directory is outside the workspace or unavailable');
@@ -118,45 +103,23 @@ export function createWorkspaceCatalog(options: {
     // Walk from the root so parent ignore rules and directory exclusions also apply to a direct nested-directory request.
     let initial: Rules = [];
     if (config.defaults !== false) {
-      await repositoryLinks(access);
+      for (const path of ['.git', '.git/info']) {
+        const info = await fs.fileInfo(absolute(path), context(access));
+        if (info.ok && info.value.kind === 'symlink') throw new RevisionError('denied', 'Repository ignore rules cannot use symbolic links');
+      }
       initial = await rulesAt('.git/info/exclude', '', [], access);
     }
     await walk('', initial);
     if (recursive) return entries;
     return entries.filter(entry => entry.path.slice(0, entry.path.lastIndexOf('/') + 1) === (directory ? `${directory}/` : ''));
   }
-  // The path index of every file: built once, reused until the feed's version moves (never by polling). Reuse needs a watcher that
-  // covers every input of the walk; `defaults: false` walks dependency folders the watcher does not cover, so it always walks.
-  let index: { readonly version: number; readonly files: FileEntry[] } | undefined;
-  // The one traversal in flight: callers share it, and a replacement starts only after it has settled.
-  let walking: { readonly version: number; readonly done: Promise<FileEntry[]> } | undefined;
-  const filesOf = (entries: FileEntry[]) => entries.filter(entry => entry.kind === 'file');
-  const unsignaled = (access: ResourceAccess): ResourceAccess => ({ principalId: access.principalId, scopeId: access.scopeId, initiatorId: access.initiatorId, ...(access.authorizationRef === undefined ? {} : { authorizationRef: access.authorizationRef }) });
-  function traverse(feed: CatalogFeed, version: number, access: ResourceAccess): { readonly version: number; readonly done: Promise<FileEntry[]> } {
-    // Built without the caller's signal: other callers may be waiting on this traversal.
-    const current = { version, done: collect('', true, unsignaled(access)).then(filesOf) };
-    walking = current;
-    void current.done.then(found => {
-      if (walking === current) walking = undefined;
-      if (feed.live() && feed.version() === version) index = { version, files: found };
-    }, () => { if (walking === current) walking = undefined; });
-    return current;
-  }
-  async function files(access: ResourceAccess): Promise<FileEntry[]> {
-    const feed = options.feed;
-    if (!feed?.live() || config.defaults === false) { index = undefined; return filesOf(await collect('', true, access)); }
-    for (;;) {
-      const version = feed.version();
-      if (index?.version === version) {
-        const found = index.files;
-        await repositoryLinks(access);
-        if (feed.version() === version) return found;
-        continue;
-      }
-      // A traversal of an older version is awaited, not replaced: its result is discarded if it was invalidated, then this loop starts one.
-      await (walking ?? traverse(feed, version, access)).done;
-      check(access);
-    }
+  // One traversal at a time, each started after its search was called: a search never reuses a walk that began before it, so its
+  // result reflects every change made before the call, and no two walks overlap.
+  let walking: Promise<unknown> = Promise.resolve();
+  function files(access: ResourceAccess): Promise<FileEntry[]> {
+    const run = walking.then(() => collect('', true, access));
+    walking = run.catch(() => undefined);
+    return run.then(entries => entries.filter(entry => entry.kind === 'file'));
   }
   function page(entries: FileEntry[], key: string, cursor: string | undefined, limit: number | undefined, order?: (entry: FileEntry) => string): FilePage {
     const count = limit ?? 100;
