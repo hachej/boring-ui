@@ -123,8 +123,8 @@ export function watchConversation(controller: NativeChatController, store: Notif
 }
 
 const ICONS = {
-  done: { Icon: CircleCheckIcon, label: 'finished', tone: 'text-emerald-500' },
-  input: { Icon: MessageCircleQuestionIcon, label: 'needsInput', tone: 'text-amber-400' },
+  done: { Icon: CircleCheckIcon, label: 'finished', tone: 'text-(--chat-success)' },
+  input: { Icon: MessageCircleQuestionIcon, label: 'needsInput', tone: 'text-(--chat-warning)' },
   error: { Icon: CircleAlertIcon, label: 'failedRun', tone: 'text-destructive' },
 } as const;
 
@@ -163,12 +163,12 @@ function Toast({ item, autoDismissMs, onActivate, onDismiss, labels }: {
     onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}
     onKeyDown={(event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); onDismiss(item); } }}>
     <button type="button" data-testid="agent-toast-open" onClick={() => onActivate(item)} aria-label={labels.openNotification(label, item.title, item.summary)}
-      className="block w-full cursor-pointer rounded-[1.75rem] border border-border bg-background py-3.5 pr-6 pl-4 text-left text-foreground shadow-xl outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring/70 motion-reduce:transition-none">
-      <span className="flex items-center gap-2.5"><KindIcon kind={item.kind} /><span className="min-w-0 flex-1 truncate text-[0.9375rem] font-medium">{item.title}</span></span>
+      className="block w-full cursor-pointer rounded-3xl border border-border bg-background py-3.5 pr-6 pl-4 text-left text-foreground shadow-lg outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring/70 motion-reduce:transition-none">
+      <span className="flex items-center gap-2.5"><KindIcon kind={item.kind} /><span className="min-w-0 flex-1 truncate text-sm font-medium">{item.title}</span></span>
       {item.summary && <span data-testid="agent-toast-summary" className="mt-1 block truncate text-sm text-muted-foreground">{item.summary}</span>}
     </button>
     <button type="button" data-testid="agent-toast-close" aria-label={labels.dismissNotification(item.title)} title={labels.dismissShort} onClick={() => onDismiss(item)}
-      className="absolute -top-2 -left-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-foreground shadow-md outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/70 max-sm:size-8 pointer-coarse:size-8 motion-reduce:transition-none">
+      className="absolute -top-2 -left-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-md outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/70 max-sm:size-8 pointer-coarse:size-8 motion-reduce:transition-none">
       <XIcon className="size-3.5" aria-hidden="true" /></button>
   </li>;
 }

@@ -104,7 +104,7 @@ function cells(value: unknown, header: boolean, context: Context): ReactNode {
 }
 
 const HEADINGS: Record<number, string> = {
-  1: 'mt-6 mb-2 text-xl font-semibold tracking-tight', 2: 'mt-5 mb-2 text-base font-semibold tracking-tight', 3: 'mt-4 mb-1.5 text-[0.9375rem] font-semibold',
+  1: 'mt-6 mb-2 text-xl font-semibold tracking-tight', 2: 'mt-5 mb-2 text-base font-semibold tracking-tight', 3: 'mt-4 mb-1.5 text-sm font-semibold',
   4: 'mt-4 mb-1 text-sm font-semibold', 5: 'mt-3 mb-1 text-sm font-medium', 6: 'mt-3 mb-1 text-sm font-medium text-muted-foreground',
 };
 
@@ -171,7 +171,7 @@ export const Markdown = memo(function Markdown({ text: source, commandMentions, 
     if (mentions) return children(tokens, context);
     return tokens.map((token, index) => <Block key={index} token={token} context={context} />);
   }, [tokens, source, mentions, context]);
-  return <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 text-[0.9375rem] leading-[1.65] [overflow-wrap:anywhere]">
+  return <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]">
     {body}
   </div>;
 });

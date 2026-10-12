@@ -57,7 +57,7 @@ function Image({ image, onOpenImage }: { readonly image: ImageContent; readonly 
   </button>;
 }
 
-const MENTION_CLASS = 'rounded-md bg-background px-1.5 py-0.5 font-mono text-[0.8125rem] font-medium text-foreground ring-1 ring-border';
+const MENTION_CLASS = 'rounded-md bg-background px-1.5 py-0.5 font-mono text-sm font-medium text-foreground ring-1 ring-border';
 
 /** A `@path` mention in a sent message: the host's own look when its `render` returns one, else the default chip (a button when it can be opened). */
 function UserMention({ path, text, open, render }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined }) {
@@ -71,7 +71,7 @@ function UserMention({ path, text, open, render }: { readonly path: string; read
 function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  return <div data-testid="user-text" className="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-[0.9375rem] leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">{context.pieces ? pieces(text, context.pieces).map((piece, at) => piece.kind === 'mention'
+  return <div data-testid="user-text" className="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">{context.pieces ? pieces(text, context.pieces).map((piece, at) => piece.kind === 'mention'
     ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
     : piece.kind === 'skill' ? <span key={at} data-testid="message-skill" data-skill={piece.value} className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-foreground">{piece.text}</span>
     : piece.text) : text}</div>;

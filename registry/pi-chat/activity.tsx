@@ -53,12 +53,12 @@ function Thinking({ text, streaming, details }: { readonly text: string; readonl
   const [open, setOpen] = useState(false);
   return <div data-testid="reasoning" data-state={open ? 'open' : 'closed'} data-streaming={streaming ? 'true' : undefined}>
     <button type="button" aria-expanded={details ? open : undefined} disabled={!details} onClick={() => setOpen(value => !value)}
-      className={cn('flex min-h-7 w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset', details ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default')}>
+      className={cn('flex min-h-7 w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset', details ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default')}>
       <BrainIcon className="size-3.5 shrink-0" aria-hidden="true" />
       <Shimmer active={streaming} className="flex-1">{streaming ? labels.thinking : labels.reasoning}</Shimmer>
       {details && <ChevronDownIcon className={cn('size-4 shrink-0 transition-transform motion-reduce:transition-none', open && 'rotate-180')} aria-hidden="true" />}
     </button>
-    {open && details && <div data-testid="reasoning-text" className="mx-2 mb-1 max-h-72 overflow-y-auto border-l-2 border-border pl-3 text-[13px] leading-6 whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</div>}
+    {open && details && <div data-testid="reasoning-text" className="mx-2 mb-1 max-h-72 overflow-y-auto border-l-2 border-border pl-3 text-sm leading-6 whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</div>}
   </div>;
 }
 
@@ -78,8 +78,8 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
   const Icon = state === 'running' ? null : state === 'failed' ? AlertCircleIcon : state === 'stopped' ? CircleSlashIcon : CheckIcon;
   return <div data-testid="activity" data-boring="activity" data-state={state} data-open={open ? 'true' : 'false'} className="my-1.5">
     <button type="button" aria-expanded={open} onClick={() => setChosen(!open)}
-      className="flex h-9 w-full cursor-pointer items-center gap-2 max-sm:h-10 pointer-coarse:h-10 rounded-lg border border-border bg-muted/40 px-3 text-left text-[13px] text-muted-foreground outline-none transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:transition-none">
-      {Icon ? <Icon aria-hidden="true" className={cn('size-3.5 shrink-0', state === 'failed' ? 'text-destructive' : state === 'done' ? 'text-emerald-600' : '')} />
+      className="flex h-9 w-full cursor-pointer items-center gap-2 max-sm:h-10 pointer-coarse:h-10 rounded-lg border border-border bg-muted/40 px-3 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:transition-none">
+      {Icon ? <Icon aria-hidden="true" className={cn('size-3.5 shrink-0', state === 'failed' ? 'text-destructive' : state === 'done' ? 'text-(--chat-success)' : '')} />
         : <Loader2Icon aria-hidden="true" className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />}
       <span data-testid="activity-label" aria-live={state === 'running' ? 'off' : undefined} className={cn('min-w-0 flex-1 truncate', state === 'failed' && 'text-destructive')}>
         <Shimmer active={state === 'running'}>{label}</Shimmer></span>

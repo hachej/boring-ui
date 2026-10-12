@@ -73,15 +73,15 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
   const approved = state === 'approved' || state === 'approved-sent', denied = state === 'denied' || state === 'denied-sent';
 
   return <section data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded}
-    className={cn('my-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs', open ? 'border-amber-500/60' : 'border-border')}>
+    className={cn('my-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs', open ? 'border-(--chat-warning)/60' : 'border-border')}>
     <div className="flex items-start gap-3">
-      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full', open ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : denied ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
+      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', open ? 'bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)' : denied ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
         {approved ? <CheckIcon className="size-4" aria-hidden="true" /> : denied ? <XIcon className="size-4" aria-hidden="true" /> : <ShieldAlertIcon className="size-4" aria-hidden="true" />}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">{open ? labels.needsApproval : approved ? labels.approved : denied ? labels.denied : labels.notDecided}</p>
+        <p className="m-0 text-xs font-medium tracking-wider text-muted-foreground uppercase">{open ? labels.needsApproval : approved ? labels.approved : denied ? labels.denied : labels.notDecided}</p>
         {summary && <p data-testid="approval-summary" className="mt-1 mb-0 text-base leading-6 font-semibold [overflow-wrap:anywhere]">{summary}</p>}
-        <p data-testid="approval-tool" className={cn('mb-0 [overflow-wrap:anywhere]', summary ? 'mt-1 text-xs text-muted-foreground' : 'mt-1 text-[0.9375rem] leading-6 font-medium')}>{labels.wantsToRun} <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem]">{call.name}</code></p>
+        <p data-testid="approval-tool" className={cn('mb-0 [overflow-wrap:anywhere]', summary ? 'mt-1 text-xs text-muted-foreground' : 'mt-1 text-sm leading-6 font-medium')}>{labels.wantsToRun} <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">{call.name}</code></p>
         {args.length > 0 && (() => {
           const list = <dl data-testid="approval-args" className="mt-2 mb-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{item.value}</dd>])}
