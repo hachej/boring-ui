@@ -57,7 +57,7 @@ Record the exact commit, package names, versions, npm account, and dist-tag befo
 publication. Use a prerelease version and explicit prerelease tag for an approved
 prerelease. Do not put an unqualified prerelease on `latest`.
 
-The `Publish npm release` workflow in `.github/workflows/npm-publish.yml` runs
+The `Publish npm release` workflow in `.github/workflows/release.yml` runs
 only through manual dispatch. It admits only `hachej` as both initiating and
 rerunning actor, in `hachej/boring-ui`, on `main`. Enter the exact reviewed main
 SHA, the version already in its manifests and a distribution tag. The supplied
@@ -92,7 +92,7 @@ active publication. Neither job changes package versions or privacy flags.
 3. Create the GitHub `release` environment with the intended maintainer approval and
    main-branch policy. This code does not create or change those settings.
 4. Configure a trusted publisher on each of the 4 packages: user `hachej`,
-   repository `boring-ui`, workflow filename `npm-publish.yml`, environment `release`.
+   repository `boring-ui`, workflow filename `release.yml`, environment `release`.
    Permit direct publishing if the npm configuration defaults to staged-only access.
    Complete setup near the first qualified release: unused new trust configurations
    can expire. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
