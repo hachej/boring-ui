@@ -105,6 +105,67 @@ export function checkHostExecution(root) {
   return { errors, files };
 }
 
+/**
+ * BORING-PI-1 one harness: a host never drives the model with its own tool loop. A source file in packages/ or examples/ that calls
+ * pi-ai's model functions (`complete`, `stream`, `streamSimple`: a member call on a Models object, or an imported binding) AND hands the
+ * model tools or reads its tool calls (`tools` in the call's options, `validateToolCall`, or the `'toolCall'` content part) is a
+ * hand-rolled loop unless it is listed in ONE_HARNESS_ALLOWED with its reason. A plain model call with no tools (a summarizer) is not a
+ * turn and is not flagged. Bounded structural evidence: the runtime proof is the native Harness turn, not this scan.
+ */
+export const ONE_HARNESS_ALLOWED = Object.freeze({
+  'packages/feedback/src/preview/agent.ts': 'in-page preview subagent: a hand-rolled tool loop on Pi Models in the browser, with no native Harness there yet. Remove this entry in the change that runs the preview on the native Harness.',
+});
+const PI_AI_MODULE = /^@earendil-works\/pi-ai(?:\/|$)/;
+const MODEL_CALLS = new Set(['complete', 'stream', 'streamSimple']);
+
+export function scanOneHarness(file, source) {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.ES2023, true, /x$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const importedModelNames = new Set();
+  const candidates = []; // model calls, resolved once the whole file is read
+  let importsPiAi = false;
+  let handlesTools = false;
+  const visit = (node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) && PI_AI_MODULE.test(node.moduleSpecifier.text)) {
+      importsPiAi = true;
+      const bindings = ts.isImportDeclaration(node) ? node.importClause?.namedBindings : undefined;
+      if (bindings && ts.isNamedImports(bindings)) for (const element of bindings.elements) if (MODEL_CALLS.has((element.propertyName ?? element.name).text)) importedModelNames.add(element.name.text);
+    }
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if ((callee.kind === ts.SyntaxKind.ImportKeyword || callee.getText(sf) === 'require') && node.arguments[0] && ts.isStringLiteralLike(node.arguments[0]) && PI_AI_MODULE.test(node.arguments[0].text)) importsPiAi = true;
+      if (ts.isPropertyAccessExpression(callee) && MODEL_CALLS.has(callee.name.text)) candidates.push({ node, name: callee.getText(sf) });
+      else if (ts.isIdentifier(callee) && importedModelNames.has(callee.text)) candidates.push({ node, name: callee.text });
+    }
+    if (ts.isIdentifier(node) && node.text === 'validateToolCall') handlesTools = true;
+    if (ts.isStringLiteral(node) && node.text === 'toolCall') handlesTools = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  if (!importsPiAi) return [];
+  const declaresTools = (call) => call.arguments.some(arg => ts.isObjectLiteralExpression(arg) && arg.properties.some(property => property.name?.getText(sf) === 'tools'));
+  return candidates.filter(({ node }) => handlesTools || declaresTools(node)).map(({ node, name }) =>
+    `ONE_HARNESS ${file}:${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}: ${name}() drives a pi-ai model with tools outside the native Harness`);
+}
+
+/** Every package and example source file: one scan, the allowlist is exact in both directions (no stale entries). */
+export function checkOneHarness(root, allowed = ONE_HARNESS_ALLOWED) {
+  const errors = [];
+  const offending = new Set();
+  let files = 0;
+  const ignored = gitIgnored(root);
+  for (const top of ['packages', 'examples']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, file) => {
+    if (entry.isSymbolicLink()) return false;
+    if (entry.isDirectory() || !/\.(?:[cm]?[jt]sx?)$/.test(entry.name) || entry.name.endsWith('.d.ts')) return;
+    files++;
+    const findings = scanOneHarness(file, readFileSync(resolve(root, file), 'utf8'));
+    if (!findings.length) return;
+    offending.add(file);
+    if (!Object.hasOwn(allowed, file)) errors.push(...findings);
+  }, ignored);
+  for (const file of Object.keys(allowed)) if (!offending.has(file)) errors.push(`ONE_HARNESS allowlist entry no longer matches a hand-rolled loop: ${file}`);
+  return { errors, files, allowed: [...offending].filter(file => Object.hasOwn(allowed, file)) };
+}
+
 export function loadBoundary(root) {
   const policy = readJson(resolve(root, 'ARCHITECTURE.json'));
   const registry = readJson(resolve(root, 'VERIFY.json'));
@@ -200,10 +261,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const root = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
   const result = loadBoundary(root);
   const host = checkHostExecution(root);
-  if (result.errors.length || host.errors.length) { console.error([...result.errors, ...host.errors].join('\n')); process.exitCode = 1; }
+  const harness = checkOneHarness(root);
+  if (result.errors.length || host.errors.length || harness.errors.length) { console.error([...result.errors, ...host.errors, ...harness.errors].join('\n')); process.exitCode = 1; }
   else {
     console.log(`ok: Pi complement policy, registry and ${result.sources} library source files (${result.contracts} erased-type files)`);
     console.log(`ok: SELF-2, ${host.files} package and example source files evaluate no code and load no computed module; SELF-4, reload changes only the native registry`);
+    console.log(`ok: BORING-PI-1 one harness, ${harness.files} package and example files: no hand-rolled model tool loop outside ${harness.allowed.length} allowlisted site(s)`);
     console.log(`${result.pending.length} runtime proofs DEFERRED; no runtime guarantee inferred from this structural check.`);
   }
 }

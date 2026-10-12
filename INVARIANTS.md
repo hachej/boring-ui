@@ -8,6 +8,8 @@ Boring's Pi integration uses native conversations, submissions, turns, tools, sc
 
 Host business obligations, approvals, claims and delivery status are legitimate application state, distinct from native execution descendants. They may reference or project Pi state but cannot redefine it or freeze its dynamic task graph. Native foreground and deliberately detached background work retain their supported ownership semantics under host grants. A cancellation request, acknowledged request and confirmed termination are different facts; loss of contact is not proof of completion or cancellation.
 
+One harness (owner ruling 2026-10-12): every turn of an agent (in-app chat, remote or hub run, job, eval) runs through that agent's native Pi Harness, with the same instructions, tools, model resolution and fallback. A host never drives the model with its own tool loop. Variations such as sandboxing, a per-run model or the conversation used are Harness options or native tool wraps.
+
 ## BORING-PI-2 — attachment borrows; setup owns
 
 Boring accepts a host-created Harness without opening another or taking its lifecycle. Detach stops only its own attachments; it does not close, reset, abort or reconfigure unrelated host work. An optional setup recipe may create a native Harness and close what it owns, with ownership explicit. Direct native API access remains available.
