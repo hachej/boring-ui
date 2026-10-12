@@ -45,6 +45,7 @@ try {
   const live = () => browser.until('the chat is live', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${INPUT}`, 20000);
 
   await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
+    await live();
     app.faults.resources = 1;
     await browser.reload();
     await browser.until('the alert with Retry', `!!${q('p[role="alert"] button')}`, 20000);
