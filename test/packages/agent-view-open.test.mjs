@@ -308,6 +308,40 @@ test('ack: a replay after the file changed reports the revision that was acknowl
   assert.equal(result.artifact.revision, REVISION, 'the result names the acknowledged revision A, not the current B');
 });
 
+test('ack: a replay answered before the tool resumes writes no result until resume, then reports the acknowledged revision', { timeout: 60000 }, async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-view-open-forced-replay-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const ws = workspace(directory);
+  t.after(() => ws.db.close());
+  const file = join(directory, 'native.sqlite');
+  let opened = await open(await openNodeSqliteStorage(file), ws, { ack: { timeoutMs: 8000 } });
+  const conversation = await opened.agent.createConversation(opened.harness, context);
+  const remote = await createRemoteChat({ endpoint, fetch: serve(opened.harness, conversation), pollMs: 10 });
+  await remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Present.' }, remote.context);
+  let call;
+  await until('pending before close', async () => (call = pending(await view(remote))[0]));
+  // The call is visible before the tool has written its view record: let it settle, then close while the call still waits.
+  await new Promise(resolve => setTimeout(resolve, 500));
+  await opened.harness.close(context);
+
+  // The file becomes revision B while the harness is closed.
+  writeFileSync(join(ws.root, 'doc.md'), 'A different revision, written after the close.\n');
+  opened = await open(await openNodeSqliteStorage(file), ws, { ack: { timeoutMs: 8000 } });
+  t.after(() => opened.harness.close(context).catch(() => {}));
+  const again = await opened.harness.conversation(conversation.id, context);
+  // The page acknowledges revision A before the tool is resumed: the answer settles the record, but no result is written yet.
+  assert.deepEqual(await answerViewOpen(again, call.answerId, JSON.stringify({ kind: 'opened', instanceId: 'tab-1', path: 'doc.md', revision: REVISION })), { kind: 'answered' });
+  const replayed = await createRemoteChat({ endpoint, fetch: serve(opened.harness, again), pollMs: 10 });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(resultOf(await view(replayed), call.id), undefined, 'no tool result before the harness resumes');
+
+  opened.harness.resume();
+  await until('result after resume', async () => finalText(await view(replayed))?.startsWith('Got {"kind":"presented"'), 15000);
+  const result = JSON.parse(finalText(await view(replayed)).slice(4));
+  assert.equal(result.opened, true, 'the acknowledged view is reported as opened');
+  assert.equal(result.artifact.revision, REVISION, 'the result names the acknowledged revision A, not the current B');
+});
+
 test('ack: the default timeout is 15 seconds', () => {
   assert.equal(VIEW_OPEN_TIMEOUT_MS, 15_000);
 });

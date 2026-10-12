@@ -167,10 +167,69 @@ test('the artifact panel reports a mount for a built-in viewer, and never for a 
     return reports;
   }
   try {
-    assert.deepEqual(await mount(descriptor('code')), [{ path: 'a.js', revision: 'rev-code' }], 'the built-in code viewer reports the revision it shows');
+    assert.deepEqual(await mount(descriptor('code')), [{ path: 'a.js', revision: 'rev-code' }, { path: 'a.js', revision: 'rev-code', hidden: true }],
+      'the built-in code viewer reports the revision it shows, and that it stopped showing it when it unmounts');
     const hostCode = { code: () => createElement('div', null, 'host') };
     assert.deepEqual(await mount(descriptor('code'), hostCode), [], 'a host viewer never reports a mount');
     assert.deepEqual(await mount(descriptor('canvas', 'board.tldraw')), [], 'the canvas "no viewer" note never reports a mount');
+  } finally {
+    delete globalThis.window; delete globalThis.document; delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+  }
+});
+
+test('an answer in flight keeps its call waiting, so a mount during the flight still confirms it', async () => {
+  // The page shows A, its answer is held; then B mounts while A is in flight. The server accepts B.
+  const sent = [];
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const answer = async (id, body) => { const parsed = JSON.parse(body); sent.push(parsed.revision); return parsed.revision === 'A' ? held : { kind: 'answered' }; };
+  const { createPresentAcks } = await load('artifact', 'pi-chat/artifact.ts');
+  const acks = createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {} });
+  acks.consider([pendingCall('c1', 'a.md')], context({ autoOpen: false }));
+  acks.shown({ path: 'a.md', revision: 'A' });
+  acks.shown({ path: 'a.md', revision: 'B' });
+  await flush();
+  assert.deepEqual(sent, ['A', 'B'], 'the mount of B is answered while A is still in flight');
+  assert.deepEqual(acks.waiting(), [], 'B is accepted, so the call is done');
+  release({ kind: 'denied', reason: 'another revision' });
+  await flush();
+  assert.deepEqual(sent, ['A', 'B'], 'the late denial of A sends nothing more');
+});
+
+test('createPresentAcks forgets decided calls and waits that are no longer live', async () => {
+  const { sent, make } = await fakeChat();
+  const acks = make();
+  acks.consider([pendingCall('c1', 'a.md')], context({ autoOpen: false }));
+  assert.deepEqual(acks.waiting(), ['c1']);
+  acks.consider([], context({ autoOpen: false }));
+  assert.deepEqual(acks.waiting(), [], 'a call that is no longer pending is not waited for');
+  acks.consider([pendingCall('c1', 'a.md')], context({ closedThisTurn: true }));
+  await flush();
+  assert.equal(sent.length, 1, 'a call that left the view and came back is decided again');
+});
+
+test('a viewer that stops showing its revision takes its mount with it: a presented call is not confirmed by the old mount', async () => {
+  const { useReportShown } = await load('artifact-panel', 'pi-app/artifact-panel.tsx');
+  const { createElement, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  globalThis.window = window; globalThis.document = window.document; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  try {
+    const { sent, make } = await fakeChat();
+    const acks = make({ open: () => true });
+    const onShown = shown => (shown.hidden ? acks.hidden(shown) : acks.shown(shown));
+    const container = window.document.createElement('div');
+    window.document.body.appendChild(container);
+    const Probe = ({ revision }) => { useReportShown(onShown, 'a.js', revision); return null; };
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(Probe, { revision: 'A' })); });
+    // A custom viewer or the canvas takes the path: the built-in viewer no longer reports a revision.
+    await act(async () => { root.render(createElement(Probe, { revision: undefined })); });
+    acks.consider([pendingCall('c1', 'a.js')], context({ showing: () => true }));
+    await flush();
+    assert.deepEqual(sent, [], 'the old mount of a.js does not confirm the call');
+    assert.deepEqual(acks.waiting(), ['c1'], 'the call waits for a real mount');
+    await act(async () => { root.unmount(); });
   } finally {
     delete globalThis.window; delete globalThis.document; delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   }

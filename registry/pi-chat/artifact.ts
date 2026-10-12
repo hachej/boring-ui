@@ -218,24 +218,28 @@ export function createPresentAcks(host: PresentAcksHost) {
       await wait(20);
     }
   }
-  /** Confirms a shown revision. A denial (another revision) keeps the call waiting for the next mount report. */
+  /** Confirms a shown revision. The call keeps its entry while the answer is in flight, so a mount during the flight still confirms it. */
   async function confirm(id: string, path: string, revision: string): Promise<void> {
     const kind = await send(id, { kind: 'opened', instanceId: host.instanceId, path, revision });
-    if (kind === 'denied') mounting.set(id, path);
+    // A denial (another revision) keeps the call waiting for the next mount report; an accepted or terminal answer ends it.
+    if (kind !== 'denied') mounting.delete(id);
   }
 
   return {
     /** A viewer mounted and shows `path` at `revision`: confirms the calls waiting for that file. */
     shown(view: { readonly path: string; readonly revision: string }): void {
-      for (const [id, path] of [...mounting]) {
-        if (path !== view.path) continue;
-        mounting.delete(id);
-        void confirm(id, path, view.revision);
-      }
+      for (const [id, path] of mounting) if (path === view.path) void confirm(id, path, view.revision);
       lastShown = view;
     },
-    /** The presents the server waits for: each is decided once, in order. */
+    /** A viewer stopped showing `path` at `revision` (it unmounted, or a custom viewer or the canvas took the file): it no longer confirms. */
+    hidden(view: { readonly path: string; readonly revision: string }): void {
+      if (lastShown?.path === view.path && lastShown.revision === view.revision) lastShown = undefined;
+    },
+    /** The presents the server waits for: each is decided once, in order. Decided calls and waits that are no longer live are forgotten. */
     consider(calls: readonly PendingPresent[], context: PresentContext): void {
+      const live = new Set(calls.map(call => call.id));
+      for (const id of decided) if (!live.has(id)) decided.delete(id);
+      for (const id of mounting.keys()) if (!live.has(id)) mounting.delete(id);
       for (const call of calls) {
         if (decided.has(call.id)) continue;
         decided.add(call.id);
@@ -244,10 +248,8 @@ export function createPresentAcks(host: PresentAcksHost) {
         else if (context.narrow) void send(call.id, { kind: 'refused', reason: 'narrow screen' });
         else {
           mounting.set(call.id, call.path);
-          if (lastShown?.path === call.path && context.showing(call.path)) {
-            mounting.delete(call.id);
-            void confirm(call.id, call.path, lastShown.revision);
-          } else if (context.autoOpen && !host.open(call.path)) {
+          if (lastShown?.path === call.path && context.showing(call.path)) void confirm(call.id, call.path, lastShown.revision);
+          else if (context.autoOpen && !host.open(call.path)) {
             mounting.delete(call.id);
             void send(call.id, { kind: 'refused', reason: 'unsaved changes' });
           }
