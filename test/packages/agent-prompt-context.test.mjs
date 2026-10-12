@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { MemoryStorage, Harness, createRegistry } from '@earendil-works/pi-durable';
+import { MemoryStorage, Harness, createRegistry, defineExtension, defineTool } from '@earendil-works/pi-durable';
+import { Type } from '@earendil-works/pi-ai';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { createPromptContext } from '@hachej/boring-agent/prompt-context';
+import { createPromptContext, withRequestContext } from '@hachej/boring-agent/prompt-context';
 
 const MODEL = { id: 'scripted', name: 'Scripted', provider: 'scripted', api: 'scripted-api', baseUrl: 'https://fixture.invalid', input: ['text'], reasoning: false, contextWindow: 200000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const MODEL_REF = { provider: 'scripted', modelId: 'scripted' };
 const WRAPPED = /^<request-context>\n([\s\S]*)\n<\/request-context>$/;
 
-/** A keyless model that records the messages of every request. `decide(messages, call)` answers `{ text }` or `{ error }`. */
+/** A keyless model that records the messages of every request. `decide(messages, call)` answers `{ text }`, `{ tool: { name, args } }` or `{ error }`. */
 function recordingModels(decide = () => ({ text: 'Noted.' })) {
   const requests = [];
   const stream = (_model, request) => {
@@ -19,13 +20,14 @@ function recordingModels(decide = () => ({ text: 'Noted.' })) {
     const events = createAssistantMessageEventStream();
     const answer = decide(request.messages, requests.length);
     const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-    const message = answer.error
-      ? { role: 'assistant', content: [], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), stopReason: 'error', errorMessage: answer.error, usage }
-      : { role: 'assistant', content: [{ type: 'text', text: answer.text }], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), stopReason: 'stop', usage };
+    const base = { role: 'assistant', api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), usage };
+    const message = answer.error ? { ...base, content: [], stopReason: 'error', errorMessage: answer.error }
+      : answer.tool ? { ...base, content: [{ type: 'toolCall', id: `call_${requests.length}`, name: answer.tool.name, arguments: answer.tool.args ?? {} }], stopReason: 'toolUse' }
+      : { ...base, content: [{ type: 'text', text: answer.text }], stopReason: 'stop' };
     setTimeout(() => {
       events.push({ type: 'start', partial: message });
       if (answer.error) events.push({ type: 'error', reason: 'error', error: message });
-      else events.push({ type: 'done', reason: 'stop', message });
+      else events.push({ type: 'done', reason: message.stopReason, message });
       events.end(message);
     }, 5);
     return events;
@@ -154,21 +156,6 @@ test('a throwing context is reported and the request is still sent without it', 
   assert.equal(textOf(log.messages.findLast(message => message.role === 'assistant')), 'Noted.', 'the turn completed');
 });
 
-test('a custom onError receives the failure instead of the Harness reporter', { timeout: 20000 }, async t => {
-  const { models, requests } = recordingModels();
-  const seen = [];
-  const reports = [];
-  const extension = createPromptContext({ context: () => { throw new Error('fictional lookup failed'); }, onError: error => seen.push(error.message) });
-  const { harness, registry } = await open(models, { reports });
-  t.after(() => harness.close(context));
-  registry.install(extension);
-  const conversation = await newConversation(harness, { extensions: [extension] });
-  await say(conversation, 'Hi.');
-  assert.equal(requests.length, 1);
-  assert.deepEqual(seen, ['fictional lookup failed']);
-  assert.deepEqual(reports, [], 'the Harness reporter is not used');
-});
-
 test('an aborted turn rethrows instead of sending the request', { timeout: 20000 }, async t => {
   const { models, requests } = recordingModels();
   const reports = [];
@@ -200,6 +187,10 @@ test('retries recompute the context: each attempt gets its own value', { timeout
   assert.equal(attempts, 2, 'the context was computed once per attempt');
   assert.deepEqual(contextMessages(requests[0]).map(textOf), ['<request-context>\nattempt 1\n</request-context>']);
   assert.deepEqual(contextMessages(requests[1]).map(textOf), ['<request-context>\nattempt 2\n</request-context>']);
+  for (const request of requests) {
+    assert.equal(textOf(request.at(-1)), 'Retry me.', 'the question stays last on every attempt');
+    assert.match(textOf(request.at(-2)), WRAPPED, 'the context sits right before the question on every attempt');
+  }
 });
 
 test('two extensions compose in install order, each before the final user message', { timeout: 20000 }, async t => {
@@ -227,6 +218,45 @@ test('each conversation gets the value for its own id', { timeout: 20000 }, asyn
   await say(bob, 'Bob here.');
   assert.deepEqual(contextMessages(requests[0]).map(textOf), [`<request-context>\nfor ${alice.id}\n</request-context>`]);
   assert.deepEqual(contextMessages(requests[1]).map(textOf), [`<request-context>\nfor ${bob.id}\n</request-context>`]);
+});
+
+test('after a tool round the context goes to the tail, after the tool result; two extensions keep their order', { timeout: 20000 }, async t => {
+  const { models, requests } = recordingModels((_messages, call) => call === 1 ? { tool: { name: 'echo', args: {} } } : { text: 'Done.' });
+  const echo = defineExtension({ name: 'fixture.echo', tools: [defineTool({ name: 'echo', description: 'Echo a fixed line.', parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe', execute: async () => ({ content: [{ type: 'text', text: 'echoed' }] }) })] });
+  const first = createPromptContext({ name: 'host.first', context: () => 'first value' });
+  const second = createPromptContext({ name: 'host.second', tag: 'document', context: () => 'second value' });
+  const { harness, registry } = await open(models);
+  t.after(() => harness.close(context));
+  registry.install(echo);
+  registry.install(first);
+  registry.install(second);
+  const conversation = await newConversation(harness, { extensions: [echo, first, second] });
+  await say(conversation, 'Use the echo tool.');
+  assert.equal(requests.length, 2, 'the tool round made a second request');
+  const round = requests[1];
+  assert.deepEqual(round.slice(-5).map(message => message.role), ['user', 'assistant', 'toolResult', 'user', 'user'], 'question, tool call, result, then both contexts at the tail');
+  assert.deepEqual(round.slice(-2).map(textOf), ['<request-context>\nfirst value\n</request-context>', '<document>\nsecond value\n</document>']);
+  assert.equal(textOf(round.at(-3)), 'echoed');
+  assert.equal(textOf(round.at(-5)), 'Use the echo tool.', 'the question is not moved');
+});
+
+test('a continuation (the request ends with an assistant message) gets the context at the tail', () => {
+  const user = { role: 'user', content: 'Question.', timestamp: 1 };
+  const assistant = { role: 'assistant', content: [{ type: 'text', text: 'Partial answer.' }], api: 'a', provider: 'p', model: 'm', timestamp: 2, stopReason: 'stop', usage: {} };
+  const placed = withRequestContext([user, assistant], 'fresh');
+  assert.equal(placed.length, 3);
+  assert.equal(placed[1], assistant, 'the assistant message is not moved');
+  assert.equal(textOf(placed[2]), '<request-context>\nfresh\n</request-context>');
+  assert.equal(textOf(placed[0]), 'Question.');
+});
+
+test('withRequestContext: before a final user message, at the tail otherwise, and the input is not changed', () => {
+  const user = { role: 'user', content: 'Q.', timestamp: 1 };
+  const before = [user];
+  const placed = withRequestContext(before, 'x', 'tag');
+  assert.deepEqual(placed.map(textOf), ['<tag>\nx\n</tag>', 'Q.']);
+  assert.deepEqual(before, [user], 'the input array is unchanged');
+  assert.deepEqual(withRequestContext([], 'x').map(textOf), ['<request-context>\nx\n</request-context>'], 'an empty request gets the context alone');
 });
 
 test('the subpath is exported by the package and the module uses only Pi public roots', () => {

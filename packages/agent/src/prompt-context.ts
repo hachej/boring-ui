@@ -2,9 +2,9 @@
 // registered with `hook(GenerationTask, ...)`. Pi runs it before every request attempt (retries and crash recovery included)
 // and uses its result for that request only, so the text is recomputed each time and never appended to the transcript.
 // The host owns the data: `context` reads its own request-scoped state keyed by the conversation (Pi's hook context carries no
-// caller values). Placement: one user-role `<request-context>` message immediately before the round's final user message, so
-// system messages and everything earlier stay byte-identical. Failure is fail-open: a throw is reported and the request goes
-// out without the context; an aborted turn rethrows. Advisory only: never use it for policy or authorization.
+// caller values). Failure is Pi's: Pi's `hooks.each` reports a throw through `HarnessOptions.onReport`, continues the request
+// without this hook's result, and rethrows only when the turn is aborted (scheduler.js, `hooks.each`). Advisory only: never use
+// it for policy or authorization.
 import { GenerationTask, defineExtension, hook } from '@earendil-works/pi-durable';
 import type { ConversationId, Extension, HookApi } from '@earendil-works/pi-durable';
 import type { Message } from '@earendil-works/pi-ai';
@@ -24,35 +24,34 @@ export interface PromptContextOptions {
   readonly tag?: string;
   /** Fresh text for this request attempt; `undefined` or `''` adds no message. */
   readonly context: (input: PromptContextInput) => string | undefined | Promise<string | undefined>;
-  /** Receives a failed `context` call (default: the Harness reporter, `HarnessOptions.onReport`). */
-  readonly onError?: (error: unknown) => void;
 }
 
-/** The Harness reporter is on the runtime object Pi passes to hooks (`TaskRuntime.report`); the hook type does not declare it. */
-type Reporting = { readonly report?: (error: unknown) => void };
+/** Messages made by this module, so a later extension skips them when it looks for the round's question (install order holds). */
+const produced = new WeakSet<Message>();
+
+/**
+ * The request messages with one user message carrying `text` added. It goes right before the round's question (the last message
+ * that is not a context from an earlier extension) when that is a user message; otherwise (after tool results, or after an
+ * assistant continuation) at the tail. Pure: the input array is not changed.
+ */
+export function withRequestContext(messages: readonly Message[], text: string, tag = 'request-context'): Message[] {
+  const message: Message = { role: 'user', content: [{ type: 'text', text: `<${tag}>\n${text}\n</${tag}>` }], timestamp: Date.now() };
+  produced.add(message);
+  let end = messages.length;
+  while (end > 0 && produced.has(messages[end - 1]!)) end--;
+  const question = messages[end - 1];
+  const at = question?.role === 'user' ? end - 1 : messages.length;
+  return [...messages.slice(0, at), message, ...messages.slice(at)];
+}
 
 export function createPromptContext(options: PromptContextOptions): Extension {
-  const tag = options.tag ?? 'request-context';
   return defineExtension({
     name: options.name ?? 'host.prompt-context',
     hooks: [hook(GenerationTask, {
       beforeRequest: async (request, api: HookApi, context) => {
-        let text: string | undefined;
-        try {
-          text = await options.context({ conversationId: api.conversationId, messages: request.messages, signal: context.abortSignal });
-        } catch (error) {
-          if (context.abortSignal?.aborted) throw error;
-          const report = (api as HookApi & Reporting).report;
-          if (options.onError) options.onError(error);
-          else report?.(error);
-          return undefined;
-        }
+        const text = await options.context({ conversationId: api.conversationId, messages: request.messages, signal: context.abortSignal });
         if (!text) return undefined;
-        const message: Message = { role: 'user', content: [{ type: 'text', text: `<${tag}>\n${text}\n</${tag}>` }], timestamp: Date.now() };
-        // Before the round's final user message; a request without one gets it at the end.
-        const last = request.messages.findLastIndex(item => item.role === 'user');
-        const at = last < 0 ? request.messages.length : last;
-        return { messages: [...request.messages.slice(0, at), message, ...request.messages.slice(at)] };
+        return { messages: withRequestContext(request.messages, text, options.tag) };
       },
     })],
   });
