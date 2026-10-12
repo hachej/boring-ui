@@ -41,7 +41,7 @@ Apply the same ownership to workspaces, watchers and shared transports. Acquire 
 
 ### TypeScript-first consumer integration
 
-Consumers use native Pi tools, extensions, prompt sections, registry installation and conversation configuration. Boring adds selected resource tools, viewer bindings and authenticated transport. It does not require another agent-definition DSL, `agent.md`, a filesystem or sandbox. File definitions are optional loading adapters.
+Consumers use native Pi tools, extensions, prompt sections, registry installation and conversation configuration. Per-request text that must stay out of the transcript (volatile host state) rides Pi's `GenerationHooks.beforeRequest` through `@hachej/boring-agent/prompt-context`, fail-open and recomputed per attempt. Boring adds selected resource tools, viewer bindings and authenticated transport. It does not require another agent-definition DSL, `agent.md`, a filesystem or sandbox. File definitions are optional loading adapters.
 
 Native configuration shape below assumes the host already supplies the registry, conversation, context, model choices and domain tools; it is not a released Boring setup API:
 
