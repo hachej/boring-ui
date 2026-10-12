@@ -1,4 +1,5 @@
-import { workspaceDirectory } from '../../scripts/consumer-install.mjs';
+import { workspaceDirectory, registryPin } from '../../scripts/consumer-install.mjs';
+import semver from 'semver';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -80,11 +81,16 @@ test('registry dependency pins and scoped styles preserve the declared source di
     }
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {
-      const split = dependency.lastIndexOf('@'), name = dependency.slice(0, split), version = dependency.slice(split + 1);
+      const split = dependency.lastIndexOf('@'), name = dependency.slice(0, split), spec = dependency.slice(split + 1);
+      // Internal packages and peers are caret ranges on their version; the one private feedback pin stays exact until the owner decides.
+      const internal = name.startsWith('@hachej/boring-');
+      if (internal && name !== '@hachej/boring-feedback') assert.match(spec, /^\^/, dependency);
+      const version = spec.replace(/^\^/, '');
       assert.match(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
       declared.add(name);
       // Items that bring their own Tailwind source pin extra packages exactly as the repository's root tooling does.
-      const expected = name.startsWith('@hachej/boring-') ? boringVersion(name) : name === '@modelcontextprotocol/sdk' || item.name in TAILWIND && architecture.rootDevDependencies[name] ? architecture.rootDevDependencies[name] : ui.peerDependencies[name];
+      // Peers are the source of truth for item ranges; a Tailwind item without a peer uses the root tooling pin, and the SDK always does.
+      const expected = internal ? boringVersion(name) : name === '@modelcontextprotocol/sdk' ? architecture.rootDevDependencies[name] : (ui.peerDependencies[name] ?? (item.name in TAILWIND ? architecture.rootDevDependencies[name] : undefined))?.replace(/^\^/, '');
       assert.equal(version, expected, dependency);
     }
     // Blocks may depend only on other items of this registry (pi-ambient and pi-workspace build on pi-chat); nothing from a remote registry.
@@ -189,4 +195,11 @@ test('the block check rejects an import cycle in a registry block or a package s
       'registry/pi-chat/queue.tsx -> registry/pi-chat/rows.ts -> registry/pi-chat/queue.tsx',
     ]);
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('registry pins accept prerelease versions and a caret range admits only its own major', () => {
+  assert.match('1.1.0-rc.1', registryPin);
+  assert.match('^1.1.0', registryPin);
+  assert.equal(semver.satisfies('1.2.0-rc.1', '^1.1.0'), false);
+  assert.equal(semver.satisfies('1.1.0', '^1.1.0'), true);
 });

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-files",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -88,9 +88,9 @@
     }
   },
   "peerDependencies": {
-    "isomorphic-git": "1.42.6",
-    "@earendil-works/pi-durable": "1.1.0",
-    "@earendil-works/chord": "1.1.0"
+    "isomorphic-git": "^1.42.6",
+    "@earendil-works/pi-durable": "^1.1.0",
+    "@earendil-works/chord": "^1.1.0"
   },
   "peerDependenciesMeta": {
     "isomorphic-git": {

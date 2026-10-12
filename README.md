@@ -59,6 +59,26 @@ The [fictional consultation guide](examples/redaction-browser/README.md) covers 
 
 Pi owns conversations, tools, task execution and recovery. Boring uses its public APIs and borrows the native Harness. Your host retains policy, budgets and credentials. See [Pi integration and composition](docs/architecture/PI-COMPLEMENT.md) for the ownership boundaries.
 
+## Install components
+
+The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each published version carries its own copy. Map the `@boring-ui` namespace once in your application's `components.json` (shadcn 3 or later), pinned to the version you installed:
+
+```json
+{
+  "registries": {
+    "@boring-ui": "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/{name}.json"
+  }
+}
+```
+
+Then add a component, for example the chat:
+
+```sh
+npx shadcn@latest add @boring-ui/pi-chat
+```
+
+Item dependencies such as `@boring-ui/theme` resolve through the same pinned URL. The version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version, change the version in the URL and re-add the components. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/{name}.json` also works. See the [registry guide](registry/README.md) for the available items.
+
 ## Release status
 
 The repository contains working implementations and tests for document publication and recovery, chat, editors, canvas, background tasks, remote adapters and installed component recipes. Passing an individual test does not qualify every provider or deployment.

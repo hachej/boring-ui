@@ -24,14 +24,14 @@ function fixture(t) {
       repository: { url: 'git+https://github.com/hachej/boring-ui.git', directory: `packages/${name}` },
       engines: { node: '>=22.19.0' }, publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
       files: ['dist', 'README.md', 'LICENSE'], exports: { '.': './dist/index.js' },
-      ...(name === 'agent' ? { peerDependencies: { '@hachej/boring-files': '1.0.0', external: '1.0.0' } } : {}),
+      ...(name === 'agent' ? { peerDependencies: { '@hachej/boring-files': '^1.0.0', external: '1.0.0' } } : {}),
     };
     write(`packages/${name}/package.json`, manifest);
     write(`packages/${name}/LICENSE`, 'MIT fixture license\n'); write(`packages/${name}/README.md`, '# Fixture\n'); write(`packages/${name}/dist/index.js`, 'export const value = 42;\n');
     lock.packages[`packages/${name}`] = structuredClone(manifest);
   }
   write('package-lock.json', lock);
-  const registry = { items: [{ name: 'fixture', dependencies: ['@hachej/boring-files@1.0.0', 'external@1.0.0'] }] };
+  const registry = { items: [{ name: 'fixture', dependencies: ['@hachej/boring-files@^1.0.0', 'external@1.0.0'] }] };
   write('registry.json', registry); write('public/r/fixture.json', registry.items[0]);
   return { root, read, write, directory: join(root, 'archives'), options: { root, version: '1.0.0', tag: 'next', commit } };
 }
@@ -43,11 +43,11 @@ test('release version edits synchronize internal pins without changing privacy o
   assert.equal(f.read('package.json').private, true);
   const pkg = f.read('packages/agent/package.json');
   assert.equal(pkg.private, false); assert.equal(pkg.peerDependencies.external, '1.0.0');
-  assert.equal(pkg.peerDependencies['@hachej/boring-files'], '1.1.0-rc.1');
+  assert.equal(pkg.peerDependencies['@hachej/boring-files'], '^1.1.0-rc.1');
   const lock = f.read('package-lock.json');
   assert.equal(lock.version, '1.1.0-rc.1'); assert.equal(lock.packages[''].version, lock.version);
-  assert.equal(lock.packages['packages/agent'].peerDependencies['@hachej/boring-files'], lock.version);
-  assert.deepEqual(f.read('registry.json').items[0].dependencies, ['@hachej/boring-files@1.1.0-rc.1', 'external@1.0.0']);
+  assert.equal(lock.packages['packages/agent'].peerDependencies['@hachej/boring-files'], `^${lock.version}`);
+  assert.deepEqual(f.read('registry.json').items[0].dependencies, ['@hachej/boring-files@^1.1.0-rc.1', 'external@1.0.0']);
   assert.deepEqual(f.read('public/r/fixture.json').dependencies, f.read('registry.json').items[0].dependencies);
 });
 

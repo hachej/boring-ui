@@ -1,6 +1,6 @@
 {
   "name": "boring-ui",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -113,6 +113,7 @@
     "@tiptap/starter-kit": "3.31.4",
     "@tldraw/editor": "5.5.2",
     "@tldraw/store": "5.5.2",
+    "@tldraw/tlschema": "5.5.2",
     "@types/node": "22.19.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -123,12 +124,15 @@
     "entities": "8.1.0",
     "esbuild": "0.28.2",
     "happy-dom": "20.14.5",
+    "ignore": "5.3.2",
     "isomorphic-git": "1.42.6",
     "just-bash": "3.6.0",
     "lucide-react": "1.51.0",
     "marked": "17.0.6",
+    "radix-ui": "1.8.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "semver": "7.8.5",
     "shadcn": "4.21.1",
     "tailwind-merge": "3.7.0",
     "tailwindcss": "4.3.3",
@@ -136,10 +140,7 @@
     "typescript": "5.9.3",
     "use-stick-to-bottom": "1.1.6",
     "wrangler": "4.147.0",
-    "zod": "4.6.5",
-    "@tldraw/tlschema": "5.5.2",
-    "ignore": "5.3.2",
-    "@radix-ui/react-collapsible": "1.1.20"
+    "zod": "4.6.5"
   },
   "overrides": {
     "@earendil-works/pi-durable": "1.1.0",

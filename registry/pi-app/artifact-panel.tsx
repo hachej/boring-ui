@@ -58,6 +58,17 @@ export interface ViewerOptions {
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
   readonly interactive?: InteractiveHtml | undefined;
   readonly share?: ViewerShare | undefined;
+  /** Told each revision a built-in viewer has mounted and shows (after it loads, never before): the page's acknowledgement of `present`. */
+  readonly onShown?: ((shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void) | undefined;
+}
+
+/** Reports `revision` of `path` once the viewer showing it has mounted (an effect, so never before the panel really shows it), and `hidden` when it stops. */
+export function useReportShown(onShown: ViewerOptions['onShown'], path: string, revision: string | undefined): void {
+  useEffect(() => {
+    if (revision === undefined || !onShown) return undefined;
+    onShown({ path, revision });
+    return () => onShown({ path, revision, hidden: true });
+  }, [onShown, path, revision]);
 }
 
 /** Every artifact version the conversation's tool results produced (the version switcher's source), oldest first. */
@@ -145,6 +156,8 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const text = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller ? controller.getSnapshot().text : saved.text, () => saved.text);
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
   const revision = saved.kind === 'open' ? saved.snapshot.ref.revision : pinned ? artifact.revision : undefined;
+  // A host viewer and the canvas (which shows only a "no viewer" note) never report a mount: a presented file in them stays unconfirmed.
+  useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' ? saved.snapshot.ref.revision : undefined);
   // The history menu: newest first, the newest marked "Latest" (choosing it follows the latest), the one on display checked.
   const versions = menu.items.length > 1 ? <ViewerVersions testId="artifact-versions" current={menu.current} onSelect={onSelect} versions={menu.items} /> : undefined;
   const target = { artifact: artifactKey(artifact), version: pinned ? artifact.revision : 'latest' };

@@ -1,4 +1,5 @@
-import { workspaceDirectory } from './consumer-install.mjs';
+import { workspaceDirectory, registryPin } from './consumer-install.mjs';
+import semver from 'semver';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
@@ -76,16 +77,17 @@ try {
   const localItem = structuredClone(item);
   const expectedVersions = new Map();
   localItem.dependencies = item.dependencies.map(pin => {
-    const split = pin.lastIndexOf('@'), name = pin.slice(0, split), version = pin.slice(split + 1);
-    assert.match(version, /^\d+\.\d+\.\d+$/);
-    expectedVersions.set(name, version);
+    const split = pin.lastIndexOf('@'), name = pin.slice(0, split), range = pin.slice(split + 1);
+    assert.match(range, registryPin);
+    const expected = name.startsWith('@hachej/boring-') ? JSON.parse(readFileSync(join(workspaceDirectory(root, name), 'package.json'), 'utf8')).version : sourceLock.packages['node_modules/' + name]?.version;
+    assert.ok(expected && semver.satisfies(expected, range), `${name}@${range}`);
     let bytes;
     if (name.startsWith('@hachej/boring-')) {
       const archive = archiveByName.get(name);
       assert.ok(archive); bytes = readFileSync(archive);
     } else {
       const entry = sourceLock.packages['node_modules/' + name];
-      assert.equal(entry.version, version);
+      assert.equal(entry.version, expected);
       assert.match(entry.resolved, /^https:\/\/registry\.npmjs\.org\//);
       const [algorithm, encoded] = entry.integrity.split('-');
       assert.equal(algorithm, 'sha512');
@@ -96,7 +98,8 @@ try {
     const archive = join(directory, 'packs', createHash('sha256').update(bytes).digest('hex') + '.tgz');
     writeFileSync(archive, bytes);
     const archived = JSON.parse(run('tar', ['-xOf', archive, 'package/package.json']));
-    assert.equal(archived.name, name); assert.equal(archived.version, version);
+    assert.equal(archived.name, name); assert.equal(archived.version, expected);
+    expectedVersions.set(name, expected);
     return name + '@file:' + archive;
   });
   const unchanged = structuredClone(localItem); unchanged.dependencies = item.dependencies;
@@ -109,7 +112,11 @@ try {
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
   run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', join(directory, recipe.name + '.json'), '--cwd', directory, '--yes'], installer);
-  for (const [name, version] of Object.entries(dependencies)) expectedVersions.set(name, version);
+  for (const [name, range] of Object.entries(dependencies)) {
+    const entry = sourceLock.packages['node_modules/' + name];
+    assert.ok(entry && semver.satisfies(entry.version, range), `${name}@${range}`);
+    expectedVersions.set(name, entry.version);
+  }
   for (const name of excludedPackages) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
   for (const [name, version] of expectedVersions) {
     const installed = JSON.parse(readFileSync(join(directory, 'node_modules', name, 'package.json'), 'utf8'));
