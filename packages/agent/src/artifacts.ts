@@ -158,11 +158,12 @@ export function createPresentTool(options: PresentToolOptions = {}) {
       if (kind.type === 'svg' && !/<svg[\s>]/i.test(text)) return reply({ kind: 'denied', reason: 'An SVG file must contain an <svg> element' });
       const kept = await files.keep(path, access);
       if (kept.kind !== 'available') return reply(kept);
-      const artifact = createArtifactDescriptor({ title: path.slice(path.lastIndexOf('/') + 1), type: kind.type, mediaType: kind.mediaType, ...(kind.language ? { language: kind.language } : {}),
-        target, revision: kept.snapshot.ref.revision });
-      if (!options.ack) return reply({ kind: 'presented', artifact });
-      const outcome = await awaitViewOpen(api, context, { tool: PRESENT_TOOL, path, revision: kept.snapshot.ref.revision }, options.ack);
-      return reply({ kind: 'presented', artifact, ...viewFields(outcome) });
+      const describe = (revision: string) => createArtifactDescriptor({ title: path.slice(path.lastIndexOf('/') + 1), type: kind.type, mediaType: kind.mediaType,
+        ...(kind.language ? { language: kind.language } : {}), target, revision });
+      if (!options.ack) return reply({ kind: 'presented', artifact: describe(kept.snapshot.ref.revision) });
+      // A replay reports the revision the call recorded (and the page acknowledged), even if the file has changed since.
+      const { outcome, revision } = await awaitViewOpen(api, context, { tool: PRESENT_TOOL, path, revision: kept.snapshot.ref.revision }, options.ack);
+      return reply({ kind: 'presented', artifact: describe(revision), ...viewFields(outcome) });
     },
   });
 }

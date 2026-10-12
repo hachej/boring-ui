@@ -17,6 +17,9 @@ import { defineAgent } from '@hachej/boring-agent/agents';
 import { createPresentTool, answerViewOpen, VIEW_OPEN_TIMEOUT_MS } from '@hachej/boring-agent/artifacts';
 import { browserTaskId } from '@hachej/boring-agent/browser-task';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
+import { build } from 'esbuild';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { mkdirSync as mkdirOut } from 'node:fs';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { blobRevision, createWorkspaceProvider } from '@hachej/boring-files/workspace';
@@ -98,6 +101,24 @@ const REVISION = await blobRevision(encoder.encode(text));
 const revision = () => REVISION;
 const doc = (overrides = {}) => ({ kind: 'opened', instanceId: 'tab-1', path: 'doc.md', revision: undefined, ...overrides });
 
+/** The page's real presents bookkeeping (registry/pi-chat/artifact.ts), bundled as a consumer would. */
+async function loadPageAcks() {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const out = `${root}.cache/view-open-page-test`;
+  mkdirOut(out, { recursive: true });
+  await build({ entryPoints: [`${root}registry/pi-chat/artifact.ts`], outfile: `${out}/artifact.mjs`, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' });
+  return import(pathToFileURL(`${out}/artifact.mjs`).href);
+}
+
+/** The page acknowledges `call` the way AgentWorkspace does: it opens the file, and the viewer's mount report confirms the revision. */
+async function acknowledge(f, call, { revision = REVISION, path = 'doc.md', instanceId = 'tab-1' } = {}) {
+  const { createPresentAcks } = await loadPageAcks();
+  const acks = createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => true, instanceId });
+  const context = { closedThisTurn: false, unsaved: false, narrow: false, autoOpen: true, showing: () => false };
+  acks.consider([{ id: call.answerId, callId: call.id, path }], context);
+  acks.shown({ path, revision });
+}
+
 async function fixture(t, options = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'boring-view-open-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -109,15 +130,10 @@ async function fixture(t, options = {}) {
   const remote = await createRemoteChat({ endpoint, fetch: serve(harness, conversation), pollMs: 10 });
   const submit = () => remote.conversation.submit({ type: 'input', requestId: `r-${Math.random()}`, content: 'Present it.' }, remote.context);
   const waitPending = async () => { let found; await until('pending present', async () => (found = pending(await view(remote))[0])); return found; };
-  // The page answers as soon as it sees the call; the record is written a moment later, so an early answer is retried like the page does.
+  // Raw answers wait for the record: the call is visible before the tool writes its view record. Acknowledgements use the real page bookkeeping.
   const answer = async (id, value) => {
-    const body = typeof value === 'string' ? value : JSON.stringify(value);
-    const deadline = Date.now() + 3000;
-    for (;;) {
-      const outcome = await remote.answer(id, body);
-      if (outcome.kind !== 'unknown-question' || Date.now() > deadline) return outcome;
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+    return remote.answer(id, typeof value === 'string' ? value : JSON.stringify(value));
   };
   return { conversation, remote, harness, caller, submit, waitPending, answer };
 }
@@ -139,7 +155,7 @@ test('ack: the page confirms the mounted revision and the result says opened wit
   const call = await f.waitPending();
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.deepEqual(f.caller.requests, ['call'], 'no model request while the page has not confirmed');
-  assert.deepEqual(await f.answer(call.answerId, doc({ revision: revision() })), { kind: 'answered' }, 'the page answer for the shown revision');
+  await acknowledge(f, call, { revision: revision() });
   await until('model continues', async () => finalText(await view(f.remote))?.startsWith('Got {"kind":"presented"'));
   const result = JSON.parse(finalText(await view(f.remote)).slice(4));
   assert.equal(result.opened, true);
@@ -151,7 +167,9 @@ test('ack: a person who closed the panel on purpose refuses, with the reason and
   const f = await fixture(t, { ack: { timeoutMs: 5000 } });
   await f.submit();
   const call = await f.waitPending();
-  assert.deepEqual(await f.answer(call.answerId, { kind: 'refused', reason: 'closed by user' }), { kind: 'answered' });
+  const { createPresentAcks } = await loadPageAcks();
+  createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => true, instanceId: 'tab-1' })
+    .consider([{ id: call.answerId, callId: call.id, path: 'doc.md' }], { closedThisTurn: true, unsaved: false, narrow: false, autoOpen: true, showing: () => false });
   await until('model continues', async () => finalText(await view(f.remote))?.startsWith('Got {"kind":"presented"'));
   const result = JSON.parse(finalText(await view(f.remote)).slice(4));
   assert.equal(result.opened, false);
@@ -258,6 +276,36 @@ test('ack: a restart keeps the original deadline, so replay cannot extend the wa
   // A re-attach that restarted the deadline would end no earlier than a full timeout after reopening.
   assert.ok(Date.now() - reopenedAt < timeoutMs, 'the stored deadline ends the wait; a re-attach does not start a new full timeout');
   assert.equal(JSON.parse(finalText(await view(remote)).slice(4)).opened, 'unconfirmed');
+});
+
+test('ack: a replay after the file changed reports the revision that was acknowledged, not the current one', { timeout: 60000 }, async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-view-open-replay-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const ws = workspace(directory);
+  t.after(() => ws.db.close());
+  const file = join(directory, 'native.sqlite');
+  let opened = await open(await openNodeSqliteStorage(file), ws, { ack: { timeoutMs: 8000 } });
+  const conversation = await opened.agent.createConversation(opened.harness, context);
+  let remote = await createRemoteChat({ endpoint, fetch: serve(opened.harness, conversation), pollMs: 10 });
+  await remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Present.' }, remote.context);
+  let call;
+  await until('pending before acknowledgement', async () => (call = pending(await view(remote))[0]));
+  // Acknowledge revision A, let the record settle, then close: the result may or may not be written before the close.
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.deepEqual(await remote.answer(call.answerId, JSON.stringify({ kind: 'opened', instanceId: 'tab-1', path: 'doc.md', revision: REVISION })), { kind: 'answered' });
+  await opened.harness.close(context);
+
+  // The file becomes revision B before the replay.
+  writeFileSync(join(ws.root, 'doc.md'), 'A different revision, written after the acknowledgement.\n');
+  opened = await open(await openNodeSqliteStorage(file), ws, { ack: { timeoutMs: 8000 } });
+  t.after(() => opened.harness.close(context).catch(() => {}));
+  const again = await opened.harness.conversation(conversation.id, context);
+  opened.harness.resume();
+  remote = await createRemoteChat({ endpoint, fetch: serve(opened.harness, again), pollMs: 10 });
+  await until('result after replay', async () => finalText(await view(remote))?.startsWith('Got {"kind":"presented"'), 15000);
+  const result = JSON.parse(finalText(await view(remote)).slice(4));
+  assert.equal(result.opened, true, 'the acknowledged revision is still the one that was opened');
+  assert.equal(result.artifact.revision, REVISION, 'the result names the acknowledged revision A, not the current B');
 });
 
 test('ack: the default timeout is 15 seconds', () => {

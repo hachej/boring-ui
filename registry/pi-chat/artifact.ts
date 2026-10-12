@@ -161,3 +161,103 @@ export function collectArtifacts(view: ConversationView | undefined, detect?: Ar
   }
   return found;
 }
+
+/** What the host's chat answer returns: the kind is all the presents bookkeeping reads. */
+export interface PresentAnswer { readonly kind: string }
+
+export interface PresentAcksHost {
+  /** The chat's `answer` (the transport's `?op=answer`); undefined when the host has none. */
+  readonly answer: (id: string, answer: string) => Promise<PresentAnswer> | undefined;
+  /** Open the file in the panel; false when the panel refuses (unsaved changes the person keeps). */
+  readonly open: (path: string) => boolean;
+  /** This page's identity in the acknowledgement. */
+  readonly instanceId: string;
+  /** Test seams: the wait between retries and the clock of the retry bound. Default: real timers. */
+  readonly wait?: (ms: number) => Promise<void>;
+  readonly now?: () => number;
+}
+
+/** The page's state of the presents it must answer, as `AgentWorkspace` reads it on each change. */
+export interface PresentContext {
+  /** The person closed the panel in this turn. */
+  readonly closedThisTurn: boolean;
+  /** The open file has unsaved edits. */
+  readonly unsaved: boolean;
+  /** The screen is a phone (the panel is a sheet and is not opened for an agent). */
+  readonly narrow: boolean;
+  /** `autoOpen`: when false the panel is not opened for an agent; the call waits for a manual open. */
+  readonly autoOpen: boolean;
+  /** Whether the panel already shows this file. */
+  readonly showing: (path: string) => boolean;
+}
+
+/**
+ * The page's side of the view-open acknowledgement. A `present` call is confirmed only by a viewer's mount report (`shown`) of the
+ * revision it names. A call is decided once; an answer the server denies (a revision the page showed before the agent wrote a new one)
+ * keeps the call waiting for the next mount report, and an answer is retried briefly while the server has not recorded the call yet.
+ */
+export function createPresentAcks(host: PresentAcksHost) {
+  const decided = new Set<string>();
+  /** Calls waiting for their file's mount report: answer ID to path. */
+  const mounting = new Map<string, string>();
+  const wait = host.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  const now = host.now ?? (() => Date.now());
+  /** The last mount report: the file on screen and its revision. */
+  let lastShown: { readonly path: string; readonly revision: string } | undefined;
+
+  /** Sends one answer; returns the server's outcome kind, or undefined when it was not sent. Retries while the record is not written yet. */
+  async function send(id: string, body: Record<string, string>): Promise<string | undefined> {
+    const until = now() + 3000;
+    for (;;) {
+      try {
+        const sent = host.answer(id, JSON.stringify(body));
+        if (sent === undefined) return undefined;
+        const outcome = await sent;
+        if (outcome.kind !== 'unknown-question' || now() > until) return outcome.kind;
+      } catch { return undefined; /* the call ends at its deadline as unconfirmed */ }
+      await wait(20);
+    }
+  }
+  /** Confirms a shown revision. A denial (another revision) keeps the call waiting for the next mount report. */
+  async function confirm(id: string, path: string, revision: string): Promise<void> {
+    const kind = await send(id, { kind: 'opened', instanceId: host.instanceId, path, revision });
+    if (kind === 'denied') mounting.set(id, path);
+  }
+
+  return {
+    /** A viewer mounted and shows `path` at `revision`: confirms the calls waiting for that file. */
+    shown(view: { readonly path: string; readonly revision: string }): void {
+      for (const [id, path] of [...mounting]) {
+        if (path !== view.path) continue;
+        mounting.delete(id);
+        void confirm(id, path, view.revision);
+      }
+      lastShown = view;
+    },
+    /** The presents the server waits for: each is decided once, in order. */
+    consider(calls: readonly PendingPresent[], context: PresentContext): void {
+      for (const call of calls) {
+        if (decided.has(call.id)) continue;
+        decided.add(call.id);
+        if (context.closedThisTurn) void send(call.id, { kind: 'refused', reason: 'closed by user' });
+        else if (context.unsaved) void send(call.id, { kind: 'refused', reason: 'unsaved changes' });
+        else if (context.narrow) void send(call.id, { kind: 'refused', reason: 'narrow screen' });
+        else {
+          mounting.set(call.id, call.path);
+          if (lastShown?.path === call.path && context.showing(call.path)) {
+            mounting.delete(call.id);
+            void confirm(call.id, call.path, lastShown.revision);
+          } else if (context.autoOpen && !host.open(call.path)) {
+            mounting.delete(call.id);
+            void send(call.id, { kind: 'refused', reason: 'unsaved changes' });
+          }
+        }
+      }
+    },
+    /** Calls still waiting for a mount (test and debugging view). */
+    waiting: (): readonly string[] => [...mounting.keys()],
+  };
+}
+
+/** What `createPresentAcks` returns. */
+export type PresentAcks = ReturnType<typeof createPresentAcks>;

@@ -18,8 +18,8 @@ import type { FileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
-import { pendingPresents } from '../pi-chat/artifact';
-import type { PendingPresent } from '../pi-chat/artifact';
+import { createPresentAcks, pendingPresents } from '../pi-chat/artifact';
+import type { PresentAcks } from '../pi-chat/artifact';
 import type { ArtifactDescriptor, ArtifactsConfig, ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
@@ -239,31 +239,14 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     return (await response.json() as { saves: readonly SavedRevision[] }).saves;
   }, [revisionProvider, historyEndpoint]);
   // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
-  // The answer goes through the chat's own `answer` (the chat transport's `?op=answer`); the server checks the path and revision.
+  // The bookkeeping is `createPresentAcks` (pi-chat/artifact.ts); the answer goes through the chat's own `answer` (the transport's
+  // `?op=answer`) and the server checks the path and revision.
   const answerPresent = useRef(chat.actions?.answer); answerPresent.current = chat.actions?.answer;
-  const instanceId = useRef(''); if (!instanceId.current) instanceId.current = randomUUID();
-  /** Answer ID of each presented file the page is about to show, by its path. */
-  const mounting = useRef(new Map<string, string>());
-  const presentShown = useRef<{ readonly path: string; readonly revision: string }>();
-  // The call is visible before the server writes its record, so an answer can arrive first: retried briefly, then left to the deadline.
-  const sendPresent = useCallback(async (id: string, body: Record<string, string>) => {
-    const until = Date.now() + 3000;
-    for (;;) {
-      try {
-        const outcome = await answerPresent.current?.(id, JSON.stringify(body));
-        if (outcome?.kind !== 'unknown-question' || Date.now() > until) return;
-      } catch { return; /* the call ends at its deadline as unconfirmed */ }
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
-  }, []);
-  const onShown = useCallback((view: { readonly path: string; readonly revision: string }) => {
-    presentShown.current = view;
-    for (const [id, path] of mounting.current) {
-      if (path !== view.path) continue;
-      mounting.current.delete(id);
-      void sendPresent(id, { kind: 'opened', instanceId: instanceId.current, path: view.path, revision: view.revision });
-    }
-  }, [sendPresent]);
+  const openForPresent = useRef<(path: string) => boolean>(() => false);
+  const presentAcks = useRef<PresentAcks>();
+  if (!presentAcks.current) presentAcks.current = createPresentAcks({ answer: (id, body) => answerPresent.current?.(id, body),
+    open: path => openForPresent.current(path), instanceId: randomUUID() });
+  const onShown = useCallback((view: { readonly path: string; readonly revision: string }) => { presentAcks.current?.shown(view); }, []);
   const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, interactive, share, onShown }), [client, identityKey, history, viewers, interactive, share, onShown]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
@@ -349,28 +332,16 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     if (unsaved.current || !autoOpen || !fresh.length || closedInTurn.current.get(conversationId) === turn || globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches) return;
     setOpened({ kind: 'artifact', conversation: conversationId, descriptor: fresh.at(-1)!, follow: true });
   }, [versions, controller, conversationId, turn]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A `present` call waiting for the page: refused on purpose when the person closed the panel this turn, has unsaved edits or is on a
-  // phone; otherwise its file is opened, and the acknowledgement follows the mount. A file already on screen is confirmed at once.
+  // A `present` call waiting for the page: decided by `createPresentAcks` (refused when the person closed the panel this turn, has unsaved
+  // edits or is on a phone; otherwise its file is opened unless `autoOpen` is off, and the acknowledgement follows the mount).
+  openForPresent.current = path => setOpened({ kind: 'file', path });
   const liveView = useSyncExternalStore(controller ? controller.subscribe : subscribeNothing, () => controller?.getSnapshot().view, () => undefined);
-  const presents = useMemo(() => pendingPresents(liveView), [liveView]);
-  const decided = useRef(new Set<string>());
+  const presentCalls = useMemo(() => pendingPresents(liveView), [liveView]);
   useEffect(() => {
     if (!answerPresent.current || conversationId === undefined) return;
-    const refuse = (call: PendingPresent, reason: string) => { void sendPresent(call.id, { kind: 'refused', reason }); };
-    for (const call of presents) {
-      if (decided.current.has(call.id)) continue;
-      decided.current.add(call.id);
-      if (closedInTurn.current.get(conversationId) === turn) refuse(call, 'closed by user');
-      else if (unsaved.current) refuse(call, 'unsaved changes');
-      else if (globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches) refuse(call, 'narrow screen');
-      else if (presentShown.current?.path === call.path && showsPath(currentView.current, call.path)) {
-        void sendPresent(call.id, { kind: 'opened', instanceId: instanceId.current, path: call.path, revision: presentShown.current.revision });
-      } else {
-        mounting.current.set(call.id, call.path);
-        if (!setOpened({ kind: 'file', path: call.path })) { mounting.current.delete(call.id); refuse(call, 'unsaved changes'); }
-      }
-    }
-  }, [presents, conversationId, turn, setOpened, sendPresent, sheetBelow]); // eslint-disable-line react-hooks/exhaustive-deps
+    presentAcks.current?.consider(presentCalls, { closedThisTurn: closedInTurn.current.get(conversationId) === turn, unsaved: unsaved.current,
+      narrow: globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches === true, autoOpen, showing: path => showsPath(currentView.current, path) });
+  }, [presentCalls, conversationId, turn, autoOpen, sheetBelow]);
   /** The versions of one file that the conversation presented or saved, newest first. */
   const newestOf = (key: string) => versions.filter(version => artifactKey(version) === key).reverse();
   const artifacts: ArtifactsConfig = useMemo(() => ({

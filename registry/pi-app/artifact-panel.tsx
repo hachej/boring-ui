@@ -152,7 +152,8 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const text = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller ? controller.getSnapshot().text : saved.text, () => saved.text);
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
   const revision = saved.kind === 'open' ? saved.snapshot.ref.revision : pinned ? artifact.revision : undefined;
-  useReportShown(options.onShown, path, saved.kind === 'open' ? saved.snapshot.ref.revision : undefined);
+  // A host viewer and the canvas (which shows only a "no viewer" note) never report a mount: a presented file in them stays unconfirmed.
+  useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' ? saved.snapshot.ref.revision : undefined);
   // The history menu: newest first, the newest marked "Latest" (choosing it follows the latest), the one on display checked.
   const versions = menu.items.length > 1 ? <ViewerVersions testId="artifact-versions" current={menu.current} onSelect={onSelect} versions={menu.items} /> : undefined;
   const target = { artifact: artifactKey(artifact), version: pinned ? artifact.revision : 'latest' };

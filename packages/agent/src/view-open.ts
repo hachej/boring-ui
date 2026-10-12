@@ -69,12 +69,14 @@ export function parseViewOpenAnswer(value: unknown): ViewOpenAnswer | undefined 
 /**
  * Records the pending view of a `present` call, then waits for the page's acknowledgement or the deadline. The deadline is stored
  * with the record, so a re-attached call (after a restart) keeps the time it started with. Abort cancels the record.
+ * Returns the revision the record holds: on a replay after the file changed, that is the revision that was acknowledged, not the
+ * current one, so the result never pairs a new file revision with an old acknowledgement.
  */
 export async function awaitViewOpen(api: ToolExecutionApi, context: Context, view: { readonly tool: string; readonly path: string; readonly revision: string },
-  options: ViewOpenOptions = {}): Promise<ViewOpenOutcome> {
+  options: ViewOpenOptions = {}): Promise<{ readonly outcome: ViewOpenOutcome; readonly revision: string }> {
   const timeoutMs = options.timeoutMs ?? VIEW_OPEN_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError('The view-open timeout must be a positive integer of milliseconds');
-  if (options.viewers && !(await options.viewers(api, context))) return { kind: 'none' };
+  if (options.viewers && !(await options.viewers(api, context))) return { outcome: { kind: 'none' }, revision: view.revision };
   const { key, startedAt, duration } = await api.commit(async tx => {
     const key = await ownBindingKey(tx, api);
     const document = await tx.doc(documents, api.conversationId, key, null);
@@ -92,9 +94,10 @@ export async function awaitViewOpen(api: ToolExecutionApi, context: Context, vie
     if (document.view?.state.kind === 'pending') document.view.state = { kind: 'cancelled' };
   }, 'View open', { at: startedAt + duration, expire });
   const state = final?.view?.state;
-  if (state?.kind === 'opened') return { kind: 'opened', viewer: state.viewer };
-  if (state?.kind === 'refused') return { kind: 'refused', reason: state.reason };
-  if (state?.kind === 'unconfirmed') return { kind: 'unconfirmed', timeoutMs: duration };
+  const revision = final?.view?.revision ?? view.revision;
+  if (state?.kind === 'opened') return { outcome: { kind: 'opened', viewer: state.viewer }, revision };
+  if (state?.kind === 'refused') return { outcome: { kind: 'refused', reason: state.reason }, revision };
+  if (state?.kind === 'unconfirmed') return { outcome: { kind: 'unconfirmed', timeoutMs: duration }, revision };
   throw new Error('View open cancelled');
 }
 
