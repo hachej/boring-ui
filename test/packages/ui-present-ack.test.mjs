@@ -144,26 +144,35 @@ test('useReportShown reports the revision once its viewer has mounted it, and no
   delete globalThis.window; delete globalThis.document; delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
+/** The ArtifactPanel fixture: a fictional workspace file `a.js` at revision `rev-code`, read through a fake resource client. */
+function panelFixture() {
+  const bytes = new TextEncoder().encode('const x = 1;\n');
+  const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-code', providerId: 'fictional', path: 'a.js' } } }),
+    saves: async () => [], search: async () => [] };
+  const descriptor = (type, path = 'a.js') => ({ schema: 'boring.artifact', version: 1, title: path, type, mediaType: 'text/plain', language: 'javascript',
+    target: { resource: { providerId: 'fictional', path }, view: { kind: 'published' } }, revision: 'rev-code' });
+  return { client, descriptor };
+}
+
 test('the artifact panel reports a mount for a built-in viewer, and never for a host viewer or the canvas', async () => {
   const { ArtifactPanel } = await load('artifact-panel', 'pi-app/artifact-panel.tsx');
   const { createElement, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const window = new Window({ url: 'https://fictional.invalid/' });
   globalThis.window = window; globalThis.document = window.document; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  const bytes = new TextEncoder().encode('const x = 1;\n');
-  const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-code', providerId: 'fictional', path: 'a.js' } } }),
-    saves: async () => [], search: async () => [] };
-  const descriptor = (type, path = 'a.js') => ({ schema: 'boring.artifact', version: 1, title: path, type, mediaType: 'text/plain', language: 'javascript',
-    target: { resource: { providerId: 'fictional', path }, view: { kind: 'published' } }, revision: 'rev-code' });
+  const { client, descriptor } = panelFixture();
   async function mount(artifact, viewers) {
     const reports = [];
     const container = window.document.createElement('div');
     window.document.body.appendChild(container);
     const root = createRoot(container);
     const options = { client, identity: { runtimeId: 'fictional' }, viewers, onShown: shown => reports.push(shown) };
-    await act(async () => { root.render(createElement(ArtifactPanel, { active: { descriptor: artifact, follow: true }, versions: [artifact], options, onSelect: () => {}, onClose: () => {} })); });
-    for (let i = 0; i < 10; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
-    await act(async () => { root.unmount(); });
+    try {
+      await act(async () => { root.render(createElement(ArtifactPanel, { active: { descriptor: artifact, follow: true }, versions: [artifact], options, onSelect: () => {}, onClose: () => {} })); });
+      for (let i = 0; i < 10; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+    } finally {
+      await act(async () => { root.unmount(); });
+    }
     return reports;
   }
   try {
@@ -208,29 +217,57 @@ test('createPresentAcks forgets decided calls and waits that are no longer live'
   assert.equal(sent.length, 1, 'a call that left the view and came back is decided again');
 });
 
-test('a viewer that stops showing its revision takes its mount with it: a presented call is not confirmed by the old mount', async () => {
-  const { useReportShown } = await load('artifact-panel', 'pi-app/artifact-panel.tsx');
+test('a built-in viewer that a custom viewer replaces on the same path takes its mount with it: a presented call is not confirmed', async () => {
+  const { ArtifactPanel } = await load('artifact-panel', 'pi-app/artifact-panel.tsx');
   const { createElement, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const window = new Window({ url: 'https://fictional.invalid/' });
   globalThis.window = window; globalThis.document = window.document; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const { client, descriptor } = panelFixture();
+  let root;
   try {
     const { sent, make } = await fakeChat();
     const acks = make({ open: () => true });
-    const onShown = shown => (shown.hidden ? acks.hidden(shown) : acks.shown(shown));
+    const reports = [];
+    const onShown = shown => { reports.push(shown); if (shown.hidden) acks.hidden(shown); else acks.shown(shown); };
     const container = window.document.createElement('div');
     window.document.body.appendChild(container);
-    const Probe = ({ revision }) => { useReportShown(onShown, 'a.js', revision); return null; };
-    const root = createRoot(container);
-    await act(async () => { root.render(createElement(Probe, { revision: 'A' })); });
-    // A custom viewer or the canvas takes the path: the built-in viewer no longer reports a revision.
-    await act(async () => { root.render(createElement(Probe, { revision: undefined })); });
+    root = createRoot(container);
+    const render = async viewers => {
+      const options = { client, identity: { runtimeId: 'fictional' }, viewers, onShown };
+      await act(async () => { root.render(createElement(ArtifactPanel, { active: { descriptor: descriptor('code'), follow: true }, versions: [descriptor('code')], options, onSelect: () => {}, onClose: () => {} })); });
+      for (let i = 0; i < 10; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+    };
+    await render(undefined);
+    assert.deepEqual(reports, [{ path: 'a.js', revision: 'rev-code' }], 'the built-in code viewer mounted a.js@rev-code');
+    // The built-in code viewer mounted a.js@rev-code. The same path now goes to a custom viewer that renders nothing.
+    await render({ code: () => null });
     acks.consider([pendingCall('c1', 'a.js')], context({ showing: () => true }));
     await flush();
-    assert.deepEqual(sent, [], 'the old mount of a.js does not confirm the call');
+    assert.deepEqual(sent, [], 'the old built-in mount of a.js does not confirm the call');
     assert.deepEqual(acks.waiting(), ['c1'], 'the call waits for a real mount');
-    await act(async () => { root.unmount(); });
   } finally {
+    await act(async () => { root?.unmount(); });
     delete globalThis.window; delete globalThis.document; delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   }
+});
+
+test('a request that fails in transport keeps its call waiting, so a later mount of the revision still confirms it', async () => {
+  // A's request rejects before any answer; B mounts afterwards and the server accepts it.
+  const sent = [];
+  const answer = async (id, body) => {
+    const parsed = JSON.parse(body); sent.push(parsed.revision);
+    if (parsed.revision === 'A') throw new Error('network down');
+    return { kind: 'answered' };
+  };
+  const { createPresentAcks } = await load('artifact', 'pi-chat/artifact.ts');
+  const acks = createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {} });
+  acks.consider([pendingCall('c1', 'a.md')], context({ autoOpen: false }));
+  acks.shown({ path: 'a.md', revision: 'A' });
+  await flush();
+  assert.deepEqual(acks.waiting(), ['c1'], 'a failed request does not end the call');
+  acks.shown({ path: 'a.md', revision: 'B' });
+  await flush();
+  assert.deepEqual(sent, ['A', 'B'], 'the later mount of B is answered');
+  assert.deepEqual(acks.waiting(), [], 'B is accepted, so the call is done');
 });

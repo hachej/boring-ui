@@ -221,8 +221,8 @@ export function createPresentAcks(host: PresentAcksHost) {
   /** Confirms a shown revision. The call keeps its entry while the answer is in flight, so a mount during the flight still confirms it. */
   async function confirm(id: string, path: string, revision: string): Promise<void> {
     const kind = await send(id, { kind: 'opened', instanceId: host.instanceId, path, revision });
-    // A denial (another revision) keeps the call waiting for the next mount report; an accepted or terminal answer ends it.
-    if (kind !== 'denied') mounting.delete(id);
+    // Only an accepted or conflicting answer ends the call. A denial (another revision), a failed request or an unrecorded call keeps it waiting for a later mount or a live-call check.
+    if (kind === 'answered' || kind === 'conflict') mounting.delete(id);
   }
 
   return {
