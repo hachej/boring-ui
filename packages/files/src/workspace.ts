@@ -350,8 +350,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
       // After the receipt and intent checks, so a replay of a committed operation keeps its result under a lower limit.
       const limit = limitOf();
       if (limit !== undefined) {
-        const oversized = request.changes.find(change => change.kind !== 'delete' && change.bytes.length > limit);
-        if (oversized && oversized.kind !== 'delete') {
+        const oversized = changes.find(change => change.bytes.length > limit);
+        if (oversized) {
           const size = oversized.bytes.length, path = oversized.target.resource.path;
           return { kind: 'file_too_large', path, size, limit, reason: fileTooLarge(path, size, limit).message };
         }
