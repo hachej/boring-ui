@@ -103,13 +103,18 @@ function nullForEmptyBlobs(connection) {
 test('SQLite file system reads zero-length files when the engine returns no bytes for an empty BLOB', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'boring-readers-empty-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const fs = openSqliteFileSystem({ connection: nullForEmptyBlobs(openNodeConnection(join(directory, 'files.sqlite'))), workspace: 'fictional', cwd: '/workspace' });
+  const connection = nullForEmptyBlobs(openNodeConnection(join(directory, 'files.sqlite')));
+  const fs = openSqliteFileSystem({ connection, workspace: 'fictional', cwd: '/workspace' });
   value(await fs.writeFile('/workspace/.gitignore', new Uint8Array(), context));
   value(await fs.writeFile('/workspace/.git/info/exclude', new Uint8Array(), context));
   value(await fs.writeFile('/workspace/src/app.txt', 'needle\n', context));
 
   assert.deepEqual(value(await fs.readBinaryFile('/workspace/.gitignore', context)), new Uint8Array());
   assert.equal(value(await fs.readTextFile('/workspace/.gitignore', context)), '');
+  // Only a file row is an empty file: a row of another kind with no bytes is corrupt and still fails.
+  connection.run("INSERT INTO boring_workspace_files (workspace, path, parent, kind, bytes, mtime_ms) VALUES ('fictional', '/workspace/corrupt', '/workspace', 'bogus', NULL, 0)");
+  assert.equal((await fs.readBinaryFile('/workspace/corrupt', context)).ok, false);
+  connection.run("DELETE FROM boring_workspace_files WHERE path = '/workspace/corrupt'");
   assert.equal(value(await fs.fileInfo('/workspace/.gitignore', context)).size, 0);
   assert.deepEqual(value(await fs.listDir('/workspace', context)).filter(entry => entry.name === '.gitignore').map(entry => [entry.kind, entry.size]), [['file', 0]]);
 
