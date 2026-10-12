@@ -1,4 +1,4 @@
-import { copyFileSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -44,6 +44,8 @@ export function build(root, { stdio = 'inherit' } = {}) {
  * generated copy at packages/ui/r so the npm archive carries the registry; the copy is gitignored, never edited by hand. */
 export function syncRegistryArchive(root) {
   const source = resolve(root, 'public/r'), target = resolve(root, 'packages/ui/r');
+  // A tree without a committed registry (isolated fixtures) has nothing to copy; the pack audit fails a release without r/registry.json.
+  if (!existsSync(source)) return;
   rmSync(target, { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
   for (const name of readdirSync(source)) if (name.endsWith('.json')) copyFileSync(join(source, name), join(target, name));
