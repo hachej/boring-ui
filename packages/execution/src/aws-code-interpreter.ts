@@ -88,8 +88,7 @@ const sleep = (ms: number, signal: AbortSignal | undefined): Promise<void> => ne
 
 /**
  * Error names and messages, besides `ResourceNotFoundException`, taken to mean "the session ended".
- * UNVERIFIED against the real AgentCore service (open question in HOST-RECIPE-AWS.md): they are the likely shapes of an
- * expired or terminated session. `AccessDeniedException` is deliberately NOT here: it is a permissions problem and
+ * These shapes are verified against the real AgentCore service (owner, 2026-10-12). `AccessDeniedException` is deliberately NOT here: it is a permissions problem and
  * renewing would not fix it. Matching needs both a listed name and a message pattern.
  */
 export const SESSION_ENDED_ERRORS: readonly { readonly name: string; readonly message: RegExp }[] = [
@@ -245,7 +244,9 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       await prepare();
       // Every call of this command goes to the session it started in, even if a later command rotates.
       pinned = await session();
-      const started = await invoke('startCommandExecution', { command: script }, context, pinned);
+      // The start request is not aborted client-side: an aborted request could leave a task running whose id this call never
+      // sees. The response always arrives, and the polling loop below stops the task at once if the signal has fired.
+      const started = await invoke('startCommandExecution', { command: script }, undefined, pinned);
       taskId = started.structuredContent?.taskId;
       if (!taskId) return err(new ExecutionError('spawn_error', boundedMessage(`Code Interpreter did not start the command: ${text(started) || 'no task id'}`)));
     } catch (error) { return err(failure(error, 'spawn_error')); }

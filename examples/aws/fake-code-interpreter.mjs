@@ -41,6 +41,8 @@ const result = value => eventMessage({ ':message-type': 'event', ':event-type': 
  */
 export async function startFakeCodeInterpreter({ accessPoints, codeInterpreterIdentifier = 'fictional-interpreter-0001' }) {
   const sessions = new Map(), calls = [];
+  // holdNextStart(): the next startCommandExecution runs (its task starts) but its response waits for `release()`.
+  let held;
   const fail = (outgoing, status, type, message) => outgoing.writeHead(status, { 'content-type': 'application/json', 'x-amzn-errortype': type }).end(JSON.stringify({ message }));
 
   function run(session, command) {
@@ -94,6 +96,7 @@ export async function startFakeCodeInterpreter({ accessPoints, codeInterpreterId
       if (!task) value = { content: [{ type: 'text', text: 'Unknown task' }], isError: true };
       else { if (body.name === 'stopTask') task.stop(); value = { content: [{ type: 'text', text: task.status }], structuredContent: structured(task) }; }
     } else return fail(outgoing, 400, 'ValidationException', `This fake does not implement ${body.name}`);
+    if (held && body.name === 'startCommandExecution') { const gate = held; held = undefined; gate.arrived(); await gate.released; }
     outgoing.writeHead(200, { 'content-type': 'application/vnd.amazon.eventstream', 'x-amzn-code-interpreter-session-id': session.id });
     outgoing.end(result(value));
   });
@@ -102,6 +105,12 @@ export async function startFakeCodeInterpreter({ accessPoints, codeInterpreterId
   return {
     endpoint, calls, sessions, codeInterpreterIdentifier,
     /** The service ends a session on its own (timeout): later calls answer ResourceNotFoundException. */
+    holdNextStart: () => {
+      let arrived, released;
+      const gate = { started: new Promise(resolve => { arrived = resolve; }), released: new Promise(resolve => { released = resolve; }), arrived };
+      held = gate;
+      return { started: gate.started, release: released };
+    },
     expire: sessionId => { const session = sessions.get(sessionId); if (session) { session.live = false; for (const task of session.tasks.values()) task.stop(); } },
     /** The real SDK client, pointed at this server with fictional static keys (never real credentials). */
     client: async () => {

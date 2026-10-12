@@ -736,3 +736,23 @@ test('a directory reader keeps paging the directory it opened, even after the cw
   assert.equal(rest.done, true);
   await reader.close(context);
 });
+
+test('Code Interpreter env: abort while startCommandExecution is in flight stops the task it started', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2002, undefined, { renew: 'manual' }), env = interpreter.env;
+  // The fake starts the task, then holds the start response: the abort fires while the start call is in flight.
+  const hold = fake.holdNextStart();
+  const cancelled = withCancel(context);
+  const pending = env.exec('sleep 5', {}, cancelled.context);
+  await hold.started;
+  cancelled.cancel();
+  hold.release();
+  const result = await pending;
+  assert.equal(result.ok ? 'ok' : result.error.code, 'aborted');
+  assert.match(result.error.message, /termination is not confirmed/, 'cancellation intent is reported, not confirmed termination');
+  assert.equal(fake.calls.filter(call => call.name === 'stopTask').length, 1, 'the task returned by the start call is stopped');
+  const [session] = [...fake.sessions.values()];
+  const tasks = [...session.tasks.values()];
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].status, 'canceled');
+});
