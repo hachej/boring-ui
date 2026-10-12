@@ -1,6 +1,8 @@
 // Fictional Composer prop sets: the golden markup in pi-chat-composer-baseline.json was rendered from these with the composer of
 // main before the optional Feedback button (registry/pi-chat/composer.tsx at 7a813e8, the public main). test/contracts/feedback-composer.test.mjs
 // renders them again with today's composer and no `feedback` prop and requires byte-identical markup.
+// Regenerated once for the token scale (feat/kit-shadcn-scale): only class tokens changed (sm:text-[0.9375rem] to sm:text-sm, the round
+// controls' rounded-full to the --radius tiers rounded-lg/rounded-md).
 export const composerCases = () => {
   const noop = () => {};
   const base = { text: '', onText: noop, attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false,

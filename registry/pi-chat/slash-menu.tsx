@@ -48,7 +48,7 @@ export function SlashMenu({ query, items, onSelect, onDismiss }: {
     <div role="tablist" aria-label={labels.filterBySource} className="flex flex-wrap gap-1 border-b border-border/60 px-2 py-1.5">
       {[ALL, ...groups].map(name => <button key={name} type="button" role="tab" aria-selected={group === name} data-testid="slash-chip" data-group={name === ALL ? 'all' : name}
         onMouseDown={event => { event.preventDefault(); setGroup(name); setActive(0); }}
-        className={cn('cursor-pointer rounded-full px-2 py-px text-[0.6875rem] font-medium transition-colors max-sm:min-h-10 max-sm:min-w-10 max-sm:px-3 pointer-coarse:min-h-10 pointer-coarse:min-w-10 motion-reduce:transition-none',
+        className={cn('cursor-pointer rounded-full px-2 py-px text-xs font-medium transition-colors max-sm:min-h-10 max-sm:min-w-10 max-sm:px-3 pointer-coarse:min-h-10 pointer-coarse:min-w-10 motion-reduce:transition-none',
           group === name ? 'bg-foreground/10 text-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70')}>{name === ALL ? labels.allSources : labels.slashGroup(name)}</button>)}
     </div>
     {filtered.length === 0
@@ -60,10 +60,10 @@ export function SlashMenu({ query, items, onSelect, onDismiss }: {
           className={cn('flex cursor-pointer flex-col gap-0.5 px-3 py-1.5 text-xs max-sm:min-h-11 max-sm:justify-center pointer-coarse:min-h-11 pointer-coarse:justify-center', index === active ? 'bg-accent text-foreground' : 'text-muted-foreground')}>
           <span className="flex items-center gap-1.5">
             <span className="font-medium text-foreground">/{item.name}</span>
-            {item.source === 'skill' && <span data-testid="slash-badge-skill" className="rounded-sm bg-primary/10 px-1 py-px text-[0.5625rem] font-semibold tracking-wide text-foreground uppercase">{labels.skillBadge}</span>}
-            {item.sourcePlugin && <span data-testid="slash-badge-source" className="rounded-sm bg-muted px-1 py-px text-[0.5625rem] font-medium text-muted-foreground">{item.sourcePlugin}</span>}
+            {item.source === 'skill' && <span data-testid="slash-badge-skill" className="rounded-sm bg-primary/10 px-1 py-px text-xs font-semibold tracking-wide text-foreground uppercase">{labels.skillBadge}</span>}
+            {item.sourcePlugin && <span data-testid="slash-badge-source" className="rounded-sm bg-muted px-1 py-px text-xs font-medium text-muted-foreground">{item.sourcePlugin}</span>}
           </span>
-          {item.description && <span className="truncate text-[0.6875rem] opacity-70">{item.description}</span>}
+          {item.description && <span className="truncate text-xs opacity-70">{item.description}</span>}
         </li>)}
       </ul>}
   </div>;

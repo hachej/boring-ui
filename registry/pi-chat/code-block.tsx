@@ -27,9 +27,9 @@ export function CodeBlock({ code, language, onCopy }: { readonly code: string; r
   const label = language?.trim().split(/\s+/)[0]?.slice(0, 24);
   return <div data-testid="code-block" className="my-3 overflow-hidden rounded-lg border border-border bg-muted/40 text-foreground">
     <div className="flex h-8 items-center justify-between border-b border-border bg-muted/60 pr-1 pl-3">
-      <span data-testid="code-language" className="font-mono text-[11px] tracking-wide text-muted-foreground lowercase">{label || 'text'}</span>
-      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} className="h-6 text-[11px] text-muted-foreground" />
+      <span data-testid="code-language" className="font-mono text-xs tracking-wide text-muted-foreground lowercase">{label || 'text'}</span>
+      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} className="h-6 text-xs text-muted-foreground" />
     </div>
-    <pre className="m-0 overflow-x-auto p-3 font-mono text-[12.5px] leading-5"><code>{code}</code></pre>
+    <pre className="m-0 overflow-x-auto p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
   </div>;
 }

@@ -58,7 +58,7 @@ export function MentionMenu({ query, search, generation, onSelect, onDismiss }: 
             className={cn('flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-xs max-sm:min-h-11 pointer-coarse:min-h-11', index === active ? 'bg-accent text-foreground' : 'text-muted-foreground')}>
             <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
             <span className="flex min-w-0 flex-col gap-0.5"><span className="truncate font-medium text-foreground">{highlight(name, query)}</span>
-              <span className="truncate text-[0.6875rem] opacity-70">{item.path}</span></span>
+              <span className="truncate text-xs opacity-70">{item.path}</span></span>
           </li>;
         })}
       </ul>}

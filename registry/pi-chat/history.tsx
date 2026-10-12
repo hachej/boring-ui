@@ -109,7 +109,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false }:
         {total === 0 && <p role="status" data-testid="conversations-empty" className="m-0 px-3 py-8 text-center text-sm text-muted-foreground">
           {loading ? labels.loadingConversations : query.trim() ? labels.noMatch(query.trim()) : archived ? labels.noArchived : labels.noConversations}</p>}
         {shown.map(group => <section key={group.key} aria-label={labels[group.key]} className="mb-1">
-          <h4 className="m-0 px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground">{labels[group.key]}</h4>
+          <h4 className="m-0 px-2.5 pt-2 pb-1 text-xs font-medium tracking-wide text-muted-foreground">{labels[group.key]}</h4>
           <ul className="m-0 list-none p-0">
             {group.items.map(item => {
               const active = item.id === conversations.activeId;
@@ -190,11 +190,11 @@ export function ConversationHistory({ conversations, onClose, onBrowseEarlier, p
   return <>
     <button type="button" tabIndex={-1} aria-hidden="true" data-testid="conversations-backdrop" onClick={onClose} className={cn('z-20 hidden cursor-default sm:block', placement === 'above' ? 'fixed inset-0' : 'absolute inset-0')} />
     <section role="dialog" aria-label={labels.historyDialog} data-testid="conversations"
-      className={cn('fixed inset-0 z-50 flex flex-col bg-background text-foreground sm:absolute sm:inset-auto sm:z-30 sm:w-[23rem] sm:rounded-2xl sm:border sm:border-border sm:shadow-xl',
+      className={cn('fixed inset-0 z-50 flex flex-col bg-background text-foreground sm:absolute sm:inset-auto sm:z-30 sm:w-[23rem] sm:rounded-2xl sm:border sm:border-border sm:shadow-lg',
         placement === 'above' ? 'sm:bottom-full sm:left-0 sm:mb-2 sm:max-h-[min(26rem,60dvh)]' : 'sm:top-12 sm:right-3 sm:max-h-[min(34rem,calc(100%-4rem))]')}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5 max-sm:pt-[max(0.625rem,env(safe-area-inset-top))]">
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="sm:hidden"><ArrowLeftIcon className="size-4" aria-hidden="true" /></Button>
-        <h3 className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">{labels.history}</h3>
+        <h3 className="m-0 min-w-0 flex-1 font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{labels.history}</h3>
         {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew!(); onClose(); }}><icons.newChat className="size-3.5" aria-hidden="true" />{labels.newConversation}</Button>}
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-sm:hidden"><XIcon className="size-4" aria-hidden="true" /></Button>
       </header>
@@ -233,7 +233,7 @@ export function HistoryPanel({ history, developer, connected, onLoad, onClose, r
   return <section aria-label={labels.earlierMessages} data-testid="history" aria-live="off" className="shrink-0 border-b border-border bg-muted/20">
     <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2">
       <icons.history className="size-4 text-muted-foreground" aria-hidden="true" />
-      <h3 className="m-0 min-w-0 flex-1 truncate text-sm font-medium">{labels.earlierMessages} <span className="font-normal text-muted-foreground">{labels.readOnly}</span></h3>
+      <h3 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium">{labels.earlierMessages} <span className="font-normal text-muted-foreground">{labels.readOnly}</span></h3>
       <Button size="sm" variant="outline" data-testid="history-load" onClick={onLoad} disabled={!connected || history.kind === 'loading' || history.kind === 'disabled' || exhausted}>
         {history.kind === 'error' ? labels.retry : history.kind === 'loading' ? labels.loadingShort : labels.loadEarlier}</Button>
       <Button size="icon-sm" aria-label={labels.returnToConversation} title={labels.returnToConversation} onClick={onClose}><XIcon className="size-4" aria-hidden="true" /></Button>
@@ -242,7 +242,7 @@ export function HistoryPanel({ history, developer, connected, onLoad, onClose, r
       {history.kind === 'error' && <p role="alert" className="m-0 text-sm text-destructive">{labels.historyFailed}</p>}
       {history.kind === 'idle' && <p className="m-0 text-sm text-muted-foreground">{labels.loadPage}</p>}
       {rows.map(row => <article key={row.key} data-history-row-id={row.key} className="rounded-lg border border-border bg-background/60 px-3 py-2">
-        <p className="m-0 mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{row.role}</p>
+        <p className="m-0 mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{row.role}</p>
         <div className="text-sm opacity-90"><Markdown text={row.body} /></div>
         {replyFooter && row.assistant && replyText(row.assistant) && replyFooter({ key: row.key, text: replyText(row.assistant), entryId: row.entryId, ...replyMeta(row.assistant) })}</article>)}
       {history.kind === 'ready' && !rows.length && <p className="m-0 text-sm text-muted-foreground">{labels.noRecords}</p>}

@@ -25,13 +25,13 @@ export function preview(args: ToolCall['arguments']): string {
 export function StatusIcon({ status, className }: { readonly status: ToolStatus; readonly className?: string }) {
   const cls = cn('size-4 shrink-0', className);
   if (status === 'running') return <Loader2Icon aria-hidden="true" className={cn(cls, 'animate-spin text-muted-foreground motion-reduce:animate-none')} />;
-  if (status === 'completed') return <CheckCircle2Icon aria-hidden="true" className={cn(cls, 'text-emerald-600')} />;
+  if (status === 'completed') return <CheckCircle2Icon aria-hidden="true" className={cn(cls, 'text-(--chat-success)')} />;
   if (status === 'failed') return <AlertCircleIcon aria-hidden="true" className={cn(cls, 'text-destructive')} />;
   return <CircleDashedIcon aria-hidden="true" className={cn(cls, 'text-muted-foreground')} />;
 }
 
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
-  return <div className="space-y-1.5"><h4 className="m-0 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">{title}</h4>{children}</div>;
+  return <div className="space-y-1.5"><h4 className="m-0 text-xs font-medium tracking-wider text-muted-foreground uppercase">{title}</h4>{children}</div>;
 }
 
 /** A short live label for a call: "Reading notes/consultation.md", "Running bash", "Running working_git" (`labels.toolActivity`). */
@@ -56,10 +56,10 @@ export function ToolCard({ entry, onOpenImage, compact = false, details = true }
       className={cn('flex w-full items-center gap-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset motion-reduce:transition-none',
         compact ? 'min-h-7 px-2 py-1 pointer-coarse:min-h-10' : 'min-h-9 px-3 py-1.5 pointer-coarse:min-h-10', details ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default')}>
       <WrenchIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-      <span data-testid="tool-name" className="shrink-0 font-mono text-[13px] font-medium">{call.name}</span>
+      <span data-testid="tool-name" className="shrink-0 font-mono text-sm font-medium">{call.name}</span>
       {hint && <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{hint}</span>}
       {!hint && <span className="flex-1" />}
-      <span data-testid="tool-status" className={cn('inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium', status === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>
+      <span data-testid="tool-status" className={cn('inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium', status === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>
         <StatusIcon status={status} className="size-3" />{labels[STATUS_LABEL[status]]}</span>
       {details && <ChevronDownIcon aria-hidden="true" className={cn('size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none', open && 'rotate-180')} />}
     </button>

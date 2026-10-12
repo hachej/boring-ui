@@ -75,12 +75,12 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   return <section data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
     className={cn('my-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs', open ? 'border-ring/50' : 'border-border')}>
     <div className="flex items-start gap-3">
-      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full', open ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', open ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
         {state === 'answered' || state === 'sent' ? <CheckIcon className="size-4" aria-hidden="true" /> : <MessageCircleQuestionIcon className="size-4" aria-hidden="true" />}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">{open ? labels.questionForYou : state === 'failed' ? labels.notAnswered : labels.answered}</p>
-        <p data-testid="question-text" className="mt-1 mb-0 text-[0.9375rem] leading-6 font-medium [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</p>
+        <p className="m-0 text-xs font-medium tracking-wider text-muted-foreground uppercase">{open ? labels.questionForYou : state === 'failed' ? labels.notAnswered : labels.answered}</p>
+        <p data-testid="question-text" className="mt-1 mb-0 text-sm leading-6 font-medium [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</p>
 
         {open && <>
           {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="mt-3 flex flex-wrap gap-2">
