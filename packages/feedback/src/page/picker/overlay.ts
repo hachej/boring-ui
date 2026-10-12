@@ -47,21 +47,21 @@ export interface OverlayOptions {
 const BASE_STYLES = `
 :host { all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; contain: layout style; }
 .layer { position: absolute; inset: 0; pointer-events: none; }
-.box { position: fixed; box-sizing: border-box; border: 2px solid var(--boring-feedback-accent, #2563eb); border-radius: 3px;
-  background: color-mix(in srgb, var(--boring-feedback-accent, #2563eb) 12%, transparent); pointer-events: none; }
+.box { position: fixed; box-sizing: border-box; border: 2px solid var(--boring-feedback-accent, var(--primary, #2563eb)); border-radius: 3px;
+  background: color-mix(in srgb, var(--boring-feedback-accent, var(--primary, #2563eb)) 12%, transparent); pointer-events: none; }
 .box[data-tone="pinned"] { border-style: solid; border-width: 3px; }
-.box[data-tone="reveal"] { border-color: var(--boring-feedback-reveal, #d97706); background: color-mix(in srgb, var(--boring-feedback-reveal, #d97706) 14%, transparent); }
+.box[data-tone="reveal"] { border-color: var(--boring-feedback-reveal, var(--ring, #d97706)); background: color-mix(in srgb, var(--boring-feedback-reveal, var(--ring, #d97706)) 14%, transparent); }
 .box[data-tone="candidate"] { border-style: dashed; }
 .label { position: fixed; max-width: min(28rem, 90vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 6px;
-  border-radius: 4px; background: var(--boring-feedback-label-background, #111827); color: var(--boring-feedback-label-foreground, #f9fafb);
+  border-radius: 4px; background: var(--boring-feedback-label-background, var(--foreground, #111827)); color: var(--boring-feedback-label-foreground, var(--background, #f9fafb));
   font: 500 12px/1.5 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
 .label[data-tone="candidate"] { min-width: 1.5em; text-align: center; font-weight: 700; }
 .toolbar { position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 6px; padding: 6px;
-  border-radius: 12px; background: var(--boring-feedback-label-background, #111827); pointer-events: auto; }
+  border-radius: 12px; background: var(--boring-feedback-label-background, var(--foreground, #111827)); pointer-events: auto; }
 .toolbar[hidden] { display: none; }
 .toolbar button { min-width: 44px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
-  color: var(--boring-feedback-label-foreground, #f9fafb); font: 600 14px/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
-.toolbar button:focus-visible { outline: 2px solid var(--boring-feedback-accent, #2563eb); }
+  color: var(--boring-feedback-label-foreground, var(--background, #f9fafb)); font: 600 14px/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
+.toolbar button:focus-visible { outline: 2px solid var(--boring-feedback-accent, var(--primary, #2563eb)); }
 `;
 
 const LABEL_HEIGHT = 22;

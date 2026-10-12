@@ -30,13 +30,14 @@ export function registryCss(item) {
 const TAILWIND_ITEMS = ['button', 'utils', 'pi-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers'];
 
 /**
- * The registry `theme` item as CSS: light tokens on `:root`, dark tokens when the system prefers dark (the CLI writes them under
- * `.dark` in a consumer app instead), and the Tailwind `@theme inline` bindings.
+ * The registry `theme` item as CSS: light tokens on `:root`, dark tokens on `.dark` (as the CLI writes them in a consumer app; the
+ * ambient `contrast` window is a `.dark` subtree) and also when the system prefers dark, the `dark:` variant for both, and the
+ * Tailwind `@theme inline` bindings.
  */
 export function themeCss() {
   const theme = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(entry => entry.name === 'theme');
   const block = vars => Object.entries(vars ?? {}).map(([name, value]) => `  --${name}: ${value};`).join('\n');
-  return `:root {\n${block(theme.cssVars.light)}\n  color-scheme: light dark;\n}\n@media (prefers-color-scheme: dark) {\n  :root {\n${block(theme.cssVars.dark).replace(/^/gm, '  ')}\n  }\n}\n@theme inline {\n${block(theme.cssVars.theme)}\n}`;
+  return `:root {\n${block(theme.cssVars.light)}\n  color-scheme: light dark;\n}\n@media (prefers-color-scheme: dark) {\n  :root {\n${block(theme.cssVars.dark).replace(/^/gm, '  ')}\n  }\n}\n.dark {\n${block(theme.cssVars.dark)}\n  color-scheme: dark;\n}\n@custom-variant dark {\n  @media (prefers-color-scheme: dark) { @slot; }\n  &:where(.dark, .dark *) { @slot; }\n}\n@theme inline {\n${block(theme.cssVars.theme)}\n}`;
 }
 
 /** Candidates are any run of non-space, non-quote characters: Tailwind ignores those that are not utilities. */

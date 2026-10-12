@@ -273,7 +273,7 @@ const controller = createNativeChatController({ identity, ...remote });
 
 `tailwind.mjs` compiles Tailwind v4 once at startup with the library API (theme and utilities only, no preflight, so the
 viewer panels keep their own styles). It scans `registry/button`, `utils`, `pi-chat`, `pi-ambient`, `pi-workspace`, `pi-app`, `viewers` and this folder for classes, and
-`themeCss()` renders the registry `theme` item (the same shadcn tokens a consumer installs) for light and dark (`prefers-color-scheme`); every example uses it. `styles.css` is the shell and panel CSS. The chat toolkit hooks
+`themeCss()` renders the registry `theme` item (the same shadcn tokens a consumer installs) for light and dark (the `.dark` class, which the ambient contrast window uses, and `prefers-color-scheme`); every example uses it. `styles.css` is the shell and panel CSS. The chat toolkit hooks
 for journeys are `data-testid` attributes: `composer-input`, `composer-submit` (`data-state` is `send` or `stop`), `connection`,
 `transcript`, `tool-card`, `tool-name`, `queue-item`, `question-card`, and for scenarios `scenario-list`, `scenario`, `scenario-next`.
 

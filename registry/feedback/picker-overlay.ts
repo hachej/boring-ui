@@ -9,11 +9,11 @@ import { createOverlay, type PickerOverlay } from '@hachej/boring-feedback/page'
 export const pickerOverlayStyles = `
 .box { border-radius: 6px; }
 .box[data-tone="hover"] { border-width: 2px; }
-.box[data-tone="pinned"] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--boring-feedback-accent, #2563eb) 25%, transparent); }
+.box[data-tone="pinned"] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--boring-feedback-accent, var(--primary)) 25%, transparent); }
 .box[data-tone="reveal"] { animation: boring-feedback-pulse 1.2s ease-out 2; }
 .label { border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }
 .toolbar { box-shadow: 0 8px 24px rgb(0 0 0 / 30%); }
-@keyframes boring-feedback-pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--boring-feedback-reveal, #d97706) 55%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
+@keyframes boring-feedback-pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--boring-feedback-reveal, var(--ring)) 55%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
 @media (prefers-reduced-motion: reduce) { .box[data-tone="reveal"] { animation: none; } }
 `;
 
