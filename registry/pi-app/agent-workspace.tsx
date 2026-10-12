@@ -244,7 +244,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // `?op=answer`) and the server checks the path and revision.
   const answerPresent = useRef(chat.actions?.answer); answerPresent.current = chat.actions?.answer;
   const openForPresent = useRef<(path: string) => boolean>(() => false);
-  const presentAcks = useRef<PresentAcks>();
+  const presentAcks = useRef<PresentAcks | undefined>(undefined);
   if (!presentAcks.current) presentAcks.current = createPresentAcks({ answer: (id, body) => answerPresent.current?.(id, body),
     open: path => openForPresent.current(path), instanceId: randomUUID() });
   const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
