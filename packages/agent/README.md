@@ -120,7 +120,7 @@ Deviations, honestly:
 
 ## Per-request prompt context
 
-`@hachej/boring-agent/prompt-context` (`createPromptContext({ context })`) is one ordinary native extension whose `GenerationHooks.beforeRequest` (registered with `hook(GenerationTask, ...)`) runs before every request attempt, retries and crash recovery included. The hook's text is used for that request only: it is recomputed each time and never appended to the transcript. The text is one user-role `<request-context>...</request-context>` message placed immediately before the round's final user message; system messages and earlier messages are unchanged, so the stable prefix stays cacheable.
+`@hachej/boring-agent/prompt-context` (`createPromptContext({ context })`) is one ordinary native extension whose `GenerationHooks.beforeRequest` (registered with `hook(GenerationTask, ...)`) runs before every request attempt, retries and crash recovery included. The hook's text is used for that request only: it is recomputed each time and never appended to the transcript. The text is one user-role `<request-context>...</request-context>` message placed immediately before the round's question when the final message is the user's question, otherwise at the tail (after tool results or an assistant continuation); system messages and earlier messages are unchanged, so the stable prefix stays cacheable.
 
 Choose the seam by how the text changes and who should see it:
 
