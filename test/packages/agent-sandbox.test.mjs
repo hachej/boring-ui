@@ -17,7 +17,7 @@ import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { createApprovalExtension } from '@hachej/boring-agent/approval';
-import { createSandboxExtension, simulatedCalls, SANDBOX_DETAILS } from '@hachej/boring-agent/sandbox';
+import { assertSandboxLast, createSandboxExtension, simulatedCalls, SANDBOX_DETAILS } from '@hachej/boring-agent/sandbox';
 import { createScriptedModel } from '@hachej/boring-testing/model';
 
 // Fictional tools that record what really ran. A sandboxed call must leave `ran` untouched.
@@ -119,7 +119,8 @@ test('a sandbox installed after an approval gate wraps outermost: no question is
   assert.deepEqual(simulatedCalls(await results()).map(call => call.toolName), ['write_note']);
 });
 
-test('a sandbox followed by a converting read refuses the recorded read: the PDF is never converted', async t => {
+/** A Harness over a real workspace with Pi's read, then the given extensions in install order (later wraps apply last). */
+async function readingWorkspace(t, extensionsInOrder) {
   const directory = mkdtempSync(join(tmpdir(), 'boring-sandbox-convert-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const workspace = join(directory, 'workspace');
@@ -132,9 +133,7 @@ test('a sandbox followed by a converting read refuses the recorded read: the PDF
   const converted = [];
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fixture.files', tools: [createReadTool()] }));
-  // The sandbox is selected first; the converting read is a later wrap of the same `read` tool.
-  registry.install(createSandboxExtension({ tools: ['read'] }));
-  registry.install(createConvertingRead({ workspace: { files, root: workspace, access }, convert: async () => { converted.push('pdf'); return { text: 'converted' }; } }));
+  for (const extension of extensionsInOrder({ files, workspace, access, converted })) registry.install(extension);
   const harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models: createModels(), env: () => env }, context);
   t.after(() => harness.close(context).catch(() => {}));
   const conversation = await harness.root(context);
@@ -142,9 +141,24 @@ test('a sandbox followed by a converting read refuses the recorded read: the PDF
   const entryId = terminal.state.outcome.result?.entryId;
   assert.notEqual(entryId, undefined, JSON.stringify(terminal.state.outcome));
   const message = (await conversation.commit(tx => tx.entry(ToolResultEntry, entryId), context)).model[0];
-  assert.equal(message.isError, true);
-  assert.match(message.content.map(part => part.text ?? '').join(''), /a later extension wraps it/);
-  assert.deepEqual(converted, [], 'the recorded read must not convert the PDF');
+  return { message, text: message.content.map(part => part.text ?? '').join(''), converted };
+}
+
+test('a setup check refuses a converting read selected after the sandbox, and names the composition limit', async () => {
+  const sandbox = createSandboxExtension({ tools: ['read'] });
+  const converting = createConvertingRead({ convert: async () => ({ text: 'unused' }) });
+  assert.throws(() => assertSandboxLast([sandbox, converting], sandbox), /must be the last wrap of each recorded tool/);
+  assert.doesNotThrow(() => assertSandboxLast([converting, sandbox], sandbox));
+});
+
+test('a sandbox selected last records a PDF read through a converting read and never converts it', async t => {
+  const { message, text, converted } = await readingWorkspace(t, ({ files, workspace, access, converted }) => [
+    createConvertingRead({ workspace: { files, root: workspace, access }, convert: async () => { converted.push('pdf'); return { text: 'converted' }; } }),
+    createSandboxExtension({ tools: ['read'] }),
+  ]);
+  assert.equal(message.isError, false, text);
+  assert.match(text, /Simulated: read was recorded and not run/);
+  assert.deepEqual(converted, [], 'the sandbox recorded the read; the converter never ran');
 });
 
 test('a tool added mid-run by addTools is offered to the next round and refused by the sandbox, never executed', async t => {

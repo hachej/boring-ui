@@ -1,6 +1,6 @@
 import { defineExtension, hook, ToolTask } from '@earendil-works/pi-durable';
 import type { Extension, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
-import type { Context, JsonValue } from '@earendil-works/chord';
+import type { JsonValue } from '@earendil-works/chord';
 
 /** Key under a recorded call's result details: `{ simulated: true, tool, arguments }`. A caller reads it back with `simulatedCalls`. */
 export const SANDBOX_DETAILS = 'boring.sandbox';
@@ -43,22 +43,15 @@ export function simulatedCalls(results: readonly { readonly toolCallId: string; 
   });
 }
 
-/** The recorders this module made. A later wrap of a recorded tool yields a new object, which is not one of these. */
-const RECORDERS = new WeakSet<object>();
-
 /** A tool that never runs: it returns the acknowledgement and records the call in its result details. Replay-safe, as nothing executes. */
-const recorded = (tool: ToolRegistration, simulate: (toolName: string, args: JsonValue) => string): ToolRegistration => {
-  const recorder = {
-    ...tool,
-    replay: 'safe',
-    execute: async (args: unknown) => ({
-      content: [{ type: 'text', text: simulate(tool.name, args as JsonValue) }],
-      details: { [SANDBOX_DETAILS]: { simulated: true, tool: tool.name, arguments: args as JsonValue } },
-    }),
-  } as ToolRegistration;
-  RECORDERS.add(recorder);
-  return recorder;
-};
+const recorded = (tool: ToolRegistration, simulate: (toolName: string, args: JsonValue) => string): ToolRegistration => ({
+  ...tool,
+  replay: 'safe',
+  execute: async (args: unknown) => ({
+    content: [{ type: 'text', text: simulate(tool.name, args as JsonValue) }],
+    details: { [SANDBOX_DETAILS]: { simulated: true, tool: tool.name, arguments: args as JsonValue } },
+  }),
+}) as ToolRegistration;
 
 /**
  * A native extension that makes the named tools fail closed in a sandbox. Its wraps replace each tool the host flags as
@@ -67,9 +60,11 @@ const recorded = (tool: ToolRegistration, simulate: (toolName: string, args: Jso
  * cannot run unnamed. It brings no tools and changes nothing unless a conversation selects it:
  * `conversation.configure({ extensions: { add: [sandbox] } })`.
  *
- * Ordering: the sandbox must be the last extension that wraps its recorded tools, so its recorder is outermost. Select it after
- * an approval gate (no person is asked inside a sandbox) and after any other wrap of those tools. A wrap selected after it is
- * not followed: that call is refused by `beforeTool`, never run, so the sandbox fails closed instead of running the tool.
+ * Composition limit (owned by the host): the sandbox must be the last wrap of each recorded tool. A wrap selected after it
+ * replaces the recorder's `execute`, and the replaced call runs for real. Pi 1.1 exposes no public seam that tells the
+ * executing phase which composed tool it runs, so this module cannot verify the order at call time. Use
+ * `assertSandboxLast` at setup, with the same ordered extension list the host selects. The upstream request is in
+ * docs/upstream/pi-hookapi-composed-tool.md.
  */
 export function createSandboxExtension(options: SandboxOptions): Extension {
   const covered = new Set(options.tools);
@@ -80,17 +75,26 @@ export function createSandboxExtension(options: SandboxOptions): Extension {
     name: options.name ?? 'boring.sandbox',
     wraps,
     hooks: [hook(ToolTask, {
-      beforeTool: async (call, api, context) => {
-        if (!covered.has(call.name)) return { block: `Not run: ${call.name} is not covered by the sandbox.` };
-        if (!recordOnly.has(call.name)) return undefined;
-        // A wrap selected after this sandbox replaces the recorder, and its execute can run the tool for real. Refuse unless the
-        // composed tool is still the recorder this module made.
-        // HookApi does not type `agent`; the runtime that runs the hook carries it. Without it, refuse.
-        const view = api as unknown as Partial<{ agent(context: Context): Promise<{ readonly tools: readonly ToolRegistration[] }> }>;
-        const current = typeof view.agent === 'function' ? (await view.agent(context)).tools.find(tool => tool.name === call.name) : undefined;
-        return current !== undefined && RECORDERS.has(current) ? undefined
-          : { block: `Not run: ${call.name} is recorded by the sandbox, and a later extension wraps it.` };
-      },
+      beforeTool: call => covered.has(call.name) ? undefined : { block: `Not run: ${call.name} is not covered by the sandbox.` },
     })],
   });
+}
+
+/**
+ * Setup-time check over the public `Extension.wraps` shape. Throws when an extension selected after `sandbox` wraps a tool the
+ * sandbox records, because that wrap would replace the recorder. `selected` is the ordered list the host selects (a
+ * `defineAgent` `extensions` list, or the order of `configure({ extensions: { add } })`). It is a host check, not a Harness
+ * guard: nothing in Pi calls it, so the host must call it wherever it composes that list.
+ */
+export function assertSandboxLast(selected: readonly Extension[], sandbox: Extension): void {
+  const at = selected.indexOf(sandbox);
+  if (at < 0) return;
+  const recorded = new Set((sandbox.wraps ?? []).flatMap(wrap => 'tool' in wrap ? [wrap.tool] : []));
+  for (const later of selected.slice(at + 1)) {
+    for (const wrap of later.wraps ?? []) {
+      if ('tool' in wrap && recorded.has(wrap.tool)) {
+        throw new Error(`${later.name} wraps ${wrap.tool} after ${sandbox.name}; the sandbox must be the last wrap of each recorded tool.`);
+      }
+    }
+  }
 }
