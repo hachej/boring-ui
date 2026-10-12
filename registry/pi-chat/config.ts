@@ -95,7 +95,13 @@ export interface ConversationsConfig {
 }
 
 /** A settled reply, as host message actions receive it: its row key, its text and the native entry it ends with. */
-export interface ReplyRef { readonly key: string; readonly text: string; readonly entryId?: string | undefined }
+export interface ReplyRef {
+  readonly key: string; readonly text: string; readonly entryId?: string | undefined;
+  /** When the last model round of the reply was written (ms), the same value as its message's `timestamp`: a host keys its own per-reply data on it. */
+  readonly timestamp?: number | undefined;
+  /** The model that wrote the last round of the reply, as its message names it (`provider` and `model` ids). */
+  readonly model?: { readonly provider: string; readonly modelId: string } | undefined;
+}
 
 export interface ModelRef { readonly provider: string; readonly modelId: string }
 export interface ModelConfig {

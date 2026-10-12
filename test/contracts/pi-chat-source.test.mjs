@@ -466,3 +466,22 @@ test('the pi-chat registry item never imports @hachej/boring-feedback (feedback 
   for (const file of published.files) assert.ok(!file.content.includes(FEEDBACK), `published ${file.path} imports ${FEEDBACK}`);
   for (const dependency of [...item.dependencies ?? [], ...published.dependencies ?? []]) assert.ok(!String(dependency).startsWith(FEEDBACK), `pi-chat depends on ${dependency}`);
 });
+
+test('a host reply footer sees the model and timestamp of the last round of a settled reply, and only settled replies get one', async () => {
+  const { derive } = await load('rows', 'rows.ts');
+  const { RowView } = await load('message', 'message.tsx');
+  const rounds = [assistant([call('1', 'read')], { provider: 'openai-codex', model: 'gpt-6-sol', timestamp: 100 }), assistant([{ type: 'text', text: 'done' }], { provider: 'cloudflare-workers-ai', model: '@cf/moonshotai/kimi-k2.7-code', timestamp: 250 })];
+  const view = { entries: entries([user('go')], [rounds[0]], [result('1', 'read', 'A')], [rounds[1]]), docs: {} };
+  const row = derive(view, options('expert')).rows[1];
+  assert.deepEqual(row.model, { provider: 'cloudflare-workers-ai', modelId: '@cf/moonshotai/kimi-k2.7-code' });
+  assert.equal(row.timestamp, 250);
+  const seen = [];
+  const context = { developer: false, groupTool: undefined, commandMentions: undefined, onOpenImage: undefined, onCopy: undefined, pieces: undefined, answer: undefined, artifacts: undefined,
+    replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model.modelId} ${reply.timestamp}`); } };
+  const html = renderToStaticMarkup(createElement(RowView, { row, context }));
+  assert.match(html, /data-testid="footer">@cf\/moonshotai\/kimi-k2\.7-code 250</);
+  assert.equal(seen[0].text, 'done');
+  const streaming = renderToStaticMarkup(createElement(RowView, { row: { ...row, streaming: true }, context }));
+  assert.ok(!streaming.includes('data-testid="footer"'));
+  assert.ok(!renderToStaticMarkup(createElement(RowView, { row, context: { ...context, replyFooter: undefined } })).includes('footer'));
+});
