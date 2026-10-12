@@ -115,6 +115,8 @@ looks up every version. Registry errors are failures, not proof a version is abs
 An existing version is skipped only when both its integrity and requested dist-tag
 match these artifacts. Different bytes or tags stop the run for manual review.
 
+After each `npm publish`, the publisher polls the registry every 15 seconds for up to 5 minutes until the version and dist-tag are visible, since npm can take a few minutes to expose a new version.
+
 The `npm-publication-*` artifact records each package as pending, unconfirmed,
 published or already-published. A failed command or lost response can leave a package
 published. Keep the original `npm-release-*` artifact and rerun only the failed publish

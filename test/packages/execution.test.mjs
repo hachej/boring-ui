@@ -712,3 +712,27 @@ test('AWS example: a workspace is busy only for live work of its own user', asyn
   assert.equal(await hasLiveWork({ tasks: [task('c1')], submissions: [] }, 'bob', userOf), false);
   assert.equal(await hasLiveWork({ tasks: [task('unknown')], submissions: [] }, 'alice', userOf), false);
 });
+
+test('argv exec runs a script found on PATH and returns its exit code', async t => {
+  const workspace = createVirtualWorkspace({ providerId: 'fictional-tools', files: { '/tools/job': { content: 'echo ran-$1\nexit 7\n', mode: 0o755 } } });
+  t.after(() => workspace.dispose());
+  const env = (await acquire(workspace, '/tools')).environment;
+  const output = [];
+  assert.deepEqual(getOrThrow(await env.exec(['job', 'x'], { env: { PATH: '/tools:/usr/bin:/bin' }, onOutput: text => output.push(text) }, context)), { exitCode: 7 });
+  assert.deepEqual(output, ['ran-x\n']);
+});
+
+test('a directory reader keeps paging the directory it opened, even after the cwd moves, and skips entries removed since', async t => {
+  const workspace = fixture(t, { '/a/one.txt': '1', '/a/two.txt': '2', '/a/three.txt': '3', '/b/other.txt': 'b' });
+  const env = (await acquire(workspace, '/a')).environment;
+  const reader = getOrThrow(await env.openDirReader('.', context));
+  env.cwd = '/b';
+  const first = getOrThrow(await reader.next(1, context));
+  assert.deepEqual(first.entries.map(entry => entry.name), ['one.txt']);
+  assert.equal(first.done, false);
+  getOrThrow(await env.remove('/a/two.txt', {}, context));
+  const rest = getOrThrow(await reader.next(10, context));
+  assert.deepEqual(rest.entries.map(entry => entry.name), ['three.txt']);
+  assert.equal(rest.done, true);
+  await reader.close(context);
+});
