@@ -1,4 +1,4 @@
-// The composer's microphone button (pi-chat/voice-input.tsx) in happy-dom: a fake microphone and recorder, a fake transcriber and a
+// The composer's microphone button (feedback/voice-input.tsx) in happy-dom: a fake microphone and recorder, a fake transcriber and a
 // fake chat controller. Fictional data only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -36,7 +36,7 @@ const mount = async t => {
   globalThis.MediaRecorder = FakeRecorder;
 
   const out = new URL('../../.cache/voice-input-test/', import.meta.url); mkdirSync(out, { recursive: true });
-  await build({ entryPoints: [new URL('../../registry/pi-chat/voice-input.tsx', import.meta.url).pathname], outfile: new URL('voice-input.mjs', out).pathname,
+  await build({ entryPoints: [new URL('../../registry/feedback/voice-input.tsx', import.meta.url).pathname], outfile: new URL('voice-input.mjs', out).pathname,
     bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   const { VoiceInput } = await import(new URL('voice-input.mjs', out).href);
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');

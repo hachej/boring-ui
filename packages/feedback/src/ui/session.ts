@@ -128,8 +128,10 @@ export interface FeedbackSessionSnapshot {
   readonly useToggle: boolean;
   readonly notes: readonly SessionNote[];
   readonly bubble?: SessionBubble;
-  /** The general note: unaligned speech, or what the person types in the review. */
+  /** The general note: unaligned speech, what the person types in the review, or a question asked with no element (`askGeneral`). */
   readonly general: string;
+  /** The general question field is open (feedback mode, no element attached). */
+  readonly generalOpen: boolean;
   /** The route template now (active) or when Done was pressed (review). */
   readonly route: string;
   /** How many steps were recorded between the notes. */
@@ -165,6 +167,15 @@ export interface FeedbackSession extends ExternalState<FeedbackSessionSnapshot> 
   readonly saveBubble: () => void;
   /** Esc in the bubble: removes a new pin, or leaves an edited note as it was. */
   readonly cancelBubble: () => void;
+  /**
+   * Cancels the selection of the open bubble (the "Cancel selection" button, or clicking the selected zone again): the pin and its
+   * note go, the person is back in feedback mode with nothing selected. What was typed is kept for a general question (`askGeneral`).
+   */
+  readonly cancelSelection: () => void;
+  /** "Ask a general question": opens a note with NO element attached (any open bubble closes; text typed there carries over). */
+  readonly askGeneral: () => void;
+  /** Closes the general question field, keeping what was typed. */
+  readonly closeGeneral: () => void;
   /** The "Use app" toggle (touch, no ⌥). */
   readonly setUseToggle: (on: boolean) => void;
   readonly toggleVoice: () => Promise<void>;
@@ -211,7 +222,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
   const routeNow = (): string => routeFor({ pathname: (options.location?.() ?? view?.location ?? { pathname: '/' }).pathname }, policy);
 
   const state = createState<FeedbackSessionSnapshot>({
-    phase: 'idle', using: false, useToggle: false, notes: [], general: '', route: routeNow(), stepCount: 0,
+    phase: 'idle', using: false, useToggle: false, notes: [], general: '', generalOpen: false, route: routeNow(), stepCount: 0,
     voice: { kind: 'off' }, voiceAvailable, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' },
   });
 
@@ -227,6 +238,8 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
   let recordings: VoiceRecording[] = [];
   let nextId = 1;
   let bubble: { noteId: number; text: string; fresh: boolean; before: string } | undefined;
+  /** Text typed in a bubble whose selection was cancelled: offered to the general question, dropped by anything else. */
+  let stash = '';
   let alt = false;
   let lastRoute = '';
   let lastHover: number | null | undefined;
@@ -311,6 +324,12 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
   };
 
   // --- the bubble ---------------------------------------------------------------------------------------------------------------
+  /** An empty note (or a new pin dismissed) is no note: remove it, its pin mark and its place on the timeline. */
+  const removeRecord = (note: NoteRecord): void => {
+    notes = notes.filter(item => item !== note);
+    timeline = timeline.filter(entry => !('noteId' in entry) || entry.noteId !== note.id);
+    pins = pins.filter(mark => !(mark.target === note.target && Math.abs(mark.t - note.t) < 1));
+  };
   const closeBubble = (keep: boolean): void => {
     if (!bubble) return;
     const open = bubble;
@@ -320,19 +339,38 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const text = keep ? open.text : open.before;
     // A pin dropped while recording stays even when empty: its note is what was said there, or what the person types in the review.
     if (!text.trim() && !(note.recorded && !open.fresh)) {
-      // An empty note (or a new pin dismissed) is no note: remove it, its pin mark and its place on the timeline.
-      notes = notes.filter(item => item !== note);
-      timeline = timeline.filter(entry => !('noteId' in entry) || entry.noteId !== note.id);
-      pins = pins.filter(mark => !(mark.target === note.target && Math.abs(mark.t - note.t) < 1));
+      // A new pin dismissed keeps what was typed for a general question instead of losing it.
+      if (!keep && open.fresh && open.text.trim()) stash = open.text;
+      removeRecord(note);
     } else {
       note.text = text;
       if (open.fresh && !timeline.some(entry => 'noteId' in entry && entry.noteId === note.id)) timeline.push({ t: note.t, noteId: note.id });
     }
   };
 
+  const cancelSelection = (): void => {
+    if (!bubble) return;
+    const open = bubble;
+    const note = notes.find(item => item.id === open.noteId);
+    bubble = undefined;
+    if (!note) return;
+    if (open.text.trim()) stash = open.text;
+    removeRecord(note);
+  };
+  const withStash = (general: string): string => {
+    const carried = stash.trim();
+    stash = '';
+    return carried && !general.includes(carried) ? [general.trim(), carried].filter(Boolean).join('\n') : general;
+  };
+
   const onPick = (element: Element): void => {
     if (state.getSnapshot().phase !== 'active') return;
     problem = undefined;
+    // Clicking the selected zone again cancels the selection (its bubble is open); a pinned zone whose bubble is closed reopens it.
+    const toggled = bubble ? notes.find(note => note.id === bubble!.noteId && note.element === element) : undefined;
+    if (toggled) { cancelSelection(); publish(); return; }
+    stash = '';
+    if (state.getSnapshot().generalOpen) state.set({ generalOpen: false });
     closeBubble(true);
     const recording = state.getSnapshot().voice.kind === 'recording';
     const existing = notes.find(note => note.element === element);
@@ -407,6 +445,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     if (key.key === 'Escape' && !event.composedPath().some(item => (item as Element).hasAttribute?.('data-feedback-ignore'))) {
       event.preventDefault(); event.stopImmediatePropagation();
       if (bubble) { closeBubble(false); publish(); }
+      else if (current.generalOpen) { state.set({ generalOpen: false }); publish(); }
     }
   };
   const onKeyUp = (event: Event): void => { if ((event as KeyboardEvent).key === 'Alt' && alt) { alt = false; applyUsing(); } };
@@ -440,7 +479,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
   const reset = (): void => {
     sessionGeneration++;
     elements = []; anchors.clear(); labels.clear(); notes = []; timeline = []; pointer = []; pins = []; recordings = [];
-    bubble = undefined; lastHover = undefined; hoverLabel = undefined; observed = undefined; problem = undefined; saved = undefined;
+    bubble = undefined; stash = ''; lastHover = undefined; hoverLabel = undefined; observed = undefined; problem = undefined; saved = undefined;
     operation = operationId(); mayHaveSent = false;
   };
 
@@ -465,7 +504,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       onChange: next => { if (next.mode === 'picking' && !next.suspended) onHover(next.current); },
     });
     void picker.start();
-    state.set({ phase: 'active', using: false, useToggle: false, general: '', voice: { kind: 'off' }, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' }, route: lastRoute });
+    state.set({ phase: 'active', using: false, useToggle: false, general: '', generalOpen: false, voice: { kind: 'off' }, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' }, route: lastRoute });
     publish();
   };
 
@@ -558,7 +597,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     await stopRecording();
     stopPicking();
     const transcribing = recordings.length > 0 && options.transcribe !== undefined;
-    state.set({ phase: 'processing', using: false, useToggle: false, transcribing });
+    state.set({ phase: 'processing', using: false, useToggle: false, generalOpen: false, transcribing });
     publish();
     if (transcribing) {
       for (const recording of recordings) {
@@ -581,7 +620,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     if (options.voice && state.getSnapshot().voice.kind === 'recording') options.voice.cancel();
     stopPicking();
     reset();
-    state.set({ phase: 'idle', using: false, useToggle: false, general: '', voice: { kind: 'off' }, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' } });
+    state.set({ phase: 'idle', using: false, useToggle: false, general: '', generalOpen: false, voice: { kind: 'off' }, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' } });
     publish();
   };
 
@@ -669,6 +708,15 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     setBubbleText: text => { if (bubble) { bubble.text = text; publish(); } },
     saveBubble: () => { closeBubble(true); publish(); },
     cancelBubble: () => { closeBubble(false); publish(); },
+    cancelSelection: () => { cancelSelection(); publish(); },
+    askGeneral: () => {
+      if (state.getSnapshot().phase !== 'active') return;
+      problem = undefined;
+      if (bubble?.fresh) closeBubble(false); else closeBubble(true);
+      state.set({ general: withStash(state.getSnapshot().general), generalOpen: true });
+      publish();
+    },
+    closeGeneral: () => { if (state.getSnapshot().generalOpen) { state.set({ generalOpen: false }); publish(); } },
     setUseToggle: on => { state.set({ useToggle: on }); applyUsing(); publish(); },
     toggleVoice,
     setNoteText: (id, text) => { const note = notes.find(item => item.id === id); if (note && note.text !== text) { note.text = text; edited(); publish(); } },

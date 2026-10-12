@@ -2,10 +2,11 @@
 
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+// Type-only: pi-chat has no alias for these chat types, so the card names them from the model SDK the host already installs.
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { FEEDBACK_ID, readableElement } from '@hachej/boring-feedback/format';
 import { CheckIcon, LocateFixedIcon, MessageSquareTextIcon, ShieldAlertIcon } from 'lucide-react';
-import type { ChatCard } from './rows';
+import type { ChatCard } from '../pi-chat/rows';
 import { cn } from '../utils/utils';
 
 /*
@@ -251,6 +252,17 @@ export function FeedbackMention({ path, id, onOpen }: { readonly path: string; r
   return onOpen
     ? <button type="button" data-testid="feedback-mention" data-path={path} aria-label={`Open feedback ${id}`} onClick={() => onOpen(path)} className={cn(className, 'cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60')}>{body}</button>
     : <span data-testid="feedback-mention" data-path={path} title={`Feedback ${id}`} className={className}>{body}</span>;
+}
+
+/**
+ * The `mentions.render` of a pi-chat host (`MentionsConfig`): `@<root><id>.md` report mentions in sent messages become feedback chips,
+ * any other mention keeps pi-chat's default. `onOpen` (the chat's `mentions.open`) makes a chip a button.
+ */
+export function feedbackMentionRenderer(onOpen?: ((path: string) => void) | undefined): (path: string) => ReactNode | undefined {
+  return path => {
+    const id = feedbackMentionId(path);
+    return id === undefined ? undefined : <FeedbackMention path={path} id={id} onOpen={onOpen} />;
+  };
 }
 
 /**

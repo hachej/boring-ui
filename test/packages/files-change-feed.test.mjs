@@ -380,3 +380,23 @@ test('a disconnect between the ready and resnapshot frames keeps the old incarna
   assert.equal(first.value.kind, 'resnapshot', 'the reconnect still asks for a reload');
   assert.deepEqual(incarnations.slice(0, 2), ['previous-process', 'previous-process'], 'the reconnect keeps the old incarnation until the resnapshot is processed');
 });
+
+test('SSE: a write made after the client reads the ready frame is delivered, even on the first connection of a fresh provider', async t => {
+  const f = fixture(t);
+  const response = await f.handler(changeRequest(await bindingOf(f.handler), ''));
+  const reader = response.body.getReader();
+  let text = '';
+  while (!/event: ready/.test(text)) text += new TextDecoder().decode((await within(reader.read(), 1000, 'the ready frame')).value);
+  // The client pauses after `ready`; the write lands on the SQLite file system while nothing is pulling the stream.
+  await new Promise(resolve => setTimeout(resolve, 30));
+  await f.write('after-ready.md', 'written after ready');
+  // Heartbeats keep the reads coming, so the deadline is checked per frame, not only by a single read's timeout.
+  const deadline = Date.now() + 2000;
+  // The write also creates its directory, which is reported first as a change with an empty path.
+  while (!/after-ready\.md/.test(text)) {
+    assert.ok(Date.now() < deadline, `no change frame after the write; the stream sent: ${JSON.stringify(text.slice(-200))}`);
+    text += new TextDecoder().decode((await within(reader.read(), 2000, 'the next frame')).value);
+  }
+  assert.match(text, /event: change\ndata: \{"kind":"change","path":"after-ready\.md"/);
+  await reader.cancel();
+});

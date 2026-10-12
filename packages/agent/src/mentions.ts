@@ -1,6 +1,7 @@
-import type { Context } from '@earendil-works/chord';
 import type { InputSubmissionDraft } from '@earendil-works/pi-durable';
-import type { FileSystem } from '@earendil-works/pi-durable/env';
+import type { ResourceAccess } from '@hachej/boring-files';
+import { SNIFF_BYTES, extensionOf, fileKind, nativeImageType } from './file-types.js';
+import type { WorkspaceBinding } from './workspaces.js';
 
 /** The native input content a submission carries: a string, or text and image parts. */
 export type MentionInput = InputSubmissionDraft['content'];
@@ -29,10 +30,6 @@ export interface MentionResolverOptions {
 export const MENTION_LIMITS = Object.freeze({ fileBytes: 100_000, totalBytes: 300_000, files: 20 });
 /** Every part this module adds starts with this prefix, so a viewer can tell it from what the person typed. */
 export const MENTION_FILE_PREFIX = '<file path="';
-
-/** Documents are never decoded as text, even when their bytes happen to be valid UTF-8 (an uncompressed PDF is). */
-const DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set(['pdf', 'doc', 'docx', 'odt', 'rtf', 'xls', 'xlsx', 'ods', 'ppt', 'pptx', 'odp', 'zip', 'epub']);
-const IMAGE_TYPES: Readonly<Record<string, string>> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 
 /** The `@path` tokens of a message: at the start or after whitespace; a bare path drops trailing punctuation, a quoted `@"a b.md"` (escapes `\"`, `\\`) is taken as written. The syntax pi-chat produces. The registry item `pi-chat` cannot import this, so it copies the
  * parser (`MENTION_TOKEN` and `pieces` in `registry/pi-chat/config.ts`); `test/contracts/pi-chat-source.test.mjs` keeps the two equal. */
@@ -90,11 +87,9 @@ export function createMentionResolver(options: MentionResolverOptions): (content
         try { file = await (reference ? options.read(path, { bytes: false }) : options.read(path)); } catch { file = undefined; }
         if (!file) { added.push(note(path, 'not found or not readable')); continue; }
         const bytes = file.bytes;
-        const dot = path.lastIndexOf('.');
-        const extension = dot > path.lastIndexOf('/') ? path.slice(dot + 1).toLowerCase() : '';
-        const image = IMAGE_TYPES[extension];
+        const image = nativeImageType(path);
         if (reference) {
-          const type = image ?? (extension || undefined);
+          const type = image ?? (extensionOf(path) || undefined);
           added.push({ type: 'text', text: `${MENTION_FILE_PREFIX}${attribute(path)}"${type ? ` type="${attribute(type)}"` : ''} size="${file.size}" />` });
           continue;
         }
@@ -106,7 +101,8 @@ export function createMentionResolver(options: MentionResolverOptions): (content
           added.push({ type: 'text', text: `${MENTION_FILE_PREFIX}${attribute(path)}" type="${image}" size="${bytes.length}" />` }, { type: 'image', data: base64(bytes), mimeType: image });
           continue;
         }
-        if (DOCUMENT_EXTENSIONS.has(extension)) { added.push(note(path, `binary file, ${bytes.length} bytes; content not included`)); continue; }
+        // Documents are never decoded as text, even when their bytes happen to be valid UTF-8 (an uncompressed PDF is).
+        if (fileKind(path, bytes.subarray(0, SNIFF_BYTES)) !== 'text') { added.push(note(path, `binary file, ${bytes.length} bytes; content not included`)); continue; }
         const room = Math.min(limits.fileBytes, limits.totalBytes - used);
         const text = bytes.length <= room ? utf8(bytes) : utf8Prefix(bytes, room);
         if (text === undefined) { added.push(note(path, `binary file, ${bytes.length} bytes; content not included`)); continue; }
@@ -119,24 +115,18 @@ export function createMentionResolver(options: MentionResolverOptions): (content
   };
 }
 
-type ReadableFiles = Pick<FileSystem, 'cwd' | 'canonicalPath' | 'fileInfo' | 'readBinaryFile'>;
 /**
- * A `MentionReader` over a native `FileSystem` (the workspace's `ExecutionEnv` is one). Paths are relative to `root`
- * (default the environment's `cwd`); the canonical path must stay inside the canonical root, so a symlink cannot lead
- * out. Files above `maxReadBytes` (default 5 MB) are reported by size and not read.
+ * A `MentionReader` over the workspace provider: the person's own view of the workspace, through the same access check and
+ * published view the file viewers use. Paths are workspace-relative and the provider decides what exists, so there is no
+ * containment check of its own. Files above `maxReadBytes` (default 5 MB) are reported by size and not given.
  */
-export function fileSystemMentionReader(fs: ReadableFiles, context: Context, options: { readonly root?: string; readonly maxReadBytes?: number } = {}): MentionReader {
+export function workspaceMentionReader(files: WorkspaceBinding['files'], access: ResourceAccess, options: { readonly maxReadBytes?: number } = {}): MentionReader {
   const maxRead = options.maxReadBytes ?? 5_000_000;
   return async (path, readOptions) => {
     if (!safeMentionPath(path)) return undefined;
-    const base = (options.root ?? fs.cwd).replace(/\/+$/, '');
-    const root = await fs.canonicalPath(base, context);
-    const target = await fs.canonicalPath(`${base}/${path}`, context);
-    if (!root.ok || !target.ok || !target.value.startsWith(`${root.value.replace(/\/+$/, '')}/`)) return undefined;
-    const info = await fs.fileInfo(target.value, context);
-    if (!info.ok || info.value.kind !== 'file') return undefined;
-    if (readOptions?.bytes === false || info.value.size > maxRead) return { size: info.value.size };
-    const bytes = await fs.readBinaryFile(target.value, context);
-    return bytes.ok ? { size: bytes.value.length, bytes: bytes.value } : undefined;
+    const read = await files.read({ target: { resource: { providerId: files.providerId, path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, { ...access });
+    if (read.kind !== 'available') return undefined;
+    const bytes = read.snapshot.bytes;
+    return readOptions?.bytes === false || bytes.byteLength > maxRead ? { size: bytes.byteLength } : { size: bytes.byteLength, bytes };
   };
 }
