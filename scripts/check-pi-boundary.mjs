@@ -255,7 +255,7 @@ function scanFile(file, text) {
         for (const element of n.name.elements) if (ts.isIdentifier(element.name)) {
           const key = (element.propertyName ?? element.name).text;
           if (whole || isModelsType(memberType(parent, key))) values.add(symbol(element.name));
-          if (key === 'createModels') factories.add(symbol(element.name));
+          if (whole && key === 'createModels') factories.add(symbol(element.name)); // only from a pi-ai binding
         }
       }
     }
@@ -267,11 +267,19 @@ function scanFile(file, text) {
   for (let size = -1; size !== values.size + factories.size;) { size = values.size + factories.size; walk(sf, learn); }
 
   // Returns a pi-ai value: an arrow or function whose result is one.
-  const returnsValue = (fn) => fn.body && !ts.isBlock(fn.body) ? valueOf(fn.body) : (() => {
+  // Stops at nested functions: their returns belong to them, not to this function.
+  const returnsValue = (fn) => {
+    if (!fn.body) return false;
+    if (!ts.isBlock(fn.body)) return valueOf(fn.body);
     let found = false;
-    walk(fn.body ?? fn, (n) => { if (ts.isReturnStatement(n) && n.expression && valueOf(n.expression)) found = true; });
+    const visit = (n) => {
+      if (found) return;
+      if (ts.isReturnStatement(n) && n.expression && valueOf(n.expression)) found = true;
+      else if (!isFunction(n)) ts.forEachChild(n, visit);
+    };
+    ts.forEachChild(fn.body, visit);
     return found;
-  })();
+  };
   const isFunction = (node) => ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node);
   // A local function, or a variable initialized with one, whose result is a pi-ai value.
   const localFunctionReturns = (sym) => (sym?.declarations ?? []).some((d) => ts.isFunctionDeclaration(d) ? returnsValue(d)

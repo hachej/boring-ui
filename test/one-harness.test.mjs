@@ -67,12 +67,12 @@ test('one harness refuses a local function returning a Models value, exported by
   ]));
   assert.ok(findings.get('packages/host/src/open.ts').some((line) => line.includes('exports a pi-ai value: open')), 'the export is refused');
 });
-test('one harness refuses a default-exported function that returns a Models value (two files)', () => {
+test('one harness refuses a default-exported arrow that returns the factory result (two files)', () => {
   const { findings } = analyzeOneHarness(new Map([
-    ['packages/host/src/open.ts', `${PI} export default function open() { return createModels(); }`],
+    ['packages/host/src/open.ts', `${PI} export default () => createModels();`],
     ['packages/host/src/loop.ts', 'import open from "./open.js"; export const run = (model, tools) => open().complete(model, { messages: [], tools });'],
   ]));
-  assert.ok(findings.get('packages/host/src/open.ts').some((line) => line.includes('returns a pi-ai value')), 'the default export is refused');
+  assert.ok(findings.get('packages/host/src/open.ts').some((line) => line.includes('exports a pi-ai value as default')), 'the default export diagnostic is reported');
 });
 
 // Acceptance: an unrelated receiver is flagged only when it is bound to pi-ai.
@@ -83,6 +83,8 @@ accepted('a stream property on an unrelated object', 'import { Type } from "@ear
 accepted('the native Harness owns the turn', 'import { Harness } from "@earendil-works/pi-durable"; await harness.submit(conversation, input);');
 accepted('pi-ai types and tool declarations without a generation read', 'import { Type } from "@earendil-works/pi-ai"; export const tool = { name: "x", parameters: Type.Object({}) };');
 accepted('a sibling member beside a Models-typed member is not a Models value', 'import type { Models } from "@earendil-works/pi-ai"; interface Options { models: Models; job: { complete(input: unknown): void } } export function run(options: Options) { return options.job.complete({ tools: [] }); }');
+accepted('a destructured createModels from an unrelated object', 'const { createModels } = orm; const job = createModels(); job.complete({ tools: [] });');
+accepted('a nested factory does not make its enclosing setup function a pi-ai value', `${PI} import { Harness } from "@earendil-works/pi-durable"; function setup(models) { function make() { return createModels(); } return Harness.open({ models: make() }); } export { setup };`);
 accepted('comments and strings are not references', `${PI} // models.complete(model, { tools })\nconst text = "createModels().complete(model, { tools })";`);
 
 test('the packages and examples of this repository have no pi-ai reference outside the reviewed allowlist', () => {
