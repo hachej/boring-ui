@@ -33,7 +33,7 @@ function MountedDocument({ controller, cells, canView, onRegenerate, title = 'Ex
   const perform = (action: () => Promise<ReadResult | SaveResult>) => {
     setError(undefined);
     void Promise.resolve().then(action).then(result => {
-      if (active.current && (result.kind === 'denied' || result.kind === 'unavailable')) setError(result.reason);
+      if (active.current && (result.kind === 'denied' || result.kind === 'unavailable' || result.kind === 'file_too_large')) setError(result.reason);
     }).catch(() => { if (active.current) setError('The layout operation failed. The draft has been retained.'); });
   };
   const status = disposed ? 'Viewer disposed' : state.readOnly ? 'Read only' : pending ? 'Keeping selected layout' : unknown ? 'Keep unconfirmed. Reconcile before keeping again.'

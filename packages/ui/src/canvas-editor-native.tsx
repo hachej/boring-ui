@@ -66,7 +66,7 @@ export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', 
     setBusy(true); setError(null);
     try {
       const result = await action();
-      if (mounted.current && (result.kind === 'unavailable' || result.kind === 'denied' || result.kind === 'conflict' || result.kind === 'unknown')) setError(result.reason);
+      if (mounted.current && (result.kind === 'unavailable' || result.kind === 'denied' || result.kind === 'conflict' || result.kind === 'unknown' || result.kind === 'file_too_large')) setError(result.reason);
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : 'Canvas operation failed');
     } finally { if (mounted.current) setBusy(false); }
@@ -101,7 +101,7 @@ export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', 
       <button type="button" disabled={pending || uncertain || busy} onClick={() => void run(controller.actions.discardToRemote)}>Discard local changes and reload</button>
     </div>}
     {state.problem && <p role="alert">{state.problem}</p>}
-    {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable') && <p role="alert">{outcome.reason}</p>}
+    {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable' || outcome?.kind === 'file_too_large') && <p role="alert">{outcome.reason}</p>}
     {error && <p role="alert">{error}</p>}
     <CanvasProposals controller={controller} state={state} editor={nativeEditor} busy={busy} run={run} />
     {state.lifecycle === 'active' && <div data-boring="canvas-stage" style={{ position: 'relative', height }}

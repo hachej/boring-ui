@@ -101,7 +101,9 @@ export interface PublicationReceipt {
 export type PublicationRefusal =
   | { readonly kind: 'conflict'; readonly current: readonly ResourceRef[]; readonly reason: string }
   | { readonly kind: 'denied'; readonly reason: string }
-  | { readonly kind: 'unavailable'; readonly reason: string };
+  | { readonly kind: 'unavailable'; readonly reason: string }
+  /** A change above the provider's byte limit: permanent for these bytes, nothing was written. */
+  | { readonly kind: 'file_too_large'; readonly path: string; readonly size: number; readonly limit: number; readonly reason: string };
 
 export type PublicationOutcome =
   | { readonly kind: 'committed'; readonly receipt: PublicationReceipt }
