@@ -43,7 +43,8 @@ function App() {
   const config = useConfiguration(log);
   // The workspace's revision provider (identity, listing, search, history, change feed) is bound by the server's binding of /api/resources.
   const [revisionProvider, setRevisionProvider] = useState();
-  useEffect(() => { let off = false; connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(value => { if (!off) setRevisionProvider(value); }).catch(() => {}); return () => { off = true; }; }, []);
+  const [discovery, setDiscovery] = useState({ attempt: 0, failed: false });
+  useEffect(() => { let off = false; setDiscovery(current => ({ ...current, failed: false })); connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(value => { if (!off) setRevisionProvider(value); }, () => { if (!off) setDiscovery(current => ({ ...current, failed: true })); }); return () => { off = true; }; }, [discovery.attempt]);
   const listed = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: selected, onSelect: setSelected });
   const conversations = listed && config.rowActions ? { ...listed, rowActions: config.rowActions } : listed;
   // The open conversation: the one chosen, while it is listed; otherwise the most recent.
@@ -59,7 +60,9 @@ function App() {
       chat={{ labels: { title: 'Writer' }, ...config.chat, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
       {...(config.labels ? { labels: config.labels, panelActions: config.panelActions } : {})} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
-      : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
+      : discovery.failed
+        ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <button type="button" className="underline" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</button></p>
+        : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
     {configured && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
   </main>;
 }

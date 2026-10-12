@@ -45,7 +45,15 @@ function Workspace({ token, onRejected }) {
   const [agent, setAgent] = useState(null);
   // The workspace's revision provider: the binding and the change feed of /api/resources (the page's files, saves and history).
   const [revisionProvider, setRevisionProvider] = useState();
-  useEffect(() => { let off = false; connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: authorized }).then(value => { if (!off) setRevisionProvider(value); }).catch(() => {}); return () => { off = true; }; }, [authorized]);
+  const [discovery, setDiscovery] = useState({ attempt: 0, failed: false });
+  // As `api`: a rejected token goes back to the gate; any other failure shows a Retry that repeats the discovery.
+  useEffect(() => {
+    let off = false;
+    setDiscovery(current => ({ ...current, failed: false }));
+    const checked = async request => { const response = await authorized(request); if (response.status === 401) onRejected(); return response; };
+    connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: checked }).then(value => { if (!off) setRevisionProvider(value); }, () => { if (!off) setDiscovery(current => ({ ...current, failed: true })); });
+    return () => { off = true; };
+  }, [authorized, discovery.attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const [scenarios, setScenarios] = useState([]);
   const [items, setItems] = useState(null);
   // A shared link names the conversation (and an artifact version) to open; it wins over what this tab last showed.
@@ -86,7 +94,9 @@ function Workspace({ token, onRejected }) {
     setLinked(null);
   }, [linked, controller, versions, active]); // eslint-disable-line react-hooks/exhaustive-deps
   const scenarioRun = useScenarioRun({ storageKey: 'recipe.scenario', scenarios, variants: variant ? [variant] : [], variant, controller, conversationId, typed });
-  if (!agent || !items || !revisionProvider) return <p className="cf-loading" role="status">Loading…</p>;
+  if (!agent || !items || !revisionProvider) return discovery.failed
+    ? <p className="cf-loading" role="alert">The workspace could not be reached. <button type="button" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</button></p>
+    : <p className="cf-loading" role="status">Loading…</p>;
   const newConversation = async () => { const { conversationId: created } = await api('/api/conversations', { method: 'POST' }); await reload(); setSelected(created); };
   const refuse = async change => { const result = await chat.configure(change); if (result.kind === 'refused') throw new Error(result.reason ?? 'The change was refused.'); };
   const composer = chat.status === 'ready' ? {

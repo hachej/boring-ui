@@ -176,8 +176,8 @@ export class Assistant extends DurableObject {
       if (url.pathname === '/api/agent' && request.method === 'GET') {
         return json({ id: this.agent.id, title: 'Assistant', skills: this.agent.skills, models: MODELS.map(model => ({ provider: CLOUDFLARE_PROVIDER_ID, ...model })), efforts: EFFORTS, notes: NOTES,
           // The variant as the shared scenario list sees it: what this deployment gives the one standard agent.
-          // This page has no file tree, uploads or terminal, so the scenarios that drive those (`workspace`, `shell`) stay listed disabled.
-          variant: { id: 'cloudflare', title: 'Cloudflare', description: 'A Durable Object on Workers: files, presented files, the shared document and bash in its SQLite workspace; this page has no file tree, uploads or terminal.',
+          // This page shows the workspace as a Library (file tree, filename search, uploads) but has no terminal; the scenarios that need the studio's own routes or a terminal (`workspace`, `shell`) stay listed disabled.
+          variant: { id: 'cloudflare', title: 'Cloudflare', description: 'A Durable Object on Workers: files, presented files, the shared document and bash in its SQLite workspace; this page shows them as a Library with filename search and uploads, and has no terminal.',
             capabilities: this.standard.capabilities.filter(capability => capability !== 'workspace' && capability !== 'shell') },
           identity: { runtimeId: 'cloudflare-recipe', ...OWNER }, instance: this.#instance });
       }
