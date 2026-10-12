@@ -139,6 +139,12 @@ test('collectArtifacts lists every version a conversation produced', async () =>
   assert.deepEqual(collectArtifacts(view).map(item => [item.target.resource.path, item.revision]), [['docs/a.md', 'a-1'], ['docs/a.md', 'a-2']]);
 });
 
+test('a pending present call and its completed artifact share one identity for repeated ./ prefixes', async () => {
+  const { pendingId } = await load('artifact', 'artifact.ts');
+  assert.equal(pendingId(call('1', 'present', { path: './././docs/a.md' })), 'docs/a.md');
+  assert.equal(pendingId(call('2', 'present', { path: 'docs/a.md' })), 'docs/a.md');
+});
+
 test('the browser descriptor validator agrees with the agent package validator', async () => {
   const browser = await load('artifact', 'artifact.ts');
   const agent = await import('@hachej/boring-agent/artifacts');

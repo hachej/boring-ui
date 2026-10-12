@@ -20,7 +20,7 @@ const TEXT = ['md', 'markdown', 'txt', 'csv', 'tsv', 'json', 'jsonl', 'html', 'h
 const OFFICE = ['doc', 'docx', 'odt', 'rtf', 'xls', 'xlsx', 'ods', 'ppt', 'pptx', 'odp', 'epub'];
 
 /** Image extensions; `native` ones a model reads as an image part without conversion. Their media types are `MEDIA_TYPES`. */
-const IMAGES: Readonly<Record<string, boolean>> = { png: true, jpg: true, jpeg: true, gif: true, webp: true, bmp: false, tif: false, tiff: false };
+const IMAGES: Readonly<Record<string, boolean>> = Object.assign(Object.create(null), { png: true, jpg: true, jpeg: true, gif: true, webp: true, bmp: false, tif: false, tiff: false });
 
 const BY_EXTENSION: ReadonlyMap<string, FileKind> = new Map<string, FileKind>([
   ...TEXT.map(extension => [extension, 'text'] as const),
@@ -30,7 +30,7 @@ const BY_EXTENSION: ReadonlyMap<string, FileKind> = new Map<string, FileKind>([
 ]);
 
 /** The media type of a native image (png, jpeg, gif, webp) by extension, or undefined. */
-export const nativeImageType = (path: string): string | undefined => IMAGES[extensionOf(path)] ? MEDIA_TYPES[extensionOf(path)] : undefined;
+export const nativeImageType = (path: string): string | undefined => IMAGES[extensionOf(path)] === true ? MEDIA_TYPES[extensionOf(path)] : undefined;
 
 /** How many leading bytes `fileKind` looks at. */
 export const SNIFF_BYTES = 16;

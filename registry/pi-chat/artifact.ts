@@ -112,7 +112,7 @@ export function pendingTitle(call: ToolCall): string | undefined {
 /** What a still-running `present` call will show: the file path. */
 export function pendingId(call: ToolCall): string | undefined {
   const path = (call.arguments as Record<string, unknown>)['path'];
-  return typeof path === 'string' && path ? path.replace(/^\.\//, '') : undefined;
+  return typeof path === 'string' && path ? path.replace(/^(\.\/)+/, '') : undefined;
 }
 
 /**

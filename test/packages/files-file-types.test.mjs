@@ -42,12 +42,23 @@ test('hidden names: the presentation default set includes VCS, build and the pro
   assert.equal(HIDDEN_NAMES.has('src'), false);
 });
 
-test('workspace paths: leading ./ and / are removed, inner segments kept', () => {
+test('workspace paths: leading ./ (repeated) is removed; a leading / stays so the provider refuses it, never aliases it', () => {
   assert.equal(workspacePath('./a/b.md'), 'a/b.md');
-  assert.equal(workspacePath('/a/b.md'), 'a/b.md');
-  assert.equal(workspacePath('//a'), 'a');
+  assert.equal(workspacePath('././a/b.md'), 'a/b.md');
+  assert.equal(workspacePath('/a/b.md'), '/a/b.md');
+  assert.equal(workspacePath('/workspace/report.md'), '/workspace/report.md');
+  assert.equal(workspacePath('/../x'), '/../x');
+  assert.equal(workspacePath('//a'), '//a');
   assert.equal(workspacePath('a/./b'), 'a/./b');
   assert.equal(workspacePath('.hidden'), '.hidden');
+});
+
+test('lookups are own properties: an inherited name is neither a media type nor a viewer', () => {
+  for (const path of ['a.constructor', 'a.__proto__']) {
+    assert.equal(mediaTypeOf(path), 'application/octet-stream', path);
+    assert.equal(viewerKindOf(path), 'text', path);
+    assert.equal(isBinaryKind(path), false, path);
+  }
 });
 
 test('upload names: a random suffix beside the stem, whitespace as underscore', () => {
@@ -71,6 +82,10 @@ test('agent kinds stay separate from viewer kinds and read the shared table', ()
   assert.equal(fileKind('notes.txt', Uint8Array.from([0x00])), 'binary');
   assert.equal(nativeImageType('a.jpeg'), 'image/jpeg');
   assert.equal(nativeImageType('a.tif'), undefined, 'a TIFF is an image a host converts, not a native part');
+  for (const path of ['a.constructor', 'a.__proto__']) {
+    assert.equal(nativeImageType(path), undefined, path);
+    assert.equal(mediaTypeFor(path, 'image', undefined), 'application/octet-stream', path);
+  }
   assert.equal(mediaTypeFor('deck.pptx', 'office', undefined), 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
   assert.equal(mediaTypeFor('legacy.txt', 'office', undefined), 'application/octet-stream', 'an OLE file under a text name keeps the generic type');
 });

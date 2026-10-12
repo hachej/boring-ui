@@ -88,4 +88,5 @@ Behaviour changes:
 - Archives and other binary files answer `unsupported` and are never sent to `convert`; a converter receives the media type the file's signature names when it has one.
 - A managed conversation's `lastMessage` preview, derived when a conversation is adopted, is the last visible text message of the newest entry (it was the first message of that entry). Titles are unchanged: the first user message, now found with an ascending scan.
 - New exports: `@hachej/boring-agent/file-types` (the one table of text, archive and binary kinds, and the media types), and from `@hachej/boring-agent/file-guard`, `confinedEnv` (Pi's `ExecutionEnv` re-checked per operation) and `workspaceRelative`.
+- Removed exports: `extensionOf` and `sniffedMediaType` from `@hachej/boring-agent/file-types`. Import `extensionOf` and `sniffMediaType` from `@hachej/boring-files/file-types` instead.
 

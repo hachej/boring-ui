@@ -7,8 +7,8 @@
 /** The lower-case extension of the last path segment, or ''. */
 export const extensionOf = (path: string): string => { const dot = path.lastIndexOf('.'); return dot > path.lastIndexOf('/') ? path.slice(dot + 1).toLowerCase() : ''; };
 
-/** The IANA media type by extension. Anything not listed is `application/octet-stream` (see `mediaTypeOf`). */
-export const MEDIA_TYPES: Readonly<Record<string, string>> = {
+/** The IANA media type by extension. Anything not listed is `application/octet-stream` (see `mediaTypeOf`). Null-prototype: `constructor` or `__proto__` is not an entry. */
+export const MEDIA_TYPES: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
   md: 'text/markdown', markdown: 'text/markdown', html: 'text/html', htm: 'text/html', json: 'application/json', svg: 'image/svg+xml',
   txt: 'text/plain', csv: 'text/csv', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', tldraw: 'application/vnd.tldraw+json',
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff',
@@ -17,7 +17,7 @@ export const MEDIA_TYPES: Readonly<Record<string, string>> = {
   ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation',
   rtf: 'application/rtf', epub: 'application/epub+zip',
-};
+});
 
 /** The IANA media type of a path, `application/octet-stream` when unknown. */
 export const mediaTypeOf = (path: string): string => MEDIA_TYPES[extensionOf(path)] ?? 'application/octet-stream';
@@ -36,11 +36,11 @@ export function sniffMediaType(head: Uint8Array): string | undefined {
 /** Which viewer opens a file. Anything not listed is shown as text when it decodes. */
 export type ViewerKind = 'markdown' | 'html' | 'canvas' | 'image' | 'pdf' | 'text';
 
-const VIEWER_KINDS: Readonly<Record<string, ViewerKind>> = {
+const VIEWER_KINDS: Readonly<Record<string, ViewerKind>> = Object.assign(Object.create(null), {
   md: 'markdown', markdown: 'markdown', html: 'html', htm: 'html', tldraw: 'canvas',
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', pdf: 'pdf',
   txt: 'text', json: 'text', csv: 'text', js: 'text', mjs: 'text', css: 'text',
-};
+});
 
 /** The viewer kind of a path: `markdown`, `html`, `canvas`, `image`, `pdf` or `text`. */
 export const viewerKindOf = (path: string): ViewerKind => VIEWER_KINDS[extensionOf(path)] ?? 'text';
@@ -58,8 +58,8 @@ export const isTemporary = (path: string): boolean => temporaryPattern.test(path
 /** Names a presentation listing hides by default (dependency, build and internal folders, and the provider's own). Not an access policy. */
 export const HIDDEN_NAMES: ReadonlySet<string> = new Set(['.git', '.boring', 'node_modules', 'dist', 'build', '.cache', '.next', 'coverage', '__pycache__']);
 
-/** A path as a person or agent typed it, as a workspace-relative resource path: leading `./` and `/` segments removed. */
-export const workspacePath = (path: string): string => path.replace(/^(\.?\/)+/, '');
+/** A path as a person or agent typed it, as a workspace-relative resource path: leading `./` segments removed. A leading `/` stays: it is not a workspace path, and the provider refuses it rather than reading it as a relative one. */
+export const workspacePath = (path: string): string => path.replace(/^(\.\/)+/, '');
 
 /** A new upload's workspace path: `uploads/<stem>-<8 hex>.<ext>`, so a second `image.png` (every pasted screenshot has that name) is a new file beside the first. Whitespace becomes `_`, because a chat mention ends at a space. */
 export function uploadPath(name: string, randomSuffix: string): string {
