@@ -107,3 +107,5 @@
 [data-boring="feedback"] .boring-feedback-preview-error { margin: 0; color: #b91c1c; font-size: 0.8125rem; }
 [data-boring="feedback"] .boring-feedback-preview-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 [data-boring="feedback"] .boring-feedback-preview-input { flex: 1 1 12rem; min-width: 0; min-height: 2.25rem; padding: 0 0.75rem; border: 1px solid var(--boring-feedback-border); border-radius: calc(var(--boring-feedback-radius) - 2px); background: var(--boring-feedback-surface); color: var(--boring-feedback-text); font: inherit; }
+[data-boring="feedback"] .boring-feedback-bubble-actions { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+[data-boring="feedback"] .boring-feedback-bubble-actions .boring-feedback-button { min-height: 2rem; padding: 0 0.625rem; font-size: 0.8125rem; }

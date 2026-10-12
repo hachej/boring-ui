@@ -5,8 +5,8 @@ import { Loader2Icon, MicIcon, SquareIcon, XIcon } from 'lucide-react';
 import { createVoiceCapture } from '@hachej/boring-feedback/page';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import { useChatText } from './labels';
-import type { ChatLabels } from './labels';
+import { useChatText } from '../pi-chat/labels';
+import type { ChatLabels } from '../pi-chat/labels';
 import { cn } from '../utils/utils';
 
 export interface VoiceInputProps {

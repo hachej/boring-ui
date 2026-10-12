@@ -1,8 +1,8 @@
 {
   "name": "@hachej/boring-execution",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Native Pi working-environment types and independently composable workspace leases.",
   "sideEffects": false,
@@ -56,7 +56,7 @@
     "@earendil-works/chord": "1.1.0",
     "just-bash": "3.6.0",
     "isomorphic-git": "1.42.6",
-    "@hachej/boring-files": "0.2.0",
+    "@hachej/boring-files": "0.2.1",
     "zod": "4.6.5",
     "@aws-sdk/client-bedrock-agentcore": "3.1146.0"
   },

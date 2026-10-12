@@ -22,7 +22,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { launch, pause } from '@hachej/boring-testing/browser';
-import { consumerDependencies, localRegistryItem, packBoringDependencies, writeLockedManifest } from './consumer-install.mjs';
+import { consumerDependencies, packBoringDependencies, registryClosure, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
 import { prepareConsumerIsolation } from './consumer-isolation.mjs';
 import { runCaptured } from './run-captured.mjs';
 
@@ -55,14 +55,17 @@ async function installLedgerly() {
     runIn(root, process.execPath, ['scripts/build.mjs']);
     timings.buildPackagesMs = Date.now() - at; at = Date.now();
   }
-  const item = JSON.parse(readFileSync(join(root, 'public/r/feedback.json'), 'utf8'));
+  // The feedback item and its host items (pi-chat, utils), with one union of their package pins.
+  const closure = registryClosure(root, 'feedback');
+  const item = closure.get('feedback');
+  const union = { dependencies: [...new Set([...closure.values()].flatMap(entry => entry.dependencies ?? []))] };
   const staging = join(tmpdir(), 'boring-feedback-scenario', 'packs-' + process.pid);
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
-  const archives = packBoringDependencies(root, item, staging, (command, args) => runIn(staging, command, args));
+  const archives = packBoringDependencies(root, union, staging, (command, args) => runIn(staging, command, args));
   const hash = createHash('sha256');
   for (const [name, path] of [...archives].sort()) hash.update(name).update(readFileSync(path));
-  hash.update(JSON.stringify(item)).update(readFileSync(join(root, 'package-lock.json')));
+  hash.update(JSON.stringify([...closure])).update(readFileSync(join(root, 'package-lock.json')));
   const key = hash.digest('hex').slice(0, 16);
   const app = join(tmpdir(), 'boring-feedback-scenario', 'ledgerly-' + key);
   timings.packMs = Date.now() - at; at = Date.now();
@@ -72,25 +75,27 @@ async function installLedgerly() {
     mkdirSync(join(app, 'packs'), { recursive: true });
     const moved = new Map([...archives].map(([name, path]) => { const target = join(app, 'packs', path.split('/').pop()); cpSync(path, target); return [name, target]; }));
     const run = (command, args, env) => runIn(app, command, args, env);
-    writeLockedManifest(root, app, 'ledgerly', consumerDependencies(root, item, ['esbuild', 'shadcn']));
+    writeLockedManifest(root, app, 'ledgerly', consumerDependencies(root, union, ['esbuild', 'shadcn', 'tailwindcss']));
     // --prefer-offline: the archives come from the cache when present; only a missing packument (npm checks optional peers) is fetched.
     run('npm', ['install', '--package-lock-only', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', cache, ...moved.values()]);
     run('npm', ['ci', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', cache]);
-    writeFileSync(join(app, 'feedback.json'), JSON.stringify(localRegistryItem(root, item, moved, join(app, 'packs'), cache, run)));
     mkdirSync(join(app, 'src'), { recursive: true });
-    writeFileSync(join(app, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+    const { url: registry, server } = await serveRegistry(root, app, closure, moved, join(app, 'packs'), cache, run);
+    writeFileSync(join(app, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' }, registries: { '@boring-ui': `${registry}/{name}.json` } }));
     writeFileSync(join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noEmit: true, baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src'] }));
-    writeFileSync(join(app, 'src/index.css'), '');
+    writeFileSync(join(app, 'src/index.css'), '@import "tailwindcss";\n');
     const installer = { ...process.env, npm_config_prefer_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
-    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', join(app, 'feedback.json'), '--cwd', app, '--yes'], installer);
-    for (const file of item.files) assert.ok(existsSync(join(app, 'src', file.target)), `the shadcn CLI must create src/${file.target}`);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/feedback.json`, '--cwd', app, '--yes'], installer);
+    server.kill();
+    for (const [name, entry] of closure) for (const file of entry.files ?? []) assert.ok(existsSync(join(app, 'src', file.target)), `the shadcn CLI must create src/${file.target} (${name})`);
     assert.ok(readFileSync(join(app, 'src/index.css'), 'utf8').includes('[data-boring="feedback"]'), 'the CLI merges the scoped feedback CSS into the host stylesheet');
     writeFileSync(join(app, '.installed'), new Date().toISOString());
     timings.installMs = Date.now() - at; at = Date.now();
   }
   rmSync(staging, { recursive: true, force: true });
-  for (const name of ['@hachej/boring-agent', '@earendil-works/pi-durable', '@earendil-works/pi-ai', '@earendil-works/chord']) {
+  // The host's packages (pi-chat's pi-durable, pi-ai, chord) come with the feedback card (owner ruling 6); the agent never does.
+  for (const name of ['@hachej/boring-agent']) {
     assert.equal(existsSync(join(app, 'node_modules', name)), false, `annotation only must not install ${name}`);
   }
   // Ledgerly's own source, refreshed every run (the installed components and CSS stay).
@@ -205,11 +210,17 @@ if (options.kit) {
   const kit = resolve(options.kit);
   mkdirSync(kit, { recursive: true });
   if (options.build || ['feedback', 'ui', 'files'].some(name => !existsSync(join(root, 'packages', name, 'dist')))) runIn(root, process.execPath, ['scripts/build.mjs']);
-  const item = JSON.parse(readFileSync(join(root, 'public/r/feedback.json'), 'utf8'));
-  const archives = packBoringDependencies(root, item, kit, (command, args) => runIn(kit, command, args));
-  item.dependencies = item.dependencies.map(pin => { const name = pin.slice(0, pin.lastIndexOf('@')); return archives.has(name) ? `${name}@file:${archives.get(name)}` : pin; });
-  writeFileSync(join(kit, 'feedback.json'), JSON.stringify(item, null, 2));
-  console.log(`Feedback kit in ${kit}:\n${[...archives.values()].map(path => '  ' + path).join('\n')}\n  ${join(kit, 'feedback.json')}\n\nIn the application (shadcn components.json present):\n  npx shadcn@4.21.1 add ${join(kit, 'feedback.json')}`);
+  // The feedback item and its host items (pi-chat, utils) as one `registry/` directory, one JSON per item, served over HTTP.
+  const closure = registryClosure(root, 'feedback');
+  const union = { dependencies: [...new Set([...closure.values()].flatMap(entry => entry.dependencies ?? []))] };
+  const archives = packBoringDependencies(root, union, kit, (command, args) => runIn(kit, command, args));
+  mkdirSync(join(kit, 'registry'), { recursive: true });
+  for (const [name, entry] of closure) {
+    const local = structuredClone(entry);
+    if (local.dependencies) local.dependencies = entry.dependencies.map(pin => { const bare = pin.slice(0, pin.lastIndexOf('@')); return archives.has(bare) ? `${bare}@file:${archives.get(bare)}` : pin; });
+    writeFileSync(join(kit, 'registry', `${name}.json`), JSON.stringify(local, null, 2));
+  }
+  console.log(`Feedback kit in ${kit}:\n${[...archives.values()].map(path => '  ' + path).join('\n')}\n  ${join(kit, 'registry')} (feedback, pi-chat, utils, ...)\n\nIn the application: serve the registry directory over HTTP, map the namespace in components.json, then add the item:\n  (cd ${join(kit, 'registry')} && python3 -m http.server 8000)\n  "registries": { "@boring-ui": "http://localhost:8000/{name}.json" }\n  npx shadcn@4.21.1 add http://localhost:8000/feedback.json`);
   process.exit(0);
 }
 

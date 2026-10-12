@@ -2,7 +2,7 @@
 
 Build an AI assistant into your application with chat, document editors, canvas viewers and background tasks. Boring UI provides TypeScript libraries and React components around the native Pi runtime. Your application owns authentication, data, permissions and model credentials.
 
-**0.2.0 release candidate.** This is a breaking replacement for the 0.1.x implementation. The seven packages remain private while release qualification is pending. Read the [migration guide](MIGRATING.md) before upgrading. “v4” names the architecture, not the npm version.
+**0.2.0 release candidate.** This is a breaking replacement for the 0.1.x implementation. Four packages (agent, ui-kit, files, execution) are prepared for publication on `latest`; boring-browser, boring-testing and boring-feedback stay private. Per the owner ruling of 2026-10-10, deferred proofs are backlog, not release blockers. Read the [migration guide](MIGRATING.md) before upgrading. “v4” names the architecture, not the npm version.
 
 ## What you can build
 
@@ -14,7 +14,7 @@ Editors and viewers also work without an agent. Choose the packages and entry po
 
 ## Packages
 
-All seven packages target **0.2.0**. These are the proposed npm names; publication is still pending.
+All seven packages target **0.2.0**. Four are in the publish set; browser, testing and feedback stay private. Nothing is published yet; publication awaits the owner checklist in the release guide.
 
 | Package | What it provides | Guide |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ All seven packages target **0.2.0**. These are the proposed npm names; publicati
 | `@hachej/boring-files` | Workspace providers, conditional document writes, revision history and remote access | [Files](packages/files/README.md) |
 | `@hachej/boring-execution` | Virtual Bash and Git, and remote execution adapters | [Execution](packages/execution/README.md) |
 | `@hachej/boring-browser` | Optional native Pi agent execution in a browser worker | [Browser](packages/browser/README.md) |
-| `@hachej/boring-feedback` | In-app feedback capture and host-controlled delivery | [Feedback](packages/feedback/README.md) |
+| `@hachej/boring-feedback` (private) | In-app feedback capture and host-controlled delivery | [Feedback](packages/feedback/README.md) |
 | `@hachej/boring-testing` | Test helpers for hosts and package consumers | [Testing](packages/testing/README.md) |
 
 A single authenticated `revisionProvider` powers a frontend file tree, filename search for `@`, uploads and retained revision previews. See the [file tree guide](packages/ui/README.md#file-tree-and-filename-mentions).
@@ -63,7 +63,7 @@ Pi owns conversations, tools, task execution and recovery. Boring uses its publi
 
 The repository contains working implementations and tests for document publication and recovery, chat, editors, canvas, background tasks, remote adapters and installed component recipes. Passing an individual test does not qualify every provider or deployment.
 
-Global release proofs, live-provider checks, consumer acceptance and optional dependency licensing still have outstanding qualifications. Packages remain private until the release gates pass. The [implementation checkpoint](docs/implementation/PARTIAL.md) records the remaining work; [VERIFY.json](VERIFY.json) owns the proof status.
+Global release proofs, live-provider checks, consumer acceptance and optional dependency licensing still have outstanding qualifications. Deferred proofs are backlog and do not block release (owner ruling, 2026-10-10); publication waits on the owner checklist in the release guide. The [implementation checkpoint](docs/implementation/PARTIAL.md) records the remaining work; [VERIFY.json](VERIFY.json) owns the proof status.
 
 The [npm release guide](docs/implementation/NPM-RELEASE.md) describes version synchronization, package ownership, trusted publishing and the manual publishing workflow. Merging a PR does not publish packages.
 
@@ -78,7 +78,7 @@ npm run check:pack
 npm run verify:release
 ```
 
-`check:pack` audits real package tarballs. `verify` reports deferred proofs; `verify:release` rejects them. Browser journeys and isolated consumer checks run separately in CI. Raw local evidence belongs in `.cache/evidence/`.
+`check:pack` audits real package tarballs. `verify` reports deferred proofs; `verify:release` still lists them but does not fail on them (backlog, not blockers); real failures still fail. Browser journeys and isolated consumer checks run separately in CI. Raw local evidence belongs in `.cache/evidence/`.
 
 ## Documentation
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
@@ -8,8 +8,8 @@ import { build } from 'esbuild';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = `${root}.cache/pi-chat-test`;
 mkdirSync(out, { recursive: true });
-async function load(name, entry) {
-  await build({ entryPoints: [`${root}registry/pi-chat/${entry}`], outfile: `${out}/${name}.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic',
+async function load(name, entry, folder = 'pi-chat') {
+  await build({ entryPoints: [`${root}registry/${folder}/${entry}`], outfile: `${out}/${name}.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic',
     packages: 'external', logLevel: 'silent' });
   return import(pathToFileURL(`${out}/${name}.mjs`).href);
 }
@@ -327,7 +327,7 @@ test('feedback cards: list results and offers stay visible in expert mode; hover
   const { act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const { derive, segments } = await load('rows', 'rows.ts');
-  const { FeedbackCard, FeedbackMention, feedbackMentionId, feedbackRenderTool, feedbackResultView } = await load('feedback-card', 'feedback-card.tsx');
+  const { FeedbackCard, FeedbackMention, feedbackMentionId, feedbackRenderTool, feedbackResultView } = await load('feedback-card', 'feedback-card.tsx', 'feedback');
   const container = document.createElement('div'); document.body.append(container);
   const rootNode = createRoot(container);
   // Fictional reports only.
@@ -447,8 +447,22 @@ test('feedback cards: list results and offers stay visible in expert mode; hover
 
 test('a sent @mention of a feedback report renders as a feedback chip; other mentions are unchanged', async () => {
   const { RowView } = await load('message', 'message.tsx');
-  const context = { developer: false, groupTool: undefined, commandMentions: undefined, onOpenImage: undefined, onCopy: undefined, answer: undefined, artifacts: undefined, pieces: { mentions: true, skills: [] } };
+  const { feedbackMentionRenderer } = await load('feedback-card', 'feedback-card.tsx', 'feedback');
+  const context = { developer: false, groupTool: undefined, commandMentions: undefined, onOpenImage: undefined, onCopy: undefined, answer: undefined, artifacts: undefined, pieces: { mentions: true, skills: [], renderMention: feedbackMentionRenderer() } };
   const html = renderToStaticMarkup(createElement(RowView, { row: { key: 'u', type: 'user', message: user('see @feedback/fb_7Q2mK9xRt4vW1cZp.md and @notes/plan.md') }, context }));
   assert.match(html, /data-testid="feedback-mention" data-path="feedback\/fb_7Q2mK9xRt4vW1cZp.md"/);
   assert.match(html, /data-testid="message-mention" data-path="notes\/plan.md"/);
+  const plain = renderToStaticMarkup(createElement(RowView, { row: { key: 'u', type: 'user', message: user('see @feedback/fb_7Q2mK9xRt4vW1cZp.md') }, context: { ...context, pieces: { mentions: true, skills: [] } } }));
+  assert.match(plain, /data-testid="message-mention" data-path="feedback\/fb_7Q2mK9xRt4vW1cZp.md"/, 'without a host renderer a feedback mention is an ordinary mention');
+  assert.doesNotMatch(plain, /feedback-mention/);
+});
+
+test('the pi-chat registry item never imports @hachej/boring-feedback (feedback is a plug-in through host slots)', () => {
+  const FEEDBACK = '@hachej/boring-feedback';
+  const item = JSON.parse(readFileSync(`${root}registry.json`, 'utf8')).items.find(entry => entry.name === 'pi-chat');
+  const published = JSON.parse(readFileSync(`${root}public/r/pi-chat.json`, 'utf8'));
+  assert.ok(item && published.name === 'pi-chat', 'pi-chat is a registry item and has a published copy');
+  for (const file of item.files) assert.ok(!readFileSync(`${root}${file.path}`, 'utf8').includes(FEEDBACK), `source ${file.path} imports ${FEEDBACK}`);
+  for (const file of published.files) assert.ok(!file.content.includes(FEEDBACK), `published ${file.path} imports ${FEEDBACK}`);
+  for (const dependency of [...item.dependencies ?? [], ...published.dependencies ?? []]) assert.ok(!String(dependency).startsWith(FEEDBACK), `pi-chat depends on ${dependency}`);
 });

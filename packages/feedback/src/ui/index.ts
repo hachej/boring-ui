@@ -2,7 +2,7 @@
 // Browser code over `./page` and `./format`; no store, agent or view-layer import. Each state exposes `subscribe`/`getSnapshot`.
 export { createState, type ExternalState, type WritableState } from './state.js';
 export {
-  captureAnnotation, createAnnotation, observePage,
+  captureAnnotation, captureGeneral, createAnnotation, observePage,
   type AnnotateHost, type AnnotationCapture, type Annotation, type AnnotationOptions, type AnnotationSnapshot, type CopyState, type SaveState,
 } from './annotate.js';
 export {

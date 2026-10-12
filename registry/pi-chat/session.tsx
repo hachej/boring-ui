@@ -245,10 +245,10 @@ export function useChatSession(options: ChatSessionOptions) {
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen } : undefined,
     messageActions,
-    pieces: slash?.skills?.length || mentions ? { mentions: Boolean(mentions), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open } : undefined,
+    pieces: slash?.skills?.length || mentions ? { mentions: Boolean(mentions), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [developer, groupTool, onOpenImage, onCopy, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, artifacts?.open, artifacts?.isOpen, messageActions, rowExtras]);
+  }), [developer, groupTool, onOpenImage, onCopy, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, artifacts?.open, artifacts?.isOpen, messageActions, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
