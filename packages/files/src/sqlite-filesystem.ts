@@ -5,7 +5,7 @@
 import type { Context } from '@earendil-works/chord';
 import { FileError, LineScanner, err, ok } from '@earendil-works/pi-durable/env';
 import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result, TextLineReader, WatchChange, WatchTarget } from '@earendil-works/pi-durable/env';
-import { SQLITE_MAX_FILE_BYTES, fileTooLarge } from './file-limits.js';
+import { SQLITE_MAX_FILE_BYTES, assertLimit, fileTooLarge } from './file-limits.js';
 import { randomUUID } from './platform.js';
 import { registerSqliteBatch } from './sqlite-batch.js';
 import type { SqliteConnection } from './sqlite.js';
@@ -60,8 +60,8 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   if (typeof workspace !== 'string' || workspace === '') throw new TypeError('A workspace name is required');
   if (typeof options.cwd !== 'string' || !options.cwd.startsWith('/')) throw new TypeError('An absolute working directory is required');
   const now = () => Date.now();
-  const maxFileBytes = options.maxFileBytes ?? SQLITE_MAX_FILE_BYTES;
-  if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 0) throw new TypeError('maxFileBytes must be a non-negative safe integer');
+  let maxFileBytes = options.maxFileBytes ?? SQLITE_MAX_FILE_BYTES;
+  assertLimit(maxFileBytes);
 
   function row(path: string): Row | undefined {
     if (path === '/') return { kind: 'directory', size: 0, mtime: 0 };
@@ -258,12 +258,16 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
     appendFile: (path, content, context) => run(path, context, 'write', absolute => {
       const added = encode(content);
       if (!row(absolute)) return write(absolute, added);
+      const grown = existing(absolute).size + added.length;
+      if (grown > maxFileBytes) throw fileTooLarge(absolute, grown, maxFileBytes);
       const before = bytes(absolute), joined = new Uint8Array(before.length + added.length);
       joined.set(before); joined.set(added, before.length);
       write(absolute, joined);
     }),
     truncateFile: (path, size, context) => run(path, context, 'write', absolute => {
       if (!Number.isSafeInteger(size) || size < 0) throw fileError('invalid', 'File size must be a non-negative safe integer', absolute);
+      // Checked before the buffer is allocated: a huge size is a size refusal, not an allocation failure.
+      if (size > maxFileBytes) throw fileTooLarge(absolute, size, maxFileBytes);
       const before = bytes(absolute), after = new Uint8Array(size);
       after.set(before.subarray(0, size));
       write(absolute, after);
@@ -275,6 +279,9 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
       const to = normalize(destination.startsWith('/') ? destination : `${fs.cwd}/${destination}`);
       const moved = existing(from);
       if (from === to) return;
+      // A moved file keeps its bytes, so a file (or a file below a moved directory) over the limit cannot replace another file by renaming.
+      const oversized = db.get<{ path: string; size: number | bigint }>(`SELECT path, length(bytes) AS size FROM boring_workspace_files WHERE ${subtree(from)} AND kind = 'file' AND length(bytes) > ? LIMIT 1`, ...subtreeArgs(from), maxFileBytes);
+      if (oversized) throw fileTooLarge(oversized.path, Number(oversized.size), maxFileBytes);
       touched.add(from); touched.add(to);
       if (from === '/' || within(from, to)) throw failure('invalid', 'EINVAL', to, 'cannot move a directory into itself');
       const target = row(to);
@@ -366,6 +373,8 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   };
   registerSqliteBatch(fs, {
     connection: db,
+    maxFileBytes: () => maxFileBytes,
+    setMaxFileBytes: limit => { assertLimit(limit); maxFileBytes = limit; },
     bytes: path => { const found = row(normalize(path)); return !found ? null : found.kind === 'directory' ? undefined : bytes(normalize(path)); },
     write: (path, content) => { const absolute = normalize(path); makeDirectory(dirname(absolute), true); write(absolute, content); notify(); },
   });

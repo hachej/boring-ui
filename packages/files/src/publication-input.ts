@@ -131,6 +131,11 @@ function publicationOutcome(value: unknown): PublicationOutcome {
   switch (input.kind) {
     case 'committed': return { kind: 'committed', receipt: publicationReceipt(input.receipt) };
     case 'denied': case 'unavailable': return { kind: input.kind, reason: reason(input.reason) };
+    case 'file_too_large': {
+      const { path, size, limit } = input;
+      if (typeof path !== 'string' || typeof size !== 'number' || !Number.isSafeInteger(size) || typeof limit !== 'number' || !Number.isSafeInteger(limit)) throw new TypeError('Invalid size refusal');
+      return { kind: 'file_too_large', path, size, limit, reason: reason(input.reason) };
+    }
     case 'unknown': return { kind: 'unknown', operationId: identifier(input.operationId), reason: reason(input.reason) };
     case 'conflict': {
       if (!Array.isArray(input.current)) throw new TypeError('Conflict requires current references');
