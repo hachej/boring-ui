@@ -102,10 +102,13 @@ active publication. Neither job changes package versions or privacy flags.
    listed in `registry.json`, or any `@hachej/*` pin inside `r/*.json` is missing or
    differs from the released version. Consumers pin the version in the URL, which must
    equal the installed npm version:
-   `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/{name}.json`
-   (`unpkg.com` works too). Consumer setup is in the [README](../../README.md#install-components).
+   `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/<item>.json`
+   (`unpkg.com` works too). `npm run registry:build` (`scripts/build-registry.mjs`) writes each item's
+   `registryDependencies` as absolute URLs of that version, so consumers need no `registries` line.
+   `release:version` rewrites those URLs with the version, and `check:pack` fails if one names another version or a
+   missing item. Consumer setup is in the [README](../../README.md#install-components).
    After publication, verify the pinned URL serves `r/registry.json` and that
-   `npx shadcn@latest add @boring-ui/pi-chat` installs from a fresh project.
+   `npx shadcn@latest add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/pi-chat.json` installs from a fresh project.
 
 ### Interrupted publication
 

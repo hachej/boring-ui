@@ -32,7 +32,8 @@ function fixture(t) {
   }
   write('package-lock.json', lock);
   const registry = { items: [{ name: 'fixture', dependencies: ['@hachej/boring-files@^1.0.0', 'external@1.0.0'] }] };
-  write('registry.json', registry); write('public/r/fixture.json', registry.items[0]);
+  write('registry.json', registry);
+  write('public/r/fixture.json', { ...registry.items[0], registryDependencies: ['https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@1.0.0/r/utils.json', 'https://example.test/r/other.json'] });
   return { root, read, write, directory: join(root, 'archives'), options: { root, version: '1.0.0', tag: 'next', commit } };
 }
 
@@ -49,6 +50,8 @@ test('release version edits synchronize internal pins without changing privacy o
   assert.equal(lock.packages['packages/agent'].peerDependencies['@hachej/boring-files'], `^${lock.version}`);
   assert.deepEqual(f.read('registry.json').items[0].dependencies, ['@hachej/boring-files@^1.1.0-rc.1', 'external@1.0.0']);
   assert.deepEqual(f.read('public/r/fixture.json').dependencies, f.read('registry.json').items[0].dependencies);
+  // Absolute item URLs of the released package move with it; any other URL is left alone.
+  assert.deepEqual(f.read('public/r/fixture.json').registryDependencies, ['https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@1.1.0-rc.1/r/utils.json', 'https://example.test/r/other.json']);
 });
 
 test('invalid versions and inconsistent lockfiles leave all source files untouched', t => {

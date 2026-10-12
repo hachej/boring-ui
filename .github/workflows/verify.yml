@@ -56,7 +56,7 @@ jobs:
         run: npm run check:pack
       - name: Consumers
         run: |
-          for name in document editor html virtual remote-shell remote-files question presentation experience canvas canvas-editor canvas-remote task-list-registry morning redaction-browser; do
+          for name in document editor html virtual remote-shell remote-files question presentation experience canvas canvas-editor canvas-remote task-list-registry morning redaction-browser pi-chat; do
             echo "::group::test:$name-consumer"
             npm run "test:$name-consumer"
             echo "::endgroup::"

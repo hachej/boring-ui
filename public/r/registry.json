@@ -107,8 +107,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
-        "@boring-ui/utils"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/theme.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json"
       ],
       "files": [
         {
@@ -436,6 +436,7 @@
       "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history, a human-in-the-loop question card, an Approve / Deny card for host tools wrapped with requireApproval optional artifact cards that open generated content in the host's panel, and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The optional pi-ambient and pi-workspace blocks build on it.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.2.2",
+        "@hachej/boring-files@^0.2.2",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "marked@^17.0.6",
@@ -448,9 +449,9 @@
         "use-stick-to-bottom@^1.1.6"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
-        "@boring-ui/utils",
-        "@boring-ui/button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/theme.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/button.json"
       ],
       "files": [
         {
@@ -569,6 +570,11 @@
           "target": "components/pi-chat/tool.tsx"
         },
         {
+          "path": "registry/pi-chat/use-remote-chat.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat/use-remote-chat.ts"
+        },
+        {
           "path": "registry/pi-chat/labels.ts",
           "type": "registry:lib",
           "target": "components/pi-chat/labels.ts"
@@ -673,10 +679,10 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "@boring-ui/pi-workspace",
-        "@boring-ui/utils",
-        "@boring-ui/button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-workspace.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/button.json"
       ],
       "files": [
         {
@@ -706,8 +712,8 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "@boring-ui/utils"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json"
       ],
       "files": [
         {
@@ -736,11 +742,11 @@
         "radix-ui@^1.8.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "@boring-ui/pi-workspace",
-        "@boring-ui/viewers",
-        "@boring-ui/utils",
-        "@boring-ui/button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-workspace.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/viewers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/button.json"
       ],
       "files": [
         {
@@ -789,11 +795,6 @@
           "target": "components/pi-app/use-conversations.ts"
         },
         {
-          "path": "registry/pi-app/use-remote-chat.ts",
-          "type": "registry:hook",
-          "target": "components/pi-app/use-remote-chat.ts"
-        },
-        {
           "path": "registry/pi-app/app-labels.ts",
           "type": "registry:lib",
           "target": "components/pi-app/app-labels.ts"
@@ -836,9 +837,9 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
-        "@boring-ui/utils",
-        "@boring-ui/button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/theme.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/button.json"
       ],
       "files": [
         {
@@ -1461,8 +1462,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
-        "@boring-ui/utils"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/theme.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json"
       ],
       "files": [
         {
@@ -2155,8 +2156,8 @@
         }
       },
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "@boring-ui/utils"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json"
       ]
     },
     {
@@ -2257,7 +2258,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/theme.json"
       ],
       "files": [
         {

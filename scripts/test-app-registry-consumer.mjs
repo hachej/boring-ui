@@ -1,23 +1,22 @@
 // Installed-block consumer for the `pi-app` registry item: a disposable app outside this repository installs pi-app with the real pinned
-// shadcn CLI over HTTP (the `@boring-ui` namespace mapped to a local registry, so its registry dependencies pi-chat, pi-workspace, viewers,
+// shadcn CLI over HTTP (the release's absolute registry dependency URLs served by a local registry, so pi-chat, pi-workspace, viewers,
 // utils, button and theme resolve as they would from a hosted one), with every package pinned to an integrity-checked archive. It then
 // type-checks the copied source and a consumer page strictly and bundles the page for the browser (no kernel, server or Node code).
 // Usage: npm run build && npm run registry:build && npm_config_cache=<cache> npm run test:app-registry-consumer
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { assertConsumerTypeFiles, prepareConsumerIsolation, npmInstallFlags } from './consumer-isolation.mjs';
-import { consumerDependencies, localRegistryItem, packBoringDependencies, writeLockedManifest } from './consumer-install.mjs';
+import { consumerDependencies, packBoringDependencies, registryItemName, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => JSON.parse(readFileSync(join(root, 'public/r', `${name}.json`), 'utf8'));
 // The block and every item it needs, through registryDependencies.
 const closure = new Map();
-const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) visit(dependency.replace('@boring-ui/', '')); };
+const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) visit(registryItemName(root, dependency)); };
 visit('pi-app');
 visit('file-tree');
 const directory = mkdtempSync(join(tmpdir(), 'boring-app-consumer-'));
@@ -30,7 +29,7 @@ function run(command, args, env) {
   return result.stdout;
 }
 
-let completed = false, server;
+let completed = false, server, registry;
 try {
   const isolated = prepareConsumerIsolation(directory);
   mkdirSync(join(directory, 'packs'));
@@ -44,17 +43,11 @@ try {
   run('npm', ['ci', ...npmInstallFlags(cache)]);
 
   // The local registry: every item of the closure with its pins pointed at the checked archives, served over HTTP by a child process.
-  mkdirSync(join(directory, 'registry/r'), { recursive: true });
-  for (const [name, item] of closure) writeFileSync(join(directory, 'registry/r', `${name}.json`), JSON.stringify(item.dependencies ? localRegistryItem(root, item, archiveByName, join(directory, 'packs'), cache, run) : item));
-  server = spawn(process.execPath, ['-e', `const { createServer } = require('node:http'); const { readFile } = require('node:fs/promises'); const { join } = require('node:path');
-createServer(async (req, res) => { try { const body = await readFile(join(${JSON.stringify(join(directory, 'registry'))}, new URL(req.url, 'http://x').pathname.replace(/\\.\\./g, ''))); res.writeHead(200, { 'content-type': 'application/json' }).end(body); } catch { res.writeHead(404).end(); } })
-  .listen(0, '127.0.0.1', function () { console.log('port ' + this.address().port); });`], { stdio: ['ignore', 'pipe', 'inherit'] });
-  const port = await new Promise((done, fail) => { server.stdout.on('data', chunk => { const found = /port (\d+)/.exec(String(chunk)); if (found) done(Number(found[1])); }); server.once('exit', code => fail(new Error(`registry server exited ${code}`))); });
-  const registry = `http://127.0.0.1:${port}/r`;
+  ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
 
   for (const path of ['src', 'dist']) mkdirSync(join(directory, path), { recursive: true });
   writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' },
-    iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' }, registries: { '@boring-ui': `${registry}/{name}.json` } }));
+    iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
     noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/page.tsx'] }));

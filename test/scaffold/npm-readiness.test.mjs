@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { checkPackage, checkShippedRegistry } from '../../scripts/check-npm-packages.mjs';
+import { kitVersion, releaseItemBase } from '../../scripts/build-registry.mjs';
+import { localRegistryDependencies, registryItemName } from '../../scripts/consumer-install.mjs';
 
 const manifest = {
   name: '@hachej/boring-example', version: '0.1.0', private: false, license: 'MIT',
@@ -76,7 +79,7 @@ test('UI may ship its declared tree stylesheet without admitting arbitrary asset
 test('UI archive ships the shadcn registry under r/ and nothing else may', () => {
   const ui = { ...manifest, name: '@hachej/boring-ui-kit', version: '0.2.2' };
   const packed = [...files, 'THIRD_PARTY_NOTICES.md', 'r/registry.json', 'r/theme.json', 'r/button.json'];
-  const items = { registry: { items: [{ name: 'theme' }, { name: 'button' }] }, theme: { dependencies: ['@hachej/boring-ui-kit@^0.2.2'], registryDependencies: [] }, button: { dependencies: ['react@19.3.0'], registryDependencies: ['@boring-ui/theme'] } };
+  const items = { registry: { items: [{ name: 'theme' }, { name: 'button' }] }, theme: { dependencies: ['@hachej/boring-ui-kit@^0.2.2'], registryDependencies: [] }, button: { dependencies: ['react@19.3.0'], registryDependencies: ['https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/theme.json'] } };
   const read = path => structuredClone(items[path.slice(2, -5)]);
   assert.deepEqual(checkPackage(ui, packed, new Map()), []);
   assert.deepEqual(checkPackage(manifest, [...files, 'r/theme.json'], new Map()), ['Unexpected packed file: r/theme.json']);
@@ -98,4 +101,27 @@ test('UI archive ships the shadcn registry under r/ and nothing else may', () =>
     'Registry dependency not shipped in r/: button -> @boring-ui/utils',
     'Registry dependency not shipped in r/: button -> theme',
   ]);
+  // Items name their own dependencies as absolute URLs of this release (scripts/build-registry.mjs): the current version of a shipped item passes.
+  const release = (version, name) => `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@${version}/r/${name}.json`;
+  const withDependency = dependency => ({ items: ['theme', 'button'], read: path => path.endsWith('button.json') ? { registryDependencies: [dependency] } : read(path) });
+  assert.deepEqual(checkShippedRegistry(ui, packed, withDependency(release('0.2.2', 'theme'))), []);
+  assert.deepEqual(checkShippedRegistry(ui, packed, withDependency(release('0.2.1', 'theme'))), [
+    `Registry URL mismatch in r/button.json: ${release('0.2.1', 'theme')} (release 0.2.2)`,
+  ], 'an item URL of another version is refused');
+  assert.deepEqual(checkShippedRegistry(ui, packed, withDependency(release('0.2.2', 'missing'))), [
+    `Registry dependency not shipped in r/: button -> ${release('0.2.2', 'missing')}`,
+  ], 'an item URL must name a shipped item');
+  // The registry index lists items too: its dependencies are audited the same way.
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path === 'r/registry.json' ? { items: [{ name: 'theme' }, { name: 'button', registryDependencies: ['@boring-ui/theme'] }] } : read(path) }), [
+    'Registry dependency not shipped in r/: registry index button -> @boring-ui/theme',
+  ], 'the index must carry release URLs too');
+});
+
+test('the consumer harness maps only this workspace release URLs to its local registry', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const current = `${releaseItemBase(kitVersion(root))}/theme.json`;
+  assert.equal(registryItemName(root, current), 'theme');
+  assert.throws(() => registryItemName(root, current.replace(/@[^/]+\/r\//, '@9.9.9/r/')), /not a registry item URL of this release|Not a registry item URL/i, 'a wrong version is refused, not served');
+  assert.throws(() => localRegistryDependencies(root, { registryDependencies: [current.replace(/@[^/]+\/r\//, '@9.9.9/r/')] }, 'http://127.0.0.1:1/r'), /Not a registry item URL/);
+  assert.deepEqual(localRegistryDependencies(root, { registryDependencies: [current] }, 'http://127.0.0.1:1/r').registryDependencies, ['http://127.0.0.1:1/r/theme.json']);
 });

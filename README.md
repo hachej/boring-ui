@@ -61,7 +61,9 @@ Pi owns conversations, tools, task execution and recovery. Boring uses its publi
 
 ## Install components
 
-The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each published version carries its own copy. Map the `@boring-ui` namespace once in your application's `components.json` (shadcn 3 or later), pinned to the version you installed:
+The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each published version carries its own copy. Add components with the shadcn CLI (shadcn 3 or later).
+
+**Version 0.2.2 (the current npm release).** Its items name their dependencies as `@boring-ui/<item>`, so map the namespace once in your application's `components.json`, pinned to the version you installed:
 
 ```json
 {
@@ -71,13 +73,15 @@ The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each pub
 }
 ```
 
-Then add a component, for example the chat:
+Then add a component, for example the chat: `npx shadcn@latest add @boring-ui/pi-chat`. Item dependencies such as `@boring-ui/theme` resolve through the same pinned URL.
+
+**The next release.** Its items name their dependencies as absolute URLs of their own version, so no `registries` line is needed. Add an item by its URL, with the version you installed:
 
 ```sh
-npx shadcn@latest add @boring-ui/pi-chat
+npx shadcn@latest add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/pi-chat.json
 ```
 
-Item dependencies such as `@boring-ui/theme` resolve through the same pinned URL. The version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version, change the version in the URL and re-add the components. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/{name}.json` also works. See the [registry guide](registry/README.md) for the available items.
+In either case the version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version and re-add the components. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/<item>.json` also works. See the [registry guide](registry/README.md) for the available items.
 
 ## Release status
 

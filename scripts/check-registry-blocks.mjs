@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { gitIgnored, walkProject } from './project-files.mjs';
 
 const source = /\.(?:tsx?|jsx?|mjs)$/;
-/** registryDependencies use the namespace the consumer maps in components.json (`"registries": { "@boring-ui": "<served public/r>/{name}.json" }`). */
+/** The source registryDependencies use the `@boring-ui/<item>` shorthand; scripts/build-registry.mjs writes them as absolute release URLs. */
 const namespace = '@boring-ui/';
 const local = (dependency) => dependency.startsWith(namespace) ? dependency.slice(namespace.length) : dependency;
 const importPattern = /\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;

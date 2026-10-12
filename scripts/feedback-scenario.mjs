@@ -81,7 +81,7 @@ async function installLedgerly() {
     run('npm', ['ci', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', cache]);
     mkdirSync(join(app, 'src'), { recursive: true });
     const { url: registry, server } = await serveRegistry(root, app, closure, moved, join(app, 'packs'), cache, run);
-    writeFileSync(join(app, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' }, registries: { '@boring-ui': `${registry}/{name}.json` } }));
+    writeFileSync(join(app, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
     writeFileSync(join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noEmit: true, baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src'] }));
     writeFileSync(join(app, 'src/index.css'), '@import "tailwindcss";\n');
     const installer = { ...process.env, npm_config_prefer_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };

@@ -6,9 +6,8 @@ import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { registrySchema, registryItemSchema } from 'shadcn/schema';
-import { runCaptured } from '../../scripts/run-captured.mjs';
+import { buildRegistry } from '../../scripts/build-registry.mjs';
 import { checkRegistryBlocks } from '../../scripts/check-registry-blocks.mjs';
 import { viewersCss } from '../../registry/viewers/build-css.mjs';
 import { feedbackCss } from '../../scripts/build-feedback-css.mjs';
@@ -40,14 +39,13 @@ test('the type-only exception admits only type imports: a runtime re-export of a
 test('standard pinned CLI rebuilds the committed source registry artifact exactly', () => {
   const directory = mkdtempSync(join(tmpdir(), 'boring-registry-build-'));
   try {
-    const cli = createRequire(import.meta.url).resolve('shadcn');
-    const result = runCaptured(process.execPath, [cli, 'build', 'registry.json', '--output', directory], { cwd: root, timeout: 30000 });
-    assert.equal(result.status, 0, result.stderr + result.stdout);
+    buildRegistry(root, directory);
     assert.deepEqual(JSON.parse(readFileSync(join(directory, 'registry.json'), 'utf8')), JSON.parse(readFileSync(join(root, 'public/r/registry.json'), 'utf8')));
     for (const item of manifest.items) {
       const built = registryItemSchema.parse(JSON.parse(readFileSync(join(directory, item.name + '.json'), 'utf8')));
       const committed = JSON.parse(readFileSync(join(root, 'public/r', item.name + '.json'), 'utf8'));
       assert.deepEqual(built, registryItemSchema.parse(committed), 'Generated item is stale or differs from the real CLI');
+      assert.equal(readFileSync(join(directory, item.name + '.json'), 'utf8'), readFileSync(join(root, 'public/r', item.name + '.json'), 'utf8'), 'public/r is stale: run npm run registry:build');
       for (const file of built.files ?? []) assert.equal(file.content, readFileSync(join(root, file.path), 'utf8'));
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }

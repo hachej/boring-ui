@@ -57,9 +57,12 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
 
 const registryItemFile = /^r\/([\w.-]+)\.json$/;
 const hachejPin = /(@hachej\/[a-z0-9-]+)@([^\s"'`,;()[\]{}]+)/g;
+// Registry dependencies of boring-ui items are absolute URLs of one release (scripts/build-registry.mjs): the version is the release.
+const releaseItemPrefix = 'https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@';
+const releaseItem = /^https:\/\/cdn\.jsdelivr\.net\/npm\/@hachej\/boring-ui-kit@([^/]+)\/r\/([\w.-]+)\.json$/;
 
 /** The UI archive ships the shadcn registry under r/. Every item of registry.json must be present, every item's
- * registryDependencies must name a shipped item in the @boring-ui namespace, and every @hachej/* pin in the shipped JSON
+ * registryDependencies must be this release's absolute URL of a shipped item, and every @hachej/* pin in the shipped JSON
  * must equal the version being released. `read(path)` returns the parsed JSON of a shipped file. */
 export function checkShippedRegistry(manifest, paths, { items = [], read } = {}) {
   if (manifest.name !== '@hachej/boring-ui-kit') return [];
@@ -70,18 +73,24 @@ export function checkShippedRegistry(manifest, paths, { items = [], read } = {})
   // Internal pins are "^<release version>". The intentionally private feedback package keeps its exact pin until the owner decides (its items are not released).
   const accepted = (name, range) => range === `^${manifest.version}` || (INTENTIONALLY_PRIVATE.has(name) && range === manifest.version);
   const pins = (value, file) => {
-    if (typeof value === 'string') {
+    if (typeof value === 'string' && value.startsWith(releaseItemPrefix)) {
+      if (releaseItem.exec(value)?.[1] !== manifest.version) errors.push(`Registry URL mismatch in r/${file}.json: ${value} (release ${manifest.version})`);
+    } else if (typeof value === 'string') {
       for (const [, name, range] of value.matchAll(hachejPin)) if (!accepted(name, range)) errors.push(`Registry pin mismatch in r/${file}.json: ${name}@${range} (release ${manifest.version})`);
     } else if (value && typeof value === 'object') for (const child of Object.values(value)) pins(child, file);
+  };
+  // Each item, and each item the registry index lists, names its dependencies as this release's URLs of shipped items.
+  const dependencies = (owner, item) => {
+    for (const dependency of item.registryDependencies ?? []) {
+      const local = releaseItem.exec(dependency)?.[2];
+      if (!local || !shipped.has(local)) errors.push(`Registry dependency not shipped in r/: ${owner} -> ${dependency}`);
+    }
   };
   for (const name of shipped) {
     const json = read(`r/${name}.json`);
     pins(json, name);
-    if (name === 'registry') continue;
-    for (const dependency of json.registryDependencies ?? []) {
-      const local = dependency.startsWith('@boring-ui/') ? dependency.slice('@boring-ui/'.length) : undefined;
-      if (!local || !shipped.has(local)) errors.push(`Registry dependency not shipped in r/: ${name} -> ${dependency}`);
-    }
+    if (name === 'registry') for (const entry of json.items ?? []) dependencies(`registry index ${entry.name}`, entry);
+    else dependencies(name, json);
   }
   return errors;
 }

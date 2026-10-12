@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { Dock, DockLayout, DockMain, useDock } from '../../registry/pi-workspace/dock.tsx';
 import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
-import { useRemoteChat } from '../../registry/pi-app/use-remote-chat.ts';
+import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 
 const { token, identity, conversation } = window.__APP__;
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };

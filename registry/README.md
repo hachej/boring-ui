@@ -9,7 +9,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | `pi-chat` | copied source in `components/pi-chat/` | `NativeChatController` from `@hachej/boring-ui-kit/native-chat` |
 | `pi-ambient` | copied source in `components/pi-ambient/` | the same `NativeChatController` as `pi-chat` |
 | `pi-workspace` | copied source in `components/pi-workspace/` | none: layout driven by props |
-| `pi-app` | copied source in `components/pi-app/` | the `NativeChatController` of `useRemoteChat`; viewers over one resource client |
+| `pi-app` | copied source in `components/pi-app/` | the agent page; viewers over one resource client (`useRemoteChat` lives in `pi-chat` and is re-exported) |
 | `provider-setup` | copied source in `components/provider-setup/` | none: props and callbacks only |
 | `theme` | the shadcn tokens (light, dark) and their `@theme inline` bindings, merged into the host's CSS | none |
 | `utils`, `button` | `cn`/`copyText` and the one shared `Button`/`IconButton`, in `components/utils/` and `components/button/` | none |
@@ -29,7 +29,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 
 Every Tailwind item depends on `theme` (`pi-chat`, `viewers`, `provider-setup` and `button` directly, the blocks over `pi-chat` through it), imports `cn` from `utils` and, when it renders buttons, `Button` from `button`; the CLI installs each once. File counts, taken from the items in `registry.json` (each item's files plus those of its registry dependencies; not a fresh CLI install, which the earlier hand count of 26, 27, 30 and 12 was): `pi-chat` 31 (its 28, `button` 2, `utils` 1), `pi-workspace` 33 (its `workspace.tsx` and `dock.tsx`), `pi-ambient` 36 (its three, plus `pi-workspace`'s two), `viewers` 15 (its 12, `button`, `utils`); each also merges the theme tokens into the CSS file, keeping tokens the host already defines.
 
-`<registry>` is wherever `public/r/` is served. `pi-ambient` and `pi-workspace` name their dependencies as `@boring-ui/pi-chat` and `@boring-ui/pi-workspace`, so map the namespace once in the app's `components.json`: `"registries": { "@boring-ui": "<registry>/{name}.json" }` (a bare name would resolve against shadcn's own registry and fail). `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`examples/studio`](../examples/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
+`<registry>` is wherever `public/r/` is served. Items name their registry dependencies as absolute URLs of their own release (`<registry>/pi-chat.json`, `<registry>/pi-workspace.json`), so no `registries` line is needed in `components.json`. `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`examples/studio`](../examples/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
 
 ## Artifact cards in `pi-chat`
 
@@ -154,7 +154,7 @@ Nothing is published, so a consumer needs a package source for the private `@hac
 
 1. In this repository: `npm ci && npm run build && npm run registry:build`, then `npm pack ./packages/ui ./packages/files ./packages/agent --pack-destination <dir>`.
 2. Serve the tarballs as an npm registry for the `@boring` scope (a ten-line static registry that returns a packument with `dist.tarball`, `dist.integrity` and the package's own manifest is enough) and put `@boring:registry=http://127.0.0.1:<port>/` in the app's `.npmrc`. This is required because every item lists `@hachej/boring-ui-kit@0.0.0` as a dependency and the CLI runs `npm install` for it. `file:` tarball specs in `package.json` do not help: the CLI still installs `@hachej/boring-ui-kit@0.0.0` by name.
-3. Serve `public/r/` over HTTP and run `npx shadcn@4.21.1 add http://127.0.0.1:<port>/r/pi-chat.json http://127.0.0.1:<port>/r/viewers.json http://127.0.0.1:<port>/r/markdown-editor.json -y`. Files land in `src/components/pi-chat/`, `src/components/viewers/`, `src/components/button/`, `src/components/utils/` and `src/components/markdown-editor/markdown-editor.tsx` (map the `@boring-ui` namespace first, see above); scoped CSS is merged into the app's CSS file. Re-running with `-o` is idempotent.
+3. Serve `public/r/` over HTTP and run `npx shadcn@4.21.1 add http://127.0.0.1:<port>/r/pi-chat.json http://127.0.0.1:<port>/r/viewers.json http://127.0.0.1:<port>/r/markdown-editor.json -y`. Files land in `src/components/pi-chat/`, `src/components/viewers/`, `src/components/button/`, `src/components/utils/` and `src/components/markdown-editor/markdown-editor.tsx`; registry dependencies are the published release's jsDelivr URLs, so an unpublished build serves only its own items locally (the consumer harness serves the dependencies too); scoped CSS is merged into the app's CSS file. Re-running with `-o` is idempotent.
 4. Install the server side with exact pins: `@hachej/boring-agent`, `@hachej/boring-files`, `react@19.3.0`, `react-dom@19.3.0`, `@earendil-works/pi-durable@1.0.1`, `@earendil-works/pi-ai@1.0.1` and `@earendil-works/chord@1.0.1`. Node 22.19 or newer runs a TypeScript server with `node server/main.ts` (SQLite resources use `node:sqlite`).
 5. The shadcn Vite template's `npm run typecheck` is `tsc --noEmit` over a solution file with `"files": []` and checks nothing. Use `tsc -p tsconfig.app.json --noEmit`; the installed source passes the template's `strict`, `noUnusedLocals` and `noUnusedParameters`.
 
@@ -213,10 +213,13 @@ The HTML installation fixture repeats public controller/renderer behavior throug
 | Composer (auto-growing, Enter/Shift+Enter, IME safe, one Send/Stop button, steer or queue while busy, image chips) | `composer.tsx` |
 | Optional composer features: `/` menu (v2 picker port), `@` file picker, model and effort pickers, shared keyboard hook, option types and token helpers | `slash-menu.tsx`, `mention-menu.tsx`, `pickers.tsx`, `picker-keyboard.ts`, `config.ts` |
 | Queue read from the view's `pi.inbox` document | `queue.tsx` |
+| Remote conversation over the chat transport: `useRemoteChat` (one controller per conversation, the `NativeChatController` of `createRemoteChat`) | `use-remote-chat.ts` |
 | Human-in-the-loop `ask_user` card | `question-card.tsx` |
 | Feedback card: `feedback` list results and offers with hoverable element lines, report mentions | `feedback/feedback-card.tsx` |
 | Empty state, read-only history (the shared `Button` and `cn` come from the `button` and `utils` items) | `empty-state.tsx`, `history.tsx` |
 | Shared chat behaviour for every surface (send, queue actions, uploads, pickers, rows, paged transcript), send/stop notices | `session.tsx`, `notice.tsx` |
+
+A local conversation is one in-process controller, `createNativeChatController({ identity, conversation, context })`; a remote one is `useRemoteChat({ conversationId, endpoint, fetch, identity })`, whose `controller` feeds the same `<PiChat controller={controller} />`. `pi-chat` alone is enough for either: a floating panel needs no workspace and no `pi-app`.
 
 Pass `actions={{ answer, withdraw }}` with the matching functions from `createRemoteChat()` (feature-detect them: a transport without them leaves question cards and queued messages read-only). `answer(callId, answer)` resolves to `{ kind: 'answered' }` or a refusal that the card shows inline.
 A question or approval card is `data-state="writing"` while the model is still generating its call (options may be partial and nothing can be answered), then `pending` while it waits on the person.

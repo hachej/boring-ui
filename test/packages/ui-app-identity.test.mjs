@@ -4,7 +4,7 @@ import { Window } from 'happy-dom';
 import { act, createElement, Suspense, startTransition } from 'react';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { useSaved } from '../../registry/pi-app/use-saved.ts';
-import { useRemoteChat } from '../../registry/pi-app/use-remote-chat.ts';
+import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 
 const identity = owner => ({ runtimeId: owner, scopeId: owner, principalId: owner });
 const target = (providerId, view = { kind: 'published' }) => ({ resource: { providerId, path: 'notes.md' }, view });
