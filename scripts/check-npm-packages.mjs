@@ -36,7 +36,12 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
     for (const [name, version] of Object.entries(manifest[field] ?? {})) {
       if (/^(file:|link:|workspace:|\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/])/.test(version) || (!version.includes('://') && /\.t(?:ar\.)?gz$/.test(version))) errors.push(`Local dependency: ${name}`);
-      if (versions.has(name) && version !== `^${versions.get(name)}`) errors.push(`Internal version mismatch: ${name}@${version}`);
+      if (versions.has(name)) {
+        const released = versions.get(name);
+        // Published packages pin internal packages as caret ranges; private packages may pin the exact version.
+        const accepted = manifest.private === true ? [released, `^${released}`] : [`^${released}`];
+        if (!accepted.includes(version)) errors.push(`Internal version mismatch: ${name}@${version}`);
+      }
     }
   }
   if (release) {

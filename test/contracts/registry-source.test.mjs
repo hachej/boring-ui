@@ -1,4 +1,5 @@
-import { workspaceDirectory } from '../../scripts/consumer-install.mjs';
+import { workspaceDirectory, registryPin } from '../../scripts/consumer-install.mjs';
+import semver from 'semver';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -194,4 +195,11 @@ test('the block check rejects an import cycle in a registry block or a package s
       'registry/pi-chat/queue.tsx -> registry/pi-chat/rows.ts -> registry/pi-chat/queue.tsx',
     ]);
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('registry pins accept prerelease versions and a caret range admits only its own major', () => {
+  assert.match('1.1.0-rc.1', registryPin);
+  assert.match('^1.1.0', registryPin);
+  assert.equal(semver.satisfies('1.2.0-rc.1', '^1.1.0'), false);
+  assert.equal(semver.satisfies('1.1.0', '^1.1.0'), true);
 });

@@ -6,18 +6,12 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import semver from 'semver';
 
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
 
-/** Whether an exact version satisfies a registry pin: an exact version, or a caret range (the only range form the pins use). */
-export function satisfiesRange(version, range) {
-  if (!range.startsWith('^')) return version === range;
-  const [major, minor, patch] = range.slice(1).split('.').map(Number);
-  const [a, b, c] = version.split('.').map(Number);
-  const atLeast = a > major || a === major && (b > minor || b === minor && c >= patch);
-  const sameLeading = major > 0 ? a === major : minor > 0 ? a === 0 && b === minor : a === 0 && b === 0 && c === patch;
-  return atLeast && sameLeading;
-}
+/** A registry dependency pin: an exact version or a caret range, with an optional prerelease (release-version writes 1.1.0-rc.1). */
+export const registryPin = /^\^?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 export function workspaceDirectory(root, name) {
   for (const entry of readdirSync(join(root, 'packages'))) {
@@ -81,12 +75,15 @@ export function localRegistryItem(root, item, archiveByName, packs, cache, run) 
   const local = structuredClone(item);
   local.dependencies = item.dependencies.map(pin => {
     const [name, range] = split(pin);
-    assert.match(range, /^\^?\d+\.\d+\.\d+$/);
+    assert.match(range, registryPin);
+    // The exact version this repository locks (or the workspace package itself); the pin's range must admit it.
+    const expected = name.startsWith('@hachej/boring-') ? JSON.parse(readFileSync(join(workspaceDirectory(root, name), 'package.json'), 'utf8')).version : sourceLock.packages['node_modules/' + name]?.version;
+    assert.ok(expected && semver.satisfies(expected, range), `${name}@${range}`);
     let bytes;
     if (name.startsWith('@hachej/boring-')) bytes = readFileSync(archiveByName.get(name));
     else {
       const entry = sourceLock.packages['node_modules/' + name];
-      assert.ok(entry && satisfiesRange(entry.version, range), `${name}@${range}`);
+      assert.equal(entry.version, expected);
       const [algorithm, encoded] = entry.integrity.split('-');
       assert.equal(algorithm, 'sha512');
       const digest = Buffer.from(encoded, 'base64').toString('hex');
@@ -96,7 +93,7 @@ export function localRegistryItem(root, item, archiveByName, packs, cache, run) 
     const archive = join(packs, createHash('sha256').update(bytes).digest('hex') + '.tgz');
     writeFileSync(archive, bytes);
     const archived = JSON.parse(run('tar', ['-xOf', archive, 'package/package.json']));
-    assert.equal(archived.name, name); assert.ok(satisfiesRange(archived.version, range), pin);
+    assert.equal(archived.name, name); assert.equal(archived.version, expected);
     return name + '@file:' + archive;
   });
   return local;

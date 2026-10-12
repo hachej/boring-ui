@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, exis
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import semver from 'semver';
 import { runCaptured } from './run-captured.mjs';
 import { prepareConsumerIsolation, assertConsumerTypeFiles, npmInstallFlags } from './consumer-isolation.mjs';
 
@@ -37,7 +38,12 @@ try {
   dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   dependencies['@tldraw/tlschema'] = sourceLock.packages['node_modules/@tldraw/tlschema'].version;
   for (const name of ['typescript', '@types/react', '@types/react-dom', '@types/node', 'happy-dom', 'esbuild']) dependencies[name] = rootManifest.devDependencies[name];
-  for (const [name, version] of Object.entries(dependencies)) assert.match(version, /^\d+\.\d+\.\d+$/, `Expected an exact dependency pin: ${name}`);
+  // Each range must admit the version this repository locks; the isolated install gets that exact version.
+  for (const [name, range] of Object.entries(dependencies)) {
+    const entry = sourceLock.packages['node_modules/' + name];
+    assert.ok(entry && semver.satisfies(entry.version, range), `${name}@${range}`);
+    dependencies[name] = entry.version;
+  }
   const manifest = { name: 'isolated-canvas-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
   const packages = {};

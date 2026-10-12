@@ -44,6 +44,10 @@ test('release dependencies cannot point into a checkout or to old sibling versio
   assert.deepEqual(checkPackage({ ...manifest, peerDependencies: { '@hachej/boring-files': '^0.2.0' } }, files, versions), [
     'Internal version mismatch: @hachej/boring-files@^0.2.0',
   ]);
+  assert.deepEqual(checkPackage({ ...manifest, private: true, dependencies: { '@hachej/boring-files': '0.1.0' } }, files, versions), [], 'private packages may pin internal packages exactly');
+  assert.deepEqual(checkPackage({ ...manifest, private: true, dependencies: { '@hachej/boring-files': '^0.2.0' } }, files, versions), [
+    'Internal version mismatch: @hachej/boring-files@^0.2.0',
+  ]);
 });
 
 test('missing build output cannot pass the pack audit', () => {
