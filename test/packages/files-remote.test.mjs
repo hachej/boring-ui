@@ -3,6 +3,10 @@ import test from 'node:test';
 import { PublicationNotDispatchedError } from '@hachej/boring-files/publication';
 import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
 import { createResourceClient, createResourceHandler } from '@hachej/boring-files/remote';
+import { createWorkspaceJournal } from '@hachej/boring-files/journal';
+import { openNodeConnection } from '@hachej/boring-files/sqlite';
+import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
+import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 
 const identity = { scopeId: 'fictional-project', principalId: 'fictional-editor', initiatorId: 'alice' };
 const target = (path, view = { kind: 'published' }) => ({ resource: { providerId: 'documents', path }, view });
@@ -75,6 +79,20 @@ test('stale replacement, absence conflict and read dependency reject the whole b
   assert.equal((await client().publish(dependent)).kind, 'conflict');
   assert.equal((await client().read(latest('summary.md'))).kind, 'missing');
   assert.deepEqual((await client().read(latest('notes.md'))).snapshot.ref, newer.receipt.changes[0].after);
+});
+
+test('a file_too_large refusal crosses the Fetch transport as a typed result and stores nothing', async t => {
+  const connection = openNodeConnection(':memory:');
+  t.after(() => connection.close());
+  const fs = openSqliteFileSystem({ connection, workspace: 'documents', cwd: '/workspace' });
+  const provider = createWorkspaceProvider({ identity: { providerId: 'documents', instanceId: identity.scopeId, incarnation: fs.incarnation, viewId: 'published' }, fs, journal: createWorkspaceJournal(connection), maxFileBytes: 10 });
+  const handler = createResourceHandler({ authenticate: async () => identity, reader: provider, publisher: provider.publication, lookup: provider.reconciliation });
+  const client = createResourceClient({ identity, endpoint: 'https://fictional.invalid/resources', fetch: request => handler(request), publication: true, reconciliation: true });
+  const refused = await client.publish(create('remote-too-large', 'big.bin', new Uint8Array(11)));
+  assert.equal(refused.kind, 'file_too_large');
+  assert.deepEqual([refused.path, refused.size, refused.limit], ['big.bin', 11, 10]);
+  assert.equal((await client.read(latest('big.bin'))).kind, 'missing');
+  assert.equal((await client.lookup('remote-too-large')).kind, 'not-found');
 });
 
 test('duplicate operation replays one receipt and changed arguments cannot reuse the ID', async t => {

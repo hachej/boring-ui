@@ -39,6 +39,16 @@ test('inline mode still inlines text and images, and never decodes a UTF-8 valid
   assert.ok(!added.join('').includes('%PDF'));
 });
 
+test('an inherited extension name is a text file, not an image or a media type (inline and reference)', async () => {
+  const bytes = enc('hello');
+  const inline = await createMentionResolver({ read: async () => ({ size: 5, bytes }) })('@notes.constructor @notes.__proto__');
+  assert.deepEqual(inline.slice(1).map(part => part.type), ['text', 'text']);
+  assert.ok(inline.slice(1).every(part => part.text.includes('hello')));
+  const reference = await createMentionResolver({ mode: 'reference', read: async () => ({ size: 5 }) })('@notes.constructor @notes.__proto__');
+  assert.equal(reference.length, 3, 'a reference part per file, none dropped');
+  for (const part of reference.slice(1)) assert.doesNotMatch(part.text, /function|\[object/);
+});
+
 test('workspaceMentionReader reads through the provider: the person\'s access decides, size-only in reference mode, big files by size', async t => {
   let allowed = true;
   const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'files', authorize: () => allowed });

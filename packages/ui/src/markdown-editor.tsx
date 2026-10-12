@@ -179,7 +179,7 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   const report = (result: unknown) => {
     if (active.current !== controller || !result || typeof result !== 'object') return;
     const { kind, reason } = result as { kind?: unknown; reason?: unknown };
-    if (kind === 'denied' || kind === 'conflict' || kind === 'unavailable') setError(typeof reason === 'string' && reason ? reason : kind === 'conflict' ? 'The document changed elsewhere. Your text is still available.' : 'The document could not be saved. Your text is still available.');
+    if (kind === 'denied' || kind === 'conflict' || kind === 'unavailable' || kind === 'file_too_large') setError(typeof reason === 'string' && reason ? reason : kind === 'conflict' ? 'The document changed elsewhere. Your text is still available.' : 'The document could not be saved. Your text is still available.');
   };
   const run = (operation: () => Promise<unknown>) => {
     setError(null);
@@ -268,7 +268,7 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
       <button type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.refresh)}>Check saved version</button>
       <button type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.discardToRemote)}>Discard local changes and reload</button>
     </div>}
-    {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable') && <p role="alert" className="boring-markdown-alert">{outcome.reason}</p>}
+    {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable' || outcome?.kind === 'file_too_large') && <p role="alert" className="boring-markdown-alert">{outcome.reason}</p>}
     {error && <p role="alert" className="boring-markdown-alert">{error}</p>}
     {state.proposals.map(proposal => <article key={proposal.id} data-boring="proposal" className="boring-markdown-proposal">
       <h3>{proposal.summary || 'Proposed edit'}</h3>

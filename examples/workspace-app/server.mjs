@@ -20,7 +20,7 @@ import { createConversations, createConversationsHandler } from '@hachej/boring-
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
-import { createResourceHandler } from '@hachej/boring-files/remote';
+import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../shared/workspace-tools.mjs';
 import { buildTailwind } from '../studio/tailwind.mjs';
@@ -52,6 +52,9 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
 
   // ---- The host handlers the block talks to. Authentication (here one bearer token) and the owner key are the host's.
   const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
+  // Journey fault: the next N discovery requests are refused with a 503 (the page then shows its Retry).
+  const faults = { resources: 0 };
+  const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
   const handlers = {
     '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agent.id, start } : null }),
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
@@ -59,8 +62,8 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
       const conversation = allowed(request) && Number.isSafeInteger(id) ? await conversations.open(agent.id, id) : undefined;
       return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id) } : null;
     } }),
-    '/api/resources': createResourceHandler({ authenticate: async request => allowed(request) ? person : null, reader: files, publisher: files.publication, lookup: files.reconciliation }),
-    '/api/history': async request => allowed(request) ? Response.json({ saves: files.saves(new URL(request.url).searchParams.get('path') ?? '') }) : new Response(null, { status: 401 }),
+    // The workspace's revision protocol: the binding, the change feed, listing, search, saved history and the resource calls.
+    '/api/resources': async request => { if (faults.resources > 0) { faults.resources--; return new Response(null, { status: 503 }); } return resources(request); },
   };
 
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.
@@ -91,8 +94,8 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, owner: agent.id,
-    close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); db.close(); },
+    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, owner: agent.id, faults,
+    close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }
 

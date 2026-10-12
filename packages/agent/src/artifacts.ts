@@ -3,6 +3,7 @@ import type { ToolExecutionApi } from '@earendil-works/pi-durable';
 import { Type } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess, ResourceLocator } from '@hachej/boring-files';
+import { workspacePath } from '@hachej/boring-files/file-types';
 import { asWorkspaceResolver, workspaceFor } from './workspaces.js';
 import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
 
@@ -78,12 +79,13 @@ export function parseArtifact(value: unknown): ArtifactDescriptor | undefined {
 const reply = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const decode = (bytes: Uint8Array) => { try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return undefined; } };
 
-const PRESENTED: Record<string, { readonly type: ArtifactType; readonly mediaType: string; readonly language?: string }> = {
+// Null-prototype tables: a name such as `constructor` is not an entry.
+const PRESENTED: Record<string, { readonly type: ArtifactType; readonly mediaType: string; readonly language?: string }> = Object.assign(Object.create(null), {
   md: { type: 'markdown', mediaType: 'text/markdown' }, markdown: { type: 'markdown', mediaType: 'text/markdown' },
   html: { type: 'html', mediaType: 'text/html' }, htm: { type: 'html', mediaType: 'text/html' },
   svg: { type: 'svg', mediaType: 'image/svg+xml' }, tldraw: { type: 'canvas', mediaType: 'application/vnd.tldraw+json' },
-};
-const LANGUAGE_OF: Record<string, string> = { js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', json: 'json', css: 'css', sql: 'sql', yaml: 'yaml', yml: 'yaml', sh: 'shell', rs: 'rust', go: 'go', java: 'java', csv: 'csv' };
+});
+const LANGUAGE_OF: Record<string, string> = Object.assign(Object.create(null), { js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', json: 'json', css: 'css', sql: 'sql', yaml: 'yaml', yml: 'yaml', sh: 'shell', rs: 'rust', go: 'go', java: 'java', csv: 'csv' });
 
 export interface PresentToolOptions {
   /**
@@ -118,7 +120,9 @@ export function createPresentTool(options: PresentToolOptions = {}) {
     parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 512, description: 'The file path, relative to the workspace.' }) }, { additionalProperties: false }),
     replay: 'safe',
     execute: async (args, api, context) => {
-      const path = args.path.replace(/^\.\//, '');
+      // An absolute path is refused, not normalised: `/workspace/a.md` must never be read as `workspace/a.md` under the root.
+      if (args.path.startsWith('/')) return reply({ kind: 'denied', reason: 'The path must be relative to the workspace' });
+      const path = workspacePath(args.path);
       const resolved = await workspaceFor(resolver, api, context);
       if ('refused' in resolved) return reply({ kind: 'denied', reason: resolved.refused });
       const { files } = resolved.binding;

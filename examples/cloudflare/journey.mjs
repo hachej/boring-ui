@@ -52,6 +52,53 @@ try {
     assert.equal(await browser.evaluate('location.search + location.hash'), '');
   });
 
+  // Page faults, set per tab in sessionStorage 'journey.faults' and read by a fetch wrapper that the page's scripts run after:
+  // `refuseDiscovery` refuses that many discovery requests with a 503; `delayWrong` holds a discovery sent with that token for 5 s.
+  const setFaults = faults => browser.evaluate(`sessionStorage.setItem('journey.faults', ${JSON.stringify(JSON.stringify(faults))})`);
+  const PAGE_FAULTS = `(() => {
+    const send = window.fetch.bind(window);
+    const read = () => { try { return JSON.parse(sessionStorage.getItem('journey.faults') ?? '{}'); } catch { return {}; } };
+    window.fetch = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname !== '/api/resources') return send(request);
+      const faults = read();
+      if (faults.refuseDiscovery > 0) { sessionStorage.setItem('journey.faults', JSON.stringify({ ...faults, refuseDiscovery: faults.refuseDiscovery - 1 })); return new Response(null, { status: 503 }); }
+      if (faults.delayWrong && request.headers.get('authorization') === 'Bearer ' + faults.delayWrong) await new Promise(done => setTimeout(done, 5000));
+      return send(request);
+    };
+  })();`;
+  await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: PAGE_FAULTS });
+  const liveChat = `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${q('[data-testid=composer-input]')}`;
+
+  await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
+    await setFaults({ refuseDiscovery: 1 });
+    await browser.reload();
+    await browser.until('the alert with Retry', `!!${q('p[role="alert"] button')}`, 30000);
+    assert.match(await browser.evaluate(`${q('p[role="alert"]')}.innerText`), /could not be reached/);
+    await browser.click(q('p[role="alert"] button'));
+    await browser.until('the chat is live again', liveChat, 60000);
+    await setFaults({});
+  });
+
+  await step('a late 401 for a token the person replaced does not sign out the new token', async () => {
+    await setFaults({ delayWrong: 'wrong-token' });
+    await browser.evaluate(`sessionStorage.removeItem('recipe.token')`);
+    await browser.reload();
+    await browser.until('token form', `!!${q('[data-testid=token-form]')}`);
+    await browser.type(q('[data-testid=token-input]'), 'wrong-token');
+    await browser.click(q('[data-testid=token-submit]'));
+    // /api/agent answers 401 at once and the gate says so; the discovery sent with the same token is still held (5 s).
+    await browser.until('the wrong token is rejected', `!!${q('[data-testid=token-error]')}`);
+    await browser.type(q('[data-testid=token-input]'), token);
+    await browser.click(q('[data-testid=token-submit]'));
+    await browser.until('the chat is live with the new token', liveChat, 60000);
+    await pause(6000); // the held discovery now answers 401 for the replaced token
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=token-form]')}`), false, 'the late 401 did not return to the gate');
+    assert.equal(await browser.evaluate(liveChat), true, 'the chat is still live');
+    assert.equal(await browser.evaluate(`sessionStorage.getItem('recipe.token')`), token);
+    await setFaults({});
+  });
+
   const t = createToolkit({ browser, pageUrl: `${base}/`, step, base, authorize, identity: agent.identity,
     // Reset the Durable Object (ctx.abort): the next request starts a new in-memory instance on the same SQLite state.
     restartHost: async () => {

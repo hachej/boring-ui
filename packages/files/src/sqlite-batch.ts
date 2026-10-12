@@ -11,6 +11,9 @@ export interface SqliteBatch {
   readonly bytes: (path: string) => Uint8Array | null | undefined;
   /** Write a regular file at an absolute path, creating its missing parent directories. Throws a Pi `FileError` on failure. */
   readonly write: (path: string, bytes: Uint8Array) => void;
+  /** The one byte limit of this file system: native writes and publications both enforce it. */
+  readonly maxFileBytes: () => number;
+  readonly setMaxFileBytes: (limit: number) => void;
 }
 
 const batches = new WeakMap<object, SqliteBatch>();

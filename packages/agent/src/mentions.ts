@@ -1,6 +1,7 @@
 import type { InputSubmissionDraft } from '@earendil-works/pi-durable';
 import type { ResourceAccess } from '@hachej/boring-files';
-import { SNIFF_BYTES, extensionOf, fileKind, nativeImageType } from './file-types.js';
+import { extensionOf } from '@hachej/boring-files/file-types';
+import { SNIFF_BYTES, fileKind, nativeImageType } from './file-types.js';
 import type { WorkspaceBinding } from './workspaces.js';
 
 /** The native input content a submission carries: a string, or text and image parts. */

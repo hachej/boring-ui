@@ -17,12 +17,17 @@ class FakeDurableObjectStorage {
     exec: (query, ...bindings) => {
       // Like the runtime: several statements are allowed without bindings; with bindings there is one statement.
       // Blobs are ArrayBuffers on the runtime's side and Uint8Arrays in node:sqlite.
-      const values = bindings.map(value => value instanceof ArrayBuffer ? new Uint8Array(value) : value);
+      // node:sqlite binds a view over a zero-length ArrayBuffer as NULL; a copy binds as an empty BLOB.
+      const values = bindings.map(value => value instanceof ArrayBuffer ? new Uint8Array(value).slice() : value);
       let rows = [];
-      if (values.length > 0) rows = this.#db.prepare(query).all(...values);
-      else if (this.#db.prepare(query).columns().length > 0) rows = this.#db.prepare(query).all();
+      // A statement without result columns runs with run(), not all().
+      if (values.length > 0) {
+        const statement = this.#db.prepare(query);
+        if (statement.columns().length > 0) rows = statement.all(...values); else statement.run(...values);
+      } else if (this.#db.prepare(query).columns().length > 0) rows = this.#db.prepare(query).all();
       else this.#db.exec(query);
-      const converted = rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value instanceof Uint8Array ? value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) : value])));
+      // A zero-length BLOB reads back as null (the runtime returns no bytes for it), not as an empty buffer.
+      const converted = rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value instanceof Uint8Array ? (value.byteLength === 0 ? null : value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)) : value])));
       return { toArray: () => converted };
     },
   };
@@ -92,6 +97,24 @@ test('a Durable Object binds the Library through the SQLite workspace: list, sea
     assert.ok(revision.savedAt >= before - 1000 && revision.savedAt <= Date.now() + 1000, 'savedAt is a millisecond timestamp');
   }
   assert.ok(history[0].savedAt >= history[1].savedAt, 'newest first');
+});
+
+test('a Durable Object round-trips an empty file and its history when zero-length BLOBs read back as null', async t => {
+  const { connect } = durableObject(t);
+  const alpha = await connect('alpha');
+  assert.equal((await alpha.publish(create(alpha, 'empty.md', ''))).kind, 'committed');
+  const created = await alpha.read({ target: alpha.locate('empty.md'), revision: { kind: 'latest' } });
+  assert.equal(created.kind, 'available');
+  assert.deepEqual(created.snapshot.bytes, new Uint8Array());
+  assert.equal((await alpha.list({})).entries.find(entry => entry.path === 'empty.md')?.size, 0);
+
+  const replaced = await alpha.publish({ operationId: 'fill-empty', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: created.snapshot.ref, bytes: encoder.encode('filled'), mediaType: 'text/markdown' }] });
+  assert.equal(replaced.kind, 'committed');
+  const history = await alpha.history('empty.md');
+  assert.equal(history.length, 2);
+  const older = await alpha.read({ target: alpha.locate('empty.md'), revision: { kind: 'exact', value: history[1].revision } });
+  assert.equal(older.kind, 'available');
+  assert.deepEqual(older.snapshot.bytes, new Uint8Array(), 'the saved empty version reads back as empty');
 });
 
 test('scope isolation: one scope never lists, searches or reads another scope through the same database', async t => {

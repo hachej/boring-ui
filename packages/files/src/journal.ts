@@ -178,8 +178,10 @@ export function createWorkspaceJournal(db: SqliteConnection, options: { readonly
     }),
     remember: (scope, path, version) => db.transaction('write', () => { remember(scope, path, version); }),
     version: (scope, path, revision) => {
-      const row = db.get('SELECT bytes, media_type FROM boring_history WHERE scope = ? AND path = ? AND revision = ?', scope, path, revision);
+      const row = db.get<{ bytes: Uint8Array | null; media_type: unknown }>('SELECT bytes, media_type FROM boring_history WHERE scope = ? AND path = ? AND revision = ?', scope, path, revision);
       if (!row) return undefined;
+      // A zero-length BLOB can come back as no bytes (see sqlite-filesystem.ts): a saved empty file is an empty version.
+      if (row.bytes === null) return { revision, bytes: new Uint8Array(), mediaType: text(row.media_type) };
       if (!(row.bytes instanceof Uint8Array)) throw new Error('Invalid stored bytes');
       return { revision, bytes: Uint8Array.from(row.bytes), mediaType: text(row.media_type) };
     },

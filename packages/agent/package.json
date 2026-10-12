@@ -125,6 +125,10 @@
     "./metering": {
       "types": "./dist/metering.d.ts",
       "import": "./dist/metering.js"
+    },
+    "./prompt-context": {
+      "types": "./dist/prompt-context.d.ts",
+      "import": "./dist/prompt-context.js"
     }
   },
   "peerDependencies": {

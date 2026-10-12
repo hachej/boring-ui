@@ -36,7 +36,7 @@ import { readFiles, shell, writeFiles } from '../shared/workspace-tools.mjs';
 import { buildTailwind } from './tailwind.mjs';
 import { loadVariants } from './variants/index.mjs';
 import { describeScenario, loadScenarios } from './scenarios/index.mjs';
-import { isBinaryKind, kindOf, mediaTypeOf } from './file-types.mjs';
+import { isBinaryKind, mediaTypeOf, viewerKindOf as kindOf } from '@hachej/boring-files/file-types';
 import { startChannels, whatsAppFromEnv } from './channels.mjs';
 
 const PROVIDERS = {
