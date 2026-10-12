@@ -41,7 +41,7 @@ export function readRelease(directory, { version, tag, commit, root = projectRoo
   return release;
 }
 
-export async function publishRelease(directory, options, { fetch: request = globalThis.fetch, run = runCaptured, record = () => {} } = {}) {
+export async function publishRelease(directory, options, { fetch: request = globalThis.fetch, run = runCaptured, record = () => {}, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), confirmIntervalMs = 15000, confirmTimeoutMs = 300000 } = {}) {
   const release = readRelease(directory, options);
   const results = release.packages.map(pack => ({ name: pack.name, version: pack.version, integrity: pack.integrity, status: 'pending' }));
   const snapshot = () => record({ commit: release.commit, version: release.version, tag: options.tag, packages: structuredClone(results) });
@@ -84,7 +84,12 @@ export async function publishRelease(directory, options, { fetch: request = glob
       snapshot();
       throw new Error(`Publication unconfirmed for ${pack.name} (${results[index].diagnostic.errorCode ?? `exit ${result.status}`}); rerun the publish job with these same artifacts to reconcile`);
     }
-    if (!matching(await lookup(pack, pack.version), pack) || !matching(await lookup(pack, options.tag), pack)) throw new Error(`Registry has not confirmed package/version/tag for ${pack.name}; retain these artifacts`);
+    // npm can take a few minutes to expose a fresh version (automated validation), so poll before failing.
+    const deadline = Date.now() + confirmTimeoutMs;
+    while (!matching(await lookup(pack, pack.version), pack) || !matching(await lookup(pack, options.tag), pack)) {
+      if (Date.now() >= deadline) throw new Error(`Registry has not confirmed package/version/tag for ${pack.name}; retain these artifacts`);
+      await sleep(confirmIntervalMs);
+    }
     results[index].status = 'published'; snapshot();
   }
   return { commit: release.commit, version: release.version, tag: options.tag, packages: results };
