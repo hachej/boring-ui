@@ -531,7 +531,18 @@ test('earlier records show the reply footer without actions, and the ambient win
   assert.match(html, /data-testid="footer">old 42</);
   assert.equal(seen.length, 1); assert.equal(seen[0].text, 'old answer'); assert.equal(seen[0].timestamp, 5);
   assert.ok(!renderToStaticMarkup(createElement(HistoryPanel, { history, developer: false, connected: true, onLoad() {}, onClose() {} })).includes('footer'));
-  const ambient = readFileSync(`${root}registry/pi-ambient/ambient.tsx`, 'utf8');
-  assert.match(ambient, /effort, replyFooter, artifacts: hostArtifacts/);
-  assert.match(ambient, /messageActions, replyFooter, afterSend/);
+});
+
+
+test('the expanded ambient window shows the host reply footer under a settled reply', async () => {
+  const { AmbientChat } = await load('ambient', 'ambient.tsx', 'pi-ambient');
+  const view = { entries: entries([user('go')], [assistant([{ type: 'text', text: 'all done' }], { model: 'amb', timestamp: 9, durationMs: 77 })]), docs: {} };
+  const snapshot = { identity: {}, conversationId: 'c1', connection: { kind: 'connected' }, view, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' },
+    send: { kind: 'idle' }, stop: 'idle', disposed: false };
+  const controller = new Proxy({ getSnapshot: () => snapshot, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : async () => {} });
+  const seen = [];
+  const html = renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded', replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model.modelId} ${reply.durationMs}`); } }));
+  assert.match(html, /data-testid="footer">amb 77</);
+  assert.equal(seen[0].text, 'all done');
+  assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('footer'));
 });

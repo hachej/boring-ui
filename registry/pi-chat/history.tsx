@@ -215,6 +215,7 @@ function line(message: Message, developer: boolean, labels: ChatLabels): { reado
   return { role: labels.roleAssistant(message.stopReason === 'aborted' ? 'interrupted' : message.stopReason === 'error' ? 'failed' : 'ok'), body, ...(message.stopReason === 'error' || message.stopReason === 'aborted' ? {} : { assistant: message }) };
 }
 
+type HistoryRow = { readonly key: string; readonly role: string; readonly body: string; readonly entryId: string; readonly assistant: AssistantMessage | undefined };
 const replyText = (message: AssistantMessage) => message.content.flatMap(part => part.type === 'text' && part.text ? [part.text] : []).join('\n\n');
 
 /** Read-only older records of the open conversation, paged in by the controller. Historical tool results are not current actions. */
@@ -225,9 +226,9 @@ export function HistoryPanel({ history, developer, connected, onLoad, onClose, r
 }) {
   const { labels, icons } = useChatText();
   const entries: readonly EntryRecord[] = 'entries' in history ? history.entries : [];
-  const rows = entries.flatMap(entry => entry.model?.length
-    ? entry.model.flatMap((message, index) => { const made = line(message, developer, labels); return made ? [{ key: `history:${entry.id}:${index}`, entryId: String(entry.id), ...made }] : []; })
-    : [{ key: `history:${entry.id}`, role: labels.roleEvent, body: entry.head === undefined ? entry.kind : labels.contextBoundary }]);
+  const rows = entries.flatMap((entry): HistoryRow[] => entry.model?.length
+    ? entry.model.flatMap((message, index) => { const made = line(message, developer, labels); return made ? [{ key: `history:${entry.id}:${index}`, entryId: String(entry.id), assistant: undefined, ...made }] : []; })
+    : [{ key: `history:${entry.id}`, role: labels.roleEvent, body: entry.head === undefined ? entry.kind : labels.contextBoundary, entryId: String(entry.id), assistant: undefined }]);
   const exhausted = history.kind === 'ready' && !history.hasMore;
   return <section aria-label={labels.earlierMessages} data-testid="history" aria-live="off" className="shrink-0 border-b border-border bg-muted/20">
     <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2">
