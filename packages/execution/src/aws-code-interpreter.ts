@@ -41,6 +41,8 @@ export interface CodeInterpreterEnvOptions {
   readonly umask?: string;
   /** Delay between `getTask` polls while a command runs (default 500 ms). */
   readonly pollIntervalMs?: number;
+  /** Deadline for the whole answer to one start or stop call (default 30 s); the SDK sets no timeout of its own. */
+  readonly serviceDeadlineMs?: number;
   /**
    * What happens after a started session is lost or nearly expired. `'auto'` (default for `{ start }`): the failing
    * command still returns `shell_unavailable` (it is never replayed: it may have had side effects) and the NEXT command
@@ -125,6 +127,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   const umask = options.umask ?? '002';
   if (!/^[0-7]{3,4}$/.test(umask)) throw new TypeError('umask must be octal');
   const pollMs = options.pollIntervalMs ?? 500;
+  const serviceDeadlineMs = options.serviceDeadlineMs ?? 30_000;
   const borrowed = 'sessionId' in options.session ? options.session.sessionId : undefined;
   const start = 'start' in options.session ? options.session.start : undefined;
   const auto = start !== undefined && (options.renew ?? 'auto') === 'auto';
@@ -190,11 +193,11 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   }
 
   /** One tool call; the streamed result, or a ServiceError for an exception (thrown or streamed). */
-  async function invoke(name: ToolName, args: ToolArguments, context: Context | undefined, pinned?: string): Promise<CodeInterpreterResult> {
+  async function invoke(name: ToolName, args: ToolArguments, signal: AbortSignal | undefined, pinned?: string): Promise<CodeInterpreterResult> {
     const id = pinned ?? await session();
     try {
       const response = await client.send(new InvokeCodeInterpreterCommand({ codeInterpreterIdentifier, sessionId: id, name, arguments: args }),
-        context?.abortSignal ? { abortSignal: context.abortSignal } : {});
+        signal ? { abortSignal: signal } : {});
       let result: CodeInterpreterResult | undefined;
       for await (const event of response.stream ?? []) {
         if (event.result) { result = event.result; continue; }
@@ -223,7 +226,8 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
 
   const TERMINAL = new Set(['completed', 'failed', 'canceled']);
   /** Asks the service to stop the task; the outcome is never assumed (the command's result says it is not confirmed). */
-  const stopTask = async (taskId: string, id: string): Promise<void> => { try { await invoke('stopTask', { taskId }, undefined, id); } catch { /* reported as unconfirmed termination */ } };
+  // Bounded like the start call: the SDK has no request timeout, so a stop answer that never comes must not hang the command.
+  const stopTask = async (taskId: string, id: string): Promise<void> => { try { await invoke('stopTask', { taskId }, AbortSignal.timeout(serviceDeadlineMs), id); } catch { /* reported as unconfirmed termination */ } };
 
   async function exec(command: string, execOptions: ShellExecOptions | undefined, context: Context): Promise<Result<ShellExecResult, ExecutionError>> {
     if (context.abortSignal?.aborted) return err(new ExecutionError('aborted', 'Command aborted before dispatch'));
@@ -244,12 +248,22 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       await prepare();
       // Every call of this command goes to the session it started in, even if a later command rotates.
       pinned = await session();
-      // The start request is not aborted client-side: an aborted request could leave a task running whose id this call never
-      // sees. The response always arrives, and the polling loop below stops the task at once if the signal has fired.
-      const started = await invoke('startCommandExecution', { command: script }, undefined, pinned);
-      taskId = started.structuredContent?.taskId;
-      if (!taskId) return err(new ExecutionError('spawn_error', boundedMessage(`Code Interpreter did not start the command: ${text(started) || 'no task id'}`)));
     } catch (error) { return err(failure(error, 'spawn_error')); }
+    // The start call is not aborted by the caller: a task it started must always come back with its id, so the polling loop
+    // below can stop it. It has its own deadline instead, covering the whole response, because the SDK sets none. Nothing is
+    // replayed when it expires: the task may or may not exist, and only a stop with its id could end it.
+    const startDeadline = AbortSignal.timeout(serviceDeadlineMs);
+    let started: CodeInterpreterResult;
+    try {
+      started = await invoke('startCommandExecution', { command: script }, startDeadline, pinned);
+    } catch (error) {
+      if (startDeadline.aborted) {
+        return err(new ExecutionError('unknown', boundedMessage(`The Code Interpreter did not answer the start call within ${serviceDeadlineMs / 1000} s: whether the command started is unknown and it was not retried`)));
+      }
+      return err(failure(error, 'spawn_error'));
+    }
+    taskId = started.structuredContent?.taskId;
+    if (!taskId) return err(new ExecutionError('spawn_error', boundedMessage(`Code Interpreter did not start the command: ${text(started) || 'no task id'}`)));
 
     const deadline = execOptions?.timeout && execOptions.timeout > 0 ? Date.now() + execOptions.timeout * 1000 : undefined;
     const seen = { stdout: '', stderr: '' };
@@ -265,7 +279,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       if (deadline !== undefined && Date.now() >= deadline) { await stopTask(taskId, pinned); return err(new ExecutionError('timeout', `Command exceeded ${execOptions?.timeout} s; stopTask was requested, termination is not confirmed`)); }
       let status;
       try {
-        const polled = await invoke('getTask', { taskId }, context, pinned);
+        const polled = await invoke('getTask', { taskId }, context.abortSignal, pinned);
         status = polled.structuredContent;
         try { deliver('stdout', status?.stdout); deliver('stderr', status?.stderr); }
         catch (error) { await stopTask(taskId, pinned); return err(new ExecutionError('callback_error', boundedMessage(`Output callback failed: ${errorText(error)}`))); }

@@ -756,3 +756,20 @@ test('Code Interpreter env: abort while startCommandExecution is in flight stops
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0].status, 'canceled');
 });
+
+test('Code Interpreter env: a start response that never arrives returns within the service deadline, reports uncertainty and is not replayed', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2003, undefined, { serviceDeadlineMs: 300 }), env = interpreter.env;
+  // The fake starts the task and then never answers: the SDK sets no request timeout of its own.
+  const hold = fake.holdNextStart();
+  t.after(() => hold.release());
+  const began = Date.now();
+  const result = await env.exec('sleep 5', {}, context);
+  const elapsed = Date.now() - began;
+  assert.equal(result.ok ? 'ok' : result.error.code, 'unknown');
+  assert.match(result.error.message, /whether the command started is unknown and it was not retried/);
+  assert.ok(elapsed < 5000, `the start call returned after ${elapsed} ms, not at the deadline`);
+  assert.equal(fake.calls.filter(call => call.name === 'startCommandExecution').length, 1, 'the start is not replayed');
+  assert.equal(fake.calls.filter(call => call.name === 'stopTask').length, 0, 'no task id, so nothing is stopped');
+  hold.release();
+});
