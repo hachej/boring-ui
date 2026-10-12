@@ -275,7 +275,7 @@ function scanFile(file, text) {
     const visit = (n) => {
       if (found) return;
       if (ts.isReturnStatement(n) && n.expression && valueOf(n.expression)) found = true;
-      else if (!isFunction(n)) ts.forEachChild(n, visit);
+      else if (!ts.isFunctionLike(n)) ts.forEachChild(n, visit);
     };
     ts.forEachChild(fn.body, visit);
     return found;

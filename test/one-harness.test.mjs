@@ -85,6 +85,7 @@ accepted('pi-ai types and tool declarations without a generation read', 'import 
 accepted('a sibling member beside a Models-typed member is not a Models value', 'import type { Models } from "@earendil-works/pi-ai"; interface Options { models: Models; job: { complete(input: unknown): void } } export function run(options: Options) { return options.job.complete({ tools: [] }); }');
 accepted('a destructured createModels from an unrelated object', 'const { createModels } = orm; const job = createModels(); job.complete({ tools: [] });');
 accepted('a nested factory does not make its enclosing setup function a pi-ai value', `${PI} import { Harness } from "@earendil-works/pi-durable"; function setup(models) { function make() { return createModels(); } return Harness.open({ models: make() }); } export { setup };`);
+accepted('a method of a nested object does not make its enclosing setup function a pi-ai value', `${PI} import { Harness } from "@earendil-works/pi-durable"; export function setup() { const factory = { make() { return createModels(); } }; return Harness.open({ models: factory.make() }); }`);
 accepted('comments and strings are not references', `${PI} // models.complete(model, { tools })\nconst text = "createModels().complete(model, { tools })";`);
 
 test('the packages and examples of this repository have no pi-ai reference outside the reviewed allowlist', () => {
