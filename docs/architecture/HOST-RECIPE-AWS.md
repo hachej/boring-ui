@@ -1,6 +1,6 @@
 # Host recipe: AWS (AgentCore Runtime + Code Interpreter + EFS)
 
-Status: **built and proven offline; never run against AWS** (no account yet). Owner: the host-recipe track in [ROADMAP.md §10](ROADMAP.md#10-package-useful-recipes-and-keep-one-source-of-instructions).
+Status: **built and proven offline; the full deployment journey has not run against AWS** (no account yet). The session-ended error shapes are verified against the real service (owner, 2026-10-12). Owner: the host-recipe track in [ROADMAP.md §10](ROADMAP.md#10-package-useful-recipes-and-keep-one-source-of-instructions).
 Code: [`@hachej/boring-execution/aws-code-interpreter`](../../packages/execution/README.md#aws-code-interpreter-environment) and [`examples/aws`](../../examples/aws/README.md). Facts about AWS services were checked against AWS documentation and the `@aws-sdk/client-bedrock-agentcore@3.1146.0` model on 2026-10-06 (links at the end); re-check them before the live run.
 
 ## Goal
@@ -47,6 +47,8 @@ library adapters listed under "Library work".
 - Studio variant `aws` (`STUDIO_AWS=fake`) and scenario `aws-shared-folder`.
 - Evidence and its limits: [PARTIAL.md](../implementation/PARTIAL.md#aws-code-interpreter-environment-and-host-recipe-offline), [FEATURES.md](../implementation/FEATURES.md).
 
+Session-ended error shapes (`ResourceNotFoundException`, and `ValidationException` or `ConflictException` whose message says the session ended, as listed in `SESSION_ENDED_ERRORS`) are verified against the real AgentCore service (owner, 2026-10-12). `AccessDeniedException` is a permissions error and does not renew a session.
+
 ## Remaining
 
 - **The live run** ([commands](../../examples/aws/README.md#live-run-pending-needs-an-aws-account)) and the acceptance journey below.
@@ -62,6 +64,8 @@ pending work recovered; a second user cannot read the first user's scope. Costs 
 
 ## Open questions (for the live run)
 
+- **Stale missing-path lookups on EFS (owner report).** A path created by a command in the interpreter is reported `not_found` shortly after by the runtime's `NodeExecutionEnv` (`fileInfo`, `exists`, `readTextFile`, `listDir` in `packages/execution/src/aws-code-interpreter.ts`). The runtime and the interpreter are two NFS clients of one file system. The runtime's Linux NFS client can keep a negative dentry until the directory's attribute cache is revalidated (`acdirmax`, up to 60 s by default); `lookupcache=pos` disables negative caching and keeps positive caching. Neither managed mount exposes mount options: `EFSVolumeConfiguration` (ECS) and `efsAccessPoint` (AgentCore Runtime) in `examples/aws/template.yaml` have no field for them, and no host script in this repository mounts EFS itself. So the option cannot be set here; a host that mounts EFS itself must use `lookupcache=pos`. Saves through the runtime's own provider are not affected: the same client creates the dentry. Not verified against EFS; a live experiment (command creates a file, the runtime stats it within a second, repeated over a few minutes) must confirm the cause before any code workaround. A plain retry is not expected to help, because the stale entry stays until the directory attributes are revalidated. Live experiment to run: prime a missing lookup on the runtime (stat a path that does not exist yet), have the interpreter create the file, then compare an ordinary retry on the runtime against opening the parent directory and retrying (close-to-open revalidation); record which one sees the file and after how long.
+- **Abort during the start call.** The caller's abort does not reach the start request, so a task it started comes back with its id; the poll loop then stops that task at once and reports cancellation (`termination is not confirmed`). The same deadline (`serviceDeadlineMs`, default 30 s, covering the whole response, since the SDK sets none) covers four operations: session start, command start, each `getTask` poll and `stopTask`. A call among these that never answers reports an unknown outcome and is not replayed. Session teardown (`StopCodeInterpreterSession`, in `stop()`) has no deadline and uses only the caller's signal: an unanswered teardown stays pending unless its caller aborts. Residual: when the start call's answer does not arrive (deadline or transport failure), the id is lost and the command reports an unknown outcome; the task may run without the adapter knowing it. Recovery would need a service-side listing of the session's tasks, which the adapter does not call.
 - `/ping` busy semantics and whether they hold a session past the idle timeout.
 - Streaming of the NDJSON `watch` body through `InvokeAgentRuntime`; WebSocket session limits.
 - Whether `RequestHeaderAllowlist: [Authorization]` passes the bearer to the container.
