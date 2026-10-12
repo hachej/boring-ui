@@ -22,17 +22,14 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run verify
-      - name: Release gate distinguishes deferrals from passes
+      - name: Release gate lists deferrals as backlog but fails on real failures
         shell: bash
         run: |
           pending=$(node --input-type=module -e 'import {readFileSync} from "node:fs"; const r=JSON.parse(readFileSync("VERIFY.json")); console.log(Object.values(r.invariants).flatMap(x=>x.verifiers).filter(x=>x.kind==="pending").length)')
-          if node scripts/verify-invariants.mjs --release > "$RUNNER_TEMP/release-gate.log" 2>&1; then
-            test "$pending" -eq 0
-          else
-            test "$pending" -gt 0
+          node scripts/verify-invariants.mjs --release > "$RUNNER_TEMP/release-gate.log" 2>&1 || { cat "$RUNNER_TEMP/release-gate.log"; exit 1; }
+          if test "$pending" -gt 0; then
             grep -q "^Runtime verification INCOMPLETE: $pending deferred proofs" "$RUNNER_TEMP/release-gate.log"
-            if grep -q '^Evidence failed:' "$RUNNER_TEMP/release-gate.log"; then exit 1; fi
-            echo "::warning::$pending runtime proofs deferred; structural evidence is not runtime qualification"
+            echo "::warning::$pending runtime proofs deferred (backlog per owner ruling 2026-10-10); structural evidence is not runtime qualification"
           fi
       - name: Isolated shared VFS/Bash/Git feasibility (not runtime conformance)
         run: |

@@ -2,8 +2,9 @@
 
 This candidate replaces the implementation in `hachej/boring-ui` with the v4
 library. Its proposed npm version is `0.2.0`, a breaking pre-1.0 update after `0.1.111`.
-The architecture name "v4" is independent of the npm version. Packages remain
-private until release qualification and publication authorization are complete.
+The architecture name "v4" is independent of the npm version. Five packages are in the
+publish set; boring-browser and boring-testing stay private. Publication still awaits
+owner authorization ([release ruling](docs/implementation/NPM-RELEASE.md#release-ruling-owner-2026-10-10)).
 
 ## Package identities
 
@@ -66,7 +67,25 @@ The previous automatic pnpm publishing workflow is removed. The replacement
 uses npm workspaces and [release preflight](docs/implementation/NPM-RELEASE.md).
 It includes synchronized version preparation and a maintainer-dispatched npm
 workflow that publishes the exact qualified tarballs through trusted publishing.
-Merges and tags do not trigger publication. Packages remain private in this PR.
+Merges and tags do not trigger publication. Publication is gated by the owner checklist in docs/implementation/NPM-RELEASE.md.
 No GitHub release, npm publication, deployment or consumer modification is part
 of this PR. The [partial checkpoint](docs/implementation/PARTIAL.md) and all
 eleven global proof deferrals remain. A version change does not discharge them.
+
+## Agent file reading, mentions and conversation previews
+
+Removed from `@hachej/boring-agent`, with their replacements:
+
+| Removed | Use instead |
+| --- | --- |
+| `createConvertedTextTool` (`/file-convert`) and the `read_converted_text` tool | `createConvertingRead({ convert, cache })`, an extension that wraps Pi's own `read`: install it in `extensions` before `createFileGuard`, and tell the model to use `read` for every file. |
+| `ConvertedTextToolOptions.pageSize` (characters per page) | none: converted text pages like Pi's read (`offset` is a 1-based line, `limit` a line count, 2000 lines or 50 KB per page; a line above 50 KB is split into 50 KB segments that each count as a line). |
+| `fileSystemMentionReader(fs, context, { root })` (`/mentions`) | `workspaceMentionReader(files, access)`, which reads the person's view through the workspace provider. A host without a provider writes its own `MentionReader`. |
+
+Behaviour changes:
+
+- The file guard refuses `read` (not only `write` and `edit`) when the workspace cannot be resolved, the provider refuses access, the path or a link leads outside the root, or the path does not exist (Pi's fallback spellings are never tried). An `edit` of a missing path is refused too.
+- Archives and other binary files answer `unsupported` and are never sent to `convert`; a converter receives the media type the file's signature names when it has one.
+- A managed conversation's `lastMessage` preview, derived when a conversation is adopted, is the last visible text message of the newest entry (it was the first message of that entry). Titles are unchanged: the first user message, now found with an ascending scan.
+- New exports: `@hachej/boring-agent/file-types` (the one table of text, archive and binary kinds, and the media types), and from `@hachej/boring-agent/file-guard`, `confinedEnv` (Pi's `ExecutionEnv` re-checked per operation) and `workspaceRelative`.
+

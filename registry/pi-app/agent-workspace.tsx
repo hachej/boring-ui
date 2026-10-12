@@ -467,7 +467,9 @@ function useChangeFeed(provider: RevisionProvider | undefined, settleMs = 150): 
           timer ??= setTimeout(() => { timer = undefined; if (!stop.signal.aborted) setState({ provider, seq: latest, live: true }); }, settleMs);
         }
       } catch { /* refused: the views fall back to their own refresh */ }
-      if (!stop.signal.aborted) setState(current => ({ ...current, live: false }));
+      clearTimeout(timer);
+      timer = undefined;
+      if (!stop.signal.aborted) setState({ provider, seq: latest, live: false });
     })();
     return () => { stop.abort(); clearTimeout(timer); };
   }, [provider, settleMs]);

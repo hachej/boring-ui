@@ -86,6 +86,11 @@ point and one word: **Feedback**, in the chat composer.
 2. **Hovering** boxes and labels the element under the pointer (the picker
    below). **A click drops a numbered pin** (①②③) and opens a small note
    bubble right there: "What's wrong here?". Enter saves, Esc discards the pin.
+   Nobody is stuck on a zone: Esc, a second click on the pinned element, or the
+   "Cancel selection" button in the bubble clears the selection (text typed there is
+   kept for a general question), and "Ask a general question" in the bar opens a
+   note with no element. The report already allows it: `anchors: []` with the
+   text in `## Said`, and notes without an `anchor` index.
    The page never reacts to that click. Pins stay visible during the session;
    clicking a pinned element reopens its note. ↑/↓ still refine.
 3. **Holding ⌥/Alt** (or the "Use app" toggle on touch) lets clicks and keys
@@ -717,8 +722,12 @@ builder's scripted model unless `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is set.
   - `PreviewBanner` over `@hachej/boring-feedback/preview` ("Preview");
   - optional, not mounted by default: `PointButton`, `AnnotateSheet` (note,
     Copy, Save), `FeedbackList`, `FeedbackReport`.
-- **In `pi-chat`:** the composer's optional Feedback button and chip, and a
-  feedback card for mentions, `list` results and `show` offers.
+- **In `pi-chat`:** the composer's optional Feedback button and chip (host
+  props only; `pi-chat` never imports `@hachej/boring-feedback`).
+- **Plugged into `pi-chat` by the `feedback` item:** the feedback card for
+  `list` results and `show` offers (`feedbackRenderTool`), the report mention
+  chip (`feedbackMentionRenderer`, through `mentions.render`) and the
+  microphone button (`VoiceInput`, through the `tools` slot).
 
 Masking, picking and resolution stay in the package, so restyling a screen
 cannot weaken them.
