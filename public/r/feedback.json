@@ -628,8 +628,8 @@
     "[data-boring=\"feedback\"] .boring-feedback-preview-title": {
       "padding": "0.125rem 0.5rem",
       "border-radius": "999px",
-      "background": "var(--boring-feedback-reveal)",
-      "color": "var(--background)",
+      "background": "var(--primary)",
+      "color": "var(--primary-foreground)",
       "font-size": "0.8125rem",
       "letter-spacing": "0.02em",
       "text-transform": "uppercase"

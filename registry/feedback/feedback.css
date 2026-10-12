@@ -101,7 +101,7 @@
 [data-boring="feedback"] .boring-feedback-mic { flex: none; display: block; }
 [data-boring="feedback"].boring-feedback-preview { position: fixed; top: 12px; left: 0; right: 0; z-index: 2147483001; display: flex; flex-direction: column; gap: 0.5rem; width: min(40rem, calc(100vw - 24px)); margin: 0 auto; padding: 0.75rem 0.875rem; border: 2px solid var(--boring-feedback-reveal); border-radius: var(--boring-feedback-radius); background: var(--boring-feedback-surface); box-shadow: 0 12px 36px rgb(0 0 0 / 18%); }
 [data-boring="feedback"] .boring-feedback-preview-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
-[data-boring="feedback"] .boring-feedback-preview-title { padding: 0.125rem 0.5rem; border-radius: 999px; background: var(--boring-feedback-reveal); color: var(--background); font-size: 0.8125rem; letter-spacing: 0.02em; text-transform: uppercase; }
+[data-boring="feedback"] .boring-feedback-preview-title { padding: 0.125rem 0.5rem; border-radius: 999px; background: var(--primary); color: var(--primary-foreground); font-size: 0.8125rem; letter-spacing: 0.02em; text-transform: uppercase; }
 [data-boring="feedback"] .boring-feedback-preview-notice { font-weight: 600; }
 [data-boring="feedback"] .boring-feedback-preview-status { margin-left: auto; color: var(--boring-feedback-muted); font-size: 0.8125rem; }
 [data-boring="feedback"] .boring-feedback-preview-summary { margin: 0; }
