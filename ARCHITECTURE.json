@@ -132,6 +132,18 @@
           "forbiddenRelative": [
             "src/"
           ]
+        },
+        {
+          "prefix": "src/sandbox",
+          "forbidden": [
+            "node:*",
+            "@hachej/boring-ui-kit*",
+            "@hachej/boring-feedback*",
+            "@hachej/boring-execution*"
+          ],
+          "forbiddenRelative": [
+            "src/"
+          ]
         }
       ]
     },

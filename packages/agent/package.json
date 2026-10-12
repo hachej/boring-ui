@@ -54,6 +54,10 @@
       "types": "./dist/file-convert.d.ts",
       "import": "./dist/file-convert.js"
     },
+    "./sandbox": {
+      "types": "./dist/sandbox.d.ts",
+      "import": "./dist/sandbox.js"
+    },
     "./file-types": {
       "types": "./dist/file-types.d.ts",
       "import": "./dist/file-types.js"
