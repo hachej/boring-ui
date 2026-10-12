@@ -6,7 +6,7 @@
   "dependencies": [
     "@hachej/boring-feedback@0.2.1",
     "@earendil-works/pi-ai@1.1.0",
-    "react@19.3.0"
+    "react@^19.0.0"
   ],
   "files": [
     {

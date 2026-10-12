@@ -131,8 +131,8 @@
     "@earendil-works/pi-durable": "1.1.0",
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/chord": "1.1.0",
-    "@hachej/boring-files": "0.2.1",
-    "@hachej/boring-ui-kit": "0.2.1"
+    "@hachej/boring-files": "^0.2.1",
+    "@hachej/boring-ui-kit": "^0.2.1"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-files": {

@@ -4,9 +4,9 @@
   "title": "Provider setup",
   "description": "A Tailwind popover for configuring model access: pick any registered Pi provider and model, save an API key (masked, shows \"saved\"), run a device-code subscription sign-in (code, link and status), set an optional gateway and see when a provider needs one. Transport-agnostic: props in, callbacks out, no fetch. Owned, editable source; fits the pi-chat controls slot.",
   "dependencies": [
-    "react@19.3.0",
-    "react-dom@19.3.0",
-    "lucide-react@1.51.0"
+    "react@^19.0.0",
+    "react-dom@^19.0.0",
+    "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
     "@boring-ui/theme",

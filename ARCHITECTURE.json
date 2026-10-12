@@ -51,7 +51,7 @@
     "buffer": "6.0.3",
     "@tldraw/tlschema": "5.5.2",
     "ignore": "5.3.2",
-    "@radix-ui/react-collapsible": "1.1.20"
+    "radix-ui": "1.8.0"
   },
   "packages": {
     "files": {
@@ -176,7 +176,7 @@
         "@json-render/react/schema",
         "@earendil-works/chord/delta",
         "@tldraw/tlschema",
-        "@radix-ui/react-collapsible",
+        "radix-ui",
         "lucide-react"
       ],
       "typeOnlyExternal": [

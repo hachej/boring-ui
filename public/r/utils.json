@@ -4,8 +4,8 @@
   "title": "Shared helpers",
   "description": "The class merge helper `cn` and `copyText` (host callback, Clipboard API, then a selection copy that works over plain HTTP) shared by every Tailwind item, installed once in components/utils/.",
   "dependencies": [
-    "clsx@2.1.1",
-    "tailwind-merge@3.7.0"
+    "clsx@^2.1.1",
+    "tailwind-merge@^3.7.0"
   ],
   "files": [
     {

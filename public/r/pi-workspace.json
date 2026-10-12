@@ -4,8 +4,8 @@
   "title": "Pi workspace layout",
   "description": "ArtifactWorkspace: the chat with a right-hand panel that slides in at full height, a resizable divider, full screen, a full-screen sheet on a phone and an opt-in float-when-narrow (the host swaps in AmbientChat from pi-ambient). Layout only; what is open is the host's. Pair it with the viewers item for the panel contents. Also dock.tsx: composable docks (DockLayout, Dock, DockMain, useDock) for any host content on the left or right of the main area, each resizable, floatable, closable and a full-screen sheet on a phone.",
   "dependencies": [
-    "react@19.3.0",
-    "react-dom@19.3.0"
+    "react@^19.0.0",
+    "react-dom@^19.0.0"
   ],
   "registryDependencies": [
     "@boring-ui/pi-chat",

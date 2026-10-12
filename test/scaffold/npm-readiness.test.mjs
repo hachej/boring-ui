@@ -36,6 +36,14 @@ test('release dependencies cannot point into a checkout or to old sibling versio
     'Internal version mismatch: @hachej/boring-files@0.0.0',
     'Local dependency: local',
   ]);
+  const versions = new Map([['@hachej/boring-files', '0.1.0']]);
+  assert.deepEqual(checkPackage({ ...manifest, peerDependencies: { '@hachej/boring-files': '^0.1.0' } }, files, versions), []);
+  assert.deepEqual(checkPackage({ ...manifest, peerDependencies: { '@hachej/boring-files': '0.1.0' } }, files, versions), [
+    'Internal version mismatch: @hachej/boring-files@0.1.0',
+  ], 'internal peers must be caret ranges, not exact');
+  assert.deepEqual(checkPackage({ ...manifest, peerDependencies: { '@hachej/boring-files': '^0.2.0' } }, files, versions), [
+    'Internal version mismatch: @hachej/boring-files@^0.2.0',
+  ]);
 });
 
 test('missing build output cannot pass the pack audit', () => {
@@ -64,7 +72,7 @@ test('UI may ship its declared tree stylesheet without admitting arbitrary asset
 test('UI archive ships the shadcn registry under r/ and nothing else may', () => {
   const ui = { ...manifest, name: '@hachej/boring-ui-kit', version: '0.2.2' };
   const packed = [...files, 'THIRD_PARTY_NOTICES.md', 'r/registry.json', 'r/theme.json', 'r/button.json'];
-  const items = { registry: { items: [{ name: 'theme' }, { name: 'button' }] }, theme: { dependencies: ['@hachej/boring-ui-kit@0.2.2'], registryDependencies: [] }, button: { dependencies: ['react@19.3.0'], registryDependencies: ['@boring-ui/theme'] } };
+  const items = { registry: { items: [{ name: 'theme' }, { name: 'button' }] }, theme: { dependencies: ['@hachej/boring-ui-kit@^0.2.2'], registryDependencies: [] }, button: { dependencies: ['react@19.3.0'], registryDependencies: ['@boring-ui/theme'] } };
   const read = path => structuredClone(items[path.slice(2, -5)]);
   assert.deepEqual(checkPackage(ui, packed, new Map()), []);
   assert.deepEqual(checkPackage(manifest, [...files, 'r/theme.json'], new Map()), ['Unexpected packed file: r/theme.json']);
@@ -74,6 +82,13 @@ test('UI archive ships the shadcn registry under r/ and nothing else may', () =>
   assert.deepEqual(checkShippedRegistry(ui, packed.filter(path => path !== 'r/button.json'), { items: ['theme', 'button'], read }), ['Missing registry item: r/button.json']);
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-files@0.2.1'] } : read(path) }), [
     'Registry pin mismatch in r/theme.json: @hachej/boring-files@0.2.1 (release 0.2.2)',
+  ], 'exact internal pin is refused');
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-files@^0.2.1', 'radix-ui@^1.8.0'] } : read(path) }), [
+    'Registry pin mismatch in r/theme.json: @hachej/boring-files@^0.2.1 (release 0.2.2)',
+  ]);
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-feedback@0.2.2', '@hachej/boring-ui-kit@^0.2.2'] } : read(path) }), [], 'the private feedback pin is exempt until the owner decides');
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-ui-kit@0.2.2'] } : read(path) }), [
+    'Registry pin mismatch in r/theme.json: @hachej/boring-ui-kit@0.2.2 (release 0.2.2)',
   ]);
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('button.json') ? { registryDependencies: ['@boring-ui/utils', 'theme'] } : read(path) }), [
     'Registry dependency not shipped in r/: button -> @boring-ui/utils',

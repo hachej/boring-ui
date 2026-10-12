@@ -24,9 +24,11 @@ export function setReleaseVersion(root, version) {
   });
   const names = new Set(packages.map(pkg => pkg.manifest.name));
   if (!packages.length || names.size !== packages.length) throw new Error('Expected uniquely named workspace packages');
+  // Internal pins are caret ranges on the released version (consumers resolve them without exact-pin conflicts).
+  const range = `^${version}`;
   const pins = value => {
     for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
-      for (const name of Object.keys(value[field] ?? {})) if (names.has(name)) value[field][name] = version;
+      for (const name of Object.keys(value[field] ?? {})) if (names.has(name)) value[field][name] = range;
     }
   };
   for (const { path, manifest: pkg } of [{ path: '', manifest }, ...packages]) {
@@ -41,7 +43,7 @@ export function setReleaseVersion(root, version) {
     for (const [key, child] of Object.entries(value)) {
       if (key === 'dependencies' && Array.isArray(child)) value[key] = child.map(spec => {
         const name = spec.slice(0, spec.lastIndexOf('@'));
-        return names.has(name) ? `${name}@${version}` : spec;
+        return names.has(name) ? `${name}@${range}` : spec;
       });
       else registryPins(child);
     }

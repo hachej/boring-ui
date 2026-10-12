@@ -36,7 +36,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
     for (const [name, version] of Object.entries(manifest[field] ?? {})) {
       if (/^(file:|link:|workspace:|\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/])/.test(version) || (!version.includes('://') && /\.t(?:ar\.)?gz$/.test(version))) errors.push(`Local dependency: ${name}`);
-      if (versions.has(name) && version !== versions.get(name)) errors.push(`Internal version mismatch: ${name}@${version}`);
+      if (versions.has(name) && version !== `^${versions.get(name)}`) errors.push(`Internal version mismatch: ${name}@${version}`);
     }
   }
   if (release) {
@@ -62,9 +62,11 @@ export function checkShippedRegistry(manifest, paths, { items = [], read } = {})
   const shipped = new Set(paths.filter(path => registryItemFile.test(path)).map(path => path.match(registryItemFile)[1]));
   if (!shipped.has('registry')) errors.push('Missing r/registry.json');
   for (const name of items) if (!shipped.has(name)) errors.push(`Missing registry item: r/${name}.json`);
+  // Internal pins are "^<release version>". The intentionally private feedback package keeps its exact pin until the owner decides (its items are not released).
+  const accepted = (name, range) => range === `^${manifest.version}` || (INTENTIONALLY_PRIVATE.has(name) && range === manifest.version);
   const pins = (value, file) => {
     if (typeof value === 'string') {
-      for (const [, name, version] of value.matchAll(hachejPin)) if (version !== manifest.version) errors.push(`Registry pin mismatch in r/${file}.json: ${name}@${version} (release ${manifest.version})`);
+      for (const [, name, range] of value.matchAll(hachejPin)) if (!accepted(name, range)) errors.push(`Registry pin mismatch in r/${file}.json: ${name}@${range} (release ${manifest.version})`);
     } else if (value && typeof value === 'object') for (const child of Object.values(value)) pins(child, file);
   };
   for (const name of shipped) {
