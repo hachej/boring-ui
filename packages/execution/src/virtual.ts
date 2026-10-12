@@ -143,7 +143,7 @@ function nativeEnvironment(fs: VirtualFiles, id: string, cwd: string, closed: ()
     return path;
   }
   // Readers and the watcher over the memory file system's whole-file reads (see fs-readers.ts).
-  const readers = snapshotReaders({ readBinaryFile: (path, context) => environment.readBinaryFile(path, context), fileInfo: (path, context) => environment.fileInfo(path, context), listDir: (path, context) => environment.listDir(path, context) });
+  const readers = snapshotReaders({ readBinaryFile: (path, context) => environment.readBinaryFile(path, context), fileInfo: (path, context) => environment.fileInfo(path, context), listDir: (path, context) => environment.listDir(path, context), canonicalPath: (path, context) => environment.canonicalPath(path, context) });
   const environment: ExecutionEnv = {
     id, cwd: posix.normalize(cwd), ...readers,
     absolutePath: (path, context) => run(path, context, path => path),
@@ -219,6 +219,8 @@ function nativeEnvironment(fs: VirtualFiles, id: string, cwd: string, closed: ()
         const cwd = absolute(options?.cwd ?? '.');
         try { if (!(await fs.stat(cwd)).isDirectory) throw new Error('not a directory'); }
         catch (cause) { return err(new ExecutionError('spawn_error', `Working directory does not exist: ${cwd}\nCannot execute bash commands.`, cause instanceof Error ? cause : undefined)); }
+        // An argv with no program is a spawn error; nothing runs.
+        if (typeof command !== 'string' && command.length === 0) return err(new ExecutionError('spawn_error', 'Empty argv: there is no program to run'));
         const result = await createBash({ cwd, ...(options?.timeout === undefined ? {} : { executionLimits: { maxExecutionTimeMs: options.timeout * 1000 } }) }).exec(shellCommand(command), {
           ...(options?.env === undefined ? {} : { env: options.env }), replaceEnv: options?.inheritEnv === false,
           signal: AbortSignal.any(signals),
