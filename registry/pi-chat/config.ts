@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { BlockAction } from '../button/actions';
 
 /*
@@ -40,6 +41,8 @@ export interface MentionsConfig {
   readonly open?: ((path: string) => void) | undefined;
   /** Changes whenever what `search` would return may have changed (a workspace change event, another workspace). An open picker searches again. */
   readonly generation?: string | number | undefined;
+  /** Host-supplied look for a mention in a sent message (a plug-in such as feedback). Return undefined to keep the default mention. */
+  readonly render?: ((path: string) => ReactNode | undefined) | undefined;
 }
 
 export interface UploadResult {

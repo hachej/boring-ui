@@ -1,8 +1,8 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Native Pi attachment, the read/write/edit guard, durable questions, conditional document delivery and metering.",
   "sideEffects": false,
@@ -53,6 +53,10 @@
     "./file-convert": {
       "types": "./dist/file-convert.d.ts",
       "import": "./dist/file-convert.js"
+    },
+    "./file-types": {
+      "types": "./dist/file-types.d.ts",
+      "import": "./dist/file-types.js"
     },
     "./ask-user": {
       "types": "./dist/ask-user.d.ts",
@@ -127,8 +131,8 @@
     "@earendil-works/pi-durable": "1.1.0",
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/chord": "1.1.0",
-    "@hachej/boring-files": "0.2.0",
-    "@hachej/boring-ui-kit": "0.2.0"
+    "@hachej/boring-files": "0.2.1",
+    "@hachej/boring-ui-kit": "0.2.1"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-files": {

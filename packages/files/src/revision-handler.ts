@@ -59,6 +59,10 @@ function changeStream(provider: WorkspaceResourceProvider, access: ResourceAcces
           // Without a cursor the feed starts at the current seq, which the client learns first and resumes from after a disconnect.
           const start = request.since ?? provider.changeHead();
           iterator = provider.changes({ since: start, ...(request.incarnation === undefined ? {} : { incarnation: request.incarnation }), signal }, { ...access, signal })[Symbol.asyncIterator]();
+          // An async iterator runs its body only on the first pull, so prime it here: the watcher then starts before `ready`, and a
+          // write the client makes after reading `ready` is not missed.
+          pending = iterator.next();
+          pending.catch(() => {});
           send(`event: ready\ndata: ${JSON.stringify({ seq: start, incarnation: provider.changeIncarnation })}\n\n`);
           return;
         }

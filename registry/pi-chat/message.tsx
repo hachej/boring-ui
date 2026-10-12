@@ -10,7 +10,6 @@ import { ArtifactCard } from './artifact-card';
 import type { ArtifactsConfig } from './artifact';
 import { ApprovalCard } from './approval-card';
 import { QuestionCard } from './question-card';
-import { FeedbackMention, feedbackMentionId } from './feedback-card';
 import type { AnswerOutcome } from './question-card';
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
@@ -34,7 +33,7 @@ export interface RowContext {
   readonly onOpenImage: ((image: ImageContent) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
-  readonly pieces: { readonly mentions: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined } | undefined;
+  readonly pieces: { readonly mentions: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined } | undefined;
   readonly answer: ((questionId: string, answer: string) => Promise<AnswerOutcome>) | undefined;
   readonly artifacts: { readonly open: ArtifactsConfig['open']; readonly isOpen?: ArtifactsConfig['isOpen'] | undefined } | undefined;
   /** Replaces the default copy button under a settled reply (the ambient window adds feedback and the time); `host` holds the host's message actions. */
@@ -54,13 +53,22 @@ function Image({ image, onOpenImage }: { readonly image: ImageContent; readonly 
   </button>;
 }
 
+const MENTION_CLASS = 'rounded-md bg-background px-1.5 py-0.5 font-mono text-[0.8125rem] font-medium text-foreground ring-1 ring-border';
+
+/** A `@path` mention in a sent message: the host's own look when its `render` returns one, else the default chip (a button when it can be opened). */
+function UserMention({ path, text, open, render }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined }) {
+  const custom = render?.(path);
+  if (custom !== undefined) return <>{custom}</>;
+  return open
+    ? <button type="button" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} className={cn(MENTION_CLASS, 'cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:inline-flex pointer-coarse:min-h-10 pointer-coarse:items-center')}>{text}</button>
+    : <span data-testid="message-mention" data-path={path} className={MENTION_CLASS}>{text}</span>;
+}
+
 function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
   const open = context.pieces?.openMention;
-  const mention = 'rounded-md bg-background px-1.5 py-0.5 font-mono text-[0.8125rem] font-medium text-foreground ring-1 ring-border';
+  const render = context.pieces?.renderMention;
   return <div data-testid="user-text" className="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-[0.9375rem] leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">{context.pieces ? pieces(text, context.pieces).map((piece, at) => piece.kind === 'mention'
-    ? feedbackMentionId(piece.value!) ? <FeedbackMention key={at} path={piece.value!} id={feedbackMentionId(piece.value!)!} onOpen={open} />
-    : open ? <button key={at} type="button" data-testid="message-mention" data-path={piece.value} aria-label={`Open ${piece.value}`} onClick={() => open(piece.value!)} className={cn(mention, 'cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:inline-flex pointer-coarse:min-h-10 pointer-coarse:items-center')}>{piece.text}</button>
-      : <span key={at} data-testid="message-mention" data-path={piece.value} className={mention}>{piece.text}</span>
+    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
     : piece.kind === 'skill' ? <span key={at} data-testid="message-skill" data-skill={piece.value} className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-foreground">{piece.text}</span>
     : piece.text) : text}</div>;
 }
