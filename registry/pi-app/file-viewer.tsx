@@ -19,8 +19,9 @@ import { ViewerFrame } from '../viewers/viewer-frame';
 import { downloadFile } from '../viewers/download';
 import { formatBytes } from '../viewers/media';
 import { copyText } from '../utils/utils';
-import { KIND_LABEL, decodeText, kindOf, mediaTypeOf } from './file-kinds';
-import type { FileKind } from './file-kinds';
+import { mediaTypeOf, viewerKindOf } from '@hachej/boring-files/file-types';
+import type { ViewerKind as FileKind } from '@hachej/boring-files/file-types';
+import { KIND_LABEL, decodeText } from './file-kinds';
 import { useReportShown } from './artifact-panel';
 import type { ViewerOptions } from './artifact-panel';
 import { useSaved } from './use-saved';
@@ -143,7 +144,7 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
   /** Built-in editable viewers report unsaved and unconfirmed changes for navigation guards. */
   readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
 }) {
-  const kind = kindOf(path);
+  const kind = viewerKindOf(path);
   const { labels, icons } = useAppText();
   const back = onBack ? <button type="button" data-testid="file-back" onClick={onBack} className="inline-flex h-10 cursor-pointer items-center gap-1 rounded-lg border border-border bg-background px-2 text-sm md:h-8 md:text-xs"><icons.back className="size-3.5" aria-hidden="true" />{backLabel ?? labels.back}</button> : undefined;
   const custom = options.viewers?.[kind];

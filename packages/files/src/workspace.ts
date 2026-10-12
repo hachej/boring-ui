@@ -10,7 +10,10 @@ import { committedChanges } from './journal.js';
 import type { HistorySource, OperationKey, StoredOperation, WorkspaceJournal } from './journal.js';
 import { randomUUID, sha1 } from './platform.js';
 import { accessSnapshot, identifier, locator, publicationDigest, publicationSnapshot } from './publication-input.js';
+import { assertLimit, fileTooLarge } from './file-limits.js';
 import { journalConnectionOf, sqliteBatchOf } from './sqlite-batch.js';
+import { isTemporary, mediaTypeOf, temporaryFileName } from './file-types.js';
+export { isTemporary } from './file-types.js';
 
 const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte, index) => byte === right[index]);
 
@@ -102,6 +105,12 @@ export interface WorkspaceProviderOptions {
   readonly changeBuffer?: number;
   /** How long the watcher stays open after the last change-feed listener leaves, in milliseconds (default 30 000). */
   readonly watchLingerMs?: number;
+  /**
+   * The largest file this workspace may store, in bytes. Over a SQLite file system (the SQLite and Durable Object providers) it sets
+   * that file system's one limit, so native writes and publications agree; default: the file system's own limit (`SQLITE_MAX_FILE_BYTES`
+   * unless opened otherwise). Over other file systems it applies to publications only, with no default.
+   */
+  readonly maxFileBytes?: number;
 }
 
 const queues = new WeakMap<object, WorkspaceQueue>();
@@ -133,21 +142,8 @@ export async function blobRevision(bytes: Uint8Array): Promise<string> {
   return hex(await sha1(whole));
 }
 
-const mediaTypes: Record<string, string> = {
-  md: 'text/markdown', markdown: 'text/markdown', html: 'text/html', htm: 'text/html', json: 'application/json', svg: 'image/svg+xml', txt: 'text/plain', tldraw: 'application/vnd.tldraw+json',
-};
-
-function mediaTypeOf(path: string): string {
-  return mediaTypes[path.slice(path.lastIndexOf('.') + 1).toLowerCase()] ?? 'application/octet-stream';
-}
-
 type Observed = { readonly kind: 'file'; readonly bytes: Uint8Array; readonly revision: string } | { readonly kind: 'missing' } | { readonly kind: 'error'; readonly reason: string }
   | { readonly kind: 'outside'; readonly reason: string };
-
-/** The provider's own temporary files. They are removed when the provider opens and are never a resource. */
-const temporaryPattern = /^\.boring-[0-9a-f-]{36}\.tmp$/;
-/** Whether a path is one of the provider's temporary files (a lister hides them). */
-export const isTemporary = (path: string) => temporaryPattern.test(path.slice(path.lastIndexOf('/') + 1));
 
 export function createWorkspaceProvider(options: WorkspaceProviderOptions): WorkspaceResourceProvider {
   const { fs, journal } = options;
@@ -164,6 +160,11 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   const queue = queueFor(fs);
   /** Present when `fs` is the SQLite file system (`@hachej/boring-files/sqlite-filesystem`): multi-file batches then commit in one transaction. */
   const batch = sqliteBatchOf(fs);
+  if (options.maxFileBytes !== undefined) {
+    assertLimit(options.maxFileBytes);
+    batch?.setMaxFileBytes(options.maxFileBytes);
+  }
+  const limitOf = (): number | undefined => batch ? batch.maxFileBytes() : options.maxFileBytes;
   const historyScope = JSON.stringify([key.providerId, key.instanceId, key.incarnation, key.viewId]);
   const listeners = new Set<(change: WorkspaceChange) => void>();
   const known = new Map<string, string | null>();
@@ -338,6 +339,15 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           : { kind: 'unknown', operationId: request.operationId, reason: 'The workspace was recreated since this operation; its outcome cannot be confirmed' };
       }
       if (journal.intent(operation)) return { kind: 'unknown', operationId: request.operationId, reason: 'An earlier attempt of this operation began and has no recorded outcome' };
+      // After the receipt and intent checks, so a replay of a committed operation keeps its result under a lower limit.
+      const limit = limitOf();
+      if (limit !== undefined) {
+        const oversized = changes.find(change => change.bytes.length > limit);
+        if (oversized) {
+          const size = oversized.bytes.length, path = oversized.target.resource.path;
+          return { kind: 'file_too_large', path, size, limit, reason: fileTooLarge(path, size, limit).message };
+        }
+      }
 
       journal.begin(operation, digest);
       let applying = false;
@@ -413,7 +423,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           if (!unchanged) {
             applying = true;
             const target = absolute(path);
-            const temporary = `${target.slice(0, target.lastIndexOf('/'))}/.boring-${randomUUID()}.tmp`;
+            const temporary = `${target.slice(0, target.lastIndexOf('/'))}/${temporaryFileName(randomUUID())}`;
             const ctx = fsContext(access.signal);
             const failure = async (reason: string) => { await fs.remove(temporary, { force: true }, fsContext()); return refuse(reason); };
             if (change.kind === 'create') {

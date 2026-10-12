@@ -117,8 +117,10 @@ export interface AmbientChatProps extends ChatFeatureProps {
   readonly state?: AmbientState;
   readonly defaultState?: AmbientState;
   readonly onStateChange?: (state: AmbientState) => void;
-  /** Where the bar was dragged is remembered for this browser session under this key. */
+  /** Where the bar was dragged is remembered under this key. */
   readonly storageKey?: string;
+  /** `session` (default) remembers the position for this browser tab's session; `local` keeps it in `localStorage` across sessions. */
+  readonly storage?: 'session' | 'local';
   /** Host controls in the composer row, between the effort picker and Send (for example a voice button the host guards itself). Absent: nothing is shown. */
   readonly tools?: ReactNode;
   /** Hand the conversation to a full `PiChat` or `ArtifactWorkspace`. Adds an "Open in full chat" action to replies. */
@@ -151,15 +153,16 @@ export interface AmbientChatProps extends ChatFeatureProps {
 interface Position { readonly right: number; readonly bottom: number }
 const MARGIN = 8, DEFAULT_POSITION: Position = { right: 16, bottom: 16 };
 
-function readPosition(key: string): Position | undefined {
+function storageFor(persist: 'session' | 'local'): Storage | undefined { try { return persist === 'local' ? globalThis.localStorage : globalThis.sessionStorage; } catch { return undefined; } }
+function readPosition(key: string, persist: 'session' | 'local'): Position | undefined {
   try {
-    const value: unknown = JSON.parse(globalThis.sessionStorage.getItem(key) ?? 'null');
+    const value: unknown = JSON.parse(storageFor(persist)?.getItem(key) ?? 'null');
     const { right, bottom } = (value ?? {}) as { right?: unknown; bottom?: unknown };
     return typeof right === 'number' && typeof bottom === 'number' && Number.isFinite(right) && Number.isFinite(bottom) ? { right, bottom } : undefined;
   } catch { return undefined; }
 }
-function writePosition(key: string, position: Position) {
-  try { globalThis.sessionStorage.setItem(key, JSON.stringify(position)); } catch { /* the position is a convenience */ }
+function writePosition(key: string, persist: 'session' | 'local', position: Position) {
+  try { storageFor(persist)?.setItem(key, JSON.stringify(position)); } catch { /* the position is a convenience */ }
 }
 const clamp = (position: Position, size: { w: number; h: number }, viewport: { w: number; h: number }): Position => ({
   right: Math.round(Math.min(Math.max(MARGIN, position.right), Math.max(MARGIN, viewport.w - size.w - MARGIN))),
@@ -239,7 +242,7 @@ const iconButton = 'inline-flex size-8 shrink-0 cursor-pointer items-center just
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
 function AmbientSession({ controller, labels, icons, avatar, headerActions, messageActions, variant = 'contrast', mode = 'expert', actions,
-  windowState, onWindowState, store, storageKey = 'boring.ambient.position', tools, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
+  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
   renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, model, effort, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
@@ -309,7 +312,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   const seconds = useElapsed(working);
 
   // Position: offsets from the bottom right corner, remembered for the session, clamped to the viewport at render so a smaller window restores them.
-  const [position, setPosition] = useState<Position>(() => readPosition(storageKey) ?? DEFAULT_POSITION);
+  const [position, setPosition] = useState<Position>(() => readPosition(storageKey, storage) ?? DEFAULT_POSITION);
   const [viewport, setViewport] = useState(viewportSize);
   const [size, setSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -350,7 +353,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
     const end = (next: globalThis.PointerEvent) => {
       if (next.pointerId !== origin.pointer) return;
       globalThis.removeEventListener('pointermove', move); globalThis.removeEventListener('pointerup', end); globalThis.removeEventListener('pointercancel', end);
-      if (moving) writePosition(storageKey, last);
+      if (moving) writePosition(storageKey, storage, last);
     };
     globalThis.addEventListener('pointermove', move); globalThis.addEventListener('pointerup', end); globalThis.addEventListener('pointercancel', end);
   };
@@ -363,7 +366,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
     if (!delta && event.key !== 'Home') return;
     event.preventDefault();
     const next = delta ? clamp({ right: placed.right + delta.right, bottom: placed.bottom + delta.bottom }, size, viewport) : clamp(DEFAULT_POSITION, size, viewport);
-    setPosition(next); writePosition(storageKey, next);
+    setPosition(next); writePosition(storageKey, storage, next);
   };
   const grip = (className?: string) => <button type="button" data-testid="ambient-grip" aria-label={labels.move} title={labels.moveHint} onPointerDown={onGripDown} onKeyDown={onGripKey}
     className={cn(iconButton, 'cursor-grab touch-none active:cursor-grabbing', className)}><icons.grip className="size-4" aria-hidden="true" /></button>;

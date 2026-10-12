@@ -89,6 +89,15 @@ test('ids come from the platform source in the feedback@1 alphabet', () => {
   for (const id of ids) assert.match(id, FEEDBACK_ID);
 });
 
+test('an oversized report is a definite refusal with its reason, not an unknown outcome, and nothing is stored', async t => {
+  const reason = 'EFBIG: file_too_large: 2000000 bytes exceeds the 1900000 byte limit, \'feedback/report.md\'';
+  const { store, resources, calls } = await fixture(t, { hooks: { publish: async () => ({ kind: 'file_too_large', path: 'feedback/report.md', size: 2_000_000, limit: 1_900_000, reason }) } });
+  const result = await create(store, draft);
+  assert.deepEqual(result, { kind: 'unavailable', reason });
+  assert.equal(calls.publish, 1);
+  assert.deepEqual(await reportsIn(resources), []);
+});
+
 test('create derives the author from access, publishes the report as one file, and read and list return it', async t => {
   const { store, resources, calls } = await fixture(t);
   const created = await create(store, draft);

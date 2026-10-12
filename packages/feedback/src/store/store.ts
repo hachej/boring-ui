@@ -196,6 +196,8 @@ export function createFeedbackStore<Context = void>(options: FeedbackStoreOption
     if (result.kind === 'committed') return result;
     if (result.kind === 'conflict') return { kind: 'conflict' };
     if (result.kind === 'denied' || result.kind === 'unavailable') return { kind: result.kind, reason: result.reason };
+    // A change above the byte limit is a definite refusal: nothing was written, so it is not a partial outcome.
+    if (result.kind === 'file_too_large') return { kind: 'unavailable', reason: result.reason };
     return { kind: 'uncertain', reason: result.kind === 'unknown' ? result.reason : 'The publication reported a partial outcome' };
   }
 

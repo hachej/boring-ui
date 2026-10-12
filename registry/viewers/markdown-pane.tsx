@@ -70,7 +70,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     setRefused(null);
     const version = controller.getSnapshot().bufferVersion;
     void controller.flush(controller.actions.selection()).then(result => {
-      if (result.kind === 'denied' || result.kind === 'conflict' || result.kind === 'unavailable') {
+      if (result.kind === 'denied' || result.kind === 'conflict' || result.kind === 'unavailable' || result.kind === 'file_too_large') {
         const reason = result.reason ?? (result.kind === 'conflict' ? labels.changedElsewhereReason : result.kind);
         setRefused({ version, label: labels.notSaved(reason.length > 48 ? `${reason.slice(0, 47)}…` : reason) });
       }

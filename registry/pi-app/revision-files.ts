@@ -1,3 +1,4 @@
+import { uploadPath } from '@hachej/boring-files/file-types';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { UploadResult } from '../pi-chat/config';
@@ -21,10 +22,7 @@ export interface AttachmentPolicy { readonly inlineImages?: boolean | undefined;
  * because a chat mention ends at a space: each run of whitespace becomes `_`.
  */
 export function attachmentPath(name: string): string {
-  const dot = name.lastIndexOf('.');
-  const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
-  const safe = (part: string) => part.replace(/\s+/g, '_');
-  return `uploads/${safe(stem)}-${randomUUID().slice(0, 8)}${safe(extension)}`;
+  return uploadPath(name, randomUUID().slice(0, 8));
 }
 
 /** Successful files remain attached when another file is refused; every outcome remains visible in the shared file tree. */

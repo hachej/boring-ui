@@ -44,6 +44,17 @@ try {
   const say = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
   const live = () => browser.until('the chat is live', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${INPUT}`, 20000);
 
+  await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
+    await live();
+    app.faults.resources = 1;
+    await browser.reload();
+    await browser.until('the alert with Retry', `!!${q('p[role="alert"] button')}`, 20000);
+    assert.match(await browser.evaluate(`${q('p[role="alert"]')}.innerText`), /could not be reached/);
+    await browser.click(q('p[role="alert"] button'));
+    await live();
+    assert.equal(app.faults.resources, 0, 'the refused discovery was the one retried');
+  });
+
   await step('the page is the block: sessions pane, chat, no studio code', async () => {
     await live();
     assert.equal(await browser.evaluate(`${q('[data-boring=agent-workspace]')}.dataset.sessions`), 'docked');
@@ -52,7 +63,7 @@ try {
   });
 
   await step('defaults: without labels, icons or actions the blocks show their own words and no host actions', async () => {
-    assert.deepEqual(await browser.evaluate(TEXTS), { title: 'Writer', placeholder: 'Message the agent…', send: 'Send', sessions: 'Chats', newChat: 'New', toggle: 'Hide chats', customIcon: false, hostActions: 0 });
+    assert.deepEqual(await browser.evaluate(TEXTS), { title: 'Writer', placeholder: 'Message the agent…', send: 'Send', sessions: 'Chats', newChat: 'New', toggle: 'Hide navigation', customIcon: false, hostActions: 0 });
   });
 
   const first = await browser.evaluate(ACTIVE);
@@ -153,7 +164,7 @@ try {
     await browser.until('the configured page, live', `${q('[data-testid=app]')}?.dataset.configured === 'true' && ${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${INPUT}`, 20000);
     await browser.until('the reply of the open chat', `${idle} && !!${q('[data-testid=reply-action-quote]')}`, 20000);
     const texts = await browser.evaluate(TEXTS);
-    assert.deepEqual({ ...texts, hostActions: undefined }, { title: 'Fernhill writer', placeholder: 'Ask Fernhill anything…', send: 'Ask', sessions: 'Projects', newChat: 'Start', toggle: 'Hide chats', customIcon: true, hostActions: undefined });
+    assert.deepEqual({ ...texts, hostActions: undefined }, { title: 'Fernhill writer', placeholder: 'Ask Fernhill anything…', send: 'Ask', sessions: 'Projects', newChat: 'Start', toggle: 'Hide navigation', customIcon: true, hostActions: undefined });
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.title`), 'Send (Enter)', 'a label the host did not set keeps its default');
     await browser.screenshot('workspace-app-configured.png');
   });

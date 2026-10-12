@@ -10,6 +10,8 @@ import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
+import { createVirtualWorkspace } from '@hachej/boring-execution/virtual';
+import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 
 const value = result => { assert.equal(result.ok, true, result.ok ? '' : result.error.message); return result.value; };
 const SAMPLES = {
@@ -89,4 +91,49 @@ test('SQLite watchers report created, changed and removed paths, honour excludes
   value(await fs.writeFile('/workspace/docs/after-close.md', 'x', context));
   await new Promise(resolve => setTimeout(resolve, 1300));
   assert.equal(changes.length, count, 'no call after close');
+});
+
+// Some SQLite engines hand back no bytes for a zero-length BLOB: the C API reports a NULL pointer, and the browser's Wasm build and
+// some Durable Object bindings return null. A file row with no bytes is an empty file, and every read must treat it that way.
+function nullForEmptyBlobs(connection) {
+  const nulled = row => row && Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value instanceof Uint8Array && value.length === 0 ? null : value]));
+  return { ...connection, get: (sql, ...params) => nulled(connection.get(sql, ...params)), all: (sql, ...params) => connection.all(sql, ...params).map(nulled) };
+}
+
+test('SQLite file system reads zero-length files when the engine returns no bytes for an empty BLOB', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-readers-empty-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const connection = nullForEmptyBlobs(openNodeConnection(join(directory, 'files.sqlite')));
+  const fs = openSqliteFileSystem({ connection, workspace: 'fictional', cwd: '/workspace' });
+  value(await fs.writeFile('/workspace/.gitignore', new Uint8Array(), context));
+  value(await fs.writeFile('/workspace/.git/info/exclude', new Uint8Array(), context));
+  value(await fs.writeFile('/workspace/src/app.txt', 'needle\n', context));
+
+  assert.deepEqual(value(await fs.readBinaryFile('/workspace/.gitignore', context)), new Uint8Array());
+  assert.equal(value(await fs.readTextFile('/workspace/.gitignore', context)), '');
+  // Only a file row is an empty file: a row of another kind with no bytes is corrupt and still fails.
+  connection.run("INSERT INTO boring_workspace_files (workspace, path, parent, kind, bytes, mtime_ms) VALUES ('fictional', '/workspace/corrupt', '/workspace', 'bogus', NULL, 0)");
+  assert.equal((await fs.readBinaryFile('/workspace/corrupt', context)).ok, false);
+  connection.run("DELETE FROM boring_workspace_files WHERE path = '/workspace/corrupt'");
+  assert.equal(value(await fs.fileInfo('/workspace/.gitignore', context)).size, 0);
+  assert.deepEqual(value(await fs.listDir('/workspace', context)).filter(entry => entry.name === '.gitignore').map(entry => [entry.kind, entry.size]), [['file', 0]]);
+
+  const workspace = createVirtualWorkspace({ providerId: 'fictional-sqlite-empty', fs });
+  t.after(() => workspace.dispose());
+  const shell = workspace.createBash({ cwd: '/workspace' });
+  assert.equal((await shell.exec('cat .gitignore')).exitCode, 0);
+  const search = await shell.exec('grep -r needle /workspace');
+  assert.equal(search.exitCode, 0, search.stderr);
+  assert.equal(search.stdout, '/workspace/src/app.txt:needle\n');
+});
+
+test('SQLite workspace journal reads back a saved empty file version when the engine returns no bytes for an empty BLOB', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-journal-empty-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const journal = createWorkspaceJournal(nullForEmptyBlobs(openNodeConnection(join(directory, 'journal.sqlite'))));
+  journal.remember('fictional-scope', '/workspace/.gitignore', { revision: 'empty-revision', bytes: new Uint8Array(), mediaType: 'text/plain', savedAt: 1, source: 'publish' });
+  const version = journal.version('fictional-scope', '/workspace/.gitignore', 'empty-revision');
+  assert.deepEqual(version?.bytes, new Uint8Array());
+  assert.equal(new TextDecoder().decode(version?.bytes), '');
+  assert.deepEqual(journal.revisions('fictional-scope', '/workspace/.gitignore'), ['empty-revision']);
 });

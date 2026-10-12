@@ -21,7 +21,7 @@ import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createVirtualWorkspace } from '@hachej/boring-execution/virtual';
 import { readFiles, writeFiles, shell } from '../../shared/workspace-tools.mjs';
-import { createResourceHandler } from '@hachej/boring-files/remote';
+import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { readJsonBody } from '@hachej/boring-files/request-guard';
 
 // Workers AI model with native tool calling, chosen by Cloudflare's own Pi example for agent work. The second is a cheaper, faster fallback.
@@ -164,7 +164,7 @@ export class Assistant extends DurableObject {
     return { injected, staged, outcome, before, after, rolledBack: JSON.stringify(before) === JSON.stringify(after) };
   }
 
-  #resources = createResourceHandler({ authenticate: async () => OWNER, reader: this.files, publisher: this.files.publication, lookup: this.files.reconciliation });
+  #resources = createRevisionHandler({ resolve: async () => ({ provider: this.files, access: OWNER }) });
 
   /** Called by the Worker after it has checked the bearer token. */
   async fetch(request) {
@@ -172,14 +172,12 @@ export class Assistant extends DurableObject {
     try {
       if (url.pathname === '/api/chat') return await this.#chat(request);
       if (url.pathname === '/api/resources') return await this.#resources(request);
-      // The retained revisions of a workspace file with their save times, newest first: the panel's version menu.
-      if (url.pathname === '/api/history' && request.method === 'GET') return json({ saves: this.files.saves(url.searchParams.get('path') ?? '') });
       await this.#open();
       if (url.pathname === '/api/agent' && request.method === 'GET') {
         return json({ id: this.agent.id, title: 'Assistant', skills: this.agent.skills, models: MODELS.map(model => ({ provider: CLOUDFLARE_PROVIDER_ID, ...model })), efforts: EFFORTS, notes: NOTES,
           // The variant as the shared scenario list sees it: what this deployment gives the one standard agent.
-          // This page has no file tree, uploads or terminal, so the scenarios that drive those (`workspace`, `shell`) stay listed disabled.
-          variant: { id: 'cloudflare', title: 'Cloudflare', description: 'A Durable Object on Workers: files, presented files, the shared document and bash in its SQLite workspace; this page has no file tree, uploads or terminal.',
+          // This page shows the workspace as a Library (file tree, filename search, uploads) but has no terminal; the scenarios that need the studio's own routes or a terminal (`workspace`, `shell`) stay listed disabled.
+          variant: { id: 'cloudflare', title: 'Cloudflare', description: 'A Durable Object on Workers: files, presented files, the shared document and bash in its SQLite workspace; this page shows them as a Library with filename search and uploads, and has no terminal.',
             capabilities: this.standard.capabilities.filter(capability => capability !== 'workspace' && capability !== 'shell') },
           identity: { runtimeId: 'cloudflare-recipe', ...OWNER }, instance: this.#instance });
       }
