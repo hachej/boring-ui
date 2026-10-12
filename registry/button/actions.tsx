@@ -96,7 +96,7 @@ export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end',
         onClick={() => { close(true); item.onSelect(); }}>
         {item.icon ?? (radio ? <span className="size-4 shrink-0">{item.checked && <CheckIcon className="size-4" aria-hidden="true" />}</span> : null)}
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
-        {item.hint && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{item.hint}</span>}
+        {item.hint && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{item.hint}</span>}
       </button>)}
     </div>}
   </div>;

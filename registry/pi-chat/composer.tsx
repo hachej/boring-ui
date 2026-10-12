@@ -88,7 +88,7 @@ export interface ComposerProps {
 }
 
 /** Round bar buttons share one look: a tinted circle, 44px so a thumb can hit it. */
-const ROUND = 'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
+const ROUND = 'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
 /** The Feedback button, a round bar button beside the "+" menu in both layouts. */
 function FeedbackButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
@@ -218,7 +218,7 @@ export function Composer(props: ComposerProps) {
           <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{path}</span>
           <button type="button" aria-label={labels.remove(path)} onClick={() => props.onText(removeMention(text, path))}
-            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
+            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
         </li>)}
       </ul>}
       {(props.uploads?.length ?? 0) > 0 && <ul data-testid="uploads" aria-label={labels.uploads} className="m-0 contents list-none p-0">
@@ -228,7 +228,7 @@ export function Composer(props: ComposerProps) {
             : <Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />}
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{item.state === 'failed' ? labels.uploadFailed(item.name, item.error) : labels.uploading(item.name)}</span>
           {item.state === 'failed' && <button type="button" aria-label={labels.dismiss(item.name)} onClick={() => props.onDismissUpload?.(item.id)}
-            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}
+            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}
         </li>)}
       </ul>}
     </div>}
@@ -240,7 +240,7 @@ export function Composer(props: ComposerProps) {
           {src ? <img src={src} alt="" className="size-7 shrink-0 rounded-full object-cover" /> : <span className="size-7 shrink-0 rounded-full bg-muted" />}
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{attachment.name}</span>
           <button type="button" aria-label={labels.remove(attachment.name)} onClick={() => props.onRemoveAttachment(attachment.id)}
-            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
+            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
         </li>;
       })}
     </ul>;
@@ -250,15 +250,15 @@ export function Composer(props: ComposerProps) {
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
       className={props.layout === 'inline'
-        ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed sm:text-[0.9375rem]'
-        : 'block max-h-52 min-h-[3.5rem] w-full resize-none border-0 bg-transparent px-5 pt-4 pb-2 text-base leading-6 sm:text-[0.9375rem] text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
+        ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed sm:text-sm'
+        : 'block max-h-52 min-h-[3.5rem] w-full resize-none border-0 bg-transparent px-5 pt-4 pb-2 text-base leading-6 sm:text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
   const plus = (canAttach || items.length > 0) && <PlusMenu disabled={disabled} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-11 shrink-0 rounded-full">
+    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-11 shrink-0">
       {stopRequested ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop className="size-4 fill-current" aria-hidden="true" />}</Button>
-    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-11 shrink-0 rounded-full disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
+    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
       <icons.send className="size-5" aria-hidden="true" /></Button>;
 
   if (props.layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}

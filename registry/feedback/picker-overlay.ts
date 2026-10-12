@@ -7,12 +7,12 @@ import { createOverlay, type PickerOverlay } from '@hachej/boring-feedback/page'
 /** CSS added to the overlay's shadow root. Parts: `box`, `label`, `toolbar` (and `box-<tone>`, `label-<tone>` for hover, pinned,
  * reveal and candidate). The colors read the host's `--boring-feedback-*` variables, which inherit through the shadow boundary. */
 export const pickerOverlayStyles = `
-.box { border-radius: 6px; }
+.box { border-radius: var(--radius-sm, calc(var(--radius, 0.625rem) * 0.6)); }
 .box[data-tone="hover"] { border-width: 2px; }
 .box[data-tone="pinned"] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--boring-feedback-accent, var(--primary)) 25%, transparent); }
-.box[data-tone="reveal"] { animation: boring-feedback-pulse 1.2s ease-out 2; }
-.label { border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }
-.toolbar { box-shadow: 0 8px 24px rgb(0 0 0 / 30%); }
+.box[data-tone="reveal"] { animation: boring-feedback-pulse 1.2s var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1)) 2; }
+.label { border-radius: var(--radius-sm, calc(var(--radius, 0.625rem) * 0.6)); box-shadow: var(--shadow-sm, 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)); }
+.toolbar { box-shadow: var(--shadow-lg, 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)); }
 @keyframes boring-feedback-pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--boring-feedback-reveal, var(--ring)) 55%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
 @media (prefers-reduced-motion: reduce) { .box[data-tone="reveal"] { animation: none; } }
 `;

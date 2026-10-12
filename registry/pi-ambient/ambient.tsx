@@ -397,21 +397,21 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   const status = waitingForAnswer ? 'input' : working ? 'working' : outcome;
   const label = waitingForAnswer ? labels.waitingForAnswer : labels.working(seconds);
   const panelOpen = expanded && shownArtifact !== undefined && artifactPanel !== undefined;
-  const surface = cn('relative flex flex-col border border-border bg-background text-foreground shadow-2xl', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
+  const surface = cn('relative flex flex-col border border-border bg-background text-foreground shadow-lg', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
     !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
   const rootClass = cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
-    : cn('transition-[width] duration-200 motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
+    : cn('transition-[width] duration-(--duration-normal) motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
   const rootStyle = phone ? undefined : { right: placed.right, bottom: placed.bottom };
 
   if (minimized) return <div ref={root} data-boring="ambient-chat" data-state="minimized" data-variant={variant} className={cn(rootClass, phone && 'flex justify-end')} style={rootStyle} onKeyDown={onKeyDown}>
     {notifications !== false && <AgentNotifications store={store} variant={variant} placement="inline" systemNotifications={systemNotifications} onActivate={onActivate} labels={labels}
       {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-[min(26rem,calc(100vw-1rem))]" />}
     {/* Feedback mode keeps its bar (Stop, Done, ✕) when the window is minimised; otherwise a recording could not be stopped. */}
-    {composerFeedback?.active && composerFeedback.bar && <div data-testid="ambient-feedback-bar" className="absolute right-0 bottom-full mb-2 w-[min(26rem,calc(100vw-1rem))] rounded-2xl border border-border bg-background pt-2.5 shadow-xl">{composerFeedback.bar}</div>}
+    {composerFeedback?.active && composerFeedback.bar && <div data-testid="ambient-feedback-bar" className="absolute right-0 bottom-full mb-2 w-[min(26rem,calc(100vw-1rem))] rounded-2xl border border-border bg-background pt-2.5 shadow-lg">{composerFeedback.bar}</div>}
     <div data-testid="ambient-pill-box" onPointerDown={event => beginDrag(event, 4)} onKeyDown={onGripKey} onClickCapture={event => { if (dragged.current) { dragged.current = false; event.stopPropagation(); event.preventDefault(); } }}
-      className={cn('relative flex h-11 max-w-[min(20rem,calc(100vw-1rem))] items-center rounded-full border border-border bg-background text-foreground shadow-xl transition-colors hover:bg-popover motion-reduce:transition-none', !phone && 'cursor-grab touch-none select-none active:cursor-grabbing')}>
-      {!phone && grip('ml-1.5 size-8 rounded-full')}
+      className={cn('relative flex h-11 max-w-[min(20rem,calc(100vw-1rem))] items-center rounded-full border border-border bg-background text-foreground shadow-lg transition-colors hover:bg-popover motion-reduce:transition-none', !phone && 'cursor-grab touch-none select-none active:cursor-grabbing')}>
+      {!phone && grip('ml-1.5 size-8 rounded-lg')}
       <button ref={pill} type="button" data-testid="ambient-pill" onClick={() => setWindowState('bar')} aria-label={labels.openAgent(shownTitle, unread)}
         className={cn('relative flex h-full min-w-0 cursor-pointer items-center gap-2.5 rounded-full pr-4 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/70', phone ? 'pl-3.5' : 'pl-1.5')}>
         {status === 'working' ? <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />
@@ -442,7 +442,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
         </span>
         {avatar && <span data-testid="ambient-avatar" className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
         <button ref={titleButton} type="button" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
-          className="min-w-0 max-w-full cursor-pointer truncate rounded-md px-1 py-1 text-left text-[0.9375rem] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
+          className="min-w-0 max-w-full cursor-pointer truncate rounded-md px-1 py-1 text-left font-display text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
         {conversations && <button type="button" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}
           className={cn(iconButton, 'size-7 max-sm:size-11')}><icons.switchConversation className="size-3.5" aria-hidden="true" /></button>}
         {expanded ? <span className="flex-1" /> : <button type="button" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="h-full min-w-2 flex-1 cursor-pointer" />}
@@ -461,14 +461,14 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={stick.scrollRef} data-testid="transcript-scroll" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
             <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="flex min-h-28 flex-col gap-5 px-4 pt-1 pb-5">
-              {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="rounded-full text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
+              {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
               {visibleRows.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
               {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
               {empty && !loading && <p data-testid="ambient-empty" className="m-0 py-6 text-center text-sm text-muted-foreground">{labels.empty}</p>}
             </div>
           </div>
           {!stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
-            className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-background/95 shadow-md backdrop-blur"><icons.jumpToLatest className="size-4" aria-hidden="true" /></Button>}
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-background/95 shadow-md backdrop-blur"><icons.jumpToLatest className="size-4" aria-hidden="true" /></Button>}
         </div>
       </div>}
 
