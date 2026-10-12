@@ -83,6 +83,12 @@ test('SQLite provider: multibyte UTF-8 counts bytes, not characters, at the prov
   assert.equal(over.kind, 'file_too_large');
   assert.equal(over.size, 11);
   assert.equal((await fs.exists('/workspace/over.txt', context)).value, false);
+  // The same limit governs native writes of this file system: 10 bytes stored, 11 refused, the stored content unchanged.
+  assert.equal((await fs.writeFile('/workspace/native.txt', 'é'.repeat(5), context)).ok, true);
+  const nativeOver = await fs.writeFile('/workspace/native.txt', 'é'.repeat(5) + 'a', context);
+  assert.equal(nativeOver.ok, false);
+  assert.match(nativeOver.error.message, /^EFBIG/);
+  assert.equal((await fs.readTextFile('/workspace/native.txt', context)).value, 'é'.repeat(5));
 });
 
 test('SQLite file system: a truncate to a huge size is a size refusal, not an allocation failure, and a refused append leaves the file as it was', async t => {
@@ -216,6 +222,10 @@ test('disk provider: no default limit, and an explicit maxFileBytes refuses an o
   const unlimited = createWorkspaceProvider({ identity, fs: new NodeExecutionEnv({ cwd: root }), journal });
   assert.equal((await unlimited.publication.publish(create('disk-big', [['big.bin', LIMIT + 1]]), access)).kind, 'committed');
 
+  // Every explicit provider limit is validated, not only the SQLite one.
+  for (const maxFileBytes of [Number.NaN, -1]) {
+    assert.throws(() => createWorkspaceProvider({ identity, fs: new NodeExecutionEnv({ cwd: root }), journal, maxFileBytes }), TypeError);
+  }
   const limited = createWorkspaceProvider({ identity: { ...identity, instanceId: 'limited' }, fs: new NodeExecutionEnv({ cwd: root }), journal, maxFileBytes: 10 });
   const refused = await limited.publication.publish(create('disk-limited', [['small.txt', 11]]), access);
   assert.equal(refused.kind, 'file_too_large');
