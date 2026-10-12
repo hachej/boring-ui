@@ -145,7 +145,7 @@ export function createWorkspaceCatalog(options: {
       if (typeof request.query !== 'string' || request.query.length > 1024) throw new RevisionError('invalid', 'Invalid filename query');
       const query = request.query.toLowerCase();
       const matches = (await files(access)).filter(entry => entry.path.toLowerCase().includes(query));
-      return page(matches, `search:${query}`, request.cursor, request.limit, entry => rank(entry.path, query));
+      return page(matches, `search:${query}`, request.cursor, request.limit, entry => rank(entry.path, query) + entry.path);
     },
     history: async (path, access) => { check(access); identifier(access.scopeId); return options.saves(catalogPath(path)); },
   };
