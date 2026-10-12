@@ -61,7 +61,7 @@ function App() {
       {...(config.labels ? { labels: config.labels, panelActions: config.panelActions } : {})} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
       : discovery.failed
-        ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached.</p>
+        ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <button type="button" className="underline" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</button></p>
         : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
     {configured && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
   </main>;
