@@ -11,6 +11,7 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
+    "r/*.json",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
@@ -109,34 +110,34 @@
     "./file-tree.css": "./styles/file-tree.css"
   },
   "peerDependencies": {
-    "@hachej/boring-files": "0.2.1",
-    "@earendil-works/pi-durable": "1.1.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "marked": "17.0.6",
-    "@tiptap/core": "3.31.4",
-    "@tiptap/react": "3.31.4",
-    "@tiptap/pm": "3.31.4",
-    "@tiptap/starter-kit": "3.31.4",
-    "@tiptap/markdown": "3.31.4",
-    "@tiptap/extensions": "3.31.4",
-    "@tiptap/extension-list": "3.31.4",
-    "@tiptap/extension-table": "3.31.4",
-    "@tiptap/extension-image": "3.31.4",
-    "@tiptap/extension-highlight": "3.31.4",
-    "@tiptap/extension-bubble-menu": "3.31.4",
-    "@tiptap/extension-floating-menu": "3.31.4",
-    "@earendil-works/chord": "1.1.0",
-    "@earendil-works/pi-ai": "1.1.0",
-    "tldraw": "5.5.2",
-    "@tldraw/editor": "5.5.2",
-    "@tldraw/store": "5.5.2",
-    "@json-render/core": "0.21.0",
-    "@json-render/react": "0.21.0",
-    "zod": "4.6.5",
-    "@tldraw/tlschema": "5.5.2",
-    "@radix-ui/react-collapsible": "1.1.20",
-    "lucide-react": "1.51.0"
+    "@hachej/boring-files": "^0.2.1",
+    "@earendil-works/pi-durable": "^1.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "marked": "^17.0.6",
+    "@tiptap/core": "^3.31.4",
+    "@tiptap/react": "^3.31.4",
+    "@tiptap/pm": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
+    "@tiptap/markdown": "^3.31.4",
+    "@tiptap/extensions": "^3.31.4",
+    "@tiptap/extension-list": "^3.31.4",
+    "@tiptap/extension-table": "^3.31.4",
+    "@tiptap/extension-image": "^3.31.4",
+    "@tiptap/extension-highlight": "^3.31.4",
+    "@tiptap/extension-bubble-menu": "^3.31.4",
+    "@tiptap/extension-floating-menu": "^3.31.4",
+    "@earendil-works/chord": "^1.1.0",
+    "@earendil-works/pi-ai": "^1.1.0",
+    "tldraw": "^5.5.2",
+    "@tldraw/editor": "^5.5.2",
+    "@tldraw/store": "^5.5.2",
+    "@json-render/core": "^0.21.0",
+    "@json-render/react": "^0.21.0",
+    "zod": "^4.6.5",
+    "@tldraw/tlschema": "^5.5.2",
+    "lucide-react": "^1.51.0",
+    "radix-ui": "^1.8.0"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-files": {
@@ -217,10 +218,10 @@
     "@tldraw/tlschema": {
       "optional": true
     },
-    "@radix-ui/react-collapsible": {
+    "lucide-react": {
       "optional": true
     },
-    "lucide-react": {
+    "radix-ui": {
       "optional": true
     }
   },

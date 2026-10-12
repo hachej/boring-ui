@@ -1,6 +1,6 @@
 'use client';
 
-import * as Collapsible from '@radix-ui/react-collapsible';
+import { Collapsible } from 'radix-ui';
 import { ChevronRight, File, Folder } from 'lucide-react';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from './file-tree-shadcn.js';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';

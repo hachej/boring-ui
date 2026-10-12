@@ -5,6 +5,7 @@ node_modules/
 *.log
 .DS_Store
 packages/*/dist/
+packages/ui/r/
 *.tsbuildinfo
 *.tgz
 .claude/worktrees/

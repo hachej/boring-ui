@@ -4,8 +4,8 @@
   "title": "Button",
   "description": "The one shadcn-style button of the Tailwind items (chat and viewer bar sizes, touch targets of 40-44px), IconButton, and the host actions every block takes (BlockAction, BlockActions, the shared ActionMenu), installed in components/button/ so it never overwrites the host's own button.",
   "dependencies": [
-    "react@19.3.0",
-    "lucide-react@1.51.0"
+    "react@^19.0.0",
+    "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
     "@boring-ui/theme",

@@ -88,6 +88,10 @@ test('experimental upstream version is pinned to reviewed exports', () => {
   assert.deepEqual(checkManifest(manifest, 'agent', policy), []);
   manifest.dependencies['@earendil-works/pi-durable'] = '^1.1.0';
   assert.ok(checkManifest(manifest, 'agent', policy).some((p) => p.includes('version must match')));
+  // Published peers may carry the reviewed range; runtime dependencies stay exact.
+  manifest.dependencies['@earendil-works/pi-durable'] = '1.1.0';
+  manifest.peerDependencies = { '@earendil-works/pi-durable': '^1.1.0' };
+  assert.deepEqual(checkManifest(manifest, 'agent', policy), []);
 });
 test('npm alias cannot swap a fork for upstream', () => {
   assert.ok(checkManifest({name:'@hachej/boring-agent', dependencies:{'@earendil-works/pi-durable':'npm:replacement@1.0.0'}}, 'agent', policy).some((p) => p.includes('local/forked/patched')));

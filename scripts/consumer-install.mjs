@@ -6,8 +6,12 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import semver from 'semver';
 
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
+
+/** A registry dependency pin: an exact version or a caret range, with an optional prerelease (release-version writes 1.1.0-rc.1). */
+export const registryPin = /^\^?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 export function workspaceDirectory(root, name) {
   for (const entry of readdirSync(join(root, 'packages'))) {
@@ -70,13 +74,16 @@ export function localRegistryItem(root, item, archiveByName, packs, cache, run) 
   const sourceLock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
   const local = structuredClone(item);
   local.dependencies = item.dependencies.map(pin => {
-    const [name, version] = split(pin);
-    assert.match(version, /^\d+\.\d+\.\d+$/);
+    const [name, range] = split(pin);
+    assert.match(range, registryPin);
+    // The exact version this repository locks (or the workspace package itself); the pin's range must admit it.
+    const expected = name.startsWith('@hachej/boring-') ? JSON.parse(readFileSync(join(workspaceDirectory(root, name), 'package.json'), 'utf8')).version : sourceLock.packages['node_modules/' + name]?.version;
+    assert.ok(expected && semver.satisfies(expected, range), `${name}@${range}`);
     let bytes;
     if (name.startsWith('@hachej/boring-')) bytes = readFileSync(archiveByName.get(name));
     else {
       const entry = sourceLock.packages['node_modules/' + name];
-      assert.equal(entry.version, version);
+      assert.equal(entry.version, expected);
       const [algorithm, encoded] = entry.integrity.split('-');
       assert.equal(algorithm, 'sha512');
       const digest = Buffer.from(encoded, 'base64').toString('hex');
@@ -86,7 +93,7 @@ export function localRegistryItem(root, item, archiveByName, packs, cache, run) 
     const archive = join(packs, createHash('sha256').update(bytes).digest('hex') + '.tgz');
     writeFileSync(archive, bytes);
     const archived = JSON.parse(run('tar', ['-xOf', archive, 'package/package.json']));
-    assert.equal(archived.name, name); assert.equal(archived.version, version);
+    assert.equal(archived.name, name); assert.equal(archived.version, expected);
     return name + '@file:' + archive;
   });
   return local;

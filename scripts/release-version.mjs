@@ -24,16 +24,20 @@ export function setReleaseVersion(root, version) {
   });
   const names = new Set(packages.map(pkg => pkg.manifest.name));
   if (!packages.length || names.size !== packages.length) throw new Error('Expected uniquely named workspace packages');
-  const pins = value => {
+  // Published packages pin internal dependencies and peers as caret ranges on the released version; devDependencies, private
+  // packages and the root stay exact.
+  const registryRange = `^${version}`;
+  const pins = (value, range) => {
     for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
-      for (const name of Object.keys(value[field] ?? {})) if (names.has(name)) value[field][name] = version;
+      for (const name of Object.keys(value[field] ?? {})) if (names.has(name)) value[field][name] = field === 'devDependencies' ? version : range;
     }
   };
   for (const { path, manifest: pkg } of [{ path: '', manifest }, ...packages]) {
     const record = lock.packages?.[path];
     if (!record || record.name !== pkg.name || record.version !== pkg.version) throw new Error(`Lockfile does not match ${path || 'root'}`);
+    const range = path && pkg.private !== true ? `^${version}` : version;
     pkg.version = version; record.version = version;
-    pins(pkg); pins(record);
+    pins(pkg, range); pins(record, range);
   }
   lock.version = version;
   const registryPins = value => {
@@ -41,7 +45,7 @@ export function setReleaseVersion(root, version) {
     for (const [key, child] of Object.entries(value)) {
       if (key === 'dependencies' && Array.isArray(child)) value[key] = child.map(spec => {
         const name = spec.slice(0, spec.lastIndexOf('@'));
-        return names.has(name) ? `${name}@${version}` : spec;
+        return names.has(name) ? `${name}@${registryRange}` : spec;
       });
       else registryPins(child);
     }
