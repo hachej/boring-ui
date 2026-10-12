@@ -116,6 +116,37 @@ test('real audited tarballs support dry-run and reconcile partial publication wi
   });
 });
 
+test('publish waits for the registry to confirm each package before failing', async t => {
+  const f = fixture(t);
+  checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+  const release = readRelease(f.directory, f.options);
+  const options = f.options, timing = { confirmIntervalMs: 1, confirmTimeoutMs: 50 };
+  const publish = (lookupsBeforeVisible, { never = false } = {}) => {
+    const registry = new Map(), lookups = new Map(), sleeps = [];
+    const fetch = async url => {
+      const parts = new URL(url).pathname.slice(1).split('/'), name = decodeURIComponent(parts[0]);
+      if (!registry.has(name)) return new Response('missing', { status: 404 });
+      const count = (lookups.get(name) ?? 0) + 1; lookups.set(name, count);
+      return count <= lookupsBeforeVisible || never ? new Response('missing', { status: 404 }) : Response.json(registry.get(name));
+    };
+    const run = (command, args) => {
+      const pack = release.packages.find(pack => args[1] === join(f.directory, pack.filename));
+      registry.set(pack.name, { name: pack.name, version: pack.version, dist: { integrity: pack.integrity } });
+      return { status: 0, stdout: '{}' };
+    };
+    const sleep = async ms => { sleeps.push(ms); };
+    return publishRelease(f.directory, options, { fetch, run, sleep, ...timing }).then(result => ({ result, sleeps }));
+  };
+  await t.test('not visible on the first lookup, visible on a later one, succeeds', async () => {
+    const { result, sleeps } = await publish(2);
+    assert.deepEqual(result.packages.map(pack => pack.status), ['published', 'published']);
+    assert.ok(sleeps.length > 0 && sleeps.every(ms => ms === 1));
+  });
+  await t.test('never visible fails with the same error after the timeout', async () => {
+    await assert.rejects(publish(0, { never: true }), /Registry has not confirmed package\/version\/tag for /);
+  });
+});
+
 test('private release candidates produce no retained publishable artifact', t => {
   const f = fixture(t), pkg = f.read('packages/files/package.json'); f.write('packages/files/package.json', { ...pkg, private: true });
   const result = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
