@@ -232,7 +232,7 @@ export function checkManifest(manifest, owner, policy) {
     for (const [name, entry] of Object.entries(value)) {
       const pi = reference(name) ?? (name === '.' ? reference(key) : undefined);
       if (pi && (key.toLowerCase().includes('patch') || (typeof entry === 'string' && /^(?:file:|link:|patch:|git|https?:|github:|npm:)/.test(entry)))) add(`local/forked/patched upstream: ${pi}`);
-      if (pi && typeof entry === 'string' && !key.toLowerCase().includes('patch') && entry !== policy.upstreamExportsVersion) add(`upstream version must match reviewed public exports ${policy.upstreamExportsVersion}: ${pi}`);
+      if (pi && typeof entry === 'string' && !key.toLowerCase().includes('patch') && entry !== policy.upstreamExportsVersion && !(key === 'peerDependencies' && entry === `^${policy.upstreamExportsVersion}`)) add(`upstream version must match reviewed public exports ${policy.upstreamExportsVersion}: ${pi}`);
       visit(entry, name);
     }
   }
