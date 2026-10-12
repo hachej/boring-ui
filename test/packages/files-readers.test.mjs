@@ -11,6 +11,7 @@ import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createVirtualWorkspace } from '@hachej/boring-execution/virtual';
+import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 
 const value = result => { assert.equal(result.ok, true, result.ok ? '' : result.error.message); return result.value; };
 const SAMPLES = {
@@ -119,4 +120,15 @@ test('SQLite file system reads zero-length files when the engine returns no byte
   const search = await shell.exec('grep -r needle /workspace');
   assert.equal(search.exitCode, 0, search.stderr);
   assert.equal(search.stdout, '/workspace/src/app.txt:needle\n');
+});
+
+test('SQLite workspace journal reads back a saved empty file version when the engine returns no bytes for an empty BLOB', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-journal-empty-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const journal = createWorkspaceJournal(nullForEmptyBlobs(openNodeConnection(join(directory, 'journal.sqlite'))));
+  journal.remember('fictional-scope', '/workspace/.gitignore', { revision: 'empty-revision', bytes: new Uint8Array(), mediaType: 'text/plain', savedAt: 1, source: 'publish' });
+  const version = journal.version('fictional-scope', '/workspace/.gitignore', 'empty-revision');
+  assert.deepEqual(version?.bytes, new Uint8Array());
+  assert.equal(new TextDecoder().decode(version?.bytes), '');
+  assert.deepEqual(journal.revisions('fictional-scope', '/workspace/.gitignore'), ['empty-revision']);
 });
