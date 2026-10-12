@@ -10,6 +10,7 @@ import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
+import { createVirtualWorkspace } from '@hachej/boring-execution/virtual';
 
 const value = result => { assert.equal(result.ok, true, result.ok ? '' : result.error.message); return result.value; };
 const SAMPLES = {
@@ -89,4 +90,33 @@ test('SQLite watchers report created, changed and removed paths, honour excludes
   value(await fs.writeFile('/workspace/docs/after-close.md', 'x', context));
   await new Promise(resolve => setTimeout(resolve, 1300));
   assert.equal(changes.length, count, 'no call after close');
+});
+
+// Some SQLite engines hand back no bytes for a zero-length BLOB: the C API reports a NULL pointer, and the browser's Wasm build and
+// some Durable Object bindings return null. A file row with no bytes is an empty file, and every read must treat it that way.
+function nullForEmptyBlobs(connection) {
+  const nulled = row => row && Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value instanceof Uint8Array && value.length === 0 ? null : value]));
+  return { ...connection, get: (sql, ...params) => nulled(connection.get(sql, ...params)), all: (sql, ...params) => connection.all(sql, ...params).map(nulled) };
+}
+
+test('SQLite file system reads zero-length files when the engine returns no bytes for an empty BLOB', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-readers-empty-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const fs = openSqliteFileSystem({ connection: nullForEmptyBlobs(openNodeConnection(join(directory, 'files.sqlite'))), workspace: 'fictional', cwd: '/workspace' });
+  value(await fs.writeFile('/workspace/.gitignore', new Uint8Array(), context));
+  value(await fs.writeFile('/workspace/.git/info/exclude', new Uint8Array(), context));
+  value(await fs.writeFile('/workspace/src/app.txt', 'needle\n', context));
+
+  assert.deepEqual(value(await fs.readBinaryFile('/workspace/.gitignore', context)), new Uint8Array());
+  assert.equal(value(await fs.readTextFile('/workspace/.gitignore', context)), '');
+  assert.equal(value(await fs.fileInfo('/workspace/.gitignore', context)).size, 0);
+  assert.deepEqual(value(await fs.listDir('/workspace', context)).filter(entry => entry.name === '.gitignore').map(entry => [entry.kind, entry.size]), [['file', 0]]);
+
+  const workspace = createVirtualWorkspace({ providerId: 'fictional-sqlite-empty', fs });
+  t.after(() => workspace.dispose());
+  const shell = workspace.createBash({ cwd: '/workspace' });
+  assert.equal((await shell.exec('cat .gitignore')).exitCode, 0);
+  const search = await shell.exec('grep -r needle /workspace');
+  assert.equal(search.exitCode, 0, search.stderr);
+  assert.equal(search.stdout, '/workspace/src/app.txt:needle\n');
 });

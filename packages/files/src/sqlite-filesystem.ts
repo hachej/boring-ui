@@ -89,7 +89,9 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   const touched = new Set<string>();
   function bytes(path: string): Uint8Array {
     if (existing(path).kind === 'directory') throw failure('is_directory', 'EISDIR', path, 'illegal operation on a directory');
-    const found = db.get<{ bytes: Uint8Array }>('SELECT bytes FROM boring_workspace_files WHERE workspace = ? AND path = ?', workspace, path);
+    const found = db.get<{ bytes: Uint8Array | null }>('SELECT bytes FROM boring_workspace_files WHERE workspace = ? AND path = ?', workspace, path);
+    // A zero-length BLOB can come back as no bytes (a NULL pointer through some engines): a file row with no bytes is an empty file.
+    if (found?.bytes === null) return new Uint8Array();
     if (!(found?.bytes instanceof Uint8Array)) throw fileError('unknown', 'Invalid stored bytes', path);
     return Uint8Array.from(found.bytes);
   }
