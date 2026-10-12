@@ -258,6 +258,8 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       // Every call of this command goes to the session it started in, even if a later command rotates.
       pinned = await session();
     } catch (error) { return err(failure(error, 'spawn_error')); }
+    // A caller that cancelled while the session was being acquired gets no command: nothing is dispatched.
+    if (context.abortSignal?.aborted) return err(new ExecutionError('aborted', 'Command aborted before dispatch'));
     // The start call is not aborted by the caller: a task it started must always come back with its id, so the polling loop
     // below can stop it. It has its own deadline instead, covering the whole response, because the SDK sets none. Nothing is
     // replayed when it expires: the task may or may not exist, and only a stop with its id could end it.

@@ -75,6 +75,7 @@ export async function startFakeCodeInterpreter({ accessPoints, codeInterpreterId
       const directory = accessPoints[mounts[0].accessPointArn];
       if (!directory) return fail(outgoing, 404, 'ResourceNotFoundException', 'Unknown access point');
       const sessionId = `fictional-session-${randomUUID()}`;
+      if (held && held.name === 'StartCodeInterpreterSession') { const gate = held; held = undefined; gate.arrived(); await gate.released; }
       sessions.set(sessionId, { id: sessionId, directory, mountPath: mounts[0].mountPath, accessPointArn: mounts[0].accessPointArn, tasks: new Map(), live: true });
       return outgoing.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ codeInterpreterIdentifier, sessionId, createdAt: new Date().toISOString() }));
     }

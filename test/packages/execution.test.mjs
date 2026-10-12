@@ -774,6 +774,23 @@ test('Code Interpreter env: a start response that never arrives returns within t
   hold.release();
 });
 
+test('Code Interpreter env: a caller cancelled during session acquisition dispatches no command', { timeout: 30000 }, async t => {
+  const { fake, open } = await codeInterpreterFixture(t);
+  const interpreter = open('user-a', 2005), env = interpreter.env;
+  // The session start is held; the caller cancels while it is pending, then the start is released.
+  const hold = fake.hold('StartCodeInterpreterSession');
+  t.after(() => hold.release());
+  const cancelled = withCancel(context);
+  const pending = env.exec('touch never-ran.txt', {}, cancelled.context);
+  await hold.started;
+  cancelled.cancel();
+  hold.release();
+  const result = await pending;
+  assert.equal(result.ok ? 'ok' : result.error.code, 'aborted');
+  assert.equal(fake.calls.filter(call => call.name === 'startCommandExecution').length, 0, 'no command is dispatched');
+  assert.equal(fake.calls.filter(call => call.operation === 'StartCodeInterpreterSession').length, 1);
+});
+
 test('Code Interpreter env: a status poll that never answers returns within the service deadline as an unknown outcome', { timeout: 30000 }, async t => {
   const { fake, open } = await codeInterpreterFixture(t);
   const interpreter = open('user-a', 2004, undefined, { serviceDeadlineMs: 300 }), env = interpreter.env;
