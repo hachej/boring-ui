@@ -31,7 +31,7 @@ test('kit sources use the scale: no arbitrary text size, leading or radius, no p
 });
 
 /** The element's own `size-*` values: responsive or state variants (`max-sm:size-11`) count, descendant variants (`[&>svg]:size-3`) do not. */
-const ownSizes = className => className.replace(/^['"`]|['"`]$/g, '').split(/\s+/).filter(token => !token.includes('[')).map(token => /^(?:[\w-]+:)*size-(\d+(?:\.\d+)?)$/.exec(token)?.[1]).filter(Boolean);
+const ownSizes = className => className.replace(/^['"`]|['"`]$/g, '').split(/\s+/).filter(token => !token.includes('[')).map(token => /^!?(?:[\w-]+:)*!?size-(\d+(?:\.\d+)?)!?$/.exec(token)?.[1]).filter(Boolean);
 
 test('rounded-full only on pills (text with horizontal padding), status dots and avatars', () => {
   for (const path of sources) {
@@ -51,6 +51,7 @@ test('rounded-full only on pills (text with horizontal padding), status dots and
   }
   assert.deepEqual(ownSizes("'rounded-full px-2 [&>svg]:size-3'"), [], 'a descendant variant does not make the pill square');
   assert.deepEqual(ownSizes("'size-5 max-sm:size-11 rounded-full'"), ['5', '11']);
+  assert.deepEqual(ownSizes("'size-2! rounded-full'"), ['2'], 'the important modifier keeps a status dot a dot');
 });
 
 test('template extras are optional: the kit derives them from shadcn roles and the theme item requires none', () => {
@@ -61,8 +62,9 @@ test('template extras are optional: the kit derives them from shadcn roles and t
   // Every radius tier the kit uses follows --radius in the bundled theme (2xl and 3xl copied from theme.derived.css at ec044d6).
   assert.equal(theme.theme['radius-2xl'], 'calc(var(--radius) * 1.8)');
   assert.equal(theme.theme['radius-3xl'], 'calc(var(--radius) * 2.2)');
-  for (const path of sources) for (const [, tier] of read(path).matchAll(/\brounded(?:-[trblse]{1,2})?-(xs|sm|md|lg|xl|2xl|3xl|4xl)\b/g)) assert.ok(theme.theme[`radius-${tier}`], `${path}: rounded-${tier} has a --radius binding in the theme item`);
-  assert.match('rounded-xs', /\brounded(?:-[trblse]{1,2})?-(xs|sm|md|lg|xl|2xl|3xl|4xl)\b/, 'the radius guard covers xs');
+  const RADIUS = /\brounded(?:-[trblse]{1,2})?-(xs|sm|md|lg|xl|2xl|3xl|4xl)\b/g;
+  for (const path of sources) for (const [, tier] of read(path).matchAll(RADIUS)) assert.ok(theme.theme[`radius-${tier}`], `${path}: rounded-${tier} has a --radius binding in the theme item`);
+  assert.deepEqual([...'rounded-xs rounded-t-xs'.matchAll(RADIUS)].map(match => match[1]), ['xs', 'xs'], 'the radius guard covers xs');
   // Core extras fall back to a shadcn role; the soft variants mirror hachej/boring-app web/src/theme.derived.css (ec044d6) exactly.
   const layer = registry.items.find(item => item.name === 'pi-chat').css['@layer components'];
   const light = layer['.pi-chat'], dark = layer['.pi-chat:is(.dark, .dark *)'];
