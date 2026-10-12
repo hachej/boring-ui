@@ -93,8 +93,11 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   /** Paths written, renamed or removed by this file system since the last comparison: reported as changed even when size and time look alike. */
   const touched = new Set<string>();
   function bytes(path: string): Uint8Array {
-    if (existing(path).kind === 'directory') throw failure('is_directory', 'EISDIR', path, 'illegal operation on a directory');
-    const found = db.get<{ bytes: Uint8Array }>('SELECT bytes FROM boring_workspace_files WHERE workspace = ? AND path = ?', workspace, path);
+    const entry = existing(path);
+    if (entry.kind === 'directory') throw failure('is_directory', 'EISDIR', path, 'illegal operation on a directory');
+    const found = db.get<{ bytes: Uint8Array | null }>('SELECT bytes FROM boring_workspace_files WHERE workspace = ? AND path = ?', workspace, path);
+    // A zero-length BLOB can come back as no bytes (a NULL pointer through some engines): a file row with no bytes is an empty file.
+    if (found?.bytes === null && entry.kind === 'file') return new Uint8Array();
     if (!(found?.bytes instanceof Uint8Array)) throw fileError('unknown', 'Invalid stored bytes', path);
     return Uint8Array.from(found.bytes);
   }
