@@ -98,7 +98,7 @@ jobs:
       github.actor == 'hachej' && github.triggering_actor == 'hachej'
     needs: [prepare, verify, browser, secrets]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: release
     permissions:
       contents: read
