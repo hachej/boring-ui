@@ -240,7 +240,7 @@ type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labe
 
 function AmbientSession({ controller, labels, icons, avatar, headerActions, messageActions, variant = 'contrast', mode = 'expert', actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', tools, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
-  renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, model, effort, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
+  renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
   const stateRef = useRef(windowState); stateRef.current = windowState;
@@ -287,7 +287,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, error, act, textarea, rowContext, composer, empty, loading } = session;
   const transcript = useTranscript(rows);
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);

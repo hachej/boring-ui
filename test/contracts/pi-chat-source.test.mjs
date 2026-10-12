@@ -485,3 +485,53 @@ test('a host reply footer sees the model and timestamp of the last round of a se
   assert.ok(!streaming.includes('data-testid="footer"'));
   assert.ok(!renderToStaticMarkup(createElement(RowView, { row, context: { ...context, replyFooter: undefined } })).includes('footer'));
 });
+
+const footerContext = seen => ({ developer: false, groupTool: undefined, commandMentions: undefined, onOpenImage: undefined, onCopy: undefined, pieces: undefined, answer: undefined, artifacts: undefined,
+  replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model?.modelId} ${reply.durationMs}`); } });
+
+test('a reply footer waits for the whole turn: no footer while a tool runs or a retry waits, and the last round reports its own durationMs', async () => {
+  const { derive } = await load('rows', 'rows.ts');
+  const { RowView } = await load('message', 'message.tsx');
+  const rounds = [assistant([{ type: 'text', text: 'let me look' }, call('1', 'read')], { model: 'a', timestamp: 100, durationMs: 700 }), assistant([{ type: 'text', text: 'done' }], { model: 'b', timestamp: 250, durationMs: 1200 })];
+  const settledView = { entries: entries([user('go')], [rounds[0]], [result('1', 'read', 'A')], [rounds[1]]), docs: {} };
+  const html = (view, seen = []) => { const row = derive(view, options('expert')).rows[1]; return { row, seen, html: renderToStaticMarkup(createElement(RowView, { row, context: footerContext(seen) })) }; };
+  // A tool round: the run is active, nothing is streaming.
+  const tool = html({ entries: entries([user('go')], [rounds[0]]), docs: { 'pi.live': { run: { taskId: 1 } } } });
+  assert.equal(tool.row.active, true); assert.equal(tool.row.streaming, false);
+  assert.ok(!tool.html.includes('data-testid="footer"'));
+  // Retry backoff: the run is active, the generation holds a retry and no message.
+  const retrying = html({ entries: entries([user('go')], [rounds[0]]), docs: { 'pi.live': { run: { taskId: 1 }, generation: { retry: { attempt: 1 } } } } });
+  assert.equal(retrying.row.active, true);
+  assert.ok(!retrying.html.includes('data-testid="footer"'));
+  // Finished: the footer shows the last round's model and Pi's own duration.
+  const done = html(settledView);
+  assert.match(done.html, /data-testid="footer">b 1200</);
+  assert.equal(done.seen[0].durationMs, 1200);
+  // A message Pi wrote before it recorded durations has none.
+  const legacy = derive({ entries: entries([user('go')], [assistant([{ type: 'text', text: 'ok' }])]), docs: {} }, options('expert')).rows[1];
+  assert.ok(!('durationMs' in legacy));
+});
+
+test('an empty final round still names the model, time and duration of the round that ended the reply', async () => {
+  const { derive } = await load('rows', 'rows.ts');
+  const view = { entries: entries([user('go')], [assistant([{ type: 'text', text: 'checking' }, call('1', 'read')], { model: 'a', timestamp: 100, durationMs: 5 })], [result('1', 'read', 'A')], [assistant([], { model: 'b', timestamp: 300, durationMs: 9 })]), docs: {} };
+  const rows = derive(view, options('expert')).rows;
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[1].model, { provider: 'x', modelId: 'b' });
+  assert.equal(rows[1].timestamp, 300); assert.equal(rows[1].durationMs, 9);
+  assert.equal(rows[1].entryId, '4');
+  assert.equal(rows[1].text, 'checking');
+});
+
+test('earlier records show the reply footer without actions, and the ambient window forwards it', async () => {
+  const { HistoryPanel } = await load('history', 'history.tsx');
+  const history = { kind: 'ready', hasMore: false, entries: entries([user('go')], [assistant([{ type: 'text', text: 'old answer' }], { model: 'old', timestamp: 5, durationMs: 42 })]) };
+  const seen = [];
+  const html = renderToStaticMarkup(createElement(HistoryPanel, { history, developer: false, connected: true, onLoad() {}, onClose() {}, replyFooter: footerContext(seen).replyFooter }));
+  assert.match(html, /data-testid="footer">old 42</);
+  assert.equal(seen.length, 1); assert.equal(seen[0].text, 'old answer'); assert.equal(seen[0].timestamp, 5);
+  assert.ok(!renderToStaticMarkup(createElement(HistoryPanel, { history, developer: false, connected: true, onLoad() {}, onClose() {} })).includes('footer'));
+  const ambient = readFileSync(`${root}registry/pi-ambient/ambient.tsx`, 'utf8');
+  assert.match(ambient, /effort, replyFooter, artifacts: hostArtifacts/);
+  assert.match(ambient, /messageActions, replyFooter, afterSend/);
+});

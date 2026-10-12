@@ -34,7 +34,7 @@ export type Part =
 
 export type Row =
   | { readonly key: string; readonly type: 'user'; readonly message: UserMessage }
-  | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
+  | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** How long the last round took to answer, in ms (Pi's `durationMs`). */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
   | { readonly key: string; readonly type: 'orphan-result'; readonly message: ToolResultMessage }
   | { readonly key: string; readonly type: 'system'; readonly text: string }
   | { readonly key: string; readonly type: 'event'; readonly label: string }
@@ -181,7 +181,15 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     else {
       const parts = partsOf(message.content, item.key, false, true);
       const interrupted = message.stopReason === 'error' || message.stopReason === 'aborted';
-      if (parts.length || interrupted) rows.push({ key: item.key, type: 'assistant', parts, streaming: false, stopReason: message.stopReason, ...(message.errorMessage ? { errorMessage: message.errorMessage } : {}), text: textOf(message), ...(typeof message.timestamp === 'number' ? { timestamp: message.timestamp } : {}), ...(typeof message.provider === 'string' && typeof message.model === 'string' ? { model: { provider: message.provider, modelId: message.model } } : {}), entryId: String(item.entry.id) });
+      if (parts.length || interrupted) rows.push({ key: item.key, type: 'assistant', parts, streaming: false, stopReason: message.stopReason, ...(message.errorMessage ? { errorMessage: message.errorMessage } : {}), text: textOf(message), ...replyMeta(message), entryId: String(item.entry.id) });
+      else {
+        // A final round with nothing to show adds no content, but it is still the round that ended the reply: its model, time and entry replace the earlier round's.
+        const previous = rows[rows.length - 1];
+        if (previous?.type === 'assistant' && !previous.stopReason?.match(/^(error|aborted)$/)) {
+          const { timestamp: _t, model: _m, durationMs: _d, ...rest } = previous;
+          rows[rows.length - 1] = { ...rest, ...replyMeta(message), entryId: String(item.entry.id) };
+        }
+      }
     }
   }
   if (typeof taskId === 'number' && liveMessage) {
@@ -192,6 +200,15 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
   const last = merged[merged.length - 1];
   if (run && last?.type === 'assistant') merged[merged.length - 1] = { ...last, active: true };
   return { rows: merged, pinned, run, retry, compacting: Array.isArray(live?.['compactions']) && live['compactions'].length > 0 };
+}
+
+/** What a reply reports about the model round that wrote it, read from Pi's own message (each field only when it is there). */
+export function replyMeta(message: AssistantMessage): { readonly timestamp?: number; readonly model?: { readonly provider: string; readonly modelId: string }; readonly durationMs?: number } {
+  return {
+    ...(typeof message.timestamp === 'number' ? { timestamp: message.timestamp } : {}),
+    ...(typeof message.provider === 'string' && typeof message.model === 'string' ? { model: { provider: message.provider, modelId: message.model } } : {}),
+    ...(typeof message.durationMs === 'number' ? { durationMs: message.durationMs } : {}),
+  };
 }
 
 /**
@@ -206,7 +223,7 @@ function mergeTurns(rows: readonly Row[]): Row[] {
     if (last?.type === 'assistant' && row.type === 'assistant' && !last.stopReason?.match(/^(error|aborted)$/)) {
       out[out.length - 1] = { key: last.key, type: 'assistant', parts: [...last.parts, ...row.parts], streaming: row.streaming,
         ...(row.stopReason ? { stopReason: row.stopReason } : {}), ...(row.errorMessage ? { errorMessage: row.errorMessage } : {}),
-        text: [last.text, row.text].filter(Boolean).join('\n\n'), ...(row.timestamp !== undefined ? { timestamp: row.timestamp } : {}), ...(row.model ? { model: row.model } : {}),
+        text: [last.text, row.text].filter(Boolean).join('\n\n'), ...(row.timestamp !== undefined ? { timestamp: row.timestamp } : {}), ...(row.model ? { model: row.model } : {}), ...(row.durationMs !== undefined ? { durationMs: row.durationMs } : {}),
         ...(row.entryId !== undefined ? { entryId: row.entryId } : last.entryId !== undefined ? { entryId: last.entryId } : {}) };
     } else out.push(row);
   }

@@ -151,7 +151,7 @@ function PiChatSession({ controller, mode = 'expert', className, actions, avatar
       </Notice></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)}
       onBrowseEarlier={state.history.kind !== 'disabled' && connected && Boolean(state.view?.entries.length) ? () => { setBrowsingHistory(true); act(controller.loadEarlier); } : undefined} />}
-    {browsingHistory && state.history.kind !== 'disabled' && <HistoryPanel history={state.history} developer={developer} connected={!state.disposed && connected}
+    {browsingHistory && state.history.kind !== 'disabled' && <HistoryPanel history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected}
       onLoad={() => act(controller.loadEarlier)} onClose={() => { setBrowsingHistory(false); if (!state.disposed) controller.clearHistory(); }} />}
 
     <div className="relative min-h-0 flex-1">

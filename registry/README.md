@@ -37,11 +37,12 @@ Pass `artifacts={{ open, isOpen?, detect? }}` to `PiChat` and a tool result whos
 
 ## Reply footer in `pi-chat`
 
-Pass `replyFooter={reply => <small>…</small>}` to `PiChat` and every settled reply gets that node under its actions. `reply` is the
-same `ReplyRef` `messageActions` receives, now with `timestamp` (the last model round's message timestamp, ms) and `model`
-(`{provider, modelId}` as that message names them, so it is the model that really answered after a fallback). The host decides
-who sees it (for example only the editors of the app) and where any other data (duration, cost) comes from, keyed on `timestamp`.
-Not rendered while the reply streams.
+Pass `replyFooter={reply => <small>…</small>}` to `PiChat` or `AmbientChat` and every finished reply gets that node under its actions, including replies listed under earlier records (which have no actions). `reply` is the
+same `ReplyRef` `messageActions` receives, now with `timestamp` (the last model round's message timestamp, ms), `model`
+(`{provider, modelId}` as that message names them, so it is the model that really answered after a fallback, even when that last round
+shows nothing) and `durationMs` (Pi's own `AssistantMessage.durationMs`: how long the last round took to answer, excluding queue time, earlier rounds, tools and retry delays;
+absent for messages written before Pi recorded it; never computed at render). The host decides who sees it (for example only the editors of the app).
+Not rendered while the reply streams, runs a tool or waits to retry.
 
 ## Approval cards in `pi-chat`
 
