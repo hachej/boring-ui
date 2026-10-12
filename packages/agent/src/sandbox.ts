@@ -57,13 +57,15 @@ const recorded = (tool: ToolRegistration, simulate: (toolName: string, args: Jso
  * A native extension that makes the named tools fail closed in a sandbox. Its wraps replace each tool the host flags as
  * mutating (or does not declare safe) with a recorder, so the call is never executed and the model gets an acknowledgement.
  * Its `beforeTool` hook blocks every call whose name is not in `tools`, so a tool added mid-run (or another extension's)
- * cannot run unnamed. It brings no tools and changes nothing unless a conversation selects it:
- * `conversation.configure({ extensions: { add: [sandbox] } })`.
+ * cannot run unnamed. It brings no tools and changes nothing unless a conversation selects it: include it in the full
+ * selected list and apply that list with `configure({ extensions: selected })`. (`add` keeps the defaults' positions, so it
+ * does not give the effective order.)
  *
  * Composition limit (owned by the host): the sandbox must be the last wrap of each recorded tool. A wrap selected after it
  * replaces the recorder's `execute`, and the replaced call runs for real. Pi 1.1 exposes no public seam that tells the
  * executing phase which composed tool it runs, so this module cannot verify the order at call time. Use
- * `assertSandboxLast` at setup, with the same ordered extension list the host selects. The upstream request is in
+ * `assertSandboxLast` at setup, over the COMPLETE selected list (the array passed to `configure({ extensions: selected })`, or
+ * the effective list of a `defineAgent`), not over an `add` list. The upstream request is in
  * docs/upstream/pi-hookapi-composed-tool.md.
  */
 export function createSandboxExtension(options: SandboxOptions): Extension {
@@ -82,9 +84,10 @@ export function createSandboxExtension(options: SandboxOptions): Extension {
 
 /**
  * Setup-time check over the public `Extension.wraps` shape. Throws when an extension selected after `sandbox` wraps a tool the
- * sandbox records, because that wrap would replace the recorder. `selected` is the ordered list the host selects (a
- * `defineAgent` `extensions` list, or the order of `configure({ extensions: { add } })`). It is a host check, not a Harness
- * guard: nothing in Pi calls it, so the host must call it wherever it composes that list.
+ * sandbox records, because that wrap would replace the recorder. `selected` must be the COMPLETE effective list, in the order
+ * the conversation applies it (the same array passed to `configure({ extensions: selected })`). A partial `add` list
+ * does not show the effective order, because defaults keep their positions. It is a host check, not a Harness guard:
+ * nothing in Pi calls it, so the host must call it wherever it composes that list.
  */
 export function assertSandboxLast(selected: readonly Extension[], sandbox: Extension): void {
   const at = selected.indexOf(sandbox);

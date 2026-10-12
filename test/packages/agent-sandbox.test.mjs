@@ -147,8 +147,10 @@ async function readingWorkspace(t, extensionsInOrder) {
 test('a setup check refuses a converting read selected after the sandbox, and names the composition limit', async () => {
   const sandbox = createSandboxExtension({ tools: ['read'] });
   const converting = createConvertingRead({ convert: async () => ({ text: 'unused' }) });
-  assert.throws(() => assertSandboxLast([sandbox, converting], sandbox), /must be the last wrap of each recorded tool/);
-  assert.doesNotThrow(() => assertSandboxLast([converting, sandbox], sandbox));
+  // The complete effective lists, as applied with configure({ extensions: selected }): defaults first, then the rest.
+  const files = defineExtension({ name: 'fixture.files', tools: [createReadTool()] });
+  assert.throws(() => assertSandboxLast([files, sandbox, converting], sandbox), /must be the last wrap of each recorded tool/);
+  assert.doesNotThrow(() => assertSandboxLast([files, converting, sandbox], sandbox));
 });
 
 test('a sandbox selected last records a PDF read through a converting read and never converts it', async t => {
