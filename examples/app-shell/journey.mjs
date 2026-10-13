@@ -415,7 +415,8 @@ try {
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
     assert.equal(await browser.evaluate(`!!document.activeElement?.closest('[data-slot=drawer-popup]')`), true, `focus is inside the modal layer (it is on ${await browser.evaluate('document.activeElement?.tagName')})`);
     assert.equal(await browser.evaluate(`${q(LAYER)}.getAttribute('aria-label')`), 'Coach', 'review 8: the dialog is named');
-    assert.equal(await browser.evaluate(`getComputedStyle(${q(LAYER)}).getPropertyValue('--app-shell-tabbar')`).then(v => v.trim()), '56px', 'review 4: the portalled popup is given the tab bar height');
+    const bar = await browser.evaluate(rect('[data-testid=tabbar]'));
+    assert.equal(await browser.evaluate(`getComputedStyle(${q(LAYER)}).getPropertyValue('--app-shell-tabbar')`).then(v => v.trim()), `${bar.h}px`, 'review 4: the portalled popup is given the tab bar height');
   });
 
   await step('review 9: every control of the layer, transcript buttons included, is at least 44px', async () => {

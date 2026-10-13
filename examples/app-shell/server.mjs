@@ -6,7 +6,6 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Harness, createRegistry } from '@earendil-works/pi-durable';
@@ -25,6 +24,9 @@ const here = name => fileURLToPath(new URL(name, import.meta.url));
 /** The sidebar tokens the shadcn sidebar fixture uses; a host's own shadcn style defines them, the repository theme does not. */
 const SIDEBAR_TOKENS = `:root{--sidebar:var(--background);--sidebar-foreground:var(--foreground);--sidebar-border:var(--border);--sidebar-accent:var(--accent);--sidebar-accent-foreground:var(--accent-foreground);--sidebar-ring:var(--ring)}
 @theme inline{--color-sidebar:var(--sidebar);--color-sidebar-foreground:var(--sidebar-foreground);--color-sidebar-border:var(--sidebar-border);--color-sidebar-accent:var(--sidebar-accent);--color-sidebar-accent-foreground:var(--sidebar-accent-foreground);--color-sidebar-ring:var(--sidebar-ring)}`;
+
+/** The few Tailwind preflight rules the shell's own markup relies on (a host's shadcn app has the whole preflight); in the base layer, so utilities win. */
+const BASE = '@layer base{*,::before,::after{box-sizing:border-box}button{background:transparent;border:0;padding:0;font:inherit;color:inherit}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}}';
 
 export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
@@ -58,7 +60,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
 
   const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell'], extraCss: SIDEBAR_TOKENS }), readFileSync(createRequire(import.meta.url).resolve('tailwindcss/preflight.css'), 'utf8'), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
     'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
   const page = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Forme (fictional)</title>
