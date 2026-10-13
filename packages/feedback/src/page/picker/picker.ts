@@ -120,6 +120,10 @@ export function createPicker(options: PickerOptions): Picker {
   /** Where the finger went down, and whether this gesture already picked (pointerup and touchend of one tap count once). */
   let fingerDown: { x: number; y: number } | undefined;
   let tapDone = false;
+  /** The finger went further than TAP_SLOP from where it went down at some point of this gesture: a drag, even if it came back. */
+  let dragged = false;
+  const far = (where: { x: number; y: number } | undefined): boolean =>
+    where !== undefined && fingerDown !== undefined && Math.hypot(where.x - fingerDown.x, where.y - fingerDown.y) > TAP_SLOP;
   /** Children left by ↑, so ↓ returns along the same path. */
   let trail: Element[] = [];
   let focus: Element | null = null;
@@ -255,14 +259,13 @@ export function createPicker(options: PickerOptions): Picker {
     const pointerType = (event as PointerEvent).pointerType;
     if (type === 'pointerdown' && pointerType) lastPointer = pointerType;
     if (type === 'touchstart') lastPointer = 'touch';
-    if ((type === 'pointerdown' && pointerType === 'touch') || type === 'touchstart') { fingerDown = point(event); tapDone = false; }
+    if ((type === 'pointerdown' && pointerType === 'touch') || type === 'touchstart') { fingerDown = point(event); tapDone = false; dragged = false; }
     if (type === 'pointercancel') tapDone = true;
     const tapped = type === 'pointerup' && pointerType === 'touch';
     if (tapped || (type === 'touchend' && lastPointer === 'touch')) {
       const where = point(event);
       if (where && tapPicks) {
-        const moved = fingerDown !== undefined && Math.hypot(where.x - fingerDown.x, where.y - fingerDown.y) > TAP_SLOP;
-        if (!tapDone && !moved && !suspended) {
+        if (!tapDone && !dragged && !far(where) && !suspended) {
           tapDone = true;
           touch = true;
           const found = at(where.x, where.y);
@@ -283,7 +286,8 @@ export function createPicker(options: PickerOptions): Picker {
   };
   const inIgnored = (event: Event): boolean => event.composedPath().some(target => isElement(target) && target.hasAttribute('data-feedback-ignore'));
   const onMove = (event: Event): void => {
-    if (passes(event) || (event as PointerEvent).pointerType === 'touch') return;
+    if (passes(event)) return;
+    if (event.type === 'touchmove' || (event as PointerEvent).pointerType === 'touch') { if (tapPicks && far(point(event))) dragged = true; return; }
     const where = point(event);
     if (where) hover(where.x, where.y);
   };
@@ -313,7 +317,7 @@ export function createPicker(options: PickerOptions): Picker {
   };
   const listenAll = (): void => {
     for (const type of POINTER_EVENTS) listen(type, onPointer);
-    for (const type of ['pointermove', 'mousemove']) listen(type, onMove, true);
+    for (const type of ['pointermove', 'mousemove', 'touchmove']) listen(type, onMove, true);
     for (const type of KEY_EVENTS) listen(type, onKey);
     if (wheel) listen('wheel', onWheel);
     listen('submit', onSubmit);

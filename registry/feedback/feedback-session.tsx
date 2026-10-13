@@ -108,7 +108,8 @@ export function pointBarInset(document: Document): number {
 
 /**
  * Beside the element: below it when the bubble (`size`, its measured height once drawn) fits above point mode's bar (if any), else
- * above it, else as low as it fits.
+ * above it, else as low as it fits. Every branch is clamped to the space above the bar, so the bubble never covers it; a bubble taller
+ * than that space scrolls inside it.
  */
 function bubblePlace(element: Element, size = 120): CSSProperties {
   const view = element.ownerDocument.defaultView;
@@ -117,8 +118,9 @@ function bubblePlace(element: Element, size = 120): CSSProperties {
   const left = Math.min(Math.max(8, rect.left), Math.max(8, width - BUBBLE_WIDTH - 8));
   const below = rect.bottom + 8;
   const above = rect.top - size - 8;
-  const top = below + size <= height ? below : above >= 8 ? above : Math.max(8, height - size);
-  return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16) };
+  const lowest = Math.max(8, height - size);
+  const top = Math.min(below + size <= height ? below : above >= 8 ? above : lowest, lowest);
+  return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16), maxHeight: Math.max(0, height - top), overflowY: 'auto' };
 }
 
 /** After a bubble closes with focus nowhere (the focused field left the page), focus goes back to the bar's general-question entry. */
@@ -150,7 +152,8 @@ export function NoteBubble({ session, labels }: { readonly session: FeedbackSess
   const [announce, setAnnounce] = useState('');
   const generalOpen = state.generalOpen && state.phase === 'active';
   const box = useRef<HTMLDivElement>(null);
-  const size = (): number | undefined => box.current?.offsetHeight || undefined;
+  // The bubble's natural height (its content plus borders), not the height it is clamped to, so it grows back when there is room.
+  const size = (): number | undefined => (box.current ? box.current.scrollHeight + box.current.offsetHeight - box.current.clientHeight : 0) || undefined;
   useLayoutEffect(() => { if (bubble) setPlace(bubblePlace(bubble.element, size())); }, [bubble?.noteId, bubble?.element]);
   // Once drawn, place it again with its real height (taller with 44px touch targets and wrapped buttons).
   useLayoutEffect(() => {

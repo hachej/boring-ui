@@ -61,6 +61,16 @@ test("picker tap: 'pick' hands one tap to onPick once, with no toolbar; a moved 
   pointer(window, 'pointercancel', $('plan'));
   touch(window, 'touchend', $('plan'));
   assert.deepEqual(picked, [$('save')], 'a gesture the browser cancelled (a scroll) is no tap');
+  // Out and back on a touch-action: none surface: no scroll cancels it, the finger ends 2px from where it started, but it moved 50px.
+  pointer(window, 'pointerdown', $('plan'));
+  touch(window, 'touchstart', $('plan'));
+  pointer(window, 'pointermove', $('plan'), { clientX: 10, clientY: 60 });
+  touch(window, 'touchmove', $('plan'), 10, 60);
+  pointer(window, 'pointermove', $('plan'), { clientX: 10, clientY: 12 });
+  touch(window, 'touchmove', $('plan'), 10, 12);
+  pointer(window, 'pointerup', $('plan'), { clientX: 10, clientY: 12 });
+  touch(window, 'touchend', $('plan'), 10, 12);
+  assert.deepEqual(picked, [$('save')], 'a finger that went 50px out and came back is a drag, not a tap');
   tap(window, $('tab'));
   assert.deepEqual(picked, [$('save')], 'the tab bar is data-feedback-ignore: its taps reach it');
   tap(window, $('plan'));

@@ -3,10 +3,11 @@
 // Steps: open the assistant (a full-screen panel) → « Montrer dans l'app » → the panel steps aside and PointBar sits above the tab bar →
 // tap an element and Annuler: the panel comes back with no picks → point again → tap the Facturation tab (navigation while pointing) →
 // tap Change plan (the bubble, the page never reacts) → note → re-tap deselects → tap again, note → tap Profil → tap Save profile → note
-// → Terminé: the panel is back and the composer chip holds the two picks → Send attaches the report. Geometry: the bar never overlaps
+// → tap a heading and scroll it down to the bar (the bubble stays clear of the bar) → re-tap deselects → Terminé: the panel is back and the composer chip holds the two picks → Send attaches the report. Geometry: the bar never overlaps
 // the tab bar, the selection or the bubble, and every bar button is at least 44px.
 // Screenshots and journey.json go to .cache/evidence/feedback-point/. Manual evidence, not an npm test.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +19,9 @@ const chromium = process.env.CHROMIUM ?? `${process.env.HOME}/.cache/ms-playwrig
 mkdirSync(evidence, { recursive: true });
 const directory = mkdtempSync(join(tmpdir(), 'boring-feedback-point-'));
 const steps = [];
-const summary = { journey: 'feedback-point', device: 'phone 390x844 touch', startedAt: new Date().toISOString(), model: 'scripted (keyless)', steps, screenshots: [], records: {} };
+const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim() !== '';
+const summary = { journey: 'feedback-point', commit, dirty, device: 'phone 390x844 touch', startedAt: new Date().toISOString(), model: 'scripted (keyless)', steps, screenshots: [], records: {} };
 const step = async (name, run) => { const started = Date.now(); await run(); steps.push({ name, ms: Date.now() - started }); console.log(`ok  ${name} (${Date.now() - started} ms)`); };
 
 const q = testid => `document.querySelector('[data-testid=${JSON.stringify(testid)}]')`;
@@ -117,6 +120,26 @@ try {
     assert.deepEqual(await browser.evaluate('window.__journeyHits'), { save: 0, submit: 0, plan: 0 }, 'Save was neither pressed nor submitted');
     summary.records.second = await geometry(q('save-profile'));
     await shot('04-second-pick');
+  });
+
+  await step('a selection scrolled down to the bar: the bubble follows and still never covers the bar; a re-tap deselects it', async () => {
+    const HEADING = `document.querySelector('[data-testid=exports] h2')`;
+    // A finger on the heading where it is (the driver's tap would centre it under the open bubble): scroll it near the top first.
+    await browser.evaluate(`window.scrollBy(0, ${HEADING}.getBoundingClientRect().top - 200)`);
+    const at = await browser.until('the heading, clear of the bubble', `(() => { const r = ${HEADING}.getBoundingClientRect(), b = ${q('feedback-bubble')}?.getBoundingClientRect(); const x = r.left + 20, y = r.top + r.height / 2;
+      return Math.abs(r.top - 200) < 2 && !(b && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) ? { x, y } : null; })()`, 5000);
+    await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+    await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await browser.until('its bubble', `!!${q('feedback-bubble')} && ${q('feedback-point-count')}.textContent === '3 sélections'`, 5000);
+    // Scroll the page up so the selected heading sits 745px down the 844px screen, just above the tab bar and behind PointBar.
+    await browser.evaluate(`window.scrollBy(0, ${HEADING}.getBoundingClientRect().top - 745)`);
+    const low = await browser.until('the selection low on the screen', `(() => { const r = ${HEADING}.getBoundingClientRect(); return Math.abs(r.top - 745) < 2 ? r.top : null; })()`, 5000);
+    await pause(200);
+    summary.records.scrolled = { selectionTop: low, ...(await geometry()) };
+    assert.ok(summary.records.scrolled.bubble, 'the bubble is still open');
+    await shot('04b-scrolled');
+    await browser.tap(HEADING);
+    await browser.until('deselected', `!${q('feedback-bubble')} && ${q('feedback-point-count')}.textContent === '2 sélections'`, 5000);
   });
 
   await step('Terminé: the panel is back and the picks are the composer chip', async () => {
