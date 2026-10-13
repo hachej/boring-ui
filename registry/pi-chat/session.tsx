@@ -291,6 +291,20 @@ export function useTranscript(rows: readonly unknown[], page = 60, more = 40) {
   const anchor = useRef<{ readonly height: number; readonly top: number } | undefined>(undefined);
   // Growth re-pins at once: a spring trails the rows that grow after insert (streamed text, late images) and leaves the newest one under the composer.
   const stick = useStickToBottom({ initial: 'instant', resize: 'instant' });
+  // The library observes only the content. A shorter viewport (phone keyboard, a taller composer) leaves the newest row below the fold,
+  // so re-pin when the viewport shrinks while the reader is at the bottom.
+  useEffect(() => {
+    const element = stick.scrollRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    let height = element.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const shrank = element.clientHeight < height;
+      height = element.clientHeight;
+      if (shrank && stick.state.isAtBottom) void stick.scrollToBottom('instant');
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [stick.scrollRef]);
   const hidden = Math.max(0, rows.length - limit);
   // Reveal older rows when the person scrolls near the top, keeping the same rows in view.
   const reveal = useCallback(() => {

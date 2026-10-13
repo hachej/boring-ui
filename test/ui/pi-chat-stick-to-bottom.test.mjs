@@ -7,7 +7,6 @@ import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
-const VIEWPORT = 400; // the scroller's clientHeight
 const ENTRY = `
 import { createElement as h } from 'react';
 import { useTranscript } from ${JSON.stringify(new URL('../../registry/pi-chat/session.tsx', import.meta.url).pathname)};
@@ -49,25 +48,27 @@ async function harness(t) {
   let stick;
   const expose = value => { stick = value; };
   const heights = {};
-  // The scroller's layout: content height is the sum of the rows' heights, the viewport is VIEWPORT px, scrollTop clamps.
+  // The scroller's layout: content height is the sum of the rows' heights, the viewport is a fixed height the test can change, scrollTop clamps.
   let scroller;
   const contentHeight = () => [...scroller.firstElementChild.children].reduce((sum, row) => sum + Number(row.dataset.h), 0);
-  const maxTop = () => Math.max(0, contentHeight() - VIEWPORT);
+  const maxTop = () => Math.max(0, contentHeight() - viewport);
   let top = 0;
+  let viewport = 400; // the scroller's clientHeight, which the keyboard or a taller composer can shrink
   const layout = () => {
     scroller ??= element.querySelector('[data-testid="transcript-scroll"]');
     if (!scroller) return;
-    Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => viewport });
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: contentHeight });
     Object.defineProperty(scroller, 'scrollTop', { configurable: true,
       get: () => Math.min(top, maxTop()),
       set: value => { top = Math.max(0, Math.min(Number(value), maxTop())); setTimeout(() => scroller.dispatchEvent(new window.Event('scroll'))); } });
     for (const [target, entry] of observed) {
-      const height = target === scroller.firstElementChild ? contentHeight() : undefined;
+      const height = target === scroller ? viewport : target === scroller.firstElementChild ? contentHeight() : undefined;
       if (height !== undefined && height !== entry.height) { entry.height = height; entry.owner.callback([{ contentRect: { height } }]); }
     }
   };
-  const render = async rows => { await act(async () => root.render(createElement(Host, { rows, heights, expose }))); layout(); };
+  let lastRows = [];
+  const render = async rows => { lastRows = rows; await act(async () => root.render(createElement(Host, { rows, heights, expose }))); layout(); };
   const frames = ms => act(() => new Promise(resolve => setTimeout(resolve, ms)));
   const distanceFromBottom = () => Math.round(maxTop() - top);
   t.after(async () => {
@@ -75,7 +76,8 @@ async function harness(t) {
     await window.happyDOM.close();
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
-  return { render, frames, expose: () => stick, heights, distanceFromBottom, scrollTo: value => { scroller.scrollTop = value; }, scroller: () => scroller, layout };
+  return { render, frames, expose: () => stick, heights, distanceFromBottom, scrollTo: value => { scroller.scrollTop = value; }, scroller: () => scroller, layout,
+    setViewport: async value => { viewport = value; await render(lastRows); } };
 }
 
 test('the latest row stays in view while the rows after it grow', async t => {
@@ -117,4 +119,19 @@ test('a reader who scrolled up is not pulled back down when a row grows', async 
   await chat.render(rows);
   await chat.frames(600);
   assert.equal(chat.scroller().scrollTop, 0, 'the view stays where the reader left it');
+});
+
+test('the latest row stays in view when the viewport shrinks (keyboard or a taller composer)', async t => {
+  const chat = await harness(t);
+  const rows = [{ key: 'user' }, { key: 'reply' }];
+  chat.heights.user = 60;
+  chat.heights.reply = 600;
+  await chat.render(rows);
+  chat.expose().scrollToBottom('instant');
+  await chat.frames(100);
+  assert.ok(chat.distanceFromBottom() <= 2, 'the reader starts at the bottom');
+  // The phone keyboard opens: the scroller loses 150px of height while its content stays the same.
+  await chat.setViewport(250);
+  await chat.frames(200);
+  assert.ok(chat.distanceFromBottom() <= 2, `the latest row is ${chat.distanceFromBottom()}px below the viewport after the shrink`);
 });
