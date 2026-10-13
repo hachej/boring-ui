@@ -44,7 +44,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
     list: async () => ({ entries: ['first.html', 'second.html'].map(path => ({ path, kind: 'file', size: 20 })) }), search: async () => ({ entries: [] }), history: async () => [],
   };
   for (const path of ['first.html', 'second.html']) await binding.publish({ operationId: path, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode('<p>Original</p>'), mediaType: 'text/html' }] });
-  await act(async () => root.render(createElement(AgentWorkspace, { controller: undefined, conversationId: undefined, revisionProvider: binding })));
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: undefined, conversationId: undefined, revisionProvider: binding, libraryPlacement: 'center' })));
   const library = () => element.querySelector('[data-testid=workspace-library]');
   assert.ok(library(), 'Library is available without conversations');
   await act(async () => library().click());
@@ -79,7 +79,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   t.after(() => chatController.dispose());
   let selected = 0, created = 0;
   const conversations = { items: [{ id: 'one', title: 'Fictional chat' }], activeId: 'one', onSelect: () => { selected++; }, onNew: () => { created++; } };
-  const workspace = extra => createElement(AgentWorkspace, { controller: chatController, conversationId: 'one', revisionProvider: binding, ...extra });
+  const workspace = extra => createElement(AgentWorkspace, { controller: chatController, conversationId: 'one', revisionProvider: binding, libraryPlacement: 'center', ...extra });
   await act(async () => root.render(workspace({ conversations })));
   await act(async () => element.querySelector('[data-testid=workspace-chat-link]').click());
   const composer = element.querySelector('[data-testid=workspace-chat-surface] textarea'); assert.ok(composer, element.textContent);

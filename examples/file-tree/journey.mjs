@@ -117,6 +117,46 @@ try {
     const unchanged = await host.storage.workspace('second').read({ target: host.target('first.html'), revision: { kind: 'latest' } }, host.access('second'));
     assert.equal(new TextDecoder().decode(unchanged.snapshot.bytes), '<p>First file</p>');
   });
+  await step('side Library column beside the viewer: desktop and a 390x844 phone sheet', async () => {
+    const tab = await browser.openTab(`http://127.0.0.1:${server.address().port}/?side=1`);
+    const shot = async name => writeFileSync(join(evidence, name), Buffer.from((await tab.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    const click = selector => tab.evaluate(`${q(selector)}.click()`);
+    const box = selector => `(() => { const r = ${q(selector)}.getBoundingClientRect(); return { x: r.x, right: r.right, width: r.width, height: r.height }; })()`;
+    try {
+      await tab.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await tab.until('integrated workspace', `!!${q('[data-testid=workspace-library]')}`);
+      assert.equal(await tab.evaluate(`${q('[data-dock=library]')}.dataset.placement`), 'closed', 'the Library column starts closed');
+      await click('[data-testid=workspace-library]');
+      await tab.until('column alone at the right edge', `${q('[data-dock=library]')}.dataset.placement === 'docked' && !!${q(row('first.html'))} && !${q('[data-testid=viewer-panel]')}`);
+      const alone = await tab.evaluate(box('[data-dock=library]'));
+      const workspaceEdge = (await tab.evaluate(box('[data-boring=agent-workspace]'))).right;
+      assert.ok(Math.abs(alone.right - workspaceEdge) < 2, `the column is at the workspace's right edge: ${JSON.stringify(alone)} in ${workspaceEdge}`);
+      await click(`${row('first.html')} button`);
+      await tab.until('viewer left of the column', `(() => { const v = ${q('[data-testid=workspace-panel]')}?.getBoundingClientRect(), l = ${q('[data-dock=library]')}.getBoundingClientRect(); return !!v && v.right <= l.x + 2 && l.width > 200 && ${q('[data-dock=library]')}.dataset.placement === 'docked'; })()`);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      await shot('library-side-desktop.png');
+      assert.equal(await tab.evaluate(`${q('[data-testid="file-viewer"]')}.dataset.path`), 'first.html');
+      assert.equal(await tab.evaluate(`${q('[data-testid=viewer-library]')}.getAttribute('aria-pressed')`), 'true');
+      await click('[data-testid=viewer-library]');
+      await tab.until('column closed from the viewer bar', `${q('[data-dock=library]')}.dataset.placement === 'closed' && ${q('[data-testid=workspace-library]')}.getAttribute('aria-pressed') === 'false'`);
+      assert.equal(await tab.evaluate(`${q('[data-testid="file-viewer"]')}.dataset.path`), 'first.html', 'the viewer is untouched');
+      await click('[data-testid=workspace-library]');
+      await tab.until('column reopened from the left pane', `${q('[data-dock=library]')}.dataset.placement === 'docked'`);
+      await tab.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+      await tab.until('phone layout', `innerWidth === 390 && ${q('[data-boring=agent-workspace]')}.dataset.sessions === 'closed'`);
+      // The open column becomes a full-screen sheet on a phone.
+      await tab.until('Library sheet', `${q('[data-dock=library]')}.dataset.placement === 'sheet'`);
+      assert.deepEqual(await tab.evaluate(box('[data-dock=library]')), { x: 0, right: 390, width: 390, height: 844 }, 'a full-screen sheet');
+      await shot('library-side-phone-sheet.png');
+      await click(`${row('second.html')} button`);
+      await tab.until('sheet closed, viewer shown', `${q('[data-dock=library]')}.dataset.placement === 'closed' && ${q('[data-testid="file-viewer"]')}?.dataset.path === 'second.html'`);
+      await click('[data-testid=viewer-library]');
+      await tab.until('sheet again from the viewer bar', `${q('[data-dock=library]')}.dataset.placement === 'sheet'`);
+      await click('[data-testid=workspace-library-close]');
+      await tab.until('sheet closed by its button', `${q('[data-dock=library]')}.dataset.placement === 'closed'`);
+      await shot('library-side-phone-viewer.png');
+    } finally { await tab.close(); }
+  });
   await step('portable tree works in a detached page without workspace or sidebar context', async () => {
     const detached = await browser.openTab(`http://127.0.0.1:${server.address().port}/?detached=1`);
     try {
