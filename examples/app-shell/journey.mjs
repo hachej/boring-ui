@@ -409,6 +409,7 @@ try {
     const r = await center(TRIGGER);
     await touch('touchStart', [[r.x, r.y]]);
     await browser.until('listening', `!!${q('[data-testid=agent-listening]')}`, 8000);
+    await pause(700); // a recording of a few milliseconds is dropped as too short
     await touch('touchEnd', []);
     await browser.until('the composer holds the transcript', `${q(INPUT)}?.value === 'Combien de pas hier ?'`, 20000);
     assert.equal(app.submits.length, before, 'nothing sent');
@@ -450,7 +451,7 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=tabbar]')}`), false, 'no tab bar');
     assert.equal(await browser.evaluate(`${q(sidebar)}.dataset.state`), 'expanded');
     assert.equal(await browser.evaluate(`${q('[data-testid=sidebar-title]')}.textContent`), 'Forme');
-    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid^=nav-]:not([data-testid=nav-badge]):not([data-testid=nav-user])')].map(e => e.textContent.trim())`), ['Jour', 'Progrès', 'Données']);
+    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid^=nav-]:not([data-testid=nav-badge]):not([data-testid=nav-user]):not([data-testid=nav-agent])')].map(e => e.textContent.trim())`), ['Jour', 'Progrès', 'Données']);
     await browser.screenshot('desktop-sidebar.png');
     const wide = (await browser.evaluate(rect('[data-slot=sidebar-container][data-side=left]'))).w;
     await browser.click(q('[data-slot=sidebar-trigger]'));
@@ -510,7 +511,7 @@ try {
     await browser.until('the dropdown', `[...document.querySelectorAll('[role=menuitem]')].some(e => e.textContent.trim() === 'Exporter')`);
     await browser.press('Escape');
     await browser.send('Page.navigate', { url: `${app.url}?agent=none` });
-    await browser.until('ready', `!!${q('[data-testid=account-button]')} && !${q('[data-testid=connecting]')}`, 30000);
+    await browser.until('ready', `!!${q('[data-testid=nav-user]')} && !${q('[data-testid=connecting]')}`, 30000);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=nav-agent]')}`), false, 'no agent, no sidebar entry');
     await browser.send('Page.navigate', { url: `${app.url}?app=empty` });
     await live();
