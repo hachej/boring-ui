@@ -472,8 +472,21 @@ try {
     await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal overflow');
     // The agent trigger toggles the right panel; the page stays interactive.
+    // The sidebar's agent entry is not a route: it toggles the right panel, and aria-pressed follows it.
+    const entry = '[data-testid=nav-agent]';
+    const routes = await browser.evaluate(`window.__routes.length`), length = await browser.evaluate(`history.length`);
+    assert.equal(await browser.evaluate(`${q(entry)}.getAttribute('aria-pressed')`), 'false');
+    assert.equal(await browser.evaluate(`${q(entry)}.textContent.trim()`), 'Coach');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=nav-agent]').closest('[data-sidebar=sidebar]') !== null`), true);
+    await browser.click(q(entry));
+    await browser.until('panel open from the entry', `${q(LAYER)}?.dataset.state === 'open' && ${q(entry)}.getAttribute('aria-pressed') === 'true'`);
+    await browser.click(q(entry));
+    await browser.until('panel closed from the entry', `${q(LAYER)}?.dataset.state === 'closed' && ${q(entry)}.getAttribute('aria-pressed') === 'false'`);
+    assert.equal(await browser.evaluate(`window.__routes.length`), routes, 'no route change');
+    assert.equal(await browser.evaluate(`history.length`), length, 'no history entry');
     await browser.click(q(TRIGGER));
     await browser.until('panel open', `${q(LAYER)}?.dataset.state === 'open'`);
+    assert.equal(await browser.evaluate(`${q(entry)}.getAttribute('aria-pressed')`), 'true', 'the header trigger and the entry agree');
     await pause(500);
     const panel = await browser.evaluate(rect('[data-slot=sidebar-container][data-side=right]'));
     assert.ok(Math.abs(panel.w - 384) <= 2 && Math.abs(panel.right - await browser.evaluate('document.documentElement.clientWidth')) <= 1, `a 24rem panel on the right edge: ${JSON.stringify(panel)}`);
@@ -496,6 +509,9 @@ try {
     await browser.click(q('[data-testid=header-more]'));
     await browser.until('the dropdown', `[...document.querySelectorAll('[role=menuitem]')].some(e => e.textContent.trim() === 'Exporter')`);
     await browser.press('Escape');
+    await browser.send('Page.navigate', { url: `${app.url}?agent=none` });
+    await browser.until('ready', `!!${q('[data-testid=account-button]')} && !${q('[data-testid=connecting]')}`, 30000);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=nav-agent]')}`), false, 'no agent, no sidebar entry');
     await browser.send('Page.navigate', { url: `${app.url}?app=empty` });
     await live();
     assert.equal(await browser.evaluate(`!!${q('[data-testid=tabbar]')} || !!document.querySelector('[data-testid^=nav-][data-testid$=accueil]')`), false, 'no tab bar and no nav list');

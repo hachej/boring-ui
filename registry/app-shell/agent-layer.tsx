@@ -6,7 +6,7 @@
 // Host concern: Pi has no layout. The chat is the borrowed NativeChatController rendered by PiChat; the screen context travels as the
 // submit's `context` (agent-context.ts). Nothing here is configurable beyond AgentSpec.
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
+import type { ComponentType, CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, SparklesIcon, XIcon } from 'lucide-react';
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
 import { createVoiceCapture } from '@hachej/boring-feedback/page';
@@ -31,6 +31,10 @@ import { AgentContextProvider } from './agent-context';
 
 export interface AgentSpec {
   readonly controller: NativeChatController;
+  /** The agent's name in the expanded sidebar (default: the chat's title, then « Assistant »). */
+  readonly label?: string;
+  /** The agent's icon in the sidebar (default: the sparkles of the header trigger). */
+  readonly icon?: ComponentType<{ className?: string }>;
   readonly chatProps?: Omit<PiChatProps, 'controller'>;
   /** Push-to-talk. `send` 'auto' submits the transcript; 'draft' (default) only fills the composer. */
   readonly voice?: { readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<string>; readonly send?: 'auto' | 'draft' };

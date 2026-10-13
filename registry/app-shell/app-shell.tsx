@@ -49,7 +49,7 @@ function Screens({ items, activeId }: { readonly items: readonly NavItem[]; read
   </div>;
 }
 
-function Shell({ title, nav, improve, account, route, text }: { readonly title: string; readonly nav: readonly NavItem[]; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ title, nav, agent, improve, account, route, text }: { readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const compact = useIsCompact();
   const [accountOpen, setAccountOpen] = useState(false);
   const active = nav.find(item => item.id === route.id) ?? nav[0];
@@ -64,7 +64,7 @@ function Shell({ title, nav, improve, account, route, text }: { readonly title: 
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
   return <SidebarProvider data-testid="app-shell" className="h-dvh min-h-0 overflow-hidden">
-    {!compact && <AppSidebar title={title} items={nav} activeId={active.id} onChange={route.onChange} account={account} improve={improve} text={text} />}
+    {!compact && <AppSidebar title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
     <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
       <ShellContext name={active.label} />
       <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} />
@@ -80,6 +80,6 @@ export function AppShell(props: AppShellProps) {
   const { agent, improve, title, nav, account, route } = props;
   const text = appShellText((agent ?? improve)?.chatProps?.locale);
   return <AgentLayerProvider agent={agent} improve={improve}>
-    <HeaderProvider><Shell title={title} nav={nav} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
+    <HeaderProvider><Shell title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

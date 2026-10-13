@@ -4,10 +4,12 @@
 // expanded. Choosing an item only calls `route.onChange`: the app's router owns the URL, and the shell adds no history entry.
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
-import { EllipsisIcon } from 'lucide-react';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail } from '@/components/ui/sidebar';
+import { EllipsisIcon, SparklesIcon } from 'lucide-react';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator } from '@/components/ui/sidebar';
 import { cn } from '../utils/utils';
 import { NavUser } from './account';
+import { useAgentLayer } from './agent-layer';
+import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './sheet';
 import type { AppShellText } from './text';
@@ -87,10 +89,14 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
 }
 
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
-export function AppSidebar({ title, items, activeId, onChange, account, improve, text }: {
+export function AppSidebar({ title, items, activeId, onChange, agent, account, improve, text }: {
   readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
-  readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText;
+  readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText;
 }) {
+  const layer = useAgentLayer();
+  const pressed = layer.state !== 'closed' && layer.showing === 'agent';
+  const AgentIcon = agent?.icon ?? SparklesIcon;
+  const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;
   return <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
     <SidebarHeader><p data-testid="sidebar-title" className="m-0 truncate px-2 py-1 text-base font-semibold group-data-[collapsible=icon]:hidden">{title}</p></SidebarHeader>
     <SidebarContent>
@@ -103,6 +109,16 @@ export function AppSidebar({ title, items, activeId, onChange, account, improve,
           </SidebarMenuButton>
         </SidebarMenuItem>)}
       </SidebarMenu></SidebarGroupContent></SidebarGroup>}
+      {/* The assistant is a layer, never a destination: no route, it toggles the right panel. */}
+      {agent && <>
+        {items.length > 1 && <SidebarSeparator />}
+        <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
+          <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-11"
+            onClick={() => { if (pressed) layer.close(); else layer.open('agent', 'half'); }}>
+            <AgentIcon /><span>{agentLabel}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>
+      </>}
     </SidebarContent>
     <SidebarFooter><NavUser account={account} improve={improve} text={text} /></SidebarFooter>
     <SidebarRail />
