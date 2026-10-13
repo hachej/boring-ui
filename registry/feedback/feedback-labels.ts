@@ -1,6 +1,6 @@
-// The words of the feedback controls that cancel a selection and ask a general question, as data. The defaults are English, like the
-// rest of the copied components; `feedbackLabelsFr` is the French set (pass it as `labels` to AnnotateSheet, FeedbackBar and
-// NoteBubble). A host may pass any subset: what it leaves out keeps the default.
+// The words of the feedback controls that cancel a selection, ask a general question and drive point mode, as data. The defaults are English, like the
+// rest of the copied components; `feedbackLabelsFr` is the French set (pass it as `labels` to AnnotateSheet, FeedbackBar,
+// NoteBubble and PointMode). A host may pass any subset: what it leaves out keeps the default.
 export interface FeedbackLabels {
   /** The annotate sheet's title for a selected zone, and the bubble's accessible name prefix is `note`. */
   readonly title: string;
@@ -24,6 +24,14 @@ export interface FeedbackLabels {
   /** Announced when the selection was cancelled, so a screen reader hears that the zone is gone. */
   readonly selectionCancelled: string;
   readonly generalOpened: string;
+  /** Point mode's bar (phones): the hint, the count of picks, Done, Cancel and the "use the app" toggle with its hint. */
+  readonly pointHint: string;
+  readonly pointCount: (count: number) => string;
+  readonly pointDone: string;
+  readonly pointCancel: string;
+  readonly pointUseApp: string;
+  readonly pointUsing: string;
+  readonly pointBar: string;
 }
 
 export const feedbackLabels: FeedbackLabels = {
@@ -44,6 +52,13 @@ export const feedbackLabels: FeedbackLabels = {
   bubbleHint: 'Enter to save · Esc to discard',
   selectionCancelled: 'Selection cancelled.',
   generalOpened: 'General question: no element attached.',
+  pointHint: 'Tap an element to comment',
+  pointCount: count => `${count} ${count === 1 ? 'selection' : 'selections'}`,
+  pointDone: 'Done',
+  pointCancel: 'Cancel',
+  pointUseApp: 'Use the app',
+  pointUsing: 'Use the app, then come back to comment',
+  pointBar: 'Point mode',
 };
 
 export const feedbackLabelsFr: FeedbackLabels = {
@@ -64,6 +79,13 @@ export const feedbackLabelsFr: FeedbackLabels = {
   bubbleHint: 'Entrée pour valider · Échap pour annuler',
   selectionCancelled: 'Sélection annulée.',
   generalOpened: 'Question générale : aucune zone sélectionnée.',
+  pointHint: 'Touchez un élément à commenter',
+  pointCount: count => `${count} ${count <= 1 ? 'sélection' : 'sélections'}`,
+  pointDone: 'Terminé',
+  pointCancel: 'Annuler',
+  pointUseApp: 'Utiliser l’app',
+  pointUsing: 'Utilisez l’app, puis revenez commenter',
+  pointBar: 'Mode pointage',
 };
 
 /** The default labels with the host's overrides on top. */

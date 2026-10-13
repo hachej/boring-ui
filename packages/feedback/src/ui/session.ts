@@ -79,6 +79,12 @@ export interface FeedbackSessionOptions extends AnnotateHost {
 }
 
 export type SessionPhase = 'idle' | 'active' | 'processing' | 'review';
+/**
+ * `feedback`: the desktop feedback mode, its bar docked in the composer. `point` (phones): the host's panel gets out of the way while the
+ * person taps elements in the app (`isPointing`), one tap per pick; the same notes, draft and attachment.
+ */
+export type SessionMode = 'feedback' | 'point';
+export interface SessionStartOptions { readonly mode?: SessionMode }
 
 export interface SessionNote {
   /** Stable for the session; never reused. */
@@ -123,6 +129,8 @@ export type SendState =
 
 export interface FeedbackSessionSnapshot {
   readonly phase: SessionPhase;
+  /** How the current or last session was started. */
+  readonly mode: SessionMode;
   /** Clicks and keys reach the app (⌥ held or the "Use app" toggle). */
   readonly using: boolean;
   readonly useToggle: boolean;
@@ -156,8 +164,8 @@ export type FeedbackAttachment =
   | { readonly kind: 'refused'; readonly reason: string };
 
 export interface FeedbackSession extends ExternalState<FeedbackSessionSnapshot> {
-  /** Enters feedback mode. */
-  readonly start: () => void;
+  /** Enters feedback mode; `{ mode: 'point' }` for point mode on phones (a tap picks at once). */
+  readonly start: (options?: SessionStartOptions) => void;
   /** Done: closes feedback mode, transcribes and aligns voice, and leaves the draft for review. */
   readonly done: () => Promise<void>;
   /** ✕: discards everything (feedback mode or the attached draft). */
@@ -208,6 +216,11 @@ const MAX_TRAIL = 5000;
 interface NoteRecord { id: number; element?: Element; target?: number; label?: string; text: string; t: number; from?: 'voice'; recorded?: true }
 type TimedStep = { readonly t: number; readonly step: FeedbackStep } | { readonly t: number; readonly noteId: number };
 
+/** Point mode is on (or finishing): the host hides its panel while this is true and shows it again when it turns false. */
+export function isPointing(state: Pick<FeedbackSessionSnapshot, 'mode' | 'phase'>): boolean {
+  return state.mode === 'point' && (state.phase === 'active' || state.phase === 'processing');
+}
+
 /** A pin number as drawn on the page: ①…⑳, then the plain number. */
 export function pinMark(number: number): string {
   return number >= 1 && number <= 20 ? String.fromCodePoint(0x245f + number) : String(number);
@@ -222,7 +235,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
   const routeNow = (): string => routeFor({ pathname: (options.location?.() ?? view?.location ?? { pathname: '/' }).pathname }, policy);
 
   const state = createState<FeedbackSessionSnapshot>({
-    phase: 'idle', using: false, useToggle: false, notes: [], general: '', generalOpen: false, route: routeNow(), stepCount: 0,
+    phase: 'idle', mode: 'feedback', using: false, useToggle: false, notes: [], general: '', generalOpen: false, route: routeNow(), stepCount: 0,
     voice: { kind: 'off' }, voiceAvailable, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' },
   });
 
@@ -483,8 +496,9 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     operation = operationId(); mayHaveSent = false;
   };
 
-  const start = (): void => {
+  const start = (startOptions: SessionStartOptions = {}): void => {
     const current = state.getSnapshot();
+    const mode: SessionMode = startOptions.mode === 'point' ? 'point' : 'feedback';
     if (current.phase === 'active' || current.phase === 'processing') return;
     stopPicking();
     reset();
@@ -498,13 +512,13 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     if (view) { view.addEventListener('blur', onBlur); removers.push(() => view.removeEventListener('blur', onBlur)); }
     pinsOverlay = createOverlay({ document, ...(options.styles !== undefined ? { styles: options.styles } : {}) });
     picker = createPicker({
-      root, policy, onPick, wheel: false, keys: 'outside-ignored',
+      root, policy, onPick, wheel: false, keys: 'outside-ignored', ...(mode === 'point' ? { tap: 'pick' as const } : {}),
       ...(options.styles !== undefined ? { styles: options.styles } : {}),
       ...(options.hitTest ? { hitTest: options.hitTest } : {}),
       onChange: next => { if (next.mode === 'picking' && !next.suspended) onHover(next.current); },
     });
     void picker.start();
-    state.set({ phase: 'active', using: false, useToggle: false, general: '', generalOpen: false, voice: { kind: 'off' }, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' }, route: lastRoute });
+    state.set({ phase: 'active', mode, using: false, useToggle: false, general: '', generalOpen: false, voice: { kind: 'off' }, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' }, route: lastRoute });
     publish();
   };
 

@@ -69,6 +69,8 @@ export const defaultChatLabels = {
   commands: 'Commands',
   feedback: 'Feedback',
   feedbackHint: 'Feedback: point at the page and say what is wrong',
+  point: 'Show in app',
+  pointHint: 'Show in the app: the panel steps aside, tap what you mean',
   remove: (name: string) => `Remove ${name}`,
   dismiss: (name: string) => `Dismiss ${name}`,
   uploading: (name: string) => `Uploading ${name}…`,

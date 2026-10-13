@@ -127,6 +127,28 @@ test('with the feedback prop: one Feedback button beside the + menu in both layo
   assert.doesNotMatch(pending, /data-testid="composer-submit"[^>]*disabled=""/, 'the pending feedback is something to send');
 });
 
+test('point mode: « Show in app » renders when the host passes point, calls it, is disabled while active or pending; no start, no Feedback button', async () => {
+  const cases = composerCases();
+  for (const name of ['stacked-empty', 'inline-empty']) {
+    const html = renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { point: () => {} } }));
+    const button = /<button type="button" data-testid="composer-point"[^>]*>.*?<\/button>/.exec(html)?.[0];
+    assert.ok(button, name);
+    assert.match(button, /Show in app/);
+    assert.match(button, /\bh-11\b/, '44px tall');
+    assert.doesNotMatch(button, /disabled=""/);
+    assert.doesNotMatch(html, /composer-feedback/, 'no start: no Feedback button');
+  }
+  const both = renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { start: () => {}, point: () => {} } }));
+  assert.ok(both.indexOf('composer-feedback') >= 0 && both.indexOf('composer-feedback') < both.indexOf('composer-point'), 'both, Feedback first');
+  for (const state of [{ active: true }, { pending: true }]) {
+    assert.match(renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { point: () => {}, ...state } })), /data-testid="composer-point" disabled=""/);
+  }
+  // One bundle, so the provider and the composer share one context.
+  const fr = await load('composer-fr', `export { Composer } from '${root}registry/pi-chat/composer.tsx'; export { ChatTextProvider } from '${root}registry/pi-chat/labels.ts'; export { chatTextFor } from '${root}registry/pi-chat/locale.ts';`);
+  const french = renderToStaticMarkup(createElement(fr.ChatTextProvider, { value: fr.chatTextFor('fr') }, createElement(fr.Composer, { ...cases['stacked-empty'], feedback: { point: () => {} } })));
+  assert.match(french, /Montrer dans l’app/);
+});
+
 test('Send with pending feedback: the host attaches it to the text, the native send reads the draft, sent() follows; a refusal sends nothing', async t => {
   const { Window } = await import('happy-dom');
   const window = new Window({ url: 'https://fictional.invalid/' });
