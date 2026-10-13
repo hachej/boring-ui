@@ -93,7 +93,9 @@ test('UI archive ships the shadcn registry under r/ and nothing else may', () =>
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-files@^0.2.1', 'radix-ui@^1.8.0'] } : read(path) }), [
     'Registry pin mismatch in r/theme.json: @hachej/boring-files@^0.2.1 (release 0.2.2)',
   ]);
-  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-feedback@0.2.2', '@hachej/boring-ui-kit@^0.2.2'] } : read(path) }), [], 'the private feedback pin is exempt until the owner decides');
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-feedback@0.2.2', '@hachej/boring-ui-kit@^0.2.2'] } : read(path) }), [
+    'Registry pin mismatch in r/theme.json: @hachej/boring-feedback@0.2.2 (release 0.2.2)',
+  ], 'a published feedback pin must be a caret range');
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-ui-kit@0.2.2'] } : read(path) }), [
     'Registry pin mismatch in r/theme.json: @hachej/boring-ui-kit@0.2.2 (release 0.2.2)',
   ]);
