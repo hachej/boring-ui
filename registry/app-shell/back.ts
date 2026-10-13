@@ -16,6 +16,15 @@ let listening = false;
 /** Layers that opened while our own `history.back()` was still pending: they push their entry once it has landed (a push in between cancels it). */
 const waiting: (() => void)[] = [];
 
+/**
+ * Runs `action` once the history entry of a sheet that is closing has really gone. A choice that navigates (the app's router replaces the
+ * URL) must not run before: the sheet's own `history.back()` would undo it. Call it in the same handler that closes the sheet.
+ */
+export function afterBack(action: () => void): void {
+  // The sheet's effect cleanup (which starts its `history.back()`) runs after this handler returns.
+  setTimeout(() => { if (ignored > 0) waiting.push(action); else action(); }, 0);
+}
+
 const topmost = (): Layer | undefined => [...layers].sort((a, b) => RANK[a.order] - RANK[b.order])[0];
 
 function onPopState(): void {
