@@ -602,6 +602,7 @@ try {
     await browser.until('panel open from the entry', `${q(LAYER)}?.dataset.state === 'open' && ${q(entry)}.getAttribute('aria-pressed') === 'true'`);
     await browser.click(q(entry));
     await browser.until('panel closed from the entry', `${q(LAYER)}?.dataset.state === 'closed' && ${q(entry)}.getAttribute('aria-pressed') === 'false'`);
+    await pause(400);
     assert.equal(await browser.evaluate(`window.__routes.length`), routes, 'no route change');
     assert.equal(await browser.evaluate(`history.length`), length, 'no history entry');
     await browser.click(q(TRIGGER));
