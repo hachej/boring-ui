@@ -10,9 +10,11 @@ import { Window } from 'happy-dom';
 const ENTRY = `
 import { createElement as h } from 'react';
 import { useTranscript } from ${JSON.stringify(new URL('../../registry/pi-chat/session.tsx', import.meta.url).pathname)};
-export function Host({ rows, heights, expose }) {
+export function Host({ rows, heights, expose, open = true }) {
   const { stick, visible } = useTranscript(rows, 60, 40);
   expose(stick);
+  // Like AmbientChat, the scroller is mounted only while the panel is open.
+  if (!open) return null;
   return h('div', { ref: stick.scrollRef, 'data-testid': 'transcript-scroll' },
     h('div', { ref: stick.contentRef, 'data-testid': 'transcript' },
       visible(rows).map(row => h('div', { key: row.key, 'data-h': heights[row.key] }, row.key))));
@@ -55,7 +57,7 @@ async function harness(t) {
   let top = 0;
   let viewport = 400; // the scroller's clientHeight, which the keyboard or a taller composer can shrink
   const layout = () => {
-    scroller ??= element.querySelector('[data-testid="transcript-scroll"]');
+    scroller = element.querySelector('[data-testid="transcript-scroll"]');
     if (!scroller) return;
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => viewport });
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: contentHeight });
@@ -68,7 +70,8 @@ async function harness(t) {
     }
   };
   let lastRows = [];
-  const render = async rows => { lastRows = rows; await act(async () => root.render(createElement(Host, { rows, heights, expose }))); layout(); };
+  let open = true;
+  const render = async (rows, { show = open } = {}) => { lastRows = rows; open = show; await act(async () => root.render(createElement(Host, { rows, heights, expose, open: show }))); layout(); };
   const frames = ms => act(() => new Promise(resolve => setTimeout(resolve, ms)));
   const distanceFromBottom = () => Math.round(maxTop() - top);
   t.after(async () => {
@@ -76,8 +79,10 @@ async function harness(t) {
     await window.happyDOM.close();
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
-  return { render, frames, expose: () => stick, heights, distanceFromBottom, scrollTo: value => { scroller.scrollTop = value; }, scroller: () => scroller, layout,
-    setViewport: async value => { viewport = value; await render(lastRows); } };
+  return { render, frames, expose: () => stick, heights, distanceFromBottom, // A reader's scroll: the browser dispatches the scroll event before the next animation frame, so it is dispatched synchronously here.
+    scrollTo: value => { scroller.scrollTop = value; scroller.dispatchEvent(new window.Event('scroll')); }, scroller: () => scroller, layout,
+    setViewport: async value => { viewport = value; await render(lastRows); },
+    setOpen: async show => { await render(lastRows, { show }); } };
 }
 
 test('the latest row stays in view while the rows after it grow', async t => {
@@ -134,4 +139,47 @@ test('the latest row stays in view when the viewport shrinks (keyboard or a tall
   await chat.setViewport(250);
   await chat.frames(200);
   assert.ok(chat.distanceFromBottom() <= 2, `the latest row is ${chat.distanceFromBottom()}px below the viewport after the shrink`);
+});
+
+/** Renders a tall transcript, scrolls to its bottom and returns the harness. */
+async function atBottom(chat, rows) {
+  chat.heights.user = 60;
+  chat.heights.reply = 600;
+  await chat.render(rows);
+  chat.expose().scrollToBottom('instant');
+  await chat.frames(100);
+  assert.ok(chat.distanceFromBottom() <= 2, 'the reader starts at the bottom');
+}
+
+test('the bottom lock follows a viewport shrink after the panel opens, and after it is reopened', async t => {
+  const chat = await harness(t);
+  const rows = [{ key: 'user' }, { key: 'reply' }];
+  // The panel starts collapsed: no scroller yet. Expanding mounts it.
+  await chat.setOpen(false);
+  await chat.setOpen(true);
+  await atBottom(chat, rows);
+  await chat.setViewport(250);
+  await chat.frames(200);
+  assert.ok(chat.distanceFromBottom() <= 2, `after expanding, the latest row is ${chat.distanceFromBottom()}px below the viewport`);
+  // Collapse, then reopen: the new scroller is the one that must be watched.
+  await chat.setViewport(400);
+  await chat.setOpen(false);
+  await chat.setOpen(true);
+  await atBottom(chat, rows);
+  await chat.setViewport(250);
+  await chat.frames(200);
+  assert.ok(chat.distanceFromBottom() <= 2, `after reopening, the latest row is ${chat.distanceFromBottom()}px below the viewport`);
+});
+
+test('a scroll-up gesture just before the pending bottom frame is not snapped back', async t => {
+  const chat = await harness(t);
+  const rows = [{ key: 'user' }, { key: 'reply' }];
+  await atBottom(chat, rows);
+  // The reply grows, which schedules a bottom re-pin for the next frame...
+  chat.heights.reply = 800;
+  await chat.render(rows);
+  // ...and the reader scrolls up before that frame runs.
+  chat.scrollTo(100);
+  await chat.frames(300);
+  assert.ok(chat.scroller().scrollTop <= 150, `the reader was snapped back to ${chat.scroller().scrollTop}px`);
 });
