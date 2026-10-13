@@ -113,6 +113,8 @@ function Chat() {
 
 The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for its own words (« Se déconnecter », « Plus », « Navigation »); without it they follow the agent's `chatProps.locale`, else English. The compact tab bar is `role="tablist"` (labelled « Navigation ») with `role="tab"` items (`data-testid="tab-<id>"`); the current one has `aria-selected="true"`, and « Plus » is one more tab when there are more than four screens. Tests locate tabs by these roles. The account sheet is titled « Compte » (the person's name is shown once, in the person block).
 
+The account theme is one switch (« Mode sombre » / "Dark mode") when the account gives `theme: { value, onChange }`, in the sheet and in the expanded menu; without it there is no row. The popups the shell portals to the body (the sheets, the account menu, the agent drawer and panel) carry the `app-shell` class; the header's « … » menu does not yet, so the item's css reset (`.app-shell :where(button, [role=button])`) reaches their buttons even without preflight. Vendoring by copying files must also copy the item's `css` into the app's global stylesheet; the files alone leave those buttons unstyled.
+
 ### Changes
 
 - `AppShell` gained the optional `locale` prop, and the account sheet's title is the generic « Compte » instead of the person's name. Hosts that relied on the name as the sheet title will see « Compte » there.

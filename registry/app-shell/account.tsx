@@ -2,12 +2,13 @@
 
 // The account menu: the compact sheet's content (`AccountMenu`) and the expanded sidebar's footer (`NavUser`, the sidebar-07 pattern).
 // Both list « Améliorer l'app » (when the app has an `improve` agent, opened in the AgentLayer), the app's own `menu`, then sign out.
-import { ChevronsUpDownIcon, LogOutIcon, SparklesIcon } from 'lucide-react';
+import { ChevronsUpDownIcon, LogOutIcon, MoonIcon, SparklesIcon } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useAgentLayer } from './agent-layer';
 import { afterBack } from './back';
+import { cn } from '../utils/utils';
 import { SHEET_ROW } from './sheet';
 import type { AppShellText } from './text';
 
@@ -16,6 +17,19 @@ export interface AccountSpec {
   readonly email?: string;
   readonly signOut?: () => void;
   readonly menu: readonly { readonly label: string; readonly onSelect: () => void }[];
+  /** The app's theme: one « Mode sombre » switch in the account menu. Absent: no row. */
+  readonly theme?: { readonly value: 'light' | 'dark' | 'system'; readonly onChange: (value: 'light' | 'dark') => void };
+}
+
+/** The switch's state: on is dark; `system` reads as light until the person turns it on. */
+const darkOn = (theme: NonNullable<AccountSpec['theme']>) => theme.value === 'dark';
+
+function ThemeSwitch({ theme, text }: { readonly theme: NonNullable<AccountSpec['theme']>; readonly text: AppShellText }) {
+  const on = darkOn(theme);
+  return <button type="button" role="switch" aria-checked={on} data-testid="account-theme" className={SHEET_ROW} onClick={() => theme.onChange(on ? 'light' : 'dark')}>
+    <MoonIcon className="size-4" aria-hidden="true" />{text.darkMode}
+    <span aria-hidden="true" className={cn('ml-auto flex h-5 w-9 shrink-0 rounded-full p-0.5', on ? 'justify-end bg-primary' : 'justify-start bg-muted')}><span className="size-4 rounded-full bg-background" /></span>
+  </button>;
 }
 
 /** « Jean Dupont » gives « JD »; one word gives its first letter. */
@@ -39,6 +53,7 @@ export function AccountMenu({ account, improve, text, done }: { readonly account
     </div>}
     {improve && <button type="button" data-testid="account-improve" className={SHEET_ROW} onClick={choose(() => layer.open('improve'))}><SparklesIcon className="size-4" aria-hidden="true" />{text.improve}</button>}
     {account?.menu.map(entry => <button key={entry.label} type="button" className={SHEET_ROW} onClick={choose(entry.onSelect)}>{entry.label}</button>)}
+    {account?.theme && <ThemeSwitch theme={account.theme} text={text} />}
     {account?.signOut && <button type="button" data-testid="account-sign-out" className={SHEET_ROW} onClick={choose(account.signOut)}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</button>}
   </div>;
 }
@@ -57,9 +72,10 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
         </div>
         <ChevronsUpDownIcon className="ml-auto size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="end" sideOffset={4} className="w-56 min-w-56">
+      <DropdownMenuContent side="right" align="end" sideOffset={4} className="app-shell w-56 min-w-56">
         {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><SparklesIcon className="size-4" aria-hidden="true" />{text.improve}</DropdownMenuItem>}
         {account?.menu.map(entry => <DropdownMenuItem key={entry.label} className="pointer-coarse:min-h-11" onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
+        {account?.theme && <DropdownMenuItem role="switch" aria-checked={darkOn(account.theme)} data-testid="account-theme" className="pointer-coarse:min-h-11" onClick={() => account.theme?.onChange(darkOn(account.theme!) ? 'light' : 'dark')}><MoonIcon className="size-4" aria-hidden="true" />{text.darkMode}</DropdownMenuItem>}
         {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}
       </DropdownMenuContent>
     </DropdownMenu>

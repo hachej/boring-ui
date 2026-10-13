@@ -63,9 +63,14 @@ try {
     await tap('[data-testid=account-button]');
     await browser.until('the account sheet', `!!${q('[data-testid=account-improve]')}`);
     await pause(700);
+    // A portalled sheet's buttons take the item's reset (no preflight here): no native appearance, a transparent background.
+    const reset = await browser.evaluate(sheetButtonReset);
+    assert.equal(reset?.appearance, 'none', 'a portalled sheet button has appearance: none');
+    assert.equal(reset?.background, 'rgba(0, 0, 0, 0)', 'a portalled sheet button has a transparent background');
     await tap('[data-testid=account-improve]');
   };
   const openSheets = `document.querySelectorAll('[data-testid=app-sheet]').length`;
+  const sheetButtonReset = `(() => { const b = document.querySelector('[data-testid=app-sheet] button'); if (!b) return null; const s = getComputedStyle(b); return { appearance: s.appearance || s.webkitAppearance, background: s.backgroundColor }; })()`;
   /** Nothing covers the tab bar: the element at the middle of each tab is that tab. */
   const tabsFree = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=tabbar] [role=tab]')].every(tab => { const r = tab.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return tab.contains(hit); })`);
 

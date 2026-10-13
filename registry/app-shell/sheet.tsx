@@ -29,7 +29,7 @@ export function AppSheet({ open, onOpenChange, title, children }: { readonly ope
   useExclusiveSheet(open, close);
   useBackLayer(open, close, 'sheet');
   return <Drawer open={open} onOpenChange={next => { if (!next) close(); }} showSwipeHandle swipeDirection="down">
-    <DrawerContent data-testid="app-sheet" className="max-h-[85dvh] pb-[env(safe-area-inset-bottom)] transition-[transform,opacity,filter]">
+    <DrawerContent data-testid="app-sheet" className="app-shell max-h-[85dvh] pb-[env(safe-area-inset-bottom)] transition-[transform,opacity,filter]">
       <DrawerTitle className="px-4 pt-1 pb-2">{title}</DrawerTitle>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2">{children}</div>
     </DrawerContent>

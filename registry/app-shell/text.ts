@@ -24,6 +24,8 @@ export interface AppShellText {
   readonly account: string;
   /** The header's « … » button. */
   readonly actions: string;
+  /** The account menu's theme switch. */
+  readonly darkMode: string;
   /** The label of the tab bar. */
   readonly tabs: string;
   /** The « ← » of a header. */
@@ -44,6 +46,7 @@ const en: AppShellText = {
   signOut: 'Sign out',
   account: 'Account',
   actions: 'More actions',
+  darkMode: 'Dark mode',
   tabs: 'Navigation',
   goBack: 'Back',
 };
@@ -62,6 +65,7 @@ const fr: AppShellText = {
   signOut: 'Se déconnecter',
   account: 'Compte',
   actions: 'Plus d\'actions',
+  darkMode: 'Mode sombre',
   tabs: 'Navigation',
   goBack: 'Retour',
 };
