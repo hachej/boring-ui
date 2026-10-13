@@ -834,6 +834,23 @@
         "avatar",
         "dropdown-menu"
       ],
+      "css": {
+        "@layer base": {
+          ".app-shell :where(button, [role=button])": {
+            "appearance": "none",
+            "background-color": "transparent",
+            "border": "0 solid",
+            "font": "inherit",
+            "color": "inherit",
+            "cursor": "pointer",
+            "padding": "0"
+          },
+          ".app-shell :where(h2)": {
+            "margin": "0",
+            "font": "inherit"
+          }
+        }
+      },
       "files": [
         {
           "path": "registry/app-shell/agent-layer.tsx",

@@ -57,7 +57,7 @@ export interface AgentLayerApi {
 }
 
 // The three fixed snap points: a peek (one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
-const PEEK_REM = 8;
+const PEEK_REM = 6;
 /** The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60). */
 const Z = { tabs: 20, peek: 30, layer: 40, sheet: 50, point: 60 } as const;
 const HALF = 0.55;
@@ -332,8 +332,8 @@ export function AgentTrigger({ className, children }: { readonly className?: str
 
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
-/** The hero push-to-talk button at the top of the content at half and full. */
-function HeroTalk({ text }: { readonly text: AppShellText }) {
+/** Push-to-talk in the composer row (PiChat's `tools` slot): press and hold, release to send or fill; a slide off cancels. */
+function TalkButton({ text }: { readonly text: AppShellText }) {
   const { voice } = useInternal();
   const recording = voice.phase === 'recording' || voice.phase === 'starting';
   const busy = voice.phase === 'transcribing';
@@ -344,15 +344,17 @@ function HeroTalk({ text }: { readonly text: AppShellText }) {
     const box = event.currentTarget.getBoundingClientRect(), slack = 24;
     if (event.clientX < box.left - slack || event.clientX > box.right + slack || event.clientY < box.top - slack || event.clientY > box.bottom + slack) voice.cancel();
   };
-  return <div className="shrink-0 px-3 pt-1 pb-2">
-    <button type="button" data-testid="agent-hero-talk" data-state={voice.phase} disabled={busy} onPointerDown={down} onPointerUp={up} onPointerCancel={up} onPointerMove={move}
-      onContextMenu={event => event.preventDefault()}
-      className={cn('flex min-h-14 w-full touch-none items-center justify-center gap-2 rounded-xl bg-muted text-base font-medium text-foreground outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60 pointer-coarse:min-h-14', recording && 'bg-destructive text-white hover:bg-destructive/90')}>
-      {busy ? <Loader2Icon className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon className="size-5" aria-hidden="true" />}
-      {recording ? `${text.listening} ${clock(voice.seconds)}` : text.holdToTalk}
-    </button>
-    {voice.problem && <p role="alert" data-testid="agent-voice-problem" className="m-0 mt-1 text-xs leading-4 text-destructive">{voice.problem}</p>}
-  </div>;
+  return <button type="button" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
+    onPointerDown={down} onPointerUp={up} onPointerCancel={up} onPointerMove={move} onContextMenu={event => event.preventDefault()}
+    className={cn('inline-flex size-11 shrink-0 touch-none items-center justify-center rounded-lg bg-muted text-foreground outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60', recording && 'bg-destructive text-white hover:bg-destructive/90')}>
+    {busy ? <Loader2Icon className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon className="size-5" aria-hidden="true" />}
+  </button>;
+}
+
+/** What went wrong with the microphone, in the flow under the title row (never over the messages). */
+function VoiceProblem() {
+  const { voice } = useInternal();
+  return voice.problem ? <p role="alert" data-testid="agent-voice-problem" className="m-0 shrink-0 px-3 pb-1 text-xs leading-4 text-destructive">{voice.problem}</p> : null;
 }
 
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
@@ -362,7 +364,8 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const pointing = usePointing(spec.feedback);
   const fr = spec.chatProps?.locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...spec.chatProps} controller={spec.controller} {...(feedback ? { feedback } : {})} />
+    <PiChat {...spec.chatProps} controller={spec.controller} {...(feedback ? { feedback } : {})}
+      {...(role === 'agent' && spec.voice ? { tools: <TalkButton text={appShellText(spec.chatProps?.locale)} /> } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {spec.feedback && visible && !pointing && <NoteBubble session={spec.feedback} {...(fr ? { labels: feedbackLabelsFr } : {})} />}
   </div>;
@@ -468,21 +471,27 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       const next = toSnap(point, layer.peekPoint);
       if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next);
     }}>
-    <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} initialFocus={closeRef} style={style}
-      className={cn('box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
+    <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} initialFocus={() => closeRef.current ?? false} style={style}
+      className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
-        'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_8rem)_0)]')}>
+        'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_6rem)_0)]')}>
       <DrawerPrimitive.VirtualKeyboardProvider>
         <div data-testid="agent-layer-sheet" onFocusCapture={event => { if ((event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
           className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',
             // The layer's own header carries the title and Close, so the chat's is hidden. At peek: one line of the last reply above the
             // composer, no empty-state overlay, room for Close.
             '[&_[data-boring=pi-chat]>header]:hidden',
-            peek && '[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-testid=transcript]]:pr-14 [&_[data-testid=transcript]]:pb-2')}>
+            // At peek: ONE compact row (a one-line input, the microphone and Send; the other composer controls wait for half), and the last
+            // reply as a single truncated line above it.
+            peek && ['[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>.relative>.pointer-events-none]:hidden',
+              '[&_[data-boring=pi-chat]>footer]:px-2 [&_[data-boring=pi-chat]>footer]:pt-1 [&_[data-boring=pi-chat]>footer]:pb-2',
+              '[&_[data-testid=transcript]]:gap-0 [&_[data-testid=transcript]]:p-0 [&_[data-testid=transcript]]:px-3 [&_[data-testid=transcript]>*]:max-h-5 [&_[data-testid=transcript]>*]:truncate [&_[data-testid=transcript]_button]:hidden',
+              '[&_[data-testid=composer]]:flex [&_[data-testid=composer]]:items-center [&_[data-testid=composer]]:rounded-full',
+              '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
+              '[&_[data-testid=composer]>div]:p-0 [&_[data-testid=composer]>div]:pr-1 [&_[data-testid=composer]>div>.flex-1]:hidden',
+              '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-feedback]]:hidden [&_[data-testid=composer-point]]:hidden'])}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
-          {peek && <button type="button" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}
-            className={cn(ICON_BUTTON, 'absolute top-0 right-1 z-10')}><XIcon className="size-4" aria-hidden="true" /></button>}
-          {!peek && showing === 'agent' && agent?.voice && <HeroTalk text={text} />}
+          {!peek && <VoiceProblem />}
           {peek && recording && <div role="status" data-testid="agent-listening" data-phase={voice.phase} className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-popover text-sm font-medium">
             <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : `${text.listening} ${clock(voice.seconds)}`}
           </div>}
@@ -506,9 +515,10 @@ function ExpandedPanel() {
   }, [open, layer]);
   // Its own provider keeps the panel's width and open state apart from the left sidebar's (Ctrl+B belongs to that one); `contents` adds no box.
   return <SidebarProvider open={open} onOpenChange={() => {}} className="contents" style={{ '--sidebar-width': '24rem' } as CSSProperties}>
-    <Sidebar side="right" collapsible="offcanvas" data-testid="agent-layer" data-state={open ? 'open' : 'closed'} aria-label={title} inert={!open} className="z-(--app-shell-z-layer)">
+    <Sidebar side="right" collapsible="offcanvas" data-testid="agent-layer" data-state={open ? 'open' : 'closed'} aria-label={title} inert={!open} className="app-shell z-(--app-shell-z-layer)">
       <SidebarHeader className="p-0 pt-2"><Header text={text} title={title} /></SidebarHeader>
       <SidebarContent className="gap-0 overflow-hidden">
+        <VoiceProblem />
         <ChatSlot />
       </SidebarContent>
     </Sidebar>

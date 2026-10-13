@@ -4,6 +4,7 @@
 // `?send=draft` makes push-to-talk only fill the composer.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 import { ActivityIcon, CalendarDaysIcon, DatabaseIcon, HomeIcon, MoonIcon, MoonStarIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
@@ -94,7 +95,7 @@ function App() {
   const common = { locale: 'fr', showHistory: false, showConnectionStatus: false };
   const agent = noAgent ? undefined : {
     controller: coach.controller,
-    chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach' }, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
+    chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' }, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
     ...(app === 'empty' ? {} : { voice: { transcribe: async () => window.__transcript ?? 'Combien de pas hier ?', send } }),
   };
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };

@@ -44,6 +44,13 @@ test('colours come only from shadcn semantic utilities: no hex, rgb(, oklch( or 
   }
 });
 
+test('the item pins no shadcn style: bare built-in names, tokens and classes only', () => {
+  assert.ok(item.registryDependencies.every(name => SHADCN_BUILTINS.includes(name) || name.startsWith('@boring-ui/')), 'no style URL in registryDependencies');
+  for (const name of files) assert.doesNotMatch(source(name), /base-(?:nova|vega|lyra|maia|mira)|new-york|radix-(?:nova|vega|lyra)|styles\/[\w-]+\/(?:drawer|sidebar)/i, `${name} names a style`);
+  const built = readFileSync(`${root}public/r/app-shell.json`, 'utf8');
+  assert.doesNotMatch(built, /ui\.shadcn\.com\/r\/styles|base-nova|base-lyra/i, 'the built item names no style');
+});
+
 test('the item imports only React, its declared packages and the declared shadcn built-ins', () => {
   const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat']);
   for (const name of files) {
