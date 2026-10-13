@@ -157,6 +157,42 @@ try {
       await shot('library-side-phone-viewer.png');
     } finally { await tab.close(); }
   });
+  await step('side Library never clips the viewer (~800 and ~1024 px) and leaves a full-screen viewer', async () => {
+    const tab = await browser.openTab(`http://127.0.0.1:${server.address().port}/?side=1`);
+    const click = selector => tab.evaluate(`${q(selector)}.click()`);
+    const box = selector => `(() => { const e = ${q(selector)}; if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, right: r.right, width: r.width }; })()`;
+    const metrics = width => tab.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    try {
+      await metrics(1440);
+      await tab.until('integrated workspace', `!!${q('[data-testid=workspace-library]')}`);
+      await click('[data-testid=workspace-library]');
+      await tab.until('tree', `!!${q(row('first.html'))}`);
+      await click(`${row('first.html')} button`);
+      await tab.until('viewer', `!!${q('[data-testid=file-viewer]')}`);
+      // Library docked or a sheet: when docked, the chat and the viewer keep their minimums and the viewer's bar is not clipped.
+      const fits = `(() => { const lib = ${q('[data-dock=library]')}, v = ${q('[data-testid=workspace-panel]')}, c = ${q('[data-testid=workspace-chat]')}, bar = ${q('[data-testid=viewer-bar]')};
+        if (lib.dataset.placement === 'sheet') return 'sheet'; if (lib.dataset.placement !== 'docked') return 'closed';
+        const vr = v.getBoundingClientRect(), cr = c.getBoundingClientRect(), lr = lib.getBoundingClientRect();
+        return vr.width >= 360 && cr.width >= 330 && vr.right <= lr.x + 2 && bar.scrollWidth <= bar.clientWidth + 1 ? 'docked' : 'clipped ' + JSON.stringify({ viewer: vr.width, chat: cr.width, lib: lr.width }); })()`;
+      for (const [width, expected] of [[1440, 'docked'], [1056, 'sheet'], [832, 'sheet']]) {
+        await metrics(width);
+        await tab.until(`layout at ${width}`, `innerWidth === ${width}`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        assert.equal(await tab.evaluate(fits), expected, `Library layout at ${width}px`);
+      }
+      // Full screen: opening the Library from the viewer bar leaves full screen, so the column is reachable.
+      await metrics(1440);
+      await tab.until('wide again', `innerWidth === 1440 && ${q('[data-dock=library]')}.dataset.placement === 'docked'`);
+      await click('[data-testid=viewer-library]');
+      await tab.until('column closed', `${q('[data-dock=library]')}.dataset.placement === 'closed'`);
+      await click('[data-testid=viewer-fullscreen]');
+      await tab.until('full screen', `${q('[data-testid=workspace-panel]')}.dataset.fullscreen === 'true'`);
+      await click('[data-testid=viewer-library]');
+      await tab.until('reachable column', `${q('[data-testid=workspace-panel]')}.dataset.fullscreen === 'false' && ${q('[data-dock=library]')}.dataset.placement === 'docked'`);
+      const edge = await tab.evaluate(`(() => { const r = ${q('[data-dock=library]')}.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + 60); return !!hit && ${q('[data-dock=library]')}.contains(hit); })()`);
+      assert.equal(edge, true, 'the open Library column is the topmost element at its position');
+    } finally { await tab.close(); }
+  });
   await step('portable tree works in a detached page without workspace or sidebar context', async () => {
     const detached = await browser.openTab(`http://127.0.0.1:${server.address().port}/?detached=1`);
     try {
