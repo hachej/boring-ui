@@ -281,13 +281,13 @@ test('useScreenHeader: an ordinary later header replaces the earlier one whole, 
 
 test('ListDetail: a reload on a compact detail adopts the stack entry that is already there', async t => {
   const window = dom(t);
+  window.history.replaceState({ appShell: 'stack' }, '');
   const { ListDetail } = await bundle('list-detail.tsx');
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   window.innerWidth = 390;
   const listeners = new Set();
   window.matchMedia = query => ({ matches: false, media: query, addEventListener: (_, listener) => listeners.add(listener), removeEventListener: (_, listener) => listeners.delete(listener) });
-  window.history.replaceState({ appShell: 'stack' }, '');
   const start = window.history.length;
   const backs = [];
   const container = window.document.createElement('div');
