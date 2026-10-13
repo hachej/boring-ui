@@ -5,6 +5,7 @@
 // the product manager (« Améliorer l'app ») when the account menu asks for it. Push-to-talk is an option of the agent.
 // Host concern: Pi has no layout. The chat is the borrowed NativeChatController rendered by PiChat; the screen context travels as the
 // submit's `context` (agent-context.ts). Nothing here is configurable beyond AgentSpec.
+import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, SparklesIcon, XIcon } from 'lucide-react';
@@ -53,6 +54,8 @@ export interface AgentLayerApi {
 
 // The three fixed snap points: a peek (one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
 const PEEK_REM = 8;
+/** The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60). */
+const Z = { tabs: 20, peek: 30, layer: 40, sheet: 50, point: 60 } as const;
 const HALF = 0.55;
 const FULL = 1;
 /** Hold the trigger this long before it records; shorter is a tap. */
@@ -87,6 +90,10 @@ interface Internal extends AgentLayerApi {
   readonly voice: Voice;
   /** The peek height in px: `PEEK_REM` plus the tab bar the peek sits above. */
   readonly peekPoint: string;
+  /** The measured tab bar height in px, given explicitly to the parts portalled to the body (they cannot inherit the shell's variables). */
+  readonly tabbar: number;
+  /** The persistent element holding both chats: it moves between the drawer and the panel, so closing never unmounts a chat. */
+  readonly host: HTMLElement | null;
 }
 
 const LayerContext = createContext<Internal | null>(null);
@@ -170,12 +177,17 @@ function useVoice(agent: AgentSpec | undefined, done: (outcome: 'sent' | 'drafte
         const spoken = (await current.voice!.transcribe(recording.audio, abort.signal)).trim();
         if (attempt !== run.current) return;
         if (!spoken) { setProblem(words().voiceNothingHeard); return; }
-        if (current.voice!.send === 'auto') { void current.controller.send(undefined, { text: spoken }); latest.current.done('sent'); }
-        else {
+        const fill = () => {
           const draft = current.controller.getSnapshot().draft.text;
           current.controller.setText(`${draft}${draft === '' || /\s$/.test(draft) ? '' : ' '}${spoken}`);
           latest.current.done('drafted');
-        }
+        };
+        if (current.voice!.send === 'auto') {
+          // Admission is awaited: the text is reported as sent only when the submission was admitted. A refusal puts it back in the composer
+          // (the controller does that); a rejection (an earlier submission still unconfirmed) is caught here and the transcript is kept as a draft.
+          try { if (await current.controller.send(undefined, { text: spoken })) latest.current.done('sent'); else latest.current.done('drafted'); }
+          catch { fill(); }
+        } else fill();
       } catch { if (attempt === run.current) setProblem(words().voiceTranscribeFailed); }
       finally { if (work.current === abort) work.current = null; if (attempt === run.current) set('idle'); }
     })();
@@ -185,13 +197,15 @@ function useVoice(agent: AgentSpec | undefined, done: (outcome: 'sent' | 'drafte
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */
-function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): string {
+function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly peekPoint: string; readonly tabbar: number } {
   const [px, setPx] = useState(PEEK_REM * 16);
+  const [tabbar, setTabbar] = useState(0);
   useLayoutEffect(() => {
     const measure = () => {
       const tab = probe.current?.offsetHeight ?? 0;
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       setPx(Math.round(PEEK_REM * rem + tab));
+      setTabbar(tab);
     };
     measure();
     window.addEventListener('resize', measure);
@@ -199,7 +213,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): string {
     if (observer && probe.current) observer.observe(probe.current);
     return () => { window.removeEventListener('resize', measure); observer?.disconnect(); };
   }, [probe]);
-  return `${px}px`;
+  return { peekPoint: `${px}px`, tabbar };
 }
 
 /** Places the layer in the app. `agent` is the one assistant; `improve` is the product manager. Either may be absent. */
@@ -209,7 +223,7 @@ export function AgentLayerProvider({ agent, improve, children }: { readonly agen
   const [snap, setSnapState] = useState<Snap>('closed');
   const [shown, setShown] = useState<Which>(agent ? 'agent' : 'improve');
   const probe = useRef<HTMLDivElement>(null);
-  const peekPoint = useMeasuredPeek(probe);
+  const { peekPoint, tabbar } = useMeasuredPeek(probe);
   const triggerUntil = useRef(0);
   const specs = useRef({ agent, improve });
   specs.current = { agent, improve };
@@ -229,22 +243,29 @@ export function AgentLayerProvider({ agent, improve, children }: { readonly agen
   const shownSpec = shown === 'agent' ? agent : improve;
   useEffect(() => { if (!shownSpec) { setSnapState('closed'); if (shown === 'improve' && agent) setShown('agent'); else if (shown === 'agent' && improve) setShown('improve'); } }, [shownSpec, shown, agent, improve]);
 
+  // The chats live in one element that is moved into the open drawer or panel; React keeps them mounted (and so their presentation state
+  // and uploads) while the layer is closed, on a phone and on a wide screen. Nothing is mounted before the layer is first opened.
+  const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
+  const opened = useRef(false);
+  if (snap !== 'closed') opened.current = true;
+
   const voice = useVoice(agent, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint,
-  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint]);
+    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host,
+  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
-  const scale = { '--app-shell-z-tabs': 20, '--app-shell-z-peek': 30, '--app-shell-z-layer': 40, '--app-shell-z-sheet': 50, '--app-shell-z-point': 60 } as CSSProperties;
+  const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
   return <AgentContextProvider>
     <LayerContext.Provider value={value}>
       <div data-app-shell="" className="contents" style={scale}>
         <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed top-0 left-0 w-0" style={{ height: 'var(--app-shell-tabbar, 0px)' }} />
         {children}
+        {host && opened.current && createPortal(<Chats showing={shown} />, host)}
       </div>
     </LayerContext.Provider>
   </AgentContextProvider>;
@@ -334,9 +355,21 @@ function HeroTalk({ text }: { readonly text: AppShellText }) {
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   // Both entries: the Feedback button and « Montrer dans l'app » (point mode, which hides the layer while the person taps the app).
   const feedback = useComposerFeedback(spec.feedback, { entry: 'both' });
+  const pointing = usePointing(spec.feedback);
+  const fr = spec.chatProps?.locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...spec.chatProps} controller={spec.controller} {...(feedback ? { feedback } : {})} />
+    {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
+    {spec.feedback && visible && !pointing && <NoteBubble session={spec.feedback} {...(fr ? { labels: feedbackLabelsFr } : {})} />}
   </div>;
+}
+
+/** Where the chats show: the persistent host element is moved in once, when the drawer or panel mounts. */
+function ChatSlot() {
+  const { host } = useInternal();
+  const place = useCallback((slot: HTMLDivElement | null) => { if (slot && host) slot.appendChild(host); }, [host]);
+  // Coarse pointers: the chat's own transcript buttons (copy, show earlier) get the layer's 44px rule from here, without touching pi-chat.
+  return <div ref={place} className="flex min-h-0 flex-1 flex-col [&_[data-testid=transcript]_button]:pointer-coarse:min-h-11 [&_[data-testid=transcript]_button]:pointer-coarse:min-w-11" />;
 }
 
 /** Both specs, each mounted once it has been shown. */
@@ -391,12 +424,27 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const showing = layer.showing ?? 'agent';
   const recording = voice.phase !== 'idle';
 
-  useBackLayer((snap === 'half' || snap === 'full') && !pointing, layer.close, 'agent');
+  useBackLayer(snap === 'half' || snap === 'full', layer.close, 'agent');
 
   // The popup is taller than what shows and slides down by `--drawer-snap-point-offset` (a registered, non-inheriting property, so only the
   // popup itself can read it): padding the popup by that offset makes its content box exactly the visible part. At peek the tab bar below is left out too.
-  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh',
+  // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
+  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-z-layer': Z.layer,
     paddingBottom: peek ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)' } as CSSProperties;
+  // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
+  const wasPeek = useRef(false);
+  useEffect(() => {
+    const entering = wasPeek.current && !peek && open;
+    wasPeek.current = peek;
+    if (!entering) return;
+    const take = () => {
+      const popup = closeRef.current?.closest('[data-slot=drawer-popup]');
+      if (popup && !popup.contains(document.activeElement)) closeRef.current?.focus({ preventScroll: true });
+    };
+    // Base UI re-applies its modal guards as the sheet moves: take focus once they have settled, and again after the slide.
+    const early = setTimeout(take, 60), late = setTimeout(take, 520);
+    return () => { clearTimeout(early); clearTimeout(late); };
+  }, [peek, open]);
   return <Drawer open={open} modal={!peek} showSwipeHandle swipeDirection="down" snapPoints={points} snapPoint={value}
     onOpenChange={(next, details) => {
       if (next) return;
@@ -416,7 +464,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       const next = toSnap(point, layer.peekPoint);
       if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next);
     }}>
-    <DrawerContent data-testid="agent-layer" data-state={snap} data-peek={peek} initialFocus={closeRef} style={style}
+    <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} initialFocus={closeRef} style={style}
       className={cn('box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_8rem)_0)]')}>
@@ -431,11 +479,11 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
           {peek && <button type="button" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}
             className={cn(ICON_BUTTON, 'absolute top-0 right-1 z-10')}><XIcon className="size-4" aria-hidden="true" /></button>}
           {!peek && showing === 'agent' && agent?.voice && <HeroTalk text={text} />}
-          {peek && recording && <div role="status" data-testid="agent-listening" className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-popover text-sm font-medium">
+          {peek && recording && <div role="status" data-testid="agent-listening" data-phase={voice.phase} className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-popover text-sm font-medium">
             <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : `${text.listening} ${clock(voice.seconds)}`}
           </div>}
           {/* The transcript scrolls and never drags the sheet: only the handle and the title row swipe. */}
-          <div data-base-ui-swipe-ignore="" className="flex min-h-0 flex-1 flex-col"><Chats showing={showing} /></div>
+          <div data-base-ui-swipe-ignore="" className="flex min-h-0 flex-1 flex-col"><ChatSlot /></div>
         </div>
       </DrawerPrimitive.VirtualKeyboardProvider>
     </DrawerContent>
@@ -446,7 +494,6 @@ function ExpandedPanel() {
   const layer = useInternal();
   const { text, title } = useTitle();
   const open = layer.snap !== 'closed';
-  const showing = layer.showing ?? 'agent';
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) layer.close(); };
@@ -458,7 +505,7 @@ function ExpandedPanel() {
     <Sidebar side="right" collapsible="offcanvas" data-testid="agent-layer" data-state={open ? 'open' : 'closed'} aria-label={title} inert={!open} className="z-(--app-shell-z-layer)">
       <SidebarHeader className="p-0 pt-2"><Header text={text} title={title} /></SidebarHeader>
       <SidebarContent className="gap-0 overflow-hidden">
-        {open && <div className="flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden"><Chats showing={showing} /></div>}
+        <ChatSlot />
       </SidebarContent>
     </Sidebar>
   </SidebarProvider>;
@@ -469,13 +516,15 @@ export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
   const pointingAgent = usePointing(layer.agent?.feedback), pointingImprove = usePointing(layer.improve?.feedback);
   const session = pointingAgent ? layer.agent?.feedback : pointingImprove ? layer.improve?.feedback : undefined;
+  // Back ends pointing first (the `point` priority); the layer keeps its own history entry underneath.
+  useBackLayer(session !== undefined, () => session?.discard(), 'point');
   if (!layer.agent && !layer.improve) return null;
   const locale = (pointingAgent ? layer.agent : layer.improve)?.chatProps?.locale;
   // Point mode: the compact sheet steps aside (the wide panel does not cover the app); the bar sits above the tab bar, outside the layer.
   return <>
     {layer.expanded ? <ExpandedPanel /> : <CompactSheet pointing={session !== undefined} />}
     {session && <>
-      <PointBar session={session} bottomOffset="var(--app-shell-tabbar, 0px)" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
+      <PointBar session={session} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
       <NoteBubble session={session} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
     </>}
   </>;

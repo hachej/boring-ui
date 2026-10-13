@@ -63,6 +63,12 @@ function App() {
   const waiting = (mode !== 'redaction' && coach.status !== 'ready') || (mode !== 'template' && manager.status !== 'ready');
   const feedback = useManagerFeedback(!waiting);
   if (waiting) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
+  // A test seam: a send that fails the way an unconfirmed earlier submission does (the controller throws).
+  if (!window.__sendWrapped && coach.status === 'ready') {
+    window.__sendWrapped = true;
+    const real = coach.controller.send.bind(coach.controller);
+    coach.controller.send = (...args) => window.__breakSend ? Promise.reject(new Error('Reconcile the existing submission before sending another')) : real(...args);
+  }
   const common = { locale: 'fr', showHistory: false, showConnectionStatus: false };
   const agent = mode === 'redaction' ? undefined : {
     controller: coach.controller,
@@ -71,10 +77,13 @@ function App() {
   };
   const improve = mode === 'template' ? undefined : { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   window.__layer = { mode };
-  return <AgentLayerProvider agent={agent} improve={improve}>
-    <div id="app-root"><Screen /><TabBar /></div>
-    <AgentLayer />
-  </AgentLayerProvider>;
+  // The shell root defines the tab bar's height; portalled parts (the drawer, the point bar) are outside it and must be given it explicitly.
+  return <div id="shell" style={{ '--app-shell-tabbar': '56px' }}>
+    <AgentLayerProvider agent={agent} improve={improve}>
+      <div id="app-root"><Screen /><TabBar /></div>
+      <AgentLayer />
+    </AgentLayerProvider>
+  </div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);

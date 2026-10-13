@@ -230,6 +230,7 @@ export function createChatTransportHandler(options: ChatTransportOptions): (requ
         if (access.prepareInput) { try { prepared = await access.prepareInput(prepared); } catch { /* submit what the person typed */ } }
         if (!await allowed('submit') || access.revoked?.aborted) return failure(403, 'not-authorized');
         if (access.requestContext && input['context'] !== undefined) await access.requestContext(input['context'] as Readonly<Record<string, unknown>>);
+        if (access.revoked?.aborted) return failure(403, 'not-authorized');
         const submission = await conversation.submit({ type: 'input', requestId: input['requestId'], content: prepared,
           ...(input['whenBusy'] === undefined ? {} : { whenBusy: input['whenBusy'] as NonNullable<InputSubmissionDraft['whenBusy']> }) }, context);
         return json({ submissionId: submission.id });

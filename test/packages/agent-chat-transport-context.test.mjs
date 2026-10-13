@@ -52,3 +52,11 @@ test('a host without requestContext ignores the field, even a malformed one', as
   assert.equal((await post({ context: 'not an object' })).status, 200);
   assert.deepEqual(order, ['submit', 'submit']);
 });
+
+test('access revoked while requestContext runs refuses the submit before the conversation sees it', async t => {
+  const revoked = new AbortController();
+  const { post, order } = await fixture(t, () => ({ revoked: revoked.signal, requestContext: async () => { revoked.abort(); } }));
+  const response = await post({ context: { name: 'Progrès', params: {} } });
+  assert.equal(response.status, 403);
+  assert.deepEqual(order, [], 'nothing was submitted');
+});
