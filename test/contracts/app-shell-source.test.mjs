@@ -78,9 +78,11 @@ async function bundle(name, extra = {}) {
   }
   return bundleEntry(`${root}${folder}/${name}`, `${out}/${name.replace(/\.tsx?$/, '')}.mjs`, extra);
 }
+let freshModule = 0;
 async function bundleEntry(entry, outfile, extra) {
   await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', ...extra });
-  return import(pathToFileURL(outfile).href);
+  // A fresh module per call: the Back manager keeps its popstate listener on the window it first saw.
+  return import(`${pathToFileURL(outfile).href}?${freshModule++}`);
 }
 
 test('text.ts has the same keys in English and French, and every word is filled', async () => {
