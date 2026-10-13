@@ -169,6 +169,7 @@ try {
     await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
     await live();
     assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=tabbar] [role=tab]')].map(e => e.textContent.trim())`), ['Jour', 'Progrès', 'Données', 'Plus']);
+    const entries = JSON.parse(await browser.evaluate(`JSON.stringify([navigation.currentEntry.index, navigation.entries().map(e => e.url)])`));
     await tap('[data-testid=tab-plus]');
     await browser.until('the Plus sheet', `${openSheets} === 1 && !!${q('[data-testid=plus-sommeil]')}`);
     await pause(700);
@@ -178,6 +179,12 @@ try {
     await controls('plus sheet');
     await tap('[data-testid=plus-sommeil]');
     await browser.until('Sommeil on show', `${q('[data-testid=tab-plus]')}.textContent.trim() === 'Sommeil' && ${openSheets} === 0`);
+    await pause(800);
+    // The choice survives the sheet's own Back: the URL is the destination, and the entry the sheet had is gone.
+    assert.equal(await browser.evaluate(`location.hash`), '#sommeil', 'the final URL is the chosen screen');
+    assert.equal(await browser.evaluate(`navigation.currentEntry.index`), entries[0], 'the sheet left no entry');
+    assert.equal(await browser.evaluate(`navigation.entries()[navigation.currentEntry.index - 1]?.url`), entries[1][entries[0] - 1], 'the next Back goes where it went before the sheet');
+    assert.equal(await browser.evaluate(`${q('[data-testid=tab-plus]')}.textContent.trim()`), 'Sommeil', 'and the screen is still the chosen one');
     assert.equal(await browser.evaluate(`${q('[data-testid=tab-plus]')}.getAttribute('aria-selected')`), 'true');
     assert.equal(await browser.evaluate(`${q('[data-testid=header-title]')}.textContent`), 'Sommeil');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=header-more]')}`), true, 'three actions: two shown and « … »');

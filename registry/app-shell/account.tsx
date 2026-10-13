@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useAgentLayer } from './agent-layer';
+import { afterBack } from './back';
 import { SHEET_ROW } from './sheet';
 import type { AppShellText } from './text';
 
@@ -30,7 +31,7 @@ export function AccountAvatar({ account, size }: { readonly account: AccountSpec
 /** The compact account sheet's content. Every choice closes the sheet first (`done`). */
 export function AccountMenu({ account, improve, text, done }: { readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText; readonly done: () => void }) {
   const layer = useAgentLayer();
-  const choose = (action: () => void) => () => { done(); action(); };
+  const choose = (action: () => void) => () => { done(); afterBack(action); };
   return <div data-testid="account-menu">
     {account && <div className="flex items-center gap-3 px-4 py-3">
       <AccountAvatar account={account} size="lg" />
@@ -48,7 +49,7 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
   if (!account && !improve) return null;
   return <SidebarMenu><SidebarMenuItem>
     <DropdownMenu>
-      <DropdownMenuTrigger render={<SidebarMenuButton size="lg" data-testid="nav-user" className="pointer-coarse:min-h-11 data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground" />}>
+      <DropdownMenuTrigger render={<SidebarMenuButton size="lg" data-testid="nav-user" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground" />}>
         <AccountAvatar account={account} />
         <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
           <span className="truncate font-medium">{account?.name ?? text.account}</span>
@@ -57,9 +58,9 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
         <ChevronsUpDownIcon className="ml-auto size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" sideOffset={4} className="w-56 min-w-56">
-        {improve && <DropdownMenuItem data-testid="account-improve" onClick={() => layer.open('improve')}><SparklesIcon className="size-4" aria-hidden="true" />{text.improve}</DropdownMenuItem>}
-        {account?.menu.map(entry => <DropdownMenuItem key={entry.label} onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
-        {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}
+        {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><SparklesIcon className="size-4" aria-hidden="true" />{text.improve}</DropdownMenuItem>}
+        {account?.menu.map(entry => <DropdownMenuItem key={entry.label} className="pointer-coarse:min-h-11" onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
+        {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}
       </DropdownMenuContent>
     </DropdownMenu>
   </SidebarMenuItem></SidebarMenu>;

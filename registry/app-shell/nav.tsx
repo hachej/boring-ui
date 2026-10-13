@@ -7,6 +7,7 @@ import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
 import { EllipsisIcon, SparklesIcon } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator } from '@/components/ui/sidebar';
 import { cn } from '../utils/utils';
+import { afterBack } from './back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
@@ -80,7 +81,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
       </button>
       <AppSheet open={plusOpen} onOpenChange={setPlusOpen} title={text.more}>
         {overflow.map(item => <button key={item.id} type="button" data-testid={`plus-${item.id}`} aria-current={item.id === activeId} className={cn(SHEET_ROW, item.id === activeId && 'text-primary')}
-          onClick={() => { setPlusOpen(false); onChange(item.id); }}>
+          onClick={() => { setPlusOpen(false); afterBack(() => onChange(item.id)); }}>
           <item.icon className="size-5" />{item.label}{item.badge && <Dot className="ml-auto" />}
         </button>)}
       </AppSheet>
@@ -102,7 +103,7 @@ export function AppSidebar({ title, items, activeId, onChange, agent, account, i
     <SidebarContent>
       {items.length > 1 && <SidebarGroup><SidebarGroupContent><SidebarMenu>
         {items.map(item => <SidebarMenuItem key={item.id}>
-          <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-11" onClick={() => onChange(item.id)}>
+          <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" onClick={() => onChange(item.id)}>
             <item.icon />
             <span>{item.label}</span>
             {item.badge && <Dot className="ml-auto group-data-[collapsible=icon]:hidden" />}
@@ -113,7 +114,7 @@ export function AppSidebar({ title, items, activeId, onChange, agent, account, i
       {agent && <>
         {items.length > 1 && <SidebarSeparator />}
         <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
-          <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-11"
+          <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
             onClick={() => { if (pressed) layer.close(); else layer.open('agent', 'half'); }}>
             <AgentIcon /><span>{agentLabel}</span>
           </SidebarMenuButton>

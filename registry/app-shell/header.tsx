@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { cn } from '../utils/utils';
 import { ScreenActiveContext } from './agent-context';
+import { afterBack } from './back';
 import { AppSheet, SHEET_ROW } from './sheet';
 import { AgentTrigger } from './agent-layer';
 import type { AppShellText } from './text';
@@ -42,6 +43,11 @@ interface Store {
 
 const HeaderContext = createContext<Store | null>(null);
 
+/** A number per icon component, so a change of icon is a change of header. */
+const icons = new WeakMap<object, number>();
+let iconCount = 0;
+const iconId = (icon: ComponentType<Icon>): number => { let id = icons.get(icon); if (id === undefined) { iconCount += 1; id = iconCount; icons.set(icon, id); } return id; };
+
 const touch = (store: Store) => { store.version += 1; for (const listener of [...store.listeners]) listener(); };
 
 /** Holds the screens' headers. `AppShell` mounts one. */
@@ -56,7 +62,7 @@ export function useScreenHeader(spec: ScreenHeaderSpec): void {
   const active = useContext(ScreenActiveContext);
   const entry = useRef<Entry>({ spec });
   entry.current.spec = spec;
-  const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.actions?.map(action => [action.id, action.label])]);
+  const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.actions?.map(action => [action.id, action.label, action.showLabel, iconId(action.icon)])]);
   useLayoutEffect(() => {
     if (!store || !active) return;
     const mine = entry.current;
@@ -105,13 +111,13 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text }: { readonl
       ? <>
         <button type="button" data-testid="header-more" aria-label={text.actions} title={text.actions} onClick={() => setSheetOpen(true)} className={ICON_BUTTON}><EllipsisIcon className="size-4" aria-hidden="true" /></button>
         <AppSheet open={sheetOpen} onOpenChange={setSheetOpen} title={text.actions}>
-          {extra.map(action => <button key={action.id} type="button" className={SHEET_ROW} onClick={() => { setSheetOpen(false); run(action.id); }}><action.icon className="size-4" />{action.label}</button>)}
+          {extra.map(action => <button key={action.id} type="button" className={SHEET_ROW} onClick={() => { setSheetOpen(false); afterBack(() => run(action.id)); }}><action.icon className="size-4" />{action.label}</button>)}
         </AppSheet>
       </>
       : <DropdownMenu>
         <DropdownMenuTrigger data-testid="header-more" aria-label={text.actions} className={cn(ICON_BUTTON, 'data-popup-open:bg-accent')}><EllipsisIcon className="size-4" aria-hidden="true" /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          {extra.map(action => <DropdownMenuItem key={action.id} onClick={() => run(action.id)}><action.icon className="size-4" />{action.label}</DropdownMenuItem>)}
+          {extra.map(action => <DropdownMenuItem key={action.id} className="pointer-coarse:min-h-11" onClick={() => run(action.id)}><action.icon className="size-4" />{action.label}</DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu>)}
     <AgentTrigger />
