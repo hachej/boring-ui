@@ -20,7 +20,7 @@ export interface AppShellText {
   /** The fourth tab when there are more than four screens, and the title of its sheet. */
   readonly more: string;
   readonly signOut: string;
-  /** The account sheet's title when the account has no name. */
+  /** The account sheet's title (the person's name is shown once, in the person block) and the sidebar's name when there is none. */
   readonly account: string;
   /** The header's « … » button. */
   readonly actions: string;

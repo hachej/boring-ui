@@ -430,7 +430,6 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const peek = snap === 'peek';
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
   const value = peek ? layer.peekPoint : snap === 'full' ? FULL : HALF;
-  const showing = layer.showing ?? 'agent';
   const recording = voice.phase !== 'idle';
 
   useBackLayer(snap === 'half' || snap === 'full', layer.close, 'agent');

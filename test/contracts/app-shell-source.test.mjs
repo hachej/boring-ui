@@ -140,9 +140,9 @@ test('useAgentContext: the most recently mounted screen wins and unmounting rest
 /** A happy-dom page for rendering hooks; restores the globals afterwards. */
 function dom(t) {
   const window = new Window({ url: 'https://fictional.invalid/' });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'getComputedStyle', 'IS_REACT_ACT_ENVIRONMENT'];
+  const names = ['window', 'document', 'navigator', 'history', 'location', 'HTMLElement', 'Element', 'Node', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'getSelection', 'MutationObserver', 'ResizeObserver', 'Event', 'CustomEvent', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'FocusEvent', 'DOMRect', 'IS_REACT_ACT_ENVIRONMENT'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
-  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name] });
+  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : /^(?:getComputedStyle|requestAnimationFrame|cancelAnimationFrame|matchMedia|getSelection)$/.test(name) ? window[name].bind(window) : window[name] });
   t.after(() => { for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
   return window;
 }
@@ -171,6 +171,7 @@ test('locale: with no agent, the shell\'s own words follow the locale prop; the 
   assert.equal(container.querySelector('[data-testid=tab-plus]')?.textContent, 'Plus');
   assert.equal(container.querySelector('[data-testid=account-button]')?.getAttribute('aria-label'), 'Camille Martin');
   await act(async () => container.querySelector('[data-testid=account-button]').click());
+  await act(async () => new Promise(done => setTimeout(done, 50)));
   const sheet = window.document.querySelector('[data-testid=app-sheet]');
   assert.ok(sheet, 'the account sheet opens');
   assert.equal(sheet.querySelector('[data-slot=drawer-title]')?.textContent, 'Compte', 'the title is the generic word, so the name appears once (in the person block)');
