@@ -3,7 +3,7 @@ import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/bor
 import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
 
 /** Wire protocol shared with the browser client in `@hachej/boring-ui-kit/remote-chat`. */
-export const CHAT_TRANSPORT = Object.freeze({ schema: 'boring.chat-transport', version: 1, maxRequestBytes: 8_388_608, maxHistoryPage: 200, maxPendingFrames: 100, heartbeatMs: 15_000 });
+export const CHAT_TRANSPORT = Object.freeze({ schema: 'boring.chat-transport', version: 1, maxRequestBytes: 8_388_608, maxContextBytes: 4096, maxHistoryPage: 200, maxPendingFrames: 100, heartbeatMs: 15_000 });
 
 /** The agent change a browser may ask for. Names only: the host maps it to a native `AgentChange`. */
 export interface ChatConfigureChange {
@@ -41,6 +41,13 @@ export interface ChatTransportAccess {
    * scopes the id to this conversation. Without it `?op=withdraw` is not supported. This handler never edits the inbox.
    */
   readonly abortSubmission?: (id: SubmissionId) => Promise<'aborted' | 'already_placed' | 'settled' | 'not_found'>;
+  /**
+   * Receive the screen context a browser sent with a submit (`context`, from `createRemoteChat({ requestContext })`), called after
+   * the request is validated and admitted and before `conversation.submit`. The value is a plain JSON object of at most
+   * `CHAT_TRANSPORT.maxContextBytes`; anything else is `400 invalid-request`. The host stores it by conversation id and renders
+   * it in `createPromptContext({ context })`; this handler keeps nothing. Without it the `context` field is ignored.
+   */
+  readonly requestContext?: (value: Readonly<Record<string, unknown>>) => void | Promise<void>;
   /** Refuse an effect call. Reading stays governed by `authenticate` and `project`. */
   readonly allow?: (operation: 'submit' | 'abort' | 'answer' | 'withdraw' | 'configure') => boolean | Promise<boolean>;
 }
@@ -71,6 +78,13 @@ function content(value: unknown): value is InputSubmissionDraft['content'] {
   if (typeof value === 'string') return value.length > 0;
   return Array.isArray(value) && value.length > 0 && value.every(part => part !== null && typeof part === 'object'
     && ((part.type === 'text' && typeof part.text === 'string') || (part.type === 'image' && typeof part.data === 'string' && typeof part.mimeType === 'string')));
+}
+
+/** The submit `context` field: absent, or a plain JSON object of at most `maxContextBytes` once serialized. */
+function contextValue(value: unknown): value is Readonly<Record<string, unknown>> | undefined {
+  if (value === undefined) return true;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  return encoder.encode(JSON.stringify(value)).length <= CHAT_TRANSPORT.maxContextBytes;
 }
 
 async function body(request: Request): Promise<Record<string, unknown>> {
@@ -210,10 +224,12 @@ export function createChatTransportHandler(options: ChatTransportOptions): (requ
       if (request.method === 'POST' && operation === 'submit') {
         const input = await body(request);
         if (typeof input['requestId'] !== 'string' || !input['requestId'] || !content(input['content'])
-          || (input['whenBusy'] !== undefined && typeof input['whenBusy'] !== 'string')) return failure(400, 'invalid-request');
+          || (input['whenBusy'] !== undefined && typeof input['whenBusy'] !== 'string')
+          || (access.requestContext && !contextValue(input['context']))) return failure(400, 'invalid-request');
         let prepared = input['content'];
         if (access.prepareInput) { try { prepared = await access.prepareInput(prepared); } catch { /* submit what the person typed */ } }
         if (!await allowed('submit') || access.revoked?.aborted) return failure(403, 'not-authorized');
+        if (access.requestContext && input['context'] !== undefined) await access.requestContext(input['context'] as Readonly<Record<string, unknown>>);
         const submission = await conversation.submit({ type: 'input', requestId: input['requestId'], content: prepared,
           ...(input['whenBusy'] === undefined ? {} : { whenBusy: input['whenBusy'] as NonNullable<InputSubmissionDraft['whenBusy']> }) }, context);
         return json({ submissionId: submission.id });

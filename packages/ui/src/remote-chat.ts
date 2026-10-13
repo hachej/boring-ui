@@ -9,6 +9,11 @@ export interface RemoteChatOptions {
   readonly endpoint: string | URL;
   /** The host adds credentials here. */
   readonly fetch: (request: Request) => Promise<Response>;
+  /**
+   * The current screen context, read at each submit. An object travels as the submit body's `context` (beside `requestId`, `content`
+   * and `whenBusy`) for a host whose chat transport has `requestContext`; `undefined` sends none. Advisory text for the model, never policy.
+   */
+  readonly requestContext?: () => Readonly<Record<string, unknown>> | undefined;
   /** Submission status poll interval for `Submission.wait`. */
   readonly pollMs?: number;
   /**
@@ -262,7 +267,8 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     submit: async (draft: InputSubmissionDraft) => {
       if (draft.type !== 'input' || !draft.requestId) throw new Error('Remote chat submits input drafts with a request ID');
       const requestId = draft.requestId;
-      const { submissionId } = await post<{ submissionId: SubmissionRecord['id'] }>('submit', { requestId, content: draft.content, whenBusy: draft.whenBusy });
+      const context = options.requestContext?.();
+      const { submissionId } = await post<{ submissionId: SubmissionRecord['id'] }>('submit', { requestId, content: draft.content, whenBusy: draft.whenBusy, ...(context === undefined ? {} : { context }) });
       requests.set(submissionId, requestId);
       const status = async () => { const record = await lookup(requestId); if (!record) throw new Error('Submission is unknown to the remote host'); return record; };
       return {
