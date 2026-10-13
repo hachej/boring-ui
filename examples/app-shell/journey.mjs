@@ -296,6 +296,7 @@ try {
     await browser.evaluate(`${q(TAB)}.focus()`);
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
     assert.equal(await browser.evaluate(`!!document.activeElement?.closest('[data-slot=drawer-popup]')`), true, `focus is inside the modal layer (it is on ${await browser.evaluate('document.activeElement?.tagName')})`);
+    assert.equal(await browser.evaluate(`!!${q('[data-spec=agent] [data-testid=host-tool]')}`), true, "the host's own composer tools stay beside the microphone");
     assert.equal(await browser.evaluate(`${q(LAYER)}.getAttribute('aria-label')`), 'Coach', 'review 8: the dialog is named');
     assert.equal(await browser.evaluate(`getComputedStyle(${q(LAYER)}).getPropertyValue('--app-shell-tabbar')`).then(v => v.trim()), '56px', 'review 4: the portalled popup is given the tab bar height');
   });
@@ -336,6 +337,8 @@ try {
     await tap('[data-testid=feedback-general]');
     await browser.until('the editor', `!!${q('[data-testid=feedback-general-input]')}`, 8000);
     assert.equal(await browser.evaluate(`document.activeElement === ${q('[data-testid=feedback-general-input]')} && !!document.activeElement.closest('[data-slot=drawer-popup]')`), true, 'focused, inside the modal layer');
+    const bubble = await browser.evaluate(rect('[data-testid=feedback-general-bubble]'));
+    assert.ok(bubble && bubble.w > 0 && bubble.y >= 0 && bubble.bottom <= 844, `the note editor is inside the viewport: ${JSON.stringify(bubble)}`);
     await browser.press('Escape');
     await pause(400);
     await browser.evaluate(`window.__vv.set(844)`);
