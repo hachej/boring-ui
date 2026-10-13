@@ -29,7 +29,7 @@ window.__did = [];
 window.__agentContext = readAgentContext;
 
 const themeAction = { id: 'theme', label: 'Thème', icon: MoonIcon, onSelect: () => document.documentElement.classList.toggle('dark') };
-const importAction = { id: 'import', label: 'Importer', icon: UploadIcon, onSelect: () => window.__did.push('import') };
+const importAction = { id: 'import', label: 'Importer', icon: UploadIcon, showLabel: 'always', onSelect: () => window.__did.push('import') };
 const moreAction = { id: 'export', label: 'Exporter', icon: DatabaseIcon, onSelect: () => window.__did.push('export') };
 
 const List = () => <ul className="m-0 list-none divide-y divide-border p-0">

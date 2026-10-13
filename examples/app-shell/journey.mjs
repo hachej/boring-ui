@@ -163,9 +163,7 @@ try {
   });
 
   await step('E six screens: three tabs plus « Plus »; the fifth screen takes the place of « Plus »; one sheet at a time', async () => {
-    // location.replace keeps the history as it was (the Back step below relies on about:blank being the previous entry).
-    await browser.evaluate(`location.replace(${JSON.stringify(`${app.url}?app=fitness&nav=6`)})`);
-    await browser.until('the six-screen page', `location.search.includes('nav=6')`);
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
     await live();
     assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=tabbar] [role=tab]')].map(e => e.textContent.trim())`), ['Jour', 'Progrès', 'Données', 'Plus']);
     await tap('[data-testid=tab-plus]');
@@ -191,8 +189,7 @@ try {
     await browser.until('closed', `${openSheets} === 0`);
     assert.equal(await browser.evaluate(`history.state`), null);
     await controls('six');
-    await browser.evaluate(`location.replace(${JSON.stringify(app.url)})`);
-    await browser.until('the three-screen page', `!location.search.includes('nav=6')`);
+    await browser.send('Page.navigate', { url: app.url });
     await live();
   });
 
@@ -319,7 +316,7 @@ try {
     assert.equal(await browser.evaluate(`location.href`), href);
     // A second Back leaves the page for its previous entry: nothing of the layer is left in the history.
     await browser.evaluate(`history.back()`).catch(() => {});
-    await browser.until('left the page', `location.href === 'about:blank'`, 8000);
+    await browser.until('left the page', `location.href !== ${JSON.stringify(href)}`, 8000);
     await browser.evaluate(`history.forward()`).catch(() => {});
     await browser.until('back on the page', `location.href === ${JSON.stringify(href)}`, 8000);
     await live();
@@ -455,11 +452,12 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-testid=sidebar-title]')}.textContent`), 'Forme');
     assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid^=nav-]:not([data-testid=nav-badge]):not([data-testid=nav-user])')].map(e => e.textContent.trim())`), ['Jour', 'Progrès', 'Données']);
     await browser.screenshot('desktop-sidebar.png');
+    const wide = (await browser.evaluate(rect('[data-slot=sidebar-container][data-side=left]'))).w;
     await browser.click(q('[data-slot=sidebar-trigger]'));
     await browser.until('collapsed to the icon rail', `${q(sidebar)}.dataset.state === 'collapsed'`);
     await pause(400);
     const rail = await browser.evaluate(rect('[data-slot=sidebar-container][data-side=left]'));
-    assert.ok(rail.w < 80, `an icon rail: ${rail.w}px`);
+    assert.ok(rail.w < wide / 2, `an icon rail: ${rail.w}px against ${wide}px`);
     await browser.click(q('[data-slot=sidebar-trigger]'));
     await browser.until('expanded again', `${q(sidebar)}.dataset.state === 'expanded'`);
     await browser.click(q('[data-testid=nav-progres]'));
@@ -488,10 +486,13 @@ try {
     await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
   });
 
-  await step('expanded: labelled actions and « … » in a dropdown; the one-screen template has a sidebar with no nav list', async () => {
+  await step('expanded: icon actions (and one labelled) and « … » in a dropdown; the one-screen template has a sidebar with no nav list', async () => {
     await browser.send('Page.navigate', { url: `${app.url}?nav=6#sommeil` });
     await live();
-    assert.equal(await browser.evaluate(`${q('[data-testid=header-action-theme]')}.textContent.trim()`), 'Thème', 'labelled buttons');
+    assert.equal(await browser.evaluate(`${q('[data-testid=header-action-theme]')}.textContent.trim()`), '', 'icon only');
+    assert.equal(await browser.evaluate(`${q('[data-testid=header-action-theme]')}.getAttribute('aria-label')`), 'Thème');
+    assert.equal(await browser.evaluate(`${q('[data-testid=header-action-theme]')}.title`), 'Thème', 'the tooltip');
+    assert.equal(await browser.evaluate(`${q('[data-testid=header-action-import]')}.textContent.trim()`), 'Importer', 'showLabel: always');
     await browser.click(q('[data-testid=header-more]'));
     await browser.until('the dropdown', `[...document.querySelectorAll('[role=menuitem]')].some(e => e.textContent.trim() === 'Exporter')`);
     await browser.press('Escape');

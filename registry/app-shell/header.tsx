@@ -14,7 +14,15 @@ import { AgentTrigger } from './agent-layer';
 import type { AppShellText } from './text';
 
 interface Icon { className?: string }
-export interface ScreenHeaderAction { readonly id: string; readonly label: string; readonly icon: ComponentType<Icon>; readonly onSelect: () => void }
+export interface ScreenHeaderAction {
+  readonly id: string;
+  /** The accessible name and the tooltip. */
+  readonly label: string;
+  readonly icon: ComponentType<Icon>;
+  /** `'always'` also shows the label as text next to the icon (default: icon only, at every width). */
+  readonly showLabel?: 'always';
+  readonly onSelect: () => void;
+}
 export interface ScreenHeaderSpec {
   /** Default: the active nav label. */
   readonly title?: string;
@@ -88,12 +96,11 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text }: { readonl
   return <header data-testid="screen-header" className="sticky top-0 z-10 flex min-h-14 shrink-0 items-center gap-1 border-b border-border bg-background px-2 pt-[env(safe-area-inset-top)]">
     {compact ? (back ?? avatar) : <><SidebarTrigger className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" />{back}</>}
     <div className="min-w-0 flex-1 px-1">
-      <h1 data-testid="header-title" className="m-0 truncate text-base leading-tight font-semibold">{spec?.title ?? fallbackTitle}</h1>
+      <h1 data-testid="header-title" className="m-0 truncate text-base leading-tight font-semibold [font-family:var(--font-display,var(--font-sans))]">{spec?.title ?? fallbackTitle}</h1>
       {spec?.subtitle && <p data-testid="header-subtitle" className="m-0 truncate text-xs text-muted-foreground">{spec.subtitle}</p>}
     </div>
-    {shown.map(action => compact
-      ? <button key={action.id} type="button" data-testid={`header-action-${action.id}`} aria-label={action.label} title={action.label} onClick={() => run(action.id)} className={ICON_BUTTON}><action.icon className="size-4" /></button>
-      : <button key={action.id} type="button" data-testid={`header-action-${action.id}`} onClick={() => run(action.id)} className={LABEL_BUTTON}><action.icon className="size-4" />{action.label}</button>)}
+    {shown.map(action => <button key={action.id} type="button" data-testid={`header-action-${action.id}`} aria-label={action.label} title={action.label} onClick={() => run(action.id)}
+      className={action.showLabel === 'always' ? LABEL_BUTTON : ICON_BUTTON}><action.icon className="size-4" />{action.showLabel === 'always' && action.label}</button>)}
     {extra.length > 0 && (compact
       ? <>
         <button type="button" data-testid="header-more" aria-label={text.actions} title={text.actions} onClick={() => setSheetOpen(true)} className={ICON_BUTTON}><EllipsisIcon className="size-4" aria-hidden="true" /></button>
