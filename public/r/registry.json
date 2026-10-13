@@ -812,6 +812,57 @@
       ]
     },
     {
+      "name": "app-shell",
+      "type": "registry:block",
+      "title": "App shell: agent layer",
+      "description": "AgentLayer: one agent's PiChat above the app. On a phone a bottom drawer with three fixed snap points (peek above the tab bar, half, full; a swipe never closes it, the transcript scrolls and only the handle drags, the composer lifts above the soft keyboard); on a wide screen a right panel. The same layer shows the product manager (improve) when the account menu asks for it. Optional push-to-talk (press and hold the AgentTrigger or the hero button; the transcript is sent or fills the composer) and point mode for the manager. Also useAgentContext and readAgentContext (the current screen travels as `context` with each submit) and useBackLayer, the one Back manager. Built on the shadcn drawer and sidebar of the host's own style (Base UI variants).",
+      "dependencies": [
+        "@hachej/boring-feedback@^0.2.2",
+        "@hachej/boring-ui-kit@^0.2.2",
+        "@base-ui/react@^1.8.0",
+        "react@^19.0.0",
+        "react-dom@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/feedback.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/button.json",
+        "drawer",
+        "sidebar",
+        "avatar",
+        "dropdown-menu"
+      ],
+      "files": [
+        {
+          "path": "registry/app-shell/agent-layer.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-layer.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-context.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/agent-context.ts"
+        },
+        {
+          "path": "registry/app-shell/back.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/back.ts"
+        },
+        {
+          "path": "registry/app-shell/use-visual-viewport.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/use-visual-viewport.ts"
+        },
+        {
+          "path": "registry/app-shell/text.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/text.ts"
+        }
+      ]
+    },
+    {
       "name": "viewers",
       "type": "registry:component",
       "title": "Viewers",
