@@ -13,6 +13,8 @@ const layers = new Set<Layer>();
 /** `popstate` events caused by our own `history.back()`, which must not close anything. */
 let ignored = 0;
 let listening = false;
+/** The layer kind the page was loaded on top of (history state survives a reload), until a layer adopts it. */
+let persisted: unknown = typeof history === 'undefined' ? undefined : (history.state as { appShell?: unknown } | null)?.appShell;
 /** Layers that opened while our own `history.back()` was still pending: they push their entry once it has landed (a push in between cancels it). */
 const waiting: (() => void)[] = [];
 
@@ -54,7 +56,10 @@ export function useBackLayer(open: boolean, close: () => void, order: BackOrder)
     let started = false;
     const start = () => {
       started = true;
-      history.pushState({ appShell: order }, '');
+      // After a reload the page still sits on the entry its layer pushed before: that one layer adopts it instead of stacking a second.
+      const adopt = persisted === order;
+      persisted = undefined;
+      if (!adopt) history.pushState({ appShell: order }, '');
       layers.add(layer);
     };
     if (!listening) { window.addEventListener('popstate', onPopState); listening = true; }

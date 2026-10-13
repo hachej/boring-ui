@@ -45,6 +45,10 @@ jobs:
         run: npm run app-shell:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
+      - name: App shell layouts workspace and chat on a phone and a desktop
+        run: npm run app-shell:journey:workspace
+        env:
+          APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
       - name: Document draft recovery with IndexedDB
         run: npm run draft-recovery:journey
       - name: File tree, mentions, uploads and revision history
