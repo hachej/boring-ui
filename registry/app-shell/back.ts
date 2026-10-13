@@ -13,11 +13,17 @@ const layers = new Set<Layer>();
 /** `popstate` events caused by our own `history.back()`, which must not close anything. */
 let ignored = 0;
 let listening = false;
+/** Layers that opened while our own `history.back()` was still pending: they push their entry once it has landed (a push in between cancels it). */
+const waiting: (() => void)[] = [];
 
 const topmost = (): Layer | undefined => [...layers].sort((a, b) => RANK[a.order] - RANK[b.order])[0];
 
 function onPopState(): void {
-  if (ignored > 0) { ignored -= 1; return; }
+  if (ignored > 0) {
+    ignored -= 1;
+    if (ignored === 0) for (const start of waiting.splice(0)) start();
+    return;
+  }
   const top = topmost();
   if (!top) return;
   // The entry is already gone: the layer closes without calling `history.back()` again.
@@ -36,10 +42,19 @@ export function useBackLayer(open: boolean, close: () => void, order: BackOrder)
   useEffect(() => {
     if (!open) return;
     const layer: Layer = { order, close: () => latest.current(), popped: false };
-    history.pushState({ appShell: order }, '');
-    layers.add(layer);
+    let started = false;
+    const start = () => {
+      started = true;
+      history.pushState({ appShell: order }, '');
+      layers.add(layer);
+    };
     if (!listening) { window.addEventListener('popstate', onPopState); listening = true; }
+    // A sheet that closes as this layer opens (the account menu choosing « Améliorer l'app ») is still going back: wait for it.
+    if (ignored > 0) waiting.push(start); else start();
     return () => {
+      const at = waiting.indexOf(start);
+      if (at >= 0) waiting.splice(at, 1);
+      if (!started) return;
       layers.delete(layer);
       if (!layer.popped) { ignored += 1; history.back(); }
     };

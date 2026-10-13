@@ -27,7 +27,7 @@ export function registryCss(item) {
 }
 
 /** Every item written in Tailwind: their source is scanned for classes and their `css` is compiled in. */
-const TAILWIND_ITEMS = ['button', 'utils', 'pi-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers'];
+const TAILWIND_ITEMS = ['button', 'utils', 'pi-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers', 'app-shell'];
 
 /**
  * The registry `theme` item as CSS: light tokens on `:root`, dark tokens on `.dark` (as the CLI writes them in a consumer app; the

@@ -3,10 +3,12 @@
 // default), `redaction` (product manager only) or `template` (coach without voice); `?send=draft` makes push-to-talk only fill the composer.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { AgentLayer, AgentLayerProvider, AgentTrigger, useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
+import { useBackLayer } from '../../registry/app-shell/back.ts';
 import { readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 
@@ -20,6 +22,19 @@ const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${a
 const policy = createPrivacyPolicy({ routeOf: ({ pathname }) => pathname });
 const ROWS = Array.from({ length: 40 }, (_, index) => ({ day: `Jour ${index + 1}`, steps: 6000 + ((index * 937) % 5000) }));
 
+/** The account menu as a bottom sheet with its own Back layer: choosing « Améliorer l'app » closes it and opens the layer in the same tick. */
+function AccountMenu() {
+  const [open, setOpen] = useState(false);
+  const layer = useAgentLayer();
+  useBackLayer(open, () => setOpen(false), 'sheet');
+  return <>
+    <button type="button" data-testid="menu-button" onClick={() => setOpen(true)} className="inline-flex min-h-9 items-center rounded-md px-2 text-sm hover:bg-accent pointer-coarse:min-h-11">Menu</button>
+    {open && createPortal(<div role="dialog" aria-label="Compte" data-testid="account-sheet" className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4">
+      <button type="button" data-testid="account-improve" onClick={() => { setOpen(false); layer.open('improve'); }} className="flex min-h-11 w-full items-center rounded-md px-2 text-left text-sm hover:bg-accent">Améliorer l'app</button>
+    </div>, document.body)}
+  </>;
+}
+
 /** The fake screen: it tells the layer what the person is looking at, and has a header with the trigger and a menu entry for the manager. */
 function Screen() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
@@ -27,7 +42,8 @@ function Screen() {
   return <main data-testid="screen" className="min-h-screen pb-[calc(var(--app-shell-tabbar)+1rem)]">
     <header className="sticky top-0 z-10 flex h-14 items-center gap-1 border-b border-border bg-background px-3">
       <h1 className="m-0 flex-1 text-base font-semibold">Progrès</h1>
-      <button type="button" data-testid="menu-improve" onClick={() => layer.open('improve')} className="inline-flex min-h-9 items-center rounded-md px-2 text-sm hover:bg-accent pointer-coarse:min-h-11">Améliorer l'app</button>
+      <AccountMenu />
+      <button type="button" data-testid="menu-improve" onClick={() => layer.open('improve')} className="inline-flex min-h-9 items-center rounded-md px-2 text-sm hover:bg-accent pointer-coarse:min-h-11">Idées</button>
       <AgentTrigger />
     </header>
     <ul className="m-0 list-none divide-y divide-border p-0">
@@ -72,7 +88,7 @@ function App() {
   const common = { locale: 'fr', showHistory: false, showConnectionStatus: false };
   const agent = mode === 'redaction' ? undefined : {
     controller: coach.controller,
-    chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach' }, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
+    chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' }, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
     ...(mode === 'template' ? {} : { voice: { transcribe: async () => window.__transcript ?? 'Combien de pas hier ?', send } }),
   };
   const improve = mode === 'template' ? undefined : { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };

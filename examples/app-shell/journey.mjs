@@ -81,6 +81,10 @@ try {
     assert.equal(await browser.evaluate(taps), before, 'the tab bar behind a modal layer does not receive the tap');
     await browser.screenshot('phone-half.png');
     await controls('half');
+    // Round c: the layer's own buttons are not browser-grey (the scoped reset stands in for Tailwind's preflight), and the microphone is in the composer row.
+    assert.deepEqual(await browser.evaluate(`(() => { const s = getComputedStyle(${q('[data-testid=agent-layer-close]')}); return [s.appearance, s.borderTopWidth, s.backgroundColor]; })()`), ['none', '0px', 'rgba(0, 0, 0, 0)']);
+    const mic = await browser.evaluate(rect('[data-testid=agent-talk]')), composer = await browser.evaluate(rect('[data-testid=composer]'));
+    assert.ok(mic.y >= composer.y && mic.bottom <= composer.bottom, 'the microphone is in the composer row, not over the messages');
   });
 
   await step('7 a suggestion chip fills the composer and sends nothing', async () => {
@@ -108,8 +112,16 @@ try {
     await browser.until('the tab bar took the tap', `${taps} === ${before + 1}`);
     const peek = await browser.evaluate(rect(LAYER));
     const tab = await browser.evaluate(rect('[data-testid=tabbar]'));
-    assert.ok(Math.abs(peek.y + 128 - tab.y) <= 3, `the 8rem peek ends where the tab bar starts: ${JSON.stringify({ peek, tab })}`);
+    assert.ok(Math.abs(peek.y + 96 - tab.y) <= 3, `the 6rem peek ends where the tab bar starts: ${JSON.stringify({ peek, tab })}`);
     await controls('peek');
+    // Round c: the peek is ONE compact row (no Close, a one-line input with the coach's placeholder, the microphone and Send).
+    const row = await browser.evaluate(rect('[data-testid=composer]'));
+    assert.ok(row.h >= 44 && row.h <= 64, `the peek composer is one row of 44-64px: ${row.h}`);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=agent-layer-close]')}`), false, 'no Close at peek');
+    assert.equal(await browser.evaluate(`${q(INPUT)}.placeholder`), 'Parle au coach…');
+    assert.deepEqual(await browser.evaluate(`['composer-plus', 'composer-feedback'].map(id => !!${q('[data-testid=composer] [data-testid=composer-plus]')} && ${q('[data-testid=composer] [data-testid=composer-plus]')}.getBoundingClientRect().width > 0)`), [false, false], 'the other composer controls wait for half');
+    const mic = await browser.evaluate(rect('[data-testid=agent-talk]'));
+    assert.ok(mic && mic.y >= row.y - 1 && mic.bottom <= row.bottom + 1, 'the microphone is in the composer row');
   });
 
   await step('5 focusing the composer goes to full, above a shortened visual viewport, in a 16px font', async () => {
@@ -200,6 +212,7 @@ try {
     const before = app.submits.length;
     const r = await center(TRIGGER);
     await touch('touchStart', [[r.x, r.y]]);
+    if (process.env.DBG) { await pause(2000); console.log('DBG', await browser.evaluate(`JSON.stringify({ snap: ${snap}, listening: ${q('[data-testid=agent-listening]')}?.outerHTML.slice(0, 150), talk: ${q('[data-testid=agent-talk]')}?.dataset.state, prob: ${q('[data-testid=agent-voice-problem]')}?.textContent })`)); }
     await browser.until('listening at peek', `${q('[data-testid=agent-listening]')}?.textContent.includes("J'écoute") && ${q('[data-testid=agent-listening]')}.dataset.phase === 'recording'`, 8000);
     assert.equal(await browser.evaluate(snap), 'peek');
     await browser.screenshot('phone-listening.png');
@@ -344,6 +357,31 @@ try {
     await browser.evaluate(`window.__breakSend = false`);
   });
 
+  await step('round c 4: the account sheet then « Améliorer l\'app » then point mode keeps the page (no about:blank)', async () => {
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+    const href = await browser.evaluate('location.href');
+    await tap('[data-testid=menu-button]');
+    await browser.until('the account sheet', `!!${q('[data-testid=account-sheet]')}`);
+    await settle();
+    if (process.env.DBG) console.log('RECT', JSON.stringify(await browser.evaluate(rect('[data-testid=account-improve]'))), await browser.evaluate(`document.elementFromPoint(100, 800)?.outerHTML.slice(0, 120)`));
+    await tap('[data-testid=account-improve]');
+    if (process.env.DBG) { await pause(1500); console.log('DBG', await browser.evaluate(`JSON.stringify({ href: location.href, st: history.state, snap: ${snap}, sheet: !!${q('[data-testid=account-sheet]')} })`)); }
+    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`); await settle();
+    assert.equal(await browser.evaluate('location.href'), href);
+    assert.equal(await browser.evaluate('history.state?.appShell'), 'agent', 'the layer owns its entry after the sheet closed');
+    await tap('[data-spec=improve] [data-testid=composer-point]');
+    await browser.until('pointing', `!!${q('[data-testid=feedback-point-bar]')}`, 8000);
+    await pause(600);
+    assert.equal(await browser.evaluate('location.href'), href, 'still on the page while pointing');
+    await tap('[data-testid=feedback-point-cancel]');
+    await browser.until('back to the sheet', `!${q('[data-testid=feedback-point-bar]')} && ${snap} === 'half'`, 8000);
+    assert.equal(await browser.evaluate('location.href'), href);
+    await browser.evaluate('history.back()');
+    await browser.until('closed by Back', `${snap} === null`);
+    assert.equal(await browser.evaluate('location.href'), href, 'one Back closed the layer and nothing more');
+  });
+
   await step('draft mode: push-to-talk only fills the composer', async () => {
     await browser.send('Page.navigate', { url: `${app.url}?send=draft` });
     await live();
@@ -374,7 +412,7 @@ try {
     await browser.send('Page.navigate', { url: `${app.url}?mode=template` });
     await browser.until('ready', `!!${q(TRIGGER)} && !${q('[data-testid=connecting]')}`, 30000);
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=agent-hero-talk]')}`), false);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=agent-talk]')}`), false);
     await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
     await browser.until('closed', `!${q(LAYER)}`);
   });
