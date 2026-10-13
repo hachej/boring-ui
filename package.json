@@ -91,6 +91,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1146.0",
+    "@base-ui/react": "1.8.0",
     "@earendil-works/chord": "1.1.0",
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-codemode": "1.1.0",
