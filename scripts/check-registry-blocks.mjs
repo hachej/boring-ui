@@ -5,7 +5,8 @@
 // 2. A file may import another item (`../<item>/<file>`) only when that item is in its own item's registryDependencies
 //    (transitively) and lists the file. pi-chat declares none, so the chat never imports pi-ambient or pi-workspace, and
 //    pi-workspace never imports pi-ambient (the host swaps AmbientChat in when the chat floats).
-// 3. Declared registryDependencies name items of this registry.
+// 3. Declared registryDependencies name items of this registry, or one of the shadcn built-ins in SHADCN_BUILTINS (a bare name; the
+//    consumer's own shadcn style resolves it). A source file imports `@/components/ui/<name>` only for a bare name its item declares.
 // 4. File types and targets: a `use*.ts` file is `registry:hook`, any other `.ts` is `registry:lib` (or a declared `registry:hook`), a
 //    `.tsx` is a component (`registry:ui` for a shared primitive such as the button); every file has the target
 //    `components/<item>/<file>`, so the installed folders mirror registry/ and the sibling imports above resolve.
@@ -22,6 +23,8 @@ const source = /\.(?:tsx?|jsx?|mjs)$/;
 /** The source registryDependencies use the `@boring-ui/<item>` shorthand; scripts/build-registry.mjs writes them as absolute release URLs. */
 const namespace = '@boring-ui/';
 const local = (dependency) => dependency.startsWith(namespace) ? dependency.slice(namespace.length) : dependency;
+/** The shadcn built-in components a registry item may depend on by bare name. Fixed: a new one is a decision, not a convenience. */
+export const SHADCN_BUILTINS = Object.freeze(['drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip']);
 const importPattern = /\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 
 /** Cycles among the source files under `folders`, following relative imports (`./x`, `./x.js` for `x.ts`, `./x` for `x.tsx`). */
@@ -82,7 +85,10 @@ export function checkRegistryBlocks(root) {
   let files = 0;
   const owners = new Map();
   for (const item of items.values()) {
-    for (const dependency of item.registryDependencies ?? []) if (!dependency.startsWith(namespace) || !items.has(local(dependency))) errors.push(`BORING-BLOCKS ${item.name}: registryDependencies must be ${namespace}<item of this registry> (found ${dependency})`);
+    for (const dependency of item.registryDependencies ?? []) {
+      if (SHADCN_BUILTINS.includes(dependency)) continue;
+      if (!dependency.startsWith(namespace) || !items.has(local(dependency))) errors.push(`BORING-BLOCKS ${item.name}: registryDependencies must be ${namespace}<item of this registry> or one of ${SHADCN_BUILTINS.join(', ')} (found ${dependency})`);
+    }
     for (const file of item.files ?? []) {
       const base = posix.basename(file.path);
       const where = `BORING-BLOCKS ${file.path}`;
@@ -107,7 +113,10 @@ export function checkRegistryBlocks(root) {
       const text = readFileSync(resolve(root, path), 'utf8');
       // build-css.mjs and similar tooling stay in the folder but ship nothing; only files that import or are imported matter for the item's code.
       if (!own.has(path) && !/\.mjs$/.test(name)) errors.push(`BORING-BLOCKS ${path}: not listed in item ${item.name} of registry.json`);
+      const builtins = (item.registryDependencies ?? []).filter((dependency) => SHADCN_BUILTINS.includes(dependency));
       for (const [, specifier] of text.matchAll(importPattern)) {
+        const ui = /^@\/components\/ui\/([\w-]+)$/.exec(specifier);
+        if (ui) { if (!builtins.includes(ui[1])) errors.push(`BORING-BLOCKS ${path}: imports ${specifier}, but item ${item.name} does not declare the shadcn built-in ${ui[1]} in registryDependencies (allowed: ${SHADCN_BUILTINS.join(', ')})`); continue; }
         if (!specifier.startsWith('.')) continue;
         const target = posix.normalize(posix.join('registry', directory.name, specifier));
         const match = /^registry\/([^/]+)\/([^/]+)$/.exec(target);

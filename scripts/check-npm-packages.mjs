@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { INTENTIONALLY_PRIVATE, isExcludedFromRelease } from './release-set.mjs';
+import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 
 export function checkPackage(manifest, paths, versions, { release = false } = {}) {
   const errors = [];
@@ -82,6 +83,7 @@ export function checkShippedRegistry(manifest, paths, { items = [], read } = {})
   // Each item, and each item the registry index lists, names its dependencies as this release's URLs of shipped items.
   const dependencies = (owner, item) => {
     for (const dependency of item.registryDependencies ?? []) {
+      if (SHADCN_BUILTINS.includes(dependency)) continue; // a bare name the consumer's own shadcn style resolves
       const local = releaseItem.exec(dependency)?.[2];
       if (!local || !shipped.has(local)) errors.push(`Registry dependency not shipped in r/: ${owner} -> ${dependency}`);
     }
