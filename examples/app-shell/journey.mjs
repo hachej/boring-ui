@@ -76,6 +76,7 @@ try {
     Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => vv });
     window.__vv = { set: h => { height = h; t.dispatchEvent(new Event('resize')); } }; })()` });
   await browser.emulate('phone');
+  if (process.env.THROTTLE) await send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) });
   await browser.reload();
   await live();
 
