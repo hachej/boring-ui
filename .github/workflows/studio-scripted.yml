@@ -41,6 +41,10 @@ jobs:
       # "No usable sandbox". Re-allow them for this job rather than running Chromium without its sandbox.
       - name: Allow the Chromium sandbox (user namespaces)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: App shell agent layer on a phone and a desktop
+        run: npm run app-shell:journey
+        env:
+          APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
       - name: Document draft recovery with IndexedDB
         run: npm run draft-recovery:journey
       - name: File tree, mentions, uploads and revision history

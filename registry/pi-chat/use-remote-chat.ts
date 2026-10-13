@@ -16,16 +16,18 @@ export type RemoteChatState =
  * The remote chat reopens a dropped stream itself (the controller reads `reconnecting` meanwhile); it never means the task stopped.
  * A failed connect retries every second. The previous conversation's controller is never handed out: it is disposed on change.
  */
-export function useRemoteChat({ conversationId, endpoint, fetch, identity }: {
+export function useRemoteChat({ conversationId, endpoint, fetch, identity, requestContext }: {
   readonly conversationId: string | undefined;
   readonly endpoint: (conversationId: string) => string | URL;
   readonly fetch: (request: Request) => Promise<Response>;
   readonly identity: ChatIdentity | undefined;
+  /** The current screen context, read at each submit and sent as the submit's `context` (for example `readAgentContext` of the app-shell item). */
+  readonly requestContext?: () => Readonly<Record<string, unknown>> | undefined;
 }): RemoteChatState {
   const url = conversationId === undefined ? undefined : String(endpoint(conversationId));
   const key = JSON.stringify([conversationId, url, identity?.runtimeId, identity?.scopeId, identity?.principalId]);
-  const binding = useMemo(() => ({ key, fetch }), [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => { binding.fetch = fetch; }, [binding, fetch]);
+  const binding = useMemo(() => ({ key, fetch, requestContext }), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { binding.fetch = fetch; binding.requestContext = requestContext; }, [binding, fetch, requestContext]);
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly chat: RemoteChatState }>();
   useEffect(() => {
     if (conversationId === undefined || !identity || url === undefined) return;
@@ -35,7 +37,7 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity }: {
     void (async () => {
       while (!disposed) {
         try {
-          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request) });
+          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: () => binding.requestContext?.() });
           if (disposed) return void remote.close();
           controller = createNativeChatController({ identity, ...remote });
           await controller.connect();

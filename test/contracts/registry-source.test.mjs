@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registrySchema, registryItemSchema } from 'shadcn/schema';
 import { buildRegistry } from '../../scripts/build-registry.mjs';
-import { checkRegistryBlocks } from '../../scripts/check-registry-blocks.mjs';
+import { checkRegistryBlocks, SHADCN_BUILTINS } from '../../scripts/check-registry-blocks.mjs';
 import { viewersCss } from '../../registry/viewers/build-css.mjs';
 import { feedbackCss } from '../../scripts/build-feedback-css.mjs';
 
@@ -16,7 +16,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 // Items written in Tailwind, installed into their own folder, rather than recipes over a headless @hachej/boring-ui-kit controller.
 const manifest = registrySchema.parse(JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')));
 // Tailwind items bring owned source with shadcn tokens: every rule is scoped to the item's root class and lives in the base or components layer.
-const TAILWIND = { button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, viewers: { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewers' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' } };
+const TAILWIND = { button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, viewers: { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewers' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' }, 'app-shell': { scope: '.app-shell', keyframes: /^$/, folder: 'app-shell' } };
 // The feedback item imports the package's browser entries directly (no copied validators), React and React DOM (a portal); nothing from store, agent or source.
 const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej/boring-feedback/format', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-feedback/preview']);
 // The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
@@ -73,7 +73,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
     }
     // Every Tailwind item depends on the theme (directly or through pi-chat).
     if (item.name in TAILWIND && item.name !== 'utils') {
-      const closure = new Set(), visit = name => { for (const dependency of manifest.items.find(entry => entry.name === name).registryDependencies ?? []) { const next = dependency.slice('@boring-ui/'.length); if (!closure.has(next)) { closure.add(next); visit(next); } } };
+      const closure = new Set(), visit = name => { for (const dependency of (manifest.items.find(entry => entry.name === name).registryDependencies ?? []).filter(dependency => !SHADCN_BUILTINS.includes(dependency))) { const next = dependency.slice('@boring-ui/'.length); if (!closure.has(next)) { closure.add(next); visit(next); } } };
       visit(item.name);
       assert.ok(closure.has('theme'), `${item.name} depends on @boring-ui/theme`);
     }
@@ -94,7 +94,8 @@ test('registry dependency pins and scoped styles preserve the declared source di
       assert.equal(version, expected, dependency);
     }
     // Blocks may depend only on other items of this registry (pi-ambient and pi-workspace build on pi-chat); nothing from a remote registry.
-    for (const dependency of item.registryDependencies ?? []) assert.ok(manifest.items.some(other => '@boring-ui/' + other.name === dependency), 'No implicit unpinned child items: ' + dependency);
+    // ... or one of the fixed shadcn built-ins by bare name (scripts/check-registry-blocks.mjs), which the consumer's own style resolves.
+    for (const dependency of item.registryDependencies ?? []) assert.ok(SHADCN_BUILTINS.includes(dependency) || manifest.items.some(other => '@boring-ui/' + other.name === dependency), 'No implicit unpinned child items: ' + dependency);
     assert.equal(item.cssVars, undefined, 'No registry theme replacement');
     if (item.name in TAILWIND) {
       const { scope, keyframes, folder } = TAILWIND[item.name];
@@ -115,6 +116,9 @@ test('registry dependency pins and scoped styles preserve the declared source di
         const source = readFileSync(join(root, file.path), 'utf8');
         for (const imported of [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])) {
           if (imported.startsWith('./')) { assert.ok([...names].some(name => name.replace(/\.tsx?$/, '') === imported.slice(2)), `${file.path} imports missing ${imported}`); continue; }
+          // The shadcn components of the host's own style (`@/components/ui/<built-in>`, and the `use-mobile` hook that the sidebar brings), only when declared.
+          const shadcn = /^@\/(?:components\/ui\/([\w-]+)|hooks\/use-mobile)$/.exec(imported);
+          if (shadcn) { assert.ok((item.registryDependencies ?? []).includes(shadcn[1] ?? 'sidebar') && SHADCN_BUILTINS.includes(shadcn[1] ?? 'sidebar'), `${file.path} imports ${imported} without declaring the shadcn built-in`); continue; }
           // A block imports the item it depends on by its installed sibling folder (`../utils/utils`, `../pi-chat/rows`); scripts/check-registry-blocks.mjs enforces the direction.
           const sibling = /^\.\.\/([\w-]+)\/([\w-]+)$/.exec(imported);
           if (sibling) { const other = manifest.items.find(entry => entry.name === sibling[1]); assert.ok(other && (item.registryDependencies ?? []).includes('@boring-ui/' + other.name) && other.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${other.name}/${sibling[2]}`), `${file.path} imports ${imported} outside its registryDependencies`); continue; }
@@ -194,6 +198,23 @@ test('the block check rejects an import cycle in a registry block or a package s
       'packages/ui/src/cycle-a.ts -> packages/ui/src/cycle-b.ts -> packages/ui/src/cycle-c.ts -> packages/ui/src/cycle-a.ts',
       'registry/pi-chat/queue.tsx -> registry/pi-chat/rows.ts -> registry/pi-chat/queue.tsx',
     ]);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('the block check accepts the fixed shadcn built-ins by bare name and rejects any other bare name or an undeclared @/components/ui import', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-registry-builtins-'));
+  try {
+    cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
+    cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
+    assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed app-shell item passes');
+    const manifestPath = join(directory, 'registry.json');
+    const edit = change => { const value = JSON.parse(readFileSync(manifestPath, 'utf8')); change(value.items.find(item => item.name === 'app-shell')); writeFileSync(manifestPath, JSON.stringify(value)); };
+    edit(item => item.registryDependencies.push('carousel'));
+    assert.deepEqual(checkRegistryBlocks(directory).errors.filter(error => error.includes('carousel')).length, 1, 'a bare name outside the list is refused');
+    cpSync(join(root, 'registry.json'), manifestPath);
+    edit(item => { item.registryDependencies = item.registryDependencies.filter(dependency => dependency !== 'drawer'); });
+    assert.ok(checkRegistryBlocks(directory).errors.some(error => /registry\/app-shell\/agent-layer\.tsx: imports @\/components\/ui\/drawer, but item app-shell does not declare/.test(error)), 'an import of an undeclared built-in is refused');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
