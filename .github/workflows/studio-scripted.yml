@@ -12,7 +12,7 @@ permissions:
 jobs:
   scripted-journeys:
     name: Studio scripted journeys
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, boring-vm]
     timeout-minutes: 30
     env:
       # Playwright 1.63.0 pins chromium-headless-shell revision 1243 (Chrome 153.0.8010.12); the journeys only need the binary.

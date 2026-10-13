@@ -31,7 +31,7 @@ jobs:
       github.repository == 'hachej/boring-ui' &&
       github.ref == 'refs/heads/main' &&
       github.actor == 'hachej' && github.triggering_actor == 'hachej'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, boring-vm]
     steps:
       - name: Bind publication to the reviewed dispatch commit
         env:
@@ -54,7 +54,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.actor == 'hachej' && github.triggering_actor == 'hachej'
     needs: admit
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, boring-vm]
     timeout-minutes: 30
     outputs:
       artifact-id: ${{ steps.archive.outputs.artifact-id }}
@@ -97,7 +97,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.actor == 'hachej' && github.triggering_actor == 'hachej'
     needs: [prepare, verify, browser, secrets]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, boring-vm]
     timeout-minutes: 30
     environment: release
     permissions:

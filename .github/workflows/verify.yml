@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, boring-vm]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,7 +40,7 @@ jobs:
     # (missing peer declarations, runtime imports of optional peers, strict declarations). About 5 minutes locally; the
     # slower registry/projection/definitions/testing consumers stay manual (each 35-130 s, testing needs Chromium).
     name: Isolated package consumers
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, boring-vm]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
