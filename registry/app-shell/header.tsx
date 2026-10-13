@@ -1,7 +1,8 @@
 'use client';
 
-// One header per screen. A screen calls `useScreenHeader` and the shell renders it; the most recently mounted caller wins and unmounting
-// restores the previous one. A screen the shell has hidden does not count (ScreenActiveContext). Host concern: Pi has no layout.
+// One header per screen. A screen calls `useScreenHeader` and the shell renders it; the most recently mounted caller wins field by field
+// (a `ListDetail` inside a screen adds « ← » and a title and keeps the screen's actions) and unmounting restores the previous one. A
+// screen the shell has hidden does not count (ScreenActiveContext). Host concern: Pi has no layout.
 import { createContext, createElement, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { ArrowLeftIcon, EllipsisIcon } from 'lucide-react';
@@ -34,7 +35,7 @@ export interface ScreenHeaderSpec {
   readonly actions?: readonly ScreenHeaderAction[];
 }
 
-interface Entry { spec: ScreenHeaderSpec }
+interface Entry { spec: ScreenHeaderSpec; readonly overlay: boolean }
 interface Store {
   readonly entries: Entry[];
   version: number;
@@ -56,11 +57,14 @@ export function HeaderProvider({ children }: { readonly children: ReactNode }) {
   return createElement(HeaderContext.Provider, { value: store.current }, children);
 }
 
-/** Registers the calling screen's header while it is mounted and on show. The latest spec is always read at click time. */
-export function useScreenHeader(spec: ScreenHeaderSpec): void {
+/**
+ * Registers the calling screen's header while it is mounted and on show. The latest spec is always read at click time. An `overlay`
+ * (the shell's own `ListDetail`) is merged over the screen's header whatever the effect order: it adds « ← » and a title, and keeps the actions.
+ */
+export function useScreenHeader(spec: ScreenHeaderSpec, options?: { readonly overlay?: boolean }): void {
   const store = useContext(HeaderContext);
   const active = useContext(ScreenActiveContext);
-  const entry = useRef<Entry>({ spec });
+  const entry = useRef<Entry>({ spec, overlay: options?.overlay === true });
   entry.current.spec = spec;
   const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.actions?.map(action => [action.id, action.label, action.showLabel, iconId(action.icon)])]);
   useLayoutEffect(() => {
@@ -81,7 +85,11 @@ export function useTopHeader(): { readonly spec: ScreenHeaderSpec } | undefined 
     () => store?.version ?? 0,
     () => 0,
   );
-  return store?.entries.at(-1);
+  const entries = store?.entries ?? [];
+  if (entries.length < 2) return entries[0];
+  const spec: Record<string, unknown> = {};
+  for (const entry of [...entries.filter(entry => !entry.overlay), ...entries.filter(entry => entry.overlay)]) for (const [field, value] of Object.entries(entry.spec)) if (value !== undefined) spec[field] = value;
+  return { spec: spec as ScreenHeaderSpec };
 }
 
 const ICON_BUTTON = 'inline-flex size-9 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11';

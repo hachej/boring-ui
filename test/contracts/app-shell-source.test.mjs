@@ -139,7 +139,7 @@ test('useAgentContext: the most recently mounted screen wins and unmounting rest
 /** A happy-dom page for rendering hooks; restores the globals afterwards. */
 function dom(t) {
   const window = new Window({ url: 'https://fictional.invalid/' });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'IS_REACT_ACT_ENVIRONMENT'];
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'history', 'IS_REACT_ACT_ENVIRONMENT'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name] });
   t.after(() => { for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
@@ -169,9 +169,90 @@ test('initials: two letters from the name, one from a single word, a question ma
   assert.equal(initials(''), '?');
 });
 
-test('layouts other than screen are not implemented yet', async () => {
+test('layout "chat" takes no agent: the page is the chat', async () => {
   const { AppShell } = await bundle('app-shell.tsx');
-  for (const layout of ['workspace', 'chat']) assert.throws(() => AppShell({ layout, title: 'Forme', nav: [], route: { id: 'a', onChange() {} } }), /not implemented/, layout);
+  assert.throws(() => AppShell({ layout: 'chat', title: 'Atelier', nav: [], agent: { controller: {} }, route: { id: 'a', onChange() {} } }), /layout "chat" takes no `agent`/);
+});
+
+test('listDetailView: both panes when expanded; when compact the detail if one is selected, else the list', async () => {
+  const { listDetailView } = await bundle('list-detail.tsx');
+  assert.equal(listDetailView(false, null), 'both');
+  assert.equal(listDetailView(false, 'x'), 'both');
+  assert.equal(listDetailView(true, null), 'list');
+  assert.equal(listDetailView(true, 'x'), 'detail');
+});
+
+test('ListDetail: expanded shows a 20rem list and the detail with no history entry; compact keeps the list mounted, stacks the detail and Back clears it', async t => {
+  const window = dom(t);
+  const { ListDetail } = await bundle('list-detail.tsx');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const backs = [];
+  const listeners = new Set();
+  window.matchMedia = query => ({ matches: false, media: query, addEventListener: (_, listener) => listeners.add(listener), removeEventListener: (_, listener) => listeners.delete(listener) });
+  const render = async (width, detail) => {
+    window.innerWidth = width;
+    await act(async () => root.render(h(ListDetail, { list: h('ul', { 'data-testid': 'rows' }), detail, onBack: () => backs.push('back'), title: 'Consultation 12' })));
+    await act(async () => { for (const listener of listeners) listener(); });
+  };
+  const pane = name => container.querySelector(`[data-testid=${name}-pane]`);
+  const entries = () => window.history.length;
+  const start = entries();
+
+  await render(1280, null);
+  assert.equal(container.firstChild.getAttribute('data-view'), 'both');
+  assert.match(pane('list').className, /\bw-80\b/, 'the list pane is 20rem');
+  assert.match(pane('list').className, /border-r/);
+  assert.match(pane('detail').className, /bg-muted\/30/, 'an empty detail pane is muted');
+  await render(1280, h('p', null, 'detail'));
+  assert.equal(entries(), start, 'selecting a row when expanded adds no history entry');
+  assert.equal(pane('list').hasAttribute('hidden') || pane('detail').hasAttribute('hidden'), false, 'both panes show');
+
+  await render(390, null);
+  assert.equal(container.firstChild.getAttribute('data-view'), 'list');
+  assert.equal(pane('detail').hasAttribute('hidden'), true);
+  assert.equal(entries(), start);
+  const rows = container.querySelector('[data-testid=rows]');
+  await render(390, h('p', null, 'detail'));
+  assert.equal(container.firstChild.getAttribute('data-view'), 'detail');
+  assert.equal(pane('list').hasAttribute('hidden'), true, 'the list is hidden, not unmounted');
+  assert.equal(container.querySelector('[data-testid=rows]'), rows, 'the list keeps its element, so its scroll is kept');
+  assert.equal(entries(), start + 1, 'a stack step is one history entry');
+  assert.deepEqual(window.history.state, { appShell: 'stack' });
+  window.dispatchEvent(new window.Event('popstate'));
+  assert.deepEqual(backs, ['back'], 'Back calls onBack');
+  await act(async () => root.unmount());
+});
+
+test('useScreenHeader: a deeper caller (a ListDetail) adds « ← » and a title and keeps the screen\'s actions', async t => {
+  const window = dom(t);
+  const { HeaderProvider, useScreenHeader, useTopHeader } = await bundle('header+context');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const actions = [{ id: 'new', label: 'Nouvelle', icon: () => null, onSelect() {} }];
+  const Outer = ({ children }) => { useScreenHeader({ title: 'Consultations', actions }); return children; };
+  const Inner = ({ on }) => { useScreenHeader(on ? { back() {}, title: 'Détail' } : {}, { overlay: true }); return null; };
+  const seen = [];
+  const Probe = () => { const top = useTopHeader(); seen.push({ title: top?.spec.title, back: Boolean(top?.spec.back), actions: top?.spec.actions?.length ?? 0 }); return null; };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const render = on => act(async () => root.render(h(HeaderProvider, null, h(Probe), h(Outer, null, h(Inner, { on })))));
+  await render(false);
+  assert.deepEqual(seen.at(-1), { title: 'Consultations', back: false, actions: 1 });
+  await render(true);
+  assert.deepEqual(seen.at(-1), { title: 'Détail', back: true, actions: 1 });
+  await render(false);
+  assert.deepEqual(seen.at(-1), { title: 'Consultations', back: false, actions: 1 });
+  await act(async () => root.unmount());
+});
+
+test('app-shell reaches pi-app only through the public agent-workspace export, and never by import', () => {
+  for (const name of files) assert.doesNotMatch(source(name), /pi-app\/(?!agent-workspace)/, `${name} imports a pi-app internal`);
+  assert.ok(item.registryDependencies.includes('@boring-ui/pi-app'), 'layout C\'s AgentWorkspace comes from the pi-app item');
 });
 
 test('useScreenHeader: the most recently mounted screen wins, unmounting restores the previous one, a hidden screen does not count', async t => {
