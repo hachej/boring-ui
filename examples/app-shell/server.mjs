@@ -1,6 +1,6 @@
-// The app-shell example: a fictional fitness app ("Forme") with a coach agent and a product-manager agent, shown by the AgentLayer
-// (the page is ./page.tsx). The server is only what the chats need: two agents on one durable native Harness (sessions in SQLite), one
-// conversation each, and the chat transport behind a bearer check. It records every submit body and the screen context the transport
+// The app-shell example: a fictional fitness app ("Forme") and a one-screen template in <AppShell layout="screen"> (the page is ./page.tsx), with a coach
+// agent and a product-manager agent shown by the AgentLayer. The server is only what the chats need: two agents on one durable native Harness
+// (sessions in SQLite), one conversation each, and the chat transport behind a bearer check. It records every submit body and the screen context the transport
 // hands to the host (`requestContext`), so the journey can prove what travelled. Fictional content only.
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -59,7 +59,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
   const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell'], extraCss: SIDEBAR_TOKENS }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
-    'html,body,#root{min-height:100%;margin:0}:root{--app-shell-tabbar:56px}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
+    'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
   const page = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Forme (fictional)</title>
 <link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversations: { coach: String(created.coach.id), pm: String(created.pm.id) }, identity: { runtimeId: 'app', ...person } })}</script>
 <script type="module" src="/app.js"></script></body></html>`;

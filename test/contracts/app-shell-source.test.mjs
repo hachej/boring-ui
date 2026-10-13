@@ -76,6 +76,9 @@ test('text.ts has the same keys in English and French, and every word is filled'
   assert.equal(appShellText(undefined), en, 'English by default');
   assert.equal(fr.listening, 'J\'écoute…');
   assert.equal(fr.holdToTalk, 'Appuie et parle');
+  assert.equal(fr.signOut, 'Se déconnecter');
+  assert.equal(fr.more, 'Plus');
+  assert.equal(fr.improve, 'Améliorer l\'app');
 });
 
 test('nextSnapOnClose: a swipe, an outside press and a lost focus never close; every other reason does', async () => {
@@ -116,4 +119,110 @@ test('useAgentContext: the most recently mounted screen wins and unmounting rest
   assert.deepEqual(readAgentContext(), { name: 'Jour', params: { day: 2 } }, 'unmounting restores the previous screen');
   await act(async () => root.unmount());
   assert.equal(readAgentContext(), undefined, 'unmounting the provider clears the context');
+});
+
+/** A happy-dom page for rendering hooks; restores the globals afterwards. */
+function dom(t) {
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'IS_REACT_ACT_ENVIRONMENT'];
+  const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name] });
+  t.after(() => { for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
+  return window;
+}
+
+test('AppShellProps has exactly the seven props of the brief, and no label, locale or theme prop', () => {
+  const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
+  const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
+  const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'nav', 'route', 'title']);
+});
+
+test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {
+  const { splitNav } = await bundle('nav.tsx');
+  const ids = count => Array.from({ length: count }, (_, index) => `n${index + 1}`);
+  for (const count of [1, 2, 3, 4]) assert.deepEqual(splitNav(ids(count)), { tabs: ids(count), overflow: [] }, `${count} items`);
+  assert.deepEqual(splitNav(ids(5)), { tabs: ['n1', 'n2', 'n3'], overflow: ['n4', 'n5'] });
+  assert.deepEqual(splitNav(ids(6)), { tabs: ['n1', 'n2', 'n3'], overflow: ['n4', 'n5', 'n6'] });
+});
+
+test('initials: two letters from the name, one from a single word, a question mark from nothing', async () => {
+  const { initials } = await bundle('account.tsx');
+  assert.equal(initials('Camille Martin'), 'CM');
+  assert.equal(initials('  éloïse   de la Tour '), 'ÉD');
+  assert.equal(initials('camille'), 'C');
+  assert.equal(initials(''), '?');
+});
+
+test('layouts other than screen are not implemented yet', async () => {
+  const { AppShell } = await bundle('app-shell.tsx');
+  for (const layout of ['workspace', 'chat']) assert.throws(() => AppShell({ layout, title: 'Forme', nav: [], route: { id: 'a', onChange() {} } }), /not implemented/, layout);
+});
+
+test('useScreenHeader: the most recently mounted screen wins, unmounting restores the previous one, a hidden screen does not count', async t => {
+  const window = dom(t);
+  const { HeaderProvider, useScreenHeader, useTopHeader } = await bundle('header.tsx');
+  const { ScreenActiveContext } = await bundle('agent-context.ts');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const Screen = ({ title, actions }) => { useScreenHeader({ title, ...(actions ? { actions } : {}) }); return null; };
+  const seen = [];
+  const Probe = () => { const top = useTopHeader(); seen.push(top?.spec.title); return null; };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const render = async screens => act(async () => root.render(h(HeaderProvider, null, h(Probe), ...screens.map(({ active = true, ...props }) => h(ScreenActiveContext.Provider, { key: props.title, value: active }, h(Screen, props))))));
+  await render([]);
+  assert.equal(seen.at(-1), undefined, 'no screen, no header');
+  await render([{ title: 'A' }]);
+  assert.equal(seen.at(-1), 'A');
+  await render([{ title: 'A' }, { title: 'B' }]);
+  assert.equal(seen.at(-1), 'B', 'mount A, mount B: B');
+  await render([{ title: 'A' }]);
+  assert.equal(seen.at(-1), 'A', 'unmount B: A');
+  await render([{ title: 'A' }, { title: 'B', active: false }]);
+  assert.equal(seen.at(-1), 'A', 'a screen that is not on show never wins');
+  await render([{ title: 'A', active: false }, { title: 'B' }]);
+  assert.equal(seen.at(-1), 'B', 'B takes the screen');
+  await render([{ title: 'A' }, { title: 'B', active: false }]);
+  assert.equal(seen.at(-1), 'A', 'A is on show again');
+  await act(async () => root.unmount());
+});
+
+test('useAgentContext: a screen that is not on show does not register its context', async t => {
+  const window = dom(t);
+  const { AgentContextProvider, useAgentContext, readAgentContext, ScreenActiveContext } = await bundle('agent-context.ts');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const Screen = ({ name }) => { useAgentContext({ name, params: {} }); return null; };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const render = async screens => act(async () => root.render(h(AgentContextProvider, null, ...screens.map(({ active, name }) => h(ScreenActiveContext.Provider, { key: name, value: active }, h(Screen, { name }))))));
+  await render([{ name: 'Jour', active: true }, { name: 'Progrès', active: false }]);
+  assert.equal(readAgentContext()?.name, 'Jour');
+  await render([{ name: 'Jour', active: false }, { name: 'Progrès', active: true }]);
+  assert.equal(readAgentContext()?.name, 'Progrès');
+  await act(async () => root.unmount());
+});
+
+test('useExclusiveSheet: opening a sheet closes every other open sheet', async t => {
+  const window = dom(t);
+  const { useExclusiveSheet } = await bundle('sheet.tsx');
+  const { createElement: h, act, useState } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const log = [];
+  let setA, setB;
+  const Sheet = ({ name, expose }) => { const [open, setOpen] = useState(false); expose(setOpen); useExclusiveSheet(open, () => { log.push(`close ${name}`); setOpen(false); }); return h('i', { 'data-open': open }); };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(h('div', null, h(Sheet, { name: 'account', expose: set => { setA = set; } }), h(Sheet, { name: 'more', expose: set => { setB = set; } }))));
+  await act(async () => setA(true));
+  assert.deepEqual(log, []);
+  await act(async () => setB(true));
+  assert.deepEqual(log, ['close account']);
+  const open = () => [...container.querySelectorAll('i')].map(node => node.getAttribute('data-open'));
+  assert.deepEqual(open(), ['false', 'true']);
+  await act(async () => root.unmount());
 });

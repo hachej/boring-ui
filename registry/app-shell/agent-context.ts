@@ -11,6 +11,11 @@ interface Entry { value: AgentScreenContext }
 interface Store { readonly entries: Entry[] }
 
 const StoreContext = createContext<Store | null>(null);
+/**
+ * Whether the calling screen is the one on show. The shell keeps every screen mounted and hides the others, so a hidden screen must not
+ * register its context (here) or its header (`useScreenHeader`). True outside a shell.
+ */
+export const ScreenActiveContext = createContext(true);
 /** The mounted provider's store, for `readAgentContext` (the transport option has no React context to read). */
 let current: Store | null = null;
 
@@ -28,17 +33,18 @@ export function AgentContextProvider({ children }: { readonly children: ReactNod
 /** Registers the current screen while the calling component is mounted; a new `name` or `params` (compared as JSON) replaces it. */
 export function useAgentContext(value: AgentScreenContext): void {
   const store = useContext(StoreContext);
+  const active = useContext(ScreenActiveContext);
   const key = JSON.stringify([value.name, value.params]);
   const latest = useRef(value);
   latest.current = value;
   const entry = useRef<Entry>({ value });
   // Mounting takes the top place; a later change of `name` or `params` updates the entry where it stands.
   useEffect(() => {
-    if (!store) return;
+    if (!store || !active) return;
     const mine = entry.current;
     store.entries.push(mine);
     return () => { const at = store.entries.indexOf(mine); if (at >= 0) store.entries.splice(at, 1); };
-  }, [store]);
+  }, [store, active]);
   useEffect(() => { entry.current.value = latest.current; }, [key]);
 }
 
