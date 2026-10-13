@@ -80,15 +80,17 @@ test('registry dependency pins and scoped styles preserve the declared source di
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {
       const split = dependency.lastIndexOf('@'), name = dependency.slice(0, split), spec = dependency.slice(split + 1);
-      // Internal packages and peers are caret ranges on their version; the one private feedback pin stays exact until the owner decides.
+      // Internal packages are caret ranges on their version; the one private feedback pin stays exact until the owner decides.
       const internal = name.startsWith('@hachej/boring-');
       if (internal && name !== '@hachej/boring-feedback') assert.match(spec, /^\^/, dependency);
-      const version = spec.replace(/^\^/, '');
+      // Pi peers stay on the reviewed 1.1.x line (tilde) until the owner moves them.
+      if (name.startsWith('@earendil-works/')) assert.match(spec, /^~/, dependency);
+      const version = spec.replace(/^[\^~]/, '');
       assert.match(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
       declared.add(name);
       // Items that bring their own Tailwind source pin extra packages exactly as the repository's root tooling does.
       // Peers are the source of truth for item ranges; a Tailwind item without a peer uses the root tooling pin, and the SDK always does.
-      const expected = internal ? boringVersion(name) : name === '@modelcontextprotocol/sdk' ? architecture.rootDevDependencies[name] : (ui.peerDependencies[name] ?? (item.name in TAILWIND ? architecture.rootDevDependencies[name] : undefined))?.replace(/^\^/, '');
+      const expected = internal ? boringVersion(name) : name === '@modelcontextprotocol/sdk' ? architecture.rootDevDependencies[name] : (ui.peerDependencies[name] ?? (item.name in TAILWIND ? architecture.rootDevDependencies[name] : undefined))?.replace(/^[\^~]/, '');
       assert.equal(version, expected, dependency);
     }
     // Blocks may depend only on other items of this registry (pi-ambient and pi-workspace build on pi-chat); nothing from a remote registry.
