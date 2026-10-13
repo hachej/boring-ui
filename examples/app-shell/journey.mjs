@@ -449,7 +449,7 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     await browser.send('Page.navigate', { url: app.url });
     await live();
-    const sidebar = '[data-testid=app-sidebar]';
+    const sidebar = '[data-slot=sidebar][data-side=left]';
     assert.equal(await browser.evaluate(`!!${q('[data-testid=tabbar]')}`), false, 'no tab bar');
     assert.equal(await browser.evaluate(`${q(sidebar)}.dataset.state`), 'expanded');
     assert.equal(await browser.evaluate(`${q('[data-testid=sidebar-title]')}.textContent`), 'Forme');

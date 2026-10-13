@@ -49,7 +49,7 @@ function Screens({ items, activeId }: { readonly items: readonly NavItem[]; read
   </div>;
 }
 
-function Shell({ title, nav, improve, account, route, text }: Pick<AppShellProps, 'title' | 'nav' | 'account' | 'route'> & { readonly improve: boolean; readonly text: AppShellText }) {
+function Shell({ title, nav, improve, account, route, text }: { readonly title: string; readonly nav: readonly NavItem[]; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const compact = useIsCompact();
   const [accountOpen, setAccountOpen] = useState(false);
   const active = nav.find(item => item.id === route.id) ?? nav[0];

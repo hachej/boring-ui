@@ -814,8 +814,8 @@
     {
       "name": "app-shell",
       "type": "registry:block",
-      "title": "App shell: agent layer",
-      "description": "AgentLayer: one agent's PiChat above the app. On a phone a bottom drawer with three fixed snap points (peek above the tab bar, half, full; a swipe never closes it, the transcript scrolls and only the handle drags, the composer lifts above the soft keyboard); on a wide screen a right panel. The same layer shows the product manager (improve) when the account menu asks for it. Optional push-to-talk (press and hold the AgentTrigger or the hero button; the transcript is sent or fills the composer) and point mode for the manager. Also useAgentContext and readAgentContext (the current screen travels as `context` with each submit) and useBackLayer, the one Back manager. Built on the shadcn drawer and sidebar of the host's own style (Base UI variants).",
+      "title": "App shell: screen layout and agent layer",
+      "description": "AppShell layout \"screen\": one screen at a time, every screen kept mounted. On a phone bottom tabs (at most four; more give three plus a « Plus » sheet) and an avatar button that opens the account sheet; on a wide screen the shadcn sidebar (icon rail, NavUser). One header per screen through useScreenHeader (title, subtitle, back, up to two actions, the rest behind « … »). The account menu holds « Améliorer l'app » (the improve agent), the app's own entries and sign out. AppSheet is the one bottom sheet (one open at a time, Back closes it). It mounts the AgentLayer: one agent's PiChat above the app (phone: a drawer with peek, half and full snap points; wide: a right panel), the improve agent in the same layer, optional push-to-talk and point mode. Also useAgentContext and readAgentContext (the screen on show travels as `context` with each submit) and useBackLayer, the one Back manager. Built on the shadcn drawer, sidebar, avatar and dropdown-menu of the host's own style (Base UI variants).",
       "dependencies": [
         "@hachej/boring-feedback@^0.2.2",
         "@hachej/boring-ui-kit@^0.2.2",
@@ -859,6 +859,41 @@
           "path": "registry/app-shell/text.ts",
           "type": "registry:lib",
           "target": "components/app-shell/text.ts"
+        },
+        {
+          "path": "registry/app-shell/app-shell.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/app-shell.tsx"
+        },
+        {
+          "path": "registry/app-shell/header.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/header.tsx"
+        },
+        {
+          "path": "registry/app-shell/nav.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/nav.tsx"
+        },
+        {
+          "path": "registry/app-shell/account.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/account.tsx"
+        },
+        {
+          "path": "registry/app-shell/sheet.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/sheet.tsx"
+        },
+        {
+          "path": "registry/app-shell/compact.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/compact.ts"
+        },
+        {
+          "path": "registry/app-shell/index.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/index.ts"
         }
       ]
     },

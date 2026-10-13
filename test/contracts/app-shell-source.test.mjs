@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
@@ -63,8 +63,16 @@ test('the item imports only React, its declared packages and the declared shadcn
 async function bundle(name, extra = {}) {
   const out = `${root}.cache/app-shell-source-test`;
   mkdirSync(out, { recursive: true });
-  const outfile = `${out}/${name.replace(/\.tsx?$/, '')}.mjs`;
-  await build({ entryPoints: [`${root}${folder}/${name}`], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', ...extra });
+  // One bundle that holds the header store and the screen-active context together, so both see the same context object.
+  if (name === 'header+context') {
+    const entry = `${out}/header-context.ts`;
+    writeFileSync(entry, `export * from '${root}${folder}/header.tsx';\nexport { ScreenActiveContext } from '${root}${folder}/agent-context.ts';\n`);
+    return bundleEntry(entry, `${out}/header-context.mjs`, extra);
+  }
+  return bundleEntry(`${root}${folder}/${name}`, `${out}/${name.replace(/\.tsx?$/, '')}.mjs`, extra);
+}
+async function bundleEntry(entry, outfile, extra) {
+  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', ...extra });
   return import(pathToFileURL(outfile).href);
 }
 
@@ -161,8 +169,7 @@ test('layouts other than screen are not implemented yet', async () => {
 
 test('useScreenHeader: the most recently mounted screen wins, unmounting restores the previous one, a hidden screen does not count', async t => {
   const window = dom(t);
-  const { HeaderProvider, useScreenHeader, useTopHeader } = await bundle('header.tsx');
-  const { ScreenActiveContext } = await bundle('agent-context.ts');
+  const { HeaderProvider, useScreenHeader, useTopHeader, ScreenActiveContext } = await bundle('header+context');
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const Screen = ({ title, actions }) => { useScreenHeader({ title, ...(actions ? { actions } : {}) }); return null; };
