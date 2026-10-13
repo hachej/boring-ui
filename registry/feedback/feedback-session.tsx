@@ -120,7 +120,7 @@ function bubblePlace(element: Element, size = 120): CSSProperties {
   const above = rect.top - size - 8;
   const lowest = Math.max(8, height - size);
   const top = Math.min(below + size <= height ? below : above >= 8 ? above : lowest, lowest);
-  return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16), maxHeight: Math.max(0, height - top), overflowY: 'auto' };
+  return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16), maxHeight: Math.max(0, height - top), overflowY: 'auto', boxSizing: 'border-box' };
 }
 
 /** After a bubble closes with focus nowhere (the focused field left the page), focus goes back to the bar's general-question entry. */
