@@ -3,7 +3,7 @@
 // The app shell. Layout A (`screen`): one screen at a time. Compact: bottom tabs (at most four; more give three plus « Plus »). Expanded:
 // the shadcn sidebar (icon rail plus NavUser). Layout B (`workspace`): the same, with a screen made of a `ListDetail`; the sidebar starts
 // as the icon rail because the list pane is the wide navigation. Layout C (`chat`): the one nav item renders the app's `AgentWorkspace`,
-// untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). One header per screen
+// untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
 import { useState } from 'react';

@@ -163,6 +163,30 @@ try {
     await browser.until('the list', `${view} === 'list'`);
   });
 
+  await step('5b a tab from a detail keeps its URL after the stack goes back, and a reload on a detail adds no second entry', async () => {
+    await open('app=redaction&tab=1');
+    await tap('[data-testid=consultation-3]');
+    await browser.until('the detail', `${view} === 'detail'`);
+    await tap('[data-testid=tab-archives]');
+    await browser.until('Archives on show', `!${q('[data-testid=screen-archives]')}.hidden`);
+    await pause(500);
+    assert.equal(await browser.evaluate(`location.hash`), '#archives', 'the URL is the tab\'s, not the detail\'s');
+    await browser.reload();
+    await ready();
+    assert.equal(await browser.evaluate(`!${q('[data-testid=screen-archives]')}.hidden`), true, 'a reload shows Archives');
+    await tap('[data-testid=tab-consultations]');
+    await tap('[data-testid=consultation-4]');
+    await browser.until('the detail', `${view} === 'detail'`);
+    const length = await browser.evaluate(historyLength);
+    await browser.reload();
+    await ready();
+    assert.equal(await browser.evaluate(view), 'detail');
+    assert.equal(await browser.evaluate(historyLength), length, 'a reload adds no entry');
+    await back();
+    await browser.until('the list', `${view} === 'list'`);
+    assert.equal(await browser.evaluate(`history.state`), null, 'the single entry was consumed');
+  });
+
   await step('6 chat layout compact: the shell header sits above AgentWorkspace, the sessions drawer opens and closes, a message is answered, no shell agent trigger', async () => {
     await open('app=pm');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=agent-trigger]')}`), false);

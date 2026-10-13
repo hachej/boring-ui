@@ -1,7 +1,7 @@
 'use client';
 
-// One header per screen. A screen calls `useScreenHeader` and the shell renders it; the most recently mounted caller wins field by field
-// (a `ListDetail` inside a screen adds « ← » and a title and keeps the screen's actions) and unmounting restores the previous one. A
+// One header per screen. A screen calls `useScreenHeader` and the shell renders it; the most recently mounted caller wins as a whole
+// (a `ListDetail` inside a screen overlays « ← » and a title and keeps the screen's actions) and unmounting restores the previous one. A
 // screen the shell has hidden does not count (ScreenActiveContext). Host concern: Pi has no layout.
 import { createContext, createElement, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, ReactNode } from 'react';
@@ -85,11 +85,16 @@ export function useTopHeader(): { readonly spec: ScreenHeaderSpec } | undefined 
     () => store?.version ?? 0,
     () => 0,
   );
-  const entries = store?.entries ?? [];
-  if (entries.length < 2) return entries[0];
-  const spec: Record<string, unknown> = {};
-  for (const entry of [...entries.filter(entry => !entry.overlay), ...entries.filter(entry => entry.overlay)]) for (const [field, value] of Object.entries(entry.spec)) if (value !== undefined) spec[field] = value;
-  return { spec: spec as ScreenHeaderSpec };
+  // A getter, so a click reads the live specs (a callback that changed without a visible change is still the current one).
+  return store?.entries.length ? { get spec() { return mergedSpec(store.entries); } } : undefined;
+}
+
+/** The latest ordinary entry is the whole header; explicit overlays (the shell's `ListDetail`) are merged over it field by field. */
+function mergedSpec(entries: readonly Entry[]): ScreenHeaderSpec {
+  const base = entries.filter(entry => !entry.overlay).at(-1);
+  const spec: Record<string, unknown> = { ...base?.spec };
+  for (const entry of entries) if (entry.overlay) for (const [field, value] of Object.entries(entry.spec)) if (value !== undefined) spec[field] = value;
+  return spec as ScreenHeaderSpec;
 }
 
 const ICON_BUTTON = 'inline-flex size-9 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11';

@@ -250,9 +250,58 @@ test('useScreenHeader: a deeper caller (a ListDetail) adds « ← » and a title
   await act(async () => root.unmount());
 });
 
+test('useScreenHeader: an ordinary later header replaces the earlier one whole, and a click reads the live callback', async t => {
+  const window = dom(t);
+  const { HeaderProvider, useScreenHeader, useTopHeader } = await bundle('header+context');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const icon = () => null;
+  const calls = [];
+  const Screen = ({ title, actions, back }) => { useScreenHeader({ title, ...(actions ? { actions } : {}), ...(back ? { back } : {}) }); return null; };
+  const Overlay = ({ on }) => { useScreenHeader(on ? { back() {}, title: 'Détail' } : {}, { overlay: true }); return null; };
+  let top;
+  const Probe = () => { top = useTopHeader(); return null; };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const render = (...children) => act(async () => root.render(h(HeaderProvider, null, h(Probe), ...children)));
+  const action = tag => ({ id: 'go', label: 'Go', icon, onSelect: () => calls.push(tag) });
+  await render(h(Screen, { key: 'a', title: 'A', actions: [action('a')], back() {} }), h(Screen, { key: 'b', title: 'B' }));
+  assert.deepEqual([top.spec.title, top.spec.actions, top.spec.back], ['B', undefined, undefined], 'B replaces A whole');
+  await render(h(Screen, { key: 'a', title: 'A', actions: [action('old')] }), h(Overlay, { key: 'o', on: true }));
+  const held = top;
+  await render(h(Screen, { key: 'a', title: 'A', actions: [action('new')] }), h(Overlay, { key: 'o', on: true }));
+  held.spec.actions[0].onSelect();
+  assert.deepEqual(calls, ['new'], 'the header held from before still calls the current callback');
+  assert.equal(held.spec.title, 'Détail');
+  await act(async () => root.unmount());
+});
+
+test('ListDetail: a reload on a compact detail adopts the stack entry that is already there', async t => {
+  const window = dom(t);
+  const { ListDetail } = await bundle('list-detail.tsx');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  window.innerWidth = 390;
+  const listeners = new Set();
+  window.matchMedia = query => ({ matches: false, media: query, addEventListener: (_, listener) => listeners.add(listener), removeEventListener: (_, listener) => listeners.delete(listener) });
+  window.history.replaceState({ appShell: 'stack' }, '');
+  const start = window.history.length;
+  const backs = [];
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(h(ListDetail, { list: h('ul'), detail: h('p', null, 'detail'), onBack: () => backs.push('back') })));
+  await act(async () => { for (const listener of listeners) listener(); });
+  assert.equal(window.history.length, start, 'no second entry');
+  window.dispatchEvent(new window.Event('popstate'));
+  assert.deepEqual(backs, ['back'], 'Back still reaches onBack');
+  await act(async () => root.unmount());
+});
+
 test('app-shell reaches pi-app only through the public agent-workspace export, and never by import', () => {
   for (const name of files) assert.doesNotMatch(source(name), /pi-app\/(?!agent-workspace)/, `${name} imports a pi-app internal`);
-  assert.ok(item.registryDependencies.includes('@boring-ui/pi-app'), 'layout C\'s AgentWorkspace comes from the pi-app item');
+  assert.ok(!item.registryDependencies.includes('@boring-ui/pi-app'), 'the shell imports nothing from pi-app, so it does not install it');
 });
 
 test('useScreenHeader: the most recently mounted screen wins, unmounting restores the previous one, a hidden screen does not count', async t => {

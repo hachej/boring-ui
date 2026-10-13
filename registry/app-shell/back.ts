@@ -54,7 +54,8 @@ export function useBackLayer(open: boolean, close: () => void, order: BackOrder)
     let started = false;
     const start = () => {
       started = true;
-      history.pushState({ appShell: order }, '');
+      // After a reload the page still sits on the entry this layer pushed before: adopt it instead of stacking a second one.
+      if ((history.state as { appShell?: unknown } | null)?.appShell !== order) history.pushState({ appShell: order }, '');
       layers.add(layer);
     };
     if (!listening) { window.addEventListener('popstate', onPopState); listening = true; }

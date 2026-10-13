@@ -11,6 +11,7 @@ import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, Clipboar
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
+import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
@@ -161,6 +162,8 @@ function RedactionApp() {
   // The app's router: the URL is a hash and is only ever replaced; the shell's Back layer owns the one history entry of an open detail.
   const go = (next: string) => { history.replaceState(history.state, '', `#${next}`); setHash(next); };
   const selected = /^\d+$/.test(hash) ? Number(hash) : null;
+  // A tab from a detail: the selection changes first, the stack entry then goes back on its own, and only after that is the URL replaced.
+  const onChange = (id: string) => { window.__routes.push(id); setHash(id); afterBack(() => history.replaceState(history.state, '', `#${id}`)); };
   const nav = [
     { id: 'consultations', label: 'Consultations', icon: ClipboardListIcon, render: () => <Consultations selected={selected} onSelect={id => go(String(id))} onBack={() => go('')} /> },
     { id: 'archives', label: 'Archives', icon: ArchiveIcon, render: () => <Archives /> },
@@ -168,7 +171,7 @@ function RedactionApp() {
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }, { label: 'Nouveautés', onSelect: () => window.__did.push('news') }] };
   return <div id="app-root" className="contents">
-    <AppShell layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange: id => { window.__routes.push(id); go(id); } }} />
+    <AppShell layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
   </div>;
 }
 
