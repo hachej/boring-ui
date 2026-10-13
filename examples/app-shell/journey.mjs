@@ -18,7 +18,10 @@ process.env.STUDIO_MODEL = 'scripted';
 const { startAppShell } = await import('./server.mjs');
 const evidence = process.env.APP_EVIDENCE ?? '.cache/evidence/app-shell';
 mkdirSync(evidence, { recursive: true });
-const step = async (name, run) => { const started = Date.now(); await run(); console.log(`ok  ${name} (${Date.now() - started} ms)`); };
+const collect = process.env.COLLECT === '1';
+const failed = [];
+// COLLECT=1 (fail-first evidence): a failing step is reported and the journey goes on.
+const step = async (name, run) => { if (process.env.ONLY && !new RegExp(process.env.ONLY).test(name)) return; const started = Date.now(); try { await run(); console.log(`ok  ${name} (${Date.now() - started} ms)`); } catch (error) { if (!collect) throw error; failed.push(name); console.log(`FAIL ${name}: ${String(error.message).split('\n')[0].slice(0, 200)}`); } };
 const rect = selector => `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; })()`;
 const LAYER = '[data-testid=agent-layer]', TRIGGER = '[data-testid=agent-trigger]', TAB = '[data-testid=tab-jour]', INPUT = '[data-testid=composer-input]';
 const snap = `(${q(LAYER)}?.dataset.state ?? null)`;
@@ -49,7 +52,7 @@ try {
   /** Every visible control of the layer is at least 44x44px (touch) and inside the viewport; fails with the selector. */
   const controls = async where => {
     const small = await browser.evaluate(`(() => { const out = []; const sel = '${LAYER} button, ${LAYER} [role=button], ${LAYER} textarea, ${LAYER} a[href], ${TRIGGER}, [data-testid=tabbar] [role=tab], [data-testid=screen-header] button';
-      for (const e of document.querySelectorAll(sel)) { const r = e.getBoundingClientRect(); const st = getComputedStyle(e); if (!r.width || st.visibility === 'hidden' || e.closest('[hidden]')) continue; if (e.closest('[data-testid=transcript]')) continue; /* pi-chat's own reply actions (40px): a known gap in pi-chat, which this item does not change */ if (r.bottom < 0 || r.top > innerHeight) continue;
+      for (const e of document.querySelectorAll(sel)) { const r = e.getBoundingClientRect(); const st = getComputedStyle(e); if (!r.width || st.visibility === 'hidden' || e.closest('[hidden]')) continue;  if (r.bottom < 0 || r.top > innerHeight) continue;
         if (r.width < 43.5 || r.height < 43.5) out.push((e.dataset.testid || e.getAttribute('aria-label') || e.tagName) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)); } return out; })()`);
     assert.deepEqual(small, [], `${where}: controls under 44px`);
     assert.ok(await browser.evaluate(noOverflow), `${where}: horizontal overflow`);
@@ -328,9 +331,10 @@ try {
     const before = app.submits.length;
     const r = await center(TRIGGER);
     await touch('touchStart', [[r.x, r.y]]);
-    await browser.until('listening at peek', `${q('[data-testid=agent-listening]')}?.textContent.includes("J'écoute")`, 8000);
+    await browser.until('listening at peek', `${q('[data-testid=agent-listening]')}?.textContent.includes("J'écoute") && ${q('[data-testid=agent-listening]')}.dataset.phase === 'recording'`, 8000);
     assert.equal(await browser.evaluate(snap), 'peek');
     await browser.screenshot('phone-listening.png');
+    await pause(600); // the fake microphone needs a moment of audio
     await touch('touchEnd', []);
     await browser.until('submit recorded', `true`);
     for (let i = 0; i < 100 && app.submits.length === before; i++) await pause(100);
@@ -345,7 +349,7 @@ try {
     const before = app.submits.length;
     const r = await center(TRIGGER);
     await touch('touchStart', [[r.x, r.y]]);
-    await browser.until('listening', `!!${q('[data-testid=agent-listening]')}`, 8000);
+    await browser.until('listening', `${q('[data-testid=agent-listening]')}?.dataset.phase === 'recording'`, 8000);
     await touch('touchMove', [[r.x - 150, r.y + 200]]);
     await browser.until('cancelled', `!${q('[data-testid=agent-listening]')}`, 5000);
     await touch('touchEnd', []);
@@ -402,14 +406,83 @@ try {
     await browser.evaluate(`document.documentElement.classList.remove('dark')`);
   });
 
+  await step('review 2: entering half from peek moves focus from the page into the layer', async () => {
+    await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
+    const handle = await center('[data-slot=drawer-swipe-handle]');
+    await dragTouch(handle.x, handle.y, 840, 10);
+    await browser.until('peek', `${snap} === 'peek'`); await settle();
+    await browser.evaluate(`${q(TAB)}.focus()`);
+    await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
+    assert.equal(await browser.evaluate(`!!document.activeElement?.closest('[data-slot=drawer-popup]')`), true, `focus is inside the modal layer (it is on ${await browser.evaluate('document.activeElement?.tagName')})`);
+    assert.equal(await browser.evaluate(`${q(LAYER)}.getAttribute('aria-label')`), 'Coach', 'review 8: the dialog is named');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q(LAYER)}).getPropertyValue('--app-shell-tabbar')`).then(v => v.trim()), '56px', 'review 4: the portalled popup is given the tab bar height');
+  });
+
+  await step('review 9: every control of the layer, transcript buttons included, is at least 44px', async () => {
+    await controls('half with replies');
+    await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
+    await browser.until('closed', `!${q(LAYER)}`);
+  });
+
+  await step('review 6: the chat keeps its DOM while the layer is closed and while pointing', async () => {
+    await openImprove();
+    await browser.until('improve', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`); await settle();
+    await browser.evaluate(`window.__chatNode = ${q('[data-spec=improve] [data-boring=pi-chat]')}; 0`);
+    await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
+    await browser.until('closed', `!${q(LAYER)}`);
+    assert.equal(await browser.evaluate(`window.__chatNode.isConnected === false && !!window.__chatNode`), true, 'detached while closed, not destroyed');
+    await openImprove();
+    await browser.until('improve again', `!!${q('[data-spec=improve] [data-boring=pi-chat]')}`); await settle();
+    assert.equal(await browser.evaluate(`${q('[data-spec=improve] [data-boring=pi-chat]')} === window.__chatNode`), true, 'the same chat element came back');
+  });
+
+  await step('review 3: Back during point mode ends pointing and keeps the page and the layer', async () => {
+    const href = await browser.evaluate('location.href');
+    await tap('[data-spec=improve] [data-testid=composer-point]');
+    await browser.until('pointing', `!!${q('[data-testid=feedback-point-bar]')}`, 8000);
+    assert.equal(await browser.evaluate('history.state?.appShell'), 'point');
+    await browser.evaluate('history.back()');
+    await browser.until('pointing ended', `!${q('[data-testid=feedback-point-bar]')} && ${snap} === 'half'`, 8000);
+    assert.equal(await browser.evaluate('location.href'), href, 'still on the page');
+    assert.equal(await browser.evaluate('history.state?.appShell'), 'agent', 'the layer keeps its entry');
+    await settle();
+  });
+
+  await step('review 5: ordinary feedback has its note editor, inside the layer', async () => {
+    await tap('[data-spec=improve] [data-testid=composer-feedback]');
+    await browser.until('the general question button', `!!${q('[data-testid=feedback-general]')}`, 8000);
+    await tap('[data-testid=feedback-general]');
+    await browser.until('the editor', `!!${q('[data-testid=feedback-general-input]')}`, 8000);
+    assert.equal(await browser.evaluate(`document.activeElement === ${q('[data-testid=feedback-general-input]')} && !!document.activeElement.closest('[data-slot=drawer-popup]')`), true, 'focused, inside the modal layer');
+    await browser.press('Escape');
+    await pause(400);
+    await browser.evaluate(`window.__vv.set(844)`);
+  });
+
+  await step('review 7: a send that fails keeps the transcript in the composer', async () => {
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+    await browser.evaluate(`window.__breakSend = true`);
+    const before = app.submits.length;
+    const r = await center(TRIGGER);
+    await touch('touchStart', [[r.x, r.y]]);
+    await browser.until('listening', `${q('[data-testid=agent-listening]')}?.dataset.phase === 'recording'`, 8000);
+    await pause(600);
+    await touch('touchEnd', []);
+    await browser.until('the composer holds the transcript', `${q(INPUT)}?.value === 'Combien de pas hier ?'`, 20000);
+    assert.equal(app.submits.length, before);
+    assert.equal(await browser.evaluate(snap), 'half');
+    await browser.evaluate(`window.__breakSend = false`);
+  });
+
   await step('draft mode: push-to-talk only fills the composer', async () => {
     await browser.send('Page.navigate', { url: `${app.url}?send=draft` });
     await live();
     const before = app.submits.length;
     const r = await center(TRIGGER);
     await touch('touchStart', [[r.x, r.y]]);
-    await browser.until('listening', `!!${q('[data-testid=agent-listening]')}`, 8000);
-    await pause(700); // a recording of a few milliseconds is dropped as too short
+    await browser.until('listening', `${q('[data-testid=agent-listening]')}?.dataset.phase === 'recording'`, 8000);
+    await pause(600);
     await touch('touchEnd', []);
     await browser.until('the composer holds the transcript', `${q(INPUT)}?.value === 'Combien de pas hier ?'`, 20000);
     assert.equal(app.submits.length, before, 'nothing sent');
@@ -519,6 +592,7 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=sidebar-title]')} && !!${q('[data-testid=nav-user]')}`), true, 'title and NavUser only');
   });
 
+  if (failed.length) console.log(`COLLECT: ${failed.length} failing step(s): ${failed.join(' | ')}`);
   console.log(browser.problems.length ? `page problems:\n${browser.problems.join('\n')}` : 'no page problems');
   assert.deepEqual(browser.problems.filter(p => !/Failed to load resource/.test(p)), []);
 } finally { await browser?.close(); await app.close(); }

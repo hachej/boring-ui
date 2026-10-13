@@ -85,6 +85,12 @@ function App() {
   const waiting = (!noAgent && coach.status !== 'ready') || manager.status !== 'ready';
   const feedback = useManagerFeedback(!waiting);
   if (waiting) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
+  // A test seam: a send that fails the way an unconfirmed earlier submission does (the controller throws).
+  if (!window.__sendWrapped && coach.status === 'ready') {
+    window.__sendWrapped = true;
+    const real = coach.controller.send.bind(coach.controller);
+    coach.controller.send = (...args) => window.__breakSend ? Promise.reject(new Error('Reconcile the existing submission before sending another')) : real(...args);
+  }
   const common = { locale: 'fr', showHistory: false, showConnectionStatus: false };
   const agent = noAgent ? undefined : {
     controller: coach.controller,
