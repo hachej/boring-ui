@@ -47,14 +47,15 @@ function candidates(paths) {
   return [...found];
 }
 
-/** `extraDirectories` are more folders (relative to the repository root) to scan for classes, such as other registry items. */
-export async function buildTailwind({ extraDirectories = [] } = {}) {
+/** `extraDirectories` are more folders (relative to the repository root) to scan for classes, such as other registry items; `extraCss` is more theme CSS (an example's own tokens). */
+export async function buildTailwind({ extraDirectories = [], extraCss = '' } = {}) {
   const items = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.filter(entry => TAILWIND_ITEMS.includes(entry.name));
   const input = `@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 ${themeCss()}
-${items.map(registryCss).join('\n')}`;
+${items.map(registryCss).join('\n')}
+${extraCss}`;
   const compiler = await compile(input, {
     base: root,
     onDependency: () => {},

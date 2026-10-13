@@ -56,9 +56,12 @@ const FULL = 1;
 /** Hold the trigger this long before it records; shorter is a tap. */
 const HOLD_MS = 350;
 
-/** What a close request from the drawer becomes: a swipe, an outside press and a lost focus never close the layer. */
+/**
+ * What a close request from the drawer becomes: a swipe, an outside press and a lost focus never close the layer. `reason` is Base UI's
+ * `details.reason` (`'swipe'`, `'outside-press'`, `'focus-out'`, `'escape-key'`, `'close-watcher'`, `'close-press'`, `'trigger-press'`, `'imperative-action'`, `'none'`).
+ */
 export function nextSnapOnClose(reason: string, hasPeek: boolean): 'peek' | 'half' | 'close' {
-  return reason === 'swipe' || reason === 'outsidePress' || reason === 'focusOut' ? (hasPeek ? 'peek' : 'half') : 'close';
+  return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' ? (hasPeek ? 'peek' : 'half') : 'close';
 }
 
 type VoicePhase = 'idle' | 'starting' | 'recording' | 'transcribing';
@@ -77,6 +80,8 @@ interface Internal extends AgentLayerApi {
   readonly snap: Snap;
   readonly setSnap: (snap: Snap) => void;
   readonly showAgent: () => void;
+  /** Until this time (ms) an outside press is the AgentTrigger's own click. */
+  readonly triggerUntil: { current: number };
   readonly voice: Voice;
   /** The peek height in px: `PEEK_REM` plus the tab bar the peek sits above. */
   readonly peekPoint: string;
@@ -203,6 +208,7 @@ export function AgentLayerProvider({ agent, improve, children }: { readonly agen
   const [shown, setShown] = useState<Which>(agent ? 'agent' : 'improve');
   const probe = useRef<HTMLDivElement>(null);
   const peekPoint = useMeasuredPeek(probe);
+  const triggerUntil = useRef(0);
   const specs = useRef({ agent, improve });
   specs.current = { agent, improve };
 
@@ -227,8 +233,8 @@ export function AgentLayerProvider({ agent, improve, children }: { readonly agen
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, voice, peekPoint,
-  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, voice, peekPoint]);
+    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint,
+  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': 20, '--app-shell-z-peek': 30, '--app-shell-z-layer': 40, '--app-shell-z-sheet': 50, '--app-shell-z-point': 60 } as CSSProperties;
@@ -251,6 +257,7 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   if (!agent) return null;
 
   const toggle = () => {
+    layer.triggerUntil.current = Date.now() + 500;
     if (layer.state !== 'closed' && layer.showing === 'agent' && layer.expanded) layer.close();
     else layer.open('agent', 'half');
   };
@@ -288,7 +295,7 @@ export function AgentTrigger({ className, children }: { readonly className?: str
       voice.cancel();
     }
   };
-  return <button type="button" data-testid="agent-trigger" aria-label={text.open} aria-expanded={layer.state !== 'closed'}
+  return <button type="button" data-agent-trigger="" data-testid="agent-trigger" aria-label={text.open} aria-expanded={layer.state !== 'closed'}
     onPointerDown={down} onPointerUp={release} onPointerCancel={release} onPointerMove={move} onContextMenu={event => event.preventDefault()}
     onClick={event => { if (event.detail === 0) toggle(); }}
     className={cn('inline-flex min-h-9 min-w-9 touch-none items-center justify-center rounded-md text-foreground outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11', className)}>
@@ -365,9 +372,6 @@ function useTitle(): { text: AppShellText; title: string } {
   return { text, title };
 }
 
-/** The sheet's content height is the visible part of the snap (the popup itself is taller and slides): `--drawer-height` minus `--drawer-snap-point-offset`. */
-const SHEET_HEIGHT = 'calc(var(--drawer-height, 100dvh) - var(--drawer-snap-point-offset, 0px))';
-
 const toSnap = (point: number | string | null, peekPoint: string): Snap | null =>
   point === peekPoint ? 'peek' : point === HALF ? 'half' : point === FULL ? 'full' : null;
 
@@ -378,6 +382,7 @@ function CompactSheet() {
   const { text, title } = useTitle();
   const vv = useVisualViewport();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const vetoed = useRef(false);
   const open = snap !== 'closed';
   const peek = snap === 'peek';
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
@@ -387,26 +392,40 @@ function CompactSheet() {
 
   useBackLayer(snap === 'half' || snap === 'full', layer.close, 'agent');
 
-  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh' } as CSSProperties;
+  // The popup is taller than what shows and slides down by `--drawer-snap-point-offset` (a registered, non-inheriting property, so only the
+  // popup itself can read it): padding the popup by that offset makes its content box exactly the visible part. At peek the tab bar below is left out too.
+  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh',
+    paddingBottom: peek ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)' } as CSSProperties;
   return <Drawer open={open} modal={!peek} showSwipeHandle swipeDirection="down" snapPoints={points} snapPoint={value}
     onOpenChange={(next, details) => {
       if (next) return;
       const outcome = nextSnapOnClose(details.reason, hasPeek);
       if (outcome === 'close') { layer.close(); return; }
       details.cancel();
+      vetoed.current = true;
+      setTimeout(() => { vetoed.current = false; }, 120);
+      // Focus leaving the non-modal peek changes nothing, and neither does the click that finished a press on the AgentTrigger (outside the
+      // drawer, so it counts as an outside press): the trigger already chose the snap.
+      if (details.reason === 'focus-out' || Date.now() < layer.triggerUntil.current) return;
       layer.setSnap(outcome);
     }}
-    onSnapPointChange={point => { const next = toSnap(point, layer.peekPoint); if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next); }}>
+    onSnapPointChange={point => {
+      // Vetoing a swipe-close makes the drawer snap back to where it was: that echo must not undo the snap we chose.
+      if (vetoed.current) return;
+      const next = toSnap(point, layer.peekPoint);
+      if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next);
+    }}>
     <DrawerContent data-testid="agent-layer" data-state={snap} data-peek={peek} initialFocus={closeRef} style={style}
-      className={cn('z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
+      className={cn('box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_8rem)_0)]')}>
       <DrawerPrimitive.VirtualKeyboardProvider>
         <div data-testid="agent-layer-sheet" onFocusCapture={event => { if ((event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
-          className={cn('relative flex min-h-0 flex-col overflow-hidden overscroll-contain',
-            // At peek: no chat header, one line of the last reply above the composer, no empty-state overlay, room for Close.
-            peek && '[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>header]:hidden [&_[data-testid=transcript]]:pr-14 [&_[data-testid=transcript]]:pb-2')}
-          style={{ height: peek ? `calc(${SHEET_HEIGHT} - var(--app-shell-tabbar, 0px))` : SHEET_HEIGHT }}>
+          className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',
+            // The layer's own header carries the title and Close, so the chat's is hidden. At peek: one line of the last reply above the
+            // composer, no empty-state overlay, room for Close.
+            '[&_[data-boring=pi-chat]>header]:hidden',
+            peek && '[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-testid=transcript]]:pr-14 [&_[data-testid=transcript]]:pb-2')}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {peek && <button type="button" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}
             className={cn(ICON_BUTTON, 'absolute top-0 right-1 z-10')}><XIcon className="size-4" aria-hidden="true" /></button>}
@@ -438,7 +457,7 @@ function ExpandedPanel() {
     <Sidebar side="right" collapsible="offcanvas" data-testid="agent-layer" data-state={open ? 'open' : 'closed'} aria-label={title} inert={!open} className="z-(--app-shell-z-layer)">
       <SidebarHeader className="p-0 pt-2"><Header text={text} title={title} /></SidebarHeader>
       <SidebarContent className="gap-0 overflow-hidden">
-        {open && <div className="flex min-h-0 flex-1 flex-col"><Chats showing={showing} /></div>}
+        {open && <div className="flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden"><Chats showing={showing} /></div>}
       </SidebarContent>
     </Sidebar>
   </SidebarProvider>;
