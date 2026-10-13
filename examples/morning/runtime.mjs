@@ -274,7 +274,7 @@ export async function openMorningRuntime({ directory, identity = morningIdentity
         const taskId = await conversation.commit(async tx => {
           if (!allowed(actionApp[name], 'execute', access)) throw new Error('Native admission revoked');
           const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'morning-action', name, arguments: input }], api: 'fixture', provider: 'fixture', model: 'fictional-no-model', timestamp: Date.now(), stopReason: 'toolUse', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }] });
-          return tx.createTask(ToolTask, { assistant: entry.id, callId: 'morning-action' }, { ownership: { kind: 'conversation' } });
+          return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: 'morning-action' }, { ownership: { kind: 'conversation' } });
         }, context);
         const uncertain = () => ({ taskId, result: unknown(JSON.stringify(['fictional.morning', instanceId, taskId]), 'Native tool failed; publication outcome is not established') });
         try {

@@ -43,7 +43,7 @@ async function fixture(t, options = {}) {
             ? (await tx.createConversation({ ownership: { kind: 'task', taskId: task.id } })).id
             : runtime.conversationId;
           const entry = await tx.appendEntry(AssistantEntry, selectedConversation, { model: [assistant(callId)] });
-          const child = await tx.createTask(ToolTask, { assistant: entry.id, callId },
+          const child = await tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId },
             task.input.childConversation
               ? { ownership: { kind: 'conversation' }, conversationId: selectedConversation }
               : { ownership: { kind: 'task', taskId: task.id } });
@@ -125,7 +125,7 @@ test('a real tool in an owned child conversation is accepted; an ownerless fork 
   const child = await f.harness.conversation(resultEntry.conversationId, context);
   const fork = await child.fork(proposal.evidence[0], { ownership: { kind: 'ownerless' } }, context);
   const assistantId = await fork.commit(tx => tx.appendEntry(AssistantEntry, fork.id, { model: [assistant('fork-source')] }), context);
-  const toolId = await fork.commit(tx => tx.createTask(ToolTask, { assistant: assistantId.id, callId: 'fork-source' },
+  const toolId = await fork.commit(tx => tx.createTask(ToolTask, { kind: 'model', assistant: assistantId.id, callId: 'fork-source' },
     { ownership: { kind: 'conversation' } }), context);
   const toolTask = await f.harness.waitForTask(toolId, context);
   assert.equal(toolTask.state.outcome.status, 'completed');

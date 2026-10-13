@@ -394,7 +394,7 @@ test('an opaque raw call ID cannot impersonate another question scoped ID', { ti
   const second = await conversation.commit(async tx => {
     const firstEntry = await tx.entry(firstTask.input.assistant);
     const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ ...firstEntry.model[0], content: [{ type: 'toolCall', id: firstId, name: 'ask_user', arguments: { question: 'Second?', options: ['red', 'blue'] } }] }] });
-    return tx.createTask(ToolTask, { assistant: entry.id, callId: firstId }, { ownership: { kind: 'conversation' } });
+    return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: firstId }, { ownership: { kind: 'conversation' } });
   }, context);
   const secondTask = await harness.getTask(second, context);
   const secondId = JSON.stringify([secondTask.input.assistant, firstId]);

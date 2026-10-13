@@ -27,7 +27,7 @@ if (phase === 'hold') {
       content: [{ type: 'toolCall', id: 'call', name: 'viewer_effect', arguments: {} }], api: 'fixture', provider: 'fixture', model: 'fictional-no-model', timestamp: 1, stopReason: 'toolUse',
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
     }] });
-    return tx.createTask(ToolTask, { assistant: entry.id, callId: 'call' }, { ownership: { kind: 'conversation' } });
+    return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: 'call' }, { ownership: { kind: 'conversation' } });
   }, context);
   writeFileSync(join(directory, 'task.json'), JSON.stringify(taskId));
 } else taskId = JSON.parse(readFileSync(join(directory, 'task.json'), 'utf8'));

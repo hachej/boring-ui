@@ -140,7 +140,7 @@ test('real native unsafe ToolTask receives the authenticated browser acknowledge
   const conversation = await harness.root(context), p = await f.poll();
   const task = await conversation.commit(async tx => {
     const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'select', name: tool.name, arguments: {} }], api: 'fixture', provider: 'fixture', model: 'fixture', timestamp: 1, stopReason: 'toolUse', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }] });
-    return tx.createTask(ToolTask, { assistant: entry.id, callId: 'select' }, { ownership: { kind: 'conversation' } });
+    return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: 'select' }, { ownership: { kind: 'conversation' } });
   }, context);
   const waiting = toolResultText(harness, conversation, task);
   const envelope = await (await p.response).json();

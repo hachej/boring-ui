@@ -8,7 +8,7 @@ export async function admitDocumentTool(conversation, args, name = 'save_note') 
       api: 'fixture', provider: 'fixture', model: 'fictional-no-model', timestamp: 1, stopReason: 'toolUse',
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
     }] });
-    return tx.createTask(ToolTask, { assistant: entry.id, callId: 'fixture-call' }, { ownership: { kind: 'conversation' } });
+    return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: 'fixture-call' }, { ownership: { kind: 'conversation' } });
   }, context);
 }
 

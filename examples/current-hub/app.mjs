@@ -89,7 +89,7 @@ export async function openFixtureApp({ directory, appId, definitionRef, implemen
       await runtime.commit(async tx => {
         if (!allowed(expectedActor, 'execute')) throw new Error('App execution is not authorized');
         const entry = await tx.appendEntry(AssistantEntry, runtime.conversationId, { model: [assistantCall(task.input.requestId)] });
-        const child = await tx.createTask(ToolTask, { assistant: entry.id, callId: 'prepare-report' }, { ownership: { kind: 'task', taskId: task.id } });
+        const child = await tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: 'prepare-report' }, { ownership: { kind: 'task', taskId: task.id } });
         return { status: 'waiting', on: [child], policy: 'allSettled', checkpoint: { phase: 'collect', child } };
       }, ctx);
     },
