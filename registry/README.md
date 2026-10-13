@@ -344,9 +344,12 @@ for publication, navigation and lifecycle behavior. `npm run file-tree:journey`
 drives the fictional SQLite-backed browser fixture; `npm run
 test:app-registry-consumer` installs the recipes in an isolated consumer.
 
-The default `pi-app` left pane includes Library when `revisionProvider` is bound.
-Library displays the tree in the center; selecting a file opens the right artifact
-viewer and keeps unsaved-change protection. Chat remains mounted across switches.
+With a `revisionProvider`, `pi-app` shows the Library as a resizable column to the right of the
+viewer (`libraryPlacement="side"`, the default). The Library button in the viewer's top bar and in
+the left pane toggles it; with no file open it opens alone at the right edge, and choosing a file opens
+the viewer to its left. On a phone it is a full-screen sheet that choosing a file closes. Unsaved-change
+protection and the mounted chat are unchanged. `libraryPlacement="center"` keeps the older layout: Chat
+and Library links in the left pane, the Library replacing the chat in the center.
 `libraryPlacement="pane"` shows the Library in the left pane instead: a tab beside
 the conversations, or the whole pane on a single-session page without
 `conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`

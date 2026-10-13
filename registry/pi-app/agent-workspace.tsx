@@ -22,6 +22,7 @@ import { PiChat, artifactKey } from '../pi-chat/pi-chat';
 import { createPresentAcks, pendingPresents } from '../pi-chat/artifact';
 import type { PresentAcks } from '../pi-chat/artifact';
 import type { ArtifactDescriptor, ArtifactsConfig, ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
+import { Dock, DockLayout, DockMain } from '../pi-workspace/dock';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { ViewerWindowProvider } from '../viewers/viewer-frame';
@@ -86,11 +87,13 @@ export interface WorkspaceResources {
 
 interface AgentWorkspaceBaseProps {
   /**
-   * Where the Library of a `revisionProvider` opens. `center` (default): Chat and Library links in the left pane, the Library replacing
+   * Where the Library of a `revisionProvider` opens. `side` (default): a column to the right of the viewer (a `Dock`, resizable), opened
+   * from the Library button in the viewer's top bar or in the left pane, alone at the right edge when no file is open; on a phone a
+   * full-screen sheet that choosing a file closes. `center`: Chat and Library links in the left pane, the Library replacing
    * the chat in the center (the chat stays mounted). `pane`: the Library is a tab beside the conversations in the left pane, or the
    * whole pane on a single-session page without `conversations`; files open in the right panel as usual.
    */
-  readonly libraryPlacement?: 'center' | 'pane' | undefined;
+  readonly libraryPlacement?: 'side' | 'center' | 'pane' | undefined;
   /** The page's language: `en` (default) or `fr`, for the chat, the panes, the viewers and the Library. `labels` and `chat.labels` override any word. */
   readonly locale?: ChatLocale | undefined;
   /**
@@ -186,7 +189,8 @@ export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
   | { readonly resources: WorkspaceResources; readonly revisionProvider?: never }
 );
 
-const SESSIONS_WIDTH = 288;
+// The Library column is docked only while the chat and the viewer (their `ArtifactWorkspace` minimums) keep their room beside it; otherwise it is Dock's sheet.
+const SESSIONS_WIDTH = 288, LIBRARY_WIDTH = 320, CHAT_MIN = 340, VIEWER_MIN = 360;
 const readFlag = (key: string): boolean => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } };
 const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
 const defaultLocate = (path: string): ResourceLocator => ({ resource: { providerId: 'workspace', path: workspacePath(path) }, view: { kind: 'published' } });
@@ -197,7 +201,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, libraryPlacement = 'center', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, resources, revisionProvider, libraryPlacement = 'side', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 768, drawerBelow = 768, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const opened = controlled !== undefined ? controlled : own;
@@ -219,7 +223,13 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const [fullscreen, setFullscreen] = useState(false);
   const [centerMode, setCenterMode] = useState<'chat' | 'library'>('chat');
   const libraryInPane = Boolean(revisionProvider) && libraryPlacement === 'pane';
-  const libraryOpen = Boolean(revisionProvider) && !libraryInPane && centerMode === 'library';
+  const librarySide = Boolean(revisionProvider) && libraryPlacement === 'side';
+  const [sideOpen, setSideOpenState] = useState(false);
+  // The Library's real docked width, reported by its Dock: the room it needs beside the chat and the viewer.
+  const [libraryWidth, setLibraryWidth] = useState(LIBRARY_WIDTH);
+  // Opening the column leaves a full-screen viewer, whose overlay would otherwise cover it.
+  const setSideOpen = useCallback((next: boolean) => { setSideOpenState(next); if (next) setFullscreen(false); }, []);
+  const libraryOpen = Boolean(revisionProvider) && libraryPlacement === 'center' && centerMode === 'library';
   const openLibrary = useCallback(() => { setCenterMode('library'); setFullscreen(false); }, []);
   const text = useMemo(() => ({ labels: withDefaults(locale === 'fr' ? frenchAppLabels : defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons, locale]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
@@ -373,11 +383,17 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const changePaneView = useCallback((next: SessionsView) => { writeFlag(`${storageKey}.library`, next === 'library'); setPaneView(next); }, [storageKey]);
   // The upload notice's "Open Library": the center Library, or the pane's Library tab with the pane shown.
   const revealLibrary = () => {
+    if (librarySide) { setSideOpen(true); return; }
     if (!libraryInPane) { openLibrary(); return; }
     changePaneView('library');
     if (narrow) setDrawer(true); else { writeFlag(`${storageKey}.sessions-hidden`, false); setCollapsed(false); }
   };
   useEffect(() => { if (!narrow) setDrawer(false); }, [narrow]);
+  const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
+  // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
+  const libraryTree = (onOpen: (path: string) => void) => fileTree
+    ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+    : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   const hasNavigation = Boolean(conversations || revisionProvider);
   const docked = hasNavigation && width > 0 && !narrow && !collapsed;
   const toggle = hasNavigation && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : !collapsed} drawer={narrow}
@@ -417,26 +433,26 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const kind = active ? 'artifact' : file ? 'file' : host?.kind;
   const shown = active ?? file ?? host;
   const actionsFor = (floatChat: (() => void) | undefined): readonly BlockAction[] => [
+    ...(librarySide ? [{ id: 'library', label: text.labels.library, icon: text.icons.library, pressed: sideOpen, onSelect: toggleSide }] : []),
     ...(floatChat ? [{ id: 'float-chat', label: text.labels.floatChat, icon: text.icons.floatChat, placement: 'menu' as const, onSelect: floatChat }] : []),
     ...(shown ? typeof panelActions === 'function' ? panelActions(shown) : panelActions ?? [] : []),
   ];
   return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
     className={cn('relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
+    <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {hasNavigation && (docked || (narrow && drawer)) && <SessionsPane conversations={conversations} drawer={narrow} onClose={() => setDrawer(false)} onChat={() => setCenterMode('chat')}
       agents={agents} view={paneView} onViewChange={changePaneView}
-      {...(revisionProvider && !libraryInPane ? { library: { selected: libraryOpen, onSelect: openLibrary } } : {})}
-      {...(libraryInPane ? { libraryContent: (onPicked: () => void) => fileTree
-        ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={path => { openFile(path); onPicked(); }} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
-        : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{text.labels.loading}</p> } : {})} />}
-    <ArtifactWorkspace open={panelOpen} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
+      {...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : revisionProvider && !libraryInPane ? { library: { selected: libraryOpen, onSelect: openLibrary } } : {})}
+      {...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {})} />}
+    <DockMain><ArtifactWorkspace open={panelOpen} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
       sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
       chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
         // With the Library in the pane, the center holds only the chat (no second, hidden toggle or tree).
-        library={libraryInPane ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
+        library={libraryInPane || librarySide ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
             <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
-          <div className="min-h-0 flex-1 overflow-auto">{fileTree ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={openFile} {...(isFile(opened) ? { selectedPath: opened.path } : {})} /> : <p role="status">{treeOptions?.labels?.loading ?? text.labels.loading}</p>}</div>
+          <div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div>
         </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>
         <div data-testid="viewer-panel" data-kind={kind} className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
@@ -448,8 +464,23 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
                 }} />
             : file ? <FileViewer key={JSON.stringify([revisionProvider?.workspace, identity, file.path])} onUnsavedChange={noteUnsaved} path={file.path} locator={locate(file.path)} options={options} onClose={win.close} {...(fileBack ? { onBack: fileBack.onBack, backLabel: fileBack.label } : {})} />
             : host ? panels![host.kind]!(host, win) : null}
-        </div></ViewerWindowProvider>} />
+        </div></ViewerWindowProvider>} /></DockMain>
+    {librarySide && <Dock id="library" side="right" open={sideOpen} onOpenChange={setSideOpen} defaultWidth={LIBRARY_WIDTH} minWidth={240} narrowBelow={Math.max(drawerBelow, (docked ? SESSIONS_WIDTH : 0) + (panelOpen ? VIEWER_MIN + CHAT_MIN : CHAT_MIN) + libraryWidth)} narrow="sheet"
+      labels={{ region: text.labels.library, resize: text.labels.resizePanel }} className="border-l border-border">
+      {api => <section data-testid="workspace-library-side" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
+        <WidthProbe width={api.width} onWidth={setLibraryWidth} />
+        <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2"><h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{text.labels.library}</h2>
+          <Button size="icon-sm" variant="ghost" aria-label={text.labels.close} title={text.labels.close} data-testid="workspace-library-close" onClick={() => setSideOpen(false)}><text.icons.closeSessions className="size-4" aria-hidden="true" /></Button></header>
+        <div className="min-h-0 flex-1 overflow-auto">{libraryTree(path => { if (setOpened({ kind: 'file', path }) && narrow) setSideOpen(false); })}</div>
+      </section>}
+    </Dock>}
+    </DockLayout>
   </div></ChatTextProvider></AppTextProvider>;
+}
+
+function WidthProbe({ width, onWidth }: { readonly width: number; readonly onWidth: (width: number) => void }) {
+  useLayoutEffect(() => { onWidth(width); }, [width, onWidth]);
+  return null;
 }
 
 function UploadNotice({ controller, onOpen }: { readonly controller: FileTreeController; readonly onOpen: () => void }) {

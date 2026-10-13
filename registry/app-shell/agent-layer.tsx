@@ -365,9 +365,11 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const fr = spec.chatProps?.locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...spec.chatProps} controller={spec.controller} {...(feedback ? { feedback } : {})}
-      {...(role === 'agent' && spec.voice ? { tools: <TalkButton text={appShellText(spec.chatProps?.locale)} /> } : {})} />
+      {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(spec.chatProps?.locale)} /></> } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
-    {spec.feedback && visible && !pointing && <NoteBubble session={spec.feedback} {...(fr ? { labels: feedbackLabelsFr } : {})} />}
+    {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
+    {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden [&_[data-testid=feedback-general-bubble]]:static!">
+      <NoteBubble session={spec.feedback} {...(fr ? { labels: feedbackLabelsFr } : {})} /></div>}
   </div>;
 }
 
@@ -444,11 +446,15 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     const entering = wasPeek.current && !peek && open;
     wasPeek.current = peek;
     if (!entering) return;
+    // The element that held focus when the sheet left peek (a page control now behind the modal). Base UI re-applies its modal guards as the
+    // sheet moves, so retake focus once they have settled and again after the slide, but only while focus is still stranded there (or lost to the body).
+    const stranded = document.activeElement;
     const take = () => {
       const popup = closeRef.current?.closest('[data-slot=drawer-popup]');
-      if (popup && !popup.contains(document.activeElement)) closeRef.current?.focus({ preventScroll: true });
+      const active = document.activeElement;
+      // Still stranded, or dropped to the body by the modal guards: retake. Focus that went anywhere else is the person's and is left alone.
+      if (popup && (active === stranded || active === document.body || active === null) && !popup.contains(active)) closeRef.current?.focus({ preventScroll: true });
     };
-    // Base UI re-applies its modal guards as the sheet moves: take focus once they have settled, and again after the slide.
     const early = setTimeout(take, 60), late = setTimeout(take, 520);
     return () => { clearTimeout(early); clearTimeout(late); };
   }, [peek, open]);
