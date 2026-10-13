@@ -18,6 +18,33 @@ const item = manifest.items.find(entry => entry.name === 'app-shell');
 const files = readdirSync(`${root}${folder}`);
 const source = name => readFileSync(`${root}${folder}/${name}`, 'utf8');
 
+// Runs before the bundles below: bundling agent-layer.tsx (nextSnapOnClose) leaves module state that breaks the account sheet's click here.
+test('locale: with no agent, the shell\'s own words follow the locale prop; the account sheet is titled « Compte », not the name', async t => {
+  const window = dom(t);
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+  const { AppShell } = await bundle('app-shell.tsx');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const Icon = () => null;
+  const nav = ['Jour', 'Semaine', 'Mois', 'Progrès', 'Profil'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const account = { name: 'Camille Martin', menu: [], signOut() {} };
+  await act(async () => root.render(h(AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, account, locale: 'fr' })));
+  assert.equal(container.querySelector('[role=tablist]')?.getAttribute('aria-label'), 'Navigation');
+  assert.equal(container.querySelector('[data-testid=tab-plus]')?.textContent, 'Plus');
+  assert.equal(container.querySelector('[data-testid=account-button]')?.getAttribute('aria-label'), 'Camille Martin');
+  await act(async () => container.querySelector('[data-testid=account-button]').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  // The drawer mounts after the click's state update and its portal: wait for it (a few frames at most).
+  for (let tries = 0; tries < 40 && !window.document.querySelector('[data-testid=app-sheet]'); tries++) await act(async () => new Promise(done => setTimeout(done, 25)));
+  const sheet = window.document.querySelector('[data-testid=app-sheet]');
+  assert.ok(sheet, 'the account sheet opens');
+  assert.equal(sheet.querySelector('[data-slot=drawer-title]')?.textContent, 'Compte', 'the title is the generic word, so the name appears once (in the person block)');
+  assert.equal(sheet.querySelector('[data-testid=account-sign-out]')?.textContent, 'Se déconnecter');
+  await act(async () => root.unmount());
+});
+
 test('every file of registry/app-shell is listed in the item and equals the committed build', () => {
   assert.deepEqual(item.files.map(entry => entry.path.replace(`${folder}/`, '')).sort(), files.sort());
   const built = JSON.parse(readFileSync(`${root}public/r/app-shell.json`, 'utf8'));
@@ -152,31 +179,6 @@ test('AppShellProps has the seven props of the brief and the one locale prop, an
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
   assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'locale', 'nav', 'route', 'title']);
-});
-
-test('locale: with no agent, the shell\'s own words follow the locale prop; the account sheet is titled « Compte », not the name', async t => {
-  const window = dom(t);
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
-  const { AppShell } = await bundle('app-shell.tsx');
-  const { createElement: h, act } = await import('react');
-  const { createRoot } = await import('react-dom/client');
-  const Icon = () => null;
-  const nav = ['Jour', 'Semaine', 'Mois', 'Progrès', 'Profil'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
-  const container = window.document.createElement('div');
-  window.document.body.append(container);
-  const root = createRoot(container);
-  const account = { name: 'Camille Martin', menu: [], signOut() {} };
-  await act(async () => root.render(h(AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, account, locale: 'fr' })));
-  assert.equal(container.querySelector('[role=tablist]')?.getAttribute('aria-label'), 'Navigation');
-  assert.equal(container.querySelector('[data-testid=tab-plus]')?.textContent, 'Plus');
-  assert.equal(container.querySelector('[data-testid=account-button]')?.getAttribute('aria-label'), 'Camille Martin');
-  await act(async () => container.querySelector('[data-testid=account-button]').click());
-  await act(async () => new Promise(done => setTimeout(done, 50)));
-  const sheet = window.document.querySelector('[data-testid=app-sheet]');
-  assert.ok(sheet, 'the account sheet opens');
-  assert.equal(sheet.querySelector('[data-slot=drawer-title]')?.textContent, 'Compte', 'the title is the generic word, so the name appears once (in the person block)');
-  assert.equal(sheet.querySelector('[data-testid=account-sign-out]')?.textContent, 'Se déconnecter');
-  await act(async () => root.unmount());
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {
