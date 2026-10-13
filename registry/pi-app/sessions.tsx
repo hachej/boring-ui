@@ -23,7 +23,8 @@ export type SessionsView = 'conversations' | 'library';
  */
 export function SessionsPane({ conversations, title: givenTitle, drawer, onClose, library, onChat, libraryContent, view = 'conversations', onViewChange, agents }: {
   readonly conversations?: ConversationsConfig | undefined;
-  readonly library?: { readonly selected: boolean; readonly onSelect: () => void } | undefined;
+  /** `side`: the Library is a column beside the viewer, so the button toggles it (`aria-pressed`) and the chat stays current. */
+  readonly library?: { readonly selected: boolean; readonly onSelect: () => void; readonly side?: boolean } | undefined;
   readonly onChat?: (() => void) | undefined;
   /** The library shown in the pane; invoke onPicked after opening a file to close a mobile drawer. */
   readonly libraryContent?: ((onPicked: () => void) => ReactNode) | undefined;
@@ -81,8 +82,8 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
         {!switcher && close}
       </header>
       {library && <nav aria-label={labels.workspaceNavigation} className="flex shrink-0 flex-col gap-1 border-b border-border p-2">
-        <Button variant="ghost" data-testid="workspace-chat-link" aria-current={!library.selected ? 'page' : undefined} className="justify-start" onClick={picked}><icons.chat className="size-4" aria-hidden="true" />{labels.chat}</Button>
-        <Button variant="ghost" data-testid="workspace-library" aria-current={library.selected ? 'page' : undefined} className="justify-start" onClick={() => { library.onSelect(); if (drawer) onClose?.(); }}><icons.library className="size-4" aria-hidden="true" />{labels.library}</Button>
+        <Button variant="ghost" data-testid="workspace-chat-link" aria-current={library.side || !library.selected ? 'page' : undefined} className="justify-start" onClick={picked}><icons.chat className="size-4" aria-hidden="true" />{labels.chat}</Button>
+        <Button variant="ghost" data-testid="workspace-library" {...(library.side ? { 'aria-pressed': library.selected } : { 'aria-current': library.selected ? 'page' : undefined })} className="justify-start" onClick={() => { library.onSelect(); if (drawer) onClose?.(); }}><icons.library className="size-4" aria-hidden="true" />{labels.library}</Button>
       </nav>}
       {shown === 'library' && libraryContent
         ? <div {...(tabs ? { role: 'tabpanel' } : {})} data-testid="sessions-library" className="flex min-h-0 flex-1 flex-col overflow-auto">{libraryContent(() => { if (drawer) onClose?.(); })}</div>

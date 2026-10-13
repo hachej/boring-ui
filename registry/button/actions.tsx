@@ -21,6 +21,8 @@ export interface BlockAction {
   readonly onSelect: () => void;
   readonly placement?: 'header' | 'menu' | undefined;
   readonly disabled?: boolean | undefined;
+  /** A toggle: set, the button carries `aria-pressed` with this state. */
+  readonly pressed?: boolean | undefined;
 }
 
 /** One row of a menu. With `checked` set (true or false) the row is a radio choice, otherwise a plain action. */
@@ -116,7 +118,7 @@ export const menuActions = (actions: readonly BlockAction[] | undefined): readon
 /** One `header` action as a bar button: the icon with the label as its name and tooltip, or the label as text. */
 export function ActionButton({ action, testId, size = 'icon-sm', className }: { readonly action: BlockAction; readonly testId: string; readonly size?: 'icon-sm' | 'icon-bar'; readonly className?: string }) {
   const Icon = action.icon;
-  if (Icon) return <IconButton label={action.label} size={size} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} onClick={action.onSelect} className={className}>
+  if (Icon) return <IconButton label={action.label} size={size} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} {...(action.pressed === undefined ? {} : { 'aria-pressed': action.pressed })} onClick={action.onSelect} className={className}>
     <Icon className="size-4" aria-hidden="true" /></IconButton>;
   return <Button size="sm" variant="ghost" data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} onClick={action.onSelect} title={action.label}
     className={cn('max-w-40 min-w-0 text-muted-foreground', className)}><span className="truncate">{action.label}</span></Button>;
