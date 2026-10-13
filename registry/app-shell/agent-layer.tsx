@@ -26,7 +26,7 @@ import { PointBar, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from './back';
 import { appShellText } from './text';
-import type { AppShellText } from './text';
+import type { AppShellLocale, AppShellText } from './text';
 import { useVisualViewport } from './use-visual-viewport';
 import { AgentContextProvider } from './agent-context';
 
@@ -98,6 +98,8 @@ interface Internal extends AgentLayerApi {
   readonly tabbar: number;
   /** The persistent element holding both chats: it moves between the drawer and the panel, so closing never unmounts a chat. */
   readonly host: HTMLElement | null;
+  /** The shell's `locale`: the layer's own words when the agent spec sets none (`agent.chatProps.locale` first). */
+  readonly locale: AppShellLocale | undefined;
 }
 
 const LayerContext = createContext<Internal | null>(null);
@@ -119,7 +121,7 @@ const REFUSAL: Readonly<Record<VoiceRefusal, 'voiceDenied' | 'voiceNoMicrophone'
 };
 
 /** The agent's push-to-talk: record on `start`, transcribe on `finish`, then submit or fill the composer. One microphone capture per mount. */
-function useVoice(agent: AgentSpec | undefined, done: (outcome: 'sent' | 'drafted') => void): Voice {
+function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefined, done: (outcome: 'sent' | 'drafted') => void): Voice {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [seconds, setSeconds] = useState(0);
   const [problem, setProblem] = useState<string | undefined>();
@@ -127,10 +129,10 @@ function useVoice(agent: AgentSpec | undefined, done: (outcome: 'sent' | 'drafte
   const run = useRef(0);
   const work = useRef<AbortController | null>(null);
   const phaseRef = useRef<VoicePhase>('idle');
-  const latest = useRef({ agent, done });
-  latest.current = { agent, done };
+  const latest = useRef({ agent, done, locale });
+  latest.current = { agent, done, locale };
   const set = (next: VoicePhase) => { phaseRef.current = next; setPhase(next); };
-  const words = () => chatTextFor(latest.current.agent?.chatProps?.locale).labels;
+  const words = () => chatTextFor(latest.current.agent?.chatProps?.locale ?? latest.current.locale).labels;
 
   useEffect(() => () => { run.current += 1; capture.current?.cancel(); work.current?.abort(); }, []);
   useEffect(() => {
@@ -221,7 +223,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 }
 
 /** Places the layer in the app. `agent` is the one assistant; `improve` is the product manager. Either may be absent. */
-export function AgentLayerProvider({ agent, improve, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ agent, improve, locale, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly children: ReactNode }): ReactElement {
   const compact = useIsMobile();
   const expanded = !compact;
   const [snap, setSnapState] = useState<Snap>('closed');
@@ -253,14 +255,14 @@ export function AgentLayerProvider({ agent, improve, children }: { readonly agen
   const opened = useRef(false);
   if (snap !== 'closed') opened.current = true;
 
-  const voice = useVoice(agent, outcome => {
+  const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host,
-  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host]);
+    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale,
+  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -279,7 +281,7 @@ export function AgentLayerProvider({ agent, improve, children }: { readonly agen
 export function AgentTrigger({ className, children }: { readonly className?: string; readonly children?: ReactNode }) {
   const layer = useInternal();
   const { agent, voice } = layer;
-  const text = appShellText(agent?.chatProps?.locale);
+  const text = appShellText(agent?.chatProps?.locale ?? layer.locale);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; held: boolean; id: number } | null>(null);
   if (!agent) return null;
 
@@ -359,13 +361,15 @@ function VoiceProblem() {
 
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
+  const layer = useInternal();
+  const locale = spec.chatProps?.locale ?? layer.locale;
   // Both entries: the Feedback button and « Montrer dans l'app » (point mode, which hides the layer while the person taps the app).
   const feedback = useComposerFeedback(spec.feedback, { entry: 'both' });
   const pointing = usePointing(spec.feedback);
-  const fr = spec.chatProps?.locale === 'fr';
+  const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...spec.chatProps} controller={spec.controller} {...(feedback ? { feedback } : {})}
-      {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(spec.chatProps?.locale)} /></> } : {})} />
+    <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} {...(feedback ? { feedback } : {})}
+      {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></> } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden [&_[data-testid=feedback-general-bubble]]:static!">
@@ -410,7 +414,7 @@ function Header({ text, title, compactSnap, closeRef }: { readonly text: AppShel
 function useTitle(): { text: AppShellText; title: string } {
   const layer = useInternal();
   const spec = layer.showing === 'improve' ? layer.improve : layer.agent;
-  const text = appShellText(spec?.chatProps?.locale);
+  const text = appShellText(spec?.chatProps?.locale ?? layer.locale);
   const title = layer.showing === 'improve' ? text.improve : (spec?.chatProps?.labels?.title ?? text.assistant);
   return { text, title };
 }
@@ -538,7 +542,7 @@ export function AgentLayer(): ReactElement | null {
   // Back ends pointing first (the `point` priority); the layer keeps its own history entry underneath.
   useBackLayer(session !== undefined, () => session?.discard(), 'point');
   if (!layer.agent && !layer.improve) return null;
-  const locale = (pointingAgent ? layer.agent : layer.improve)?.chatProps?.locale;
+  const locale = (pointingAgent ? layer.agent : layer.improve)?.chatProps?.locale ?? layer.locale;
   // Point mode: the compact sheet steps aside (the wide panel does not cover the app); the bar sits above the tab bar, outside the layer.
   return <>
     {layer.expanded ? <ExpandedPanel /> : <CompactSheet pointing={session !== undefined} />}

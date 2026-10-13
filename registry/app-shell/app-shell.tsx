@@ -28,7 +28,7 @@ export interface AppShellProps {
   /** The product manager: adds « Améliorer l'app » to the account menu. */
   readonly improve?: AgentSpec;
   readonly account?: AccountSpec;
-  /** The language of the shell's own words (« Se déconnecter », « Plus »…). Absent: the agent's `chatProps.locale`, else English. */
+  /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l'assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
   readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
@@ -80,8 +80,8 @@ function Shell({ title, nav, agent, improve, account, route, text }: { readonly 
 export function AppShell(props: AppShellProps) {
   if (props.layout !== 'screen') throw new Error(`AppShell layout "${props.layout}" is not implemented`);
   const { agent, improve, title, nav, account, route } = props;
-  const text = appShellText(props.locale ?? (agent ?? improve)?.chatProps?.locale);
-  return <AgentLayerProvider agent={agent} improve={improve}>
+  const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
+  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
     <HeaderProvider><Shell title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }
