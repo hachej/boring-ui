@@ -72,6 +72,13 @@ test('Library is a right-side column by default: toggled from the viewer bar and
   assert.equal(q('[data-testid=file-viewer]').dataset.path, 'first.html', 'toggling the Library leaves the viewer alone');
   await act(async () => barButton().click());
   assert.equal(dock().dataset.placement, 'docked'); assert.equal(paneButton().getAttribute('aria-pressed'), 'true');
+  // A full-screen viewer would cover the column: opening the Library leaves full screen.
+  await act(async () => barButton().click());
+  await act(async () => q('[data-testid=viewer-fullscreen]').click());
+  assert.equal(q('[data-testid=workspace-panel]').dataset.fullscreen, 'true');
+  await act(async () => barButton().click());
+  assert.equal(dock().dataset.placement, 'docked');
+  assert.equal(q('[data-testid=workspace-panel]').dataset.fullscreen, 'false', 'opening the Library leaves full screen');
   await act(async () => q('[data-testid=workspace-library-close]').click());
   assert.equal(dock().dataset.placement, 'closed');
 
@@ -95,4 +102,20 @@ test('Library is a right-side column by default: toggled from the viewer bar and
   assert.equal(q('[data-testid=workspace-library-view]').parentElement.hidden, false);
   await render({ key: 'pane', storageKey: 'pane-proof', libraryPlacement: 'pane' });
   assert.equal(dock(), null); assert.ok(q('[data-testid=sessions-tab-library]'));
+});
+
+test('a text-only toggle action carries aria-pressed', async t => {
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'IS_REACT_ACT_ENVIRONMENT'];
+  const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name] });
+  const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
+  const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
+  const output = new URL('actions.mjs', out);
+  await build({ entryPoints: [new URL('../../registry/button/actions.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external' });
+  const { ActionButton } = await import(output.href);
+  const element = window.document.createElement('div'); window.document.body.append(element); const root = createRoot(element);
+  t.after(async () => { await act(async () => root.unmount()); await window.happyDOM.close(); for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
+  await act(async () => root.render(createElement(ActionButton, { testId: 'bar', action: { id: 'toggle', label: 'Toggle', pressed: true, onSelect() {} } })));
+  assert.equal(element.querySelector('button').getAttribute('aria-pressed'), 'true');
 });

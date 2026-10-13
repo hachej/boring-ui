@@ -120,7 +120,7 @@ export function ActionButton({ action, testId, size = 'icon-sm', className }: { 
   const Icon = action.icon;
   if (Icon) return <IconButton label={action.label} size={size} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} {...(action.pressed === undefined ? {} : { 'aria-pressed': action.pressed })} onClick={action.onSelect} className={className}>
     <Icon className="size-4" aria-hidden="true" /></IconButton>;
-  return <Button size="sm" variant="ghost" data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} onClick={action.onSelect} title={action.label}
+  return <Button size="sm" variant="ghost" data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} {...(action.pressed === undefined ? {} : { 'aria-pressed': action.pressed })} onClick={action.onSelect} title={action.label}
     className={cn('max-w-40 min-w-0 text-muted-foreground', className)}><span className="truncate">{action.label}</span></Button>;
 }
 
