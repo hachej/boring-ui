@@ -74,7 +74,7 @@ test('native ToolTask uses a captured mounted Markdown target without owning the
     } },
     prepareInput: args => ({ index: args.index, expiresAt: Date.now() + 5000 }),
     authorize: (_input, _target, api) => api.conversationId === conversation.id,
-    formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] }),
+    formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),
   });
   const registry = createRegistry(); registry.install(defineExtension({ name: 'fixture.mounted-markdown', tools: [tool] }));
   harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);

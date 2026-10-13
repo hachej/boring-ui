@@ -296,7 +296,7 @@ const navigate = createPresentationTool({
   target: capturedTarget,
   prepareInput: ({ index }) => ({ index, expiresAt: Date.now() + 5000 }),
   authorize: (_input, _target, api, context) => canNavigate(api.conversationId, context),
-  formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify({ kind: result.kind }) }] }),
+  formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify({ kind: result.kind }) }] }),
 });
 ```
 

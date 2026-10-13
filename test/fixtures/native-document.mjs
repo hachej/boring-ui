@@ -53,7 +53,7 @@ export function createSaveNoteTool({ target, publisher, operationNamespace, reso
         ? { kind: 'create', target, expected: { kind: 'absent' }, bytes, mediaType: 'text/markdown' }
         : { kind: 'replace', target: { ...target, revision: args.expected.revision }, bytes, mediaType: 'text/markdown' };
       const result = await publisher.publish({ operationId: JSON.stringify([operationNamespace, api.taskId]), atomicity: 'all-or-nothing', changes: [change] }, access);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return { output: [{ type: 'text', text: JSON.stringify(result) }] };
     },
   });
 }

@@ -32,7 +32,7 @@ export interface RequireApprovalOptions<TParameters extends TSchema = TSchema> {
   readonly when?: (args: Static<TParameters>, call: ApprovalCall) => boolean;
 }
 
-const text = (value: string, isError: boolean) => ({ isError, content: [{ type: 'text' as const, text: value }] });
+const text = (value: string, isError: boolean) => ({ isError, output: [{ type: 'text' as const, text: value }] });
 
 /**
  * Wrap a native tool so the person must approve each call before it executes. The tool keeps its name, schema and

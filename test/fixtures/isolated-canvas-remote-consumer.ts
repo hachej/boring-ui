@@ -17,7 +17,7 @@ export function remoteSelectionTool(connection: {
     command: connection.select,
     prepareInput: args => ({ shapeIds: args.shapeIds, expiresAt: Date.now() + 5000 }),
     authorize: (_input, _target, api, context) => authorize(api, context),
-    formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result.kind === 'unknown'
+    formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result.kind === 'unknown'
       ? { kind: 'unknown', reason: result.reason }
       : result) }] }),
   });

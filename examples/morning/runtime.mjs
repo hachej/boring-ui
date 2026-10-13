@@ -224,9 +224,9 @@ export async function openMorningRuntime({ directory, identity = morningIdentity
       execute: async (args, api, ctx) => {
         let intent = await api.memo(requestMemo, ctx);
         const app = actionApp[name];
-        if (intent && (intent.instanceId !== instanceId || intent.providerBinding !== providerBindings[app] || intent.name !== name || !sameActor(intent.actor, actor))) return { content: [{ type: 'text', text: JSON.stringify(unknown(intent.request.operationId, 'Original action binding changed')) }] };
+        if (intent && (intent.instanceId !== instanceId || intent.providerBinding !== providerBindings[app] || intent.name !== name || !sameActor(intent.actor, actor))) return { output: [{ type: 'text', text: JSON.stringify(unknown(intent.request.operationId, 'Original action binding changed')) }] };
         const operationId = intent?.request.operationId ?? JSON.stringify(['fictional.morning', instanceId, api.taskId]);
-        const respond = result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] });
+        const respond = result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] });
         if (!allowed(app, 'execute', actor)) return respond(intent ? unknown(operationId) : refusal('Native execution denied'));
         if (!intent) {
           const prepared = await prepareAction(name, { ...args, operationId }, actor);

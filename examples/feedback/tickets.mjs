@@ -47,7 +47,7 @@ export function ticketsOnWrite({ tickets, files, root, resolveAccess }) {
     if (result.isError || existed) return result;
     const mirrored = await tickets.mirror(path, access, await revisionOf(path, access));
     const line = mirrored.kind === 'recorded' ? `Ticket: ${JSON.stringify(mirrored.outcome)}` : `Ticket not published: ${mirrored.reason}`;
-    return { ...result, content: [...result.content, { type: 'text', text: line }] };
+    return { ...result, output: [...(result.output ?? [{ type: 'text', text: api.retainedOutput().text }]), { type: 'text', text: line }] };
   } });
   return defineExtension({ name: 'fernhill.tickets', wraps: [wrapTool(createWriteTool(), wrapped)] });
 }

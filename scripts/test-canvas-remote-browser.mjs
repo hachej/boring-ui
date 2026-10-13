@@ -62,7 +62,7 @@ async function attach() {
         : Type.Object({ edits: Type.Array(Type.Any()), summary: Type.String() }, { additionalProperties: false }),
       command: connection[command], target: connection.target, prepareInput: args => ({ ...args, expiresAt: Date.now() + 30000 }),
       authorize: (_input, captured, api) => api.conversationId === conversation.id && !revocation.signal.aborted && captured.subject.scopeId === access.scopeId,
-      formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] }),
+      formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),
     });
   });
   const extension = defineExtension({ name: `fixture.remote.${connection.id}`, tools });

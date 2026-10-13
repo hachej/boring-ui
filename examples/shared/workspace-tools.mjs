@@ -12,7 +12,7 @@ const listFiles = defineTool({
   parameters: Type.Object({ path: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'safe',
   execute: async (args, api, context) => {
     const entries = getOrThrow(await api.env.listDir(args.path ?? '.', context));
-    return { content: [{ type: 'text', text: entries.map(entry => `${entry.kind === 'directory' ? 'dir ' : 'file'} ${entry.name}`).join('\n') || '(empty)' }] };
+    return { output: [{ type: 'text', text: entries.map(entry => `${entry.kind === 'directory' ? 'dir ' : 'file'} ${entry.name}`).join('\n') || '(empty)' }] };
   },
 });
 

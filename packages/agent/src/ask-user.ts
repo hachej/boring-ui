@@ -46,9 +46,9 @@ export function createAskUserTool(options: { readonly description?: string } = {
     replay: 'safe',
     execute: async (args, api, context) => {
       const problem = refusal(args.options, args.allowFreeText);
-      if (problem) return { isError: true, content: [{ type: 'text', text: `Invalid question: ${problem}.` }] };
+      if (problem) return { isError: true, output: [{ type: 'text', text: `Invalid question: ${problem}.` }] };
       const answer = await askPerson(api, context, { prompt: args.question, ...(args.options === undefined ? {} : { options: args.options }), allowFreeText: args.allowFreeText === true });
-      return { content: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer }) }] };
+      return { output: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer }) }] };
     },
   });
 }

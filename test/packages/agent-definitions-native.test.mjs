@@ -40,7 +40,7 @@ async function fixture(t) {
   const tool = createSaveNoteTool({ target: target('output.md'), publisher: provider.publication,
     operationNamespace: 'fictional-definition', resolveAccess: () => access });
   const echo = defineTool({ name: 'fictional_echo', description: 'Return fictional text.', parameters: Type.Object({ text: Type.String() }),
-    execute: async args => ({ content: [{ type: 'text', text: JSON.stringify({ kind: 'echo', text: args.text }) }] }) });
+    execute: async args => ({ output: [{ type: 'text', text: JSON.stringify({ kind: 'echo', text: args.text }) }] }) });
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fixture.definition-tools', tools: [tool, echo] }));
   const f = { directory, provider, tool, echo, registry };

@@ -14,7 +14,7 @@ const tool = createPresentationTool({ name: 'viewer_effect', description: 'Ficti
     appendFileSync(join(directory, 'effects'), 'effect\n');
     if (phase === 'hold') { writeFileSync(join(directory, 'ready'), 'ready'); await new Promise(() => {}); }
     return { kind: 'applied', value: undefined };
-  } }, formatResult: result => ({ content: [{ type: 'text', text: result.kind }] }),
+  } }, formatResult: result => ({ output: [{ type: 'text', text: result.kind }] }),
 });
 const keepAlive = setInterval(() => {}, 1000);
 const registry = createRegistry(); registry.install(defineExtension({ name: 'fixture.presentation.crash', tools: [tool] }));

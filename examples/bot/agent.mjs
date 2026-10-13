@@ -94,7 +94,7 @@ ${declarations(HOST_TOOLS, version.abilities)}`,
       execute: async ({ code }, api, callContext) => {
         const result = await runSandboxed(code, version.abilities, sandboxTools(api.conversationId), callContext.abortSignal);
         runs.executions += 1; if (result.isError) runs.failed += 1;
-        return { content: [{ type: 'text', text: result.text }], isError: result.isError };
+        return { output: [{ type: 'text', text: result.text }], isError: result.isError };
       },
     });
     return defineExtension({
@@ -115,13 +115,13 @@ ${declarations(HOST_TOOLS, version.abilities)}`,
     parameters: Type.Object({ note: Type.String({ description: 'One line: what changed and why.' }) }, { additionalProperties: false }),
     execute: async ({ note }) => {
       let snapshot;
-      try { snapshot = await readSelf(); } catch (error) { return { content: [{ type: 'text', text: `Not deployed: ${error.message}` }], isError: true }; }
+      try { snapshot = await readSelf(); } catch (error) { return { output: [{ type: 'text', text: `Not deployed: ${error.message}` }], isError: true }; }
       const problems = await checkAbilities(snapshot.abilities);
-      if (problems.length) return { content: [{ type: 'text', text: `Not deployed; fix these first:\n${problems.join('\n')}` }], isError: true };
+      if (problems.length) return { output: [{ type: 'text', text: `Not deployed; fix these first:\n${problems.join('\n')}` }], isError: true };
       const change = describeChange(deploys.current, snapshot);
-      if (change === 'no change') return { content: [{ type: 'text', text: `Nothing to deploy: the files match v${deploys.current.version}.` }] };
+      if (change === 'no change') return { output: [{ type: 'text', text: `Nothing to deploy: the files match v${deploys.current.version}.` }] };
       const entry = deploy(snapshot, note);
-      return { content: [{ type: 'text', text: `Deployed self v${entry.version} (${entry.change}). It takes effect from your next request in this same conversation.` }] };
+      return { output: [{ type: 'text', text: `Deployed self v${entry.version} (${entry.change}). It takes effect from your next request in this same conversation.` }] };
     },
   });
 

@@ -67,7 +67,7 @@ export function createBrowserTaskTool<P extends TSchema>(options: BrowserTaskOpt
       }, 'Browser task');
       const state = final?.task?.state;
       if (state?.kind !== 'answered') throw new Error('Browser task cancelled');
-      return { content: [{ type: 'text', text: JSON.stringify(state.answer) }] };
+      return { output: [{ type: 'text', text: JSON.stringify(state.answer) }] };
     },
   });
 }

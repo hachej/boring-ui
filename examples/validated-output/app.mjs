@@ -33,13 +33,13 @@ export async function openValidatedOutputFixture({ directory, scenario = 'repair
   const source = defineTool({ name: 'read_fictional_source', description: 'Read the fictional authorized source.', replay: 'safe',
     parameters: Type.Object({ resource: Type.Literal('fictional-source') }, { additionalProperties: false }),
     execute: async () => await authorizeTool('read_fictional_source') === true
-      ? { content: [{ type: 'text', text: 'Fictional source: two plus two.' }] }
-      : { isError: true, content: [{ type: 'text', text: 'Fictional source access denied' }] } });
+      ? { output: [{ type: 'text', text: 'Fictional source: two plus two.' }] }
+      : { isError: true, output: [{ type: 'text', text: 'Fictional source access denied' }] } });
   const calculator = defineTool({ name: 'calculate_fictional', description: 'Calculate the fictional sum.', replay: 'safe',
     parameters: Type.Object({ left: Type.Integer(), right: Type.Integer() }, { additionalProperties: false }),
     execute: async args => await authorizeTool('calculate_fictional') === true
-      ? { content: [{ type: 'text', text: String(args.left + args.right) }] }
-      : { isError: true, content: [{ type: 'text', text: 'Fictional calculation denied' }] } });
+      ? { output: [{ type: 'text', text: String(args.left + args.right) }] }
+      : { isError: true, output: [{ type: 'text', text: 'Fictional calculation denied' }] } });
   const toolExtension = defineExtension({ name: 'fixture.validated.tools', tools: [source, calculator] });
   registry.install(toolExtension);
   let validation;

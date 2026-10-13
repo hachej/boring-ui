@@ -253,7 +253,7 @@ test('an agent without the extension has a byte-identical tool list and prompt',
   const directory = mkdtempSync(join(tmpdir(), 'boring-feedback-agent-snapshot-'));
   const { resources, store } = await openFeedbackStore(join(directory, 'feedback.sqlite'));
   t.after(() => { resources.close(); rmSync(directory, { recursive: true, force: true }); });
-  const echo = defineTool({ name: 'echo', description: 'Echo fictional text.', parameters: Type.Object({ text: Type.String() }), replay: 'safe', execute: async args => ({ content: [{ type: 'text', text: args.text }] }) });
+  const echo = defineTool({ name: 'echo', description: 'Echo fictional text.', parameters: Type.Object({ text: Type.String() }), replay: 'safe', execute: async args => ({ output: [{ type: 'text', text: args.text }] }) });
   const skill = parseSkill('---\nname: fictional-release\ndescription: "Prepare a fictional release"\n---\nList the fictional changes.\n');
   async function firstRequest(withFeedback) {
     const fake = createFakeChatModel();

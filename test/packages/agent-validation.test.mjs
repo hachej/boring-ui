@@ -19,7 +19,7 @@ async function fixture(t, options = {}) {
   const tool = defineTool({ name: 'fictional_source', description: 'Return a fictional source result.',
     parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
     ...(options.truncated ? { outputLimits: { maxBytes: 12, maxLines: 100 } } : {}),
-    execute: async () => ({ content: [{ type: 'text', text: options.truncated ? 'Fictional source result exceeds the native output limit' : 'Fictional source result' }],
+    execute: async () => ({ output: [{ type: 'text', text: options.truncated ? 'Fictional source result exceeds the native output limit' : 'Fictional source result' }],
       ...(options.toolError ? { isError: true } : {}),
       ...(options.warning ? { diagnostics: [{ severity: 'warn', code: 'fictional_warning', message: 'Incomplete source' }] } : {}),
       ...(options.info ? { diagnostics: [{ severity: 'info', code: 'fictional_info', message: 'Source may be incomplete' }] } : {}),

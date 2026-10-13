@@ -23,15 +23,15 @@ import { createScriptedModel } from '@hachej/boring-testing/model';
 // Fictional tools that record what really ran. A sandboxed call must leave `ran` untouched.
 function tools(ran) {
   const note = name => defineTool({ name, description: `Fictional ${name}.`, parameters: Type.Object({ note: Type.String() }),
-    execute: async args => { ran.push(`${name}:${args.note}`); return { content: [{ type: 'text', text: `${name} ran` }] }; } });
+    execute: async args => { ran.push(`${name}:${args.note}`); return { output: [{ type: 'text', text: `${name} ran` }] }; } });
   return {
     write: note('write_note'),
     read: defineTool({ name: 'read_note', description: 'Fictional read.', parameters: Type.Object({}),
-      execute: async () => { ran.push('read_note'); return { content: [{ type: 'text', text: 'read ran' }] }; } }),
+      execute: async () => { ran.push('read_note'); return { output: [{ type: 'text', text: 'read ran' }] }; } }),
     safe: defineTool({ name: 'safe_note', description: 'Fictional safe.', parameters: Type.Object({}),
-      execute: async () => { ran.push('safe_note'); return { content: [{ type: 'text', text: 'safe ran' }] }; } }),
+      execute: async () => { ran.push('safe_note'); return { output: [{ type: 'text', text: 'safe ran' }] }; } }),
     undeclared: defineTool({ name: 'undeclared_note', description: 'Fictional undeclared.', parameters: Type.Object({}),
-      execute: async () => { ran.push('undeclared_note'); return { content: [{ type: 'text', text: 'undeclared ran' }] }; } }),
+      execute: async () => { ran.push('undeclared_note'); return { output: [{ type: 'text', text: 'undeclared ran' }] }; } }),
     throws: defineTool({ name: 'throws_note', description: 'Fictional failure.', parameters: Type.Object({}),
       execute: async () => { throw new Error('fictional failure'); } }),
   };
@@ -53,7 +53,7 @@ async function open(t, { extensions = [], scriptTools }) {
     'run the unnamed tool': [{ tools: [{ name: 'late_write', args: { note: 'late' } }] }, 'Done.'],
   } });
   const late = defineTool({ name: 'late_write', description: 'Fictional late write.', parameters: Type.Object({ note: Type.String() }),
-    execute: async args => { ran.push(`late_write:${args.note}`); return { content: [{ type: 'text', text: 'late ran' }] }; } });
+    execute: async args => { ran.push(`late_write:${args.note}`); return { output: [{ type: 'text', text: 'late ran' }] }; } });
   const agent = defineAgent({ id: 'sandboxed', model: scripted.model, tools: [fictional.write, fictional.read, fictional.safe, fictional.undeclared, fictional.throws, late], extensions, instructions: 'Fictional agent.' });
   const registry = createRegistry();
   agent.install(registry);
@@ -166,9 +166,9 @@ test('a sandbox selected last records a PDF read through a converting read and n
 test('a tool added mid-run by addTools is offered to the next round and refused by the sandbox, never executed', async t => {
   const ran = [];
   const discover = defineTool({ name: 'discover_note', description: 'Fictional discovery.', parameters: Type.Object({}),
-    execute: async () => ({ content: [{ type: 'text', text: 'discovered' }], control: { addTools: ['late_write'] } }) });
+    execute: async () => ({ output: [{ type: 'text', text: 'discovered' }], control: { addTools: ['late_write'] } }) });
   const late = defineTool({ name: 'late_write', description: 'Fictional late write.', parameters: Type.Object({ note: Type.String() }),
-    execute: async args => { ran.push(`late_write:${args.note}`); return { content: [{ type: 'text', text: 'late ran' }] }; } });
+    execute: async args => { ran.push(`late_write:${args.note}`); return { output: [{ type: 'text', text: 'late ran' }] }; } });
   const offered = [];
   const scripted = createScriptedModel({ script: { 'discover, then write late': [
     { tools: [{ name: 'discover_note', args: {} }] },

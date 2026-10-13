@@ -82,7 +82,7 @@ export function createSubagents({ harness, context, childModel, childExtensions 
           const existing = (await anchorsOf(tx, api.conversationId)).find(record => record.input.spawnedBy === api.taskId);
           return existing?.id ?? tx.createTask(Anchor, { task: args.task, spawnedBy: api.taskId }, { ownership: { kind: 'conversation' }, background: true });
         }, ctx);
-        return { details: { taskId: id }, content: [{ type: 'text', text: `Started background subagent #${id}. Do not wait for it: its report arrives as a new message.` }] };
+        return { details: { taskId: id }, output: [{ type: 'text', text: `Started background subagent #${id}. Do not wait for it: its report arrives as a new message.` }] };
       }
       const child = await api.commit(async tx => {
         const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
@@ -94,9 +94,9 @@ export function createSubagents({ harness, context, childModel, childExtensions 
       await api.details({ conversationId: child }, ctx); // lets a UI attach to the child
       const handle = await api.conversation(child, ctx);
       const settled = await (await handle.submit({ type: 'input', content: args.task, requestId: `subagent:${api.taskId}` }, ctx)).wait(ctx);
-      if (settled.status !== 'done') return { isError: true, content: [{ type: 'text', text: `The subagent gave no answer (${settled.reason}).` }] };
+      if (settled.status !== 'done') return { isError: true, output: [{ type: 'text', text: `The subagent gave no answer (${settled.reason}).` }] };
       const answer = await api.commit(tx => tx.entry(settled.answer), ctx);
-      return { content: [{ type: 'text', text: textOf(answer?.model?.[0]) || '(empty answer)' }] };
+      return { output: [{ type: 'text', text: textOf(answer?.model?.[0]) || '(empty answer)' }] };
     },
   });
   const listSubagents = defineTool({
@@ -104,7 +104,7 @@ export function createSubagents({ harness, context, childModel, childExtensions 
     parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
     execute: async (_args, api, ctx) => {
       const records = await api.commit(tx => anchorsOf(tx, api.conversationId), ctx);
-      return { content: [{ type: 'text', text: records.map(record => `#${record.id} ${statusOf(record)}: ${record.input.task}${record.state.outcome?.result ? `\n  answer: ${record.state.outcome.result.answer}` : ''}`).join('\n') || '(no subagents)' }] };
+      return { output: [{ type: 'text', text: records.map(record => `#${record.id} ${statusOf(record)}: ${record.input.task}${record.state.outcome?.result ? `\n  answer: ${record.state.outcome.result.answer}` : ''}`).join('\n') || '(no subagents)' }] };
     },
   });
   const stopSubagent = defineTool({
@@ -112,11 +112,11 @@ export function createSubagents({ harness, context, childModel, childExtensions 
     parameters: Type.Object({ id: Type.Integer() }, { additionalProperties: false }), replay: 'safe',
     execute: async (args, api, ctx) => {
       const record = (await api.commit(tx => anchorsOf(tx, api.conversationId), ctx)).find(candidate => candidate.id === args.id);
-      if (!record) return { isError: true, content: [{ type: 'text', text: `No background subagent #${args.id} in this conversation.` }] };
+      if (!record) return { isError: true, output: [{ type: 'text', text: `No background subagent #${args.id} in this conversation.` }] };
       // Aborting the anchor aborts the child conversation it owns first, then the anchor's own abort handler runs.
       await harness().abortTask(record.id, ctx);
       const settled = await harness().waitForTask(record.id, ctx);
-      return { content: [{ type: 'text', text: `Background subagent #${args.id} is ${statusOf(settled)}.` }] };
+      return { output: [{ type: 'text', text: `Background subagent #${args.id} is ${statusOf(settled)}.` }] };
     },
   });
 

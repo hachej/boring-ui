@@ -79,7 +79,7 @@ export async function openFixtureApp({ directory, appId, definitionRef, implemen
       const agent = await api.agent(ctx);
       if (agent.instructions !== loaded.change.instructions || agent.tools.length !== 1 || agent.tools[0] !== report
         || !allowed(expectedActor, 'execute')) throw new Error('App configuration is unavailable');
-      return { content: [{ type: 'text', text: `# Fictional ${appId}\n${agent.instructions}\n${owner.input.privateInput}\n${PRIVATE_MARKERS[appId].result}\n` }] };
+      return { output: [{ type: 'text', text: `# Fictional ${appId}\n${agent.instructions}\n${owner.input.privateInput}\n${PRIVATE_MARKERS[appId].result}\n` }] };
     } });
   const producer = defineTask({ name: 'fixture.hub.produce', version: 2, initial: () => ({ phase: 'produce' }), phases: {
     produce: async (task, runtime, ctx) => {

@@ -8,7 +8,7 @@ import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 
 const target = () => ({ instanceId: 'fictional-editor', epoch: 'mount-1', subject: { document: 'private-note' } });
-const formatResult = result => ({ content: [{ type: 'text', text: JSON.stringify({ kind: result.kind }) }], isError: false });
+const formatResult = result => ({ output: [{ type: 'text', text: JSON.stringify({ kind: result.kind }) }], isError: false });
 const options = overrides => ({ name: 'viewer_command', description: 'Fictional viewer command', parameters: Type.Object({ text: Type.String() }, { additionalProperties: false }),
   command: { name: 'command', input: { parse: input => input }, invoke: async () => ({ kind: 'applied', value: undefined }) },
   target: target(), prepareInput: args => args, authorize: () => true, formatResult, ...overrides });

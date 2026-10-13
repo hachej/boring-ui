@@ -14,7 +14,7 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const target = path => ({ resource: { providerId: 'definitions', path }, view: { kind: 'published' } });
 const access = () => ({ scopeId: 'fictional-team', principalId: 'fictional-member', initiatorId: 'fictional-requester' });
 const tool = name => defineTool({ name, description: `Fictional ${name}`, parameters: Type.Object({}), replay: 'unsafe',
-  execute: async () => ({ content: [{ type: 'text', text: name }] }) });
+  execute: async () => ({ output: [{ type: 'text', text: name }] }) });
 const alpha = tool('alpha'), beta = tool('beta');
 const available = { alpha: { tool: alpha, implementationVersion: 'alpha-v1' }, beta: { tool: beta, implementationVersion: 'beta-v1' } };
 const resolveTool = name => available[name];

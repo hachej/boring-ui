@@ -81,7 +81,7 @@ export function parseArtifact(value: unknown): ArtifactDescriptor | undefined {
     target: { resource: { providerId, path }, view: parsedView }, revision, ...(ordinal === undefined ? {} : { ordinal }) };
 }
 
-const reply = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
+const reply = (value: unknown) => ({ output: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const decode = (bytes: Uint8Array) => { try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return undefined; } };
 
 // Null-prototype tables: a name such as `constructor` is not an entry.

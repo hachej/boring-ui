@@ -132,7 +132,7 @@ test('poll cancellation releases its connection and capacity; idle poll expires 
 test('real native unsafe ToolTask receives the authenticated browser acknowledgement', async t => {
   const f = await fixture(t);
   const tool = createPresentationTool({ name: 'fixture_select', description: 'Fictional mounted selection', parameters: Type.Object({}), target,
-    command: f.connection.select, prepareInput: input, authorize: () => true, formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] }) });
+    command: f.connection.select, prepareInput: input, authorize: () => true, formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }) });
   assert.equal(tool.replay, 'unsafe');
   const registry = createRegistry(); registry.install(defineExtension({ name: 'fixture.canvas-transport', tools: [tool] }));
   const harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);

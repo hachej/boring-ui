@@ -15,7 +15,7 @@ import { getIndexAbove } from '@tldraw/utils';
 export { canvasMediaType } from '@hachej/boring-ui-kit/canvas-document';
 const COLORS = ['black', 'grey', 'blue', 'light-blue', 'green', 'light-green', 'yellow', 'orange', 'red', 'light-red', 'violet', 'light-violet'];
 const schema = createTLSchema();
-const reply = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
+const reply = value => ({ output: [{ type: 'text', text: JSON.stringify(value) }] });
 const slug = id => String(id).replace(/^shape:/, '').trim();
 const round = value => Math.round(value * 10) / 10;
 
