@@ -27,8 +27,9 @@ test('every file of registry/app-shell is listed in the item and equals the comm
 
 test('the item compiles strictly against the pinned shadcn fixtures', () => {
   const base = ts.readConfigFile(`${root}tsconfig.base.json`, ts.sys.readFile);
+  // The strict consumer settings (a copied item must compile in an app that sets them): unused locals and parameters, verbatim imports, erasable syntax only.
   const { options } = ts.parseJsonConfigFileContent({ ...base.config, compilerOptions: { ...base.config.compilerOptions, composite: false, declaration: false, declarationMap: false, noEmit: true,
-    allowImportingTsExtensions: true, jsx: 'react-jsx', module: 'ESNext', moduleResolution: 'Bundler', lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: root, paths: { '@/*': ['examples/app-shell/*'] } } }, ts.sys, root);
+    noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, allowImportingTsExtensions: true, jsx: 'react-jsx', module: 'ESNext', moduleResolution: 'Bundler', lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: root, paths: { '@/*': ['examples/app-shell/*'] } } }, ts.sys, root);
   const program = ts.createProgram(files.map(name => `${root}${folder}/${name}`), options);
   const diagnostics = ts.getPreEmitDiagnostics(program).filter(diagnostic => diagnostic.file && (diagnostic.file.fileName.startsWith(`${root}registry/`) || diagnostic.file.fileName.startsWith(`${root}examples/app-shell/`)));
   assert.deepEqual(diagnostics.map(diagnostic => `${diagnostic.file.fileName.replace(root, '')}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`), []);
@@ -139,18 +140,42 @@ test('useAgentContext: the most recently mounted screen wins and unmounting rest
 /** A happy-dom page for rendering hooks; restores the globals afterwards. */
 function dom(t) {
   const window = new Window({ url: 'https://fictional.invalid/' });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'IS_REACT_ACT_ENVIRONMENT'];
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'getComputedStyle', 'IS_REACT_ACT_ENVIRONMENT'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name] });
   t.after(() => { for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
   return window;
 }
 
-test('AppShellProps has exactly the seven props of the brief, and no label, locale or theme prop', () => {
+test('AppShellProps has the seven props of the brief and the one locale prop, and no label or theme prop', () => {
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'nav', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'locale', 'nav', 'route', 'title']);
+});
+
+test('locale: with no agent, the shell\'s own words follow the locale prop; the account sheet is titled « Compte », not the name', async t => {
+  const window = dom(t);
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+  const { AppShell } = await bundle('app-shell.tsx');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const Icon = () => null;
+  const nav = ['Jour', 'Semaine', 'Mois', 'Progrès', 'Profil'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const account = { name: 'Camille Martin', menu: [], signOut() {} };
+  await act(async () => root.render(h(AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, account, locale: 'fr' })));
+  assert.equal(container.querySelector('[role=tablist]')?.getAttribute('aria-label'), 'Navigation');
+  assert.equal(container.querySelector('[data-testid=tab-plus]')?.textContent, 'Plus');
+  assert.equal(container.querySelector('[data-testid=account-button]')?.getAttribute('aria-label'), 'Camille Martin');
+  await act(async () => container.querySelector('[data-testid=account-button]').click());
+  const sheet = window.document.querySelector('[data-testid=app-sheet]');
+  assert.ok(sheet, 'the account sheet opens');
+  assert.equal(sheet.querySelector('[data-slot=drawer-title]')?.textContent, 'Compte', 'the title is the generic word, so the name appears once (in the person block)');
+  assert.equal(sheet.querySelector('[data-testid=account-sign-out]')?.textContent, 'Se déconnecter');
+  await act(async () => root.unmount());
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {
