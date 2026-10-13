@@ -80,9 +80,9 @@ test('registry dependency pins and scoped styles preserve the declared source di
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {
       const split = dependency.lastIndexOf('@'), name = dependency.slice(0, split), spec = dependency.slice(split + 1);
-      // Internal packages are caret ranges on their version; the one private feedback pin stays exact until the owner decides.
+      // Internal packages are caret ranges on their version.
       const internal = name.startsWith('@hachej/boring-');
-      if (internal && name !== '@hachej/boring-feedback') assert.match(spec, /^\^/, dependency);
+      if (internal) assert.match(spec, /^\^/, dependency);
       // Pi peers stay on the reviewed 1.1.x line (tilde) until the owner moves them.
       if (name.startsWith('@earendil-works/')) assert.match(spec, /^~/, dependency);
       const version = spec.replace(/^[\^~]/, '');

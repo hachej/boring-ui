@@ -1,7 +1,7 @@
 # @hachej/boring-feedback
 
 Feedback reports, storage, placement, and optional UI and native agent adapters.
-Private plug-in used inside this repository; not published to npm.
+Published plug-in (`@hachej/boring-feedback`); the app-shell registry item depends on it.
 
 Import the capability you need. There is no root export.
 

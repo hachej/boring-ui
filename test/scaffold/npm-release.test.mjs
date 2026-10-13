@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import test from 'node:test';
 import { checkPackages } from '../../scripts/check-npm-packages.mjs';
 import { setReleaseVersion, validReleaseVersion } from '../../scripts/release-version.mjs';
 import { publishRelease, readRelease } from '../../scripts/publish-npm-packages.mjs';
+import { INTENTIONALLY_PRIVATE, isExcludedFromRelease } from '../../scripts/release-set.mjs';
 
 const commit = 'a'.repeat(40);
 function fixture(t) {
@@ -36,6 +37,16 @@ function fixture(t) {
   write('public/r/fixture.json', { ...registry.items[0], registryDependencies: ['https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@1.0.0/r/utils.json', 'https://example.test/r/other.json'] });
   return { root, read, write, directory: join(root, 'archives'), options: { root, version: '1.0.0', tag: 'next', commit } };
 }
+
+test('the publish set is every workspace package except the owner-private ones', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const manifests = readdirSync(join(root, 'packages')).map(dir => JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8')));
+  const published = manifests.filter(manifest => !isExcludedFromRelease(manifest)).map(manifest => manifest.name).sort();
+  assert.deepEqual(published, ['@hachej/boring-agent', '@hachej/boring-execution', '@hachej/boring-feedback', '@hachej/boring-files', '@hachej/boring-ui-kit']);
+  assert.deepEqual([...INTENTIONALLY_PRIVATE].sort(), ['@hachej/boring-browser', '@hachej/boring-testing']);
+  for (const manifest of manifests) if (INTENTIONALLY_PRIVATE.has(manifest.name)) assert.equal(manifest.private, true, manifest.name);
+  for (const name of published) assert.notEqual(manifests.find(manifest => manifest.name === name).private, true, name);
+});
 
 test('release version edits synchronize internal pins without changing privacy or external versions', t => {
   const f = fixture(t);
