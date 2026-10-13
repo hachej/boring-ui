@@ -309,18 +309,19 @@ export function useTranscript(rows: readonly unknown[], page = 60, more = 40) {
     return () => observer.disconnect();
   }, [scroller, library.state, library.scrollToBottom]);
   // The library ignores scroll events while it is absorbing a growth (a resize difference), so a scroll-up in that window would be
-  // snapped back by its pending frame. Release the bottom lock as soon as the reader moves up; a clamp to the bottom is not a scroll-up.
+  // snapped back by its pending frame. Release the bottom lock as soon as the reader moves up. The library's own programmatic
+  // writes are marked in ignoreScrollToTop, which its listener clears: this listener is a capture listener so it reads the mark first.
   useEffect(() => {
     if (!scroller) return;
     let last = scroller.scrollTop;
     const onScroll = () => {
       const top = scroller.scrollTop;
-      const distance = scroller.scrollHeight - scroller.clientHeight - top;
-      if (top < last && distance > 70 && library.state.isAtBottom) library.stopScroll();
+      const programmatic = library.state.ignoreScrollToTop === top;
+      if (!programmatic && top < last && !library.state.isNearBottom && library.state.isAtBottom) library.stopScroll();
       last = top;
     };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
+    scroller.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    return () => scroller.removeEventListener('scroll', onScroll, { capture: true });
   }, [scroller, library.state, library.stopScroll]);
   const hidden = Math.max(0, rows.length - limit);
   // Reveal older rows when the person scrolls near the top, keeping the same rows in view.

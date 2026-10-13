@@ -54,6 +54,7 @@ async function harness(t) {
   let scroller;
   const contentHeight = () => [...scroller.firstElementChild.children].reduce((sum, row) => sum + Number(row.dataset.h), 0);
   const maxTop = () => Math.max(0, contentHeight() - viewport);
+  const setTop = value => { top = Math.max(0, Math.min(Number(value), maxTop())); };
   let top = 0;
   let viewport = 400; // the scroller's clientHeight, which the keyboard or a taller composer can shrink
   const layout = () => {
@@ -61,9 +62,11 @@ async function harness(t) {
     if (!scroller) return;
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => viewport });
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: contentHeight });
+    // A write clamps and queues one scroll event, as a browser does; the position is not clamped on read, so a shrink
+    // leaves it overscrolled until the library's own clamp writes it back.
     Object.defineProperty(scroller, 'scrollTop', { configurable: true,
-      get: () => Math.min(top, maxTop()),
-      set: value => { top = Math.max(0, Math.min(Number(value), maxTop())); setTimeout(() => scroller.dispatchEvent(new window.Event('scroll'))); } });
+      get: () => top,
+      set: value => { setTop(value); setTimeout(() => scroller.dispatchEvent(new window.Event('scroll'))); } });
     for (const [target, entry] of observed) {
       const height = target === scroller ? viewport : target === scroller.firstElementChild ? contentHeight() : undefined;
       if (height !== undefined && height !== entry.height) { entry.height = height; entry.owner.callback([{ contentRect: { height } }]); }
@@ -79,8 +82,9 @@ async function harness(t) {
     await window.happyDOM.close();
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
-  return { render, frames, expose: () => stick, heights, distanceFromBottom, // A reader's scroll: the browser dispatches the scroll event before the next animation frame, so it is dispatched synchronously here.
-    scrollTo: value => { scroller.scrollTop = value; scroller.dispatchEvent(new window.Event('scroll')); }, scroller: () => scroller, layout,
+  return { render, frames, expose: () => stick, heights, distanceFromBottom,
+    // A reader's scroll: one event, dispatched before the next animation frame as the browser does.
+    scrollTo: value => { setTop(value); scroller.dispatchEvent(new window.Event('scroll')); }, scroller: () => scroller, layout,
     setViewport: async value => { viewport = value; await render(lastRows); },
     setOpen: async show => { await render(lastRows, { show }); } };
 }
@@ -182,4 +186,18 @@ test('a scroll-up gesture just before the pending bottom frame is not snapped ba
   chat.scrollTo(100);
   await chat.frames(300);
   assert.ok(chat.scroller().scrollTop <= 150, `the reader was snapped back to ${chat.scroller().scrollTop}px`);
+});
+
+test('a library clamp followed by growth, before its queued scroll event, does not release the bottom lock', async t => {
+  const chat = await harness(t);
+  const rows = [{ key: 'user' }, { key: 'reply' }];
+  await atBottom(chat, rows);
+  // The reply shrinks: the library clamps the overscrolled position upward (its own write, with its programmatic marker).
+  chat.heights.reply = 100;
+  await chat.render(rows);
+  // The reply grows back before the queued scroll event for that clamp arrives.
+  chat.heights.reply = 600;
+  await chat.render(rows);
+  await chat.frames(300);
+  assert.ok(chat.distanceFromBottom() <= 2, `the reader was left ${chat.distanceFromBottom()}px above the latest row`);
 });
