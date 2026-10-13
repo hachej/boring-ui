@@ -289,7 +289,8 @@ export type ChatSession = ReturnType<typeof useChatSession>;
 export function useTranscript(rows: readonly unknown[], page = 60, more = 40) {
   const [limit, setLimit] = useState(page);
   const anchor = useRef<{ readonly height: number; readonly top: number } | undefined>(undefined);
-  const stick = useStickToBottom({ initial: 'instant', resize: 'smooth' });
+  // Growth re-pins at once: a spring trails the rows that grow after insert (streamed text, late images) and leaves the newest one under the composer.
+  const stick = useStickToBottom({ initial: 'instant', resize: 'instant' });
   const hidden = Math.max(0, rows.length - limit);
   // Reveal older rows when the person scrolls near the top, keeping the same rows in view.
   const reveal = useCallback(() => {
