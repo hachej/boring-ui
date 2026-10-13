@@ -19,7 +19,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import { chatTextFor } from '../pi-chat/locale';
-import { useComposerFeedback } from '../feedback/feedback-session';
+import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
+import { feedbackLabelsFr } from '../feedback/feedback-labels';
+import { PointBar, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from './back';
 import { appShellText } from './text';
@@ -330,9 +332,8 @@ function HeroTalk({ text }: { readonly text: AppShellText }) {
 
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
-  const feedback = useComposerFeedback(spec.feedback);
-  // TODO(#1661): point mode. When the feedback item's `usePointing` and `PointMode` land, the drawer's `open` becomes `open && !pointing`
-  // (it stays mounted) and `<PointMode session bottomOffset="var(--app-shell-tabbar, 0px)" />` renders outside it; `useComposerFeedback(session, { entry: 'both' })`.
+  // Both entries: the Feedback button and « Montrer dans l'app » (point mode, which hides the layer while the person taps the app).
+  const feedback = useComposerFeedback(spec.feedback, { entry: 'both' });
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...spec.chatProps} controller={spec.controller} {...(feedback ? { feedback } : {})} />
   </div>;
@@ -375,7 +376,7 @@ function useTitle(): { text: AppShellText; title: string } {
 const toSnap = (point: number | string | null, peekPoint: string): Snap | null =>
   point === peekPoint ? 'peek' : point === HALF ? 'half' : point === FULL ? 'full' : null;
 
-function CompactSheet() {
+function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const layer = useInternal();
   const { snap, agent, voice } = layer;
   const hasPeek = Boolean(agent);
@@ -383,14 +384,14 @@ function CompactSheet() {
   const vv = useVisualViewport();
   const closeRef = useRef<HTMLButtonElement>(null);
   const vetoed = useRef(false);
-  const open = snap !== 'closed';
+  const open = snap !== 'closed' && !pointing;
   const peek = snap === 'peek';
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
   const value = peek ? layer.peekPoint : snap === 'full' ? FULL : HALF;
   const showing = layer.showing ?? 'agent';
   const recording = voice.phase !== 'idle';
 
-  useBackLayer(snap === 'half' || snap === 'full', layer.close, 'agent');
+  useBackLayer((snap === 'half' || snap === 'full') && !pointing, layer.close, 'agent');
 
   // The popup is taller than what shows and slides down by `--drawer-snap-point-offset` (a registered, non-inheriting property, so only the
   // popup itself can read it): padding the popup by that offset makes its content box exactly the visible part. At peek the tab bar below is left out too.
@@ -466,6 +467,16 @@ function ExpandedPanel() {
 /** The layer itself: the drawer on a phone, the right panel on a wide screen. Placed once by the shell. */
 export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
+  const pointingAgent = usePointing(layer.agent?.feedback), pointingImprove = usePointing(layer.improve?.feedback);
+  const session = pointingAgent ? layer.agent?.feedback : pointingImprove ? layer.improve?.feedback : undefined;
   if (!layer.agent && !layer.improve) return null;
-  return layer.expanded ? <ExpandedPanel /> : <CompactSheet />;
+  const locale = (pointingAgent ? layer.agent : layer.improve)?.chatProps?.locale;
+  // Point mode: the compact sheet steps aside (the wide panel does not cover the app); the bar sits above the tab bar, outside the layer.
+  return <>
+    {layer.expanded ? <ExpandedPanel /> : <CompactSheet pointing={session !== undefined} />}
+    {session && <>
+      <PointBar session={session} bottomOffset="var(--app-shell-tabbar, 0px)" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
+      <NoteBubble session={session} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
+    </>}
+  </>;
 }

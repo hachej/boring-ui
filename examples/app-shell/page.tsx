@@ -3,7 +3,9 @@
 // default), `redaction` (product manager only) or `template` (coach without voice); `?send=draft` makes push-to-talk only fill the composer.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createFeedbackSession } from '@hachej/boring-feedback/ui';
+import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { AgentLayer, AgentLayerProvider, AgentTrigger, useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
 import { readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
@@ -15,6 +17,7 @@ const send = query.get('send') === 'draft' ? 'draft' : 'auto';
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${agent}&conversation=${id}`, location.href);
 
+const policy = createPrivacyPolicy({ routeOf: ({ pathname }) => pathname });
 const ROWS = Array.from({ length: 40 }, (_, index) => ({ day: `Jour ${index + 1}`, steps: 6000 + ((index * 937) % 5000) }));
 
 /** The fake screen: it tells the layer what the person is looking at, and has a header with the trigger and a menu entry for the manager. */
@@ -42,10 +45,23 @@ function TabBar() {
   </nav>;
 }
 
+/** The product manager's point-mode session over the app's own root (the layer itself is outside it, so it is never picked). */
+function useManagerFeedback(mounted: boolean) {
+  const [session, setSession] = useState(undefined);
+  useEffect(() => {
+    if (!mounted) return;
+    const created = createFeedbackSession({ app: 'forme', build: 'dev', root: document.getElementById('app-root'), policy });
+    setSession(created);
+    return () => created.dispose();
+  }, [mounted]);
+  return session;
+}
+
 function App() {
   const coach = useRemoteChat({ conversationId: mode === 'redaction' ? undefined : conversations.coach, endpoint: endpoint('coach'), fetch: authorized, identity, requestContext: readAgentContext });
   const manager = useRemoteChat({ conversationId: mode === 'template' ? undefined : conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
   const waiting = (mode !== 'redaction' && coach.status !== 'ready') || (mode !== 'template' && manager.status !== 'ready');
+  const feedback = useManagerFeedback(!waiting);
   if (waiting) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   const common = { locale: 'fr', showHistory: false, showConnectionStatus: false };
   const agent = mode === 'redaction' ? undefined : {
@@ -53,11 +69,10 @@ function App() {
     chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach' }, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
     ...(mode === 'template' ? {} : { voice: { transcribe: async () => window.__transcript ?? 'Combien de pas hier ?', send } }),
   };
-  const improve = mode === 'template' ? undefined : { controller: manager.controller, chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
+  const improve = mode === 'template' ? undefined : { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   window.__layer = { mode };
   return <AgentLayerProvider agent={agent} improve={improve}>
-    <Screen />
-    <TabBar />
+    <div id="app-root"><Screen /><TabBar /></div>
     <AgentLayer />
   </AgentLayerProvider>;
 }

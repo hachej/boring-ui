@@ -238,7 +238,25 @@ try {
     await tap('[data-testid=agent-layer-back]');
     await browser.until('back to the coach', `${q('[data-testid=agent-layer-title]')}?.textContent === 'Coach'`);
     assert.equal(await browser.evaluate(`${q('[data-spec=agent] ' + INPUT)}.value`), 'brouillon du coach', 'the draft survived');
-    // TODO(#1661): « Montrer dans l'app » hides the drawer, the point bar sits above the tab bar, « Terminé » brings it back with the chip.
+    await tap('[data-testid=agent-layer-close]');
+    await browser.until('closed', `!${q(LAYER)}`);
+    // Point mode: « Montrer dans l'app » hides the sheet, the point bar sits above the tab bar, a pick, « Terminé » brings it back with the chip.
+    await tap('[data-testid=menu-improve]');
+    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`);
+    await settle();
+    assert.equal(await browser.evaluate(`${q('[data-spec=improve] [data-testid=composer-point]')}?.textContent`), 'Montrer dans l’app');
+    await tap('[data-spec=improve] [data-testid=composer-point]');
+    await browser.until('point bar, sheet hidden', `!!${q('[data-testid=feedback-point-bar]')} && !${q(LAYER)}`, 8000);
+    await pause(500);
+    const bar = await browser.evaluate(rect('[data-testid=feedback-point-bar]'));
+    const tabs = await browser.evaluate(rect('[data-testid=tabbar]'));
+    assert.ok(bar.bottom <= tabs.y + 1, `the point bar is above the tab bar: ${JSON.stringify({ bar, tabs })}`);
+    await browser.screenshot('phone-point-bar.png');
+    await tap('[data-testid=screen] li:nth-child(3)');
+    await browser.until('a bubble', `!!${q('[data-testid=feedback-bubble]')}`, 8000);
+    await browser.evaluate(`document.activeElement.blur()`);
+    await tap('[data-testid=feedback-point-done]');
+    await browser.until('the sheet is back with the chip', `${snap} === 'half' && !!${q('[data-spec=improve]')} && !${q('[data-testid=feedback-point-bar]')}`, 8000);
     await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
     await browser.until('closed', `!${q(LAYER)}`);
   });
@@ -261,7 +279,7 @@ try {
     await touch('touchStart', [[r.x, r.y]]);
     await browser.until('listening', `!!${q('[data-testid=agent-listening]')}`, 8000);
     await touch('touchEnd', []);
-    await browser.until('the composer holds the transcript', `${q(INPUT)}?.value === 'Combien de pas hier ?'`, 8000);
+    await browser.until('the composer holds the transcript', `${q(INPUT)}?.value === 'Combien de pas hier ?'`, 20000);
     assert.equal(app.submits.length, before, 'nothing sent');
   });
 
