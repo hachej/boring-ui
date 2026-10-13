@@ -1,6 +1,6 @@
 # Upstream request: the phase-resolved tool on `HookApi`
 
-Status: draft, not filed. Owner: boring-ui sandbox (`@hachej/boring-agent/sandbox`, PR #1656).
+Status: draft, not filed. Checked against pi-durable 1.2.0 (2026-10-13): `HookApi` is unchanged (`taskId`, `conversationId`, `models`, `memo`, reader), so the request stands. Owner: boring-ui sandbox (`@hachej/boring-agent/sandbox`, PR #1656).
 
 ## Problem
 
