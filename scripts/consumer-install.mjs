@@ -11,8 +11,8 @@ import { kitVersion, releaseItemBase } from './build-registry.mjs';
 
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
 
-/** A registry dependency pin: an exact version or a caret range, with an optional prerelease (release-version writes 1.1.0-rc.1). */
-export const registryPin = /^\^?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+/** A registry dependency pin: an exact version, a caret or tilde range, with an optional prerelease (release-version writes 1.1.0-rc.1). */
+export const registryPin = /^[\^~]?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 export function workspaceDirectory(root, name) {
   for (const entry of readdirSync(join(root, 'packages'))) {
