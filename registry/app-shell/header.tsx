@@ -128,6 +128,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text }: { readonl
           {extra.map(action => <DropdownMenuItem key={action.id} className="pointer-coarse:min-h-11" onClick={() => run(action.id)}><action.icon className="size-4" />{action.label}</DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu>)}
+    {compact && back && avatar}
     <AgentTrigger />
   </header>;
 }

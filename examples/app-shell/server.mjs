@@ -1,6 +1,6 @@
 // The app-shell example: a fictional fitness app ("Forme") and a one-screen template in <AppShell layout="screen"> (the page is ./page.tsx), with a coach
 // agent and a product-manager agent shown by the AgentLayer. The server is only what the chats need: two agents on one durable native Harness
-// (sessions in SQLite), one conversation each, and the chat transport behind a bearer check. It records every submit body and the screen context the transport
+// (sessions in SQLite), one conversation each (plus the writer's workspace, resources and conversation list for layout C), and the chat transport behind a bearer check. It records every submit body and the screen context the transport
 // hands to the host (`requestContext`), so the journey can prove what travelled. Fictional content only.
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -14,9 +14,16 @@ import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
+import { createPresentTool } from '@hachej/boring-agent/artifacts';
+import { createFileGuard } from '@hachej/boring-agent/file-guard';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
-import { createConversations } from '@hachej/boring-agent/conversations';
+import { createConversations, createConversationsHandler } from '@hachej/boring-agent/conversations';
+import { openNodeConnection } from '@hachej/boring-files/sqlite';
+import { createWorkspaceJournal } from '@hachej/boring-files/journal';
+import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
+import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
+import { readFiles, writeFiles } from '../shared/workspace-tools.mjs';
 import { buildTailwind } from '../studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
@@ -34,7 +41,14 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
   const env = new NodeExecutionEnv({ cwd: join(directory, 'workspace') });
+  // The workspace of `?app=pm` (layout C): the same composition as examples/workspace-app, so AgentWorkspace runs unchanged.
+  const root = join(directory, 'workspace'), agentAccess = { ...person, principalId: 'fictional-agent' };
+  const db = openNodeConnection(join(directory, 'workspace.sqlite'));
+  const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'app', incarnation: 'app', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
   const agents = {
+    writer: defineAgent({ id: 'writer', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You write short fictional documents for the person. Be brief.',
+      tools: [createPresentTool({ workspace: { files, root, access: agentAccess } })],
+      extensions: [readFiles, writeFiles, createFileGuard({ workspace: { files, root, access: agentAccess } })] }),
     coach: defineAgent({ id: 'coach', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You coach a fictional walker. Be brief.', tools: [], extensions: [] }),
     pm: defineAgent({ id: 'pm', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You are the product manager of a fictional fitness app. Be brief.', tools: [], extensions: [] }),
   };
@@ -49,7 +63,11 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   /** Submit bodies as the browser sent them, and the contexts the transport handed to `requestContext`. */
   const submits = [], contexts = [];
   const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
+  const writerStart = init => agents.writer.createConversation(harness, context, { init });
   const handlers = {
+    '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agents.writer.id, start: writerStart } : null }),
+    '/api/resources': resources,
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
       const params = new URL(request.url).searchParams, agent = agents[params.get('agent')], id = Number(params.get('conversation'));
       const conversation = allowed(request) && agent && Number.isSafeInteger(id) ? await conversations.open(agent.id, id) : undefined;
@@ -88,7 +106,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts,
-    close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); },
+    close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }
 
