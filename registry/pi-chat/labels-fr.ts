@@ -68,6 +68,8 @@ export const frenchChatLabels: ChatLabels = {
   commands: 'Commandes',
   feedback: 'Retour',
   feedbackHint: 'Retour : montrez l’endroit de la page et dites ce qui ne va pas',
+  point: 'Montrer dans l’app',
+  pointHint: 'Montrer dans l’app : le panneau s’efface, touchez ce dont vous parlez',
   remove: name => `Retirer ${name}`,
   dismiss: name => `Fermer ${name}`,
   uploading: name => `Envoi de ${name}…`,

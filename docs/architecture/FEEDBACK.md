@@ -147,6 +147,28 @@ point and one word: **Feedback**, in the chat composer.
    store, the rendered report is inlined in the message in a fenced block.
    Without a chat, the review offers **Copy report**.
 
+### Point mode (phones)
+
+On a phone the assistant's panel is usually full screen (a Sheet), so it hides the app the person wants to point at. **Point mode**
+is the same session, started from a second, opt-in composer action, « Show in app » (« Montrer dans l'app »):
+`useComposerFeedback(session, { entry: 'point' | 'both' })` sets the composer's `point`, which calls `session.start({ mode: 'point' })`.
+
+- **The host's panel gets out of the way.** The kit never owns the host's panel. The host binds `usePointing(session)` (headless:
+  `isPointing(snapshot)`) to it, for example `<Sheet open={open && !pointing}>` or AmbientChat's `state={pointing ? 'minimized' : state}`.
+  Because the host's own open state never changes, the panel comes back as it was when pointing ends. Navigation while pointing must
+  leave that state alone (a tab bar that usually closes the panel does not do so while pointing). The host mounts `PointBar` and
+  the one `NoteBubble` outside the panel, because the panel may unmount while it is hidden. To keep the person's typed text, the panel
+  stays mounted while it is hidden.
+- **The bar.** `PointBar` is a compact bottom bar: « Touchez un élément à commenter », the number of picks, « Utiliser l'app » (the
+  "Use app" toggle), Annuler and Terminé. Its targets are at least 44px and it uses the host's shadcn tokens. It sits above the safe
+  area and above the app's tab bar, whose height the host passes as `bottomOffset`. The tab bar is marked `data-feedback-ignore`, so
+  it still navigates while the person points. The note bubble keeps clear of the bar.
+- **Touch first.** A tap picks at once with the same picker (`tap: 'pick'`: no Parent/Child toolbar, no hover, no long press). A
+  finger that moved is a scroll, not a pick. Tapping the selection again, Esc or « Annuler la sélection » deselects, and several picks
+  are allowed.
+- **Done and Cancel.** « Terminé » is Done: the draft becomes the composer's chip and Send attaches it as above. « Annuler » discards:
+  the panel comes back with no picks. Voice is not offered in point mode.
+
 The agent's feedback card has no Show button: hovering an element line
 highlights it in the page, leaving it clears, and clicking it resolves it,
 letting the person choose among ambiguous candidates. The outcome is said
@@ -163,7 +185,7 @@ element under the cursor gets a highlighted box and a label (the component
 name when the development build adds source locations, otherwise the role and
 allowed visible name, `Button «Add item»`); ↑ selects the parent and ↓
 returns to the child. Feedback mode uses it continuously (each click pins, the
-wheel scrolls the page). Standalone, click pins, Shift-click pins several and
+wheel scrolls the page); point mode also lets one tap pick (`tap: 'pick'`). Standalone, click pins, Shift-click pins several and
 Esc cancels; on touch screens a tap selects and "parent" and "child" buttons
 replace the keys; with a keyboard, Tab moves between elements and Enter pins.
 

@@ -32,6 +32,7 @@
     "feedback": "node examples/feedback/server.mjs",
     "feedback:journey": "node examples/feedback/journey-composer.mjs",
     "feedback:journey:picker": "node examples/feedback/journey.mjs",
+    "feedback:journey:point": "node examples/feedback/journey-point.mjs",
     "feedback:journey:e2e": "node examples/feedback/journey-e2e.mjs",
     "feedback:journey:ticket": "node examples/feedback/journey-ticket.mjs",
     "feedback:journey:preview": "node examples/feedback/journey-preview.mjs",
