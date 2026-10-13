@@ -617,9 +617,11 @@ green", "preview"), the builder calls one tool:
   `validateToolCall`, over host-built `Models` whose only provider is
   `gatewayProvider` (model gateway, no key in the page). It is in memory on
   purpose: a preview is never saved and a reload reverts it; the durable part
-  is the server's wait. A Pi harness in the page (as in the browser extension,
-  with SQLite in a worker) would add storage and recovery a preview does not
-  need.
+  is the server's wait. This loop is legacy debt under [BORING-PI-1](../../INVARIANTS.md#boring-pi-1--pi-is-the-execution-authority):
+  every agent turn runs through the native Pi Harness, and the preview moves onto
+  it (browser Harness composition already exists) in a change that removes its
+  allowlist entry in `scripts/check-pi-boundary.mjs`. Until then the loop is the
+  one reviewed exception, not a pattern to copy.
 - **Page tools only**, over the application root and its pins: `inspect` (the
   masked `app.dom@1` outline with ids, pins first, a few computed colors and
   sizes, never a value naming a resource), `set_style(element, css)` (inline
