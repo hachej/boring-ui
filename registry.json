@@ -925,6 +925,11 @@
           "target": "components/app-shell/header.tsx"
         },
         {
+          "path": "registry/app-shell/header-actions.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/header-actions.tsx"
+        },
+        {
           "path": "registry/app-shell/nav.tsx",
           "type": "registry:component",
           "target": "components/app-shell/nav.tsx"

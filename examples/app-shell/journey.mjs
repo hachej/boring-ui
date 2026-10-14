@@ -139,6 +139,21 @@ try {
     await browser.until('Jour header', `${q('[data-testid=header-title]')}.textContent === 'Ma journée'`);
   });
 
+  await step('B2 the layer header: the coach\'s host action is a link in the half drawer, 44px, before the close and snap controls', async () => {
+    await tap(TRIGGER);
+    await browser.until('the coach at half', `${q(LAYER)}?.dataset.state === 'half'`);
+    await settle();
+    const order = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-header] [data-testid]')].map(e => e.dataset.testid)`);
+    assert.ok(order.indexOf('agent-layer-action-whatsapp') >= 0 && order.indexOf('agent-layer-action-whatsapp') < order.indexOf('agent-layer-expand'), `${order}`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer-action-whatsapp]')}.tagName`), 'A');
+    assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer-action-whatsapp]')}.getAttribute('href')`), '/whatsapp/open?app=fitness');
+    assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer-action-whatsapp]')}.getAttribute('aria-label')`), 'Discuter avec Max sur WhatsApp');
+    const size = await center('[data-testid=agent-layer-action-whatsapp]');
+    assert.ok(size.w >= 44 && size.h >= 44, `${size.w}x${size.h}`);
+    await tap('[data-testid=agent-layer-close]');
+    await browser.until('closed', `!${q(LAYER)}`);
+  });
+
   await step('C the account sheet: avatar opens it, Back closes it and the URL is unchanged, a choice closes it', async () => {
     const href = await browser.evaluate(`location.href`);
     await tap('[data-testid=account-button]');
@@ -579,6 +594,20 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=agent-talk]')}`), false);
     await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
     await browser.until('closed', `!${q(LAYER)}`);
+  });
+
+  await step('expanded 1280x800: the coach\'s host action is in the dock header, before the dock controls and Close', async () => {
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+    await browser.click(q(TRIGGER));
+    await browser.until('the coach in the panel', `${q(LAYER)}?.dataset.state === 'open'`);
+    await settle();
+    const order = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-header] [data-testid]')].map(e => e.dataset.testid)`);
+    assert.ok(order.indexOf('agent-layer-action-whatsapp') >= 0 && order.indexOf('agent-layer-action-whatsapp') < order.indexOf('agent-layer-close'), `${order}`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer-action-whatsapp]')}.getAttribute('href')`), '/whatsapp/open?app=fitness');
+    await browser.screenshot('desktop-agent-header-action.png');
   });
 
   await step('expanded 1280x800: sidebar rail collapses and expands, no tab bar, NavUser has the same entries, the trigger opens the right panel', async () => {

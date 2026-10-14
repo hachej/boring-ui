@@ -163,5 +163,70 @@ async function oneLayerAt(t, width) {
   await act(async () => reactRoot.unmount());
 }
 
+// The layer's header actions: one layer open (its header is the drawer's on a phone, the dock's on a wide screen), the probe reads the layer's API.
+async function openedLayer(t, width, specs) {
+  const { createElement: h, useLayoutEffect, act } = await import('react');
+  const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
+  let latest;
+  const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
+  const window = dom(t, width);
+  const { createRoot } = await import('react-dom/client');
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' })));
+  return { window, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
+}
+
+async function headerOf(opened, which) {
+  await opened.act(async () => opened.latest().open(which, 'half'));
+  for (let tries = 0; tries < 40 && !opened.window.document.querySelector('[data-testid=agent-layer-header]'); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));
+  return opened.window.document.querySelector('[data-testid=agent-layer-header]');
+}
+
+for (const width of [390, 1280]) {
+  test(`the layer header actions at ${width}: a button with its label runs onSelect, a href is a link (target and rel only when passed), none when absent`, async t => {
+    const calls = [];
+    const agent = { ...agentWith(), headerActions: [
+      { id: 'go', label: 'Ouvrir la boutique', icon: Icon, onSelect: () => calls.push('go') },
+      { id: 'wa', label: 'Discuter avec Max sur WhatsApp', icon: Icon, href: '/whatsapp/open?app=fitness', onSelect: () => calls.push('wa') },
+    ] };
+    const opened = await openedLayer(t, width, { agent, improve: { ...agentWith(), headerActions: [{ id: 'ask', label: 'Demander', icon: Icon, onSelect: () => calls.push('ask') }] } });
+    const header = await headerOf(opened, 'agent');
+    const button = header.querySelector('[data-testid=agent-layer-action-go]');
+    assert.equal(button?.tagName, 'BUTTON');
+    assert.equal(button?.getAttribute('aria-label'), 'Ouvrir la boutique');
+    assert.equal(button?.getAttribute('title'), 'Ouvrir la boutique', 'the tooltip');
+    const link = header.querySelector('[data-testid=agent-layer-action-wa]');
+    assert.equal(link?.tagName, 'A');
+    assert.equal(link?.getAttribute('href'), '/whatsapp/open?app=fitness');
+    assert.equal(link?.hasAttribute('target'), false, 'no target unless the host passes one');
+    assert.equal(link?.hasAttribute('rel'), false, 'no rel unless the host passes one');
+    await opened.act(async () => button.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+    assert.deepEqual(calls, ['go'], 'the click runs onSelect');
+    const improve = await headerOf(opened, 'improve');
+    assert.ok(improve.querySelector('[data-testid=agent-layer-action-ask]'), 'the product manager has its own actions');
+    assert.equal(improve.querySelector('[data-testid=agent-layer-action-go]'), null, 'and not the coach\'s');
+    await opened.unmount();
+
+    const bare = await openedLayer(t, width, { agent: agentWith() });
+    const plain = await headerOf(bare, 'agent');
+    assert.ok(plain, 'the header renders');
+    assert.equal(plain.querySelector('[data-testid^=agent-layer-action-]'), null, 'nothing renders when there are no actions');
+    await bare.unmount();
+  });
+
+  test(`the layer header at ${width}: a third action goes in the overflow control, never in the title row`, async t => {
+    const three = ['a', 'b', 'c'].map(id => ({ id, label: `Action ${id}`, icon: Icon, onSelect() {} }));
+    const opened = await openedLayer(t, width, { agent: { ...agentWith(), headerActions: three } });
+    const header = await headerOf(opened, 'agent');
+    assert.ok(header.querySelector('[data-testid=agent-layer-action-b]'), 'the second is shown');
+    assert.equal(header.querySelector('[data-testid=agent-layer-action-c]'), null, 'the third is not');
+    assert.ok(header.querySelector('[data-testid=agent-layer-more]'), 'the overflow control');
+    await opened.unmount();
+  });
+}
+
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));
 test('one layer at a time on a wide screen: opening the agent closes the product manager and back', t => oneLayerAt(t, 1280));
