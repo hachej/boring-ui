@@ -4,19 +4,19 @@
   "title": "Pi agent app",
   "description": "AgentWorkspace: a whole agent page in one component. Left: the sessions pane (search, New, rename, archive, delete; collapsible, a drawer on a narrow screen). Center: PiChat. Right: the artifact viewers (artifact panel with versions, file viewer, auto-open of new artifacts) in the ArtifactWorkspace panel, a full-screen sheet on a phone. Props are data and callbacks; hooks for the conversations handler (useConversations), the chat transport (useRemoteChat) and saved resources (useSaved).",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.2.4",
-    "@hachej/boring-files@^0.2.4",
+    "@hachej/boring-ui-kit@^0.2.5",
+    "@hachej/boring-files@^0.2.5",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "lucide-react@^1.51.0",
     "radix-ui@^1.8.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.4/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.4/r/pi-workspace.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.4/r/viewers.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.4/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.4/r/button.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/pi-workspace.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/viewers.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/button.json"
   ],
   "files": [
     {
