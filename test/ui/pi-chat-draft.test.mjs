@@ -45,13 +45,15 @@ test('the composer draft is kept per conversation: restored after a remount, syn
   const element = window.document.createElement('div'); window.document.body.append(element);
   const mounted = [];
   // Mounts the hook for one controller (a tab or a remount); returns the root to unmount it.
+  const Probe = ({ controller, k }) => { useChatDraft(controller, k); return null; };
   const mount = async (controller, key) => {
     const host = window.document.createElement('div'); element.append(host); const root = createRoot(host);
-    const Probe = () => { useChatDraft(controller, key); return null; };
-    await act(async () => root.render(createElement(Probe)));
+    await act(async () => root.render(createElement(Probe, { controller, k: key })));
     mounted.push(root);
     return root;
   };
+  // The same mounted hook with another key (a conversation switch over the same controller).
+  const rekey = async (root, controller, key) => act(async () => root.render(createElement(Probe, { controller, k: key })));
   t.after(async () => {
     for (const root of mounted) await act(async () => { try { root.unmount(); } catch { /* already unmounted by the test */ } });
     await window.happyDOM.close();
@@ -121,6 +123,52 @@ test('the composer draft is kept per conversation: restored after a remount, syn
       await mount(reloaded, 'blocked');
       assert.equal(reloaded.getSnapshot().draft.text, 'kept', 'no restore is attempted, the controller keeps its own draft');
     } finally { storageBroken = false; }
+  });
+
+  await t.test('switching the key over the same controller shows the new conversation\'s draft and never writes the old text into it', async () => {
+    window.localStorage.clear();
+    window.localStorage.setItem(PREFIX_KEY('conv-b'), 'saved for B');
+    const controller = fakeController(), root = await mount(controller, 'conv-a');
+    controller.setText('typed in A');
+    assert.equal(stored(PREFIX_KEY('conv-a')), 'typed in A');
+    await rekey(root, controller, 'conv-b');
+    assert.equal(controller.getSnapshot().draft.text, 'saved for B', 'the composer shows B\'s saved draft');
+    assert.equal(stored(PREFIX_KEY('conv-b')), 'saved for B', 'B\'s storage is untouched');
+    controller.setText('saved for B and more');
+    assert.equal(stored(PREFIX_KEY('conv-b')), 'saved for B and more');
+    assert.equal(stored(PREFIX_KEY('conv-a')), 'typed in A', 'A\'s storage keeps A\'s text');
+    // A conversation with no saved draft gets an empty composer, not A's text.
+    controller.setText('');
+    controller.setText('typed in B');
+    await rekey(root, controller, 'conv-c');
+    assert.equal(controller.getSnapshot().draft.text, '', 'a conversation with no draft starts empty');
+    assert.equal(stored(PREFIX_KEY('conv-c')), null, 'nothing is written for C before the person types');
+    assert.equal(stored(PREFIX_KEY('conv-b')), 'typed in B');
+  });
+
+  await t.test('text already in the composer is saved when persistence starts, so a reload restores it', async () => {
+    window.localStorage.clear();
+    const first = fakeController('typed before the draft key was set');
+    const root = await mount(first, 'late');
+    assert.equal(stored(PREFIX_KEY('late')), 'typed before the draft key was set', 'written at once, without another keystroke');
+    await act(async () => root.unmount());
+    const reloaded = fakeController();
+    await mount(reloaded, 'late');
+    assert.equal(reloaded.getSnapshot().draft.text, 'typed before the draft key was set');
+  });
+
+  await t.test('a storage event whose read throws keeps the composer text', async () => {
+    window.localStorage.clear();
+    const controller = fakeController('unsent words'), root = await mount(controller, 'event-throw');
+    storageBroken = true;
+    try {
+      storageEvent(PREFIX_KEY('event-throw'));
+      assert.equal(controller.getSnapshot().draft.text, 'unsent words', 'unavailable storage is not a missing draft');
+    } finally { storageBroken = false; }
+    window.localStorage.removeItem(PREFIX_KEY('event-throw'));
+    storageEvent(PREFIX_KEY('event-throw'));
+    assert.equal(controller.getSnapshot().draft.text, '', 'a readable missing draft still clears the composer');
+    await act(async () => root.unmount());
   });
 
   await t.test('without a key nothing is stored', async () => {

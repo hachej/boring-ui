@@ -40,11 +40,15 @@ export function useRevisionAttachments({ revisionProvider, fileTree, accept, max
     return () => tree.dispose();
   }, [fileTree, revisionProvider]);
   const tree = fileTree ?? (binding?.provider === revisionProvider ? binding?.tree : undefined);
-  // The failure callback is read at upload time, so a new callback does not rebuild the config.
+  // The failure callback is read when an upload starts, so a new callback does not rebuild the config, and a late failure of an upload
+  // reports to the workspace it was started in (not the one selected since).
   const failure = useRef(onPreparationFailure); failure.current = onPreparationFailure;
   return useMemo<AttachmentsConfig | undefined>(() => tree ? {
     ...(accept !== undefined ? { accept } : {}),
-    upload: (files: File[], signal: AbortSignal) => uploadRevisionAttachments(tree, files, signal, (name, reason) => failure.current?.(name, reason),
-      { inlineImages, ...(maxBytes !== undefined ? { maxBytes, tooLarge } : {}), ...(accept ? { accept } : {}) }),
+    upload: (files: File[], signal: AbortSignal) => {
+      const report = failure.current;
+      return uploadRevisionAttachments(tree, files, signal, (name, reason) => report?.(name, reason),
+        { inlineImages, ...(maxBytes !== undefined ? { maxBytes, tooLarge } : {}), ...(accept ? { accept } : {}) });
+    },
   } : undefined, [tree, accept, inlineImages, maxBytes, tooLarge]);
 }

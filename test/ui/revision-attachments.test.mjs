@@ -53,7 +53,7 @@ test('attachments saved through any revision provider: under uploads/, refused o
   // Renders the hook for one set of options and returns the config it produced; `failures` collects the partial failures it reports.
   const failures = [];
   let config;
-  const Probe = options => { config = useRevisionAttachments({ ...options, onPreparationFailure: (name, reason) => failures.push([name, reason]) }); return null; };
+  const Probe = ({ onFailure, ...options }) => { config = useRevisionAttachments({ ...options, onPreparationFailure: onFailure ?? ((name, reason) => failures.push([name, reason])) }); return null; };
   const render = async options => { await act(async () => root.render(createElement(Probe, options))); };
   const file = (name, bytes, type) => new window.File([bytes], name, { type });
   // Every file in the workspace under uploads/ (a listing of a directory that does not exist yet is refused by the provider).
@@ -96,6 +96,25 @@ test('attachments saved through any revision provider: under uploads/, refused o
     assert.deepEqual(failures, [['program.exe', 'This file type is not accepted.']]);
     assert.ok(results.every(item => item.path.startsWith('uploads/')));
     await assert.rejects(config.upload([file('script.sh', 'echo', 'text/x-sh')], new AbortController().signal), error => error.message === 'This file type is not accepted.');
+  });
+
+  await t.test('a late failure of an upload is reported to the workspace it was started in, not the one selected since', async () => {
+    const other = await revisionFixture(t);
+    const reportedA = [], reportedB = [];
+    // Probe over two bindings: the workspace (provider) and its failure report, switched together.
+    await render({ revisionProvider: client, onFailure: (name, reason) => reportedA.push([name, reason]) });
+    const configA = config;
+    assert.ok(configA?.upload);
+    let rejectRead;
+    const slowFile = { name: 'slow.txt', type: 'text/plain', size: 4, arrayBuffer: () => new Promise((_, reject) => { rejectRead = reject; }) };
+    const pending = configA.upload([slowFile], new AbortController().signal);
+    // The workspace switches while the read is still running.
+    await render({ revisionProvider: other, onFailure: (name, reason) => reportedB.push([name, reason]) });
+    assert.ok(config?.upload && config !== configA);
+    rejectRead(new Error('The disk read failed'));
+    await assert.rejects(pending, error => error.message === 'The disk read failed');
+    assert.deepEqual(reportedA, [['slow.txt', 'The disk read failed']]);
+    assert.deepEqual(reportedB, [], 'the failure is not shown under the workspace selected since');
   });
 
   await t.test('with no provider there are no attachments', async () => {
