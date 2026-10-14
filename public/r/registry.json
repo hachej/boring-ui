@@ -845,8 +845,8 @@
     {
       "name": "live-preview",
       "type": "registry:block",
-      "title": "Live preview: replaceable parts, overlay store, banner and chat card",
-      "description": "Replaceable marks a part of a screen the PM may replace live in the viewer's browser (the overlay is temporary: sessionStorage, two hours, one release). The shell shows a « Prévisualisation » banner while overlays are active, with per-key close and an optional « Partager » that proposes the change. previewCardFor turns a boring.preview tool result into a chat card whose click adds the overlay. This part executes no source: the sandboxed frame is a later part.",
+      "title": "Live preview: chat card, preview view and sandboxed frame",
+      "description": "previewCardFor turns a boring.preview tool result into a chat « Prévisualiser » card; its click (and nothing else) opens the preview view, in memory only: full screen on a phone, the main area on a desktop, with « Fermer » and an optional « Partager ». The PM's component runs only in preview-frame.html, an iframe with sandbox=\"allow-scripts\" (opaque origin, strict CSP, import allowlist); serve preview-frame.html and preview-frame.js together from the app's origin.",
       "dependencies": [
         "react@^19.0.0"
       ],
@@ -855,14 +855,9 @@
       ],
       "files": [
         {
-          "path": "registry/live-preview/replaceable.tsx",
+          "path": "registry/live-preview/view.tsx",
           "type": "registry:component",
-          "target": "components/live-preview/replaceable.tsx"
-        },
-        {
-          "path": "registry/live-preview/store.ts",
-          "type": "registry:lib",
-          "target": "components/live-preview/store.ts"
+          "target": "components/live-preview/view.tsx"
         },
         {
           "path": "registry/live-preview/provider.tsx",
@@ -870,14 +865,14 @@
           "target": "components/live-preview/provider.tsx"
         },
         {
-          "path": "registry/live-preview/status.tsx",
-          "type": "registry:component",
-          "target": "components/live-preview/status.tsx"
-        },
-        {
           "path": "registry/live-preview/card.tsx",
           "type": "registry:component",
           "target": "components/live-preview/card.tsx"
+        },
+        {
+          "path": "registry/live-preview/frame-protocol.ts",
+          "type": "registry:lib",
+          "target": "components/live-preview/frame-protocol.ts"
         },
         {
           "path": "registry/live-preview/preview-text.ts",
@@ -888,6 +883,16 @@
           "path": "registry/live-preview/preview.ts",
           "type": "registry:lib",
           "target": "components/live-preview/preview.ts"
+        },
+        {
+          "path": "registry/live-preview/preview-frame.html",
+          "type": "registry:file",
+          "target": "components/live-preview/preview-frame.html"
+        },
+        {
+          "path": "registry/live-preview/preview-frame.js",
+          "type": "registry:file",
+          "target": "components/live-preview/preview-frame.js"
         }
       ]
     },

@@ -129,6 +129,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       const names = new Set(item.files.map(file => file.path.replace(new RegExp('^registry/' + folder + '/'), '')));
       for (const file of item.files) {
         assert.match(file.target, new RegExp('^components/' + folder + '/'), 'files install into their own folder, never over the host\'s button or utils');
+        if (!/\.tsx?$/.test(file.path)) continue; // the preview frame page and its bundle: proven by live-preview-source.test.mjs and live-preview-frame.test.mjs
         const source = readFileSync(join(root, file.path), 'utf8');
         for (const imported of [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])) {
           if (imported.startsWith('./')) { assert.ok([...names].some(name => name.replace(/\.tsx?$/, '') === imported.slice(2)), `${file.path} imports missing ${imported}`); continue; }

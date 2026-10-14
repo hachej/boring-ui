@@ -6,7 +6,7 @@
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AccountAvatar, AccountMenu } from './account';
@@ -21,8 +21,10 @@ import type { NavItem } from './nav';
 import { AppSheet } from './sheet';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
-import { PreviewProvider, PreviewStatus } from '../live-preview/preview';
+import { PreviewNote, PreviewProvider, PreviewView, usePreview } from '../live-preview/preview';
 import type { PreviewSettings } from '../live-preview/preview';
+import { useBackLayer } from './back';
+import { useAgentLayer } from './agent-layer';
 
 export interface AppShellProps {
   /** A `screen` (tabs), B `workspace` (list and detail), C `chat` (the app's `AgentWorkspace`; no `agent`). */
@@ -37,16 +39,16 @@ export interface AppShellProps {
   readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
-  /** The live preview (registry/live-preview): off unless `enabled`. `enabled: false` is the kill switch: every replaceable renders its original. */
+  /** The live preview (registry/live-preview): off unless `enabled`. `enabled: false` is the kill switch: cards render disabled and no view opens. */
   readonly preview?: PreviewSpec;
 }
 
-/** The host's live-preview settings. `release` is the build SHA; `onShare` proposes a change (its promise may give the PR link). */
+/** The host's live-preview settings. `frameUrl` is where preview-frame.html is served (same origin; default `/preview-frame.html`). */
 export interface PreviewSpec {
   readonly enabled: boolean;
-  readonly release: string;
-  readonly appId: string;
-  readonly onShare?: PreviewSettings['onShare'] | undefined;
+  readonly frameUrl?: string;
+  readonly onSharePreview?: PreviewSettings['onSharePreview'];
+  readonly onPreviewError?: PreviewSettings['onPreviewError'];
 }
 
 /** Registers what is on show for the agent. A screen's own `useAgentContext` is mounted later and wins. */
@@ -69,6 +71,11 @@ function Screens({ items, activeId, scrolls }: { readonly items: readonly NavIte
 function Shell({ layout, title, nav, agent, improve, account, route, text }: { readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const compact = useIsCompact();
   const [accountOpen, setAccountOpen] = useState(false);
+  const preview = usePreview();
+  const layer = useAgentLayer();
+  // The preview view is a Back layer; on a phone it covers the app, so the agent sheet steps aside while it is open.
+  useBackLayer(Boolean(preview.view), preview.close, 'sheet');
+  useEffect(() => { if (preview.view && compact) layer.close(); }, [preview.view, compact, layer.close]);
   const active = nav.find(item => item.id === route.id) ?? nav[0];
   if (!active) return null;
   const hasAccount = Boolean(account) || improve;
@@ -86,9 +93,10 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
       <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} />
-      <PreviewStatus />
+      <PreviewNote />
       <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} />
       {compact && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
+      <PreviewView compact={compact} />
       </div>
     </AgentDockLayout>
     <AgentLayer />
@@ -101,7 +109,7 @@ export function AppShell(props: AppShellProps) {
   const locale = (agent ?? improve)?.chatProps?.locale ?? props.locale;
   const text = appShellText(locale);
   const preview = props.preview;
-  const settings: PreviewSettings = { appId: preview?.appId ?? '', release: preview?.release ?? '', enabled: Boolean(preview?.enabled), locale: locale ?? 'en', onShare: preview?.onShare };
+  const settings: PreviewSettings = { enabled: Boolean(preview?.enabled), locale: locale ?? 'en', frameUrl: preview?.frameUrl ?? '/preview-frame.html', onSharePreview: preview?.onSharePreview, onPreviewError: preview?.onPreviewError };
   return <PreviewProvider settings={settings}>
     <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
       <HeaderProvider><Shell layout={layout} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>

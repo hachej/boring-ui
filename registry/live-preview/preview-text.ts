@@ -2,50 +2,22 @@
 export type PreviewLocale = 'en' | 'fr';
 
 export interface PreviewText {
-  /** The banner's title. */
+  /** The banner's title, followed by the preview's title. */
   readonly banner: string;
-  /** The toggle that hides or shows the overlays. */
-  readonly show: string;
-  readonly hide: string;
-  /** Removes every overlay at once. */
-  readonly cancelAll: string;
-  /** Proposes the change for review (shown only when the host gives `onShare`). */
+  readonly close: string;
+  /** Proposes the change for review (shown only when the host gives `onSharePreview`). */
   readonly share: string;
   /** Shown after a share: the change is proposed, not applied. */
   readonly proposed: string;
   readonly seeProposal: string;
-  /** The neutral box a replaced component shows in its slot. */
-  readonly unavailable: string;
   /** The chat card's button label. */
   readonly preview: string;
-  readonly closeKey: (key: string) => string;
+  readonly loading: string;
+  readonly intent: (name: string, args: string) => string;
 }
 
-const en: PreviewText = {
-  banner: 'Preview',
-  show: 'Show',
-  hide: 'Hide',
-  cancelAll: 'Cancel all',
-  share: 'Share',
-  proposed: 'Proposed — visible once deployed',
-  seeProposal: 'See the proposal',
-  unavailable: 'Preview unavailable',
-  preview: 'Preview',
-  closeKey: key => `Close the preview of ${key}`,
-};
-
-const fr: PreviewText = {
-  banner: 'Prévisualisation',
-  show: 'Afficher',
-  hide: 'Masquer',
-  cancelAll: 'Tout annuler',
-  share: 'Partager',
-  proposed: 'Proposé — visible après mise en ligne',
-  seeProposal: 'Voir la proposition',
-  unavailable: 'Aperçu indisponible',
-  preview: 'Prévisualiser',
-  closeKey: key => `Fermer la prévisualisation de ${key}`,
-};
+const en: PreviewText = { banner: 'Preview', close: 'Close', share: 'Share', proposed: 'Proposed — visible once deployed', seeProposal: 'See the proposal', preview: 'Preview', loading: 'Loading the preview…', intent: (name, args) => `Intent: ${name}(${args.slice(1, -1)})` };
+const fr: PreviewText = { banner: 'Prévisualisation', close: 'Fermer', share: 'Partager', proposed: 'Proposé — visible après mise en ligne', seeProposal: 'Voir la proposition', preview: 'Prévisualiser', loading: 'Chargement de la prévisualisation…', intent: (name, args) => `Intention : ${name}(${args.slice(1, -1)})` };
 
 export function previewText(locale: PreviewLocale): PreviewText {
   return locale === 'fr' ? fr : en;
