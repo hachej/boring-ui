@@ -6,7 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
-import { workspacePath } from '@hachej/boring-files/file-types';
+import { mediaTypeOf, workspacePath } from '@hachej/boring-files/file-types';
 import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { randomUUID } from '@hachej/boring-files/platform';
@@ -38,6 +38,7 @@ import { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 import type { CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 import { FileViewer } from './file-viewer';
 import { useRevisionAttachments } from './use-revision-attachments';
+import { imageData } from './revision-files';
 import { SessionsPane, SessionsToggle } from './sessions';
 import type { SessionsView, WorkspaceAgents } from './sessions';
 
@@ -305,6 +306,11 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       return entries;
     },
     open: openFile,
+    // A card's thumbnail: the chat's image upload read through this provider, the same read the file viewer makes.
+    preview: async (path: string, signal: AbortSignal) => {
+      const read = await revisionProvider.read({ target: revisionProvider.locate(path), revision: { kind: 'latest' } }, signal);
+      return read.kind === 'available' ? { mimeType: mediaTypeOf(path), data: imageData(read.snapshot.bytes) } : undefined;
+    },
   } : undefined, [revisionProvider, openFile, mentionResults]);
   // The search function changes only with the binding; the feed's seq rides along as the picker's generation.
   const mentionsForChat = useMemo(() => mentions && { ...mentions, generation: feed.seq }, [mentions, feed.seq]);

@@ -48,6 +48,10 @@ export default [
       await t.tab('files');
       await browser.until('listed in the workspace panel', `[...document.querySelectorAll('.studio-panel li button')].some(b => b.textContent === 'uploads/visit-note.txt')`, 10000);
       await t.shots('menus-upload');
+      // The sent message shows the upload as a card above its text, and the bubble does not repeat the raw mention (run at phone and desktop sizes).
+      await browser.until('the sent upload is a card', `${q('[data-testid=message-mention]')}?.dataset.path === 'uploads/visit-note.txt'`, 10000);
+      assert.equal(await browser.evaluate(`${q('[data-testid=user-text]')}?.textContent.includes('@uploads')`), false, 'the bubble hides the raw mention');
+      await browser.screenshot('attach-file-card.png');
     },
   },
   {

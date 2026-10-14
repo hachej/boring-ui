@@ -7,8 +7,8 @@ import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/
 import type { ChatAttachment, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import type { ComposerFeedback, PendingUpload } from './composer';
-import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, SlashConfig } from './config';
-import { mentionToken } from './config';
+import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
+import { looksLikeMarkdown, mentionToken } from './config';
 import { ModelEffortPicker } from './pickers';
 import type { CommandMentions } from './markdown';
 import type { RowContext } from './message';
@@ -44,6 +44,10 @@ export interface ChatFeatureProps {
   readonly fileAccept?: string;
   /** `/` menu of host commands and skills. Omit it and `/` is just text. */
   readonly slash?: SlashConfig;
+  /** Opens an `uploads/` file from its card in a sent message. Without it the card is not clickable. */
+  readonly onOpenFile?: (path: string) => void;
+  /** Pastes above these limits become a file through `attachments` (on by default, 2000 characters or 40 lines). Needs `attachments`. */
+  readonly pasteToFile?: PasteToFile;
   /** `@` workspace file mentions: a picker, composer chips and styled mentions in sent messages. */
   readonly mentions?: MentionsConfig;
   /** Attach button, paste and drop through the host's upload. Takes the place of `onFiles` and `fileAccept`. */
@@ -84,7 +88,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, pasteToFile } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
@@ -194,13 +198,16 @@ export function useChatSession(options: ChatSessionOptions) {
     controller.setText(`${text}${text && !/\s$/.test(text) ? ' ' : ''}${paths.map(mentionToken).join(' ')} `);
     setPicked(value => [...new Set([...value, ...paths])]);
   };
-  async function upload(files: readonly File[]) {
+  /** Uploads files; `restore` (a pasted text) is what their pending cards undo: it abandons the upload and puts the text back. */
+  async function upload(files: readonly File[], paste?: { readonly restore: () => void; readonly after: string }) {
     if ((!onFiles && !attachments) || !files.length || !current()) return;
     const abort = new AbortController(); uploads.current.add(abort); setUploading(value => value + 1);
     const ids = files.map(() => `upload-${++uploadIds.current}`);
     const settle = (failure?: string) => setPending(items => failure === undefined ? items.filter(item => !ids.includes(item.id))
       : items.map(item => ids.includes(item.id) ? { ...item, state: 'failed', error: failure } : item));
-    setPending(items => [...items, ...files.map((file, index): PendingUpload => ({ id: ids[index]!, name: file.name, state: 'uploading' }))]);
+    const cancel = paste && (() => { abort.abort(); setPending(items => items.filter(item => !ids.includes(item.id))); paste.restore(); });
+    setPending(items => [...items, ...files.map((file, index): PendingUpload => ({ id: ids[index]!, name: file.name, state: 'uploading',
+      ...(cancel && paste ? { cancel, restoreWhile: paste.after } : {}) }))]);
     try {
       let added: readonly ChatAttachment[] = [];
       let paths: string[] = [];
@@ -218,6 +225,28 @@ export function useChatSession(options: ChatSessionOptions) {
     } catch (cause) { if (!abort.signal.aborted) { settle(cause instanceof Error ? cause.message : labels.uploadFailedShort); if (!attachments) report(cause); } }
     finally { uploads.current.delete(abort); if (current()) setUploading(value => value - 1); }
   }
+  /** A paste the composer took: saved as a file under `uploads/` (Send then references it). Cancelling puts the text back where it was pasted. */
+  const pasteText = (paste: PastedText) => {
+    if (!attachments || !current()) return;
+    const at = new Date(), two = (value: number) => String(value).padStart(2, '0');
+    const stamp = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}-${two(at.getMinutes())}-${two(at.getSeconds())}`;
+    const markdown = looksLikeMarkdown(paste.text);
+    const file = new File([paste.text], `${labels.pastedFileName(stamp)}${markdown ? '.md' : '.txt'}`, { type: markdown ? 'text/markdown' : 'text/plain' });
+    // The pasted text replaces its selection when the paste is accepted, so the draft shows what is left. Restoring inserts the text at
+    // the same place and deletes nothing: whatever was typed since stays.
+    const draft = controller.getSnapshot().draft.text;
+    const start = Math.min(paste.start, draft.length), end = Math.min(Math.max(paste.end, start), draft.length);
+    const after = `${draft.slice(0, start)}${draft.slice(end)}`;
+    controller.setText(after);
+    const restore = () => {
+      if (!current()) return;
+      const now = controller.getSnapshot().draft.text;
+      const at = Math.min(start, now.length);
+      controller.setText(`${now.slice(0, at)}${paste.text}${now.slice(at)}`);
+      textarea.current?.focus();
+    };
+    void upload([file], { restore, after });
+  };
   const agentDoc = object(state.view?.docs['pi.agent']);
   const currentModel = object(agentDoc?.['model']);
   const viewModel: ModelRef | undefined = typeof currentModel?.['provider'] === 'string' && typeof currentModel['modelId'] === 'string' ? { provider: currentModel['provider'], modelId: currentModel['modelId'] } : undefined;
@@ -242,16 +271,16 @@ export function useChatSession(options: ChatSessionOptions) {
     if (catalog && selected) act(async () => catalog.onActivate({ name: selected.name, behavior: selected.behavior }));
   };
   const rowContext = useMemo<RowContext>(() => ({
-    developer, groupTool, onOpenImage, onCopy,
+    developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen } : undefined,
     messageActions,
     replyFooter,
-    pieces: slash?.skills?.length || mentions ? { mentions: Boolean(mentions), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render } : undefined,
+    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [developer, groupTool, onOpenImage, onCopy, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, artifacts?.open, artifacts?.isOpen, messageActions, replyFooter, rowExtras]);
+  }), [developer, groupTool, onOpenImage, onCopy, onOpenFile, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -277,6 +306,7 @@ export function useChatSession(options: ChatSessionOptions) {
     uploading: uploading > 0, canAttach: Boolean(onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
+    onPasteText: attachments ? pasteText : undefined, pasteToFile,
     feedback,
   };
 
