@@ -9,6 +9,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | `pi-chat` | copied source in `components/pi-chat/` | `NativeChatController` from `@hachej/boring-ui-kit/native-chat` |
 | `pi-ambient` | copied source in `components/pi-ambient/` | the same `NativeChatController` as `pi-chat` |
 | `pi-workspace` | copied source in `components/pi-workspace/` | none: layout driven by props |
+| `dock` | copied source in `components/dock/` | none: `Dock`, `DockLayout`, `DockMain` (re-exported by `pi-workspace/dock`; the app shell installs it) |
 | `pi-app` | copied source in `components/pi-app/` | the agent page; viewers over one resource client (`useRemoteChat` lives in `pi-chat` and is re-exported) |
 | `provider-setup` | copied source in `components/provider-setup/` | none: props and callbacks only |
 | `theme` | the shadcn tokens (light, dark) and their `@theme inline` bindings, merged into the host's CSS | none |
@@ -69,9 +70,11 @@ Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApprova
 
 `@` mentions name workspace files; a path with whitespace or a quote is written quoted (`@"docs/Meeting notes.md"`, with `\"` and `\\` escaped), and bare paths keep their form. `mentionToken(path)` writes the text, `pieces` and `mentionedPaths` (the agent package, which must match it) read it back, and the composer chip and `removeMention` treat the quoted form as one token. A bare mention ends at whitespace, so the composer never inserts a bare path that contains a space.
 
-## Docks (`pi-workspace`)
+## Docks (`dock`)
 
-`pi-workspace/dock.tsx` lays out any host content as a row of docks around the app. It is layout only: what a dock shows is the host's, and `ArtifactWorkspace` is unchanged (it keeps its own panel, and the two do not know about each other).
+`dock/dock.tsx` (the `dock` item; `pi-workspace/dock.tsx` re-exports it, so existing imports keep working) lays out any host content as a row of docks around the app. It is layout only: what a dock shows is the host's, and `ArtifactWorkspace` is unchanged (it keeps its own panel, and the two do not know about each other).
+
+On a wide screen the app shell's agent layer is one of these docks (id `agent`): docked right by default, floatable and dockable left or right from its header, remembered per viewer (local storage under `boring.app-shell`); below 768px it stays the bottom drawer.
 
 - `DockLayout` is the row. It measures its own width, so it works in any container. Props: `storageKey` (default `boring.dock`), `persist` (`session`, default, or `local`), `minMain` (default 360: the main content never gets narrower while docks are beside it), `className`.
 - `DockMain` is the host's own content between the docks; it takes the remaining width.
