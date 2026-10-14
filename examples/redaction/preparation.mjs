@@ -57,8 +57,8 @@ export function createPreparation({ harness, provider, models, allowed, options 
   const source = defineTool({ name: 'read_preparation_source', description: 'Read the exact fictional preparation sources.', replay: 'safe', parameters: Type.Object({ resource: Type.Literal('captured') }, { additionalProperties: false }),
     execute: async (_args, api) => {
       const task = await original(api.conversationId);
-      return permitted(task.input) ? { content: [{ type: 'text', text: JSON.stringify({ notes: task.input.notes, dossier: task.input.dossier }) }] }
-        : { isError: true, content: [{ type: 'text', text: 'Preparation source denied' }] };
+      return permitted(task.input) ? { output: [{ type: 'text', text: JSON.stringify({ notes: task.input.notes, dossier: task.input.dossier }) }] }
+        : { isError: true, output: [{ type: 'text', text: 'Preparation source denied' }] };
     } });
   const producer = defineTask({ name: 'fixture.redaction.preparation.produce', version: 1, initial: () => ({ phase: 'start' }), phases: {
     start: async (task, runtime, ctx) => {

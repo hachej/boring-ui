@@ -74,7 +74,7 @@ export interface FileGuardOptions {
 type Observed = { readonly kind: 'file'; readonly revision: string } | { readonly kind: 'missing' } | { readonly kind: 'refused'; readonly reason: string };
 type Args = { readonly path: string };
 
-const refusal = (text: string): ToolExecutionResult => ({ content: [{ type: 'text', text }], isError: true });
+const refusal = (text: string): ToolExecutionResult => ({ output: [{ type: 'text', text }], isError: true });
 // The same normalisation as Pi's tool paths: a leading "@" and special spaces.
 const normalised = (path: string) => { const spaced = path.replace(/[  -   　]/g, ' '); return spaced.startsWith('@') ? spaced.slice(1) : spaced; };
 

@@ -22,7 +22,7 @@ function workspaceFixture(t) {
 const ctx = { abortSignal: new AbortController().signal };
 // A constant workspace ignores the call's target, so the tool's API needs only `agent` (its working directory).
 const api = { conversationId: 'fictional-conversation', agent: async () => ({}) };
-const presentOf = (tool, path) => tool.execute({ path }, api, {}).then(result => JSON.parse(result.content[0].text));
+const presentOf = (tool, path) => tool.execute({ path }, api, {}).then(result => JSON.parse(result.output[0].text));
 
 test('present shows the file at the given relative path, and refuses an absolute one instead of reading another file', async t => {
   const { fs, files } = workspaceFixture(t);

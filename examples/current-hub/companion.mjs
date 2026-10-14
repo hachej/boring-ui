@@ -26,7 +26,7 @@ export async function openFixtureCompanion({ directory, apps, changePaths, actor
     }
     return defineTool({ name: `invoke_${appId}`, description: `Request the pinned ${appId} app capability using an input reference.`,
       parameters, replay: 'safe', execute: async (args, api, ctx) => {
-        const respond = result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] });
+        const respond = result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] });
         try {
           const request = structuredClone(args), actor = structuredClone(actorFor(appId));
           const retained = await api.memo('fixture.hub.invocation.v1', ctx);

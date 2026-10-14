@@ -53,6 +53,8 @@ export function createBrowserTaskTool<P extends TSchema>(options: BrowserTaskOpt
     description: options.description,
     parameters: options.parameters,
     replay: 'safe',
+    // The wait binds to the calling model entry and call id; a nested `api.executeTool` caller has neither (see durable-wait.ts).
+    callers: ['model'],
     execute: async (_args, api, context) => {
       const key = await api.commit(async tx => {
         const key = await ownBindingKey(tx, api);
@@ -67,7 +69,7 @@ export function createBrowserTaskTool<P extends TSchema>(options: BrowserTaskOpt
       }, 'Browser task');
       const state = final?.task?.state;
       if (state?.kind !== 'answered') throw new Error('Browser task cancelled');
-      return { content: [{ type: 'text', text: JSON.stringify(state.answer) }] };
+      return { output: [{ type: 'text', text: JSON.stringify(state.answer) }] };
     },
   });
 }

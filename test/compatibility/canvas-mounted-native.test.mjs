@@ -100,13 +100,13 @@ test('native ToolTasks select a captured mounted canvas and refuse stale or clos
       if (gate) { gate.signal = ctx.abortSignal; gate.entered.resolve(); await gate.release.promise; }
       return permit;
     },
-    formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] }),
+    formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),
   });
   const proposalDefinition = createPresentationTool({ name: 'propose_canvas', description: 'Propose a reviewed fictional move',
     parameters: Type.Object({ x: Type.Number() }), command: tools.propose, target: captured,
     prepareInput: args => ({ edits: [{ kind: 'update', record: { ...editor.getShape(shapeId), x: args.x } }], summary: 'Native proposed move', expiresAt: Date.now() + 10000 }),
     authorize: async () => permit,
-    formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] }),
+    formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),
   });
   const registry = createRegistry(); registry.install(defineExtension({ name: 'fixture.canvas-mounted', tools: [definition, proposalDefinition] }));
   harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);

@@ -240,8 +240,8 @@ function changingModel() {
 }
 
 function changeTools(changes) {
-  const read = defineTool({ name: 'read_note', description: 'Read the note.', parameters: Type.Object({}), execute: async () => ({ content: [{ type: 'text', text: `notes: ${changes.join(',') || 'none'}` }] }) });
-  const change = defineTool({ name: 'change_note', description: 'Change the note.', parameters: Type.Object({ note: Type.String() }), execute: async ({ note }) => { changes.push(note); return { content: [{ type: 'text', text: `changed ${note}` }] }; } });
+  const read = defineTool({ name: 'read_note', description: 'Read the note.', parameters: Type.Object({}), execute: async () => ({ output: [{ type: 'text', text: `notes: ${changes.join(',') || 'none'}` }] }) });
+  const change = defineTool({ name: 'change_note', description: 'Change the note.', parameters: Type.Object({ note: Type.String() }), execute: async ({ note }) => { changes.push(note); return { output: [{ type: 'text', text: `changed ${note}` }] }; } });
   return { read, change, gated: requireApproval(change, { summarize: args => `Add "${args.note}"` }) };
 }
 
@@ -394,7 +394,7 @@ test('an opaque raw call ID cannot impersonate another question scoped ID', { ti
   const second = await conversation.commit(async tx => {
     const firstEntry = await tx.entry(firstTask.input.assistant);
     const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ ...firstEntry.model[0], content: [{ type: 'toolCall', id: firstId, name: 'ask_user', arguments: { question: 'Second?', options: ['red', 'blue'] } }] }] });
-    return tx.createTask(ToolTask, { assistant: entry.id, callId: firstId }, { ownership: { kind: 'conversation' } });
+    return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: firstId }, { ownership: { kind: 'conversation' } });
   }, context);
   const secondTask = await harness.getTask(second, context);
   const secondId = JSON.stringify([secondTask.input.assistant, firstId]);
@@ -437,7 +437,7 @@ test('a completed legacy question retains idempotent answer retries after upgrad
       const doc = await tx.doc(legacy, api.conversationId, api.callId, null);
       doc.question = { prompt: args.question, options: args.options, allowFreeText: false, taskId: api.taskId, state: { kind: 'answered', answer: 'park' } };
     }, ctx);
-    return { content: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer: 'park' }) }] };
+    return { output: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer: 'park' }) }] };
   } };
   registry.install(defineExtension({ name: 'fictional.legacy-ask', tools: [oldTool] }));
   const harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);

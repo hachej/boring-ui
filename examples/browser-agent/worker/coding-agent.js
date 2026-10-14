@@ -37,7 +37,7 @@ async function callApi(method, path, body, signal) {
   const text = await response.text();
   return { ok: response.ok, status: response.status, text: text.length > API_BODY_LIMIT ? `${text.slice(0, API_BODY_LIMIT)}\n[truncated]` : text };
 }
-const apiResult = ({ ok, status, text }) => ({ content: [{ type: 'text', text: `HTTP ${status}\n${text}` }], isError: !ok });
+const apiResult = ({ ok, status, text }) => ({ output: [{ type: 'text', text: `HTTP ${status}\n${text}` }], isError: !ok });
 
 /** Run one command in the repository through Pi's native env (its bash has git) and capture the output. */
 export async function shell(env, command, context) {
@@ -104,7 +104,7 @@ ${declarations}`,
         let text = lines.join('\n') || 'Code finished without output. Use text(value) or return a value.';
         if (text.length > LIMITS.outputChars) text = `${text.slice(0, LIMITS.outputChars)}\n[output truncated]`;
         runs.executions++; if (!result.ok) runs.failed++;
-        return { content: [{ type: 'text', text }], isError: !result.ok };
+        return { output: [{ type: 'text', text }], isError: !result.ok };
       } finally { await sandbox.close(); }
     },
   });

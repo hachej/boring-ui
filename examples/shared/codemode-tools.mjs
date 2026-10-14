@@ -90,6 +90,6 @@ ${DECLARATIONS}`,
   replay: 'safe',
   execute: async ({ code }, _api, context) => {
     const result = await runCode(code, context.abortSignal);
-    return { content: [{ type: 'text', text: result.text }], isError: result.isError, details: { nestedCalls: result.calls.length, outputChars: result.text.length } };
+    return { output: [{ type: 'text', text: result.text }], isError: result.isError, details: { nestedCalls: result.calls.length, outputChars: result.text.length } };
   },
 });

@@ -547,12 +547,22 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [open, layer]);
-  // A dock control moves or removes the button that was pressed: focus goes to the panel's first dock control instead of the page.
+  // A dock control (or the divider's Alt+Arrow) moves or removes the element that had focus: it goes to the panel's first dock control instead of the page.
   useLayoutEffect(() => {
-    if (!layer.restoreFocus.current) return;
+    const lost = !document.activeElement || document.activeElement === document.body;
+    const wanted = layer.restoreFocus.current || (open && lost && api.placement !== 'closed');
     layer.restoreFocus.current = false;
-    box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
+    if (wanted) box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
   }, [api.placement, side, layer.restoreFocus]);
+  // A dragged window stays reachable: its remembered position is clamped to the viewport on open, on placement change and on every resize.
+  const [viewport, setViewport] = useState(0);
+  useEffect(() => { const resize = () => setViewport(count => count + 1); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize); }, []);
+  useLayoutEffect(() => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!pos || !floating || !open || !rect || !rect.width) return;
+    const left = Math.min(Math.max(pos.left, 0), Math.max(0, innerWidth - rect.width)), top = Math.min(Math.max(pos.top, 0), Math.max(0, innerHeight - rect.height));
+    if (left !== pos.left || top !== pos.top) setPos({ left, top });
+  }, [pos, floating, open, viewport]);
   const act = (run: () => void) => () => { layer.restoreFocus.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <button type="button" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)} className={ICON_BUTTON}><Icon className="size-4" aria-hidden="true" /></button>;

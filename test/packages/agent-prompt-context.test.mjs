@@ -222,7 +222,7 @@ test('each conversation gets the value for its own id', { timeout: 20000 }, asyn
 
 test('after a tool round the context goes to the tail, after the tool result; two extensions keep their order', { timeout: 20000 }, async t => {
   const { models, requests } = recordingModels((_messages, call) => call === 1 ? { tool: { name: 'echo', args: {} } } : { text: 'Done.' });
-  const echo = defineExtension({ name: 'fixture.echo', tools: [defineTool({ name: 'echo', description: 'Echo a fixed line.', parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe', execute: async () => ({ content: [{ type: 'text', text: 'echoed' }] }) })] });
+  const echo = defineExtension({ name: 'fixture.echo', tools: [defineTool({ name: 'echo', description: 'Echo a fixed line.', parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'echoed' }] }) })] });
   const first = createPromptContext({ name: 'host.first', context: () => 'first value' });
   const second = createPromptContext({ name: 'host.second', tag: 'document', context: () => 'second value' });
   const { harness, registry } = await open(models);

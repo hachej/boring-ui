@@ -132,7 +132,7 @@ test('poll cancellation releases its connection and capacity; idle poll expires 
 test('real native unsafe ToolTask receives the authenticated browser acknowledgement', async t => {
   const f = await fixture(t);
   const tool = createPresentationTool({ name: 'fixture_select', description: 'Fictional mounted selection', parameters: Type.Object({}), target,
-    command: f.connection.select, prepareInput: input, authorize: () => true, formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] }) });
+    command: f.connection.select, prepareInput: input, authorize: () => true, formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }) });
   assert.equal(tool.replay, 'unsafe');
   const registry = createRegistry(); registry.install(defineExtension({ name: 'fixture.canvas-transport', tools: [tool] }));
   const harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);
@@ -140,7 +140,7 @@ test('real native unsafe ToolTask receives the authenticated browser acknowledge
   const conversation = await harness.root(context), p = await f.poll();
   const task = await conversation.commit(async tx => {
     const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'select', name: tool.name, arguments: {} }], api: 'fixture', provider: 'fixture', model: 'fixture', timestamp: 1, stopReason: 'toolUse', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }] });
-    return tx.createTask(ToolTask, { assistant: entry.id, callId: 'select' }, { ownership: { kind: 'conversation' } });
+    return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: 'select' }, { ownership: { kind: 'conversation' } });
   }, context);
   const waiting = toolResultText(harness, conversation, task);
   const envelope = await (await p.response).json();

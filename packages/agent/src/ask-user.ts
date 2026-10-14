@@ -44,11 +44,13 @@ export function createAskUserTool(options: { readonly description?: string } = {
       allowFreeText: Type.Optional(Type.Boolean()),
     }, { additionalProperties: false }),
     replay: 'safe',
+    // The wait binds to the calling model entry and call id; a nested `api.executeTool` caller has neither (see durable-wait.ts).
+    callers: ['model'],
     execute: async (args, api, context) => {
       const problem = refusal(args.options, args.allowFreeText);
-      if (problem) return { isError: true, content: [{ type: 'text', text: `Invalid question: ${problem}.` }] };
+      if (problem) return { isError: true, output: [{ type: 'text', text: `Invalid question: ${problem}.` }] };
       const answer = await askPerson(api, context, { prompt: args.question, ...(args.options === undefined ? {} : { options: args.options }), allowFreeText: args.allowFreeText === true });
-      return { content: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer }) }] };
+      return { output: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer }) }] };
     },
   });
 }

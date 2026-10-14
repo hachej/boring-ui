@@ -84,11 +84,11 @@ export async function connectMcpTools({ id, transport, allow, readOnly = [], max
         let result;
         if (perCredential) {
           const credential = await credentials(await callTarget(api, context), context, { tool: name, server: id });
-          if (!credential) return { content: [{ type: 'text', text: `${id} is not connected for this person: the host has no credential for it.` }], isError: true };
+          if (!credential) return { output: [{ type: 'text', text: `${id} is not connected for this person: the host has no credential for it.` }], isError: true };
           result = await perCredential.call(credential, client => call(client, args, context));
         } else result = await call(shared, args, context);
         // MCP reports a tool's own failure in the result, not as a protocol error.
-        return { content: capped(toLlmContent(result), maxResult), isError: result.isError === true };
+        return { output: capped(toLlmContent(result), maxResult), isError: result.isError === true };
       },
     });
     return reads.has(tool.name) ? native : requireApproval(native, { summarize: args => `${id}: ${tool.name} ${JSON.stringify(args)}` });

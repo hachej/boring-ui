@@ -56,7 +56,7 @@ export interface ConvertingReadOptions {
 type ReadArgs = { readonly path: string; readonly offset?: number; readonly limit?: number };
 type Execute = (args: ReadArgs, api: ToolExecutionApi, context: Context) => Promise<ToolExecutionResult>;
 
-const failure = (text: string, code: string): ToolExecutionResult => ({ content: [{ type: 'text', text }], isError: true, diagnostics: [{ severity: 'error', code, message: text }] });
+const failure = (text: string, code: string): ToolExecutionResult => ({ output: [{ type: 'text', text }], isError: true, diagnostics: [{ severity: 'error', code, message: text }] });
 const utf8Length = (text: string) => new TextEncoder().encode(text).length;
 
 /**
@@ -112,7 +112,7 @@ function convertedPage(text: string, offset: number | undefined, limit: number |
   if (cut.length) diagnostics.push({ severity: 'warn', code: 'truncated', message: `The converted text has ${cut.length === 1 ? 'a line' : 'lines'} longer than ${MAX_BYTES / 1024}KB (original line ${cut.join(', ')}); each is split into segments of at most ${MAX_BYTES / 1024}KB and every segment counts as one line for offset and limit.` });
   if (shown < wanted) diagnostics.push({ severity: 'info', code: 'truncated', message: `Showing lines ${start + 1}-${end} of ${total}${byBytes ? ` (${MAX_BYTES / 1024}KB limit)` : ''}. Use offset=${end + 1} to continue.` });
   else if (end < total) diagnostics.push({ severity: 'info', message: `${total - end} more lines in file. Use offset=${end + 1} to continue.` });
-  return { content: shownText === '' ? [] : [{ type: 'text', text: shownText }], diagnostics };
+  return { output: shownText === '' ? [] : [{ type: 'text', text: shownText }], diagnostics };
 }
 
 /** Pi's `read`, extended to convert PDF, office and image files through the host's converter. An extension to select (after the extension that registers `read`, before the file guard). */

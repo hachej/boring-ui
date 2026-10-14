@@ -54,7 +54,7 @@ function taskApi(taskId) {
   const memos = new Map();
   return { taskId, env: undefined, memo: async (name, value, ...rest) => { if (rest.length === 0) return memos.get(name); if (!memos.has(name)) memos.set(name, value); return memos.get(name); } };
 }
-const run = async (tool, args, api) => JSON.parse((await tool.execute(args, api, context)).content[0].text);
+const run = async (tool, args, api) => JSON.parse((await tool.execute(args, api, context)).output[0].text);
 
 test('the extension is one native extension: a prompt section and the replay-safe feedback tool', async t => {
   const { feedback } = await fixture(t);
@@ -253,7 +253,7 @@ test('an agent without the extension has a byte-identical tool list and prompt',
   const directory = mkdtempSync(join(tmpdir(), 'boring-feedback-agent-snapshot-'));
   const { resources, store } = await openFeedbackStore(join(directory, 'feedback.sqlite'));
   t.after(() => { resources.close(); rmSync(directory, { recursive: true, force: true }); });
-  const echo = defineTool({ name: 'echo', description: 'Echo fictional text.', parameters: Type.Object({ text: Type.String() }), replay: 'safe', execute: async args => ({ content: [{ type: 'text', text: args.text }] }) });
+  const echo = defineTool({ name: 'echo', description: 'Echo fictional text.', parameters: Type.Object({ text: Type.String() }), replay: 'safe', execute: async args => ({ output: [{ type: 'text', text: args.text }] }) });
   const skill = parseSkill('---\nname: fictional-release\ndescription: "Prepare a fictional release"\n---\nList the fictional changes.\n');
   async function firstRequest(withFeedback) {
     const fake = createFakeChatModel();

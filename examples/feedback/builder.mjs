@@ -358,7 +358,7 @@ export async function builderAgent({ store, accessOf, page, tickets, project = {
     name: 'edit_page', description: 'Change the fictional Fernhill page. target "save-profile": the Save button of the profile form, with its new label.',
     parameters: Type.Object({ target: Type.Literal('save-profile'), label: Type.String({ minLength: 1, maxLength: 60 }) }, { additionalProperties: false }),
     replay: 'safe',
-    execute: async args => ({ content: [{ type: 'text', text: JSON.stringify({ kind: 'applied', page: page.edit(args) }) }] }),
+    execute: async args => ({ output: [{ type: 'text', text: JSON.stringify({ kind: 'applied', page: page.edit(args) }) }] }),
   });
   const { models, model } = provider ? await realModels(provider) : scriptedBuilderModels();
   // Tickets: the standard workspace tools (Pi's read, write and edit, then the file guard, then the ticket trigger on write) and present.

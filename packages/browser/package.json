@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-browser",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -47,11 +47,11 @@
     }
   },
   "peerDependencies": {
-    "@earendil-works/pi-durable": "1.1.0",
-    "@earendil-works/pi-ai": "1.1.0",
-    "@earendil-works/chord": "1.1.0",
-    "@earendil-works/pi-codemode": "1.1.0",
-    "@hachej/boring-files": "0.2.5",
+    "@earendil-works/pi-durable": "1.2.0",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/chord": "1.2.0",
+    "@earendil-works/pi-codemode": "1.2.0",
+    "@hachej/boring-files": "0.3.0",
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "buffer": "6.0.3"
   },

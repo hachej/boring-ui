@@ -34,6 +34,10 @@ async function ownedBy(tx: Tx, id: TaskId, owner: TaskId): Promise<boolean> {
   return false;
 }
 
+// A completed v1 tool task keeps version 1 and its untagged `{ assistant, callId }` input after the upgrade; v2 model tasks are tagged.
+const modelTaskShape = (version: number, input: JsonValue): boolean =>
+  version === 1 || (version === ToolTask.definition.version && object(input) && input.kind === 'model');
+
 export async function readToolEvidence(harness: Harness, owner: TaskId, ids: readonly EntryId[], context: Context): Promise<NativeToolEvidence[]> {
   return harness.commit(async tx => {
     const evidence: NativeToolEvidence[] = [];
@@ -41,7 +45,7 @@ export async function readToolEvidence(harness: Harness, owner: TaskId, ids: rea
       const entry = await tx.entry(ToolResultEntry, id);
       if (!entry?.byTaskId || entry.model?.length !== 1) throw new Error('Missing native tool result');
       const task = await tx.task(entry.byTaskId);
-      if (!task || task.kind !== ToolTask.definition.name || task.version !== ToolTask.definition.version
+      if (!task || task.kind !== ToolTask.definition.name || !modelTaskShape(task.version, task.input)
         || task.conversationId !== entry.conversationId || task.state.status !== 'terminal'
         || task.state.outcome.status !== 'completed' || !object(task.state.outcome.result)
         || task.state.outcome.result.entryId !== id || !object(task.input)

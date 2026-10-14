@@ -32,7 +32,7 @@ export interface RequireApprovalOptions<TParameters extends TSchema = TSchema> {
   readonly when?: (args: Static<TParameters>, call: ApprovalCall) => boolean;
 }
 
-const text = (value: string, isError: boolean) => ({ isError, content: [{ type: 'text' as const, text: value }] });
+const text = (value: string, isError: boolean) => ({ isError, output: [{ type: 'text' as const, text: value }] });
 
 /**
  * Wrap a native tool so the person must approve each call before it executes. The tool keeps its name, schema and
@@ -59,6 +59,7 @@ export function requireApproval<TParameters extends TSchema, TDetails extends Js
   const gated: ToolRegistration<TParameters, JsonValue> = {
     ...(tool as unknown as ToolRegistration<TParameters, JsonValue>),
     replay: 'safe',
+    callers: ['model'], // the question binds to the calling model entry; a nested executeTool caller has none (durable-wait.ts)
     execute: async (args, outerApi, context): Promise<ToolExecutionResult<JsonValue>> => {
       let record: { summary: string; decision?: 'approved' | 'denied' | 'cancelled' } | undefined;
       const withRecord = (value: JsonValue | undefined): JsonValue | undefined => !record ? value

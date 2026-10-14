@@ -665,6 +665,24 @@ try {
     const moved = await browser.evaluate(rect(LAYER));
     assert.ok(Math.abs(moved.x - (floating.x - 200)) <= 3 && Math.abs(moved.y - (floating.y - 120)) <= 3, `dragged by the title row: ${JSON.stringify({ floating, moved })}`);
     await browser.screenshot('desktop-dock-floating.png');
+    // Reachable after a resize: dragged far right at 1920 wide, then the window shrinks to 1024 (also after closing and reopening).
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 800, deviceScaleFactor: 1, mobile: false });
+    await pause(300);
+    const far = await center('[data-testid=agent-layer-title]');
+    await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: far.x, y: far.y, button: 'left', clickCount: 1 });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1900, y: far.y, button: 'left' });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 1900, y: far.y, button: 'left', clickCount: 1 });
+    await pause(200);
+    assert.ok((await browser.evaluate(rect(LAYER))).x > 1400, 'dragged to x > 1400');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.until('fully visible after the window shrank', `(() => { const r = ${q(LAYER)}.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })()`, 5000);
+    await browser.click(q('[data-testid=agent-layer-close]'));
+    await browser.until('closed', `${q(LAYER)}.dataset.state === 'closed'`);
+    await browser.click(q(TRIGGER));
+    await browser.until('reopened', `${q(LAYER)}.dataset.state === 'open'`);
+    assert.ok(await browser.evaluate(`(() => { const r = ${q(LAYER)}.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })()`), 'still visible after reopening');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await pause(300);
     await browser.send('Page.navigate', { url: app.url }); await live();
     await openCoach();
     assert.equal(await browser.evaluate(placement), 'floating:right', 'still floating after a reload');
@@ -678,6 +696,15 @@ try {
     await browser.send('Page.navigate', { url: app.url }); await live();
     await openCoach();
     assert.equal(await browser.evaluate(placement), 'docked:left', 'still docked left after a reload');
+    // Floating from the divider (Alt+Arrow towards the edge) keeps focus in the panel. Dock right first: its divider is on the inner (left) edge.
+    await browser.click(q('[data-testid=agent-layer-dock-right]'));
+    await browser.until('docked right', `${placement} === 'docked:right'`);
+    await browser.evaluate(`${q('[data-testid=dock-divider-agent]')}.focus()`);
+    await browser.press('ArrowRight', { alt: true });
+    await browser.until('floating from the divider', `${placement} === 'floating:right'`);
+    assert.equal(await browser.evaluate(`${q(LAYER)}.contains(document.activeElement)`), true, 'focus stays in the panel after floating from the divider');
+    await browser.click(q('[data-testid=agent-layer-dock-left]'));
+    await browser.until('docked left again', `${placement} === 'docked:left'`);
     // One layer at a time: the manager replaces the coach, in the same dock.
     await browser.click(q('[data-testid=nav-user]'));
     await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);

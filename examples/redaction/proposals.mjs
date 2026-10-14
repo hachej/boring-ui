@@ -27,15 +27,15 @@ export function createRedactionProposals({ harness, allowed, beforeProduce = asy
     parameters: Type.Object({ resource: Type.Literal('original') }, { additionalProperties: false }),
     execute: async (_args, api) => {
       const { input } = await producerInput(api.conversationId);
-      return permitted(input) ? { content: [{ type: 'text', text: input.text }] }
-        : { isError: true, content: [{ type: 'text', text: 'Fictional source denied' }] };
+      return permitted(input) ? { output: [{ type: 'text', text: input.text }] }
+        : { isError: true, output: [{ type: 'text', text: 'Fictional source denied' }] };
     } });
   const calculator = defineTool({ name: 'calculate_fictional', description: 'Calculate the fictional sum.', replay: 'safe',
     parameters: Type.Object({ left: Type.Integer(), right: Type.Integer() }, { additionalProperties: false }),
     execute: async (args, api) => {
       const { input } = await producerInput(api.conversationId);
-      return permitted(input) ? { content: [{ type: 'text', text: String(args.left + args.right) }] }
-        : { isError: true, content: [{ type: 'text', text: 'Fictional calculation denied' }] };
+      return permitted(input) ? { output: [{ type: 'text', text: String(args.left + args.right) }] }
+        : { isError: true, output: [{ type: 'text', text: 'Fictional calculation denied' }] };
     } });
   let validation;
   const proposedEvidence = (input, evidence) => input.settings.proposal.scenario === 'missing' ? []
