@@ -39,6 +39,7 @@ Confirm the npm organization and publishing account with
 the owner. The candidate names use `@hachej/boring-*`; repository ownership does not prove
 ownership of that npm scope. Confirm that all pinned external peers are available
 to the intended consumer. The tarball audit does not contact the registry.
+Pi peers use the tilde range `~1.2.0` (dev pins exact `1.2.0`); a Pi minor move is a reviewed change to both.
 
 Run `npm run release:version -- 0.2.0` (or an exact prerelease such as `0.2.0-rc.1`).
 This updates all seven workspace packages, internal dependency pins, lockfile records and

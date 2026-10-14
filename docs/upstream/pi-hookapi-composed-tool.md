@@ -8,7 +8,7 @@ A `beforeTool` hook (`hook(ToolTask, { beforeTool })`) receives `HookApi`, which
 
 Consequence for a fail-closed wrapper: an extension selected after the wrapper can replace the wrapper's `execute` (for example a converting read). The hook cannot detect that replacement, so the replaced call runs for real. Boring's sandbox must therefore assume the host orders extensions correctly.
 
-Pi 1.1 exposes `agent(context)` on `TaskRuntime`, `ToolExecutionApi` and `Conversation`. It is not typed on `HookApi`. The tool task passes its runtime to hooks, so an implementation can reach it, but that is not a documented contract, and Boring does not use it (BORING-PI-4).
+Pi 1.2 exposes `agent(context)` on `TaskRuntime`, `ToolExecutionApi` and `Conversation`. It is not typed on `HookApi`. The tool task passes its runtime to hooks, so an implementation can reach it, but that is not a documented contract, and Boring does not use it (BORING-PI-4).
 
 ## Request
 
