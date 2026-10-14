@@ -20,10 +20,12 @@ export interface AppShellText {
   /** The fourth tab when there are more than four screens, and the title of its sheet. */
   readonly more: string;
   readonly signOut: string;
-  /** The account sheet's title when the account has no name. */
+  /** The account sheet's title (the person's name is shown once, in the person block) and the sidebar's name when there is none. */
   readonly account: string;
   /** The header's « … » button. */
   readonly actions: string;
+  /** The account menu's theme switch. */
+  readonly darkMode: string;
   /** The label of the tab bar. */
   readonly tabs: string;
   /** The « ← » of a header. */
@@ -44,6 +46,7 @@ const en: AppShellText = {
   signOut: 'Sign out',
   account: 'Account',
   actions: 'More actions',
+  darkMode: 'Dark mode',
   tabs: 'Navigation',
   goBack: 'Back',
 };
@@ -62,6 +65,7 @@ const fr: AppShellText = {
   signOut: 'Se déconnecter',
   account: 'Compte',
   actions: 'Plus d\'actions',
+  darkMode: 'Mode sombre',
   tabs: 'Navigation',
   goBack: 'Retour',
 };

@@ -27,8 +27,9 @@ test('every file of registry/app-shell is listed in the item and equals the comm
 
 test('the item compiles strictly against the pinned shadcn fixtures', () => {
   const base = ts.readConfigFile(`${root}tsconfig.base.json`, ts.sys.readFile);
+  // The strict consumer settings (a copied item must compile in an app that sets them): unused locals and parameters, verbatim imports, erasable syntax only.
   const { options } = ts.parseJsonConfigFileContent({ ...base.config, compilerOptions: { ...base.config.compilerOptions, composite: false, declaration: false, declarationMap: false, noEmit: true,
-    allowImportingTsExtensions: true, jsx: 'react-jsx', module: 'ESNext', moduleResolution: 'Bundler', lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: root, paths: { '@/*': ['examples/app-shell/*'] } } }, ts.sys, root);
+    noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, allowImportingTsExtensions: true, jsx: 'react-jsx', module: 'ESNext', moduleResolution: 'Bundler', lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: root, paths: { '@/*': ['examples/app-shell/*'] } } }, ts.sys, root);
   const program = ts.createProgram(files.map(name => `${root}${folder}/${name}`), options);
   const diagnostics = ts.getPreEmitDiagnostics(program).filter(diagnostic => diagnostic.file && (diagnostic.file.fileName.startsWith(`${root}registry/`) || diagnostic.file.fileName.startsWith(`${root}examples/app-shell/`)));
   assert.deepEqual(diagnostics.map(diagnostic => `${diagnostic.file.fileName.replace(root, '')}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`), []);
@@ -141,18 +142,18 @@ test('useAgentContext: the most recently mounted screen wins and unmounting rest
 /** A happy-dom page for rendering hooks; restores the globals afterwards. */
 function dom(t) {
   const window = new Window({ url: 'https://fictional.invalid/' });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'history', 'IS_REACT_ACT_ENVIRONMENT'];
+  const names = ['window', 'document', 'navigator', 'history', 'location', 'HTMLElement', 'Element', 'Node', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'getSelection', 'MutationObserver', 'ResizeObserver', 'Event', 'CustomEvent', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'FocusEvent', 'DOMRect', 'IS_REACT_ACT_ENVIRONMENT'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
-  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name] });
+  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : /^(?:getComputedStyle|requestAnimationFrame|cancelAnimationFrame|matchMedia|getSelection)$/.test(name) ? window[name].bind(window) : window[name] });
   t.after(() => { for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
   return window;
 }
 
-test('AppShellProps has exactly the seven props of the brief, and no label, locale or theme prop', () => {
+test('AppShellProps has the seven props of the brief and the one locale prop, and no label or theme prop', () => {
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'nav', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'locale', 'nav', 'route', 'title']);
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {

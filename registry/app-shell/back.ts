@@ -27,7 +27,7 @@ export function afterBack(action: () => void): void {
   setTimeout(() => { if (ignored > 0) waiting.push(action); else action(); }, 0);
 }
 
-const topmost = (): Layer | undefined => [...layers].sort((a, b) => RANK[a.order] - RANK[b.order])[0];
+const topmost = (): Layer | undefined => [...layers].toSorted((a, b) => RANK[a.order] - RANK[b.order])[0];
 
 function onPopState(): void {
   if (ignored > 0) {

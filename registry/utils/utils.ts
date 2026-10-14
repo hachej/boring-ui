@@ -6,7 +6,8 @@ export function cn(...inputs: ClassValue[]): string { return twMerge(clsx(inputs
 
 /** Thrown when no automatic copy worked; `text` is what the person must copy by hand (a viewer shows it selected). */
 export class ManualCopyError extends Error {
-  constructor(readonly text: string) { super('Copy the text by hand'); this.name = 'ManualCopyError'; }
+  readonly text: string;
+  constructor(text: string) { super('Copy the text by hand'); this.name = 'ManualCopyError'; this.text = text; }
 }
 
 /**
