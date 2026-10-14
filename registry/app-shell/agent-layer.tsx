@@ -27,6 +27,7 @@ import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { PointBar, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from './back';
+import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
 import { useVisualViewport } from './use-visual-viewport';
@@ -258,14 +259,17 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
   specs.current = { agent, improve };
 
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
+  const close = useCallback(() => setSnapState('closed'), []);
+  // One full-screen layer at a time: opening the agent or product manager closes a view of the app (`useShellLayer`), and a view closes these.
+  useEffect(() => registerAgentLayerCloser(close), [close]);
   const open = useCallback((which?: Which, at: 'half' | 'full' = 'half') => {
     const { agent: a, improve: i } = specs.current;
     const target = which ?? (a ? 'agent' : 'improve');
     if (target === 'agent' ? !a : !i) return;
+    closeShellLayer();
     setShown(target);
     setSnapState(at);
   }, []);
-  const close = useCallback(() => setSnapState('closed'), []);
   const showAgent = useCallback(() => { if (specs.current.agent) setShown('agent'); }, []);
 
   // A spec that goes away takes the layer with it.
