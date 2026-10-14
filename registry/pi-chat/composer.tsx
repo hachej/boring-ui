@@ -88,10 +88,10 @@ export interface ComposerProps {
 /** Round bar buttons share one look: a tinted circle, 44px so a thumb can hit it. */
 const ROUND = 'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
-/** The annotate toggle (a round bar button beside the "+" menu in both layouts). Notes waiting to be sent keep it off until they are sent or removed. */
+/** The annotate toggle (a round bar button beside the "+" menu in both layouts). */
 function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
   const { labels } = useChatText();
-  return <button type="button" data-testid="composer-annotate" aria-pressed={feedback.active} disabled={disabled || (!feedback.active && feedback.count > 0)}
+  return <button type="button" data-testid="composer-annotate" aria-pressed={feedback.active} disabled={disabled}
     title={labels.annotateHint} onClick={() => feedback.annotate()}
     className={cn(ROUND, feedback.active && 'bg-accent')}>
     <MessageSquarePlusIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.annotate}</span>

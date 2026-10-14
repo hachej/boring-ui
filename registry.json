@@ -2313,8 +2313,16 @@
           "font": "inherit"
         },
         "[data-boring=\"feedback\"] .boring-feedback-pin-field": {
-          "position": "relative",
-          "display": "block"
+          "display": "grid"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-pin-field > *": {
+          "grid-column": "1"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-pin-field > textarea, [data-boring=\"feedback\"] .boring-feedback-pin-field > .boring-feedback-pin-mic": {
+          "grid-row": "1"
+        },
+        "[data-boring=\"feedback\"] .boring-feedback-pin-field > .boring-feedback-voice-problem": {
+          "grid-row": "2"
         },
         "[data-boring=\"feedback\"] .boring-feedback-pin-field textarea": {
           "display": "block",
@@ -2323,9 +2331,8 @@
           "padding-right": "3.25rem"
         },
         "[data-boring=\"feedback\"] .boring-feedback-pin-mic": {
-          "position": "absolute",
-          "right": "0",
-          "bottom": "0",
+          "justify-self": "end",
+          "align-self": "end",
           "display": "inline-flex",
           "align-items": "center",
           "justify-content": "center",

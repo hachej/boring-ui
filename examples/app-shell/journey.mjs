@@ -421,7 +421,7 @@ try {
     await tap('[data-testid=feedback-point-done]');
     await browser.until('the sheet is back with the count chip', `${snap} === 'half' && !!${q('[data-spec=improve]')} && !${q('[data-testid=feedback-point-bar]')} && ${q('[data-spec=improve] [data-testid=feedback-count]')}?.dataset.count === '1'`, 8000);
     assert.match(await browser.evaluate(`${q('[data-spec=improve] [data-testid=feedback-count]')}.innerText`), /1 note/);
-    assert.equal(await browser.evaluate(`${q('[data-spec=improve] [data-testid=composer-annotate]')}.disabled`), true, 'notes waiting for Send keep the toggle off');
+    assert.equal(await browser.evaluate(`${q('[data-spec=improve] [data-testid=composer-annotate]')}.disabled`), false, 'notes waiting for Send do not block annotating');
     await settle();
     await tap('[data-spec=improve] [data-testid=feedback-count-clear]');
     await browser.until('the chip is removed', `!${q('[data-spec=improve] [data-testid=feedback-count]')}`, 5000);

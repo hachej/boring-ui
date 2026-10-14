@@ -130,7 +130,7 @@ test('with the feedback prop: ONE annotate button beside the + menu in both layo
   assert.doesNotMatch(active, /data-testid="composer-annotate"[^>]*disabled=""/, 'the same toggle exits annotating');
 });
 
-test('notes taken: a count chip (not a Feedback block) in the composer, Send allowed with no text, the toggle waits until they are sent or removed', async () => {
+test('notes taken: a count chip (not a Feedback block) in the composer, Send allowed with no text, the toggle stays available to add more', async () => {
   const cases = composerCases();
   for (const name of ['stacked-empty', 'inline-empty']) {
     const html = renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { ...idle, count: 2 } }));
@@ -138,7 +138,7 @@ test('notes taken: a count chip (not a Feedback block) in the composer, Send all
     assert.match(html, /2 notes/);
     assert.match(html, /data-testid="feedback-count-clear"/);
     assert.doesNotMatch(html, /data-testid="composer-submit"[^>]*disabled=""/, 'the notes are something to send');
-    assert.match(html, /data-testid="composer-annotate"[^>]*disabled=""/);
+    assert.doesNotMatch(html, /data-testid="composer-annotate"[^>]*disabled=""/, 'pending notes never block annotating again');
     assert.match(renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { ...idle, count: 1 } })), /1 note\b(?!s)/);
   }
   assert.doesNotMatch(renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { ...idle, count: 2, active: true } })), /data-testid="composer-annotate"[^>]*disabled=""/, 'annotating with notes can still be turned off');

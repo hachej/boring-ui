@@ -156,6 +156,7 @@ try {
     await browser.click(q('feedback-bubble-mic'));
     assert.equal(await browser.until('the voice problem', `${q('feedback-bubble-voice-problem')}?.textContent`, 5000), 'Recording needs a secure page (https or localhost).');
     assert.equal(await browser.evaluate(`${q('feedback-bubble-input')}.value`), NOTE_PLAN, 'a failed mic keeps the typed text');
+    assert.equal(await browser.evaluate(`(() => { const f = ${q('feedback-bubble-input')}.getBoundingClientRect(), m = ${q('feedback-bubble-mic')}.getBoundingClientRect(); return m.left >= f.left && m.right <= f.right && m.bottom <= f.bottom + 1; })()`), true, 'the mic stays inside the field when an error is shown');
     await shot('05-mic-insecure');
     await browser.click(q('feedback-bubble-input'));
     await browser.press('Enter');
@@ -164,13 +165,19 @@ try {
     await shot('05b-second-pin');
   });
 
-  await step('Esc exits annotating: the toggle is off, the pins are gone from the page, the composer keeps the "2 notes" chip', async () => {
+  await step('Esc exits annotating: the toggle is off, the pins are gone from the page, the composer keeps the "2 notes" chip; the toggle resumes and a third note joins them', async () => {
     await browser.press('Escape');
     await browser.until('not annotating', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'false' && window.__feedbackSession.getSnapshot().phase === 'review'`, 10000);
     assert.equal(await browser.evaluate(`${inChat('feedback-count')}.innerText.trim()`), '2 notes');
     assert.deepEqual((await browser.evaluate(DRAWN)).filter(item => item.tone === 'pinned' || item.tone === 'hover'), [], 'no pins or hover once annotating is off');
     assert.equal(await browser.evaluate(`!!${inChat('feedback-chip')} || !!${q('feedback-bar')}`), false, 'no Feedback block');
     await shot('06-count-chip');
+    assert.equal(await browser.evaluate(`${inChat('composer-annotate')}.disabled`), false, 'pending notes do not block annotating');
+    await browser.click(inChat('composer-annotate'));
+    await browser.until('resumed with the notes kept', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'true' && ${inChat('feedback-count')}?.dataset.count === '2'`, 5000);
+    await browser.press('Escape');
+    await browser.until('not annotating', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'false' && window.__feedbackSession.getSnapshot().phase === 'review'`, 10000);
+    assert.equal(await browser.evaluate(`${inChat('feedback-count')}.dataset.count`), '2');
   });
 
   let id;

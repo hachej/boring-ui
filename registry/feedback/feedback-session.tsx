@@ -354,8 +354,9 @@ function pointsInstead(): boolean {
 }
 
 /**
- * Starts annotating on desktop, with Esc as a way out. The session swallows Esc on the page (it only closes a pin), so this listens on the
- * window's capture phase BEFORE the session starts, and ends the mode (Done: the notes wait for Send) when no pin is open.
+ * Starts (or resumes) annotating in either mode, with Esc as a way out. The session swallows Esc on the page (it only closes a pin), so
+ * this listens on the window's capture phase BEFORE the session starts, and ends the mode (Done: the notes wait for Send) when no pin is
+ * open. From the review, `resume` keeps the notes, anchors and save guards: a second round adds to the same draft.
  */
 function startAnnotating(session: FeedbackSession): void {
   const view = globalThis.window;
@@ -364,7 +365,7 @@ function startAnnotating(session: FeedbackSession): void {
     if (event.key === 'Escape' && !session.getSnapshot().bubble) { event.preventDefault(); event.stopPropagation(); void session.done(); }
   };
   view?.addEventListener('keydown', onKey, { capture: true });
-  session.start();
+  session.resume(pointsInstead() ? { mode: 'point' } : {});
   const stop = session.subscribe(() => {
     if (session.getSnapshot().phase === 'active') return;
     view?.removeEventListener('keydown', onKey, { capture: true });
@@ -374,7 +375,7 @@ function startAnnotating(session: FeedbackSession): void {
 
 /**
  * The composer's `feedback` prop for a session: ONE annotate toggle (targeting with a hover highlight; point mode on touch and compact
- * screens), a count of the notes taken, and Send attaching them: a saved report as its `@` mention (the host's mention resolver inlines
+ * screens, and again after Esc to add more), a count of the notes taken, and Send attaching them: a saved report as its `@` mention (the host's mention resolver inlines
  * the stored report with the person's access), otherwise the rendered report inline in a fenced block. Pair it with `NoteBubble`.
  */
 export function useComposerFeedback(session: FeedbackSession | undefined): ComposerFeedbackProp | undefined {
@@ -385,7 +386,7 @@ export function useComposerFeedback(session: FeedbackSession | undefined): Compo
     annotate: () => {
       const phase = session.getSnapshot().phase;
       if (phase === 'active') void session.done();
-      else if (phase === 'idle') { if (pointsInstead()) session.start({ mode: 'point' }); else startAnnotating(session); }
+      else if (phase === 'idle' || phase === 'review') startAnnotating(session);
     },
     active: open,
     // A note being typed in the pin counts: Send saves it.

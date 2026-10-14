@@ -371,7 +371,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
       {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(spec.chatProps?.locale)} /></> } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
-    {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden [&_[data-testid=feedback-general-bubble]]:static!">
+    {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
       <NoteBubble session={spec.feedback} {...(transcribe ? { transcribe } : {})} {...(fr ? { labels: feedbackLabelsFr } : {})} /></div>}
   </div>;
 }

@@ -9,8 +9,6 @@ export interface FeedbackLabels {
   readonly cancelSelection: string;
   /** The entry point (bar button, sheet button, general sheet title): a note with no element attached. */
   readonly askGeneral: string;
-  readonly generalPlaceholder: string;
-  readonly generalHint: string;
   /** The sheet's field label for a selected zone / for a general question. */
   readonly changeField: string;
   readonly generalField: string;
@@ -20,7 +18,6 @@ export interface FeedbackLabels {
   readonly saving: string;
   readonly saved: string;
   readonly bubblePlaceholder: string;
-  readonly bubbleHint: string;
   /** The pin's one-line desktop hint: holding Alt passes clicks to the app. */
   readonly altHint: string;
   /** The pin's field label, its Add button, and the mic inside the field (record, stop, transcribing, nothing heard, failed). */
@@ -32,7 +29,6 @@ export interface FeedbackLabels {
   readonly voiceFailed: string;
   /** Announced when the selection was cancelled, so a screen reader hears that the zone is gone. */
   readonly selectionCancelled: string;
-  readonly generalOpened: string;
   /** Point mode's bar (phones): the hint, the count of picks, Done, Cancel and the "use the app" toggle with its hint. */
   readonly pointHint: string;
   readonly pointCount: (count: number) => string;
@@ -48,8 +44,6 @@ export const feedbackLabels: FeedbackLabels = {
   close: 'Close',
   cancelSelection: 'Cancel selection',
   askGeneral: 'Ask a general question',
-  generalPlaceholder: 'Your question (no element attached)',
-  generalHint: 'Esc to close · Done to send',
   changeField: 'What should change?',
   generalField: 'Your question',
   copyReport: 'Copy report',
@@ -58,7 +52,6 @@ export const feedbackLabels: FeedbackLabels = {
   saving: 'Saving…',
   saved: 'Saved',
   bubblePlaceholder: "What's wrong here?",
-  bubbleHint: 'Enter to save · Esc to discard',
   altHint: 'Hold ⌥ to use the app',
   add: 'Add note',
   voiceRecord: 'Speak your note',
@@ -67,7 +60,6 @@ export const feedbackLabels: FeedbackLabels = {
   voiceNothing: 'Nothing was heard. Your text is kept.',
   voiceFailed: 'The recording could not be transcribed. Your text is kept.',
   selectionCancelled: 'Selection cancelled.',
-  generalOpened: 'General question: no element attached.',
   pointHint: 'Tap an element to comment',
   pointCount: count => `${count} ${count === 1 ? 'selection' : 'selections'}`,
   pointDone: 'Done',
@@ -82,8 +74,6 @@ export const feedbackLabelsFr: FeedbackLabels = {
   close: 'Fermer',
   cancelSelection: 'Annuler la sélection',
   askGeneral: 'Poser une question générale',
-  generalPlaceholder: 'Votre question (sans zone)',
-  generalHint: 'Échap pour fermer · Terminé pour envoyer',
   changeField: 'Que faut-il changer ?',
   generalField: 'Votre question',
   copyReport: 'Copier le rapport',
@@ -92,7 +82,6 @@ export const feedbackLabelsFr: FeedbackLabels = {
   saving: 'Enregistrement…',
   saved: 'Enregistré',
   bubblePlaceholder: "Qu'est-ce qui ne va pas ici ?",
-  bubbleHint: 'Entrée pour valider · Échap pour annuler',
   altHint: 'Maintenez ⌥ pour utiliser l’app',
   add: 'Ajouter la note',
   voiceRecord: 'Dicter votre note',
@@ -101,7 +90,6 @@ export const feedbackLabelsFr: FeedbackLabels = {
   voiceNothing: 'Rien n’a été entendu. Votre texte est conservé.',
   voiceFailed: 'L’enregistrement n’a pas pu être transcrit. Votre texte est conservé.',
   selectionCancelled: 'Sélection annulée.',
-  generalOpened: 'Question générale : aucune zone sélectionnée.',
   pointHint: 'Touchez un élément à commenter',
   pointCount: count => `${count} ${count <= 1 ? 'sélection' : 'sélections'}`,
   pointDone: 'Terminé',

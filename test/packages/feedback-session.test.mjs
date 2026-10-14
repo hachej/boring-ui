@@ -495,6 +495,27 @@ test('voice: transcription is the host\'s callback; text only, timed segments, a
   assert.equal((await run(async () => { throw 'boom'; })).problem, 'Voice could not be transcribed. Your pins are kept: type a note for each in the review.');
 });
 
+test('session.resume: from the review it keeps notes and anchors; a saved draft gets a new operation; otherwise it starts', async t => {
+  const context = page(t);
+  const saves = [];
+  const { session, under } = sessionOn(t, context, { save: async ({ operationId, draft }) => { saves.push([operationId, draft.anchors.length]); return { kind: 'saved', id: `fb_${saves.length}`, revision: 'r1' }; }, mention: id => `feedback/${id}.md` });
+  session.resume();
+  assert.equal(session.getSnapshot().phase, 'active', 'no review: resume starts');
+  pinAt(context, under, context.$('save')); session.setBubbleText('A'); session.saveBubble();
+  await session.done();
+  assert.equal(session.getSnapshot().phase, 'review');
+  assert.equal((await session.attach()).kind, 'mention');
+  session.resume();
+  assert.equal(session.getSnapshot().phase, 'active');
+  assert.deepEqual(session.getSnapshot().notes.map(note => note.text), ['A']);
+  pinAt(context, under, context.$('plan')); session.setBubbleText('B'); session.saveBubble();
+  await session.done();
+  assert.equal((await session.attach()).kind, 'mention');
+  assert.equal(saves.length, 2, 'the changed draft was saved again');
+  assert.notEqual(saves[0][0], saves[1][0], 'under a new operation id');
+  assert.deepEqual(saves.map(save => save[1]), [1, 2]);
+});
+
 // --- the registry components ---------------------------------------------------------------------------------------------------------
 
 let bundled;
@@ -673,7 +694,19 @@ test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exi
   assert.equal(session.getSnapshot().phase, 'review', 'Esc exits annotating; the note waits for Send');
   assert.deepEqual([composer.active, composer.count], [false, 1]);
 
-  // Send attaches the pending note through the existing attach/sent flow.
+  // Resume: the toggle in the review keeps note A, adds B, and Send carries both through one save.
+  await act(async () => composer.annotate());
+  assert.equal(session.getSnapshot().phase, 'active', 'the toggle resumes the unsent session');
+  assert.equal(composer.count, 1, 'note A is kept');
+  await act(async () => pinAt(context, under, context.$('plan')));
+  await act(async () => setValue(window, $t('feedback-bubble-input'), 'Note B'));
+  await act(async () => { keydown(window, $t('feedback-bubble-input'), 'Enter'); });
+  assert.equal(composer.count, 2);
+  await act(async () => { keydown(window, document.body, 'Escape'); });
+  await until('review again', () => session.getSnapshot().phase === 'review');
+  assert.deepEqual(session.getSnapshot().notes.map(note => note.text), ['Say what it saves and it is slow', 'Note B']);
+  assert.equal(session.draft().anchors.length, 2, 'both anchors are in the draft');
+  // Send attaches the pending notes through the existing attach/sent flow.
   assert.deepEqual(await composer.attach('Please look.'), { kind: 'ok', text: 'Please look.\n\n@feedback/fb_7Q2mK9xRt4vW1cZp.md' });
   await act(async () => composer.sent());
   assert.deepEqual([composer.active, composer.count], [false, 0]);
@@ -717,6 +750,9 @@ test('registry: on touch or a compact screen the toggle enters point mode', { ti
       await act(async () => composer.annotate());
       assert.equal(session.getSnapshot().mode, 'point');
       assert.equal(composer.active, true);
+      await act(async () => { keydown(window, document.body, 'Escape'); });
+      for (let i = 0; i < 100 && session.getSnapshot().phase === 'active'; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+      assert.notEqual(session.getSnapshot().phase, 'active', 'Esc exits point mode too');
       await act(async () => session.discard());
     } finally {
       if (before) Object.defineProperty(globalThis, 'matchMedia', before); else delete globalThis.matchMedia;
