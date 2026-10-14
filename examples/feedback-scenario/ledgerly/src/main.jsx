@@ -48,8 +48,8 @@ function ComposerStandIn({ session }) {
   const feedback = useComposerFeedback(session);
   if (!feedback) return null;
   return <span className="ly-composer" data-boring="feedback">
-    {feedback.pending ? <FeedbackChip session={session} copy />
-      : <button type="button" className="boring-feedback-button" data-testid="composer-feedback" aria-pressed={feedback.active} disabled={feedback.active} onClick={feedback.start}>Feedback</button>}
+    {feedback.count > 0 && !feedback.active ? <FeedbackChip session={session} copy />
+      : <button type="button" className="boring-feedback-button" data-testid="composer-feedback" aria-pressed={feedback.active} disabled={feedback.active} onClick={feedback.annotate}>Feedback</button>}
   </span>;
 }
 

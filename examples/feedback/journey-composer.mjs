@@ -1,13 +1,12 @@
-// The composer journey (FEEDBACK.md, "UX"): one driven Chromium run of the default Fernhill page, with real pointer and keyboard input
-// over the DevTools protocol on an insecure origin, the keyless scripted builder (builder.mjs) and the SQLite store. Steps:
-//   Feedback in the chat composer → hover and click Save (pinned, never pressed) → type a note, Enter → hold ⌥ and use the app (open the
-//   Billing section, open the plan menu: both reach the page and are recorded as steps) → release ⌥, click Change plan (pinned, the
-//   menu does not toggle) → note → 🎙 Record says in the bar that recording needs a secure page (this origin is insecure) → Done →
-//   one chip → its review (hover highlights a note's element, or says it is not on this page) → Send → the builder replies citing both
-//   elements with file:line → the card's element lines read «name» kind + file:line; hovering one highlights it in the page (✓), and a
-//   pin from the other section is "not on this page" → recording mode on a secure origin (127.0.0.1) with Chromium's fake microphone:
-//   Record (red dot, timer, Stop), two clicks drop pins ① ② with no bubble, Stop, Done → Transcribing… → the chip counts the merged
-//   notes from the fake transcription (run with `env -u TRANSCRIPTION_API_KEY` so the example uses it).
+// The composer journey (FEEDBACK.md, "UX"): one driven Chromium run (1280x800) of the default Fernhill page, with real pointer and keyboard
+// input over the DevTools protocol on an insecure origin, the keyless scripted builder (builder.mjs) and the SQLite store. Steps:
+//   the composer has exactly ONE annotate control and no Feedback block → toggle → hover and click Save (pinned, never pressed) → a pin with
+//   a text field and a mic inside it, and a hint that ⌥ passes clicks to the app → type a note, Enter → a count chip in the composer →
+//   hold ⌥ and use the app (open the Billing section, open the plan menu: both reach the page and are recorded as steps) → release ⌥, click
+//   Change plan → the mic says recording needs a secure page and keeps the typed text → Enter → Esc exits annotating, the chip stays →
+//   Send → the builder replies citing both elements with file:line → the card's element lines highlight in the page on hover → on a secure
+//   origin (127.0.0.1) with Chromium's fake microphone: the mic in a pin records and the transcript lands in the field (run with
+//   `env -u TRANSCRIPTION_API_KEY` so the example uses its fake transcription).
 // Screenshots and journey.json go to .cache/evidence/feedback-composer/. Manual evidence, not an npm test.
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -56,83 +55,87 @@ try {
   const alt = type => browser.send('Input.dispatchKeyEvent', { type, key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18, modifiers: type === 'keyUp' ? 0 : 1 });
   const hoverLabel = `(${DRAWN}).find(item => item.tone === 'hover')?.label`;
 
-  await browser.until('the page and the Feedback button in the composer', `!!(${q('app-root')} && ${CHAT} && ${inChat('composer-feedback')} && !${inChat('composer-feedback')}.disabled && ${inChat('composer-input')} && !${inChat('composer-input')}.disabled)`, 30000);
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await browser.until('the page and the annotate toggle in the composer', `!!(${q('app-root')} && ${CHAT} && ${inChat('composer-annotate')} && !${inChat('composer-annotate')}.disabled && ${inChat('composer-input')} && !${inChat('composer-input')}.disabled)`, 30000);
   await browser.evaluate(`(() => { const hits = window.__journeyHits = { save: 0, submit: 0, plan: 0 };
     ${SAVE}.addEventListener('click', () => hits.save++); ${SAVE}.closest('form').addEventListener('submit', () => hits.submit++); })()`);
+  const session = () => browser.evaluate('(() => { const s = window.__feedbackSession.getSnapshot(); return { phase: s.phase, mode: s.mode, using: s.using, notes: s.notes.length }; })()');
 
-  await step('one entry point: the composer has a Feedback button beside the + menu, and the page has no other feedback button', async () => {
-    const found = await browser.evaluate(`({ button: ${inChat('composer-feedback')}.textContent, point: !!${q('feedback-point')}, list: !!${q('feedback-open-list')}, dock: !!${q('feedback-dock')}, bar: !!${q('feedback-bar')} })`);
-    assert.deepEqual(found, { button: 'Feedback', point: false, list: false, dock: false, bar: false });
+  await step('one annotate control: the toolbar has exactly one, 44px, and no Feedback block, Record, Done, general question or Show in app', async () => {
+    const found = await browser.evaluate(`(() => { const form = ${inChat('composer')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')];
+      const r = toggles[0].getBoundingClientRect();
+      return { toggles: toggles.length, size: [Math.round(r.width), Math.round(r.height)], label: toggles[0].textContent,
+        words: /Feedback|Record|Done|Show in app|general question|Use app/i.test(form.innerText),
+        gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-done', 'feedback-voice', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')),
+        page: ['feedback-point', 'feedback-open-list', 'feedback-dock'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
+    assert.equal(found.toggles, 1);
+    assert.ok(found.size[0] >= 44 && found.size[1] >= 44, `44px target (${found.size})`);
+    assert.equal(found.words, false, 'no Feedback block words in the composer');
+    assert.deepEqual(found.gone, []);
+    assert.deepEqual(found.page, []);
     await shot('01-page');
   });
 
-  await step('Feedback: feedback mode, a slim bar; hovering boxes and labels the element through the privacy policy', async () => {
-    await browser.click(inChat('composer-feedback'));
-    await browser.until('the feedback bar', `!!${q('feedback-bar')}`, 5000);
-    assert.equal(await browser.evaluate(`${inChat('composer-feedback')}.getAttribute('aria-pressed')`), 'true');
-    assert.match(await browser.evaluate(`${q('feedback-bar')}.innerText`), /Feedback[\s\S]*0 notes[\s\S]*Hold ⌥ to use the app[\s\S]*Use app[\s\S]*Done/);
+  await step('toggle: targeting is armed, no bar appears; hovering boxes and labels the element through the privacy policy', async () => {
+    await browser.click(inChat('composer-annotate'));
+    await browser.until('annotating', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'true' && window.__feedbackSession.getSnapshot().phase === 'active'`, 5000);
+    assert.equal(await browser.evaluate(`!!${q('feedback-bar')} || !!${q('feedback-bar-hint')}`), false, 'no Feedback bar');
+    assert.equal((await session()).mode, 'feedback', 'desktop: pins, not point mode');
     await point(SAVE);
     assert.equal(await browser.until('a hover label', hoverLabel, 5000), 'SettingsPage · button «Save profile»');
-    assert.equal(await browser.evaluate(`${q('feedback-bar-hint')}.textContent`), 'Click what you want to comment on', 'the bar never names the hovered component');
-    assert.ok(await browser.evaluate(`!!${inChat('feedback-bar')}`), 'the bar is docked under the composer');
-    await shot('02-feedback-mode-hover');
+    await shot('02-annotate-hover');
   });
 
-  await step('cancel a selection (Esc, a second click on the zone, the Cancel selection button) and ask a general question with no element: never stuck on a zone', async () => {
-    const count = () => browser.evaluate(`${q('feedback-bar-count')}.textContent`);
+  await step('cancel a selection (Esc, a second click on the zone, the Cancel selection button): never stuck on a zone, and no general question anywhere', async () => {
+    const live = () => session();
     // Esc from the note.
     await clickAt(SAVE);
-    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
     await browser.type(q('feedback-bubble-input'), 'never mind');
     await browser.press('Escape');
     await browser.until('the pin is gone', `!${q('feedback-bubble')} && !(${DRAWN}).some(item => item.tone === 'pinned')`, 5000);
-    assert.equal(await count(), '0 notes');
-    assert.equal(await browser.evaluate('document.querySelector(\'[data-testid=feedback-bar]\') !== null'), true, 'Esc did not end feedback mode');
+    assert.equal((await live()).phase, 'active', 'Esc in the pin did not end annotating');
     // The zone again: a second click clears the selection.
     await clickAt(SAVE);
-    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
     await clickAt(SAVE);
     await browser.until('the selection is cleared', `!${q('feedback-bubble')} && !(${DRAWN}).some(item => item.tone === 'pinned')`, 5000);
-    // The button; focus returns to the general-question entry.
+    // The button.
     await clickAt(SAVE);
-    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
     assert.equal(await browser.evaluate(`${q('feedback-cancel-selection')}.textContent`), 'Cancel selection');
+    assert.equal(await browser.evaluate(`!!${q('feedback-bubble-general')} || !!${q('feedback-general')}`), false, 'no general-question button');
     await browser.click(q('feedback-cancel-selection'));
     await browser.until('the selection is cleared', `!${q('feedback-bubble')} && !(${DRAWN}).some(item => item.tone === 'pinned')`, 5000);
-    assert.equal(await browser.evaluate(`document.activeElement === ${q('feedback-general')}`), true, 'focus returns to the general-question entry');
     assert.deepEqual(await browser.evaluate('window.__journeyHits'), { save: 0, submit: 0, plan: 0 }, 'the zone was never pressed');
-    // A general question: a note with no element; Esc closes it and keeps the text.
-    await browser.click(q('feedback-general'));
-    await browser.until('the general question', `document.activeElement === ${q('feedback-general-input')}`, 5000);
-    await browser.type(q('feedback-general-input'), 'x');
-    await shot('02b-general-question');
-    await browser.press('Escape');
-    await browser.until('closed', `!${q('feedback-general-bubble')} && ${q('feedback-bar-count')}.textContent === '1 note'`, 5000);
-    await browser.click(q('feedback-general'));
-    await browser.until('reopened with the text', `${q('feedback-general-input')}?.value === 'x'`, 5000);
-    await browser.evaluate(`${q('feedback-general-input')}.select()`);
-    await browser.press('Backspace');
-    await browser.press('Escape');
-    await browser.until('nothing left', `!${q('feedback-general-bubble')} && ${q('feedback-bar-count')}.textContent === '0 notes'`, 5000);
+    assert.equal(await browser.evaluate(`!!${inChat('feedback-count')}`), false, 'nothing taken: no count chip');
   });
 
-  await step('click Save: a numbered pin and a note bubble right there; the page never reacts', async () => {
+  await step('click Save: a pin right there with a text field, a mic inside it and a one-line Alt hint; the page never reacts', async () => {
     await clickAt(SAVE);
-    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
     assert.equal(await browser.evaluate(`${q('feedback-bubble-input')}.placeholder`), "What's wrong here?");
     assert.deepEqual(await browser.evaluate('window.__journeyHits'), { save: 0, submit: 0, plan: 0 }, 'Save was neither clicked nor submitted');
     assert.equal(await browser.evaluate(`${q('profile-saved')}.dataset.presses`), '0');
+    const geometry = await browser.evaluate(`(() => { const f = ${q('feedback-bubble-input')}.getBoundingClientRect(), m = ${q('feedback-bubble-mic')}.getBoundingClientRect(); const hint = ${q('feedback-bubble-hint')};
+      return { inside: m.left >= f.left && m.right <= f.right && m.top >= f.top && m.bottom <= f.bottom, mic: [Math.round(m.width), Math.round(m.height)], hint: hint.textContent, lines: Math.round(hint.getBoundingClientRect().height / parseFloat(getComputedStyle(hint).lineHeight || 16)), buttons: [...${q('feedback-bubble')}.querySelectorAll('button')].map(b => [b.textContent, Math.round(b.getBoundingClientRect().height)]) }; })()`);
+    assert.equal(geometry.inside, true, 'the mic is inside the text field');
+    assert.ok(geometry.mic[0] >= 44 && geometry.mic[1] >= 44, `44px mic (${geometry.mic})`);
+    assert.match(geometry.hint, /Hold ⌥ to use the app/, 'desktop: Alt passes clicks to the app');
+    assert.equal(geometry.lines, 1, 'a one-line hint');
+    for (const [name, height] of geometry.buttons) assert.ok(height >= 44, `${name || 'mic'} is 44px (${height})`);
     await browser.type(q('feedback-bubble-input'), NOTE_SAVE);
-    await shot('03-bubble');
+    await shot('03-pin');
     await browser.press('Enter');
-    await browser.until('the note is kept', `!${q('feedback-bubble')} && ${q('feedback-bar-count')}.textContent === '1 note'`, 5000);
+    await browser.until('the note is kept and counted in the composer', `!${q('feedback-bubble')} && ${inChat('feedback-count')}?.dataset.count === '1'`, 5000);
+    assert.equal(await browser.evaluate(`${inChat('feedback-count')}.innerText.trim()`), '1 note');
     assert.ok((await browser.evaluate(DRAWN)).some(item => item.label === '①' && item.tone === 'pinned'), 'pin ① stays on the page');
     assert.equal(await browser.evaluate(boxOver(SAVE, 'pinned')), true);
   });
 
   await step('hold ⌥ and use the app: the Billing section opens and the plan menu opens; both are recorded as steps', async () => {
     await alt('rawKeyDown');
-    await browser.until('using the app', `${q('feedback-bar')}.dataset.using === 'true'`, 5000);
+    await browser.until('using the app', `window.__feedbackSession.getSnapshot().using === true`, 5000);
     await clickAt(q('section-billing'), { alt: true });
     await browser.until('the Billing section', `location.pathname === '/settings/billing' && !!${PLAN}`, 5000);
     await browser.evaluate(`${PLAN}.addEventListener('click', () => window.__journeyHits.plan++)`);
@@ -141,56 +144,47 @@ try {
     assert.equal(await browser.evaluate('window.__journeyHits.plan'), 1, 'the click reached the app');
     await shot('04-using-the-app');
     await alt('keyUp');
-    await browser.until('back to commenting', `${q('feedback-bar')}.dataset.using === 'false'`, 5000);
+    await browser.until('back to commenting', `window.__feedbackSession.getSnapshot().using === false`, 5000);
   });
 
-  await step('release ⌥ and click Change plan: a second pin and note; the menu does not toggle', async () => {
+  await step('release ⌥ and click Change plan: a second pin; the mic on this insecure origin says so and keeps the typed text; the menu does not toggle', async () => {
     await clickAt(PLAN);
-    await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
+    await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
     assert.equal(await browser.evaluate('window.__journeyHits.plan'), 1, 'the pin click never reached the app');
     assert.equal(await browser.evaluate(`!!${q('plan-menu')}`), true, 'the menu is still open');
     await browser.type(q('feedback-bubble-input'), NOTE_PLAN);
+    await browser.click(q('feedback-bubble-mic'));
+    assert.equal(await browser.until('the voice problem', `${q('feedback-bubble-voice-problem')}?.textContent`, 5000), 'Recording needs a secure page (https or localhost).');
+    assert.equal(await browser.evaluate(`${q('feedback-bubble-input')}.value`), NOTE_PLAN, 'a failed mic keeps the typed text');
+    assert.equal(await browser.evaluate(`(() => { const f = ${q('feedback-bubble-input')}.getBoundingClientRect(), m = ${q('feedback-bubble-mic')}.getBoundingClientRect(); return m.left >= f.left && m.right <= f.right && m.bottom <= f.bottom + 1; })()`), true, 'the mic stays inside the field when an error is shown');
+    await shot('05-mic-insecure');
+    await browser.click(q('feedback-bubble-input'));
     await browser.press('Enter');
-    await browser.until('two notes', `${q('feedback-bar-count')}.textContent === '2 notes'`, 5000);
+    await browser.until('two notes', `${inChat('feedback-count')}?.dataset.count === '2'`, 5000);
     assert.ok((await browser.evaluate(DRAWN)).some(item => item.label === '②' && item.tone === 'pinned'));
-    await shot('05-second-pin');
+    await shot('05b-second-pin');
   });
 
-  await step('🎙 Record: on this insecure origin the bar itself says recording needs a secure page', async () => {
-    assert.equal(await browser.evaluate(`${q('feedback-voice')}.textContent`), 'Record', 'a labelled Record button');
-    await browser.click(q('feedback-voice'));
-    assert.equal(await browser.until('the voice problem', `${q('feedback-voice-problem')}?.textContent`, 5000), 'Recording needs a secure page (https or localhost).');
-    assert.equal(await browser.evaluate(`${q('feedback-voice-problem')}.getAttribute('role')`), 'alert');
-    assert.equal(await browser.evaluate(`!!${q('feedback-recording')}`), false, 'no recording indicator without a recording');
-    await shot('05b-record-insecure');
-  });
-
-  await step('Done: feedback mode closes and the composer shows one chip', async () => {
-    await browser.click(q('feedback-done'));
-    await browser.until('the chip', `!!${inChat('feedback-chip')} && !${q('feedback-bar')}`, 10000);
-    assert.equal(await browser.evaluate(`${inChat('feedback-chip-open')}.textContent`), '💬 Feedback · 2 notes · /settings/:section');
-    assert.deepEqual((await browser.evaluate(DRAWN)).filter(item => item.tone === 'pinned' || item.tone === 'hover'), [], 'no pins or hover once feedback mode is closed');
-    await shot('06-chip');
-  });
-
-  await step('the review: notes in order; hovering one highlights its element, or says it is not on this page', async () => {
-    await browser.click(inChat('feedback-chip-open'));
-    await browser.until('the review', `document.querySelectorAll('[data-testid=feedback-review-note]').length === 2`, 5000);
-    const texts = await browser.evaluate(`[...document.querySelectorAll('[data-testid=feedback-review-text]')].map(area => area.value)`);
-    assert.deepEqual(texts, [NOTE_SAVE, NOTE_PLAN]);
-    await point(`document.querySelectorAll('[data-testid=feedback-review-note]')[1]`);
-    await browser.until('the plan button highlighted', boxOver(PLAN, 'reveal'), 5000);
-    await shot('07-review-hover');
-    await point(`document.querySelectorAll('[data-testid=feedback-review-note]')[0]`);
-    await browser.until('not on this page', `document.querySelectorAll('[data-testid=feedback-review-note]')[0].dataset.where === 'not-on-page'`, 5000);
-    await browser.click(q('feedback-review-close'));
+  await step('Esc exits annotating: the toggle is off, the pins are gone from the page, the composer keeps the "2 notes" chip; the toggle resumes and a third note joins them', async () => {
+    await browser.press('Escape');
+    await browser.until('not annotating', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'false' && window.__feedbackSession.getSnapshot().phase === 'review'`, 10000);
+    assert.equal(await browser.evaluate(`${inChat('feedback-count')}.innerText.trim()`), '2 notes');
+    assert.deepEqual((await browser.evaluate(DRAWN)).filter(item => item.tone === 'pinned' || item.tone === 'hover'), [], 'no pins or hover once annotating is off');
+    assert.equal(await browser.evaluate(`!!${inChat('feedback-chip')} || !!${q('feedback-bar')}`), false, 'no Feedback block');
+    await shot('06-count-chip');
+    assert.equal(await browser.evaluate(`${inChat('composer-annotate')}.disabled`), false, 'pending notes do not block annotating');
+    await browser.click(inChat('composer-annotate'));
+    await browser.until('resumed with the notes kept', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'true' && ${inChat('feedback-count')}?.dataset.count === '2'`, 5000);
+    await browser.press('Escape');
+    await browser.until('not annotating', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'false' && window.__feedbackSession.getSnapshot().phase === 'review'`, 10000);
+    assert.equal(await browser.evaluate(`${inChat('feedback-count')}.dataset.count`), '2');
   });
 
   let id;
   await step('Send: the report is saved and attached; the builder replies citing both elements with file:line', async () => {
     await browser.type(inChat('composer-input'), 'Please fix these.');
     await browser.press('Enter');
-    await browser.until('the chip is gone', `!${inChat('feedback-chip')}`, 10000);
+    await browser.until('the count chip is gone', `!${inChat('feedback-count')}`, 10000);
     if (await browser.evaluate(`${CHAT}.dataset.state`) !== 'expanded') await browser.click(inChat('ambient-title'));
     const pattern = /fb_[1-9A-HJ-NP-Za-km-z]{16}: 2 notes/;
     await browser.until('the builder replied', `${pattern}.test(${TRANSCRIPT}) && ${CHAT}.querySelector('[data-testid=ambient-status]')?.dataset.status !== 'working'`, 30000);
@@ -245,49 +239,38 @@ try {
     summary.records.card = { save: saveLine.text, plan: (await read(1)).text };
   });
 
-  await step('recording mode (secure origin, fake microphone): Record, red dot and timer; two clicks pin ① ② with no bubble; Done transcribes into two notes', async () => {
+  await step('the mic in a pin (secure origin, fake microphone): record, stop, the transcript lands in the field after the typed text; a failed one never loses it', async () => {
     await browser.send('Page.navigate', { url: `${app.url}settings/profile` });
-    await browser.until('the secure page', `location.hostname === '127.0.0.1' && isSecureContext && !!(${inChat('composer-feedback')} && !${inChat('composer-feedback')}.disabled)`, 30000);
-    await browser.click(inChat('composer-feedback'));
-    await browser.until('the feedback bar', `!!${q('feedback-bar')}`, 5000);
-    await browser.click(q('feedback-voice'));
-    await browser.until('recording', `!!${q('feedback-recording')} && ${q('feedback-voice')}.textContent === 'Stop'`, 10000);
-    assert.equal(await browser.evaluate(`${q('feedback-bar-hint')}.textContent`), 'Recording — point and talk');
-    assert.match(await browser.evaluate(`${q('feedback-recording-time')}.textContent`), /^\d\d:\d\d$/);
-    assert.equal(await browser.evaluate(`!!${q('feedback-voice-problem')}`), false);
-    // The fake transcription says two segments: 0–1.5 s and 1.5–3 s of the audio. One click inside each.
-    await pause(400);
+    await browser.until('the secure page', `location.hostname === '127.0.0.1' && isSecureContext && !!(${inChat('composer-annotate')} && !${inChat('composer-annotate')}.disabled)`, 30000);
+    await browser.click(inChat('composer-annotate'));
+    await browser.until('annotating', `window.__feedbackSession.getSnapshot().phase === 'active'`, 5000);
     await clickAt(SAVE);
-    await browser.until('pin ①', `(${DRAWN}).some(item => item.label === '①' && item.tone === 'pinned')`, 5000);
-    assert.equal(await browser.evaluate(`!!${q('feedback-bubble')}`), false, 'no note bubble while recording');
-    await pause(1300);
-    const heading = `${q('notifications')}.querySelector('h2')`;
-    await clickAt(heading);
-    await browser.until('pin ②', `(${DRAWN}).some(item => item.label === '②' && item.tone === 'pinned')`, 5000);
-    assert.equal(await browser.evaluate(`!!${q('feedback-bubble')}`), false);
-    assert.equal(await browser.evaluate(`${q('feedback-bar-count')}.textContent`), '0 notes · 2 pins');
-    assert.equal(await browser.evaluate(`${q('profile-saved')}.dataset.presses`), '0', 'Save was never pressed');
-    await pause(1500);
-    await shot('11-recording');
-    await browser.evaluate(`(() => { window.__sawTranscribing = false; new MutationObserver(() => { if (${q('feedback-bar')}?.dataset.transcribing === 'true' && ${q('feedback-bar-hint')}?.textContent === 'Transcribing…') window.__sawTranscribing = true; }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true }); })()`);
-    await browser.click(q('feedback-voice'));
-    await browser.until('stopped', `!${q('feedback-recording')} && ${q('feedback-voice')}.textContent === 'Record'`, 5000);
-    await browser.click(q('feedback-done'));
-    await browser.until('the chip', `!!${inChat('feedback-chip')} && !${q('feedback-bar')}`, 20000);
-    assert.equal(await browser.evaluate('window.__sawTranscribing'), true, 'the bar said Transcribing… until the notes were merged');
-    assert.equal(await browser.evaluate(`${inChat('feedback-chip-open')}.textContent`), '💬 Feedback · 2 notes · /settings/:section');
-    assert.equal(await browser.evaluate(`!!${inChat('feedback-chip-voice')}`), false, 'no transcription problem');
-    await browser.click(inChat('feedback-chip-open'));
-    await browser.until('the review', `document.querySelectorAll('[data-testid=feedback-review-note]').length === 2`, 5000);
-    const notes = await browser.evaluate(`[...document.querySelectorAll('[data-testid=feedback-review-note]')].map(note => ({ name: note.querySelector('[data-testid=feedback-review-name]').textContent, file: note.querySelector('[data-testid=feedback-review-file]')?.textContent, text: note.querySelector('textarea').value, voice: !!note.querySelector('[data-testid=feedback-review-voice]') }))`);
-    assert.deepEqual(notes.map(note => [note.name, note.file, note.voice]), [['«Save profile» button', 'SettingsPage.jsx:65', true], ['«Notifications» heading', 'SettingsPage.jsx:70', true]]);
-    assert.equal(notes[0].text, 'Fake transcript: this is where the person spoke.');
-    assert.match(notes[1].text, /^\(\d+ KB of audio\/webm\)$/);
-    summary.records.recording = notes;
-    await shot('12-recording-review');
-    await browser.click(q('feedback-review-close'));
-    await browser.click(inChat('feedback-chip-discard'));
-    await browser.until('discarded', `!${inChat('feedback-chip')}`, 5000);
+    await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
+    await browser.type(q('feedback-bubble-input'), 'Typed first.');
+    await browser.click(q('feedback-bubble-mic'));
+    await browser.until('recording', `${q('feedback-bubble-mic')}.dataset.state === 'recording'`, 10000);
+    await pause(1200);
+    await shot('07-pin-recording');
+    await browser.click(q('feedback-bubble-mic'));
+    await browser.until('the transcript is in the field', `${q('feedback-bubble-input')}.value.startsWith('Typed first. ') && ${q('feedback-bubble-input')}.value.includes('Fake transcript')`, 20000);
+    assert.equal(await browser.evaluate(`!!${q('feedback-bubble-voice-problem')}`), false, 'no transcription problem');
+    const spoken = await browser.evaluate(`${q('feedback-bubble-input')}.value`);
+    summary.records.spoken = spoken;
+    // A transcription the server refuses keeps everything typed and says so.
+    await browser.evaluate(`(() => { const real = window.fetch; window.__realFetch = real; window.fetch = (input, init) => /\\/api\\/transcribe/.test(String(input?.url ?? input)) ? Promise.resolve(new Response('no', { status: 502 })) : real(input, init); })()`);
+    await browser.click(q('feedback-bubble-mic'));
+    await browser.until('recording again', `${q('feedback-bubble-mic')}.dataset.state === 'recording'`, 10000);
+    await pause(600);
+    await browser.click(q('feedback-bubble-mic'));
+    await browser.until('the failure is said', `!!${q('feedback-bubble-voice-problem')}`, 20000);
+    assert.equal(await browser.evaluate(`${q('feedback-bubble-input')}.value`), spoken, 'the field is unchanged by a failed transcription');
+    await browser.evaluate('window.fetch = window.__realFetch');
+    await shot('08-pin-voice-failed');
+    await browser.click(q('feedback-bubble-input'));
+    await browser.press('Enter');
+    await browser.until('counted', `${inChat('feedback-count')}?.dataset.count === '1'`, 5000);
+    await browser.click(inChat('feedback-count-clear'));
+    await browser.until('removed', `!${inChat('feedback-count')} && window.__feedbackSession.getSnapshot().phase === 'idle'`, 5000);
   });
 
   assert.deepEqual(browser.problems.filter(problem => !/favicon|ERR_|Failed to load resource/.test(problem)), [], 'no page errors');

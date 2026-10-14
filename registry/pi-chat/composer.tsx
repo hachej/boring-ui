@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
-import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquareIcon, MousePointerClickIcon, SlashIcon, XIcon } from 'lucide-react';
+import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, SlashIcon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
 import { hasMention, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
 import type { MentionsConfig, SlashConfig, SlashItem } from './config';
@@ -21,30 +21,23 @@ export function thumbnail(mimeType: string, data: string): string | undefined {
 }
 
 /**
- * The optional Feedback entry point (FEEDBACK.md, "UX"): a button beside the "+" menu that starts feedback mode on the host's page,
- * and afterwards one chip for the pending feedback. The host owns everything else (the registry `feedback` item's
+ * The optional annotate toggle (FEEDBACK.md, "UX"): one button in the composer's row that arms element targeting on the host's page,
+ * and one count chip for the notes taken. Send attaches them. The host owns everything else (the registry `feedback` item's
  * `useComposerFeedback` returns this shape). Absent: the composer is unchanged.
  */
 export interface ComposerFeedback {
-  /** Enters feedback mode on the page: the Feedback button. Absent: no Feedback button. */
-  readonly start?: () => void;
-  /**
-   * Point mode for phones: the « Show in app » action. The host hides its panel while the person taps elements in the app, and the
-   * draft comes back as the chip. Absent: no action.
-   */
-  readonly point?: () => void;
-  /** Feedback mode is on: the button shows pressed. */
-  readonly active?: boolean;
-  /** Feedback is waiting to be sent with the next message: Send is allowed with no text. */
-  readonly pending?: boolean;
-  /** The pending feedback's chip, shown with the other chips. */
-  readonly chip?: ReactNode;
-  /** Feedback mode's controls while it is on, docked under the composer's row. */
-  readonly bar?: ReactNode;
-  /** Send: the text to send instead, with the feedback attached, or why it cannot be sent yet. */
-  readonly attach?: (text: string) => Promise<{ readonly kind: 'ok'; readonly text: string } | { readonly kind: 'refused'; readonly reason: string }>;
-  /** The message carrying the feedback was accepted. */
-  readonly sent?: () => void;
+  /** The annotate toggle: arms targeting on the page (point mode on touch and compact screens), or stops it when it is on. */
+  readonly annotate: () => void;
+  /** Annotating is on: the toggle shows pressed. */
+  readonly active: boolean;
+  /** Notes taken and waiting to be sent with the next message; above zero, Send is allowed with no text. */
+  readonly count: number;
+  /** Removes the notes (the count chip's remove button). */
+  readonly clear: () => void;
+  /** Send: the text to send instead, with the notes attached, or why they cannot be sent yet. */
+  readonly attach: (text: string) => Promise<{ readonly kind: 'ok'; readonly text: string } | { readonly kind: 'refused'; readonly reason: string }>;
+  /** The message carrying the notes was accepted. */
+  readonly sent: () => void;
 }
 
 /** One file being uploaded (or that failed to upload), shown as a chip until it settles or is dismissed. */
@@ -95,25 +88,25 @@ export interface ComposerProps {
 /** Round bar buttons share one look: a tinted circle, 44px so a thumb can hit it. */
 const ROUND = 'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
-/** A bar button with a word: the same tint and 44px height as ROUND. */
-const PILL = 'inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full bg-muted px-3.5 text-sm font-medium text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
-
-/** The Feedback button (a round bar button beside the "+" menu in both layouts) and « Show in app », each when the host offers it. */
-function FeedbackButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
+/** The annotate toggle (a round bar button beside the "+" menu in both layouts). */
+function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
   const { labels } = useChatText();
-  const busy = disabled || feedback.active === true || feedback.pending === true;
-  const { start, point } = feedback;
-  return <>
-    {start && <button type="button" data-testid="composer-feedback" aria-pressed={feedback.active === true} disabled={busy}
-      title={labels.feedbackHint} onClick={() => start()}
-      className={cn(ROUND, feedback.active && 'bg-accent')}>
-      <MessageSquareIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.feedback}</span>
-    </button>}
-    {point && <button type="button" data-testid="composer-point" disabled={busy} title={labels.pointHint} onClick={() => point()}
-      className={PILL}>
-      <MousePointerClickIcon className="size-4" aria-hidden="true" /><span className="whitespace-nowrap">{labels.point}</span>
-    </button>}
-  </>;
+  return <button type="button" data-testid="composer-annotate" aria-pressed={feedback.active} disabled={disabled}
+    title={labels.annotateHint} onClick={() => feedback.annotate()}
+    className={cn(ROUND, feedback.active && 'bg-accent')}>
+    <MessageSquarePlusIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.annotate}</span>
+  </button>;
+}
+
+/** The count chip: how many notes go with the next message, and a way to drop them. */
+function NotesChip({ feedback }: { readonly feedback: ComposerFeedback }) {
+  const { labels } = useChatText();
+  return <span data-testid="feedback-count" data-count={feedback.count} className="flex h-9 items-center gap-1.5 rounded-full border border-border bg-muted/50 py-1 pr-1 pl-2.5">
+    <MessageSquarePlusIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    <span className="text-xs font-medium">{labels.annotateNotes(feedback.count)}</span>
+    <button type="button" data-testid="feedback-count-clear" aria-label={labels.annotateClear} title={labels.annotateClear} onClick={() => feedback.clear()}
+      className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
+  </span>;
 }
 
 /** The "+" button and its small menu (Attach files, Commands). Arrow keys move, Enter picks, Escape and outside clicks close. */
@@ -207,7 +200,7 @@ export function Composer(props: ComposerProps) {
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); props.onText(event.currentTarget.value); };
 
   const { feedback } = props;
-  const hasContent = text.trim().length > 0 || attachments.length > 0 || feedback?.pending === true;
+  const hasContent = text.trim().length > 0 || attachments.length > 0 || (feedback?.count ?? 0) > 0;
   const canSubmit = hasContent && !sendBlocked && !disabled;
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);
@@ -227,8 +220,8 @@ export function Composer(props: ComposerProps) {
   const drop = (event: DragEvent) => { if (!canAttach) return; event.preventDefault(); setDragging(false); props.onPickFiles(Array.from(event.dataTransfer.files)); };
 
   const chipRows = <>
-    {(chips.length > 0 || (props.uploads?.length ?? 0) > 0 || Boolean(feedback?.chip)) && <div className="flex flex-wrap gap-2 px-3 pt-3">
-      {feedback?.chip}
+    {(chips.length > 0 || (props.uploads?.length ?? 0) > 0 || (feedback?.count ?? 0) > 0) && <div className="flex flex-wrap gap-2 px-3 pt-3">
+      {feedback && feedback.count > 0 && <NotesChip feedback={feedback} />}
       {chips.length > 0 && <ul data-testid="mention-chips" aria-label={labels.mentionedFiles} className="m-0 contents list-none p-0">
         {chips.map(path => <li key={path} data-testid="mention-chip" data-path={path} title={path} className="flex h-9 max-w-full sm:max-w-[16rem] items-center gap-1.5 rounded-full border border-border bg-muted/50 py-1 pr-1 pl-2.5">
           <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -286,7 +279,7 @@ export function Composer(props: ComposerProps) {
     <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-2">
       {fileEl}
       {plus}
-      {feedback && <FeedbackButton feedback={feedback} disabled={disabled} />}
+      {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}
       {textareaEl}
       {props.barNote}
       {props.barStart}
@@ -295,7 +288,6 @@ export function Composer(props: ComposerProps) {
       {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-11 shrink-0 rounded-full px-4"><icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
       {send}
     </div>
-    {feedback?.bar}
   </form>;
 
   return <form data-testid="composer" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
@@ -309,7 +301,7 @@ export function Composer(props: ComposerProps) {
     <div className="flex flex-nowrap items-center gap-x-2 px-3 pt-1 pb-3">
       {fileEl}
       {plus}
-      {feedback && <FeedbackButton feedback={feedback} disabled={disabled} />}
+      {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}
       {props.barStart}
       {props.barNote}
       {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
@@ -319,6 +311,5 @@ export function Composer(props: ComposerProps) {
         <icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
       {send}
     </div>
-    {feedback?.bar}
   </form>;
 }

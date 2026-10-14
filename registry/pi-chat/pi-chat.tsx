@@ -76,7 +76,7 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly showHistory?: boolean;
   /** Show the header connection badge. Default true; connection state still controls actions. */
   readonly showConnectionStatus?: boolean;
-  /** The optional Feedback button in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
+  /** The optional annotate toggle and notes chip in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
   readonly feedback?: ComposerFeedback;
 }
 
