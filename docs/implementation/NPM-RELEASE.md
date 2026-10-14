@@ -82,6 +82,12 @@ reviewed source, and publishes only those archives with `--ignore-scripts` and a
 explicit public npm destination. Release runs are serialized without cancelling an
 active publication. Neither job changes package versions or privacy flags.
 
+After a successful publish, a final `github-release` job creates the `v<version>` git
+tag and GitHub release at the reviewed commit, with the body of the merged release PR
+(generated notes if none is found). It marks the release Latest only for the `latest`
+dist-tag; other tags become prereleases that are not Latest. If the release already
+exists, the job does nothing, so reruns are safe. It uses only the job's `GITHUB_TOKEN`.
+
 ### Owner checklist before first publish
 
 1. `npm login` as the owner of the `@hachej` scope, with 2FA enabled. GitHub
