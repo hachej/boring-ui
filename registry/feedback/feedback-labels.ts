@@ -81,7 +81,7 @@ export const feedbackLabelsFr: FeedbackLabels = {
   saveAgain: 'Enregistrer à nouveau',
   saving: 'Enregistrement…',
   saved: 'Enregistré',
-  bubblePlaceholder: "Qu'est-ce qui ne va pas ici ?",
+  bubblePlaceholder: "Qu’est-ce qui ne va pas ici ?",
   altHint: 'Maintenez ⌥ pour utiliser l’app',
   add: 'Ajouter la note',
   voiceRecord: 'Dicter votre note',

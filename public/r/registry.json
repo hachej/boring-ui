@@ -107,7 +107,6 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/utils.json"
       ],
       "files": [
@@ -449,7 +448,6 @@
         "use-stick-to-bottom@^1.1.6"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/button.json"
       ],
@@ -684,6 +682,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/utils.json",
@@ -716,7 +715,6 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/utils.json"
       ],
       "files": [
@@ -737,6 +735,7 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/dock.json"
@@ -768,6 +767,7 @@
         "radix-ui@^1.8.0"
       ],
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/viewers.json",

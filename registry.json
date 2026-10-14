@@ -107,7 +107,6 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/utils"
       ],
       "files": [
@@ -449,7 +448,6 @@
         "use-stick-to-bottom@^1.1.6"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/utils",
         "@boring-ui/button"
       ],
@@ -684,6 +682,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
+        "@boring-ui/theme",
         "@boring-ui/pi-chat",
         "@boring-ui/pi-workspace",
         "@boring-ui/utils",
@@ -716,7 +715,6 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/utils"
       ],
       "files": [
@@ -737,6 +735,7 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
+        "@boring-ui/theme",
         "@boring-ui/pi-chat",
         "@boring-ui/utils",
         "@boring-ui/dock"
@@ -768,6 +767,7 @@
         "radix-ui@^1.8.0"
       ],
       "registryDependencies": [
+        "@boring-ui/theme",
         "@boring-ui/pi-chat",
         "@boring-ui/pi-workspace",
         "@boring-ui/viewers",

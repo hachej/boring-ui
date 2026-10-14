@@ -73,13 +73,15 @@ The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each pub
 }
 ```
 
-Then add a component, for example the chat: `npx shadcn@latest add @boring-ui/pi-chat`. Item dependencies such as `@boring-ui/theme` resolve through the same pinned URL.
+Then add a component, for example the chat: `npx shadcn@latest add @boring-ui/pi-chat`. Items that need the shadcn tokens list `@boring-ui/theme` as a dependency and resolve it through the same pinned URL; `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not, see the [registry guide](registry/README.md).
 
 **The next release.** Its items name their dependencies as absolute URLs of their own version, so no `registries` line is needed. Add an item by its URL, with the version you installed:
 
 ```sh
-npx shadcn@latest add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/pi-chat.json
+npx shadcn@latest add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/theme.json https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/pi-chat.json
 ```
+
+The `theme.json` item (the shadcn tokens) is needed only when the host does not define them already. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not install it.
 
 In either case the version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version and re-add the components. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/<item>.json` also works. See the [registry guide](registry/README.md) for the available items.
 

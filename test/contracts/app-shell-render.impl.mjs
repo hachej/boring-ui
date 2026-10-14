@@ -88,7 +88,7 @@ test('the layer\'s own words follow the shell locale when the agent sets none; t
     await unmount();
     return label;
   };
-  assert.equal(await trigger(undefined, 'fr'), 'Ouvrir l\'assistant', 'no agent locale: the shell\'s French');
+  assert.equal(await trigger(undefined, 'fr'), 'Ouvrir l’assistant', 'no agent locale: the shell\'s French');
   assert.equal(await trigger({ locale: 'en' }, 'fr'), 'Open the assistant', 'the agent\'s own locale wins');
   assert.equal(await trigger(undefined, undefined), 'Open the assistant', 'neither set: English');
 });

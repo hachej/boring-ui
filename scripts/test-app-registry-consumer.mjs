@@ -60,7 +60,7 @@ try {
     noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/page.tsx'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
-  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, '--cwd', directory, '--yes'], installer);
+  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
   for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
   const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
   assert.ok(css.includes('--background') && css.includes('.pi-chat'), 'theme tokens and the chat\'s scoped css merged into the host stylesheet');

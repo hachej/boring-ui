@@ -28,10 +28,10 @@ export interface AppShellProps {
   readonly title: string;
   readonly nav: readonly NavItem[];
   readonly agent?: AgentSpec;
-  /** The product manager: adds « Améliorer l'app » to the account menu. */
+  /** The product manager: adds « Améliorer l’app » to the account menu. */
   readonly improve?: AgentSpec;
   readonly account?: AccountSpec;
-  /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l'assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
+  /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
   readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
@@ -68,7 +68,7 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
     </AppSheet>
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
-  return <SidebarProvider data-testid="app-shell" defaultOpen={layout === 'screen'} className="h-dvh min-h-0 overflow-hidden">
+  return <SidebarProvider data-testid="app-shell" defaultOpen={layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
     {!compact && <AppSidebar title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">

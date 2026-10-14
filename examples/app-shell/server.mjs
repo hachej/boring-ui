@@ -33,7 +33,7 @@ const SIDEBAR_TOKENS = `:root{--sidebar:var(--background);--sidebar-foreground:v
 @theme inline{--color-sidebar:var(--sidebar);--color-sidebar-foreground:var(--sidebar-foreground);--color-sidebar-border:var(--sidebar-border);--color-sidebar-accent:var(--sidebar-accent);--color-sidebar-accent-foreground:var(--sidebar-accent-foreground);--color-sidebar-ring:var(--sidebar-ring)}`;
 
 /** The few Tailwind preflight rules the shell's own markup relies on (a host's shadcn app has the whole preflight); in the base layer, so utilities win. */
-const BASE = '@layer base{*,::before,::after{box-sizing:border-box}button{background:transparent;border:0;padding:0;font:inherit;color:inherit}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}}';
+const BASE = '@layer base{*,::before,::after{box-sizing:border-box}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}}';
 
 export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });

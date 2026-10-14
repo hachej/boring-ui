@@ -8,6 +8,7 @@
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-chat.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/utils.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/dock.json"

@@ -35,6 +35,13 @@ test('the item compiles strictly against the pinned shadcn fixtures', () => {
   assert.deepEqual(diagnostics.map(diagnostic => `${diagnostic.file.fileName.replace(root, '')}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`), []);
 });
 
+test('the shell root carries the app-shell class in every layout, so the scoped reset reaches its own header and nav buttons', () => {
+  // One root for the three layouts (Shell renders it); the `.app-shell` reset is scoped to this class, so a host never wraps the shell to get it.
+  const root = /<SidebarProvider\b[^>]*\bclassName="([^"]*)"/.exec(source('app-shell.tsx'));
+  assert.ok(root, 'the root is the SidebarProvider');
+  assert.match(root[1], /(?:^|\s)app-shell(?:\s|$)/, 'the root className names app-shell');
+});
+
 test('colours come only from shadcn semantic utilities: no hex, rgb(, oklch( or text-[Npx]', () => {
   for (const name of files) {
     const text = source(name);
@@ -92,11 +99,25 @@ test('text.ts has the same keys in English and French, and every word is filled'
   assert.deepEqual(Object.keys(fr).sort(), Object.keys(en).sort());
   for (const [key, value] of [...Object.entries(en), ...Object.entries(fr)]) assert.ok(typeof value === 'string' && value.trim(), key);
   assert.equal(appShellText(undefined), en, 'English by default');
-  assert.equal(fr.listening, 'J\'écoute…');
+  assert.equal(fr.listening, 'J’écoute…');
   assert.equal(fr.holdToTalk, 'Appuie et parle');
   assert.equal(fr.signOut, 'Se déconnecter');
   assert.equal(fr.more, 'Plus');
-  assert.equal(fr.improve, 'Améliorer l\'app');
+  assert.equal(fr.improve, 'Améliorer l’app');
+});
+
+test('the French words of the shell and of the chat and feedback labels use the typographic apostrophe, never ASCII', () => {
+  // Every string literal of the French sources (the shell's `fr` table, pi-chat's labels-fr.ts, the feedback labels' French table) is checked: an ASCII ' in a value is a defect.
+  const literals = (text, from) => { const found = []; const visit = node => { if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) found.push(node.text); ts.forEachChild(node, visit); }; visit(from); return found; };
+  const parse = (name, text) => ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true);
+  const frTable = (text, name) => parse(name, text).statements.flatMap(statement => ts.isVariableStatement(statement) ? statement.declarationList.declarations.filter(declaration => /fr/i.test(declaration.name.getText())) : []);
+  const checked = [
+    ...frTable(source('text.ts'), 'text.ts').flatMap(declaration => literals(source('text.ts'), declaration)),
+    ...literals(readFileSync(`${root}registry/pi-chat/labels-fr.ts`, 'utf8'), parse('labels-fr.ts', readFileSync(`${root}registry/pi-chat/labels-fr.ts`, 'utf8'))),
+    ...frTable(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), 'feedback-labels.ts').flatMap(declaration => literals(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), declaration)),
+  ];
+  assert.ok(checked.length > 100, 'the French tables are found');
+  assert.deepEqual(checked.filter(value => value.includes("'")), [], 'an ASCII apostrophe in a French string');
 });
 
 test('nextSnapOnClose: a swipe, an outside press and a lost focus never close; every other reason does', async () => {

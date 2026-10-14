@@ -5,7 +5,7 @@
 // without moving the page; a hard swipe on the handle stops at peek (never closes) with the tab bar tappable; tapping above the sheet moves
 // full to peek; focusing the composer goes to full and keeps it above a shortened visual viewport; five messages stay above the composer;
 // a suggestion chip fills the composer without sending; Back closes the layer and leaves the history clean; push-to-talk shows
-// « J'écoute… » at peek and sends (auto) or fills (draft) with the screen context; the product manager swaps in with « ← »; controls are at
+// « J’écoute… » at peek and sends (auto) or fills (draft) with the screen context; the product manager swaps in with « ← »; controls are at
 // least 44x44px and nothing overflows horizontally in light and dark; the Redaction and empty-template cases; and at 1280x800 the layer as a Dock
 // (docked right by default, floating or docked left, remembered across reloads). Point mode waits for #1661 (TODO in the item). Screenshots go to .cache/evidence/app-shell/.
 import assert from 'node:assert/strict';
@@ -58,7 +58,7 @@ try {
     assert.ok(await browser.evaluate(noOverflow), `${where}: horizontal overflow`);
   };
   const settle = () => pause(900);
-  /** The account sheet, then « Améliorer l'app »: opens the product manager in the layer. */
+  /** The account sheet, then « Améliorer l’app »: opens the product manager in the layer. */
   const openImprove = async () => {
     await tap('[data-testid=account-button]');
     await browser.until('the account sheet', `!!${q('[data-testid=account-improve]')}`);
@@ -88,6 +88,8 @@ try {
   const historyLength = await browser.evaluate(`history.length`);
   await step('A fitness: three tabs keep their screens mounted: the scroll survives and a tab switch adds no history entry', async () => {
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=tabbar] [role=tab]').length`), 3);
+    // The shell's own header button takes the item's reset: the root carries `app-shell`, and this page has no preflight.
+    assert.equal(await browser.evaluate(`(() => { const s = getComputedStyle(document.querySelector('[data-testid=screen-header] button')); return s.appearance || s.webkitAppearance; })()`), 'none', 'a header button has appearance: none');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=tab-plus]')}`), false, 'no « Plus » with three screens');
     assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-testid=tabbar]')}).paddingBottom`), '0px', 'safe-area padding is 0 here');
     const bar = await browser.evaluate(rect('[data-testid=tabbar]'));
@@ -143,7 +145,7 @@ try {
     await browser.until('the sheet', `${openSheets} === 1 && !!${q('[data-testid=account-improve]')}`);
     await pause(700);
     const rows = await browser.evaluate(`[...document.querySelectorAll('[data-testid=account-menu] button')].map(e => e.textContent.trim())`);
-    assert.deepEqual(rows, ["Améliorer l'app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
+    assert.deepEqual(rows, ["Améliorer l’app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
     assert.ok((await browser.evaluate(`${q('[data-testid=account-menu]')}.innerText`)).includes('camille@example.invalid'), 'the person block');
     await browser.screenshot('phone-account.png');
     await controls('account sheet');
@@ -162,9 +164,9 @@ try {
     assert.equal(await browser.evaluate(`history.state`), null, 'a choice leaves no history entry');
   });
 
-  await step('D « Améliorer l\'app » shows the product manager in the layer; closing it leaves the history clean', async () => {
+  await step('D « Améliorer l’app » shows the product manager in the layer; closing it leaves the history clean', async () => {
     await openImprove();
-    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`);
+    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`);
     await pause(700);
     assert.equal(await browser.evaluate(`${openSheets}`), 0, 'the account sheet closed');
     await tap('[data-testid=agent-layer-close]');
@@ -352,14 +354,14 @@ try {
     await live();
   });
 
-  await step('9 push-to-talk: hold shows « J\'écoute… » at peek; release sends with the screen context (auto)', async () => {
+  await step('9 push-to-talk: hold shows « J’écoute… » at peek; release sends with the screen context (auto)', async () => {
     await tap('[data-testid=tab-progres]');
     await browser.until('Progrès on show', `${q('[data-testid=header-title]')}.textContent === 'Progrès'`);
     const before = app.submits.length;
     const r = await center(TRIGGER);
     await touch('touchStart', [[r.x, r.y]]);
     if (process.env.DBG) { await pause(2000); console.log('DBG', await browser.evaluate(`JSON.stringify({ snap: ${snap}, listening: ${q('[data-testid=agent-listening]')}?.outerHTML.slice(0, 150), talk: ${q('[data-testid=agent-talk]')}?.dataset.state, prob: ${q('[data-testid=agent-voice-problem]')}?.textContent })`)); }
-    await browser.until('listening at peek', `${q('[data-testid=agent-listening]')}?.textContent.includes("J'écoute") && ${q('[data-testid=agent-listening]')}.dataset.phase === 'recording'`, 8000);
+    await browser.until('listening at peek', `${q('[data-testid=agent-listening]')}?.textContent.includes("J’écoute") && ${q('[data-testid=agent-listening]')}.dataset.phase === 'recording'`, 8000);
     assert.equal(await browser.evaluate(snap), 'peek');
     await browser.screenshot('phone-listening.png');
     await pause(600); // the fake microphone needs a moment of audio
@@ -393,7 +395,7 @@ try {
     await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
     await browser.until('closed', `!${q(LAYER)}`);
     await openImprove();
-    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`);
+    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`);
     assert.ok(await browser.evaluate(`!!${q('[data-testid=agent-layer-back]')}`), 'the « ← » is shown');
     await settle();
     await browser.screenshot('phone-improve.png');
@@ -405,7 +407,7 @@ try {
     await browser.until('closed', `!${q(LAYER)}`);
     // Point mode: the ONE annotate toggle (a phone: point mode) hides the sheet, the point bar sits above the tab bar, a pick, « Terminé » brings it back with the count chip.
     await openImprove();
-    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`);
+    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`);
     await settle();
     assert.deepEqual(await browser.evaluate(`(() => { const form = ${q('[data-spec=improve] [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
       return { toggles: toggles.length, label: toggles[0]?.textContent, size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
@@ -466,7 +468,7 @@ try {
 
   await step('review 6: the chat keeps its DOM while the layer is closed and while pointing', async () => {
     await openImprove();
-    await browser.until('improve', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`); await settle();
+    await browser.until('improve', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`); await settle();
     await browser.evaluate(`window.__chatNode = ${q('[data-spec=improve] [data-boring=pi-chat]')}; 0`);
     await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
     await browser.until('closed', `!${q(LAYER)}`);
@@ -514,7 +516,7 @@ try {
     await browser.evaluate(`window.__breakSend = false`);
   });
 
-  await step('round c 4: the account sheet then « Améliorer l\'app » then point mode keeps the page (no about:blank)', async () => {
+  await step('round c 4: the account sheet then « Améliorer l’app » then point mode keeps the page (no about:blank)', async () => {
     await browser.send('Page.navigate', { url: app.url });
     await live();
     const href = await browser.evaluate('location.href');
@@ -524,7 +526,7 @@ try {
     if (process.env.DBG) console.log('RECT', JSON.stringify(await browser.evaluate(rect('[data-testid=account-improve]'))), await browser.evaluate(`document.elementFromPoint(100, 800)?.outerHTML.slice(0, 120)`));
     await tap('[data-testid=account-improve]');
     if (process.env.DBG) { await pause(1500); console.log('DBG', await browser.evaluate(`JSON.stringify({ href: location.href, st: history.state, snap: ${snap}, sheet: !!${q('[data-testid=account-menu]')} })`)); }
-    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`); await settle();
+    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`); await settle();
     assert.equal(await browser.evaluate('location.href'), href);
     assert.equal(await browser.evaluate('history.state?.appShell'), 'agent', 'the layer owns its entry after the sheet closed');
     await tap('[data-spec=improve] [data-testid=composer-annotate]');
@@ -602,10 +604,10 @@ try {
     await browser.until('Progrès on show', `${q('[data-testid=header-title]')}.textContent === 'Progrès' && !${q('[data-testid=screen-progres]')}.hidden`);
     await browser.click(q('[data-testid=nav-user]'));
     await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);
-    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-slot=dropdown-menu-content] [role=menuitem]')].map(e => e.textContent.trim())`), ["Améliorer l'app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
+    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-slot=dropdown-menu-content] [role=menuitem]')].map(e => e.textContent.trim())`), ["Améliorer l’app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
     await browser.screenshot('desktop-account.png');
     await browser.click(q('[data-testid=account-improve]'));
-    await browser.until('the manager in the panel', `${q(LAYER)}?.dataset.state === 'open' && ${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`);
+    await browser.until('the manager in the panel', `${q(LAYER)}?.dataset.state === 'open' && ${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`);
     await browser.press('Escape');
     await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal overflow');
@@ -648,7 +650,7 @@ try {
     const docked = await browser.evaluate(rect(LAYER)), shrunk = await browser.evaluate(rect(MAIN));
     assert.ok(Math.abs(docked.right - await browser.evaluate(viewport)) <= 1 && shrunk.w <= full - 300 && shrunk.right <= docked.x + 1, `docked: the content reflows beside the panel: ${JSON.stringify({ full, shrunk, docked })}`);
     // The controls are labelled and 44px under a coarse pointer (checked on the phone); here: named buttons.
-    assert.deepEqual(await browser.evaluate(`['float', 'dock-left'].map(id => document.querySelector('[data-testid="agent-layer-' + id + '"]')?.getAttribute('aria-label'))`), ["Flotter sur l'app", 'Ancrer à gauche']);
+    assert.deepEqual(await browser.evaluate(`['float', 'dock-left'].map(id => document.querySelector('[data-testid="agent-layer-' + id + '"]')?.getAttribute('aria-label'))`), ["Flotter sur l’app", 'Ancrer à gauche']);
     await browser.click(q('[data-testid=agent-layer-float]'));
     await browser.until('floating', `${placement} === 'floating:right'`);
     await pause(300);
@@ -709,7 +711,7 @@ try {
     await browser.click(q('[data-testid=nav-user]'));
     await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);
     await browser.click(q('[data-testid=account-improve]'));
-    await browser.until('the manager shown, the coach hidden', `${q('[data-spec=improve]')} && !${q('[data-spec=improve]')}.hidden && ${q('[data-spec=agent]')}.hidden && ${q('[data-testid=agent-layer-title]')}.textContent === "Améliorer l'app"`);
+    await browser.until('the manager shown, the coach hidden', `${q('[data-spec=improve]')} && !${q('[data-spec=improve]')}.hidden && ${q('[data-spec=agent]')}.hidden && ${q('[data-testid=agent-layer-title]')}.textContent === "Améliorer l’app"`);
     assert.equal(await browser.evaluate(`document.querySelectorAll('${LAYER}').length`), 1, 'one layer');
     await browser.click(q('[data-testid=agent-layer-dock-right]'));
     await browser.until('docked right again', `${placement} === 'docked:right'`);
@@ -733,7 +735,7 @@ try {
     await browser.click(q('[data-testid=nav-user]'));
     await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);
     await browser.click(q('[data-testid=account-improve]'));
-    await browser.until('the manager in the panel', `${q(LAYER)}?.dataset.state === 'open' && ${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app"`);
+    await browser.until('the manager in the panel', `${q(LAYER)}?.dataset.state === 'open' && ${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`);
     await pause(500);
     const IMPROVE = '[data-spec=improve]';
     const found = await browser.evaluate(`(() => { const form = ${q(IMPROVE + ' [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
