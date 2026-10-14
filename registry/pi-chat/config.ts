@@ -243,16 +243,16 @@ export function looksLikeMarkdown(text: string): boolean {
   return /^\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s|```|~~~)/m.test(text) || /\*\*[^*\n]+\*\*|\]\([^)\n]+\)|^\|.*\|\s*$/m.test(text);
 }
 /** Split a sent message into plain text, `@path` mentions and a leading `/skill` token. */
-export function pieces(text: string, options: { readonly mentions: boolean; readonly skills: readonly string[] }): Piece[] {
+export function pieces(text: string, options: { readonly mentions: boolean; readonly skills: readonly string[]; readonly uploads?: boolean }): Piece[] {
   const found: { start: number; end: number; kind: 'mention' | 'skill'; value: string }[] = [];
   const skill = options.skills.length ? new RegExp(`^/(${options.skills.map(escape).join('|')})(?=\\s|$)`).exec(text) : null;
   if (skill) found.push({ start: 0, end: skill[0].length, kind: 'skill', value: skill[1]! });
-  if (options.mentions) {
+  if (options.mentions || options.uploads) {
     for (const match of text.matchAll(MENTION_TOKEN)) {
       // A quoted path keeps its punctuation (the closing quote ends it); a bare one drops trailing punctuation, as a sentence would.
       const quoted = match[2] !== undefined;
       const path = quoted ? match[2]!.replace(/\\(.)/g, '$1') : match[3]!.replace(/[.,;:!?)\]}'"]+$/, '');
-      if (!path) continue;
+      if (!path || (!options.mentions && !isUploadPath(path))) continue;
       const start = match.index! + match[1]!.length;
       const end = quoted ? match.index! + match[0].length : start + 1 + path.length;
       found.push({ start, end, kind: 'mention', value: path });

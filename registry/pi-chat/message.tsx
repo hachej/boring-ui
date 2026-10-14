@@ -35,7 +35,7 @@ export interface RowContext {
   readonly onOpenImage: ((image: ImageContent) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
-  readonly pieces: { readonly mentions: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
+  readonly pieces: { readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined } | undefined;
   /** Opens an `uploads/` file from its card in a sent message (`PiChat`'s `onOpenFile`). Absent: the card is not clickable. */
   readonly openFile?: ((path: string) => void) | undefined;
@@ -90,10 +90,14 @@ function FileCard({ path, open, preview }: { readonly path: string; readonly ope
   const { labels } = useChatText();
   const kind = fileKind(path), name = displayName(path);
   const [src, setSrc] = useState<string | undefined>();
+  // A thumbnail belongs to the provider that read it: a new provider, or a read that is refused or unavailable, shows the icon.
   useEffect(() => {
+    setSrc(undefined);
     if (kind !== 'image' || !preview) return;
     const abort = new AbortController();
-    preview(path, abort.signal).then(read => { if (!abort.signal.aborted && read) setSrc(thumbnail(read.mimeType, read.data)); }, () => {});
+    preview(path, abort.signal).then(
+      read => { if (!abort.signal.aborted) setSrc(read ? thumbnail(read.mimeType, read.data) : undefined); },
+      () => { if (!abort.signal.aborted) setSrc(undefined); });
     return () => abort.abort();
   }, [kind, path, preview]);
   const body = <>

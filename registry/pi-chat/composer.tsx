@@ -43,8 +43,10 @@ export interface ComposerFeedback {
 /** One file being uploaded (or that failed to upload), shown as a chip until it settles or is dismissed. */
 export interface PendingUpload {
   readonly id: string; readonly name: string; readonly state: 'uploading' | 'failed'; readonly error?: string;
-  /** A pasted text file still uploading: abandons the upload and puts the text back in the message (its × and Ctrl+Z). */
+  /** A pasted text file: abandons the upload and puts the text back in the message (its restore button, or Ctrl+Z). */
   readonly cancel?: (() => void) | undefined;
+  /** The message text right after the paste was accepted: Ctrl+Z restores only while the text is still this (any later edit leaves it alone). */
+  readonly restoreWhile?: string | undefined;
 }
 
 export interface ComposerProps {
@@ -213,7 +215,7 @@ export function Composer(props: ComposerProps) {
     props.onKeyDown?.(event);
     if (event.defaultPrevented) return;
     // Ctrl+Z right after a paste that is still uploading puts the pasted text back, instead of undoing the paste in the textarea.
-    const undo = (props.uploads ?? []).filter(item => item.state === 'uploading' && item.cancel).pop();
+    const undo = (props.uploads ?? []).filter(item => item.state === 'uploading' && item.cancel && item.restoreWhile === props.text).pop();
     if (undo && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z') { event.preventDefault(); undo.cancel!(); return; }
     // Never send while an input method editor is composing (Enter confirms the candidate).
     // A phone keyboard has no Shift+Enter: on a touch device Enter inserts a newline and the Send button sends.
@@ -251,7 +253,7 @@ export function Composer(props: ComposerProps) {
           {item.state === 'failed' ? <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
             : <Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />}
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{item.state === 'failed' ? labels.uploadFailed(item.name, item.error) : labels.uploading(item.name)}</span>
-          {item.state === 'uploading' && item.cancel && <button type="button" aria-label={labels.restorePaste} title={labels.restorePaste} onClick={() => item.cancel!()}
+          {item.cancel && <button type="button" aria-label={labels.restorePaste} title={labels.restorePaste} onClick={() => item.cancel!()}
             className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}
           {item.state === 'failed' && <button type="button" aria-label={labels.dismiss(item.name)} onClick={() => props.onDismissUpload?.(item.id)}
             className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}

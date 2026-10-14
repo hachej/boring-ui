@@ -16,14 +16,15 @@ async function load(name, contents) {
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
 const { PiChat, frenchChatLabels } = await load('pi-chat', `export { PiChat, frenchChatLabels } from '${root}registry/pi-chat/pi-chat.tsx';`);
+const { AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '${root}registry/pi-ambient/ambient.tsx';`);
 
 const SENT = 'Read @uploads/report-1a2b3c4d.pdf please';
 const LONG = `# Notes\n\n${'Fictional paragraph line.\n'.repeat(120)}`;
 
-async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, locale } = {}) {
+async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, locale, component, extra = {} } = {}) {
   const { Window } = await import('happy-dom');
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'addEventListener', 'removeEventListener', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) {
     const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : name === 'ResizeObserver' ? class { observe() {} unobserve() {} disconnect() {} } : window[name];
@@ -49,9 +50,11 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
   const props = { controller, historyList: false, showHistory: false, ...(attachments ? { attachments } : {}), ...(mentions ? { mentions } : {}),
-    ...(onOpenFile ? { onOpenFile } : {}), ...(pasteToFile ? { pasteToFile } : {}), ...(locale ? { locale } : {}) };
-  await act(async () => ui.render(createElement(PiChat, props)));
-  return { window, controller, container, act };
+    ...(onOpenFile ? { onOpenFile } : {}), ...(pasteToFile ? { pasteToFile } : {}), ...(locale ? { locale } : {}), ...extra };
+  const Component = component ?? PiChat;
+  const renderWith = async next => { Object.assign(props, next); await act(async () => ui.render(createElement(Component, props))); };
+  await renderWith({});
+  return { window, controller, container, act, rerender: renderWith };
 }
 
 /** A paste as the browser delivers it: the event carries the clipboard text; `prevented` says whether the composer took it. */
@@ -188,4 +191,91 @@ test('without attachments a large paste stays inline exactly as before', async t
   assert.equal(result.prevented, false);
   assert.equal(container.querySelector('[data-testid=upload-chip]'), null);
   assert.equal(controller.getSnapshot().draft.text, '');
+});
+
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+const undoEvent = window => new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
+
+test('a paste over a selection replaces it at once, and cancelling deletes nothing typed since', async t => {
+  const attachments = { upload: (files, signal) => new Promise((resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('aborted'))); }) };
+  const { container, act, window, controller } = await harness(t, { attachments });
+  await act(async () => { controller.setText('OLD TEXT'); });
+  const field = container.querySelector('[data-testid=composer-input]');
+  field.setSelectionRange(0, 8);
+  await act(async () => { paste(window, field, LONG); });
+  assert.equal(controller.getSnapshot().draft.text.includes('OLD'), false, 'the selection is removed when the paste is accepted');
+  await act(async () => { controller.setText('KEEP'); });
+  await act(async () => container.querySelector('[data-testid=upload-chip][data-state=uploading] button').click());
+  assert.equal(controller.getSnapshot().draft.text, `${LONG}KEEP`, 'the text goes back and what was typed since is kept');
+});
+
+test('Ctrl+Z stops restoring once the person has typed after the paste', async t => {
+  const attachments = { upload: (files, signal) => new Promise((resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('aborted'))); }) };
+  const { container, act, window, controller } = await harness(t, { attachments });
+  const field = container.querySelector('[data-testid=composer-input]');
+  await act(async () => { paste(window, field, LONG); });
+  await act(async () => { controller.setText('typed after'); });
+  let notPrevented;
+  await act(async () => { notPrevented = field.dispatchEvent(undoEvent(window)); });
+  assert.equal(notPrevented, true, 'Ctrl+Z is left to the textarea');
+  assert.ok(container.querySelector('[data-testid=upload-chip][data-state=uploading]'), 'the pending card stays');
+});
+
+test('a failed pasted-text upload keeps a button that puts the text back', async t => {
+  const attachments = { upload: () => Promise.reject(new Error('Fictional refusal')) };
+  const { container, act, window, controller } = await harness(t, { attachments });
+  await act(async () => { paste(window, container.querySelector('[data-testid=composer-input]'), LONG); });
+  await act(async () => flush());
+  const chip = container.querySelector('[data-testid=upload-chip][data-state=failed]');
+  assert.ok(chip, 'the upload failed');
+  const restore = [...chip.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === 'Put the pasted text back in the message');
+  assert.ok(restore, 'the failed chip offers the restore');
+  await act(async () => restore.click());
+  assert.equal(controller.getSnapshot().draft.text, LONG);
+  assert.equal(container.querySelector('[data-testid=upload-chip]'), null);
+});
+
+test('an upload mention is a card when only attachments is set (no mentions search config)', async t => {
+  const { controller, container, act } = await harness(t, { attachments: { upload: async () => [] }, onOpenFile: () => {} });
+  await act(async () => { controller.setText(SENT); });
+  await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
+  assert.ok(container.querySelector('[data-testid=message-file][data-path="uploads/report-1a2b3c4d.pdf"]'), 'the card renders');
+  assert.equal(container.querySelector('[data-testid=user-text]').textContent.includes('@uploads'), false);
+});
+
+test('AmbientChat forwards onOpenFile and pasteToFile', async t => {
+  const opened = [];
+  const uploads = [];
+  const attachments = { upload: (files, signal) => new Promise(() => { uploads.push(files); }) };
+  const { controller, container, act, window } = await harness(t, { component: AmbientChat, attachments, onOpenFile: path => opened.push(path), pasteToFile: { minLines: 3 },
+    extra: { defaultState: 'expanded' } });
+  await act(async () => { controller.setText(SENT); });
+  await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
+  const card = container.querySelector('[data-testid=message-file]');
+  assert.equal(card?.tagName, 'BUTTON', 'the card is clickable through the ambient chat');
+  await act(async () => card.click());
+  assert.deepEqual(opened, ['uploads/report-1a2b3c4d.pdf']);
+  await act(async () => { paste(window, container.querySelector('[data-testid=composer-input]'), 'one\ntwo\nthree\nfour'); });
+  assert.equal(uploads.length, 1, 'the custom threshold applies through the ambient chat');
+});
+
+test('a thumbnail is dropped when its provider changes and when a read is unavailable', async t => {
+  const good = async () => ({ mimeType: 'image/png', data: 'iVBORw0KGgo=' });
+  const { controller, container, act, rerender } = await harness(t, { mentions: { search: async () => [], preview: good }, onOpenFile: () => {} });
+  await act(async () => { controller.setText('See @uploads/photo-5e6f7a8b.png'); });
+  await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
+  await act(async () => flush());
+  assert.ok(container.querySelector('[data-testid=message-file] img'), 'the thumbnail shows');
+  await rerender({ mentions: { search: async () => [], preview: async () => undefined } });
+  await act(async () => flush());
+  assert.equal(container.querySelector('[data-testid=message-file] img'), null, 'an unavailable read shows the icon');
+  await rerender({ mentions: { search: async () => [], preview: good } });
+  await act(async () => flush());
+  assert.ok(container.querySelector('[data-testid=message-file] img'));
+  await rerender({ mentions: { search: async () => [], preview: async () => { throw new Error('Fictional read failure'); } } });
+  await act(async () => flush());
+  assert.equal(container.querySelector('[data-testid=message-file] img'), null, 'a failed read shows the icon');
+  await rerender({ mentions: { search: async () => [] } });
+  await act(async () => flush());
+  assert.equal(container.querySelector('[data-testid=message-file] img'), null, 'a removed provider shows the icon');
 });

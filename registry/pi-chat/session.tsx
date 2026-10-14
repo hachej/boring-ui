@@ -199,14 +199,15 @@ export function useChatSession(options: ChatSessionOptions) {
     setPicked(value => [...new Set([...value, ...paths])]);
   };
   /** Uploads files; `restore` (a pasted text) is what their pending cards undo: it abandons the upload and puts the text back. */
-  async function upload(files: readonly File[], restore?: () => void) {
+  async function upload(files: readonly File[], paste?: { readonly restore: () => void; readonly after: string }) {
     if ((!onFiles && !attachments) || !files.length || !current()) return;
     const abort = new AbortController(); uploads.current.add(abort); setUploading(value => value + 1);
     const ids = files.map(() => `upload-${++uploadIds.current}`);
     const settle = (failure?: string) => setPending(items => failure === undefined ? items.filter(item => !ids.includes(item.id))
       : items.map(item => ids.includes(item.id) ? { ...item, state: 'failed', error: failure } : item));
-    const cancel = restore && (() => { abort.abort(); setPending(items => items.filter(item => !ids.includes(item.id))); restore(); });
-    setPending(items => [...items, ...files.map((file, index): PendingUpload => ({ id: ids[index]!, name: file.name, state: 'uploading', ...(cancel ? { cancel } : {}) }))]);
+    const cancel = paste && (() => { abort.abort(); setPending(items => items.filter(item => !ids.includes(item.id))); paste.restore(); });
+    setPending(items => [...items, ...files.map((file, index): PendingUpload => ({ id: ids[index]!, name: file.name, state: 'uploading',
+      ...(cancel && paste ? { cancel, restoreWhile: paste.after } : {}) }))]);
     try {
       let added: readonly ChatAttachment[] = [];
       let paths: string[] = [];
@@ -231,14 +232,20 @@ export function useChatSession(options: ChatSessionOptions) {
     const stamp = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}-${two(at.getMinutes())}-${two(at.getSeconds())}`;
     const markdown = looksLikeMarkdown(paste.text);
     const file = new File([paste.text], `${labels.pastedFileName(stamp)}${markdown ? '.md' : '.txt'}`, { type: markdown ? 'text/markdown' : 'text/plain' });
+    // The pasted text replaces its selection when the paste is accepted, so the draft shows what is left. Restoring inserts the text at
+    // the same place and deletes nothing: whatever was typed since stays.
+    const draft = controller.getSnapshot().draft.text;
+    const start = Math.min(paste.start, draft.length), end = Math.min(Math.max(paste.end, start), draft.length);
+    const after = `${draft.slice(0, start)}${draft.slice(end)}`;
+    controller.setText(after);
     const restore = () => {
       if (!current()) return;
-      const draft = controller.getSnapshot().draft.text;
-      const start = Math.min(paste.start, draft.length), end = Math.min(Math.max(paste.end, start), draft.length);
-      controller.setText(`${draft.slice(0, start)}${paste.text}${draft.slice(end)}`);
+      const now = controller.getSnapshot().draft.text;
+      const at = Math.min(start, now.length);
+      controller.setText(`${now.slice(0, at)}${paste.text}${now.slice(at)}`);
       textarea.current?.focus();
     };
-    void upload([file], restore);
+    void upload([file], { restore, after });
   };
   const agentDoc = object(state.view?.docs['pi.agent']);
   const currentModel = object(agentDoc?.['model']);
@@ -270,10 +277,10 @@ export function useChatSession(options: ChatSessionOptions) {
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen } : undefined,
     messageActions,
     replyFooter,
-    pieces: slash?.skills?.length || mentions ? { mentions: Boolean(mentions), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render, preview: mentions?.preview } : undefined,
+    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [developer, groupTool, onOpenImage, onCopy, onOpenFile, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, artifacts?.open, artifacts?.isOpen, messageActions, replyFooter, rowExtras]);
+  }), [developer, groupTool, onOpenImage, onCopy, onOpenFile, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
