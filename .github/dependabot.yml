@@ -15,6 +15,13 @@ updates:
       # @tiptap/markdown still depends on marked ^17 and receives our marked parser instance; move together when Tiptap does.
       - dependency-name: marked
         update-types: [version-update:semver-major]
+      # Majors held until qualified against the Node 22 engine and our tooling (closed #1611 @types/node 26, #1612 typescript 7, #1613 ignore 7).
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: ignore
+        update-types: [version-update:semver-major]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
