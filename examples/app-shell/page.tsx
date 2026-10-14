@@ -13,6 +13,8 @@ import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
+import { Replaceable, previewCardFor } from '../../registry/live-preview/preview.ts';
+import type { PreviewResult } from '../../registry/live-preview/preview.ts';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 
@@ -41,9 +43,17 @@ const List = () => <ul className="m-0 list-none divide-y divide-border p-0">
   {ROWS.map(row => <li key={row.day} className="flex items-center justify-between px-4 py-3"><span>{row.day}</span><span className="text-muted-foreground">{row.steps} pas</span></li>)}
 </ul>;
 
+// The live preview: the Jour list is a replaceable part. The journey injects a `boring.preview` tool result here, as the chat would deliver
+// it, and the probe shows the card; nothing applies until its button is clicked.
+function PreviewProbe() {
+  const [result, setResult] = useState<PreviewResult | undefined>();
+  useEffect(() => { window.__injectPreview = setResult; }, []);
+  const card = result && previewCardFor(result, { id: 'journey-call' });
+  return card ? <div data-testid="preview-probe" className="px-4 py-3">{card.content}</div> : null;
+}
 function Day() {
   useScreenHeader({ title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
-  return <List />;
+  return <><PreviewProbe /><Replaceable id="forme.jour.list" source="src/screens/Day.tsx"><List /></Replaceable></>;
 }
 function Progress() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
@@ -113,7 +123,8 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }} />
+    <AppShell layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }}
+      preview={{ enabled: true, release: 'journey', appId: 'forme' }} />
   </div>;
 }
 

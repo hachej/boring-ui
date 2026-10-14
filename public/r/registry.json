@@ -843,6 +843,55 @@
       ]
     },
     {
+      "name": "live-preview",
+      "type": "registry:block",
+      "title": "Live preview: replaceable parts, overlay store, banner and chat card",
+      "description": "Replaceable marks a part of a screen the PM may replace live in the viewer's browser (the overlay is temporary: sessionStorage, two hours, one release). The shell shows a « Prévisualisation » banner while overlays are active, with per-key close and an optional « Partager » that proposes the change. previewCardFor turns a boring.preview tool result into a chat card whose click adds the overlay. This part executes no source: the sandboxed frame is a later part.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-chat.json"
+      ],
+      "files": [
+        {
+          "path": "registry/live-preview/replaceable.tsx",
+          "type": "registry:component",
+          "target": "components/live-preview/replaceable.tsx"
+        },
+        {
+          "path": "registry/live-preview/store.ts",
+          "type": "registry:lib",
+          "target": "components/live-preview/store.ts"
+        },
+        {
+          "path": "registry/live-preview/provider.tsx",
+          "type": "registry:component",
+          "target": "components/live-preview/provider.tsx"
+        },
+        {
+          "path": "registry/live-preview/status.tsx",
+          "type": "registry:component",
+          "target": "components/live-preview/status.tsx"
+        },
+        {
+          "path": "registry/live-preview/card.tsx",
+          "type": "registry:component",
+          "target": "components/live-preview/card.tsx"
+        },
+        {
+          "path": "registry/live-preview/preview-text.ts",
+          "type": "registry:lib",
+          "target": "components/live-preview/preview-text.ts"
+        },
+        {
+          "path": "registry/live-preview/preview.ts",
+          "type": "registry:lib",
+          "target": "components/live-preview/preview.ts"
+        }
+      ]
+    },
+    {
       "name": "app-shell",
       "type": "registry:block",
       "title": "App shell: layouts, list/detail and agent layer",
@@ -859,6 +908,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/dock.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/feedback.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/live-preview.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/button.json",
         "drawer",

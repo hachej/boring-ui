@@ -21,6 +21,8 @@ import type { NavItem } from './nav';
 import { AppSheet } from './sheet';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
+import { PreviewProvider, PreviewStatus } from '../live-preview/preview';
+import type { PreviewSettings } from '../live-preview/preview';
 
 export interface AppShellProps {
   /** A `screen` (tabs), B `workspace` (list and detail), C `chat` (the app's `AgentWorkspace`; no `agent`). */
@@ -35,6 +37,16 @@ export interface AppShellProps {
   readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
+  /** The live preview (registry/live-preview): off unless `enabled`. `enabled: false` is the kill switch: every replaceable renders its original. */
+  readonly preview?: PreviewSpec;
+}
+
+/** The host's live-preview settings. `release` is the build SHA; `onShare` proposes a change (its promise may give the PR link). */
+export interface PreviewSpec {
+  readonly enabled: boolean;
+  readonly release: string;
+  readonly appId: string;
+  readonly onShare?: PreviewSettings['onShare'] | undefined;
 }
 
 /** Registers what is on show for the agent. A screen's own `useAgentContext` is mounted later and wins. */
@@ -74,6 +86,7 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
       <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} />
+      <PreviewStatus />
       <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} />
       {compact && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
       </div>
@@ -85,8 +98,13 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
 export function AppShell(props: AppShellProps) {
   const { layout, agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
-  const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
-  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
-    <HeaderProvider><Shell layout={layout} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
-  </AgentLayerProvider>;
+  const locale = (agent ?? improve)?.chatProps?.locale ?? props.locale;
+  const text = appShellText(locale);
+  const preview = props.preview;
+  const settings: PreviewSettings = { appId: preview?.appId ?? '', release: preview?.release ?? '', enabled: Boolean(preview?.enabled), locale: locale ?? 'en', onShare: preview?.onShare };
+  return <PreviewProvider settings={settings}>
+    <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
+      <HeaderProvider><Shell layout={layout} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
+    </AgentLayerProvider>
+  </PreviewProvider>;
 }

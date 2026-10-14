@@ -64,7 +64,7 @@ test('the item imports only React, its declared packages and the declared shadcn
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
-      if (/^\.\.\/(?:pi-chat|feedback|utils|dock)\//.test(imported)) continue;
+      if (/^\.\.\/(?:pi-chat|feedback|utils|dock|live-preview)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]) && item.registryDependencies.includes(ui[1]), `${name}: ${imported} is not a declared shadcn built-in`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(item.registryDependencies.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
@@ -174,7 +174,7 @@ test('AppShellProps has the seven props of the brief and the one locale prop, an
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'locale', 'nav', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'locale', 'nav', 'preview', 'route', 'title']);
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {

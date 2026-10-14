@@ -781,6 +781,27 @@ try {
     await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
   });
 
+  // The live preview (registry/live-preview): a tool result's card adds the overlay only on its click; the banner and the slot show; « Tout
+  // annuler » restores the original list. The result is injected as the chat would deliver it (page.tsx's PreviewProbe).
+  await step('P live preview: the card adds nothing until its click; the banner and the slot show; « Tout annuler » restores the list', async () => {
+    const button = text => `[...document.querySelectorAll('${text.scope} button')].find(b => b.textContent.trim() === '${text.label}')`;
+    // The last step leaves the wide layout, where Jour is a sidebar item rather than a tab.
+    await browser.evaluate(`(document.querySelector('[data-testid=tab-jour]') ?? document.querySelector('[data-testid=nav-jour]')).click()`);
+    await settle();
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=preview-banner]')}`), false, 'no banner before a preview');
+    await browser.evaluate(`window.__injectPreview({ details: { kind: 'boring.preview', key: 'forme.jour.list', source: 'src/screens/Day.tsx' } })`);
+    await browser.until('the preview card', `!!${q('[data-testid=preview-probe] button')}`);
+    assert.equal(await browser.evaluate(`!!${q('[data-boring-preview-slot="forme.jour.list"]')}`), false, 'the card alone applies nothing');
+    await browser.evaluate(`${q('[data-testid=preview-probe] button')}.click()`);
+    await browser.until('the banner and the slot', `!!${q('[data-testid=preview-banner]')} && !!${q('[data-boring-preview-slot="forme.jour.list"]')}`);
+    assert.match(await browser.evaluate(`${q('[data-testid=preview-banner]')}.textContent`), /Prévisualisation/);
+    assert.match(await browser.evaluate(`${q('[data-boring-preview-slot="forme.jour.list"]')}.textContent`), /Aperçu indisponible/);
+    assert.equal(await browser.evaluate(`${q('[data-testid=screen-jour]')}.querySelectorAll('li').length >= 40`), true, 'the original list renders beside the slot');
+    await browser.evaluate(`${button({ scope: '[data-testid=preview-banner]', label: 'Tout annuler' })}.click()`);
+    await browser.until('the original alone', `!${q('[data-testid=preview-banner]')} && !${q('[data-boring-preview-slot="forme.jour.list"]')}`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=screen-jour]')}.querySelectorAll('li').length >= 40`), true, 'the original list is back');
+  });
+
   await step('expanded: icon actions (and one labelled) and « … » in a dropdown; the one-screen template has a sidebar with no nav list', async () => {
     await browser.send('Page.navigate', { url: `${app.url}?nav=6#sommeil` });
     await live();
