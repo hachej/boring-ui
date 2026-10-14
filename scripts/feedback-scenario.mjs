@@ -205,7 +205,7 @@ async function doneAndCopy() {
 
 // --kit <dir>: what a real application installs today, since the @boring packages are not published: the three tarballs and the
 // `feedback` registry item with its @boring pins pointing at them (react and react-dom stay npm pins). Then, in the application:
-//   npx shadcn@4.21.1 add <dir>/feedback.json
+//   npx shadcn@4.21.4 add <dir>/feedback.json
 if (options.kit) {
   const kit = resolve(options.kit);
   mkdirSync(kit, { recursive: true });
@@ -220,7 +220,7 @@ if (options.kit) {
     if (local.dependencies) local.dependencies = entry.dependencies.map(pin => { const bare = pin.slice(0, pin.lastIndexOf('@')); return archives.has(bare) ? `${bare}@file:${archives.get(bare)}` : pin; });
     writeFileSync(join(kit, 'registry', `${name}.json`), JSON.stringify(local, null, 2));
   }
-  console.log(`Feedback kit in ${kit}:\n${[...archives.values()].map(path => '  ' + path).join('\n')}\n  ${join(kit, 'registry')} (feedback, pi-chat, utils, ...)\n\nIn the application: serve the registry directory over HTTP, map the namespace in components.json, then add the item:\n  (cd ${join(kit, 'registry')} && python3 -m http.server 8000)\n  "registries": { "@boring-ui": "http://localhost:8000/{name}.json" }\n  npx shadcn@4.21.1 add http://localhost:8000/feedback.json`);
+  console.log(`Feedback kit in ${kit}:\n${[...archives.values()].map(path => '  ' + path).join('\n')}\n  ${join(kit, 'registry')} (feedback, pi-chat, utils, ...)\n\nIn the application: serve the registry directory over HTTP, map the namespace in components.json, then add the item:\n  (cd ${join(kit, 'registry')} && python3 -m http.server 8000)\n  "registries": { "@boring-ui": "http://localhost:8000/{name}.json" }\n  npx shadcn@4.21.4 add http://localhost:8000/feedback.json`);
   process.exit(0);
 }
 

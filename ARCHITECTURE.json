@@ -537,7 +537,7 @@
   ],
   "sourceDistribution": {
     "manifest": "registry.json",
-    "format": "shadcn@4.21.1",
+    "format": "shadcn@4.21.4",
     "runtimeImports": [
       "@hachej/boring-ui-kit/markdown-editor",
       "@hachej/boring-ui-kit/native-chat",
