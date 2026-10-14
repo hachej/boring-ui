@@ -18,6 +18,7 @@ import { MessageQueue } from './queue';
 import { ChatNotices, Notice } from './notice';
 import { Shimmer } from './shimmer';
 import { useChatSession, useTranscript } from './session';
+import { useChatDraft } from './use-chat-draft';
 import type { ChatFeatureProps, FilesHandler } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
 import { chatTextFor } from './locale';
@@ -39,6 +40,7 @@ export { frenchChatLabels } from './labels-fr';
 export { chatTextFor } from './locale';
 export type { ChatLocale } from './locale';
 export { ActionMenu, BlockActions } from '../button/actions';
+export { useChatDraft } from './use-chat-draft';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, MentionResult, MentionsConfig, ModelConfig, ModelRef, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 
@@ -78,6 +80,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly showConnectionStatus?: boolean;
   /** The optional annotate toggle and notes chip in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
   readonly feedback?: ComposerFeedback;
+  /** Keeps the composer's half-typed message in localStorage under this key (a conversation id), across reloads and tabs; see `useChatDraft`. Omit it and nothing is stored. */
+  readonly draftKey?: string | undefined;
 }
 
 const PAGE = 60, MORE = 40;
@@ -101,8 +105,9 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
 }
 
 function PiChatSession({ controller, mode = 'expert', className, actions, avatar, headerActions, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
+  useChatDraft(controller, draftKey);
   const { title } = labels;
   const [browsingHistory, setBrowsingHistory] = useState(false);
   const [pickingConversation, setPickingConversation] = useState(false);

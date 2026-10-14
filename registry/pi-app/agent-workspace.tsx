@@ -37,7 +37,7 @@ import type { AppIcons, AppLabels } from './app-labels';
 import { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 import type { CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 import { FileViewer } from './file-viewer';
-import { uploadRevisionAttachments } from './revision-files';
+import { useRevisionAttachments } from './use-revision-attachments';
 import { SessionsPane, SessionsToggle } from './sessions';
 import type { SessionsView, WorkspaceAgents } from './sessions';
 
@@ -312,16 +312,14 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // Primitives only in the memo: a host's inline `labels` object would otherwise rebuild the chat's attachments on every render.
   const uploadAccept = uploads?.accept, inlineImages = uploads?.inlineImages === true, maxBytes = uploads?.maxBytes;
   const tooLarge = maxBytes !== undefined ? text.labels.attachmentTooLarge(sizeLabel(maxBytes)) : undefined;
-  const attachments = useMemo(() => fileTree ? {
-    ...(uploadAccept !== undefined ? { accept: uploadAccept } : {}),
-    upload: (files: File[], signal: AbortSignal) => {
-      setAttachmentFailure(undefined);
-      return uploadRevisionAttachments(fileTree, files, signal, (name, reason) => {
-        if (fileTree.getSnapshot().lifecycle === 'active') setAttachmentFailure(current => ({ tree: fileTree,
-          reasons: [...(current?.tree === fileTree ? current.reasons : []), `${name}: ${reason}`] }));
-      }, { inlineImages, ...(maxBytes !== undefined ? { maxBytes, tooLarge } : {}) });
-    },
-  } : undefined, [fileTree, uploadAccept, inlineImages, maxBytes, tooLarge]);
+  const revisionAttachments = useRevisionAttachments({ fileTree, accept: uploadAccept, inlineImages, maxBytes, tooLarge, onPreparationFailure: (name, reason) => {
+    if (fileTree && fileTree.getSnapshot().lifecycle === 'active') setAttachmentFailure(current => ({ tree: fileTree,
+      reasons: [...(current?.tree === fileTree ? current.reasons : []), `${name}: ${reason}`] }));
+  } });
+  const attachments = useMemo(() => revisionAttachments && { ...revisionAttachments, upload: (files: File[], signal: AbortSignal) => {
+    setAttachmentFailure(undefined);
+    return revisionAttachments.upload(files, signal);
+  } }, [revisionAttachments]);
 
   // ---- Artifacts: cards open the panel; the agent's new ones open it too.
   const versions = useArtifactVersions(controller, detect);

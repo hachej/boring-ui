@@ -575,6 +575,11 @@
           "target": "components/pi-chat/use-remote-chat.ts"
         },
         {
+          "path": "registry/pi-chat/use-chat-draft.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat/use-chat-draft.ts"
+        },
+        {
           "path": "registry/pi-chat/labels.ts",
           "type": "registry:lib",
           "target": "components/pi-chat/labels.ts"
@@ -808,6 +813,11 @@
           "path": "registry/pi-app/app-labels-fr.ts",
           "type": "registry:lib",
           "target": "components/pi-app/app-labels-fr.ts"
+        },
+        {
+          "path": "registry/pi-app/use-revision-attachments.ts",
+          "type": "registry:hook",
+          "target": "components/pi-app/use-revision-attachments.ts"
         }
       ]
     },
