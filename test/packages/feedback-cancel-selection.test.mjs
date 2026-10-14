@@ -239,12 +239,12 @@ async function registry(t, entry, name) {
 }
 const setValue = (window, element, value) => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(element, value); element.dispatchEvent(new window.Event('input', { bubbles: true })); };
 
-test('registry bubble: Annuler la sélection, Esc, a second click on the zone, and Poser une question générale, with French labels, focus and announcements', { timeout: 30000 }, async t => {
+test('registry bubble: Annuler la sélection, Esc, a second click on the zone, with French labels and announcements; no general-question entry anywhere in the UI', { timeout: 30000 }, async t => {
   const { window, document, components, labels, createElement, act, createRoot } = await registry(t, 'feedback-session.tsx', 'feedback-session');
   const { FeedbackBar, NoteBubble } = components;
   const fr = labels.feedbackLabelsFr;
   assert.equal(fr.cancelSelection, 'Annuler la sélection');
-  assert.equal(fr.askGeneral, 'Poser une question générale');
+  assert.equal(fr.askGeneral, 'Poser une question générale', 'the label stays for the Release 1 sheet');
   document.body.innerHTML = PAGE;
   const context = { window, document, root: document.getElementById('app'), $: id => document.getElementById(id) };
   const { session, pinAt } = sessionOn(t, context);
@@ -253,8 +253,7 @@ test('registry bubble: Annuler la sélection, Esc, a second click on the zone, a
   const q = id => document.querySelector(`[data-testid=${id}]`);
   assert.equal(q('feedback-general'), null, 'no bar before feedback mode');
   await act(async () => session.start());
-  assert.equal(q('feedback-general').textContent, 'Poser une question générale');
-  assert.equal(q('feedback-general').getAttribute('aria-pressed'), 'false');
+  assert.equal(q('feedback-general'), null, 'the bar has no general-question entry');
 
   // Button.
   await act(async () => pinAt(context.$('save')));
@@ -266,7 +265,6 @@ test('registry bubble: Annuler la sélection, Esc, a second click on the zone, a
   assert.equal(q('feedback-bubble'), null);
   assert.equal(session.getSnapshot().notes.length, 0);
   assert.equal(q('feedback-bubble-announce').textContent, 'Sélection annulée.', 'the cancellation is announced');
-  assert.equal(document.activeElement, q('feedback-general'), 'focus returns to the general-question entry, not to the top of the page');
 
   // Esc inside the field.
   await act(async () => pinAt(context.$('plan')));
@@ -280,25 +278,19 @@ test('registry bubble: Annuler la sélection, Esc, a second click on the zone, a
   await act(async () => pinAt(context.$('plan')));
   assert.equal(q('feedback-bubble'), null);
 
-  // The general question: no element, the typed text carried over from the bubble.
+  // No general question in the pin: a general note is the plain chat (the session API keeps captureGeneral/askGeneral).
   await act(async () => pinAt(context.$('heading')));
-  await act(async () => setValue(window, q('feedback-bubble-input'), 'Comment annuler mon abonnement ?'));
-  await act(async () => q('feedback-bubble-general').click());
-  assert.equal(q('feedback-bubble'), null);
-  const dialog = q('feedback-general-bubble');
-  assert.equal(dialog.getAttribute('role'), 'dialog');
-  assert.equal(dialog.getAttribute('aria-label'), 'Poser une question générale');
-  assert.equal(q('feedback-general').getAttribute('aria-pressed'), 'true');
-  assert.equal(document.activeElement, q('feedback-general-input'));
-  assert.equal(q('feedback-general-input').value, 'Comment annuler mon abonnement ?');
-  await act(async () => setValue(window, q('feedback-general-input'), 'Comment annuler mon abonnement ?\nMerci.'));
-  await act(async () => { keydown(window, q('feedback-general-input'), 'Escape'); });
+  assert.equal(q('feedback-bubble-general'), null);
   assert.equal(q('feedback-general-bubble'), null);
-  assert.equal(session.getSnapshot().general, 'Comment annuler mon abonnement ?\nMerci.', 'closing keeps the text');
-  assert.equal(document.activeElement, q('feedback-general'), 'focus returns to the entry');
-  assert.equal(q('feedback-bar-count').textContent, '1 note', 'the general question counts');
+  assert.equal(document.body.textContent.includes('Poser une question générale'), false);
+  await act(async () => setValue(window, q('feedback-bubble-input'), 'Comment annuler mon abonnement ?'));
+  assert.equal(q('feedback-bubble-save').textContent, 'Ajouter la note');
+  assert.match(q('feedback-bubble-hint').textContent, /Maintenez ⌥ pour utiliser l’app/);
+  await act(async () => q('feedback-bubble-save').click());
+  assert.equal(q('feedback-bubble'), null);
+  assert.equal(q('feedback-bar-count').textContent, '1 note');
   await act(async () => { q('feedback-done').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
-  assert.deepEqual(session.draft().anchors, []);
+  assert.equal(session.getSnapshot().phase, 'review');
   await act(async () => ui.unmount());
 });
 

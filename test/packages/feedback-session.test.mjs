@@ -526,23 +526,25 @@ test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and it
   const context = { window, document, root: document.getElementById('app'), $: id => document.getElementById(id) };
   const { session, under } = sessionOn(t, context, { save: async () => ({ kind: 'saved', id: 'fb_7Q2mK9xRt4vW1cZp', revision: 'r1' }), mention: id => `feedback/${id}.md` });
   let composer;
-  function Host() { composer = useComposerFeedback(session); return createElement('div', null, createElement(FeedbackBar, { session }), createElement(NoteBubble, { session }), composer?.chip ?? null); }
+  function Host() { composer = useComposerFeedback(session); return createElement('div', null, createElement(FeedbackBar, { session }), createElement(NoteBubble, { session }), createElement(FeedbackChip, { session })); }
   const ui = createRoot(document.getElementById('ui'));
   await act(async () => ui.render(createElement(Host)));
   assert.equal(document.querySelector('[data-testid=feedback-bar]'), null, 'no bar before Feedback is pressed');
   assert.equal(composer.active, false);
-  await act(async () => composer.start());
+  await act(async () => composer.annotate());
   const bar = document.querySelector('[data-testid=feedback-bar]');
   assert.ok(bar.hasAttribute('data-feedback-ignore'));
   assert.match(bar.textContent, /Feedback0 notes.*Hold ⌥ to use the app.*Use app.*Done/);
   assert.equal(document.querySelector('[data-testid=feedback-voice]'), null, 'no voice toggle without voice');
   assert.equal(composer.active, true);
-  assert.ok(composer.bar, 'feedback mode docks its bar under the composer');
+  assert.equal(document.querySelector('[data-testid=feedback-general]'), null, 'no general-question entry in the bar');
   assert.equal(document.querySelector('[data-testid=feedback-bar-hint]').textContent, 'Click what you want to comment on');
 
   await act(async () => pinAt(context, under, context.$('save')));
   let input = document.querySelector('[data-testid=feedback-bubble-input]');
   assert.equal(input.getAttribute('placeholder'), "What's wrong here?");
+  assert.equal(document.querySelector('[data-testid=feedback-bubble-general]'), null, 'no general-question button in the pin');
+  assert.equal(document.querySelector('[data-testid=feedback-bubble-mic]'), null, 'no mic without a transcribe');
   assert.equal(document.querySelector('[data-testid=feedback-bubble-label]').textContent, 'button «Save profile»');
   await act(async () => setValue(window, input, 'Say what it saves.'));
   await act(async () => { keydown(window, input, 'Enter'); });
@@ -563,7 +565,7 @@ test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and it
   await act(async () => document.querySelector('[data-testid=feedback-use-app]').click());
   await act(async () => { document.querySelector('[data-testid=feedback-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
   assert.equal(document.querySelector('[data-testid=feedback-bar]'), null);
-  assert.equal(composer.pending, true);
+  assert.ok(composer.count > 0);
   const chip = document.querySelector('[data-testid=feedback-chip]');
   assert.equal(chip.querySelector('[data-testid=feedback-chip-open]').textContent, '💬 Feedback · 2 notes · /settings/:section');
 
@@ -582,15 +584,138 @@ test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and it
   assert.deepEqual(await composer.attach(''), { kind: 'ok', text: '@feedback/fb_7Q2mK9xRt4vW1cZp.md' });
   await act(async () => composer.sent());
   assert.equal(document.querySelector('[data-testid=feedback-chip]'), null);
-  assert.equal(composer.pending, false);
+  assert.equal(composer.count, 0);
   // × on the chip discards.
-  await act(async () => composer.start());
+  await act(async () => composer.annotate());
   await act(async () => pinAt(context, under, context.$('save')));
   await act(async () => setValue(window, document.querySelector('[data-testid=feedback-bubble-input]'), 'x'));
   await act(async () => { keydown(window, document.querySelector('[data-testid=feedback-bubble-input]'), 'Enter'); });
   await act(async () => { document.querySelector('[data-testid=feedback-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
   await act(async () => document.querySelector('[data-testid=feedback-chip-discard]').click());
   assert.equal(session.getSnapshot().phase, 'idle');
+  await act(async () => ui.unmount());
+});
+
+class PinRecorder extends EventTarget {
+  static isTypeSupported() { return true; }
+  constructor(stream, options = {}) { super(); this.mimeType = options.mimeType ?? ''; this.state = 'inactive'; }
+  start() { this.state = 'recording'; queueMicrotask(() => this.dispatchEvent(new Event('start'))); }
+  stop() {
+    this.state = 'inactive';
+    setTimeout(() => { const event = new Event('dataavailable'); event.data = new Blob([new Uint8Array([1, 2, 3, 4])], { type: this.mimeType }); this.dispatchEvent(event); this.dispatchEvent(new Event('stop')); }, 1);
+  }
+}
+
+test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exits; the mic keeps the typed text; the pin says Alt passes clicks', { timeout: 30000 }, async t => {
+  const { window, document, components, createElement, act, createRoot } = await registry(t);
+  const { NoteBubble, useComposerFeedback } = components;
+  document.body.innerHTML = PAGE;
+  const context = { window, document, root: document.getElementById('app'), $: id => document.getElementById(id) };
+  const { session, under } = sessionOn(t, context, { save: async () => ({ kind: 'saved', id: 'fb_7Q2mK9xRt4vW1cZp', revision: 'r1' }), mention: id => `feedback/${id}.md` });
+  const track = { stop() {} };
+  window.navigator.mediaDevices = { getUserMedia: async () => ({ getTracks: () => [track], getAudioTracks: () => [track] }) };
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, writable: true, value: PinRecorder });
+  t.after(() => { if (had) Object.defineProperty(globalThis, 'MediaRecorder', had); else delete globalThis.MediaRecorder; });
+  let composer, transcribe = async () => 'and it is slow';
+  function Host() { composer = useComposerFeedback(session); return createElement(NoteBubble, { session, transcribe: (audio, signal) => transcribe(audio, signal) }); }
+  const ui = createRoot(document.getElementById('ui'));
+  await act(async () => ui.render(createElement(Host)));
+  const $t = id => document.querySelector(`[data-testid=${id}]`);
+  assert.deepEqual(Object.keys(composer).sort(), ['active', 'annotate', 'attach', 'clear', 'count', 'sent'], 'the composer prop is minimal');
+  assert.deepEqual([composer.active, composer.count], [false, 0]);
+
+  // Toggle on: targeting is armed; a click on an element opens the pin with a field and a mic inside it.
+  await act(async () => composer.annotate());
+  assert.equal(composer.active, true);
+  assert.equal(session.getSnapshot().mode, 'feedback');
+  await act(async () => pinAt(context, under, context.$('save')));
+  assert.ok($t('feedback-bubble'));
+  assert.ok($t('feedback-bubble').querySelector('textarea') && $t('feedback-bubble').querySelector('[data-testid=feedback-bubble-mic]'), 'the mic is inside the pin');
+  assert.equal($t('feedback-bubble').querySelector('.boring-feedback-pin-field [data-testid=feedback-bubble-mic]') !== null, true);
+  assert.match($t('feedback-bubble-hint').textContent, /Hold ⌥ to use the app/, 'a one-line hint: Alt passes clicks to the app');
+  assert.equal($t('feedback-bubble-general'), null);
+  await act(async () => setValue(window, $t('feedback-bubble-input'), 'Say what it saves'));
+  assert.equal(composer.count, 1, 'a note being typed already counts: Send saves it');
+
+  // The mic: record, stop, the transcript is appended to the typed text.
+  await act(async () => $t('feedback-bubble-mic').click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+  assert.equal($t('feedback-bubble-mic').dataset.state, 'recording');
+  await act(async () => { $t('feedback-bubble-mic').click(); await new Promise(resolve => setTimeout(resolve, 30)); });
+  assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow');
+  // A rejected transcription keeps the typed text and says so.
+  transcribe = async () => { throw new Error('the transcription answered 502'); };
+  await act(async () => $t('feedback-bubble-mic').click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+  await act(async () => { $t('feedback-bubble-mic').click(); await new Promise(resolve => setTimeout(resolve, 30)); });
+  assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow', 'the typed text is kept');
+  assert.match($t('feedback-bubble-voice-problem').textContent, /could not be transcribed/);
+  assert.equal($t('feedback-bubble-mic').dataset.state, 'idle');
+  // Nothing recorded (a refused microphone) keeps the text too.
+  window.navigator.mediaDevices.getUserMedia = async () => { throw Object.assign(new Error('no'), { name: 'NotAllowedError' }); };
+  await act(async () => { $t('feedback-bubble-mic').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow');
+  assert.ok($t('feedback-bubble-voice-problem'));
+
+  // Enter saves the pin; the count is 1. Esc with no pin open exits annotating (on the page, where the session swallows Esc).
+  await act(async () => { keydown(window, $t('feedback-bubble-input'), 'Enter'); });
+  assert.equal($t('feedback-bubble'), null);
+  assert.equal(composer.count, 1);
+  assert.equal(session.getSnapshot().phase, 'active');
+  await act(async () => { keydown(window, document.body, 'Escape'); await new Promise(resolve => setTimeout(resolve, 10)); });
+  assert.equal(session.getSnapshot().phase, 'review', 'Esc exits annotating; the note waits for Send');
+  assert.deepEqual([composer.active, composer.count], [false, 1]);
+
+  // Send attaches the pending note through the existing attach/sent flow.
+  assert.deepEqual(await composer.attach('Please look.'), { kind: 'ok', text: 'Please look.\n\n@feedback/fb_7Q2mK9xRt4vW1cZp.md' });
+  await act(async () => composer.sent());
+  assert.deepEqual([composer.active, composer.count], [false, 0]);
+
+  // The same toggle exits; Send while still annotating finishes it first and keeps the pin being typed; Esc in the pin discards only the pin.
+  await act(async () => composer.annotate());
+  await act(async () => pinAt(context, under, context.$('plan')));
+  await act(async () => setValue(window, $t('feedback-bubble-input'), 'Typed, not yet saved'));
+  await act(async () => { keydown(window, $t('feedback-bubble-input'), 'Escape'); });
+  assert.equal(session.getSnapshot().phase, 'active', 'Esc in the pin discards the pin, not the mode');
+  await act(async () => pinAt(context, under, context.$('plan')));
+  await act(async () => setValue(window, $t('feedback-bubble-input'), 'Typed, not yet saved'));
+  const attached = await composer.attach('');
+  assert.equal(attached.kind, 'ok');
+  assert.equal(attached.text, '@feedback/fb_7Q2mK9xRt4vW1cZp.md');
+  assert.equal(session.getSnapshot().notes[0].text, 'Typed, not yet saved');
+  await act(async () => composer.clear());
+  assert.equal(session.getSnapshot().phase, 'idle');
+  await act(async () => composer.annotate());
+  await act(async () => composer.annotate());
+  assert.equal(session.getSnapshot().phase, 'idle', 'the same toggle exits; with no notes there is nothing to send');
+  await act(async () => ui.unmount());
+});
+
+test('registry: on touch or a compact screen the toggle enters point mode', { timeout: 30000 }, async t => {
+  const { window, document, components, createElement, act, createRoot } = await registry(t);
+  const { useComposerFeedback } = components;
+  document.body.innerHTML = PAGE;
+  const context = { window, document, root: document.getElementById('app'), $: id => document.getElementById(id) };
+  const { session } = sessionOn(t, context);
+  let composer;
+  function Host() { composer = useComposerFeedback(session); return null; }
+  const ui = createRoot(document.getElementById('ui'));
+  await act(async () => ui.render(createElement(Host)));
+  for (const media of [() => ({ matches: true }), query => ({ matches: false })]) {
+    const before = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia'), width = Object.getOwnPropertyDescriptor(globalThis, 'innerWidth');
+    Object.defineProperty(globalThis, 'matchMedia', { configurable: true, writable: true, value: media });
+    Object.defineProperty(globalThis, 'innerWidth', { configurable: true, writable: true, value: media === undefined ? 1024 : 390 });
+    try {
+      await act(async () => composer.annotate());
+      assert.equal(session.getSnapshot().mode, 'point');
+      assert.equal(composer.active, true);
+      await act(async () => session.discard());
+    } finally {
+      if (before) Object.defineProperty(globalThis, 'matchMedia', before); else delete globalThis.matchMedia;
+      if (width) Object.defineProperty(globalThis, 'innerWidth', width); else delete globalThis.innerWidth;
+    }
+  }
   await act(async () => ui.unmount());
 });
 
