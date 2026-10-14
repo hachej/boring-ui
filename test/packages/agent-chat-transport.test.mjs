@@ -209,8 +209,8 @@ test('defineAgent maps data to native extensions, agent configuration and on-dem
   assert.deepEqual(added(reviewerCall), [], 'agents do not see each other\'s tools');
   reviewerCall.respond('ok');
   const loader = writer.extensions[1].tools[0];
-  assert.equal((await loader.execute({ name: 'fictional-letter' })).content[0].text, 'Always sign as the Fictional Clinic.');
-  assert.match((await loader.execute({ name: 'missing' })).content[0].text, /Unknown skill/);
+  assert.equal((await loader.execute({ name: 'fictional-letter' })).output[0].text, 'Always sign as the Fictional Clinic.');
+  assert.match((await loader.execute({ name: 'missing' })).output[0].text, /Unknown skill/);
 });
 
 // Two local models that answer at once with their own ID, so a test can see which model served a request.

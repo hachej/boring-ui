@@ -239,7 +239,7 @@ test('change tool captures the original request and actor before asynchronous na
   current = { ...actor, principalId: 'different-person' };
   args.source.resource.path = 'changed-while-awaiting';
   release.resolve();
-  const response = JSON.parse((await result).content[0].text);
+  const response = JSON.parse((await result).output[0].text);
   assert.deepEqual(captured.actor, actor);
   assert.equal(captured.request.source.resource.path, 'original');
   assert.equal(calls, 0);

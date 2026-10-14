@@ -54,7 +54,7 @@ function taskApi(taskId) {
   const memos = new Map();
   return { taskId, env: undefined, memo: async (name, value, ...rest) => { if (rest.length === 0) return memos.get(name); if (!memos.has(name)) memos.set(name, value); return memos.get(name); } };
 }
-const run = async (tool, args, api) => JSON.parse((await tool.execute(args, api, context)).content[0].text);
+const run = async (tool, args, api) => JSON.parse((await tool.execute(args, api, context)).output[0].text);
 
 test('the extension is one native extension: a prompt section and the replay-safe feedback tool', async t => {
   const { feedback } = await fixture(t);
