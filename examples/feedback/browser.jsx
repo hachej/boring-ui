@@ -272,7 +272,7 @@ function PhoneApp() {
   const section = sectionOf(path);
   return <>
     <SettingsPage saveLabel={copy.saveLabel} section={section} onNavigate={navigate} />
-    {session && <NoteBubble session={session} labels={feedbackLabelsFr} />}
+    {session && <NoteBubble session={session} labels={feedbackLabelsFr} transcribe={pinTranscribe} />}
     {session && <PointBar session={session} labels={feedbackLabelsFr} bottomOffset={TABBAR} />}
     <nav className="fh-tabbar" data-feedback-ignore="" data-testid="tabbar" aria-label="Sections" style={{ height: TABBAR }}>
       {[['profile', 'Profil'], ['billing', 'Facturation']].map(([id, name]) => <button key={id} type="button" data-testid={`tab-${id}`}
