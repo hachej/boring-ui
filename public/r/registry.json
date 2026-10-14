@@ -708,17 +708,38 @@
       ]
     },
     {
+      "name": "dock",
+      "type": "registry:block",
+      "title": "Docks",
+      "description": "Composable docks: DockLayout, Dock, DockMain and useDock lay out any host content on the left or right of the main area, each resizable, floatable, closable and a full-screen sheet on a phone. Layout only; what a dock shows is the host's. Installed by pi-workspace (which re-exports it) and app-shell.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/theme.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "registry/dock/dock.tsx",
+          "type": "registry:component",
+          "target": "components/dock/dock.tsx"
+        }
+      ]
+    },
+    {
       "name": "pi-workspace",
       "type": "registry:block",
       "title": "Pi workspace layout",
-      "description": "ArtifactWorkspace: the chat with a right-hand panel that slides in at full height, a resizable divider, full screen, a full-screen sheet on a phone and an opt-in float-when-narrow (the host swaps in AmbientChat from pi-ambient). Layout only; what is open is the host's. Pair it with the viewers item for the panel contents. Also dock.tsx: composable docks (DockLayout, Dock, DockMain, useDock) for any host content on the left or right of the main area, each resizable, floatable, closable and a full-screen sheet on a phone.",
+      "description": "ArtifactWorkspace: the chat with a right-hand panel that slides in at full height, a resizable divider, full screen, a full-screen sheet on a phone and an opt-in float-when-narrow (the host swaps in AmbientChat from pi-ambient). Layout only; what is open is the host's. Pair it with the viewers item for the panel contents. Also dock.tsx, which re-exports the docks of the dock item (DockLayout, Dock, DockMain, useDock) for any host content on the left or right of the main area, each resizable, floatable, closable and a full-screen sheet on a phone.",
       "dependencies": [
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/dock.json"
       ],
       "files": [
         {
@@ -836,6 +857,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/dock.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/feedback.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.5/r/button.json",

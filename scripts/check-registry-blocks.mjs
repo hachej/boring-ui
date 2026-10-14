@@ -73,6 +73,8 @@ function shortestLoop(graph, component) {
 /** Folders the cycle rule covers: every registry block and every package's sources. */
 export const cycleFolders = (root) => ['registry', ...readdirSync(resolve(root, 'packages'), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => `packages/${entry.name}/src`)];
 
+const isShim = (root, path, base) => /^(?:\/\/[^\n]*\n)*export \* from '\.\.\/[\w-]+\/[\w-]+';\s*$/.test(readFileSync(resolve(root, path), 'utf8')) && base.endsWith('.tsx');
+
 export function checkRegistryBlocks(root) {
   const errors = [];
   const manifest = JSON.parse(readFileSync(resolve(root, 'registry.json'), 'utf8'));
@@ -96,6 +98,8 @@ export function checkRegistryBlocks(root) {
       if (/^use[A-Z-].*\.ts$/.test(base) && file.type !== 'registry:hook') errors.push(`${where}: a use*.ts file is registry:hook (found ${file.type})`);
       else if (/\.ts$/.test(base) && file.type !== 'registry:lib' && file.type !== 'registry:hook') errors.push(`${where}: a .ts helper is registry:lib (found ${file.type})`);
       else if (/\.tsx$/.test(base) && file.type !== 'registry:component' && file.type !== 'registry:ui') errors.push(`${where}: a .tsx file is registry:component or registry:ui (found ${file.type})`);
+      // A one-line `export * from '../<item>/<base>'` shim keeps an old import path working after a move (pi-workspace/dock -> dock/dock): it claims no name.
+      if (isShim(root, file.path, base)) continue;
       if (owners.has(base)) errors.push(`${where}: ${base} is also shipped by item ${owners.get(base)}; share one item instead`);
       else owners.set(base, item.name);
     }
