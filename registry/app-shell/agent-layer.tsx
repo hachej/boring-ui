@@ -31,6 +31,8 @@ import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
 import { useVisualViewport } from './use-visual-viewport';
 import { AgentContextProvider } from './agent-context';
+import { HeaderActions } from './header-actions';
+import type { ScreenHeaderAction } from './header-actions';
 
 export interface AgentSpec {
   readonly controller: NativeChatController;
@@ -43,6 +45,8 @@ export interface AgentSpec {
   readonly voice?: { readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<string>; readonly send?: 'auto' | 'draft' };
   /** Point mode (the product manager, in practice). */
   readonly feedback?: FeedbackSession;
+  /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
+  readonly headerActions?: readonly ScreenHeaderAction[];
 }
 
 /** Compact: closed, peek, half or full. Expanded: closed or open. */
@@ -68,11 +72,13 @@ const FULL = 1;
 const HOLD_MS = 350;
 
 /**
- * What a close request from the drawer becomes: a swipe, an outside press and a lost focus never close the layer. `reason` is Base UI's
- * `details.reason` (`'swipe'`, `'outside-press'`, `'focus-out'`, `'escape-key'`, `'close-watcher'`, `'close-press'`, `'trigger-press'`, `'imperative-action'`, `'none'`).
+ * What a close request from the drawer becomes. A swipe, an outside press, a lost focus and Escape never close the layer: they step down
+ * to peek (half without an `agent`), so the modal state goes and the coach stays reachable. Only the Close control closes it. `reason` is
+ * Base UI's `details.reason` (`'swipe'`, `'outside-press'`, `'focus-out'`, `'escape-key'`, `'close-watcher'`, `'close-press'`, `'trigger-press'`,
+ * `'imperative-action'`, `'none'`).
  */
 export function nextSnapOnClose(reason: string, hasPeek: boolean): 'peek' | 'half' | 'close' {
-  return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' ? (hasPeek ? 'peek' : 'half') : 'close';
+  return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' || reason === 'escape-key' ? (hasPeek ? 'peek' : 'half') : 'close';
 }
 
 type VoicePhase = 'idle' | 'starting' | 'recording' | 'transcribing';
@@ -421,9 +427,11 @@ const ICON_BUTTON = 'inline-flex size-9 shrink-0 items-center justify-center rou
 function Header({ text, title, compactSnap, closeRef, controls, className, ...rest }: { readonly text: AppShellText; readonly title: string; readonly compactSnap?: Snap; readonly closeRef?: Ref<HTMLButtonElement>; readonly controls?: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'title'>) {
   const layer = useInternal();
   const back = layer.showing === 'improve' && layer.agent;
+  const actions = (layer.showing === 'improve' ? layer.improve : layer.agent)?.headerActions ?? [];
   return <div data-testid="agent-layer-header" {...rest} className={cn('flex shrink-0 items-center gap-1 px-2 pb-1', className)}>
     {back && <button type="button" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent} className={ICON_BUTTON}><ArrowLeftIcon className="size-4" aria-hidden="true" /></button>}
     <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{title}</h2>
+    {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
     {compactSnap === 'half' && <button type="button" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')} className={ICON_BUTTON}><ChevronUpIcon className="size-4" aria-hidden="true" /></button>}
     {compactSnap === 'full' && <button type="button" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')} className={ICON_BUTTON}><ChevronDownIcon className="size-4" aria-hidden="true" /></button>}
     {controls}
@@ -450,6 +458,9 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const vv = useVisualViewport();
   const closeRef = useRef<HTMLButtonElement>(null);
   const vetoed = useRef(false);
+  // Set while the layer closes; cleared when it opens again (a close is final until the trigger or a choice opens the layer).
+  const closing = useRef(false);
+  useEffect(() => { if (snap !== 'closed') closing.current = false; }, [snap]);
   const open = snap !== 'closed' && !pointing;
   const peek = snap === 'peek';
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
@@ -485,7 +496,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     onOpenChange={(next, details) => {
       if (next) return;
       const outcome = nextSnapOnClose(details.reason, hasPeek);
-      if (outcome === 'close') { layer.close(); return; }
+      if (outcome === 'close') { closing.current = true; layer.close(); return; }
       details.cancel();
       vetoed.current = true;
       setTimeout(() => { vetoed.current = false; }, 120);
@@ -496,7 +507,8 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     }}
     onSnapPointChange={point => {
       // Vetoing a swipe-close makes the drawer snap back to where it was: that echo must not undo the snap we chose.
-      if (vetoed.current) return;
+      // Base UI also reports the first snap point (peek) as the drawer closes: that echo must not reopen the layer.
+      if (vetoed.current || closing.current) return;
       const next = toSnap(point, layer.peekPoint);
       if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next);
     }}>
@@ -573,7 +585,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   </>;
   const down = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = box.current?.getBoundingClientRect();
-    if (!floating || !rect || event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+    if (!floating || !rect || event.button !== 0 || (event.target as HTMLElement).closest('button, a[href]')) return;
     drag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };

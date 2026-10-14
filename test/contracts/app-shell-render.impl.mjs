@@ -163,5 +163,112 @@ async function oneLayerAt(t, width) {
   await act(async () => reactRoot.unmount());
 }
 
+// The layer's header actions: one layer open (its header is the drawer's on a phone, the dock's on a wide screen), the probe reads the layer's API.
+async function openedLayer(t, width, specs) {
+  const { createElement: h, useLayoutEffect, act } = await import('react');
+  const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
+  let latest;
+  const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
+  const window = dom(t, width);
+  const { createRoot } = await import('react-dom/client');
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' })));
+  return { window, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
+}
+
+async function headerOf(opened, which) {
+  await opened.act(async () => opened.latest().open(which, 'half'));
+  for (let tries = 0; tries < 40 && !opened.window.document.querySelector('[data-testid=agent-layer-header]'); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));
+  return opened.window.document.querySelector('[data-testid=agent-layer-header]');
+}
+
+for (const width of [390, 1280]) {
+  test(`the layer header actions at ${width}: a button with its label runs onSelect, a href is a link (target and rel only when passed), none when absent`, async t => {
+    const calls = [];
+    const agent = { ...agentWith(), headerActions: [
+      { id: 'go', label: 'Ouvrir la boutique', icon: Icon, onSelect: () => calls.push('go') },
+      { id: 'wa', label: 'Discuter avec Max sur WhatsApp', icon: Icon, href: '/whatsapp/open?app=fitness', onSelect: () => calls.push('wa') },
+    ] };
+    const opened = await openedLayer(t, width, { agent, improve: { ...agentWith(), headerActions: [{ id: 'ask', label: 'Demander', icon: Icon, onSelect: () => calls.push('ask') }] } });
+    const header = await headerOf(opened, 'agent');
+    const button = header.querySelector('[data-testid=agent-layer-action-go]');
+    assert.equal(button?.tagName, 'BUTTON');
+    assert.equal(button?.getAttribute('aria-label'), 'Ouvrir la boutique');
+    assert.equal(button?.getAttribute('title'), 'Ouvrir la boutique', 'the tooltip');
+    const link = header.querySelector('[data-testid=agent-layer-action-wa]');
+    assert.equal(link?.tagName, 'A');
+    assert.equal(link?.getAttribute('href'), '/whatsapp/open?app=fitness');
+    assert.equal(link?.hasAttribute('target'), false, 'no target unless the host passes one');
+    assert.equal(link?.hasAttribute('rel'), false, 'no rel unless the host passes one');
+    await opened.act(async () => button.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+    assert.deepEqual(calls, ['go'], 'the click runs onSelect');
+    const improve = await headerOf(opened, 'improve');
+    assert.ok(improve.querySelector('[data-testid=agent-layer-action-ask]'), 'the product manager has its own actions');
+    assert.equal(improve.querySelector('[data-testid=agent-layer-action-go]'), null, 'and not the coach\'s');
+    await opened.unmount();
+
+    const bare = await openedLayer(t, width, { agent: agentWith() });
+    const plain = await headerOf(bare, 'agent');
+    assert.ok(plain, 'the header renders');
+    assert.equal(plain.querySelector('[data-testid^=agent-layer-action-]'), null, 'nothing renders when there are no actions');
+    await bare.unmount();
+  });
+
+  test(`the layer header at ${width}: a third action goes in the overflow control, never in the title row`, async t => {
+    const three = ['a', 'b', 'c'].map(id => ({ id, label: `Action ${id}`, icon: Icon, onSelect() {} }));
+    const opened = await openedLayer(t, width, { agent: { ...agentWith(), headerActions: three } });
+    const header = await headerOf(opened, 'agent');
+    assert.ok(header.querySelector('[data-testid=agent-layer-action-b]'), 'the second is shown');
+    assert.equal(header.querySelector('[data-testid=agent-layer-action-c]'), null, 'the third is not');
+    assert.ok(header.querySelector('[data-testid=agent-layer-more]'), 'the overflow control');
+    await opened.unmount();
+  });
+}
+
+test('the phone overflow of the layer header is a link when the third action has an href (target and rel kept)', async t => {
+  const three = [
+    { id: 'a', label: 'Action a', icon: Icon, onSelect() {} },
+    { id: 'b', label: 'Action b', icon: Icon, onSelect() {} },
+    { id: 'c', label: 'Inviter', icon: Icon, href: '/invite?app=fitness', target: '_blank', rel: 'noopener', onSelect() {} },
+  ];
+  const opened = await openedLayer(t, 390, { agent: { ...agentWith(), headerActions: three } });
+  const header = await headerOf(opened, 'agent');
+  const more = header.querySelector('[data-testid=agent-layer-more]');
+  await opened.act(async () => more.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  for (let tries = 0; tries < 40 && !opened.window.document.querySelector('[data-testid=app-sheet] a'); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));
+  const link = opened.window.document.querySelector('[data-testid=app-sheet] [data-testid=agent-layer-action-c]');
+  assert.equal(link?.tagName, 'A', 'the overflow entry is an anchor');
+  assert.equal(link?.getAttribute('href'), '/invite?app=fitness');
+  assert.equal(link?.getAttribute('target'), '_blank');
+  assert.equal(link?.getAttribute('rel'), 'noopener');
+  await opened.unmount();
+});
+
+test('the screen header follows an action whose href, target or rel changes alone (the change key covers them)', async t => {
+  const { createElement: h, act, useState } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const shell = await bundle('screen-header-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
+  const window = dom(t, 390);
+  const Screen = ({ href, target, rel }) => { shell.useScreenHeader({ actions: [{ id: 'go', label: 'Ouvrir', icon: Icon, href, target, rel, onSelect() {} }] }); return null; };
+  const Host = () => {
+    const [link, setLink] = useState({ href: '/a' });
+    return h('div', null, h('button', { type: 'button', id: 'change', onClick: () => setLink({ href: '/b', target: '_blank', rel: 'noopener' }) }), h(Screen, link));
+  };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Host) }], route: { id: 'Jour', onChange() {} }, locale: 'fr' })));
+  const link = () => window.document.querySelector('[data-testid=header-action-go]');
+  assert.equal(link()?.getAttribute('href'), '/a');
+  await act(async () => window.document.querySelector('#change').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  assert.equal(link()?.getAttribute('href'), '/b', 'the new destination shows');
+  assert.equal(link()?.getAttribute('target'), '_blank');
+  assert.equal(link()?.getAttribute('rel'), 'noopener');
+  await act(async () => reactRoot.unmount());
+});
+
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));
 test('one layer at a time on a wide screen: opening the agent closes the product manager and back', t => oneLayerAt(t, 1280));
