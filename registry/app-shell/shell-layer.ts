@@ -3,7 +3,7 @@
 // A full-screen app view (a document sheet, a pushed view of the app) that takes part in the shell's one-layer-at-a-time rule: opening it
 // closes the agent and product manager layers, and opening either of those closes it. Its Back is the shared Back manager's `sheet` layer
 // (`useBackLayer`), so the browser's Back closes it first. Host concern: Pi has no layers; this is the shell's own presentation rule.
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useBackLayer } from './back';
 
 /** The shell's agent and product manager layers share one close; the agent layer registers it while mounted. */
@@ -38,12 +38,30 @@ export interface ShellLayer {
   readonly isOpen: boolean;
 }
 
+export interface ShellLayerOptions {
+  /** Asked when the browser's Back would close the view: `false` keeps it open (the history entry is pushed again). */
+  readonly confirmBack?: () => boolean;
+}
+
+/** The one owner of each view id: its component registers Back and the history entry. Other callers only observe. */
+const owners = new Map<string, symbol>();
+
 /**
  * The handle of one full-screen view, `id` being its name in the shell. `open` closes the agent and product manager layers and any other
- * view; `close` closes this one (a no-op when it is not on show). Back closes it first. Any component may call `open` (a host's handler
- * too), so the view's own component reads `isOpen` to render.
+ * view; `close` closes this one (a no-op when it is not on show). The first component that calls `useShellLayer(id)` owns the view: only
+ * it registers the Back layer and the history entry, and only it closes the view when it unmounts. Any other caller (a host's trigger)
+ * observes `isOpen` and can open or close, and its own unmount releases nothing but its subscription.
  */
-export function useShellLayer(id: string): ShellLayer {
+export function useShellLayer(id: string, options?: ShellLayerOptions): ShellLayer {
+  // The owner is the first component of this id to render (parents render before their children). Claimed while rendering, so a parent
+  // that mounts with an observer child is the owner; the claim is released by the owner's own cleanup.
+  const [me] = useState(() => {
+    const token = Symbol(id);
+    const claimed = !owners.has(id);
+    if (claimed) owners.set(id, token);
+    return { token, owner: claimed };
+  });
+  const owner = me.owner;
   const isOpen = useSyncExternalStore(subscribe, () => shown === id, () => false);
   const open = useCallback(() => {
     closeAgentLayers();
@@ -56,8 +74,24 @@ export function useShellLayer(id: string): ShellLayer {
     shown = undefined;
     emit();
   }, [id]);
-  // The view is one history entry while it is open; Back and any other close keep the history as it was (the Back manager's rules).
-  useBackLayer(isOpen, close, 'sheet');
-  useEffect(() => () => { if (shown === id) close(); }, [id, close]);
+  useEffect(() => {
+    if (!owner) return undefined;
+    if (!owners.has(id)) owners.set(id, me.token);
+    return () => {
+      if (owners.get(id) !== me.token) return;
+      // The owner's component is gone: its view goes with it (its history entry is released by the Back layer's cleanup).
+      owners.delete(id);
+      close();
+    };
+  }, [id, owner, me, close]);
+  const confirmBack = useRef(options?.confirmBack);
+  confirmBack.current = options?.confirmBack;
+  const back = useCallback(() => {
+    // A refused Back keeps the view and its entry: the entry the browser just popped is pushed again.
+    if (confirmBack.current && !confirmBack.current()) { history.pushState({ appShell: 'sheet' }, ''); return; }
+    close();
+  }, [close]);
+  // The view is one history entry while it is open, owned by one component only (the Back manager's rules).
+  useBackLayer(owner && isOpen, back, 'sheet');
   return { open, close, isOpen };
 }

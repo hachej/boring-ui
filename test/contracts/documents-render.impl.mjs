@@ -76,6 +76,12 @@ async function fixture(t) {
   const first = await write('seed-brief-1', { kind: 'create', target: locate('brief.txt'), expected: { kind: 'absent' }, bytes: bytes('Premier jet\n'), mediaType: 'text/plain' });
   const second = await write('seed-brief-2', { kind: 'replace', target: { ...locate('brief.txt'), revision: first }, bytes: bytes('Deuxième jet\n'), mediaType: 'text/plain' });
   const last = await write('seed-brief-3', { kind: 'replace', target: { ...locate('brief.txt'), revision: second }, bytes: bytes('Version finale\n'), mediaType: 'text/plain' });
+  const fiche1 = await write('seed-fiche-1', { kind: 'create', target: locate('fiche.md'), expected: { kind: 'absent' }, bytes: bytes('# Ancienne fiche\n'), mediaType: 'text/markdown' });
+  const fiche2 = await write('seed-fiche-2', { kind: 'replace', target: { ...locate('fiche.md'), revision: fiche1 }, bytes: bytes('# Nouvelle fiche\n'), mediaType: 'text/markdown' });
+  const pngA = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137]);
+  const pngB = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 138]);
+  const logo1 = await write('seed-logo-1', { kind: 'create', target: locate('logo.png'), expected: { kind: 'absent' }, bytes: pngA, mediaType: 'image/png' });
+  const logo2 = await write('seed-logo-2', { kind: 'replace', target: { ...locate('logo.png'), revision: logo1 }, bytes: pngB, mediaType: 'image/png' });
   // The binding a host builds over its workspace: the same methods a remote `RevisionProvider` exposes, here over the fictional store.
   const provider = {
     identity: { scopeId, principalId: access.principalId, initiatorId: access.initiatorId },
@@ -88,7 +94,7 @@ async function fixture(t) {
     search: request => workspace.catalog.search(request, access),
     history: path => workspace.catalog.history(path, access),
   };
-  return { provider, notes, first, second, last };
+  return { provider, notes, first, second, last, fiche: { first: fiche1, last: fiche2 }, logo: { first: logo1, last: logo2 } };
 }
 
 /**
@@ -164,7 +170,8 @@ test('DocumentSheet at 390: one document opens over the app, « Toutes les fiche
   await view.settle(() => view.q('[data-testid=document-sheet] [data-testid=file-viewer][data-path="notes.md"]'));
   assert.ok(view.q('[data-testid=document-sheet] [data-testid=file-viewer][data-path="notes.md"]'), 'the sheet shows the document');
   await view.click(view.q('[data-testid=document-sheet-all]'));
-  assert.deepEqual(calls, ['all', 'closed'], '« Toutes les fiches » reports to the host, and the sheet closes');
+  await view.settle(() => calls.length === 2);
+  assert.deepEqual(calls, ['closed', 'all'], '« Toutes les fiches » closes the sheet, then reports to the host');
   assert.equal(view.q('[data-testid=document-sheet]'), null, 'closed');
   await view.click(view.q('#open-sheet'));
   await view.settle(() => view.q('[data-testid=document-sheet]'));
@@ -172,7 +179,7 @@ test('DocumentSheet at 390: one document opens over the app, « Toutes les fiche
   await view.back();
   await view.settle(() => !view.q('[data-testid=document-sheet]'));
   assert.equal(view.q('[data-testid=document-sheet]'), null, 'Back closes the sheet');
-  assert.deepEqual(calls, ['all', 'closed', 'closed'], 'the host learns that it closed');
+  assert.deepEqual(calls, ['closed', 'all', 'closed'], 'the host learns that it closed');
 });
 
 test('useShellLayer: opening a full-screen view closes the agent layer, and Back closes the view', async t => {
@@ -195,4 +202,154 @@ test('useShellLayer: opening a full-screen view closes the agent layer, and Back
   await view.act(async () => doc.open());
   await view.back();
   assert.equal(doc.isOpen, false, 'Back closes the view first');
+});
+
+test('Revisions at 1280: the newest row opens its own revision read-only too, and « Back to editing » returns to the file', async t => {
+  const f = await fixture(t);
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider: f.provider }) });
+  await view.settle(() => view.q('[role=treeitem][data-path="brief.txt"] button'));
+  await view.click(view.q('[role=treeitem][data-path="brief.txt"] button'));
+  await view.settle(() => view.q('[data-testid=revision-item]'));
+  const newest = view.q(`[data-testid=revision-item][data-revision="${f.last}"]`);
+  await view.click(newest);
+  await view.settle(() => view.q('[data-testid=revision-view]'));
+  assert.equal(view.q('[data-testid=revision-view]')?.dataset.revision, f.last, 'the newest row shows exactly its revision');
+  assert.ok(view.q(`[data-testid=artifact-panel][data-artifact-revision="${f.last}"]`), 'read-only, not the editable file');
+  await view.click(view.q('[data-testid=back-to-editing]'));
+  await view.settle(() => view.q('[data-testid=file-viewer][data-path="brief.txt"]'));
+  assert.equal(view.q('[data-testid=revision-view]'), null, 'back to the editable file');
+});
+
+const setText = (view, element, value) => {
+  const setter = Object.getOwnPropertyDescriptor(view.window.HTMLTextAreaElement.prototype, 'value').set;
+  setter.call(element, value);
+  element.dispatchEvent(new view.window.Event('input', { bubbles: true }));
+};
+
+test('Documents at 1280: unsaved edits survive a visit to an older revision, and leaving the file with them asks first', async t => {
+  const f = await fixture(t);
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider: f.provider }) });
+  await view.settle(() => view.q('[role=treeitem][data-path="fiche.md"] button'));
+  await view.click(view.q('[role=treeitem][data-path="fiche.md"] button'));
+  await view.settle(() => view.q('[data-testid$="-mode-source"]'));
+  await view.click(view.q('[data-testid$="-mode-source"]'));
+  await view.settle(() => view.q('[data-testid=file-viewer][data-path="fiche.md"] textarea'));
+  const draft = 'Brouillon non enregistré';
+  await view.act(async () => setText(view, view.q('[data-testid=file-viewer][data-path="fiche.md"] textarea'), draft));
+  await view.settle(() => view.q(`[data-testid=revision-item][data-revision="${f.fiche.first}"]`));
+  await view.click(view.q(`[data-testid=revision-item][data-revision="${f.fiche.first}"]`));
+  await view.settle(() => view.q('[data-testid=revision-view]'));
+  await view.click(view.q('[data-testid=back-to-editing]'));
+  await view.settle(() => view.q('[data-testid=file-viewer][data-path="fiche.md"] textarea'));
+  assert.equal(view.q('[data-testid=file-viewer][data-path="fiche.md"] textarea').value, draft, 'the draft is still in the editor');
+  // Leaving with unsaved edits asks; declining keeps the file and the draft.
+  view.window.confirm = () => false;
+  await view.click(view.q('[role=treeitem][data-path="brief.txt"] button'));
+  await view.act(async () => new Promise(done => setTimeout(done, 100)));
+  assert.equal(view.q('[data-testid=file-viewer][data-path="fiche.md"] textarea')?.value, draft, 'declined: still here');
+  // Accepting leaves the file.
+  view.window.confirm = () => true;
+  await view.click(view.q('[role=treeitem][data-path="brief.txt"] button'));
+  await view.settle(() => view.q('[data-testid=file-viewer][data-path="brief.txt"]'));
+  assert.ok(view.q('[data-testid=file-viewer][data-path="brief.txt"]'), 'accepted: the other file opens');
+});
+
+test('Documents at 1280: an older Markdown revision is read exactly, also after a reload', async t => {
+  const f = await fixture(t);
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider: f.provider }) });
+  await view.settle(() => view.q('[role=treeitem][data-path="fiche.md"] button'));
+  await view.click(view.q('[role=treeitem][data-path="fiche.md"] button'));
+  await view.settle(() => view.q(`[data-testid=revision-item][data-revision="${f.fiche.first}"]`));
+  await view.click(view.q(`[data-testid=revision-item][data-revision="${f.fiche.first}"]`));
+  await view.settle(() => /Ancienne fiche/.test(view.q('[data-testid=revision-view]')?.textContent ?? ''));
+  await view.click(view.q('[data-testid=artifact-more]'));
+  await view.settle(() => view.q('[data-testid=artifact-refresh]'));
+  await view.click(view.q('[data-testid=artifact-refresh]'));
+  await view.act(async () => new Promise(done => setTimeout(done, 300)));
+  const body = view.q('[data-testid=revision-view]')?.textContent ?? '';
+  assert.match(body, /Ancienne fiche/, 'the reload re-reads the selected revision');
+  assert.doesNotMatch(body, /Nouvelle fiche/, 'never the latest');
+});
+
+test('Documents at 1280: an image revision opens read-only in the image pane', async t => {
+  const f = await fixture(t);
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider: f.provider }) });
+  await view.settle(() => view.q('[role=treeitem][data-path="logo.png"] button'));
+  await view.click(view.q('[role=treeitem][data-path="logo.png"] button'));
+  await view.settle(() => view.q(`[data-testid=revision-item][data-revision="${f.logo.first}"]`));
+  await view.click(view.q(`[data-testid=revision-item][data-revision="${f.logo.first}"]`));
+  await view.settle(() => view.q('[data-testid=revision-view][data-kind="image"]'));
+  assert.ok(view.q('[data-testid=revision-view][data-kind="image"]'), 'the image revision has its own pane, not a note');
+  assert.equal(view.q('[data-testid=revision-view]')?.dataset.revision, f.logo.first);
+});
+
+test('Documents at 1280 in French: the viewer bar and the revision view use the French words', async t => {
+  const f = await fixture(t);
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider: f.provider, locale: 'fr' }) });
+  await view.settle(() => view.q('[role=treeitem][data-path="fiche.md"] button'));
+  await view.click(view.q('[role=treeitem][data-path="fiche.md"] button'));
+  await view.settle(() => view.q(`[data-testid=revision-item][data-revision="${f.fiche.first}"]`));
+  await view.click(view.q(`[data-testid=revision-item][data-revision="${f.fiche.first}"]`));
+  await view.settle(() => view.q('[data-testid=revision-view]'));
+  assert.match(view.q('[data-testid=revision-view]')?.textContent ?? '', /Lecture seule/, 'the app words');
+  assert.equal(view.q('[data-testid=revision-view] [data-testid$=-close]')?.getAttribute('aria-label'), 'Fermer', 'the viewer bar words');
+  assert.equal(view.q('[data-testid=back-to-editing]')?.textContent.trim(), 'Revenir à la modification');
+});
+
+test('the all-documents button is 44px on a coarse pointer, tablets included (no fine-pointer-only size)', async () => {
+  const { readFileSync: read } = await import('node:fs');
+  const source = read(new URL('../../registry/documents/document-sheet.tsx', import.meta.url), 'utf8');
+  const button = source.slice(source.indexOf('data-testid="document-sheet-all"'), source.indexOf('>{labels.allDocuments}'));
+  assert.match(button, /pointer-coarse:min-h-11/, 'a 44px minimum on a coarse pointer');
+  assert.doesNotMatch(button, /md:min-h-8/, 'no md override that shrinks it on a tablet');
+});
+
+test('useShellLayer: one owner registers Back; an observer unmounting releases only its subscription', async t => {
+  const shell = await load();
+  const { createElement: h, useLayoutEffect, useState } = await import('react');
+  let owner, observer, showObserver;
+  const Observer = () => { observer = shell.useShellLayer('documents-test'); return null; };
+  const page = () => {
+    const [shown, setShown] = useState(true);
+    showObserver = setShown;
+    owner = shell.useShellLayer('documents-test');
+    useLayoutEffect(() => {});
+    return h('div', null, shown ? h(Observer) : null);
+  };
+  const view = await mount(t, { width: 1280, screen: () => page });
+  await view.act(async () => observer.open());
+  assert.equal(owner.isOpen, true, 'the owner sees the view open');
+  assert.equal(observer.isOpen, true, 'the observer sees it too');
+  await view.act(async () => showObserver(false));
+  assert.equal(owner.isOpen, true, 'an observer leaving does not close the view');
+  await view.back();
+  assert.equal(owner.isOpen, false, 'Back closes it once, through the owner');
+});
+
+test('Revisions at 1280: switching the provider shows no history of the previous workspace while the new one is read', async t => {
+  const f = await fixture(t);
+  const { createElement: h, useState } = await import('react');
+  // The same file in another workspace whose history has not arrived yet.
+  const pending = { ...f.provider, history: () => new Promise(() => {}) };
+  let switchTo;
+  const Host = shell => () => {
+    const [current, setCurrent] = useState(f.provider);
+    switchTo = () => setCurrent(pending);
+    return h('div', null, h(shell.Documents, { provider: current }));
+  };
+  const view = await mount(t, { width: 1280, screen: Host });
+  await view.settle(() => view.q('[role=treeitem][data-path="brief.txt"] button'));
+  await view.click(view.q('[role=treeitem][data-path="brief.txt"] button'));
+  await view.settle(() => view.q('[data-testid=revision-item]'));
+  assert.ok(view.q('[data-testid=revision-item]'), 'the first workspace shows its history');
+  await view.act(async () => switchTo());
+  await view.click(view.q('[role=treeitem][data-path="brief.txt"] button'));
+  await view.act(async () => new Promise(done => setTimeout(done, 200)));
+  assert.equal(view.q('[data-testid=revision-item]'), null, 'no row of the previous workspace');
+  assert.match(view.q('[data-testid=revisions]')?.textContent ?? '', /Loading revisions|Chargement/, 'the new history is awaited');
 });
