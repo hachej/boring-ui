@@ -17,11 +17,11 @@ export interface AccountSpec {
   readonly email?: string;
   readonly signOut?: () => void;
   readonly menu: readonly { readonly label: string; readonly onSelect: () => void }[];
-  /** The app's theme: one « Mode sombre » switch in the account menu. Absent: no row. */
-  readonly theme?: { readonly value: 'light' | 'dark' | 'system'; readonly onChange: (value: 'light' | 'dark') => void };
+  /** The app's resolved theme: one « Mode sombre » switch in the account menu. The host resolves `system` (its preference) to `light` or `dark` before it gets here. Absent: no row. */
+  readonly theme?: { readonly value: 'light' | 'dark'; readonly onChange: (value: 'light' | 'dark') => void };
 }
 
-/** The switch's state: on is dark; `system` reads as light until the person turns it on. */
+/** The switch's state: on is dark. */
 const darkOn = (theme: NonNullable<AccountSpec['theme']>) => theme.value === 'dark';
 
 function ThemeSwitch({ theme, text }: { readonly theme: NonNullable<AccountSpec['theme']>; readonly text: AppShellText }) {

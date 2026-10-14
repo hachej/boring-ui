@@ -11,6 +11,8 @@ import { Window } from 'happy-dom';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const folder = 'registry/app-shell';
 
+// Each call imports a fresh copy of the bundle: the shell's module state (the Back manager) belongs to one window, not to every test.
+let bundles = 0;
 async function bundle(name, source) {
   const out = `${root}.cache/app-shell-render-test`;
   mkdirSync(out, { recursive: true });
@@ -18,7 +20,7 @@ async function bundle(name, source) {
   const entry = source ? `${out}/${name}` : `${root}${folder}/${name}`;
   if (source) writeFileSync(entry, source);
   await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent' });
-  return import(pathToFileURL(outfile).href);
+  return import(`${pathToFileURL(outfile).href}?fresh=${++bundles}`);
 }
 
 /** A happy-dom page for rendering; restores the globals afterwards. */
@@ -119,6 +121,15 @@ test('the account theme: one « Mode sombre » switch when the app gives a theme
   await act(async () => row.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
   assert.deepEqual(changed, ['dark'], 'a light app turns dark');
   await unmount();
+
+  const darkChanged = [];
+  const dark = await openAccount(t, { account: { name: 'Camille Martin', menu: [], signOut() {}, theme: { value: 'dark', onChange: value => darkChanged.push(value) } }, locale: 'fr' });
+  const darkRow = dark.window.document.querySelector('[data-testid=app-sheet] [data-testid=account-theme]');
+  assert.equal(darkRow?.getAttribute('aria-checked'), 'true', 'a dark app shows the switch on');
+  const { act: actDark } = await import('react');
+  await actDark(async () => darkRow.dispatchEvent(new dark.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  assert.deepEqual(darkChanged, ['light'], 'a dark app turns light');
+  await dark.unmount();
 
   const none = await openAccount(t, { account: { name: 'Camille Martin', menu: [], signOut() {} }, locale: 'fr' });
   assert.equal(none.window.document.querySelector('[data-testid=account-theme]'), null, 'no theme, no row');
