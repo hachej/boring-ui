@@ -4,14 +4,14 @@
   "title": "File tree",
   "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.3.0",
-    "@hachej/boring-files@^0.3.0",
+    "@hachej/boring-ui-kit@^0.3.1",
+    "@hachej/boring-files@^0.3.1",
     "react@^19.0.0",
     "radix-ui@^1.8.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/theme.json"
   ],
   "files": [
     {
