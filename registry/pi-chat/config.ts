@@ -43,7 +43,19 @@ export interface MentionsConfig {
   readonly generation?: string | number | undefined;
   /** Host-supplied look for a mention in a sent message (a plug-in such as feedback). Return undefined to keep the default mention. */
   readonly render?: ((path: string) => ReactNode | undefined) | undefined;
+  /**
+   * The bytes of an image upload, for its card's thumbnail: the host reads them through its own provider. Absent: the card shows its icon.
+   * Only png, jpeg, gif and webp are shown (`thumbnail`); anything else, or a refusal, leaves the icon.
+   */
+  readonly preview?: PreviewRead | undefined;
 }
+/** Reads an image upload for its card's thumbnail: its media type and base64 data, or undefined. */
+export type PreviewRead = (path: string, signal: AbortSignal) => Promise<{ readonly mimeType: string; readonly data: string } | undefined>;
+
+/** Paste-to-file thresholds: a paste with more characters or more lines than these becomes a file. Defaults 2000 and 40. */
+export interface PasteToFile { readonly minChars?: number | undefined; readonly minLines?: number | undefined }
+/** A paste the composer took, with the textarea range it replaces (restored if the upload is cancelled). */
+export interface PastedText { readonly text: string; readonly start: number; readonly end: number }
 
 export interface UploadResult {
   /** The host saved the file in the workspace: it becomes an `@path` mention. */
@@ -179,6 +191,57 @@ export function removeMention(text: string, path: string): string {
 }
 
 export type Piece = { readonly text: string; readonly kind?: 'mention' | 'skill'; readonly value?: string };
+
+/** Upload paths are `uploads/<name>`: the attachments of a message, shown as cards rather than as text. */
+export const isUploadPath = (path: string): boolean => path.startsWith('uploads/');
+
+export type FileKind = 'document' | 'image' | 'pdf' | 'sheet' | 'slides' | 'file';
+const KIND_BY_EXTENSION: Readonly<Record<string, FileKind>> = {
+  png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image', avif: 'image',
+  pdf: 'pdf',
+  csv: 'sheet', tsv: 'sheet', xls: 'sheet', xlsx: 'sheet', xlsm: 'sheet', ods: 'sheet', numbers: 'sheet',
+  ppt: 'slides', pptx: 'slides', odp: 'slides', key: 'slides',
+  md: 'document', markdown: 'document', txt: 'document', doc: 'document', docx: 'document', odt: 'document', rtf: 'document',
+};
+/** The card's kind, from the extension alone. */
+export function fileKind(path: string): FileKind {
+  const extension = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase() ?? '';
+  return KIND_BY_EXTENSION[extension] ?? 'file';
+}
+/** The name a card shows: the upload's file name without the random suffix `uploadPath` adds (`report-1a2b3c4d.pdf` is `report.pdf`). */
+export function displayName(path: string): string {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  return name.replace(/-[0-9a-f]{8}(?=\.[^.]*$|$)/i, '');
+}
+
+/**
+ * The pieces a message shows once `hidden` ones are taken out: a space that a removed piece leaves at a join is dropped, and the ends are
+ * trimmed where it was. The message's own text is not changed, only what the bubble draws.
+ */
+export function visibleParts(parts: readonly Piece[], hidden: (part: Piece) => boolean): Piece[] {
+  const out: Piece[] = [];
+  let gap = false;
+  for (const part of parts) {
+    if (hidden(part)) { gap = true; continue; }
+    const prev = out[out.length - 1];
+    const joins = gap && part.kind === undefined && (prev === undefined || (prev.kind === undefined && /\s$/.test(prev.text)));
+    out.push(joins ? { text: part.text.replace(/^\s+/, '') } : part);
+    gap = false;
+  }
+  const last = out[out.length - 1];
+  if (gap && last && last.kind === undefined) out[out.length - 1] = { text: last.text.replace(/\s+$/, '') };
+  return out.filter(part => part.kind !== undefined || part.text !== '');
+}
+
+/** Whether pasted text is long enough to become a file. `more` than the limits: the characters, or the lines, of the text. */
+export function isLongPaste(text: string, limits: PasteToFile = {}): boolean {
+  const { minChars = 2000, minLines = 40 } = limits;
+  return text.length > minChars || text.split('\n').length > minLines;
+}
+/** Markdown in pasted text: a heading, a list or quote item, a fence, a table row, emphasis or a link. Anything else is plain text. */
+export function looksLikeMarkdown(text: string): boolean {
+  return /^\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s|```|~~~)/m.test(text) || /\*\*[^*\n]+\*\*|\]\([^)\n]+\)|^\|.*\|\s*$/m.test(text);
+}
 /** Split a sent message into plain text, `@path` mentions and a leading `/skill` token. */
 export function pieces(text: string, options: { readonly mentions: boolean; readonly skills: readonly string[] }): Piece[] {
   const found: { start: number; end: number; kind: 'mention' | 'skill'; value: string }[] = [];

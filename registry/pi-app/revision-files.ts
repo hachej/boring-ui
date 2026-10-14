@@ -3,7 +3,7 @@ import { randomUUID } from '@hachej/boring-files/platform';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { UploadResult } from '../pi-chat/config';
 
-function imageData(bytes: Uint8Array): string {
+export function imageData(bytes: Uint8Array): string {
   let binary = '';
   for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
   return btoa(binary);

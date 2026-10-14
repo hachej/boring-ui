@@ -4,8 +4,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
 import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, SlashIcon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
-import { hasMention, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
-import type { MentionsConfig, SlashConfig, SlashItem } from './config';
+import { hasMention, isLongPaste, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
+import type { MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
 import { MentionMenu } from './mention-menu';
 import { SlashMenu } from './slash-menu';
 import { useChatText } from './labels';
@@ -41,7 +41,11 @@ export interface ComposerFeedback {
 }
 
 /** One file being uploaded (or that failed to upload), shown as a chip until it settles or is dismissed. */
-export interface PendingUpload { readonly id: string; readonly name: string; readonly state: 'uploading' | 'failed'; readonly error?: string }
+export interface PendingUpload {
+  readonly id: string; readonly name: string; readonly state: 'uploading' | 'failed'; readonly error?: string;
+  /** A pasted text file still uploading: abandons the upload and puts the text back in the message (its × and Ctrl+Z). */
+  readonly cancel?: (() => void) | undefined;
+}
 
 export interface ComposerProps {
   /** `/` menu of commands and skills. Absent: no menu and no keyboard trigger. */
@@ -55,6 +59,9 @@ export interface ComposerProps {
   readonly onMentionPicked?: ((path: string) => void) | undefined;
   readonly uploads?: readonly PendingUpload[];
   readonly onDismissUpload?: ((id: string) => void) | undefined;
+  /** A paste above `pasteToFile`'s limits, taken by the composer: the host uploads it as a file. Absent: pastes stay inline. */
+  readonly onPasteText?: ((paste: PastedText) => void) | undefined;
+  readonly pasteToFile?: PasteToFile | undefined;
   /** Extra controls in the bar (the model and effort pill) and a short note beside them. */
   readonly barStart?: ReactNode;
   readonly barNote?: ReactNode;
@@ -205,6 +212,9 @@ export function Composer(props: ComposerProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);
     if (event.defaultPrevented) return;
+    // Ctrl+Z right after a paste that is still uploading puts the pasted text back, instead of undoing the paste in the textarea.
+    const undo = (props.uploads ?? []).filter(item => item.state === 'uploading' && item.cancel).pop();
+    if (undo && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z') { event.preventDefault(); undo.cancel!(); return; }
     // Never send while an input method editor is composing (Enter confirms the candidate).
     // A phone keyboard has no Shift+Enter: on a touch device Enter inserts a newline and the Send button sends.
     const touch = globalThis.matchMedia?.('(pointer: coarse)').matches === true;
@@ -214,7 +224,12 @@ export function Composer(props: ComposerProps) {
     }
   };
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (canAttach && event.clipboardData.files.length) { event.preventDefault(); props.onPickFiles(Array.from(event.clipboardData.files)); }
+    if (canAttach && event.clipboardData.files.length) { event.preventDefault(); props.onPickFiles(Array.from(event.clipboardData.files)); return; }
+    if (!props.onPasteText) return;
+    const pasted = event.clipboardData.getData('text/plain');
+    if (!isLongPaste(pasted, props.pasteToFile)) return;
+    event.preventDefault();
+    props.onPasteText({ text: pasted, start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
   };
   const drag = (event: DragEvent) => { if (canAttach) { event.preventDefault(); setDragging(event.type === 'dragover'); } };
   const drop = (event: DragEvent) => { if (!canAttach) return; event.preventDefault(); setDragging(false); props.onPickFiles(Array.from(event.dataTransfer.files)); };
@@ -236,6 +251,8 @@ export function Composer(props: ComposerProps) {
           {item.state === 'failed' ? <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
             : <Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />}
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{item.state === 'failed' ? labels.uploadFailed(item.name, item.error) : labels.uploading(item.name)}</span>
+          {item.state === 'uploading' && item.cancel && <button type="button" aria-label={labels.restorePaste} title={labels.restorePaste} onClick={() => item.cancel!()}
+            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}
           {item.state === 'failed' && <button type="button" aria-label={labels.dismiss(item.name)} onClick={() => props.onDismissUpload?.(item.id)}
             className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}
         </li>)}

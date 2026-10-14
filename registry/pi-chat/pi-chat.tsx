@@ -42,7 +42,7 @@ export type { ChatLocale } from './locale';
 export { ActionMenu, BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
 export type { BlockAction, BlockIcon } from '../button/actions';
-export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, MentionResult, MentionsConfig, ModelConfig, ModelRef, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
+export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 
 export interface PiChatProps extends ChatFeatureProps {
   readonly controller: NativeChatController;
@@ -105,7 +105,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
 }
 
 function PiChatSession({ controller, mode = 'expert', className, actions, avatar, headerActions, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, onOpenFile, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   const { title } = labels;
@@ -117,7 +117,7 @@ function PiChatSession({ controller, mode = 'expert', className, actions, avatar
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, pasteToFile });
   const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, empty, loading, developer } = session;
   const { rows, pinned, retry } = derived;
   const transcript = useTranscript(rows, PAGE, MORE);

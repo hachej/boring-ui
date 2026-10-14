@@ -1,8 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
-import { AlertCircleIcon, CircleSlashIcon } from 'lucide-react';
+import { AlertCircleIcon, CircleSlashIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
 import { Markdown } from './markdown';
 import type { CommandMentions } from './markdown';
@@ -16,7 +17,8 @@ import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
 import { ToolCard } from './tool';
 import { thumbnail } from './composer';
-import { pieces } from './config';
+import { displayName, fileKind, isUploadPath, pieces, visibleParts } from './config';
+import type { FileKind, Piece, PreviewRead } from './config';
 import { isFileBlock, segments } from './rows';
 import type { DeriveOptions, Row } from './rows';
 import { Button } from '../button/button';
@@ -33,7 +35,10 @@ export interface RowContext {
   readonly onOpenImage: ((image: ImageContent) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
-  readonly pieces: { readonly mentions: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined } | undefined;
+  readonly pieces: { readonly mentions: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
+    readonly preview?: PreviewRead | undefined } | undefined;
+  /** Opens an `uploads/` file from its card in a sent message (`PiChat`'s `onOpenFile`). Absent: the card is not clickable. */
+  readonly openFile?: ((path: string) => void) | undefined;
   readonly answer: ((questionId: string, answer: string) => Promise<AnswerOutcome>) | undefined;
   readonly artifacts: { readonly open: ArtifactsConfig['open']; readonly isOpen?: ArtifactsConfig['isOpen'] | undefined } | undefined;
   /** Replaces the default copy button under a settled reply (the ambient window adds feedback and the time); `host` holds the host's message actions. */
@@ -68,13 +73,72 @@ function UserMention({ path, text, open, render }: { readonly path: string; read
     : <span data-testid="message-mention" data-path={path} className={MENTION_CLASS}>{text}</span>;
 }
 
+/** The icon a file card shows for its kind. */
+function FileGlyph({ kind }: { readonly kind: FileKind }) {
+  const className = 'size-5 text-muted-foreground';
+  switch (kind) {
+    case 'image': return <ImageIcon className={className} aria-hidden="true" />;
+    case 'sheet': return <FileSpreadsheetIcon className={className} aria-hidden="true" />;
+    case 'slides': return <PresentationIcon className={className} aria-hidden="true" />;
+    case 'document': return <FileTextIcon className={className} aria-hidden="true" />;
+    default: return <FileIcon className={className} aria-hidden="true" />;
+  }
+}
+
+/** A file a person sent (an `uploads/` mention): its icon or thumbnail, name and type. A button when it can be opened. */
+function FileCard({ path, open, preview }: { readonly path: string; readonly open: ((path: string) => void) | undefined; readonly preview: PreviewRead | undefined }) {
+  const { labels } = useChatText();
+  const kind = fileKind(path), name = displayName(path);
+  const [src, setSrc] = useState<string | undefined>();
+  useEffect(() => {
+    if (kind !== 'image' || !preview) return;
+    const abort = new AbortController();
+    preview(path, abort.signal).then(read => { if (!abort.signal.aborted && read) setSrc(thumbnail(read.mimeType, read.data)); }, () => {});
+    return () => abort.abort();
+  }, [kind, path, preview]);
+  const body = <>
+    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background ring-1 ring-border">
+      {src ? <img src={src} alt="" className="size-full object-cover" /> : <FileGlyph kind={kind} />}
+    </span>
+    <span className="flex min-w-0 flex-col text-left">
+      <span className="truncate text-sm font-medium text-foreground">{name}</span>
+      <span className="truncate text-xs text-muted-foreground">{labels.fileKind[kind]}</span>
+    </span>
+  </>;
+  return open
+    ? <button type="button" data-testid="message-file" data-path={path} aria-label={labels.openFile(name)} onClick={() => open(path)}
+      className="flex min-h-11 max-w-[16rem] cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card p-1.5 pr-3 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60">{body}</button>
+    : <div data-testid="message-file" data-path={path} className="flex min-h-11 max-w-[16rem] items-center gap-2.5 rounded-xl border border-border bg-card p-1.5 pr-3">{body}</div>;
+}
+
+/** The file cards of a message, above its text bubble. */
+function FileCards({ paths, open, preview }: { readonly paths: readonly string[]; readonly open: ((path: string) => void) | undefined; readonly preview: PreviewRead | undefined }) {
+  return <ul data-testid="message-files" className="m-0 flex max-w-[85%] list-none flex-wrap justify-end gap-2 p-0">
+    {paths.map(path => <li key={path}><FileCard path={path} open={open} preview={preview} /></li>)}
+  </ul>;
+}
+
+/**
+ * A text part of a sent message. Its `uploads/` mentions become file cards above the bubble and leave the text; the message content keeps
+ * them (only what is drawn changes).
+ */
 function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  return <div data-testid="user-text" className="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">{context.pieces ? pieces(text, context.pieces).map((piece, at) => piece.kind === 'mention'
-    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
-    : piece.kind === 'skill' ? <span key={at} data-testid="message-skill" data-skill={piece.value} className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-foreground">{piece.text}</span>
-    : piece.text) : text}</div>;
+  const bubble = 'max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
+  if (!context.pieces) return <div data-testid="user-text" className={bubble}>{text}</div>;
+  const all = pieces(text, context.pieces);
+  const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);
+  const files = all.filter(isFile).map(piece => piece.value!);
+  const shown = files.length ? visibleParts(all, isFile) : all;
+  const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
+  return <>
+    {files.length > 0 && <FileCards paths={files} open={context.openFile} preview={context.pieces.preview} />}
+    {!(files.length > 0 && empty) && <div data-testid="user-text" className={bubble}>{shown.map((piece, at) => piece.kind === 'mention'
+      ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
+      : piece.kind === 'skill' ? <span key={at} data-testid="message-skill" data-skill={piece.value} className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-foreground">{piece.text}</span>
+      : piece.text)}</div>}
+  </>;
 }
 
 function UserBubble({ message, context }: { readonly message: UserMessage; readonly context: RowContext }) {
