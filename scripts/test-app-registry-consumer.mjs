@@ -41,10 +41,10 @@ try {
   const union = { dependencies: pins };
   const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
   const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss']);
-  // The shadcn built-ins the shell installs (drawer, sidebar, avatar, dropdown-menu) import class-variance-authority, which is not in any closure item (the base-nova variant below uses no vaul):
+  // The shadcn built-ins the shell installs (drawer, sidebar, avatar, dropdown-menu) import class-variance-authority and cn (shadcn's own package, which the base-nova built-ins depend on), which are not in any closure item (the base-nova variant below uses no vaul):
   // pinned to this repository's lock, so the offline install finds it in the cache.
   const lockedVersion = name => { const entry = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')).packages[`node_modules/${name}`]; assert.ok(entry?.version, `${name} is locked`); return entry.version; };
-  dependencies['class-variance-authority'] = lockedVersion('class-variance-authority');
+  for (const name of ['class-variance-authority', 'cn']) dependencies[name] = lockedVersion(name);
   writeLockedManifest(root, directory, 'isolated-app-consumer', dependencies);
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archiveByName.values()]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
