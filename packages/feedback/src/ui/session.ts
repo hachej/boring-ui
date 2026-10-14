@@ -166,6 +166,8 @@ export type FeedbackAttachment =
 export interface FeedbackSession extends ExternalState<FeedbackSessionSnapshot> {
   /** Enters feedback mode; `{ mode: 'point' }` for point mode on phones (a tap picks at once). */
   readonly start: (options?: SessionStartOptions) => void;
+  /** From the review, back to picking with the notes kept (more notes before Send); otherwise like `start`. */
+  readonly resume: (options?: SessionStartOptions) => void;
   /** Done: closes feedback mode, transcribes and aligns voice, and leaves the draft for review. */
   readonly done: () => Promise<void>;
   /** ✕: discards everything (feedback mode or the attached draft). */
@@ -496,14 +498,8 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     operation = operationId(); mayHaveSent = false;
   };
 
-  const start = (startOptions: SessionStartOptions = {}): void => {
-    const current = state.getSnapshot();
-    const mode: SessionMode = startOptions.mode === 'point' ? 'point' : 'feedback';
-    if (current.phase === 'active' || current.phase === 'processing') return;
-    stopPicking();
-    reset();
-    lastRoute = routeNow();
-    record({ kind: 'route', route: lastRoute });
+  /** Starts listening and picking for an active session (shared by start and resume). */
+  const arm = (mode: SessionMode): void => {
     // Keys belong to feedback mode from now on: focus left on the Feedback button (an ignored subtree) would keep them from it.
     const focused = document.activeElement;
     if (focused && focused !== document.body && isExcluded(focused) && typeof (focused as HTMLElement).blur === 'function') (focused as HTMLElement).blur();
@@ -518,7 +514,34 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       onChange: next => { if (next.mode === 'picking' && !next.suspended) onHover(next.current); },
     });
     void picker.start();
+  };
+
+  const start = (startOptions: SessionStartOptions = {}): void => {
+    const current = state.getSnapshot();
+    const mode: SessionMode = startOptions.mode === 'point' ? 'point' : 'feedback';
+    if (current.phase === 'active' || current.phase === 'processing') return;
+    stopPicking();
+    reset();
+    lastRoute = routeNow();
+    record({ kind: 'route', route: lastRoute });
+    arm(mode);
     state.set({ phase: 'active', mode, using: false, useToggle: false, general: '', generalOpen: false, voice: { kind: 'off' }, transcribing: false, send: { kind: 'idle' }, copy: { kind: 'idle' }, route: lastRoute });
+    publish();
+  };
+
+  /**
+   * Back to picking from the review, keeping the notes, anchors and pins: the unsent draft continues. A draft already saved gets a fresh
+   * operation id (it is a different report now); one that may have reached the store keeps its id until the draft changes (`edited`).
+   * Anything but a review starts a new session.
+   */
+  const resume = (resumeOptions: SessionStartOptions = {}): void => {
+    if (state.getSnapshot().phase !== 'review') return start(resumeOptions);
+    const mode: SessionMode = resumeOptions.mode === 'point' ? 'point' : 'feedback';
+    stopPicking();
+    if (saved) { saved = undefined; operation = operationId(); mayHaveSent = false; }
+    observed = undefined;
+    arm(mode);
+    state.set({ phase: 'active', mode, using: false, useToggle: false, generalOpen: false, voice: { kind: 'off' }, transcribing: false, send: state.getSnapshot().send.kind === 'saved' ? { kind: 'idle' } : state.getSnapshot().send, copy: { kind: 'idle' } });
     publish();
   };
 
@@ -717,6 +740,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     getSnapshot: state.getSnapshot,
     subscribe: state.subscribe,
     start,
+    resume,
     done,
     discard,
     setBubbleText: text => { if (bubble) { bubble.text = text; publish(); } },

@@ -74,46 +74,62 @@ feedback a builder assistant needs most.
 | Element snapshot | The masked, allowlisted serialization of part of a page (`app.dom@1`) | `@hachej/boring-feedback/ui` (the privacy policy) |
 | Placement | Where an anchor lands in one explicit snapshot, with what was evaluated | Computed, never stored |
 
-## UX: one entry point, Feedback
+## UX: one annotate toggle
 
-Revised 2026-10-05 after the Release 1 UI (Point, the annotate sheet, the
-Feedback list and Show) proved to be too many concepts. There is one entry
-point and one word: **Feedback**, in the chat composer.
+Revised 2026-10-14 (owner: Julien). The 2026-10-05 UX still had too many
+controls in the chat composer (`+`, a Feedback button, a mic, Send, then a
+Feedback bar with "N notes", Record, "Click what you want to comment on",
+« Ask a general question », Use app, Done, ✕). It is now **one annotate toggle**
+and a count chip. This is a breaking change to the composer's `feedback` prop
+(see "Changes" in `registry/README.md`).
 
-1. **Feedback** (beside the "+" menu, an opt-in prop of the pi-chat composer)
-   enters **feedback mode** on the application page. A slim bar says
-   `● Feedback · N notes · 🎙 Record · Hold ⌥ to use the app · Use app · Done · ✕`.
-2. **Hovering** boxes and labels the element under the pointer (the picker
-   below). **A click drops a numbered pin** (①②③) and opens a small note
-   bubble right there: "What's wrong here?". Enter saves, Esc discards the pin.
-   Nobody is stuck on a zone: Esc, a second click on the pinned element, or the
-   "Cancel selection" button in the bubble clears the selection (text typed there is
-   kept for a general question), and "Ask a general question" in the bar opens a
-   note with no element. The report already allows it: `anchors: []` with the
-   text in `## Said`, and notes without an `anchor` index.
-   The page never reacts to that click. Pins stay visible during the session;
-   clicking a pinned element reopens its note. ↑/↓ still refine.
-3. **Holding ⌥/Alt** (or the "Use app" toggle on touch) lets clicks and keys
-   reach the app, so the person can open menus and navigate. Those
-   interactions are recorded as **steps** between the notes: the element's
-   label through the privacy policy, named keys only (never typed text), and
-   route templates. Releasing ⌥ returns to commenting.
-4. **🎙 Record (optional voice)** records while the person points: a red dot,
-   a running mm:ss timer, "Recording — point and talk", and the button becomes
-   **Stop**. While recording **a click drops a numbered pin without the note
-   bubble**; what is said around it becomes that pin's note (the pin wins in
-   `alignSpeech`). On Done ("Transcribing…" in the bar) the audio goes to the
-   host's transcription, and `alignSpeech` matches each segment with the
-   pointer trail and the pins (one `performance.now()` clock): speech on a
-   pinned element extends that note, speech on a hovered element becomes a new
-   pin note marked voice, and anything else becomes the general note. A pin
-   nothing was said about, or every pin when transcription fails, stays as an
-   empty note to type into in the review, and the chip and review say why. A
-   refused microphone (blocked permission, no microphone, busy, insecure page,
-   no MediaRecorder) is said in the bar itself, never only in a tooltip.
+1. **Annotate** (beside the "+" menu, an opt-in prop of the pi-chat composer) is
+   the only control. It arms element targeting on the application page; there
+   is no bar. **Hovering** boxes and labels the element under the pointer (the
+   picker below). On touch or a compact screen the toggle enters **point mode**
+   instead (below): "use the app, then point".
+2. **A click drops a numbered pin** (①②③) and opens a small pin (`NoteBubble`) right
+   there: a text field ("What's wrong here?") with a **mic icon inside it**, "Add
+   note" and "Cancel selection". Enter saves, Esc discards the pin. The page never
+   reacts to that click. Pins stay visible while annotating; clicking a pinned
+   element reopens its note; ↑/↓ still refine. Nobody is stuck on a zone: Esc, a
+   second click on the pinned element, or "Cancel selection" clears it.
+3. **The mic** in the pin records with `createVoiceCapture` from
+   `@hachej/boring-feedback/page` and appends the transcript to what is typed. A
+   refused microphone, nothing heard or a rejected transcription is said under the
+   field and **never touches the typed text**. The host passes the pin's
+   `transcribe(audio, signal) => Promise<string>` (`NoteBubble`'s prop; AgentLayer
+   reuses the shell's `voice.transcribe`); without it the pin has no mic. Where the
+   audio goes and which key it uses are the application's business
+   (`examples/feedback/` shows one way: `transcribe-route.mjs`).
+4. **Holding ⌥/Alt** (desktop only; the pin says so in one line) passes clicks and
+   keys through to the app, so the person can open menus and navigate. Those
+   interactions are recorded as **steps** between the notes: the element's label
+   through the privacy policy, named keys only (never typed text), and route
+   templates. Releasing ⌥ returns to commenting.
+5. **Esc, or the same toggle, exits** annotating (Esc in an open pin only
+   discards that pin). Exiting keeps the notes: the composer shows **one count
+   chip** (`N notes`, with a remove button) and the normal **Send**. While notes
+   wait, the toggle stays off until they are sent or removed.
+6. **Send** sends the message with the notes attached (sending while still
+   annotating ends it first and keeps the pin being typed). With a store, the
+   report is saved first (one operation id per draft) and attached as its
+   `@<root><id>.md` mention, which the host's mention resolver inlines with
+   the person's access, the same way any mention reaches the model. Without a
+   store, the rendered report is inlined in the message in a fenced block.
+   Without a chat, `FeedbackChip`'s review offers **Copy report**.
+7. **A general note is the plain chat.** There is no « Ask a general question » in the
+   UI. `captureGeneral`, `askGeneral` and the report's `anchors: []` form stay in
+   the package and the session API.
 
-   **Transcription is a host capability**, not part of the library. The host
-   passes one browser-side callback to `createFeedbackSession`:
+The composer's prop is minimal: `{ annotate(), active, count, clear(), attach(text), sent() }`.
+`FeedbackBar` (with its Record and Done), `FeedbackChip` and its review, and the session's
+record-while-pointing voice (`toggleVoice`, aligned with `alignSpeech`) stay as optional
+components and API for hosts with no chat; the composer does not mount them.
+
+**Transcription is a host capability**, not part of the library. For the session's
+record-while-pointing voice the host passes one browser-side callback to
+`createFeedbackSession`:
 
    ```ts
    transcribe?: (audio: Blob, mimeType: string) => Promise<{
@@ -123,35 +139,19 @@ point and one word: **Feedback**, in the chat composer.
    }>
    ```
 
-   Where the audio goes (an app route, a shared service, a provider SDK) and
-   which key it uses are the application's business. With timed `segments`
-   (seconds from the start of the audio, optionally with word timings) speech
-   is aligned as above. Without them the `text` cannot be placed in time, so
-   all of it becomes the general note, and pins made while recording stay as
-   empty notes. Without a callback the Record button is not offered. The
-   session reads only these fields: extra fields are ignored, malformed
-   segments are dropped, and an answer with neither usable segments nor text,
-   like a callback that throws, gives a plain "Voice could not be transcribed"
-   message with the pins kept. `examples/feedback/` shows one way to do it
-   (`transcription.mjs`, a server-side client for a transcription service
-   whose URL the app configures, and a keyless fake, behind `transcribe-route.mjs`);
-   it is example glue to copy or replace.
-5. **Done** closes feedback mode and puts **one chip** in the composer:
-   `💬 Feedback · 3 notes · /settings/:section`. Clicking it opens a compact
-   review: notes in order, editable and removable, and hovering a note
-   highlights its element (or says it is not on this page). ✕ discards.
-6. **Send** sends the message with the report attached. With a store, the
-   report is saved first (one operation id per draft) and attached as its
-   `@<root><id>.md` mention, which the host's mention resolver inlines with
-   the person's access, the same way any mention reaches the model. Without a
-   store, the rendered report is inlined in the message in a fenced block.
-   Without a chat, the review offers **Copy report**.
+With timed `segments` (seconds from the start of the audio, optionally with word
+timings) speech is aligned with the pointer trail and the pins (one
+`performance.now()` clock); without them the `text` becomes the general note. The
+session reads only these fields: extra fields are ignored, malformed segments are
+dropped, and an answer with neither usable segments nor text, like a callback that
+throws, gives a plain "Voice could not be transcribed" message with the pins kept.
+The pin's mic needs only text.
 
 ### Point mode (phones)
 
 On a phone the assistant's panel is usually full screen (a Sheet), so it hides the app the person wants to point at. **Point mode**
-is the same session, started from a second, opt-in composer action, « Show in app » (« Montrer dans l'app »):
-`useComposerFeedback(session, { entry: 'point' | 'both' })` sets the composer's `point`, which calls `session.start({ mode: 'point' })`.
+is the same session, started by the same annotate toggle on touch or a compact screen (a coarse pointer or a viewport under 768px):
+`useComposerFeedback(session)` calls `session.start({ mode: 'point' })` there, and `session.start()` (pins) elsewhere.
 
 - **The host's panel gets out of the way.** The kit never owns the host's panel. The host binds `usePointing(session)` (headless:
   `isPointing(snapshot)`) to it, for example `<Sheet open={open && !pointing}>` or AmbientChat's `state={pointing ? 'minimized' : state}`.
@@ -167,7 +167,7 @@ is the same session, started from a second, opt-in composer action, « Show in a
   finger that moved is a scroll, not a pick. Tapping the selection again, Esc or « Annuler la sélection » deselects, and several picks
   are allowed.
 - **Done and Cancel.** « Terminé » is Done: the draft becomes the composer's chip and Send attaches it as above. « Annuler » discards:
-  the panel comes back with no picks. Voice is not offered in point mode.
+  the panel comes back with no picks. The pin keeps its mic when the host gives `transcribe`; there is no Alt hint on touch.
 
 The agent's feedback card has no Show button: hovering an element line
 highlights it in the page, leaving it clears, and clicking it resolves it,
@@ -740,13 +740,14 @@ builder's scripted model unless `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is set.
 ### Registry items
 
 - **A new `feedback` item:**
-  - `FeedbackBar`, `NoteBubble`, `FeedbackChip` with its review, and
-    `useComposerFeedback` (the composer's `feedback` prop);
+  - `NoteBubble` (the pin, with its mic), `useComposerFeedback` (the composer's
+    `feedback` prop: one annotate toggle and a count chip), and the optional
+    `FeedbackBar` and `FeedbackChip` with its review;
   - `PickerOverlay` (styles only; behavior stays in `./page`);
   - `PreviewBanner` over `@hachej/boring-feedback/preview` ("Preview");
   - optional, not mounted by default: `PointButton`, `AnnotateSheet` (note,
     Copy, Save), `FeedbackList`, `FeedbackReport`.
-- **In `pi-chat`:** the composer's optional Feedback button and chip (host
+- **In `pi-chat`:** the composer's optional annotate toggle and count chip (host
   props only; `pi-chat` never imports `@hachej/boring-feedback`).
 - **Plugged into `pi-chat` by the `feedback` item:** the feedback card for
   `list` results and `show` offers (`feedbackRenderTool`), the report mention

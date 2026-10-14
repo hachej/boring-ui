@@ -1,9 +1,9 @@
 // The point-mode journey (FEEDBACK.md, "Point mode"): one driven Chromium run of the Fernhill page in its phone layout (`?mobile=1`),
 // emulated as a 390x844 phone with touch through the DevTools protocol, the keyless scripted builder (builder.mjs) and the SQLite store.
-// Steps: open the assistant (a full-screen panel) → « Montrer dans l'app » → the panel steps aside and PointBar sits above the tab bar →
+// Steps: open the assistant (a full-screen panel whose composer has ONE annotate toggle) → the toggle enters point mode: the panel steps aside and PointBar sits above the tab bar →
 // tap an element and Annuler: the panel comes back with no picks → point again → tap the Facturation tab (navigation while pointing) →
 // tap Change plan (the bubble, the page never reacts) → note → re-tap deselects → tap again, note → tap Profil → tap Save profile → note
-// → tap a heading and scroll it down to the bar (the bubble stays clear of the bar) → re-tap deselects → Terminé: the panel is back and the composer chip holds the two picks → Send attaches the report. Geometry: the bar never overlaps
+// → tap a heading and scroll it down to the bar (the bubble stays clear of the bar) → re-tap deselects → Terminé: the panel is back and the composer's count chip holds the two picks → Send attaches the report. Geometry: the bar never overlaps
 // the tab bar, the selection or the bubble, and every bar button is at least 44px.
 // Screenshots and journey.json go to .cache/evidence/feedback-point/. Manual evidence, not an npm test.
 import assert from 'node:assert/strict';
@@ -59,18 +59,24 @@ try {
     document.addEventListener('click', event => { if (event.target.closest?.('[data-testid=save-profile]')) hits.save++; if (event.target.closest?.('[data-testid=change-plan]')) hits.plan++; }, true);
     document.addEventListener('submit', () => hits.submit++, true); })()`);
 
-  await step('open the assistant: a full-screen panel whose composer offers « Montrer dans l’app »', async () => {
+  await step('open the assistant: a full-screen panel whose composer has exactly one annotate control (44px) and no Feedback block, Show in app or general question', async () => {
     await browser.tap(q('tab-assistant'));
-    await browser.until('the panel and its composer', `!!(${PANEL} && !${PANEL}.hidden && ${inPanel('composer-point')} && !${inPanel('composer-point')}.disabled)`, 30000);
+    await browser.until('the panel and its composer', `!!(${PANEL} && !${PANEL}.hidden && ${inPanel('composer-annotate')} && !${inPanel('composer-annotate')}.disabled)`, 30000);
     const panel = await browser.evaluate(box(PANEL));
     assert.deepEqual([panel.top, panel.left, panel.width, panel.height], [0, 0, 390, 844], 'the panel covers the phone');
-    assert.equal(await browser.evaluate(`${inPanel('composer-point')}.textContent`), 'Montrer dans l’app');
-    assert.equal(await browser.evaluate(`!!${inPanel('composer-feedback')}`), false, 'point entry only');
+    const found = await browser.evaluate(`(() => { const form = ${inPanel('composer')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0].getBoundingClientRect();
+      return { toggles: toggles.length, label: toggles[0].textContent, size: [Math.round(r.width), Math.round(r.height)], words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
+        gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
+    assert.equal(found.toggles, 1);
+    assert.equal(found.label, 'Annoter');
+    assert.ok(found.size[0] >= 44 && found.size[1] >= 44, `44px target (${found.size})`);
+    assert.equal(found.words, false);
+    assert.deepEqual(found.gone, []);
     await shot('01-panel');
   });
 
-  await step('« Montrer dans l’app »: the panel steps aside, the app is visible, the bar sits above the tab bar', async () => {
-    await browser.tap(inPanel('composer-point'));
+  await step('the annotate toggle on a phone is point mode: the panel steps aside, the app is visible, the bar sits above the tab bar', async () => {
+    await browser.tap(inPanel('composer-annotate'));
     await browser.until('point mode', `!!${BAR} && ${PANEL}.hidden`, 5000);
     assert.equal(await browser.evaluate(`${q('feedback-point-hint')}.textContent`), 'Touchez un élément à commenter');
     assert.equal(await count(), '0 sélection');
@@ -83,12 +89,12 @@ try {
     await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
     await browser.tap(q('feedback-point-cancel'));
     await browser.until('the panel is back', `!${BAR} && !${PANEL}.hidden`, 5000);
-    assert.equal(await browser.evaluate(`!!${inPanel('feedback-chip')}`), false, 'no chip');
+    assert.equal(await browser.evaluate(`!!${inPanel('feedback-count')}`), false, 'no count chip');
     assert.equal(await browser.evaluate(`!!${q('feedback-bubble')}`), false);
   });
 
   await step('point again and navigate with the tab bar while pointing: the app stays usable', async () => {
-    await browser.tap(inPanel('composer-point'));
+    await browser.tap(inPanel('composer-annotate'));
     await browser.until('point mode', `!!${BAR} && ${PANEL}.hidden`, 5000);
     await browser.tap(q('tab-billing'));
     await browser.until('the Billing section', `location.pathname === '/settings/billing' && !!${q('change-plan')}`, 5000);
@@ -107,6 +113,12 @@ try {
     await browser.until('the bubble', `document.activeElement === ${q('feedback-bubble-input')}`, 5000);
     await browser.send('Input.insertText', { text: NOTE_PLAN });
     assert.equal(await browser.evaluate(`${q('feedback-cancel-selection')}.textContent`), 'Annuler la sélection');
+    const pin = await browser.evaluate(`(() => { const m = ${q('feedback-bubble-mic')}?.getBoundingClientRect(), f = ${q('feedback-bubble-input')}.getBoundingClientRect();
+      return { mic: m ? [Math.round(m.width), Math.round(m.height)] : null, inside: !!m && m.left >= f.left && m.right <= f.right && m.bottom <= f.bottom + 1, hint: !!${q('feedback-bubble-hint')}, general: !!${q('feedback-bubble-general')}, buttons: [...${q('feedback-bubble')}.querySelectorAll('button')].map(b => Math.round(b.getBoundingClientRect().height)) }; })()`);
+    assert.ok(pin.mic && pin.mic[0] >= 44 && pin.mic[1] >= 44 && pin.inside, `a 44px mic inside the pin's field (${JSON.stringify(pin)})`);
+    assert.equal(pin.hint, false, 'no Alt hint on touch');
+    assert.equal(pin.general, false, 'no general question');
+    assert.ok(pin.buttons.every(height => height >= 44), `44px targets in the pin (${pin.buttons})`);
     summary.records.selection = await geometry(q('change-plan'));
     await shot('03-selection');
   });
@@ -142,27 +154,25 @@ try {
     await browser.until('deselected', `!${q('feedback-bubble')} && ${q('feedback-point-count')}.textContent === '2 sélections'`, 5000);
   });
 
-  await step('Terminé: the panel is back and the picks are the composer chip', async () => {
+  await step('Terminé: the panel is back and the picks are the composer\'s count chip', async () => {
     await browser.tap(q('feedback-point-done'));
-    await browser.until('the panel with the chip', `!${BAR} && !${PANEL}.hidden && !!${inPanel('feedback-chip')}`, 10000);
-    assert.match(await browser.evaluate(`${inPanel('feedback-chip-open')}.textContent`), /2 notes/);
-    await browser.tap(inPanel('feedback-chip-open'));
-    await browser.until('the review', `document.querySelectorAll('[data-testid=feedback-review-note]').length === 2`, 5000);
-    const notes = await browser.evaluate(`[...document.querySelectorAll('[data-testid=feedback-review-note]')].map(note => note.querySelector('textarea').value)`);
-    assert.deepEqual(notes, [NOTE_PLAN, NOTE_SAVE]);
-    summary.records.notes = notes;
-    await shot('05-chip-review');
-    await browser.tap(q('feedback-review-close'));
+    await browser.until('the panel with the count chip', `!${BAR} && !${PANEL}.hidden && ${inPanel('feedback-count')}?.dataset.count === '2'`, 10000);
+    assert.match(await browser.evaluate(`${inPanel('feedback-count')}.innerText`), /2 notes/);
+    assert.equal(await browser.evaluate(`!!${inPanel('feedback-chip')} || !!${inPanel('feedback-bar')}`), false, 'no Feedback block');
+    await shot('05-count-chip');
   });
 
   await step('Send: the report is saved and attached to the message, as feedback attaches today', async () => {
     await browser.until('Send enabled', `!!${inPanel('composer-submit')} && !${inPanel('composer-submit')}.disabled`, 5000);
     await browser.tap(inPanel('composer-submit'));
-    await browser.until('sent: the chip is gone, the message carries the report and the builder read both notes', `!${inPanel('feedback-chip')} && /fb_\\w{16}: 2 notes/.test(${PANEL}.innerText)`, 20000);
+    await browser.until('sent: the count chip is gone, the message carries the report and the builder read both notes', `!${inPanel('feedback-count')} && /fb_\\w{16}: 2 notes/.test(${PANEL}.innerText)`, 20000);
     const listed = await browser.evaluate(`fetch('/api/feedback', { headers: { authorization: 'Bearer ' + window.__FEEDBACK__.token } }).then(response => response.json())`);
     assert.equal(listed.kind, 'available');
     assert.equal(listed.items.length, 1, 'one stored report');
     summary.records.stored = listed.items.map(item => ({ id: item.id, title: item.title }));
+    const stored = await browser.evaluate(`fetch('/api/feedback/${listed.items[0].id}', { headers: { authorization: 'Bearer ' + window.__FEEDBACK__.token } }).then(response => response.json())`);
+    assert.deepEqual(stored.report.notes.map(note => note.text), [NOTE_PLAN, NOTE_SAVE], 'the notes typed in the pins are in the stored report');
+    summary.records.notes = stored.report.notes.map(note => note.text);
     await shot('06-sent');
   });
 

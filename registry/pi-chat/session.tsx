@@ -78,7 +78,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   readonly afterSend?: (() => void) | undefined;
   /** Extra attributes of the row context a surface needs (for example per-reply actions). */
   readonly rowExtras?: Partial<RowContext> | undefined;
-  /** The optional Feedback button: when feedback is pending, Send attaches it to the message first. */
+  /** The optional annotate toggle: when notes are pending (`count` > 0), Send attaches them to the message first. */
   readonly feedback?: ComposerFeedback | undefined;
 }
 
@@ -133,7 +133,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const waitingForAnswer = rows.some(row => row.type === 'assistant' && row.parts.some(part => (part.kind === 'question' || part.kind === 'approval') && !part.live && !part.result));
   const send = () => {
     if (sendBlocked || !current()) return;
-    const attach = feedback?.pending ? feedback.attach : undefined;
+    const attach = feedback && feedback.count > 0 ? feedback.attach : undefined;
     if (attach) {
       // The pending feedback goes with this message: the host attaches it to the text, then the native send reads the draft.
       act(async () => {
@@ -146,7 +146,7 @@ export function useChatSession(options: ChatSessionOptions) {
         if (attached.kind === 'refused') { putBack(typed.text, typed.attachments); throw new Error(attached.reason); }
         if (!current()) { putBack(typed.text, typed.attachments); return; }
         const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: typed.text, attachments: typed.attachments } });
-        if (submission) feedback?.sent?.();
+        if (submission) feedback?.sent();
       });
       afterSend?.();
       textarea.current?.focus();

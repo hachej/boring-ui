@@ -1,29 +1,25 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
-import type { EntryRecord } from '@earendil-works/pi-durable';
-import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import type { ChatAttachment, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ReactNode } from 'react';
+import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '../button/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
 import type { ComposerFeedback } from './composer';
-import type { AttachmentsConfig, ConversationsConfig, EffortConfig, MentionsConfig, ModelConfig, SlashConfig } from './config';
+import type { ConversationsConfig } from './config';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, HistoryPanel } from './history';
-import type { CommandMentions } from './markdown';
 import { RowView } from './message';
 import { MessageQueue } from './queue';
 import { ChatNotices, Notice } from './notice';
-import type { ArtifactsConfig } from './artifact';
-import type { ChatCard, Mode } from './rows';
 import { Shimmer } from './shimmer';
 import { useChatSession, useTranscript } from './session';
-import type { ChatFeatureProps, FilesHandler, PiChatActions } from './session';
+import { useChatDraft } from './use-chat-draft';
+import type { ChatFeatureProps, FilesHandler } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
 import { chatTextFor } from './locale';
 import type { ChatLocale } from './locale';
@@ -44,6 +40,7 @@ export { frenchChatLabels } from './labels-fr';
 export { chatTextFor } from './locale';
 export type { ChatLocale } from './locale';
 export { ActionMenu, BlockActions } from '../button/actions';
+export { useChatDraft } from './use-chat-draft';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, MentionResult, MentionsConfig, ModelConfig, ModelRef, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 
@@ -81,8 +78,10 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly showHistory?: boolean;
   /** Show the header connection badge. Default true; connection state still controls actions. */
   readonly showConnectionStatus?: boolean;
-  /** The optional Feedback button in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
+  /** The optional annotate toggle and notes chip in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
   readonly feedback?: ComposerFeedback;
+  /** Keeps the composer's half-typed message in localStorage under this key (a conversation id), across reloads and tabs; see `useChatDraft`. Omit it and nothing is stored. */
+  readonly draftKey?: string | undefined;
 }
 
 const PAGE = 60, MORE = 40;
@@ -106,8 +105,9 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
 }
 
 function PiChatSession({ controller, mode = 'expert', className, actions, avatar, headerActions, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
+  useChatDraft(controller, draftKey);
   const { title } = labels;
   const [browsingHistory, setBrowsingHistory] = useState(false);
   const [pickingConversation, setPickingConversation] = useState(false);

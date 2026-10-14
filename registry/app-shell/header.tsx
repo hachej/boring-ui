@@ -129,7 +129,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text }: { readonl
       </>
       : <DropdownMenu>
         <DropdownMenuTrigger data-testid="header-more" aria-label={text.actions} className={cn(ICON_BUTTON, 'data-popup-open:bg-accent')}><EllipsisIcon className="size-4" aria-hidden="true" /></DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuContent align="end" className="app-shell w-48">
           {extra.map(action => <DropdownMenuItem key={action.id} className="pointer-coarse:min-h-11" onClick={() => run(action.id)}><action.icon className="size-4" />{action.label}</DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu>)}

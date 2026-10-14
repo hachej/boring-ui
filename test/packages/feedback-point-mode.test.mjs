@@ -140,7 +140,7 @@ async function registry(t) {
   const out = join(root, '.cache/feedback-point-mode-test');
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'entry.tsx'), `export { PointBar, usePointing } from '${root}registry/feedback/point-mode.tsx';
-export { NoteBubble, useComposerFeedback } from '${root}registry/feedback/feedback-session.tsx';
+export { NoteBubble, FeedbackChip, useComposerFeedback } from '${root}registry/feedback/feedback-session.tsx';
 export { feedbackLabelsFr } from '${root}registry/feedback/feedback-labels.ts';`);
   await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'point-mode.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   const window = new Window({ url: 'https://fictional.invalid/settings/profile', settings: { disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } });
@@ -161,31 +161,35 @@ export { feedbackLabelsFr } from '${root}registry/feedback/feedback-labels.ts';`
 }
 const setValue = (window, element, value) => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(element, value); element.dispatchEvent(new window.Event('input', { bubbles: true })); };
 
-test('registry: « Show in app » starts point mode, the host panel binds usePointing, PointBar counts picks, Terminé brings the panel back with the chip; Annuler with nothing', { timeout: 30000 }, async t => {
+test('registry: the annotate toggle on touch starts point mode, the host panel binds usePointing, PointBar counts picks, Terminé brings the panel back with the chip; Annuler with nothing', { timeout: 30000 }, async t => {
   const { window, document, components, createElement, act, createRoot } = await registry(t);
-  const { PointBar, usePointing, NoteBubble, useComposerFeedback, feedbackLabelsFr } = components;
+  const { PointBar, usePointing, NoteBubble, FeedbackChip, useComposerFeedback, feedbackLabelsFr } = components;
   document.body.innerHTML = PAGE;
   const $ = id => document.getElementById(id);
   const under = { current: [] };
   const session = createFeedbackSession({ app: 'fictional-settings', build: 'dev-fixture', root: $('app'), policy, hitTest: () => under.current,
     save: async () => ({ kind: 'saved', id: 'fb_7Q2mK9xRt4vW1cZp', revision: 'r1' }), mention: id => `feedback/${id}.md` });
   t.after(() => session.dispose());
+  // A phone: a coarse pointer, so the one annotate toggle enters point mode.
+  const media = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+  Object.defineProperty(globalThis, 'matchMedia', { configurable: true, writable: true, value: () => ({ matches: true }) });
+  t.after(() => { if (media) Object.defineProperty(globalThis, 'matchMedia', media); else delete globalThis.matchMedia; });
   let composer;
   function Host() {
-    composer = useComposerFeedback(session, { entry: 'point' });
+    composer = useComposerFeedback(session);
     const pointing = usePointing(session);
     return createElement('div', null,
-      createElement('section', { 'data-testid': 'panel', hidden: pointing }, composer?.chip ?? null),
+      createElement('section', { 'data-testid': 'panel', hidden: pointing }, createElement(FeedbackChip, { session })),
       createElement(NoteBubble, { session, labels: feedbackLabelsFr }),
       createElement(PointBar, { session, labels: feedbackLabelsFr, bottomOffset: '64px' }));
   }
   const ui = createRoot($('ui'));
   await act(async () => ui.render(createElement(Host)));
-  assert.equal(typeof composer.point, 'function');
-  assert.equal(composer.start, undefined, "entry: 'point' offers no Feedback button");
+  assert.equal(typeof composer.annotate, 'function');
+  assert.equal(composer.point, undefined, 'one toggle: no separate point action');
   assert.equal(document.querySelector('[data-testid=feedback-point-bar]'), null);
 
-  await act(async () => composer.point());
+  await act(async () => composer.annotate());
   const bar = () => document.querySelector('[data-testid=feedback-point-bar]');
   assert.ok(bar(), 'the bar shows');
   assert.equal(bar().parentElement, document.body, 'portalled to the body, outside the hidden panel');
@@ -193,7 +197,7 @@ test('registry: « Show in app » starts point mode, the host panel binds usePoi
   assert.equal(bar().getAttribute('aria-label'), 'Mode pointage');
   assert.match(bar().getAttribute('style'), /bottom: calc\(64px \+ env\(safe-area-inset-bottom, 0px\) \+ 8px\)/);
   assert.equal($('ui').querySelector('[data-testid=panel]').hidden, true, 'the host panel is hidden while pointing');
-  assert.equal(composer.bar, undefined, 'point mode docks nothing in the composer');
+  assert.equal(composer.active, true);
   assert.equal(document.querySelector('[data-testid=feedback-point-hint]').textContent, 'Touchez un élément à commenter');
   assert.equal(document.querySelector('[data-testid=feedback-point-count]').textContent, '0 sélection');
 
@@ -214,18 +218,18 @@ test('registry: « Show in app » starts point mode, the host panel binds usePoi
   await act(async () => { document.querySelector('[data-testid=feedback-point-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
   assert.equal(bar(), null);
   assert.equal($('ui').querySelector('[data-testid=panel]').hidden, false, 'Terminé: the panel is back');
-  assert.equal(composer.pending, true);
+  assert.equal(composer.count, 2);
   assert.match(document.querySelector('[data-testid=feedback-chip-open]').textContent, /2 notes/, 'the picks are the composer chip');
   assert.deepEqual(await composer.attach('Regardez.'), { kind: 'ok', text: 'Regardez.\n\n@feedback/fb_7Q2mK9xRt4vW1cZp.md' }, 'Send attaches as feedback always does');
   await act(async () => composer.sent());
 
-  await act(async () => composer.point());
+  await act(async () => composer.annotate());
   under.current = [$('heading')];
   await act(async () => { tap(window, $('heading')); });
   await act(async () => document.querySelector('[data-testid=feedback-point-cancel]').click());
   assert.equal(bar(), null);
   assert.equal($('ui').querySelector('[data-testid=panel]').hidden, false, 'Annuler: the panel is back');
-  assert.equal(composer.pending, false);
+  assert.equal(composer.count, 0);
   assert.equal(document.querySelector('[data-testid=feedback-chip]'), null, 'with no picks');
   await act(async () => ui.unmount());
 });
