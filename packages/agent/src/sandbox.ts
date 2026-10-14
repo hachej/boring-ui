@@ -48,7 +48,7 @@ const recorded = (tool: ToolRegistration, simulate: (toolName: string, args: Jso
   ...tool,
   replay: 'safe',
   execute: async (args: unknown) => ({
-    content: [{ type: 'text', text: simulate(tool.name, args as JsonValue) }],
+    output: [{ type: 'text', text: simulate(tool.name, args as JsonValue) }],
     details: { [SANDBOX_DETAILS]: { simulated: true, tool: tool.name, arguments: args as JsonValue } },
   }),
 }) as ToolRegistration;

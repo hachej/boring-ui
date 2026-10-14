@@ -21,7 +21,7 @@ const native = capability.extension.tools[0];
 const tool = defineTool({ ...native, execute: async (args, api, ctx) => {
   const result = await native.execute(args, api, ctx);
   if (mode === 'commit-and-hold') {
-    writeFileSync(join(directory, 'committed.json'), JSON.stringify({ taskId: api.taskId, result: JSON.parse(result.content[0].text) }));
+    writeFileSync(join(directory, 'committed.json'), JSON.stringify({ taskId: api.taskId, result: JSON.parse(result.output[0].text) }));
     setInterval(() => {}, 1000);
     await new Promise(() => {});
   }

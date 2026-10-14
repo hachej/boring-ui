@@ -14,7 +14,7 @@ const options = {
   target: { instanceId: 'notes', epoch: 'page-one', subject: { documentId: 'fictional' } },
   prepareInput: (args: { index: number }) => ({ index: args.index, expiresAt: Date.now() + 5000 }),
   authorize: () => true,
-  formatResult: () => ({ content: [{ type: 'text' as const, text: 'applied' }] }),
+  formatResult: () => ({ output: [{ type: 'text' as const, text: 'applied' }] }),
 };
 const tool: ToolRegistration<typeof parameters> = createPresentationTool({
   ...options,
@@ -26,13 +26,13 @@ const tool: ToolRegistration<typeof parameters> = createPresentationTool({
   formatResult: result => {
     if (result.kind === 'unknown') {
       const reason: string = result.reason;
-      return { content: [{ type: 'text', text: `Unconfirmed browser effect: ${reason}` }] };
+      return { output: [{ type: 'text', text: `Unconfirmed browser effect: ${reason}` }] };
     }
     if (result.kind === 'applied') {
       const privateText: string = result.value.privateText;
-      return { content: [{ type: 'text', text: JSON.stringify({ kind: result.kind, length: privateText.length }) }] };
+      return { output: [{ type: 'text', text: JSON.stringify({ kind: result.kind, length: privateText.length }) }] };
     }
-    return { content: [{ type: 'text', text: JSON.stringify({ kind: result.kind }) }] };
+    return { output: [{ type: 'text', text: JSON.stringify({ kind: result.kind }) }] };
   },
 });
 void tool;

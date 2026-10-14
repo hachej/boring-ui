@@ -82,7 +82,7 @@ const FIELDS: Readonly<Record<FeedbackToolAction, { readonly required: readonly 
 };
 const ALL_FIELDS: readonly Field[] = ['status', 'subject', 'cursor', 'id', 'anchor', 'note', 'expectedRevision'];
 
-const reply = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
+const reply = (value: unknown) => ({ output: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 function age(created: string, now: number): string {

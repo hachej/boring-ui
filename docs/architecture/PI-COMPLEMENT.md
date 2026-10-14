@@ -22,6 +22,10 @@ A consumer uses ordinary TypeScript functions, injected interfaces and native re
 
 Adding an unrelated piece must not change existing tools, grants, identities, model settings or lifecycle. Only declared dependencies are required. Conflicting Boring registrations fail clearly or use an explicit host choice; native Pi's deliberate replacement/override semantics remain available. Removing one piece releases only its own registrations and subscriptions. A recipe is wiring, not another runtime type.
 
+### Pi 1.2 surface
+
+The packages target Pi 1.2.0 (peers `~1.2.0`). Tool tasks are the tagged `ToolTaskInput` (`kind: 'model' | 'nested'`) and tools return `output` rather than `content`. Bash and PowerShell return an error result with an `exit_code` diagnostic on nonzero exit instead of throwing, and any Storage throw fails the Session. Pi 1.2 also adds nested tool calls (`api.executeTool`), task-owned child conversations and durable codemode; hosts reach them through Pi's native API, and this repository adds no facade over them.
+
 ### Do not rebuild smaller native contracts
 
 The concrete scaffold reuses native tools/results, the complete environment factory and the complete ConversationWatch rather than parallel HostOperation/SnapshotSubscription wrappers. Headless UI is installable without files, Pi or agent; resource and native-chat subpaths are optional. Renderer/controller and acquisition/recovery are separate capabilities. Native hooks retain their particular semantics: beforeTool has a documented blocking path, while ordinary observation/reporting hooks are not a general admission fence. Test the actual seam rather than globally replacing or disabling native behavior.

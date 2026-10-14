@@ -420,7 +420,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
 
   // ---- The extension -----------------------------------------------------------------------------------------------------
 
-  const text = (value: string) => ({ content: [{ type: 'text' as const, text: value }] });
+  const text = (value: string) => ({ output: [{ type: 'text' as const, text: value }] });
   const zoomTool = defineTool({
     name: 'zoom',
     description: 'Open the line id+n of the view into the two lines of n/2 under it; n = 1 gives the message whole.',

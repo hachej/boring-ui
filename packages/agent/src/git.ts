@@ -36,7 +36,7 @@ export function createGitTool(repository?: GitRepository) {
     execute: async (args, api, context) => {
       const resolved = repository === undefined ? await workspaceFor(undefined, api, context) : undefined;
       const selected = repository ?? (resolved && 'binding' in resolved ? resolved.binding.repository : undefined);
-      if (selected === undefined) return { content: [{ type: 'text', text: 'This conversation has no working repository.' }], isError: true };
+      if (selected === undefined) return { output: [{ type: 'text', text: 'This conversation has no working repository.' }], isError: true };
       const signal = context.abortSignal;
       let value: unknown;
       switch (args.operation) {
@@ -51,7 +51,7 @@ export function createGitTool(repository?: GitRepository) {
         case 'checkout': value = await selected.checkout(args.ref, signal); break;
         case 'diff': value = (await selected.diff(args.before, args.after, signal)).map(change => ({ path: change.path, before: readable(change.before), after: readable(change.after) })); break;
       }
-      return { content: [{ type: 'text', text: JSON.stringify({ operation: args.operation, value: value ?? null }) }] };
+      return { output: [{ type: 'text', text: JSON.stringify({ operation: args.operation, value: value ?? null }) }] };
     },
   });
 }

@@ -4,7 +4,7 @@ import { accessSnapshot, locator, parsePublicationResult, publicationDigest } fr
 import { applyTaskListOperations, emptyTaskList, readTaskList, serializeTaskList, taskListMediaType } from '../../registry/task-list-viewer/task-list-document.ts';
 
 const intentKey = 'fictional.task-list.intent.v1', attemptedKey = 'fictional.task-list.attempted.v1';
-const reply = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
+const reply = value => ({ output: [{ type: 'text', text: JSON.stringify(value) }] });
 const unknown = (intent, reason) => ({ kind: 'unknown', operationId: intent.operationId, reason });
 const id = Type.String({ minLength: 1, maxLength: 128 });
 const title = Type.String({ minLength: 1, maxLength: 2048 });

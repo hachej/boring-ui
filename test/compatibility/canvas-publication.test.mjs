@@ -34,7 +34,7 @@ async function fixture(t) {
     const id = await conversation.commit(async tx => {
       const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'call', name, arguments: args }], api: 'fixture', provider: 'fixture', model: 'fictional-no-model', timestamp: 1, stopReason: 'toolUse',
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }] });
-      return tx.createTask(ToolTask, { assistant: entry.id, callId: 'call' }, { ownership: { kind: 'conversation' } });
+      return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: 'call' }, { ownership: { kind: 'conversation' } });
     }, context);
     const terminal = await harness.waitForTask(id, context);
     assert.equal(terminal.state.outcome.status, 'completed', JSON.stringify(terminal.state));

@@ -178,7 +178,7 @@ test('the watch heartbeats while idle and the remote chat reopens a dropped or s
 test('defineAgent maps data to native extensions, agent configuration and on-demand skills', async t => {
   const fake = createFakeChatModel();
   const echo = defineTool({ name: 'echo', description: 'Echo text.', parameters: Type.Object({ text: Type.String() }), replay: 'safe',
-    execute: async args => ({ content: [{ type: 'text', text: args.text }] }) });
+    execute: async args => ({ output: [{ type: 'text', text: args.text }] }) });
   const skill = parseSkill('---\nname: fictional-letter\ndescription: "Write a fictional letter"\n---\nAlways sign as the Fictional Clinic.\n');
   assert.deepEqual(skill, { name: 'fictional-letter', description: 'Write a fictional letter', body: 'Always sign as the Fictional Clinic.' });
   assert.throws(() => parseSkill('no front matter'), TypeError);
@@ -209,8 +209,8 @@ test('defineAgent maps data to native extensions, agent configuration and on-dem
   assert.deepEqual(added(reviewerCall), [], 'agents do not see each other\'s tools');
   reviewerCall.respond('ok');
   const loader = writer.extensions[1].tools[0];
-  assert.equal((await loader.execute({ name: 'fictional-letter' })).content[0].text, 'Always sign as the Fictional Clinic.');
-  assert.match((await loader.execute({ name: 'missing' })).content[0].text, /Unknown skill/);
+  assert.equal((await loader.execute({ name: 'fictional-letter' })).output[0].text, 'Always sign as the Fictional Clinic.');
+  assert.match((await loader.execute({ name: 'missing' })).output[0].text, /Unknown skill/);
 });
 
 // Two local models that answer at once with their own ID, so a test can see which model served a request.

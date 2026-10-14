@@ -50,7 +50,7 @@ export function createSkillsExtension(name: string, skills: readonly Skill[]): E
       replay: 'safe',
       execute: async args => {
         const skill = known.get(args.name);
-        return { content: [{ type: 'text', text: skill ? skill.body : `Unknown skill "${args.name}". Available: ${[...known.keys()].join(', ')}` }] };
+        return { output: [{ type: 'text', text: skill ? skill.body : `Unknown skill "${args.name}". Available: ${[...known.keys()].join(', ')}` }] };
       },
     })],
   });

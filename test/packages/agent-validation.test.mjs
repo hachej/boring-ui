@@ -14,12 +14,17 @@ const assistant = callId => ({ role: 'assistant',
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
 });
 
+// A completed tool task written before the 1.2 upgrade: version 1 and the untagged `{ assistant, callId }` input.
+const v1View = harness => ({ commit: (fn, ctx) => harness.commit(tx => fn(new Proxy(tx, { get: (target, key) => key === 'task'
+  ? async id => { const task = await target.task(id); if (task?.kind !== 'pi.tool') return task; const { kind, ...input } = task.input; return { ...task, version: 1, input }; }
+  : typeof target[key] === 'function' ? target[key].bind(target) : target[key] })), ctx) });
+
 async function fixture(t, options = {}) {
   let harness, authorizeCalls = 0, validateCalls = 0;
   const tool = defineTool({ name: 'fictional_source', description: 'Return a fictional source result.',
     parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
     ...(options.truncated ? { outputLimits: { maxBytes: 12, maxLines: 100 } } : {}),
-    execute: async () => ({ content: [{ type: 'text', text: options.truncated ? 'Fictional source result exceeds the native output limit' : 'Fictional source result' }],
+    execute: async () => ({ output: [{ type: 'text', text: options.truncated ? 'Fictional source result exceeds the native output limit' : 'Fictional source result' }],
       ...(options.toolError ? { isError: true } : {}),
       ...(options.warning ? { diagnostics: [{ severity: 'warn', code: 'fictional_warning', message: 'Incomplete source' }] } : {}),
       ...(options.info ? { diagnostics: [{ severity: 'info', code: 'fictional_info', message: 'Source may be incomplete' }] } : {}),
@@ -43,7 +48,7 @@ async function fixture(t, options = {}) {
             ? (await tx.createConversation({ ownership: { kind: 'task', taskId: task.id } })).id
             : runtime.conversationId;
           const entry = await tx.appendEntry(AssistantEntry, selectedConversation, { model: [assistant(callId)] });
-          const child = await tx.createTask(ToolTask, { assistant: entry.id, callId },
+          const child = await tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId },
             task.input.childConversation
               ? { ownership: { kind: 'conversation' }, conversationId: selectedConversation }
               : { ownership: { kind: 'task', taskId: task.id } });
@@ -58,7 +63,7 @@ async function fixture(t, options = {}) {
       },
     }, abort: async (_task, runtime, ctx) => runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx),
   });
-  const validation = createOutputValidation({ name: 'fictional_answer', version: 1, harness: () => harness,
+  const validation = createOutputValidation({ name: 'fictional_answer', version: 1, harness: () => options.storedV1 ? v1View(harness) : harness,
     authorize: async (...args) => { authorizeCalls++; return options.authorize ? options.authorize(...args) : true; },
     validate: async (...args) => { validateCalls++; return options.validate ? options.validate(...args)
       : { kind: 'valid', value: { text: args[0], evidenceCount: args[1].length } }; },
@@ -103,6 +108,14 @@ test('actual native ToolTask evidence authorizes a typed result through the nati
   assert.equal(f.validateCalls(), 1);
 });
 
+test('a tool task completed under Pi 1.1 (version 1) still validates after the upgrade', { timeout: 15000 }, async t => {
+  const f = await fixture(t, { storedV1: true });
+  const owner = await f.createProducer({});
+  assert.equal((await f.harness.waitForTask(owner, context)).state.outcome.status, 'completed');
+  const result = await f.validateProducer(owner);
+  assert.equal(result.result.kind, 'valid', JSON.stringify(result.result));
+});
+
 test('missing, forged and another producer’s ToolResultEntry cannot validate this owner', { timeout: 15000 }, async t => {
   const f = await fixture(t);
   const owner = await f.createProducer({});
@@ -125,7 +138,7 @@ test('a real tool in an owned child conversation is accepted; an ownerless fork 
   const child = await f.harness.conversation(resultEntry.conversationId, context);
   const fork = await child.fork(proposal.evidence[0], { ownership: { kind: 'ownerless' } }, context);
   const assistantId = await fork.commit(tx => tx.appendEntry(AssistantEntry, fork.id, { model: [assistant('fork-source')] }), context);
-  const toolId = await fork.commit(tx => tx.createTask(ToolTask, { assistant: assistantId.id, callId: 'fork-source' },
+  const toolId = await fork.commit(tx => tx.createTask(ToolTask, { kind: 'model', assistant: assistantId.id, callId: 'fork-source' },
     { ownership: { kind: 'conversation' } }), context);
   const toolTask = await f.harness.waitForTask(toolId, context);
   assert.equal(toolTask.state.outcome.status, 'completed');

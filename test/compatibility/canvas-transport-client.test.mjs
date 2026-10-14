@@ -34,7 +34,7 @@ for (const lost of [false, true]) test(`native Harness and transport with simula
   const tool = createPresentationTool({ name: 'remote_select', description: 'Simulated browser select through actual transport',
     parameters: Type.Object({ shapeIds: Type.Array(Type.String()) }), command: connection.select, target,
     prepareInput: args => ({ ...args, expiresAt: Date.now() + 1000 }), authorize: () => true,
-    formatResult: result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] }),
+    formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),
   });
   const extension = defineExtension({ name: 'fixture.remote', tools: [tool] });
   registry.install(extension);

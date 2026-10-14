@@ -80,13 +80,13 @@ export function agentInstructionsSection(): PromptSection {
 
 /** Runs `run` through the conversation's environment with the arguments as one line of JSON on stdin; the output is the result. */
 async function runTool(description: ToolDescription, env: ExecutionEnv | undefined, args: unknown, context: Context): Promise<ToolExecutionResult> {
-  if (env === undefined || typeof env.exec !== 'function') return { content: [{ type: 'text', text: `${description.name} cannot run: this conversation has no execution environment.` }], isError: true };
+  if (env === undefined || typeof env.exec !== 'function') return { output: [{ type: 'text', text: `${description.name} cannot run: this conversation has no execution environment.` }], isError: true };
   let output = '';
   const command = `{ ${description.run}\n} <<'${ARGS_END}'\n${JSON.stringify(args ?? {})}\n${ARGS_END}`;
   const result = await env.exec(command, { onOutput: text => { output += text; } }, context);
-  if (!result.ok) return { content: [{ type: 'text', text: `${description.name} failed: ${result.error.message}${output ? `\n${output}` : ''}` }], isError: true };
+  if (!result.ok) return { output: [{ type: 'text', text: `${description.name} failed: ${result.error.message}${output ? `\n${output}` : ''}` }], isError: true };
   const failed = result.value.exitCode !== 0;
-  return { content: [{ type: 'text', text: output || '(no output)' }], ...(failed ? { isError: true, diagnostics: [{ severity: 'error' as const, message: `${description.run} exited with code ${result.value.exitCode}` }] } : {}) };
+  return { output: [{ type: 'text', text: output || '(no output)' }], ...(failed ? { isError: true, diagnostics: [{ severity: 'error' as const, message: `${description.run} exited with code ${result.value.exitCode}` }] } : {}) };
 }
 
 /** The Harness validates each call's arguments against the agent-written schema before `run` starts (see `jsonSchemaTool`). */
@@ -148,7 +148,7 @@ export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolutio
     executionMode: 'sequential',
     execute: async (_args, api, context) => {
       const report = await reload(api.env, context);
-      return { content: [{ type: 'text', text: report.text }], details: JSON.parse(JSON.stringify(report)) };
+      return { output: [{ type: 'text', text: report.text }], details: JSON.parse(JSON.stringify(report)) };
     },
   });
   const section = agentInstructionsSection();

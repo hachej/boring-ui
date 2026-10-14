@@ -44,7 +44,7 @@ export async function startLiveSlice({ port = 0, provider = process.env.SLICE_PR
       const body = read.kind === 'available'
         ? { kind: 'available', revision: read.snapshot.ref.revision, text: new TextDecoder().decode(read.snapshot.bytes) }
         : { kind: read.kind };
-      return { content: [{ type: 'text', text: JSON.stringify(body) }] };
+      return { output: [{ type: 'text', text: JSON.stringify(body) }] };
     },
   });
   // The slice's own conditional save (the agent package has no document tool: workspace agents use Pi's file tools behind the guard).
@@ -56,7 +56,7 @@ export async function startLiveSlice({ port = 0, provider = process.env.SLICE_PR
       const result = await resources.publication.publish({ operationId: JSON.stringify(['live-slice-v1', api.taskId]), atomicity: 'all-or-nothing', changes: [args.expected.kind === 'absent'
         ? { kind: 'create', target, expected: { kind: 'absent' }, bytes, mediaType: 'text/markdown' }
         : { kind: 'replace', target: { ...target, revision: args.expected.revision }, bytes, mediaType: 'text/markdown' }] }, agent);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return { output: [{ type: 'text', text: JSON.stringify(result) }] };
     },
   });
   const registry = createRegistry();

@@ -2,11 +2,11 @@
   "version": 1,
   "rootDevDependencies": {
     "typescript": "5.9.3",
-    "@earendil-works/pi-durable": "1.1.0",
-    "@earendil-works/pi-ai": "1.1.0",
-    "@earendil-works/chord": "1.1.0",
-    "@earendil-works/pi-codemode": "1.1.0",
-    "@earendil-works/pi-mcp": "1.0.4",
+    "@earendil-works/pi-durable": "1.2.0",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/chord": "1.2.0",
+    "@earendil-works/pi-codemode": "1.2.0",
+    "@earendil-works/pi-mcp": "1.2.0",
     "@vercel/sandbox": "3.5.1",
     "@aws-sdk/client-bedrock-agentcore": "3.1146.0",
     "agents": "0.28.0",
@@ -507,7 +507,7 @@
       "./worker"
     ]
   },
-  "upstreamExportsVersion": "1.1.0",
+  "upstreamExportsVersion": "1.2.0",
   "runtimeProofs": {
     "BORING-PI-1": "test/contracts/pi-native-state.test.mjs",
     "BORING-PI-2": "test/contracts/pi-harness-attachment.test.mjs",

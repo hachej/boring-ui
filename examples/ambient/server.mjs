@@ -68,7 +68,7 @@ export async function startAmbient({ directory, port = 0, provider = process.env
     execute: async (args, _api, ctx) => {
       const seconds = Math.min(60, Math.max(1, Math.round(args.seconds ?? 15)));
       await sleep(seconds * 1000, ctx.abortSignal);
-      return { content: [{ type: 'text', text: `Health check finished after ${seconds}s: API latency 82 ms (ok), webhook queue 0 pending (ok), last export Tuesday 02:14 (ok).` }] };
+      return { output: [{ type: 'text', text: `Health check finished after ${seconds}s: API latency 82 ms (ok), webhook queue 0 pending (ok), last export Tuesday 02:14 (ok).` }] };
     },
   });
   const agent = defineAgent({ id: 'console-assistant', model: { provider, modelId: process.env.AMBIENT_MODEL ?? 'gpt-5-mini' }, instructions: INSTRUCTIONS,

@@ -25,7 +25,7 @@ export function createFixtureChangeTools({ changePaths, actorFor }) {
     }
     return defineTool({ name: `request_change_${appId}`, description: `Hand off the pinned ${appId} app's staged change request by reference.`,
       parameters, replay: 'safe', execute: async (args, api, ctx) => {
-        const respond = result => ({ content: [{ type: 'text', text: JSON.stringify(result) }] });
+        const respond = result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] });
         try {
           let actor, request;
           try {
