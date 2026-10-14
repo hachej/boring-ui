@@ -22,6 +22,8 @@ visit('pi-app');
 // The app shell too: a strict regression in the shell fails here, not only in the monorepo fixture check.
 visit('app-shell');
 visit('file-tree');
+// The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
+visit('documents');
 const directory = mkdtempSync(join(tmpdir(), 'boring-app-consumer-'));
 const cache = process.env.npm_config_cache;
 assert.ok(cache, 'Set npm_config_cache to a writable npm cache (npm run sets it)');
@@ -57,10 +59,10 @@ try {
     iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/page.tsx'] }));
+    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
-  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
+  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
   for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
   const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
   assert.ok(css.includes('--background') && css.includes('.pi-chat'), 'theme tokens and the chat\'s scoped css merged into the host stylesheet');
@@ -73,10 +75,13 @@ import type { OpenedView } from './components/pi-app/agent-workspace';
 import type { BlockAction, ChatLabels } from './components/pi-chat/pi-chat';
 import { DownloadIcon } from 'lucide-react';
 import { FileTree } from './components/file-tree/file-tree';
+import { Documents } from './components/documents/documents';
+import { DocumentSheet } from './components/documents/document-sheet';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 
 export function BoundWorkspace({ revisionProvider }: { readonly revisionProvider: RevisionProvider }) {
   return <><AgentWorkspace revisionProvider={revisionProvider} controller={undefined} conversationId={undefined} /><FileTree revisionProvider={revisionProvider} />
+  <Documents provider={revisionProvider} locale="fr" /><DocumentSheet provider={revisionProvider} path={undefined} onClose={() => {}} onShowAll={() => {}} />
     <AgentWorkspace revisionProvider={revisionProvider} chat={{ showHistory: false, showConnectionStatus: false, tools: <button type="button">Mic</button> }} libraryPlacement="pane" locale="fr" fileTree={{ labels: { search: 'Rechercher' }, upload: false, history: false, refreshKey: 1 }} onUnsavedChange={unsaved => { void unsaved; }} controller={undefined} conversationId={undefined}
       agents={{ items: [{ id: 'pm', label: 'PM' }, { id: 'dev', label: 'Developer' }], activeId: 'pm', onSelect: () => {} }} /></>;
 }
@@ -112,7 +117,7 @@ createRoot(document.getElementById('root')!).render(<App />);
   assert.ok(bundledCss.includes('sidebar-menu-button') && bundledCss.includes('file-tree'), 'portable tree styles ship without scanning package internals');
   const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'dist/meta.json'), 'utf8')).inputs);
   assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
-  for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx'])
+  for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx'])
     assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
   assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
   console.log(`PASS: real pinned shadcn installation of pi-app over HTTP with its ${closure.size - 1} registry dependencies, strict declarations of the copied block and a consumer page, and a browser bundle; type and bundle evidence only`);

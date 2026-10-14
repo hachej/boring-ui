@@ -28,6 +28,20 @@ import { buildTailwind } from '../studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 
+/** A fictional product sheet with three saves, so its history has older revisions for the documents screen (`?documents=1`). */
+async function seedDocuments(files, access) {
+  const locate = path => ({ resource: { providerId: 'workspace', path }, view: { kind: 'published' } });
+  const bytes = text => new TextEncoder().encode(text);
+  const write = async (operationId, change) => {
+    const result = await files.publication.publish({ operationId, atomicity: 'all-or-nothing', changes: [change] }, access);
+    if (result.kind !== 'committed') throw new Error(`Fixture seed ${operationId} failed: ${result.kind}`);
+    return result.receipt.changes[0].after.revision;
+  };
+  const first = await write('seed-fiche-1', { kind: 'create', target: locate('fiche-produit.md'), expected: { kind: 'absent' }, bytes: bytes('# Fiche produit\n\nBrouillon initial.\n'), mediaType: 'text/markdown' });
+  const second = await write('seed-fiche-2', { kind: 'replace', target: { ...locate('fiche-produit.md'), revision: first }, bytes: bytes('# Fiche produit\n\nRelue par l’équipe.\n'), mediaType: 'text/markdown' });
+  await write('seed-fiche-3', { kind: 'replace', target: { ...locate('fiche-produit.md'), revision: second }, bytes: bytes('# Fiche produit\n\nVersion validée.\n'), mediaType: 'text/markdown' });
+}
+
 /** The sidebar tokens the shadcn sidebar fixture uses; a host's own shadcn style defines them, the repository theme does not. */
 const SIDEBAR_TOKENS = `:root{--sidebar:var(--background);--sidebar-foreground:var(--foreground);--sidebar-border:var(--border);--sidebar-accent:var(--accent);--sidebar-accent-foreground:var(--accent-foreground);--sidebar-ring:var(--ring)}
 @theme inline{--color-sidebar:var(--sidebar);--color-sidebar-foreground:var(--sidebar-foreground);--color-sidebar-border:var(--sidebar-border);--color-sidebar-accent:var(--sidebar-accent);--color-sidebar-accent-foreground:var(--sidebar-accent-foreground);--color-sidebar-ring:var(--sidebar-ring)}`;
@@ -45,6 +59,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const root = join(directory, 'workspace'), agentAccess = { ...person, principalId: 'fictional-agent' };
   const db = openNodeConnection(join(directory, 'workspace.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'app', incarnation: 'app', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
+  await seedDocuments(files, person);
   const agents = {
     writer: defineAgent({ id: 'writer', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You write short fictional documents for the person. Be brief.',
       tools: [createPresentTool({ workspace: { files, root, access: agentAccess } })],
@@ -78,7 +93,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
 
   const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
     'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
   const page = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Forme (fictional)</title>

@@ -94,7 +94,7 @@ function DocumentDetail({ provider, path, version, options, labels, locale, olde
   readonly onOpenRevision: (revision: string | undefined) => void;
   readonly onClose: () => void;
 }) {
-  return <div data-testid="documents-detail" className="flex h-full min-h-0 flex-col md:flex-row">
+  return <div data-testid="documents-detail" className="flex h-full min-h-0 flex-col md:flex-row [&_button]:pointer-coarse:min-h-11 [&_button]:pointer-coarse:min-w-11">
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {older === undefined
         ? <FileViewer path={path} locator={provider.locate(path)} options={options} onClose={onClose} />
@@ -115,10 +115,13 @@ export function Documents({ provider, locale, labels: given, viewers, share }: D
   // An older revision of the file on show (`undefined`: the latest, editable as the Library opens it).
   const [pinned, setPinned] = useState<{ readonly path: string; readonly revision: string }>();
   const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, viewers, share]);
-  const list = tree ? <FileTreeView controller={tree} onOpen={next => { setPath(next); setPinned(undefined); }} selectedPath={path} locale={language} upload={false} history={false} /> : null;
+  // The Library's buttons are at least 44px on a coarse pointer (a touch screen); the tree itself is the file-tree item's, unchanged.
+  const list = tree ? <div className="min-h-0 [&_button]:pointer-coarse:min-h-11 [&_button]:pointer-coarse:min-w-11">
+    <FileTreeView controller={tree} onOpen={next => { setPath(next); setPinned(undefined); }} selectedPath={path} locale={language} upload={false} history={false} />
+  </div> : null;
   const older = path !== undefined && pinned?.path === path ? pinned.revision : undefined;
-  const detail = path === undefined
-    ? <p role="status" className="m-0 p-6 text-sm text-muted-foreground">{labels.selectFile}</p>
+  // `null` (nothing chosen) is what lets a phone show the list alone: ListDetail stacks the detail only when there is one.
+  const detail = path === undefined ? null
     : <DocumentDetail key={path} provider={provider} path={path} version={version} options={options} labels={labels} locale={language} older={older}
       onOpenRevision={revision => setPinned(revision === undefined || path === undefined ? undefined : { path, revision })}
       onClose={() => { setPath(undefined); setPinned(undefined); }} />;
