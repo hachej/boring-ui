@@ -8,11 +8,12 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import semver from 'semver';
 import { kitVersion, releaseItemBase } from './build-registry.mjs';
+import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
 
-/** A registry dependency pin: an exact version or a caret range, with an optional prerelease (release-version writes 1.1.0-rc.1). */
-export const registryPin = /^\^?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+/** A registry dependency pin: an exact version, a caret or tilde range, with an optional prerelease (release-version writes 1.1.0-rc.1). */
+export const registryPin = /^[\^~]?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 export function workspaceDirectory(root, name) {
   for (const entry of readdirSync(join(root, 'packages'))) {
@@ -110,7 +111,8 @@ export function registryItemName(root, dependency) {
 
 /** The item with its registryDependencies served from `base` (the harness's stand-in for the CDN), so the CLI never leaves the machine. */
 export function localRegistryDependencies(root, item, base) {
-  return item.registryDependencies ? { ...item, registryDependencies: item.registryDependencies.map(dependency => `${base}/${registryItemName(root, dependency)}.json`) } : item;
+  // A shadcn built-in (a bare name such as `drawer`) stays a bare name: the consumer's own style resolves it.
+  return item.registryDependencies ? { ...item, registryDependencies: item.registryDependencies.map(dependency => SHADCN_BUILTINS.includes(dependency) ? dependency : `${base}/${registryItemName(root, dependency)}.json`) } : item;
 }
 
 /** An item and every item it needs through registryDependencies, read from public/r. */
@@ -120,7 +122,7 @@ export function registryClosure(root, name) {
     if (closure.has(item)) return;
     const read = JSON.parse(readFileSync(join(root, 'public/r', `${item}.json`), 'utf8'));
     closure.set(item, read);
-    for (const dependency of read.registryDependencies ?? []) visit(registryItemName(root, dependency));
+    for (const dependency of read.registryDependencies ?? []) if (!SHADCN_BUILTINS.includes(dependency)) visit(registryItemName(root, dependency));
   };
   visit(name);
   return closure;

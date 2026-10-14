@@ -136,8 +136,11 @@ void tools;
     const installedLock = JSON.parse(readFileSync(join(directory, 'package-lock.json'), 'utf8'));
     const selected = Object.entries(ui.peerDependencies).filter(([name]) => name.startsWith('@tiptap/') || ['marked', '@earendil-works/pi-durable', '@earendil-works/pi-ai', '@earendil-works/chord'].includes(name));
     selected.push(['@modelcontextprotocol/sdk', rootManifest.devDependencies['@modelcontextprotocol/sdk']]);
-    for (const [name, version] of selected) { installedManifest.dependencies[name] = version; include(name); }
-    for (const [path, entry] of Object.entries(packages)) if (path && !installedLock.packages[path]) installedLock.packages[path] = entry;
+    // Exact versions of the repository's own lock (root devDependencies), not the packages' peer ranges: a range lets npm resolve the newest
+    // release (pi 1.2.0, published 2026-10-12) and the consumer would then test a Pi the repository has not adopted.
+    for (const [name, range] of selected) { installedManifest.dependencies[name] = rootManifest.devDependencies[name] ?? range; include(name); }
+    // The lock subset is authoritative for the packages chosen above: an entry npm resolved earlier from a peer range must not win.
+    for (const [path, entry] of Object.entries(packages)) if (path) installedLock.packages[path] = entry;
     installedLock.packages[''].dependencies = installedManifest.dependencies;
     writeFileSync(join(directory, 'package.json'), JSON.stringify(installedManifest));
     writeFileSync(join(directory, 'package-lock.json'), JSON.stringify(installedLock));

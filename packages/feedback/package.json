@@ -1,8 +1,8 @@
 {
   "name": "@hachej/boring-feedback",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Feedback people leave on what they see, usable without an agent and by agents through an opt-in capability.",
   "sideEffects": false,
@@ -52,14 +52,14 @@
     }
   },
   "peerDependencies": {
-    "@hachej/boring-ui-kit": "0.2.2",
-    "@hachej/boring-files": "0.2.2",
-    "@hachej/boring-agent": "0.2.2",
-    "@earendil-works/pi-durable": "1.2.0",
-    "@earendil-works/pi-ai": "1.2.0",
-    "@earendil-works/chord": "1.2.0",
-    "react": "19.3.0",
-    "esbuild": "0.28.2"
+    "@hachej/boring-ui-kit": "^0.2.4",
+    "@hachej/boring-files": "^0.2.4",
+    "@hachej/boring-agent": "^0.2.4",
+    "@earendil-works/pi-durable": "~1.2.0",
+    "@earendil-works/pi-ai": "~1.2.0",
+    "@earendil-works/chord": "~1.2.0",
+    "react": "^19.0.0",
+    "esbuild": "^0.28.2"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-agent": {

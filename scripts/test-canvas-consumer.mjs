@@ -37,6 +37,8 @@ try {
   // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
   dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   dependencies['@tldraw/tlschema'] = sourceLock.packages['node_modules/@tldraw/tlschema'].version;
+  // The kit's optional tiptap peers would otherwise resolve to the newest registry release and conflict with tldraw's pins.
+  for (const name of ['@tiptap/core', '@tiptap/pm', '@tiptap/react']) dependencies[name] = sourceLock.packages['node_modules/' + name].version;
   for (const name of ['typescript', '@types/react', '@types/react-dom', '@types/node', 'happy-dom', 'esbuild']) dependencies[name] = rootManifest.devDependencies[name];
   // Each range must admit the version this repository locks; the isolated install gets that exact version.
   for (const [name, range] of Object.entries(dependencies)) {

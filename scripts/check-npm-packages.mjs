@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { INTENTIONALLY_PRIVATE, isExcludedFromRelease } from './release-set.mjs';
+import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 
 export function checkPackage(manifest, paths, versions, { release = false } = {}) {
   const errors = [];
@@ -70,8 +71,8 @@ export function checkShippedRegistry(manifest, paths, { items = [], read } = {})
   const shipped = new Set(paths.filter(path => registryItemFile.test(path)).map(path => path.match(registryItemFile)[1]));
   if (!shipped.has('registry')) errors.push('Missing r/registry.json');
   for (const name of items) if (!shipped.has(name)) errors.push(`Missing registry item: r/${name}.json`);
-  // Internal pins are "^<release version>". The intentionally private feedback package keeps its exact pin until the owner decides (its items are not released).
-  const accepted = (name, range) => range === `^${manifest.version}` || (INTENTIONALLY_PRIVATE.has(name) && range === manifest.version);
+  // Internal pins are "^<release version>".
+  const accepted = (name, range) => range === `^${manifest.version}`;
   const pins = (value, file) => {
     if (typeof value === 'string' && value.startsWith(releaseItemPrefix)) {
       if (releaseItem.exec(value)?.[1] !== manifest.version) errors.push(`Registry URL mismatch in r/${file}.json: ${value} (release ${manifest.version})`);
@@ -82,6 +83,7 @@ export function checkShippedRegistry(manifest, paths, { items = [], read } = {})
   // Each item, and each item the registry index lists, names its dependencies as this release's URLs of shipped items.
   const dependencies = (owner, item) => {
     for (const dependency of item.registryDependencies ?? []) {
+      if (SHADCN_BUILTINS.includes(dependency)) continue; // a bare name the consumer's own shadcn style resolves
       const local = releaseItem.exec(dependency)?.[2];
       if (!local || !shipped.has(local)) errors.push(`Registry dependency not shipped in r/: ${owner} -> ${dependency}`);
     }

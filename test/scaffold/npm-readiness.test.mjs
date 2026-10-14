@@ -93,7 +93,9 @@ test('UI archive ships the shadcn registry under r/ and nothing else may', () =>
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-files@^0.2.1', 'radix-ui@^1.8.0'] } : read(path) }), [
     'Registry pin mismatch in r/theme.json: @hachej/boring-files@^0.2.1 (release 0.2.2)',
   ]);
-  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-feedback@0.2.2', '@hachej/boring-ui-kit@^0.2.2'] } : read(path) }), [], 'the private feedback pin is exempt until the owner decides');
+  assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-feedback@0.2.2', '@hachej/boring-ui-kit@^0.2.2'] } : read(path) }), [
+    'Registry pin mismatch in r/theme.json: @hachej/boring-feedback@0.2.2 (release 0.2.2)',
+  ], 'a published feedback pin must be a caret range');
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path.endsWith('theme.json') ? { dependencies: ['@hachej/boring-ui-kit@0.2.2'] } : read(path) }), [
     'Registry pin mismatch in r/theme.json: @hachej/boring-ui-kit@0.2.2 (release 0.2.2)',
   ]);
@@ -111,6 +113,9 @@ test('UI archive ships the shadcn registry under r/ and nothing else may', () =>
   assert.deepEqual(checkShippedRegistry(ui, packed, withDependency(release('0.2.2', 'missing'))), [
     `Registry dependency not shipped in r/: button -> ${release('0.2.2', 'missing')}`,
   ], 'an item URL must name a shipped item');
+  // A shadcn built-in is a bare name the consumer's own style resolves: it needs no shipped item.
+  assert.deepEqual(checkShippedRegistry(ui, packed, withDependency('drawer')), []);
+  assert.deepEqual(checkShippedRegistry(ui, packed, withDependency('carousel')), ['Registry dependency not shipped in r/: button -> carousel'], 'any other bare name is refused');
   // The registry index lists items too: its dependencies are audited the same way.
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path === 'r/registry.json' ? { items: [{ name: 'theme' }, { name: 'button', registryDependencies: ['@boring-ui/theme'] }] } : read(path) }), [
     'Registry dependency not shipped in r/: registry index button -> @boring-ui/theme',
