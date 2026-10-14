@@ -264,7 +264,7 @@ test('a github-release job publishes the GitHub release only after a successful 
   const job = workflowJob('github-release');
   assert.match(job, /^    needs: publish$/m);
   assert.match(job, /^    if: needs\.publish\.result == 'success'$/m);
-  assert.match(job, /^    permissions:\n      contents: write$/m);
+  assert.match(job, /^    permissions:\n      contents: write\n      pull-requests: read$/m);
   assert.equal((workflow.match(/contents: write/g) || []).length, 1, 'only the github-release job gets write access');
   assert.match(workflowJob('publish'), /^    permissions:\n      contents: read\n      id-token: write$/m);
   assert.match(job, /GH_TOKEN: \$\{\{ github\.token \}\}/);
