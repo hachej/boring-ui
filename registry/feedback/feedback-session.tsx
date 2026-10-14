@@ -27,8 +27,6 @@ export interface FeedbackBarProps {
   readonly className?: string;
   /** Docked under the chat composer (the composer's `feedback.bar`) instead of floating at the top of the page. */
   readonly docked?: boolean;
-  /** Words of the controls (`feedbackLabelsFr` for French); what is left out keeps the English default. */
-  readonly labels?: Partial<FeedbackLabels>;
 }
 
 /** Pins dropped while recording that have no note yet (nothing transcribed for them, or transcription failed). */
@@ -67,7 +65,7 @@ function barHint(state: FeedbackSessionSnapshot): string {
  * Feedback mode's bar: `● Feedback · N notes · 🎙 Record · Hold ⌥ to use the app · Use app · Done · ✕`. While recording: a red dot, the
  * running time, "Recording — point and talk" and Stop. A refused microphone is said in the bar itself, never only in a tooltip.
  */
-export function FeedbackBar({ session, className, docked = false, labels }: FeedbackBarProps) {
+export function FeedbackBar({ session, className, docked = false }: FeedbackBarProps) {
   const state = useExternal(session);
   const recording = state.voice.kind === 'recording';
   const time = useRecordingTime(recording && (state.phase === 'active' || state.phase === 'processing'));
