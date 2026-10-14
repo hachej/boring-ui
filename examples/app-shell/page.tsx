@@ -13,7 +13,7 @@ import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
-import { Replaceable, previewCardFor } from '../../registry/live-preview/preview.ts';
+import { Replaceable, previewCardFor, replaceablesContext } from '../../registry/live-preview/preview.ts';
 import type { PreviewResult } from '../../registry/live-preview/preview.ts';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
@@ -33,6 +33,8 @@ const ROWS = Array.from({ length: 40 }, (_, index) => ({ day: `Jour ${index + 1}
 // What the test reads back: every `onChange` of the shell, and what the account menu and the actions did.
 window.__routes = [];
 window.__did = [];
+window.__shared = [];
+window.__previewErrors = [];
 window.__agentContext = readAgentContext;
 
 const themeAction = { id: 'theme', label: 'Thème', icon: MoonIcon, onSelect: () => document.documentElement.classList.toggle('dark') };
@@ -43,8 +45,8 @@ const List = () => <ul className="m-0 list-none divide-y divide-border p-0">
   {ROWS.map(row => <li key={row.day} className="flex items-center justify-between px-4 py-3"><span>{row.day}</span><span className="text-muted-foreground">{row.steps} pas</span></li>)}
 </ul>;
 
-// The live preview: the Jour list is a replaceable part. The journey injects a `boring.preview` tool result here, as the chat would deliver
-// it, and the probe shows the card; nothing applies until its button is clicked.
+// The live preview: the Jour list is a replaceable part and gets its real props (the rows, and a callback the frame only reports). The journey
+// injects a `boring.preview` tool result here, as the chat would deliver it, and the probe shows the card; nothing is replaced until its click.
 function PreviewProbe() {
   const [result, setResult] = useState<PreviewResult | undefined>();
   useEffect(() => { window.__injectPreview = setResult; }, []);
@@ -53,7 +55,8 @@ function PreviewProbe() {
 }
 function Day() {
   useScreenHeader({ title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
-  return <><PreviewProbe /><Replaceable id="forme.jour.list" source="src/screens/Day.tsx"><List /></Replaceable></>;
+  const onSelect = (day: string) => window.__did.push(`select:${day}`);
+  return <><PreviewProbe /><Replaceable id="forme.jour.list" source="src/screens/Day.tsx" props={{ rows: ROWS, onSelect }}><List /></Replaceable></>;
 }
 function Progress() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
@@ -95,7 +98,7 @@ function useManagerFeedback(mounted: boolean) {
 
 function App() {
   const coach = useRemoteChat({ conversationId: noAgent ? undefined : conversations.coach, endpoint: endpoint('coach'), fetch: authorized, identity, requestContext: readAgentContext });
-  const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
+  const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), ...replaceablesContext('fr') }) });
   const [route, setRoute] = useState(() => location.hash.slice(1));
   const waiting = (!noAgent && coach.status !== 'ready') || manager.status !== 'ready';
   const feedback = useManagerFeedback(!waiting);
@@ -124,7 +127,11 @@ function App() {
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
     <AppShell layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }}
-      preview={{ enabled: true, release: 'journey', appId: 'forme' }} />
+      preview={{ enabled: true, release: 'journey-sha',
+        // The host's share: ids only (the PM resolves the source and the file itself); it may resolve the PR link.
+        onSharePreview: async p => { window.__shared.push(p); return { prUrl: 'https://example.invalid/pr/12' }; },
+        // A frame error goes to the PM as a normal user turn, so it can fix its component.
+        onPreviewError: ({ message }) => { window.__previewErrors.push(message); void manager.controller.send(`La prévisualisation a échoué : ${message}`).catch(() => {}); } }} />
   </div>;
 }
 

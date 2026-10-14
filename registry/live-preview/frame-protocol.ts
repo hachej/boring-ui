@@ -1,8 +1,10 @@
 // The messages between the app and the sandboxed preview frame (preview-frame.html). The frame has an opaque origin: its `event.origin` is
 // "null", so each side trusts a message by its `source` window (the app: its own iframe; the frame: its parent), never by origin alone.
 export const FRAME_TAG = 'boring.preview';
+/** In a props snapshot a function becomes `{ [INTENT_KEY]: name }`; the frame turns it into a stub that reports the call and runs nothing. */
+export const INTENT_KEY = '__boringIntent';
 
-/** App to frame: compile `source` and render it with `props`, styled by `css` (the app's own stylesheets). */
+/** App to frame: compile `source` and render it with `props` (a snapshot, see snapshot.ts), styled by `css` (the app's own stylesheets). */
 export interface RenderMessage { readonly boring: typeof FRAME_TAG; readonly type: 'render'; readonly source: string; readonly props: unknown; readonly css: string; readonly dark: boolean }
 /** Frame to app. `intent` is a component callback that was called: shown, never executed. */
 export type FrameMessage =

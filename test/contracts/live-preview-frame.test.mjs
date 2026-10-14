@@ -11,8 +11,9 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = `${root}.cache/live-preview-frame-test`;
 mkdirSync(out, { recursive: true });
 writeFileSync(`${out}/package.json`, '{"type":"module"}');
-await build({ entryPoints: { compile: `${root}scripts/preview-frame/compile.ts`, 'frame-protocol': `${root}registry/live-preview/frame-protocol.ts` }, outdir: out, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' });
+await build({ entryPoints: { snapshot: `${root}registry/live-preview/snapshot.ts`, compile: `${root}scripts/preview-frame/compile.ts`, 'frame-protocol': `${root}registry/live-preview/frame-protocol.ts` }, outdir: out, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' });
 const { compileComponent } = await import(pathToFileURL(`${out}/compile.js`).href);
+const { snapshotProps } = await import(pathToFileURL(`${out}/snapshot.js`).href);
 const { acceptFromFrame, acceptFromParent, FRAME_TAG } = await import(pathToFileURL(`${out}/frame-protocol.js`).href);
 
 const modules = { react: { marker: 'react' }, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'f' }, '@/components/ui/button': { Button: 'button' } };
@@ -53,6 +54,14 @@ test('the frame accepts a render only from its parent window', () => {
   assert.equal(acceptFromParent({ data: render, source: {} }, parent), undefined);
   assert.equal(acceptFromParent({ data: { ...render, source: 5 }, source: parent }, parent), undefined);
   assert.equal(acceptFromParent({ data: { boring: FRAME_TAG, type: 'size', height: 1 }, source: parent }, parent), undefined);
+});
+
+test('the props snapshot keeps clone-safe values, turns functions into intent markers and drops the rest', () => {
+  const cyclic = { name: 'loop' }; cyclic.self = cyclic;
+  const snap = snapshotProps({ title: 'Jour', steps: [1, 2], nested: { onPick() {}, when: 3 }, onSelect() {}, bad: Symbol('x'), big: 10n, element: { $$typeof: Symbol.for('react.element') }, date: new Date(), cyclic });
+  assert.deepEqual(snap, { title: 'Jour', steps: [1, 2], nested: { onPick: { __boringIntent: 'onPick' }, when: 3 }, onSelect: { __boringIntent: 'onSelect' }, cyclic: { name: 'loop' } });
+  structuredClone(snap);
+  assert.deepEqual(snapshotProps(undefined), {});
 });
 
 test('the committed preview-frame.js is the build of scripts/preview-frame', async () => {

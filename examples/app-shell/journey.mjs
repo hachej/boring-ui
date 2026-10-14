@@ -781,25 +781,76 @@ try {
     await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
   });
 
-  // The live preview (registry/live-preview): a tool result's card adds the overlay only on its click; the banner and the slot show; « Tout
-  // annuler » restores the original list. The result is injected as the chat would deliver it (page.tsx's PreviewProbe).
-  await step('P live preview: the card adds nothing until its click; the banner and the slot show; « Tout annuler » restores the list', async () => {
-    const button = text => `[...document.querySelectorAll('${text.scope} button')].find(b => b.textContent.trim() === '${text.label}')`;
-    // The last step leaves the wide layout, where Jour is a sidebar item rather than a tab.
+  // The live preview (registry/live-preview), in place: a tool result's card replaces nothing until its click; then the sandboxed frame takes the
+  // slot of the Jour list and shows the real props; Fermer restores the list; Partager restores it and shows the note; an error brings it back too.
+  // The frame is probed from inside: it tries the parent's cookie and localStorage (set below) and its parent's document, and reports through an intent.
+  const PROBE = `import { useEffect } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+export default function DayList({ rows, onSelect, onProbe }) {
+  const tried = (name, read) => { try { read(); return name + ':readable'; } catch { return name + ':blocked'; } };
+  useEffect(() => {
+    onSelect(rows[0].day);
+    setTimeout(() => onProbe([tried('cookie', () => document.cookie), tried('storage', () => localStorage.getItem('forme-secret')), tried('parent', () => window.parent.document.title), 'rows:' + rows.length, 'first:' + rows[0].day, 'select:' + typeof onSelect].join(' ')), 100);
+  }, []);
+  return <Card><CardHeader><CardTitle>Liste proposée</CardTitle></CardHeader><CardContent>{rows.length} jours, le premier est {rows[0].day}</CardContent></Card>;
+}`;
+  const BAD = `import fetchIt from 'x';\nexport default function Bad() { return <p>{String(fetchIt)}</p>; }`;
+  const previewJourney = async label => {
+    const lis = `${q('[data-testid=screen-jour]')}.querySelectorAll('li').length`;
+    const card = q('[data-testid=preview-probe] button');
+    const inject = source => browser.evaluate(`window.__injectPreview({ details: { kind: 'boring.preview', previewId: '9d1c7f52-0000-4000-8000-00000000000a', key: 'forme.jour.list', title: 'Liste du jour', source: ${JSON.stringify(source)} } })`);
     await browser.evaluate(`(document.querySelector('[data-testid=tab-jour]') ?? document.querySelector('[data-testid=nav-jour]')).click()`);
     await settle();
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=preview-banner]')}`), false, 'no banner before a preview');
-    await browser.evaluate(`window.__injectPreview({ details: { kind: 'boring.preview', key: 'forme.jour.list', source: 'src/screens/Day.tsx' } })`);
-    await browser.until('the preview card', `!!${q('[data-testid=preview-probe] button')}`);
-    assert.equal(await browser.evaluate(`!!${q('[data-boring-preview-slot="forme.jour.list"]')}`), false, 'the card alone applies nothing');
-    await browser.evaluate(`${q('[data-testid=preview-probe] button')}.click()`);
-    await browser.until('the banner and the slot', `!!${q('[data-testid=preview-banner]')} && !!${q('[data-boring-preview-slot="forme.jour.list"]')}`);
-    assert.match(await browser.evaluate(`${q('[data-testid=preview-banner]')}.textContent`), /Prévisualisation/);
-    assert.match(await browser.evaluate(`${q('[data-boring-preview-slot="forme.jour.list"]')}.textContent`), /Aperçu indisponible/);
-    assert.equal(await browser.evaluate(`${q('[data-testid=screen-jour]')}.querySelectorAll('li').length >= 40`), true, 'the original list renders beside the slot');
-    await browser.evaluate(`${button({ scope: '[data-testid=preview-banner]', label: 'Tout annuler' })}.click()`);
-    await browser.until('the original alone', `!${q('[data-testid=preview-banner]')} && !${q('[data-boring-preview-slot="forme.jour.list"]')}`);
-    assert.equal(await browser.evaluate(`${q('[data-testid=screen-jour]')}.querySelectorAll('li').length >= 40`), true, 'the original list is back');
+    await browser.evaluate(`document.cookie = 'forme_secret=1; path=/'; localStorage.setItem('forme-secret', '1'); window.__did.length = 0; window.__shared.length = 0; window.__previewErrors.length = 0`);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=preview-banner]')}`), false, `${label}: no banner before a preview`);
+    assert.equal(await browser.evaluate(`${lis} >= 40`), true, `${label}: the original list renders`);
+    await inject(PROBE);
+    await browser.until('the preview card', `!!${card}`);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=preview-frame]')}`), false, `${label}: the card alone replaces nothing`);
+    await browser.evaluate(`${card}.click()`);
+    await browser.until('the frame in the slot', `!!${q('[data-testid=preview-frame]')}`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=preview-frame]')}.getAttribute('sandbox')`), 'allow-scripts', `${label}: sandbox is exactly allow-scripts`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=preview-frame]')}.hasAttribute('srcdoc')`), false);
+    assert.equal(await browser.evaluate(`${lis}`), 0, `${label}: the frame takes the list's place`);
+    assert.match(await browser.evaluate(`${q('[data-testid=preview-banner]')}.textContent`), /Prévisualisation · Liste du jour/);
+    await browser.until('the frame reported', `/onProbe/.test(${q('[data-testid=preview-intent]')}?.textContent ?? '')`, 15000);
+    const probe = await browser.evaluate(`${q('[data-testid=preview-intent]')}.textContent`);
+    assert.match(probe, /cookie:blocked storage:blocked parent:blocked/, `${label}: the frame cannot read the parent's cookie, localStorage or document: ${probe}`);
+    assert.match(probe, /rows:40 first:Jour 1 select:function/, `${label}: the frame has the real props: ${probe}`);
+    assert.equal(await browser.evaluate(`window.__did.filter(entry => entry.startsWith('select:')).length`), 0, `${label}: a callback is shown, never executed`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=preview-frame]')}.getBoundingClientRect().height > 60`), true, `${label}: the frame sized itself to its content`);
+    await browser.screenshot(`preview-${label}.png`);
+    await browser.evaluate(`${q('[data-testid=preview-close]')}.click()`);
+    await browser.until('the list is back', `!${q('[data-testid=preview-frame]')} && !${q('[data-testid=preview-banner]')} && ${lis} >= 40`);
+    // Partager: the host gets ids and the release; the list is back and the note shows with the link.
+    await browser.evaluate(`${card}.click()`);
+    await browser.until('the frame again', `!!${q('[data-testid=preview-frame]')}`);
+    await browser.evaluate(`${q('[data-testid=preview-share]')}.click()`);
+    await browser.until('the note', `!!${q('[data-testid=preview-note]')} && !${q('[data-testid=preview-frame]')} && ${lis} >= 40`);
+    assert.deepEqual(await browser.evaluate(`window.__shared`), [{ key: 'forme.jour.list', previewId: '9d1c7f52-0000-4000-8000-00000000000a', release: 'journey-sha' }]);
+    assert.match(await browser.evaluate(`${q('[data-testid=preview-note]')}.textContent`), /Proposé — visible après mise en ligne/);
+    assert.equal(await browser.evaluate(`${q('[data-testid=preview-note] a')}.getAttribute('href')`), 'https://example.invalid/pr/12');
+    // An error (a disallowed import) shows in the banner, reaches the host and brings the original back.
+    await inject(BAD);
+    await browser.until('the card', `!!${card}`);
+    await browser.evaluate(`${card}.click()`);
+    await browser.until('the compile error', `/not allowed/.test(${q('[data-testid=preview-error]')}?.textContent ?? '')`, 15000);
+    assert.equal(await browser.evaluate(`${lis} >= 40 && !${q('[data-testid=preview-frame]')}`), true, `${label}: the original is back after an error`);
+    assert.match(await browser.evaluate(`window.__previewErrors[0] ?? ''`), /Import "x" is not allowed/);
+    await browser.evaluate(`${q('[data-testid=preview-close]')}.click()`);
+    await browser.until('closed', `!${q('[data-testid=preview-banner]')}`);
+  };
+  await step('P live preview, desktop 1280x800: the card replaces nothing until its click; the sandboxed frame shows the real props in the slot; Fermer, Partager and an error restore the list', async () => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await settle();
+    await previewJourney('desktop');
+  });
+  await step('P live preview, phone 390x844: the same, in place', async () => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    await settle();
+    await previewJourney('phone');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await settle();
   });
 
   await step('expanded: icon actions (and one labelled) and « … » in a dropdown; the one-screen template has a sidebar with no nav list', async () => {

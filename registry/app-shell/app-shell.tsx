@@ -21,9 +21,8 @@ import type { NavItem } from './nav';
 import { AppSheet } from './sheet';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
-import { PreviewNote, PreviewProvider, PreviewView, usePreview } from '../live-preview/preview';
+import { PreviewBanner, PreviewNote, PreviewProvider, usePreview } from '../live-preview/preview';
 import type { PreviewSettings } from '../live-preview/preview';
-import { useBackLayer } from './back';
 import { useAgentLayer } from './agent-layer';
 
 export interface AppShellProps {
@@ -39,13 +38,14 @@ export interface AppShellProps {
   readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
-  /** The live preview (registry/live-preview): off unless `enabled`. `enabled: false` is the kill switch: cards render disabled and no view opens. */
+  /** The live preview (registry/live-preview): off unless `enabled`. `enabled: false` is the kill switch: cards render disabled and every part renders its original. */
   readonly preview?: PreviewSpec;
 }
 
-/** The host's live-preview settings. `frameUrl` is where preview-frame.html is served (same origin; default `/preview-frame.html`). */
+/** The host's live-preview settings. `release` is the build SHA. `frameUrl` is where preview-frame.html is served (same origin; default `/preview-frame.html`). */
 export interface PreviewSpec {
   readonly enabled: boolean;
+  readonly release?: string;
   readonly frameUrl?: string;
   readonly onSharePreview?: PreviewSettings['onSharePreview'];
   readonly onPreviewError?: PreviewSettings['onPreviewError'];
@@ -73,9 +73,8 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
   const [accountOpen, setAccountOpen] = useState(false);
   const preview = usePreview();
   const layer = useAgentLayer();
-  // The preview view is a Back layer; on a phone it covers the app, so the agent sheet steps aside while it is open.
-  useBackLayer(Boolean(preview.view), preview.close, 'sheet');
-  useEffect(() => { if (preview.view && compact) layer.close(); }, [preview.view, compact, layer.close]);
+  // The replaced part is in the screen, behind the agent sheet on a phone: the sheet steps aside when a preview starts.
+  useEffect(() => { if (preview.overlay && compact) layer.close(); }, [preview.overlay, compact, layer.close]);
   const active = nav.find(item => item.id === route.id) ?? nav[0];
   if (!active) return null;
   const hasAccount = Boolean(account) || improve;
@@ -93,10 +92,10 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
       <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} />
+      <PreviewBanner />
       <PreviewNote />
       <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} />
       {compact && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
-      <PreviewView compact={compact} />
       </div>
     </AgentDockLayout>
     <AgentLayer />
@@ -109,7 +108,7 @@ export function AppShell(props: AppShellProps) {
   const locale = (agent ?? improve)?.chatProps?.locale ?? props.locale;
   const text = appShellText(locale);
   const preview = props.preview;
-  const settings: PreviewSettings = { enabled: Boolean(preview?.enabled), locale: locale ?? 'en', frameUrl: preview?.frameUrl ?? '/preview-frame.html', onSharePreview: preview?.onSharePreview, onPreviewError: preview?.onPreviewError };
+  const settings: PreviewSettings = { enabled: Boolean(preview?.enabled), locale: locale ?? 'en', release: preview?.release ?? '', frameUrl: preview?.frameUrl ?? '/preview-frame.html', onSharePreview: preview?.onSharePreview, onPreviewError: preview?.onPreviewError };
   return <PreviewProvider settings={settings}>
     <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
       <HeaderProvider><Shell layout={layout} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>

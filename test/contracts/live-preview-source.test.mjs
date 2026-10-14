@@ -33,22 +33,22 @@ test('colours come only from shadcn semantic utilities: no hex, rgb(, oklch( or 
   }
 });
 
-test('the app shell takes the preview prop and mounts its provider, view and note', () => {
+test('the app shell takes the preview prop and mounts its provider, banner and note', () => {
   const shell = readFileSync(`${root}registry/app-shell/app-shell.tsx`, 'utf8');
   assert.match(shell, /readonly preview\?: PreviewSpec/);
   assert.match(shell, /<PreviewProvider settings=\{settings\}>/);
-  assert.match(shell, /<PreviewView compact=\{compact\} \/>/);
+  assert.match(shell, /<PreviewBanner \/>/);
   const app = manifest.items.find(entry => entry.name === 'app-shell');
   assert.ok(app.registryDependencies.includes('@boring-ui/live-preview'));
 });
 
-test('the chat card reads only the tool result kind, previewId, title, source and sampleProps', () => {
+test('the chat card reads only the tool result kind, previewId, key, title and source', () => {
   assert.match(source('card.tsx'), /d\?\.kind !== 'boring\.preview'/);
 });
 
-test('the view renders the frame with exactly sandbox="allow-scripts"', () => {
-  assert.match(source('view.tsx'), /sandbox="allow-scripts"/);
-  assert.doesNotMatch(source('view.tsx'), /allow-(?:same-origin|forms|popups|top-navigation|modals)/);
+test('the frame element has exactly sandbox="allow-scripts"; nothing touches browser storage', () => {
+  assert.match(source('frame.tsx'), /sandbox="allow-scripts"/);
+  for (const name of code) assert.doesNotMatch(source(name), /allow-(?:same-origin|forms|popups|top-navigation|modals)|sessionStorage|localStorage|indexedDB|document\.cookie/, name);
 });
 
 test('the frame page has the restrictive CSP and loads only its own script', () => {

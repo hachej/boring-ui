@@ -84,7 +84,9 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const page = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Forme (fictional)</title>
 <link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversations: { coach: String(created.coach.id), pm: String(created.pm.id) }, identity: { runtimeId: 'app', ...person } })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
-  const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
+  const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css],
+    // The sandboxed preview frame, served as files from the app's origin (what a host does with the live-preview item's two files).
+    '/preview-frame.html': ['text/html; charset=utf-8', readFileSync(here('../../registry/live-preview/preview-frame.html'), 'utf8')], '/preview-frame.js': ['text/javascript; charset=utf-8', readFileSync(here('../../registry/live-preview/preview-frame.js'), 'utf8')] };
 
   const server = createServer(async (incoming, outgoing) => {
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);

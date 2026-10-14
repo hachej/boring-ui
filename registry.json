@@ -845,8 +845,8 @@
     {
       "name": "live-preview",
       "type": "registry:block",
-      "title": "Live preview: chat card, preview view and sandboxed frame",
-      "description": "previewCardFor turns a boring.preview tool result into a chat « Prévisualiser » card; its click (and nothing else) opens the preview view, in memory only: full screen on a phone, the main area on a desktop, with « Fermer » and an optional « Partager ». The PM's component runs only in preview-frame.html, an iframe with sandbox=\"allow-scripts\" (opaque origin, strict CSP, import allowlist); serve preview-frame.html and preview-frame.js together from the app's origin.",
+      "title": "Live preview: replaceable parts, sandboxed frame, banner and chat card",
+      "description": "Replaceable marks a part of a screen the PM may replace in place, in the viewer's browser only (React state: a reload or « Fermer » ends it; listReplaceables gives the key to file mapping). While a preview is active the part renders the PM's component in preview-frame.html, an iframe with sandbox=\"allow-scripts\" (opaque origin, strict CSP, import allowlist) that receives a snapshot of the part's real props; functions become intent stubs that run nothing. The shell shows a « Prévisualisation » banner with « Fermer » and an optional « Partager ». previewCardFor turns a boring.preview tool result into a « Prévisualiser » card; its click starts the preview. Serve preview-frame.html and preview-frame.js together from the app's origin.",
       "dependencies": [
         "react@^19.0.0"
       ],
@@ -855,9 +855,19 @@
       ],
       "files": [
         {
-          "path": "registry/live-preview/view.tsx",
+          "path": "registry/live-preview/replaceable.tsx",
           "type": "registry:component",
-          "target": "components/live-preview/view.tsx"
+          "target": "components/live-preview/replaceable.tsx"
+        },
+        {
+          "path": "registry/live-preview/frame.tsx",
+          "type": "registry:component",
+          "target": "components/live-preview/frame.tsx"
+        },
+        {
+          "path": "registry/live-preview/banner.tsx",
+          "type": "registry:component",
+          "target": "components/live-preview/banner.tsx"
         },
         {
           "path": "registry/live-preview/provider.tsx",
@@ -868,6 +878,11 @@
           "path": "registry/live-preview/card.tsx",
           "type": "registry:component",
           "target": "components/live-preview/card.tsx"
+        },
+        {
+          "path": "registry/live-preview/snapshot.ts",
+          "type": "registry:lib",
+          "target": "components/live-preview/snapshot.ts"
         },
         {
           "path": "registry/live-preview/frame-protocol.ts",
