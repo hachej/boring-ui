@@ -650,7 +650,7 @@ try {
     const docked = await browser.evaluate(rect(LAYER)), shrunk = await browser.evaluate(rect(MAIN));
     assert.ok(Math.abs(docked.right - await browser.evaluate(viewport)) <= 1 && shrunk.w <= full - 300 && shrunk.right <= docked.x + 1, `docked: the content reflows beside the panel: ${JSON.stringify({ full, shrunk, docked })}`);
     // The controls are labelled and 44px under a coarse pointer (checked on the phone); here: named buttons.
-    assert.deepEqual(await browser.evaluate(`['float', 'dock-left'].map(id => document.querySelector('[data-testid="agent-layer-' + id + '"]')?.getAttribute('aria-label'))`), ["Flotter sur l'app", 'Ancrer à gauche']);
+    assert.deepEqual(await browser.evaluate(`['float', 'dock-left'].map(id => document.querySelector('[data-testid="agent-layer-' + id + '"]')?.getAttribute('aria-label'))`), ["Flotter sur l’app", 'Ancrer à gauche']);
     await browser.click(q('[data-testid=agent-layer-float]'));
     await browser.until('floating', `${placement} === 'floating:right'`);
     await pause(300);
