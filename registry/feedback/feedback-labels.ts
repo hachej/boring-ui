@@ -21,6 +21,15 @@ export interface FeedbackLabels {
   readonly saved: string;
   readonly bubblePlaceholder: string;
   readonly bubbleHint: string;
+  /** The pin's one-line desktop hint: holding Alt passes clicks to the app. */
+  readonly altHint: string;
+  /** The pin's field label, its Add button, and the mic inside the field (record, stop, transcribing, nothing heard, failed). */
+  readonly add: string;
+  readonly voiceRecord: string;
+  readonly voiceStop: string;
+  readonly voiceTranscribing: string;
+  readonly voiceNothing: string;
+  readonly voiceFailed: string;
   /** Announced when the selection was cancelled, so a screen reader hears that the zone is gone. */
   readonly selectionCancelled: string;
   readonly generalOpened: string;
@@ -50,6 +59,13 @@ export const feedbackLabels: FeedbackLabels = {
   saved: 'Saved',
   bubblePlaceholder: "What's wrong here?",
   bubbleHint: 'Enter to save · Esc to discard',
+  altHint: 'Hold ⌥ to use the app',
+  add: 'Add note',
+  voiceRecord: 'Speak your note',
+  voiceStop: 'Stop recording',
+  voiceTranscribing: 'Transcribing…',
+  voiceNothing: 'Nothing was heard. Your text is kept.',
+  voiceFailed: 'The recording could not be transcribed. Your text is kept.',
   selectionCancelled: 'Selection cancelled.',
   generalOpened: 'General question: no element attached.',
   pointHint: 'Tap an element to comment',
@@ -77,6 +93,13 @@ export const feedbackLabelsFr: FeedbackLabels = {
   saved: 'Enregistré',
   bubblePlaceholder: "Qu'est-ce qui ne va pas ici ?",
   bubbleHint: 'Entrée pour valider · Échap pour annuler',
+  altHint: 'Maintenez ⌥ pour utiliser l’app',
+  add: 'Ajouter la note',
+  voiceRecord: 'Dicter votre note',
+  voiceStop: 'Arrêter l’enregistrement',
+  voiceTranscribing: 'Transcription…',
+  voiceNothing: 'Rien n’a été entendu. Votre texte est conservé.',
+  voiceFailed: 'L’enregistrement n’a pas pu être transcrit. Votre texte est conservé.',
   selectionCancelled: 'Sélection annulée.',
   generalOpened: 'Question générale : aucune zone sélectionnée.',
   pointHint: 'Touchez un élément à commenter',
