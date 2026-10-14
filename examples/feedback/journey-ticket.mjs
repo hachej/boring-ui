@@ -1,5 +1,5 @@
 // The ticket journey (FEEDBACK.md, "Tickets"): one driven Chromium run of the default Fernhill page with the keyless scripted builder
-// and the default file sink. Steps: Feedback in the composer → click Save (pinned, never pressed) → a note → Done → Send → the builder
+// and the default file sink. Steps: the annotate toggle in the composer → click Save (pinned, never pressed) → a note → Esc → Send → the builder
 // cites the note → "create a ticket" → the builder loads boring-pm, writes `tickets/<id>.md` with the write tool, presents it and
 // replies with the link the file sink wrote into its front matter → the link opens the ticket page (title, notes, the element with
 // file:line, the route template, acceptance criteria). No GitHub: the demo names no repository. Screenshots and journey.json go to
@@ -39,22 +39,22 @@ try {
     await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
     for (const type of ['mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 });
   };
-  await browser.until('the page and the Feedback button', `!!(${q('app-root')} && ${inChat('composer-feedback')} && !${inChat('composer-feedback')}.disabled && !${inChat('composer-input')}.disabled)`, 30000);
+  await browser.until('the page and the annotate toggle', `!!(${q('app-root')} && ${inChat('composer-annotate')} && !${inChat('composer-annotate')}.disabled && !${inChat('composer-input')}.disabled)`, 30000);
 
   let id;
-  await step('Feedback: pin Save with a note, Done, Send; the builder cites it', async () => {
-    await browser.click(inChat('composer-feedback'));
-    await browser.until('the feedback bar', `!!${q('feedback-bar')}`, 5000);
+  await step('Feedback: pin Save with a note, Esc, Send; the builder cites it', async () => {
+    await browser.click(inChat('composer-annotate'));
+    await browser.until('annotating', `window.__feedbackSession.getSnapshot().phase === 'active'`, 5000);
     await clickAt(SAVE);
     await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
     await browser.type(q('feedback-bubble-input'), NOTE);
     await browser.press('Enter');
-    await browser.until('one note', `${q('feedback-bar-count')}.textContent === '1 note'`, 5000);
-    await browser.click(q('feedback-done'));
-    await browser.until('the chip', `!!${inChat('feedback-chip')}`, 10000);
+    await browser.until('one note', `${inChat('feedback-count')}?.dataset.count === '1'`, 5000);
+    await browser.press('Escape');
+    await browser.until('the count chip, annotating off', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'false' && !!${inChat('feedback-count')}`, 10000);
     await browser.type(inChat('composer-input'), 'Please fix this.');
     await browser.press('Enter');
-    await browser.until('the chip is gone', `!${inChat('feedback-chip')}`, 10000);
+    await browser.until('the count chip is gone', `!${inChat('feedback-count')}`, 10000);
     if (await browser.evaluate(`${CHAT}.dataset.state`) !== 'expanded') await browser.click(inChat('ambient-title'));
     await browser.until('the builder replied', `/fb_[1-9A-HJ-NP-Za-km-z]{16}: 1 note/.test(${TRANSCRIPT}) && ${IDLE}`, 30000);
     id = /(fb_[1-9A-HJ-NP-Za-km-z]{16}): 1 note/.exec(await browser.evaluate(TRANSCRIPT))[1];

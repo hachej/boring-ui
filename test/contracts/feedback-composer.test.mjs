@@ -63,7 +63,7 @@ test('pending feedback preserves the originating live controller after its prese
         let resolve, reject;
         const pending = new Promise((yes, no) => { resolve = yes; reject = no; });
         let sent = 0;
-        const feedback = { start: () => {}, pending: true, attach: () => pending, sent: () => sent++ };
+        const feedback = { annotate: () => {}, active: false, count: 2, clear: () => {}, attach: () => pending, sent: () => sent++ };
         const activeController = { current: origin };
         await act(async () => ui.render(createElement(Surface, { controller: origin, activeController, feedback })));
         await act(async () => container.querySelector('[data-testid=composer-submit]').click());
@@ -109,44 +109,44 @@ test('without the feedback prop the composer renders byte-identical markup to th
   }
 });
 
-test('with the feedback prop: one Feedback button beside the + menu in both layouts, pressed while active, and the chip; a pending draft allows Send with no text', () => {
+const idle = { annotate: () => {}, active: false, count: 0, clear: () => {}, attach: async () => ({ kind: 'ok', text: '' }), sent: () => {} };
+
+test('with the feedback prop: ONE annotate button beside the + menu in both layouts, pressed while active; no Feedback button, no point button, no bar', () => {
   const cases = composerCases();
   for (const name of ['stacked-empty', 'inline-empty']) {
-    const html = renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { start: () => {} } }));
-    const button = /<button type="button" data-testid="composer-feedback"[^>]*>/.exec(html)?.[0];
+    const html = renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: idle }));
+    const button = /<button type="button" data-testid="composer-annotate"[^>]*>/.exec(html)?.[0];
     assert.ok(button, name);
     assert.match(button, /aria-pressed="false"/);
-    assert.ok(html.indexOf('data-attach="true"') < html.indexOf('data-testid="composer-feedback"'), 'after the file input and the + menu');
-    assert.equal((html.match(/composer-feedback/g) ?? []).length, 1);
+    assert.match(button, /\bsize-11\b|class="[^"]*\bsize-11\b/, '44px');
+    assert.ok(html.indexOf('data-attach="true"') < html.indexOf('data-testid="composer-annotate"'), 'after the file input and the + menu');
+    assert.equal((html.match(/composer-annotate/g) ?? []).length, 1);
+    assert.doesNotMatch(html, /composer-feedback|composer-point|feedback-bar|feedback-chip|feedback-general/, 'no Feedback button, Show in app, or Feedback block');
     assert.match(html, /data-testid="composer-submit"[^>]*disabled=""/, 'nothing to send yet');
+    assert.doesNotMatch(html, /data-testid="feedback-count"/, 'no chip with no notes');
   }
-  const active = renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { start: () => {}, active: true } }));
-  assert.match(active, /data-testid="composer-feedback" aria-pressed="true" disabled=""/);
-  const pending = renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { start: () => {}, pending: true, chip: createElement('span', { 'data-testid': 'fictional-chip' }, 'Feedback · 2 notes') } }));
-  assert.match(pending, /data-testid="fictional-chip"/);
-  assert.doesNotMatch(pending, /data-testid="composer-submit"[^>]*disabled=""/, 'the pending feedback is something to send');
+  const active = renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { ...idle, active: true } }));
+  assert.match(active, /data-testid="composer-annotate" aria-pressed="true"/);
+  assert.doesNotMatch(active, /data-testid="composer-annotate"[^>]*disabled=""/, 'the same toggle exits annotating');
 });
 
-test('point mode: « Show in app » renders when the host passes point, calls it, is disabled while active or pending; no start, no Feedback button', async () => {
+test('notes taken: a count chip (not a Feedback block) in the composer, Send allowed with no text, the toggle stays available to add more', async () => {
   const cases = composerCases();
   for (const name of ['stacked-empty', 'inline-empty']) {
-    const html = renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { point: () => {} } }));
-    const button = /<button type="button" data-testid="composer-point"[^>]*>.*?<\/button>/.exec(html)?.[0];
-    assert.ok(button, name);
-    assert.match(button, /Show in app/);
-    assert.match(button, /\bh-11\b/, '44px tall');
-    assert.doesNotMatch(button, /disabled=""/);
-    assert.doesNotMatch(html, /composer-feedback/, 'no start: no Feedback button');
+    const html = renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { ...idle, count: 2 } }));
+    assert.match(html, /data-testid="feedback-count" data-count="2"/);
+    assert.match(html, /2 notes/);
+    assert.match(html, /data-testid="feedback-count-clear"/);
+    assert.doesNotMatch(html, /data-testid="composer-submit"[^>]*disabled=""/, 'the notes are something to send');
+    assert.doesNotMatch(html, /data-testid="composer-annotate"[^>]*disabled=""/, 'pending notes never block annotating again');
+    assert.match(renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { ...idle, count: 1 } })), /1 note\b(?!s)/);
   }
-  const both = renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { start: () => {}, point: () => {} } }));
-  assert.ok(both.indexOf('composer-feedback') >= 0 && both.indexOf('composer-feedback') < both.indexOf('composer-point'), 'both, Feedback first');
-  for (const state of [{ active: true }, { pending: true }]) {
-    assert.match(renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { point: () => {}, ...state } })), /data-testid="composer-point" disabled=""/);
-  }
+  assert.doesNotMatch(renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { ...idle, count: 2, active: true } })), /data-testid="composer-annotate"[^>]*disabled=""/, 'annotating with notes can still be turned off');
   // One bundle, so the provider and the composer share one context.
   const fr = await load('composer-fr', `export { Composer } from '${root}registry/pi-chat/composer.tsx'; export { ChatTextProvider } from '${root}registry/pi-chat/labels.ts'; export { chatTextFor } from '${root}registry/pi-chat/locale.ts';`);
-  const french = renderToStaticMarkup(createElement(fr.ChatTextProvider, { value: fr.chatTextFor('fr') }, createElement(fr.Composer, { ...cases['stacked-empty'], feedback: { point: () => {} } })));
-  assert.match(french, /Montrer dans l’app/);
+  const french = renderToStaticMarkup(createElement(fr.ChatTextProvider, { value: fr.chatTextFor('fr') }, createElement(fr.Composer, { ...cases['stacked-empty'], feedback: { ...idle, count: 2 } })));
+  assert.match(french, /2 notes/);
+  assert.match(french, /Annoter/);
 });
 
 test('Send with pending feedback: the host attaches it to the text, the native send reads the draft, sent() follows; a refusal sends nothing', async t => {
@@ -187,7 +187,7 @@ test('Send with pending feedback: the host attaches it to the text, the native s
   const ui = createRoot(container);
   const chat = controller();
   const calls = [];
-  const feedback = { start: () => {}, pending: true, sent: () => calls.push('sent'),
+  const feedback = { annotate: () => {}, active: false, count: 2, clear: () => {}, sent: () => calls.push('sent'),
     attach: async text => { calls.push(`attach ${JSON.stringify(text)}`); return { kind: 'ok', text: `${text}\n\n@feedback/fb_7Q2mK9xRt4vW1cZp.md`.trim() }; } };
   await act(async () => ui.render(createElement(Harness, { controller: chat, feedback })));
   await act(async () => chat.setText('What do you think?'));
@@ -197,7 +197,7 @@ test('Send with pending feedback: the host attaches it to the text, the native s
   assert.equal(chat.getSnapshot().draft.text, '', 'the composer is empty once the message is sent');
 
   const refusing = controller();
-  const refusal = { start: () => {}, pending: true, sent: () => calls.push('never'), attach: async () => ({ kind: 'refused', reason: 'Not saved: the fictional store is unavailable.' }) };
+  const refusal = { annotate: () => {}, active: false, count: 1, clear: () => {}, sent: () => calls.push('never'), attach: async () => ({ kind: 'refused', reason: 'Not saved: the fictional store is unavailable.' }) };
   await act(async () => ui.render(createElement(Harness, { key: 'refusing', controller: refusing, feedback: refusal })));
   await act(async () => refusing.setText('Keep this text'));
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
@@ -208,7 +208,7 @@ test('Send with pending feedback: the host attaches it to the text, the native s
 
   // Without pending feedback the send is the ordinary one.
   const plain = controller();
-  await act(async () => ui.render(createElement(Harness, { key: 'plain', controller: plain, feedback: { start: () => {} } })));
+  await act(async () => ui.render(createElement(Harness, { key: 'plain', controller: plain, feedback: { annotate: () => {}, active: false, count: 0, clear: () => {}, attach: async () => ({ kind: 'ok', text: '' }), sent: () => {} } })));
   await act(async () => plain.setText('Just text.'));
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
   assert.deepEqual(plain.sent, ['Just text.']);

@@ -145,7 +145,7 @@ export interface AmbientChatProps extends ChatFeatureProps {
   readonly conversations?: ConversationsConfig;
   /** Adds a "Dock chat" action to the header, for a host that floats this window out of a docked chat (`ArtifactWorkspace` with `floatBelow`). It shares the controller with the docked `PiChat`, so nothing is lost. */
   readonly onDock?: () => void;
-  /** The optional Feedback button in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
+  /** The optional annotate toggle and notes chip in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
   readonly feedback?: ComposerFeedback;
   readonly className?: string;
 }
@@ -407,8 +407,6 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   if (minimized) return <div ref={root} data-boring="ambient-chat" data-state="minimized" data-variant={variant} className={cn(rootClass, phone && 'flex justify-end')} style={rootStyle} onKeyDown={onKeyDown}>
     {notifications !== false && <AgentNotifications store={store} variant={variant} placement="inline" systemNotifications={systemNotifications} onActivate={onActivate} labels={labels}
       {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-[min(26rem,calc(100vw-1rem))]" />}
-    {/* Feedback mode keeps its bar (Stop, Done, ✕) when the window is minimised; otherwise a recording could not be stopped. */}
-    {composerFeedback?.active && composerFeedback.bar && <div data-testid="ambient-feedback-bar" className="absolute right-0 bottom-full mb-2 w-[min(26rem,calc(100vw-1rem))] rounded-2xl border border-border bg-background pt-2.5 shadow-lg">{composerFeedback.bar}</div>}
     <div data-testid="ambient-pill-box" onPointerDown={event => beginDrag(event, 4)} onKeyDown={onGripKey} onClickCapture={event => { if (dragged.current) { dragged.current = false; event.stopPropagation(); event.preventDefault(); } }}
       className={cn('relative flex h-11 max-w-[min(20rem,calc(100vw-1rem))] items-center rounded-full border border-border bg-background text-foreground shadow-lg transition-colors hover:bg-popover motion-reduce:transition-none', !phone && 'cursor-grab touch-none select-none active:cursor-grabbing')}>
       {!phone && grip('ml-1.5 size-8 rounded-lg')}
