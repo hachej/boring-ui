@@ -6,8 +6,8 @@
 // full to peek; focusing the composer goes to full and keeps it above a shortened visual viewport; five messages stay above the composer;
 // a suggestion chip fills the composer without sending; Back closes the layer and leaves the history clean; push-to-talk shows
 // « J'écoute… » at peek and sends (auto) or fills (draft) with the screen context; the product manager swaps in with « ← »; controls are at
-// least 44x44px and nothing overflows horizontally in light and dark; the Redaction and empty-template cases; and at 1280x800 the right
-// panel. Point mode waits for #1661 (TODO in the item). Screenshots go to .cache/evidence/app-shell/.
+// least 44x44px and nothing overflows horizontally in light and dark; the Redaction and empty-template cases; and at 1280x800 the layer as a Dock
+// (docked right by default, floating or docked left, remembered across reloads). Point mode waits for #1661 (TODO in the item). Screenshots go to .cache/evidence/app-shell/.
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -627,7 +627,7 @@ try {
     await browser.until('panel open', `${q(LAYER)}?.dataset.state === 'open'`);
     assert.equal(await browser.evaluate(`${q(entry)}.getAttribute('aria-pressed')`), 'true', 'the header trigger and the entry agree');
     await pause(500);
-    const panel = await browser.evaluate(rect('[data-slot=sidebar-container][data-side=right]'));
+    const panel = await browser.evaluate(rect(LAYER));
     assert.ok(Math.abs(panel.w - 384) <= 2 && Math.abs(panel.right - await browser.evaluate('document.documentElement.clientWidth')) <= 1, `a 24rem panel on the right edge: ${JSON.stringify(panel)}`);
     assert.equal(await browser.evaluate(`!!document.querySelector('[data-slot=drawer-overlay]')`), false, 'not modal');
     const before = await browser.evaluate(taps);
@@ -636,6 +636,68 @@ try {
     await browser.screenshot('desktop-panel.png');
     await browser.press('Escape');
     await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
+  });
+
+  await step('expanded 1280x800: the layer is a dock: docked right by default and the content reflows; float, reload, still floating; dock left, reload, still left; the manager closes the coach; compact is still the drawer', async () => {
+    const MAIN = '[data-boring=dock-main]', viewport = 'document.documentElement.clientWidth';
+    const placement = `${q(LAYER)}?.dataset.placement + ':' + ${q(LAYER)}?.dataset.side`;
+    const openCoach = async () => { await browser.click(q(TRIGGER)); await browser.until('the coach open', `${q(LAYER)}?.dataset.state === 'open'`); await pause(400); };
+    const full = (await browser.evaluate(rect(MAIN))).w;
+    await openCoach();
+    assert.equal(await browser.evaluate(placement), 'docked:right', 'default: docked right');
+    const docked = await browser.evaluate(rect(LAYER)), shrunk = await browser.evaluate(rect(MAIN));
+    assert.ok(Math.abs(docked.right - await browser.evaluate(viewport)) <= 1 && shrunk.w <= full - 300 && shrunk.right <= docked.x + 1, `docked: the content reflows beside the panel: ${JSON.stringify({ full, shrunk, docked })}`);
+    // The controls are labelled and 44px under a coarse pointer (checked on the phone); here: named buttons.
+    assert.deepEqual(await browser.evaluate(`['float', 'dock-left'].map(id => document.querySelector('[data-testid="agent-layer-' + id + '"]')?.getAttribute('aria-label'))`), ["Flotter sur l'app", 'Ancrer à gauche']);
+    await browser.click(q('[data-testid=agent-layer-float]'));
+    await browser.until('floating', `${placement} === 'floating:right'`);
+    await pause(300);
+    const floating = await browser.evaluate(rect(LAYER));
+    assert.ok(Math.abs((await browser.evaluate(rect(MAIN))).w - full) <= 2, 'floating overlays: the content takes the full width again');
+    assert.ok(floating.x > 0 && floating.right <= await browser.evaluate(viewport) && floating.w < 400 && floating.h < 800, `a floating window inside the viewport: ${JSON.stringify(floating)}`);
+    assert.equal(await browser.evaluate(`!!${q(LAYER)}.contains(document.activeElement) && document.activeElement.hasAttribute('data-dock-control')`), true, 'focus stays on a dock control after floating');
+    // Dragging the title row moves the window.
+    const grip = await center('[data-testid=agent-layer-title]');
+    await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: grip.x, y: grip.y, button: 'left', clickCount: 1 });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: grip.x - 200, y: grip.y - 120, button: 'left' });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: grip.x - 200, y: grip.y - 120, button: 'left', clickCount: 1 });
+    await pause(200);
+    const moved = await browser.evaluate(rect(LAYER));
+    assert.ok(Math.abs(moved.x - (floating.x - 200)) <= 3 && Math.abs(moved.y - (floating.y - 120)) <= 3, `dragged by the title row: ${JSON.stringify({ floating, moved })}`);
+    await browser.screenshot('desktop-dock-floating.png');
+    await browser.send('Page.navigate', { url: app.url }); await live();
+    await openCoach();
+    assert.equal(await browser.evaluate(placement), 'floating:right', 'still floating after a reload');
+    await browser.click(q('[data-testid=agent-layer-dock-left]'));
+    await browser.until('docked left', `${placement} === 'docked:left'`);
+    await pause(300);
+    const left = await browser.evaluate(rect(LAYER)), main = await browser.evaluate(rect(MAIN));
+    assert.ok(left.right <= main.x + 1 && main.right >= await browser.evaluate(viewport) - 1, `docked left: the content reflows to its right: ${JSON.stringify({ left, main })}`);
+    assert.equal(await browser.evaluate(`!!${q(LAYER)}.contains(document.activeElement)`), true, 'focus stays in the panel after docking');
+    await browser.screenshot('desktop-dock-left.png');
+    await browser.send('Page.navigate', { url: app.url }); await live();
+    await openCoach();
+    assert.equal(await browser.evaluate(placement), 'docked:left', 'still docked left after a reload');
+    // One layer at a time: the manager replaces the coach, in the same dock.
+    await browser.click(q('[data-testid=nav-user]'));
+    await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);
+    await browser.click(q('[data-testid=account-improve]'));
+    await browser.until('the manager shown, the coach hidden', `${q('[data-spec=improve]')} && !${q('[data-spec=improve]')}.hidden && ${q('[data-spec=agent]')}.hidden && ${q('[data-testid=agent-layer-title]')}.textContent === "Améliorer l'app"`);
+    assert.equal(await browser.evaluate(`document.querySelectorAll('${LAYER}').length`), 1, 'one layer');
+    await browser.click(q('[data-testid=agent-layer-dock-right]'));
+    await browser.until('docked right again', `${placement} === 'docked:right'`);
+    await browser.press('Escape');
+    await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
+    // Compact: still the bottom drawer, with no dock placement.
+    await browser.emulate('phone');
+    await browser.send('Page.navigate', { url: app.url }); await live();
+    await tap(TRIGGER);
+    await browser.until('the drawer at half', `${snap} === 'half' && !!document.querySelector('[data-slot=drawer-popup]')`);
+    assert.equal(await browser.evaluate(`${q(LAYER)}.dataset.placement ?? null`), null, 'the drawer has no dock placement');
+    assert.equal(await browser.evaluate(`!!${q('[data-boring=dock]')} || !!${q('[data-testid=agent-layer-float]')}`), false, 'no dock and no float control on a phone');
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: app.url }); await live();
   });
 
   await step('expanded 1280x800: the annotate toggle arms pins, not point mode: hover, click, a pin with a field and a mic, the count chip, Esc exits (and does not close the panel), Send attaches the note', async () => {
