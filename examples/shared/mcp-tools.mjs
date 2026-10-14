@@ -88,7 +88,7 @@ export async function connectMcpTools({ id, transport, allow, readOnly = [], max
           result = await perCredential.call(credential, client => call(client, args, context));
         } else result = await call(shared, args, context);
         // MCP reports a tool's own failure in the result, not as a protocol error.
-        return { content: capped(toLlmContent(result), maxResult), isError: result.isError === true };
+        return { output: capped(toLlmContent(result), maxResult), isError: result.isError === true };
       },
     });
     return reads.has(tool.name) ? native : requireApproval(native, { summarize: args => `${id}: ${tool.name} ${JSON.stringify(args)}` });
