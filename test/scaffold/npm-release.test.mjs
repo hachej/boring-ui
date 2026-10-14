@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -209,4 +209,91 @@ test('the publisher and everything it imports start with no node_modules reachab
   const result = spawnSync(process.execPath, [join(dir, 'scripts', 'publish-npm-packages.mjs')], { encoding: 'utf8', cwd: dir });
   assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/);
   assert.match(result.stderr, /Usage: node scripts\/publish-npm-packages\.mjs/);
+});
+
+// The GitHub release job: its step script runs here against a stub `gh`, so the idempotency and channel logic is executed, not just grepped.
+const workflow = readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8');
+function workflowJob(name) {
+  const lines = workflow.split('\n');
+  const start = lines.indexOf(`  ${name}:`);
+  assert.notEqual(start, -1, `job ${name} exists`);
+  let end = start + 1;
+  while (end < lines.length && !/^\S/.test(lines[end]) && !/^  \S/.test(lines[end])) end += 1;
+  return lines.slice(start, end).join('\n');
+}
+function stepScript(job, stepName) {
+  const lines = workflowJob(job).split('\n');
+  const at = lines.findIndex(line => line.includes(`- name: ${stepName}`));
+  assert.notEqual(at, -1, `step ${stepName}`);
+  const run = lines.findIndex((line, index) => index > at && line.trimStart().startsWith('run: |'));
+  const indent = lines[run].search(/\S/);
+  const body = [];
+  for (const line of lines.slice(run + 1)) {
+    if (line.trim() !== '' && line.search(/\S/) <= indent) break;
+    body.push(line.slice(indent + 2));
+  }
+  return body.join('\n');
+}
+function runGithubRelease(t, { version, tag, exists = false, pr = '' }) {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-gh-release-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, 'gh.log');
+  writeFileSync(join(dir, 'gh'), [
+    '#!/bin/sh',
+    `printf '%s|' "$@" >> '${log}'; printf '\\n' >> '${log}'`,
+    'case "$1" in',
+    '  api) printf "%s\\n" "$STUB_PR" ;;',
+    '  pr) printf "Release notes body\\n" ;;',
+    '  release) if [ "$2" = view ]; then [ "$STUB_RELEASE_EXISTS" = 1 ]; fi ;;',
+    'esac',
+  ].join('\n'));
+  chmodSync(join(dir, 'gh'), 0o755);
+  writeFileSync(join(dir, 'step.sh'), stepScript('github-release', 'Create the GitHub release once'));
+  const result = spawnSync('bash', [join(dir, 'step.sh')], {
+    encoding: 'utf8',
+    env: {
+      ...process.env, PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, GITHUB_REPOSITORY: 'hachej/boring-ui', GH_REPO: 'hachej/boring-ui',
+      RELEASE_VERSION: version, RELEASE_TAG: tag, RELEASE_COMMIT: commit, STUB_PR: pr, STUB_RELEASE_EXISTS: exists ? '1' : '0',
+    },
+  });
+  const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(line => line.split('|').filter(Boolean)) : [];
+  return { status: result.status, stderr: result.stderr, calls, create: calls.find(args => args[0] === 'release' && args[1] === 'create') };
+}
+
+test('a github-release job publishes the GitHub release only after a successful publish', () => {
+  const job = workflowJob('github-release');
+  assert.match(job, /^    needs: publish$/m);
+  assert.match(job, /^    if: needs\.publish\.result == 'success'$/m);
+  assert.match(job, /^    permissions:\n      contents: write$/m);
+  assert.equal((workflow.match(/contents: write/g) || []).length, 1, 'only the github-release job gets write access');
+  assert.match(workflowJob('publish'), /^    permissions:\n      contents: read\n      id-token: write$/m);
+  assert.match(job, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(job, /secrets\./);
+});
+
+test('the GitHub release step is idempotent: an existing release is left alone', t => {
+  const result = runGithubRelease(t, { version: '9.9.9', tag: 'latest', exists: true, pr: '123' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.create, undefined);
+});
+
+test('a latest publish creates a Latest release with the merged release PR body', t => {
+  const result = runGithubRelease(t, { version: '9.9.9', tag: 'latest', pr: '123' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.calls.find(args => args[0] === 'api').slice(0, 2), ['api', `repos/hachej/boring-ui/commits/${commit}/pulls`]);
+  assert.deepEqual(result.calls.find(args => args[0] === 'pr'), ['pr', 'view', '123', '--json', 'body', '--jq', '.body']);
+  assert.ok(result.create, 'release create was called');
+  assert.deepEqual(result.create.slice(0, 6), ['release', 'create', 'v9.9.9', '--target', commit, '--title']);
+  assert.ok(result.create.includes('--latest'));
+  assert.ok(!result.create.includes('--prerelease') && !result.create.includes('--latest=false'));
+  assert.ok(result.create.includes('--notes-file') && !result.create.includes('--generate-notes'));
+});
+
+test('a non-latest dist-tag creates a prerelease that is never Latest, and falls back to generated notes', t => {
+  const result = runGithubRelease(t, { version: '9.9.9-next.1', tag: 'next', pr: '' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.create, 'release create was called');
+  assert.ok(result.create.includes('--prerelease') && result.create.includes('--latest=false'));
+  assert.ok(!result.create.includes('--latest'));
+  assert.ok(result.create.includes('--generate-notes') && !result.create.includes('--notes-file'));
 });

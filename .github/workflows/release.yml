@@ -133,3 +133,39 @@ jobs:
           path: ${{ runner.temp }}/npm-release/publication.json
           if-no-files-found: ignore
           retention-days: 30
+
+  github-release:
+    needs: publish
+    if: needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_COMMIT: ${{ inputs.commit }}
+    steps:
+      - name: Create the GitHub release once
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub release $tag already exists; nothing to create."
+            exit 0
+          fi
+          pr=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_COMMIT}/pulls" --jq ".[] | select(.merge_commit_sha == \"${RELEASE_COMMIT}\") | .number" | head -n 1) || pr=""
+          notes_file="${RUNNER_TEMP}/release-notes.md"
+          if [ -n "$pr" ] && gh pr view "$pr" --json body --jq .body > "$notes_file" && [ -s "$notes_file" ]; then
+            notes=(--notes-file "$notes_file")
+          else
+            notes=(--generate-notes)
+          fi
+          if [ "$RELEASE_TAG" = latest ]; then
+            channel=(--latest)
+          else
+            channel=(--prerelease --latest=false)
+          fi
+          gh release create "$tag" --target "$RELEASE_COMMIT" --title "$tag" "${channel[@]}" "${notes[@]}"
