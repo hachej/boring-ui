@@ -13,8 +13,16 @@ function imageData(bytes: Uint8Array): string {
  * What a chat upload may do. `inlineImages` also sends a png, jpeg, gif or webp as a native image in the message (off by default: the
  * file is saved and the message carries only its `@path`, which the agent reads with a tool, so no base64 rides along in every later
  * turn). `maxBytes` refuses a larger file before it is read or uploaded, with `tooLarge` as the reason shown beside the other failures.
+ * `accept` is the picker's MIME/extension list: a file of another type is refused too (a drop or a paste does not pass the picker).
  */
-export interface AttachmentPolicy { readonly inlineImages?: boolean | undefined; readonly maxBytes?: number | undefined; readonly tooLarge?: string | undefined }
+export interface AttachmentPolicy { readonly inlineImages?: boolean | undefined; readonly maxBytes?: number | undefined; readonly tooLarge?: string | undefined; readonly accept?: string | undefined }
+
+/** Whether a file passes a picker's `accept` list: `image/*`, an exact MIME type or an extension such as `.pdf`. An empty list accepts any file. */
+export function acceptsFile(file: { readonly name: string; readonly type: string }, accept: string): boolean {
+  const name = file.name.toLowerCase(), type = file.type.toLowerCase();
+  const tokens = accept.split(',').map(token => token.trim().toLowerCase()).filter(Boolean);
+  return tokens.length === 0 || tokens.some(token => token.startsWith('.') ? name.endsWith(token) : token.endsWith('/*') ? type.startsWith(token.slice(0, -1)) : type === token);
+}
 
 /**
  * Where a chat attachment is saved: its name with a short random suffix, so a second `image.png` (every pasted screenshot has that
@@ -32,6 +40,7 @@ export async function uploadRevisionAttachments(controller: FileTreeController, 
   for (const file of files) {
     if (signal.aborted) break;
     if (policy.maxBytes !== undefined && file.size > policy.maxBytes) { reason = policy.tooLarge ?? 'The file is too large to attach.'; onPreparationFailure?.(file.name, reason); continue; }
+    if (policy.accept && !acceptsFile(file, policy.accept)) { reason = 'This file type is not accepted.'; onPreparationFailure?.(file.name, reason); continue; }
     try {
       const path = attachmentPath(file.name), bytes = new Uint8Array(await file.arrayBuffer());
       const upload = await controller.upload({ path, bytes, mediaType: file.type || 'application/octet-stream', signal });
