@@ -2348,24 +2348,6 @@
           "opacity": "0.6",
           "cursor": "default"
         },
-        "[data-boring=\"feedback\"] .boring-feedback-pin-wait": {
-          "width": "1rem",
-          "height": "1rem",
-          "border": "2px solid currentColor",
-          "border-right-color": "transparent",
-          "border-radius": "50%",
-          "animation": "boring-feedback-spin 0.8s linear infinite"
-        },
-        "@keyframes boring-feedback-spin": {
-          "to": {
-            "transform": "rotate(360deg)"
-          }
-        },
-        "@media (prefers-reduced-motion: reduce)": {
-          "[data-boring=\"feedback\"] .boring-feedback-pin-wait": {
-            "animation": "none"
-          }
-        },
         "[data-boring=\"feedback\"] .boring-feedback-bubble-actions": {
           "display": "flex",
           "flex-wrap": "wrap",

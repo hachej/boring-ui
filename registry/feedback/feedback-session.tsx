@@ -169,7 +169,7 @@ function PinMic({ session, transcribe, words }: { readonly session: FeedbackSess
     <button type="button" className="boring-feedback-pin-mic" data-testid="feedback-bubble-mic" data-state={phase} aria-pressed={recording}
       aria-label={recording ? words.voiceStop : words.voiceRecord} title={recording ? words.voiceStop : words.voiceRecord} disabled={phase === 'starting' || phase === 'transcribing'}
       onClick={() => { if (phase === 'idle') void start(); else if (recording) void finish(); }}>
-      {phase === 'transcribing' ? <span role="status" aria-label={words.voiceTranscribing} className="boring-feedback-pin-wait" />
+      {phase === 'transcribing' ? <span role="status" aria-label={words.voiceTranscribing}>…</span>
         : recording ? <span className="boring-feedback-stop" aria-hidden="true" /> : <MicIcon />}
     </button>
     {problem && <span className="boring-feedback-voice-problem" role="alert" data-testid="feedback-bubble-voice-problem">{problem}</span>}
