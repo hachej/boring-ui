@@ -3,7 +3,7 @@
 // The AgentLayer: ONE agent's PiChat above the app. Compact (below 768px): a bottom drawer with three fixed snap points, peek, half and
 // full (shadcn `drawer`, Base UI variant). Expanded: a `Dock` (the `dock` item) beside the app, docked on the left or the right (default right)
 // or floating over it; the person chooses and the choice is remembered. The same layer shows
-// the product manager (« Améliorer l'app ») when the account menu asks for it. Push-to-talk is an option of the agent.
+// the product manager (« Améliorer l’app ») when the account menu asks for it. Push-to-talk is an option of the agent.
 // Host concern: Pi has no layout. The chat is the borrowed NativeChatController rendered by PiChat; the screen context travels as the
 // submit's `context` (agent-context.ts). Nothing here is configurable beyond AgentSpec.
 import { createPortal } from 'react-dom';

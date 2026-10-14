@@ -1,7 +1,7 @@
 'use client';
 
 // The account menu: the compact sheet's content (`AccountMenu`) and the expanded sidebar's footer (`NavUser`, the sidebar-07 pattern).
-// Both list « Améliorer l'app » (when the app has an `improve` agent, opened in the AgentLayer), the app's own `menu`, then sign out.
+// Both list « Améliorer l’app » (when the app has an `improve` agent, opened in the AgentLayer), the app's own `menu`, then sign out.
 import { ChevronsUpDownIcon, LogOutIcon, MoonIcon, SparklesIcon } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';

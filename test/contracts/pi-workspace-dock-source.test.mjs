@@ -16,7 +16,7 @@ const workspace = manifest.items.find(entry => entry.name === 'pi-workspace');
 
 test('dock.tsx is the dock item and in the committed build', () => {
   assert.deepEqual(item.files, [{ path: file, type: 'registry:component', target: 'components/dock/dock.tsx' }]);
-  assert.deepEqual(item.registryDependencies, ['@boring-ui/theme', '@boring-ui/utils']);
+  assert.deepEqual(item.registryDependencies, ['@boring-ui/utils']);
   const built = JSON.parse(readFileSync(`${root}public/r/dock.json`, 'utf8'));
   assert.equal(built.files.find(entry => entry.path === file)?.content, readFileSync(`${root}${file}`, 'utf8'));
 });

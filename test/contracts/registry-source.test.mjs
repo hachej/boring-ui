@@ -22,11 +22,28 @@ const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej
 // The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
 // (`../pi-chat/`, `../utils/`), and the host's model and chat types, which are type-only imports and never installed as a direct dependency.
 const HOST_IMPORTS = ['../pi-chat/', '../utils/'];
+/** The `@boring-ui/` items a block reaches through registryDependencies, transitively (shadcn built-ins excluded). */
+const closureOf = name => {
+  const closure = new Set();
+  const visit = from => { for (const dependency of (manifest.items.find(entry => entry.name === from).registryDependencies ?? []).filter(dependency => !SHADCN_BUILTINS.includes(dependency))) { const next = dependency.slice('@boring-ui/'.length); if (!closure.has(next)) { closure.add(next); visit(next); } } };
+  visit(name);
+  return closure;
+};
+/** The app shell and everything it installs. */
+const APP_SHELL_CLOSURE = () => new Set(['app-shell', ...closureOf('app-shell')]);
 const TYPE_ONLY_IMPORTS = new Set(['@earendil-works/pi-ai', '@hachej/boring-ui-kit/native-chat']);
 /** The modules a source imports or re-exports, split into type-only and value (a runtime `export ... from` counts as a value). */
 const importKinds = source => ({
   typeOnly: new Set([...source.matchAll(/\b(?:import|export)\s+type\b[^'";]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])),
   valued: new Set([...source.matchAll(/\b(?:import|export)\s+(?!type\s)[^'";]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])),
+});
+
+test('the app-shell closure ships no global tokens: no cssVars, and the theme item is not in it', () => {
+  // `shadcn add` of the shell must not merge light and dark tokens or radius steps into the host's CSS: the theme is an optional item the host adds itself.
+  const closure = closureOf('app-shell');
+  assert.ok(closure.size > 0);
+  assert.ok(!closure.has('theme'), 'the theme item is optional for the shell');
+  for (const name of APP_SHELL_CLOSURE()) assert.equal(manifest.items.find(entry => entry.name === name).cssVars, undefined, `${name} ships cssVars`);
 });
 
 test('the type-only exception admits only type imports: a runtime re-export of a model SDK is a value import', () => {
@@ -73,9 +90,8 @@ test('registry dependency pins and scoped styles preserve the declared source di
     }
     // Every Tailwind item depends on the theme (directly or through pi-chat).
     if (item.name in TAILWIND && item.name !== 'utils') {
-      const closure = new Set(), visit = name => { for (const dependency of (manifest.items.find(entry => entry.name === name).registryDependencies ?? []).filter(dependency => !SHADCN_BUILTINS.includes(dependency))) { const next = dependency.slice('@boring-ui/'.length); if (!closure.has(next)) { closure.add(next); visit(next); } } };
-      visit(item.name);
-      assert.ok(closure.has('theme'), `${item.name} depends on @boring-ui/theme`);
+      // The app shell's closure ships no global tokens (the host adds `theme` itself); every other Tailwind item still depends on the theme.
+      assert.equal(closureOf(item.name).has('theme'), !APP_SHELL_CLOSURE().has(item.name), `${item.name} depends on @boring-ui/theme`);
     }
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {

@@ -142,14 +142,14 @@ try {
     assert.equal(await browser.evaluate(`history.state`), null);
   });
 
-  await step('5 « Améliorer l\'app » opens the layer in the detail: a swipe down does not close it and Back closes it before the stack pops', async () => {
+  await step('5 « Améliorer l’app » opens the layer in the detail: a swipe down does not close it and Back closes it before the stack pops', async () => {
     await tap('[data-testid=consultation-3]');
     await browser.until('the detail', `${view} === 'detail'`);
     await tap('[data-testid=account-button]');
     await browser.until('the account sheet', `!!${q('[data-testid=account-improve]')}`);
     await pause(700);
     await tap('[data-testid=account-improve]');
-    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l'app" && ${q(LAYER)}?.dataset.state === 'half'`);
+    await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app" && ${q(LAYER)}?.dataset.state === 'half'`);
     await settle();
     const handle = await center('[data-slot=drawer-swipe-handle]');
     await dragTouch(handle.x, handle.y, 840, 10);

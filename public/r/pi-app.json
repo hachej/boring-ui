@@ -12,6 +12,7 @@
     "radix-ui@^1.8.0"
   ],
   "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/theme.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-chat.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/pi-workspace.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.0/r/viewers.json",
