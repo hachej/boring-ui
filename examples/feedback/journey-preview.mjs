@@ -1,5 +1,5 @@
 // The preview journey (FEEDBACK.md, "Preview"): one driven Chromium run of the default Fernhill page with the keyless scripted builder,
-// the keyless scripted preview subagent behind `/api/llm`, and the default file sink. Steps: Feedback in the composer → pin Save with
+// the keyless scripted preview subagent behind `/api/llm`, and the default file sink. Steps: the annotate toggle in the composer → pin Save with
 // the note "make it green" → Send → "preview" → the builder's `browser_preview` waits; the page's subagent turns Save green (computed
 // style) under the preview banner → "darker" in the banner → Approve → the builder files the ticket and replies with its link; the
 // ticket's acceptance criteria carry the approved change with SettingsPage.jsx:N → back on the page, "preview" again → Discard → Save
@@ -42,7 +42,7 @@ try {
     await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
     for (const type of ['mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 });
   };
-  const ready = () => browser.until('the page and the Feedback button', `!!(${q('app-root')} && ${inChat('composer-feedback')} && !${inChat('composer-feedback')}.disabled && !${inChat('composer-input')}.disabled)`, 30000);
+  const ready = () => browser.until('the page and the annotate toggle', `!!(${q('app-root')} && ${inChat('composer-annotate')} && !${inChat('composer-annotate')}.disabled && !${inChat('composer-input')}.disabled)`, 30000);
   const say = async text => { await browser.type(inChat('composer-input'), text); await browser.press('Enter'); };
   const expand = async () => { if (await browser.evaluate(`${CHAT}.dataset.state`) !== 'expanded') await browser.click(inChat('ambient-title')); };
   await ready();
@@ -50,18 +50,18 @@ try {
   summary.records.original = original;
 
   let id;
-  await step(`Feedback: pin Save with "${NOTE}", Done, Send; the builder cites it`, async () => {
-    await browser.click(inChat('composer-feedback'));
-    await browser.until('the feedback bar', `!!${q('feedback-bar')}`, 5000);
+  await step(`Feedback: pin Save with "${NOTE}", Esc, Send; the builder cites it`, async () => {
+    await browser.click(inChat('composer-annotate'));
+    await browser.until('annotating', `window.__feedbackSession.getSnapshot().phase === 'active'`, 5000);
     await clickAt(SAVE);
     await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
     await browser.type(q('feedback-bubble-input'), NOTE);
     await browser.press('Enter');
-    await browser.until('one note', `${q('feedback-bar-count')}.textContent === '1 note'`, 5000);
-    await browser.click(q('feedback-done'));
-    await browser.until('the chip', `!!${inChat('feedback-chip')}`, 10000);
+    await browser.until('one note', `${inChat('feedback-count')}?.dataset.count === '1'`, 5000);
+    await browser.press('Escape');
+    await browser.until('the count chip, annotating off', `${inChat('composer-annotate')}.getAttribute('aria-pressed') === 'false' && !!${inChat('feedback-count')}`, 10000);
     await say('Please fix this.');
-    await browser.until('the chip is gone', `!${inChat('feedback-chip')}`, 10000);
+    await browser.until('the count chip is gone', `!${inChat('feedback-count')}`, 10000);
     await expand();
     await browser.until('the builder replied', `/fb_[1-9A-HJ-NP-Za-km-z]{16}: 1 note/.test(${TRANSCRIPT}) && ${IDLE}`, 30000);
     id = /(fb_[1-9A-HJ-NP-Za-km-z]{16}): 1 note/.exec(await browser.evaluate(TRANSCRIPT))[1];

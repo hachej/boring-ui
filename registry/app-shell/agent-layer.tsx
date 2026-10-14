@@ -359,17 +359,20 @@ function VoiceProblem() {
 
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
-  // Both entries: the Feedback button and « Montrer dans l'app » (point mode, which hides the layer while the person taps the app).
-  const feedback = useComposerFeedback(spec.feedback, { entry: 'both' });
+  // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
+  const feedback = useComposerFeedback(spec.feedback);
   const pointing = usePointing(spec.feedback);
+  // The pin's mic uses the shell's transcription: this agent's own, else the coach's.
+  const coach = useInternal().agent;
+  const transcribe = (spec.voice ?? coach?.voice)?.transcribe;
   const fr = spec.chatProps?.locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...spec.chatProps} controller={spec.controller} {...(feedback ? { feedback } : {})}
       {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(spec.chatProps?.locale)} /></> } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
-    {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden [&_[data-testid=feedback-general-bubble]]:static!">
-      <NoteBubble session={spec.feedback} {...(fr ? { labels: feedbackLabelsFr } : {})} /></div>}
+    {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
+      <NoteBubble session={spec.feedback} {...(transcribe ? { transcribe } : {})} {...(fr ? { labels: feedbackLabelsFr } : {})} /></div>}
   </div>;
 }
 
@@ -495,7 +498,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
               '[&_[data-testid=composer]]:flex [&_[data-testid=composer]]:items-center [&_[data-testid=composer]]:rounded-full',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               '[&_[data-testid=composer]>div]:p-0 [&_[data-testid=composer]>div]:pr-1 [&_[data-testid=composer]>div>.flex-1]:hidden',
-              '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-feedback]]:hidden [&_[data-testid=composer-point]]:hidden'])}>
+              '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'])}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div role="status" data-testid="agent-listening" data-phase={voice.phase} className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-popover text-sm font-medium">
@@ -539,13 +542,15 @@ export function AgentLayer(): ReactElement | null {
   // Back ends pointing first (the `point` priority); the layer keeps its own history entry underneath.
   useBackLayer(session !== undefined, () => session?.discard(), 'point');
   if (!layer.agent && !layer.improve) return null;
-  const locale = (pointingAgent ? layer.agent : layer.improve)?.chatProps?.locale;
+  const pointed = pointingAgent ? layer.agent : layer.improve;
+  const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
+  const locale = pointed?.chatProps?.locale;
   // Point mode: the compact sheet steps aside (the wide panel does not cover the app); the bar sits above the tab bar, outside the layer.
   return <>
     {layer.expanded ? <ExpandedPanel /> : <CompactSheet pointing={session !== undefined} />}
     {session && <>
       <PointBar session={session} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
-      <NoteBubble session={session} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
+      <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
     </>}
   </>;
 }

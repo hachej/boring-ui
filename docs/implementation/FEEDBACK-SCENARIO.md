@@ -57,8 +57,9 @@ so any change to what a consumer receives reinstalls.
      row;
    - the mount in `src/main.jsx`: the feedback session (`createFeedbackSession`)
      with `FeedbackBar`, `NoteBubble` and a minimal stand-in for a chat
-     composer (its Feedback button, `composer-feedback`, and the
-     `FeedbackChip` whose review offers Copy report), no store,
+     composer (its own Feedback button, `composer-feedback`, calling the hook's
+     `annotate`, and the `FeedbackChip` whose review offers Copy report; the
+     real pi-chat composer has the one annotate toggle instead), no store,
      no agent, plus an "Open a copied report" panel;
    - `build.mjs`, `serve.mjs` and `feedback.scenario.mjs`.
 4. **Bundle with Ledgerly's `build.mjs`**: esbuild with
@@ -153,8 +154,10 @@ export function Feedback({ children }) {
 }
 ```
 
-Without a chat, render the Feedback button and `FeedbackChip` with `copy`
-yourself, as Ledgerly's `src/main.jsx` does.
+With a pi-chat composer, `feedback` is its annotate toggle and count chip
+(pass `transcribe` to `NoteBubble` for the pin's mic). Without a chat, render
+your own button (calling `feedback.annotate`), `FeedbackBar` and `FeedbackChip`
+with `copy` yourself, as Ledgerly's `src/main.jsx` does.
 
 - **Mark visible regions.** Put `data-feedback-visible` on regions that hold
   no personal data (header, nav, forms' labels and buttons). Everything else
