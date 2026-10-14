@@ -14,6 +14,11 @@ const assistant = callId => ({ role: 'assistant',
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
 });
 
+// A completed tool task written before the 1.2 upgrade: version 1 and the untagged `{ assistant, callId }` input.
+const v1View = harness => ({ commit: (fn, ctx) => harness.commit(tx => fn(new Proxy(tx, { get: (target, key) => key === 'task'
+  ? async id => { const task = await target.task(id); if (task?.kind !== 'pi.tool') return task; const { kind, ...input } = task.input; return { ...task, version: 1, input }; }
+  : typeof target[key] === 'function' ? target[key].bind(target) : target[key] })), ctx) });
+
 async function fixture(t, options = {}) {
   let harness, authorizeCalls = 0, validateCalls = 0;
   const tool = defineTool({ name: 'fictional_source', description: 'Return a fictional source result.',
@@ -58,7 +63,7 @@ async function fixture(t, options = {}) {
       },
     }, abort: async (_task, runtime, ctx) => runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx),
   });
-  const validation = createOutputValidation({ name: 'fictional_answer', version: 1, harness: () => harness,
+  const validation = createOutputValidation({ name: 'fictional_answer', version: 1, harness: () => options.storedV1 ? v1View(harness) : harness,
     authorize: async (...args) => { authorizeCalls++; return options.authorize ? options.authorize(...args) : true; },
     validate: async (...args) => { validateCalls++; return options.validate ? options.validate(...args)
       : { kind: 'valid', value: { text: args[0], evidenceCount: args[1].length } }; },
@@ -101,6 +106,14 @@ test('actual native ToolTask evidence authorizes a typed result through the nati
   assert.equal(examined.evidence[0].call.name, 'fictional_source');
   assert.equal(examined.evidence[0].result.isError, false);
   assert.equal(f.validateCalls(), 1);
+});
+
+test('a tool task completed under Pi 1.1 (version 1) still validates after the upgrade', { timeout: 15000 }, async t => {
+  const f = await fixture(t, { storedV1: true });
+  const owner = await f.createProducer({});
+  assert.equal((await f.harness.waitForTask(owner, context)).state.outcome.status, 'completed');
+  const result = await f.validateProducer(owner);
+  assert.equal(result.result.kind, 'valid', JSON.stringify(result.result));
 });
 
 test('missing, forged and another producer’s ToolResultEntry cannot validate this owner', { timeout: 15000 }, async t => {

@@ -44,6 +44,8 @@ export function createAskUserTool(options: { readonly description?: string } = {
       allowFreeText: Type.Optional(Type.Boolean()),
     }, { additionalProperties: false }),
     replay: 'safe',
+    // The wait binds to the calling model entry and call id; a nested `api.executeTool` caller has neither (see durable-wait.ts).
+    callers: ['model'],
     execute: async (args, api, context) => {
       const problem = refusal(args.options, args.allowFreeText);
       if (problem) return { isError: true, output: [{ type: 'text', text: `Invalid question: ${problem}.` }] };
