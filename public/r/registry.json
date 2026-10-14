@@ -905,6 +905,11 @@
           "target": "components/app-shell/use-visual-viewport.ts"
         },
         {
+          "path": "registry/app-shell/shell-layer.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/shell-layer.ts"
+        },
+        {
           "path": "registry/app-shell/text.ts",
           "type": "registry:lib",
           "target": "components/app-shell/text.ts"
@@ -2521,6 +2526,56 @@
         }
       ],
       "css": {}
+    },
+    {
+      "name": "documents",
+      "type": "registry:block",
+      "title": "Documents: the Library, a file and its revisions",
+      "description": "The workspace's Library as the list, the chosen file in its viewer and its retained revisions beside it (an older one opens read-only). DocumentSheet opens one document over the app for a host's « Voir la fiche », with an optional « Toutes les fiches ». Every read goes through one revisionProvider binding.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.3.1",
+        "@hachej/boring-files@^0.3.1",
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/theme.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/pi-app.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/app-shell.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/file-tree.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.1/r/viewers.json",
+        "drawer"
+      ],
+      "files": [
+        {
+          "path": "registry/documents/documents.tsx",
+          "type": "registry:component",
+          "target": "components/documents/documents.tsx"
+        },
+        {
+          "path": "registry/documents/document-sheet.tsx",
+          "type": "registry:component",
+          "target": "components/documents/document-sheet.tsx"
+        },
+        {
+          "path": "registry/documents/revisions.tsx",
+          "type": "registry:component",
+          "target": "components/documents/revisions.tsx"
+        },
+        {
+          "path": "registry/documents/words.tsx",
+          "type": "registry:component",
+          "target": "components/documents/words.tsx"
+        },
+        {
+          "path": "registry/documents/documents-labels.ts",
+          "type": "registry:lib",
+          "target": "components/documents/documents-labels.ts"
+        }
+      ]
     }
   ]
 }

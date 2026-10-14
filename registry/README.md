@@ -11,6 +11,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | `pi-workspace` | copied source in `components/pi-workspace/` | none: layout driven by props |
 | `dock` | copied source in `components/dock/` | none: `Dock`, `DockLayout`, `DockMain` (re-exported by `pi-workspace/dock`; the app shell installs it) |
 | `pi-app` | copied source in `components/pi-app/` | the agent page; viewers over one resource client (`useRemoteChat` lives in `pi-chat` and is re-exported) |
+| `documents` | copied source in `components/documents/` | none: the Library, a file and its revisions over one `revisionProvider`; `DocumentSheet` for one document over the app |
 | `provider-setup` | copied source in `components/provider-setup/` | none: props and callbacks only |
 | `theme` | the shadcn tokens (light, dark) and their `@theme inline` bindings, merged into the host's CSS | none |
 | `utils`, `button` | `cn`/`copyText` and the one shared `Button`/`IconButton`, in `components/utils/` and `components/button/` | none |
@@ -135,6 +136,8 @@ The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for it
 
 The account theme is one switch (« Mode sombre » / "Dark mode") when the account gives `theme: { value, onChange }` (`value` is the resolved `'light' | 'dark'`: the host resolves `system`), in the sheet and in the expanded menu; without it there is no row. The shell's root carries the `app-shell` class in every layout, so the item's css reset (`.app-shell :where(button, [role=button])`) reaches its own header and nav buttons and the popups it portals to the body (the sheets, the account menu, the agent drawer and panel) even without preflight. No wrapper is needed. Vendoring by copying files must also copy the item's `css` into the app's global stylesheet; the files alone leave those buttons unstyled.
 
+`useShellLayer(id)` (`app-shell/shell-layer.ts`) lets a full-screen view of the app (a document sheet, a pushed view) take part in the same one-layer-at-a-time rule: `const { open, close, isOpen } = useShellLayer('documents')`. Opening it closes the agent and product manager layers, and opening either of those closes it; the browser's Back closes it first (the Back manager's `sheet` layer). No `AppShell` prop is added. Any component may call `open`, so a host's handler can open the view; the view's component renders from `isOpen`.
+
 ### Changes
 
 - `AppShell` gained the optional `locale` prop, and the account sheet's title is the generic « Compte » instead of the person's name. Hosts that relied on the name as the sheet title will see « Compte » there.
@@ -180,6 +183,18 @@ Every block takes its words as one typed, partial `labels` object over its expor
 ``` The studio and the Cloudflare recipe use the same block. `npm run test:app-registry-consumer` installs `pi-app` with the pinned CLI over HTTP (the namespace mapped to a local registry), type-checks the copied closure and a consumer page strictly and bundles it for the browser.
 
 A tab left open keeps running the JavaScript it loaded, so after a deploy it can drift from the server. `useNewVersion({ current, url = '/version.json', everyMs = 60000 })` (`pi-app/use-new-version.ts`) returns `true` once the served build differs from `current`, the build id the host bakes into its own bundle (`undefined`, empty or `'dev'` never checks). It polls on the interval and again when the tab becomes visible, and stops once it is stale. The host serves `version.json` as `{ "build": "<id>" }` next to its bundle. `NewVersionNotice` (`pi-app/new-version-notice.tsx`) is the polite status line with a Reload button (`location.reload()`, so unsaved work in the page is lost): render it while the hook is true, as `{stale && <NewVersionNotice />}`. Its words are `newVersion` and `reload` in `app-labels.ts` and `app-labels-fr.ts`.
+
+## Documents (`documents`)
+
+The `documents` item is the workspace's file screen with no page of its own: `Documents` shows the Library (the file tree) as the list (`ListDetail`: beside the file on a wide screen, one pane at a time on a phone), the chosen file in the same viewer the Library opens (editable where it edits), and its Revisions beside it. `<Documents provider={revisionProvider} locale="fr" labels={…} viewers={…} share={…} />`; the provider is the files guide's `connectRevisionProvider` (or a host binding), borrowed and never disposed here.
+
+Revisions are the public `RevisionProvider.history(path)`: one row per retained revision, newest first, with when it was saved and who wrote it (`publish`, `agent` or `observed`), and its revision id. The list is read again when the provider's `changes` feed moves. An older revision opens read-only in the artifact panel's pinned view (text, Markdown and HTML); the newest row returns to the editable file. Images and PDFs have no older-version preview here (the panel says so).
+
+`DocumentSheet` opens one document over the app, for a host's « Voir la fiche »: the host holds the `path` and clears it in `onClose`. `<DocumentSheet provider path onClose onShowAll locale />` is a bottom sheet of the full height that uses `useShellLayer('document')` (one layer at a time, Back closes it), with the viewer and an optional « Toutes les fiches » button that closes the sheet and then calls `onShowAll`.
+
+Not in this item: the Library's own History button and upload (`FileTreeView` is given `upload={false}` and `history={false}`, since the revisions panel is the history). The Library's buttons are 44px on a coarse pointer through the documents item's own CSS, not by changing the file tree.
+
+Words: `documentsLabels(locale, labels)` over `defaultDocumentsLabels` and `frenchDocumentsLabels`, and the viewers' words through the pi-app labels. Journey: `npm run app-shell:journey:documents` (the example's `?documents=1` page: a Fiches screen, and « Voir la fiche » in the product manager's layer).
 
 ## Install into a new app (tested with a fresh outside app)
 

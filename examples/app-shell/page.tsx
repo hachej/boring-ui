@@ -13,6 +13,9 @@ import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
+import type { RevisionProvider } from '@hachej/boring-files/revision';
+import { Documents } from '../../registry/documents/documents.tsx';
+import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 
@@ -20,6 +23,8 @@ const { token, identity, conversations } = window.__APP__;
 const query = new URLSearchParams(location.search);
 const app = ['empty', 'redaction', 'pm'].includes(query.get('app')) ? query.get('app') : 'fitness';
 const six = query.get('nav') === '6';
+// `?documents=1`: the workspace's Documents screen (the Library, a file and its revisions) and the product manager's « Voir la fiche » sheet.
+const documents = query.get('documents') === '1';
 const send = query.get('send') === 'draft' ? 'draft' : 'auto';
 const noAgent = query.get('agent') === 'none';
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -84,6 +89,10 @@ function useManagerFeedback(mounted: boolean) {
 }
 
 function App() {
+  // The workspace's revision provider, bound to the server's resources route (only for `?documents=1`).
+  const [docs, setDocs] = useState<RevisionProvider>();
+  const [spec, setSpec] = useState<string>();
+  useEffect(() => { if (documents) void connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: authorized }).then(setDocs); }, []);
   const coach = useRemoteChat({ conversationId: noAgent ? undefined : conversations.coach, endpoint: endpoint('coach'), fetch: authorized, identity, requestContext: readAgentContext });
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
   const [route, setRoute] = useState(() => location.hash.slice(1));
@@ -108,8 +117,10 @@ function App() {
     chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' }, tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
     ...(app === 'empty' ? {} : { voice: { transcribe: async () => window.__transcript ?? 'Combien de pas hier ?', send } }),
   };
-  const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
-  const nav = app === 'empty' ? EMPTY : FITNESS;
+  // The product manager's « Voir la fiche » opens the product sheet over the app (`DocumentSheet`); the host decides which document.
+  const seeSheet = docs ? [{ id: 'spec', label: 'Voir la fiche', icon: ClipboardListIcon, onSelect: () => setSpec('fiche-produit.md') }] : [];
+  const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), ...(seeSheet.length ? { headerActions: seeSheet } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
+  const nav = [...(app === 'empty' ? EMPTY : FITNESS), ...(docs ? [{ id: 'fiches', label: 'Fiches', icon: ClipboardListIcon, render: () => <Documents provider={docs} locale="fr" /> }] : [])];
   const account = {
     name: 'Camille Martin', email: 'camille@example.invalid',
     menu: app === 'empty' ? [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }]
@@ -120,6 +131,7 @@ function App() {
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
     <AppShell layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }} />
+    {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
 
