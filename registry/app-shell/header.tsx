@@ -57,7 +57,7 @@ export function useScreenHeader(spec: ScreenHeaderSpec, options?: { readonly ove
   const active = useContext(ScreenActiveContext);
   const entry = useRef<Entry>({ spec, overlay: options?.overlay === true });
   entry.current.spec = spec;
-  const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.actions?.map(action => [action.id, action.label, action.showLabel, iconId(action.icon)])]);
+  const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.actions?.map(action => [action.id, action.label, action.showLabel, action.href, action.target, action.rel, iconId(action.icon)])]);
   useLayoutEffect(() => {
     if (!store || !active) return;
     const mine = entry.current;

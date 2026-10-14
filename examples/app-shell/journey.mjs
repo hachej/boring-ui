@@ -154,6 +154,29 @@ try {
     await browser.until('closed', `!${q(LAYER)}`);
   });
 
+  await step('B3 the layer overflow on a phone: « … » opens a sheet with the third action as a link (44px); Back closes the sheet, not the layer; a tap navigates', async () => {
+    const link = '[data-testid=app-sheet] a[href="/invite?app=fitness"]';
+    await tap(TRIGGER);
+    await browser.until('the coach at half', `${q(LAYER)}?.dataset.state === 'half'`);
+    await settle();
+    await tap('[data-testid=agent-layer-more]');
+    await browser.until('the overflow sheet', `!!${q(link)}`);
+    await pause(400);
+    assert.equal(await browser.evaluate(`${q(link)}.textContent.trim()`), 'Inviter un ami');
+    const size = await center(link);
+    assert.ok(size.h >= 44, `${size.h}px`);
+    await browser.evaluate('history.back()');
+    await browser.until('the sheet closed by Back', `!${q('[data-testid=app-sheet]')}`);
+    assert.equal(await browser.evaluate(`${q(LAYER)}?.dataset.state`), 'half', 'Back closed the sheet, the layer stays open');
+    await tap('[data-testid=agent-layer-more]');
+    await browser.until('the overflow sheet again', `!!${q(link)}`);
+    await pause(400);
+    await tap(link);
+    await browser.until('navigated to the link', `location.pathname === '/invite'`, 15000);
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+  });
+
   await step('C the account sheet: avatar opens it, Back closes it and the URL is unchanged, a choice closes it', async () => {
     const href = await browser.evaluate(`location.href`);
     await tap('[data-testid=account-button]');
@@ -607,7 +630,45 @@ try {
     const order = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-header] [data-testid]')].map(e => e.dataset.testid)`);
     assert.ok(order.indexOf('agent-layer-action-whatsapp') >= 0 && order.indexOf('agent-layer-action-whatsapp') < order.indexOf('agent-layer-close'), `${order}`);
     assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer-action-whatsapp]')}.getAttribute('href')`), '/whatsapp/open?app=fitness');
+    // The third action is in the « … » menu, as a link.
+    await browser.click(q('[data-testid=agent-layer-more]'));
+    await browser.until('the overflow menu', `!!${q('[role=menuitem][data-testid=agent-layer-action-invite]')}`);
+    assert.equal(await browser.evaluate(`${q('[role=menuitem][data-testid=agent-layer-action-invite]')}.tagName`), 'A', 'a link in the menu');
+    assert.equal(await browser.evaluate(`${q('[role=menuitem][data-testid=agent-layer-action-invite]')}.getAttribute('href')`), '/invite?app=fitness');
+    await browser.press('Escape');
+    await browser.until('the menu closed', `!${q('[role=menu]')}`);
     await browser.screenshot('desktop-agent-header-action.png');
+  });
+
+  await step('expanded 1280x800: on the floating panel a press on a header link neither drags the panel nor swallows the click', async () => {
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+    await browser.click(q(TRIGGER));
+    await browser.until('the coach docked', `${q(LAYER)}?.dataset.state === 'open' && ${q(LAYER)}?.dataset.placement === 'docked'`);
+    await browser.click(q('[data-testid=agent-layer-float]'));
+    await browser.until('floating', `${q(LAYER)}?.dataset.placement === 'floating'`);
+    await settle();
+    const link = '[data-testid=agent-layer-action-whatsapp]';
+    // A press on the link, a move, and a release away from it: the panel stays where it is.
+    const before = await browser.evaluate(rect(LAYER));
+    const at = await center(link);
+    await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= 10; i++) await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x - i * 12, y: at.y + i * 8, button: 'left', buttons: 1 });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x - 120, y: at.y + 80, button: 'left', buttons: 0, clickCount: 1 });
+    await pause(300);
+    const after = await browser.evaluate(rect(LAYER));
+    assert.deepEqual([after.x, after.y], [before.x, before.y], 'the panel did not move');
+    // A plain click on the link navigates (the link's own href; the page behind is a fictional one, so it may 404).
+    await browser.click(q(link));
+    await browser.until('navigated to the link', `location.pathname === '/whatsapp/open'`, 15000);
+    // Leave the floating state behind for the next steps (the remembered placement lives in localStorage).
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+    await browser.evaluate('localStorage.clear()');
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
   });
 
   await step('expanded 1280x800: sidebar rail collapses and expands, no tab bar, NavUser has the same entries, the trigger opens the right panel', async () => {

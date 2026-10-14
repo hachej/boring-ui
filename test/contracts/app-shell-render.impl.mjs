@@ -228,5 +228,47 @@ for (const width of [390, 1280]) {
   });
 }
 
+test('the phone overflow of the layer header is a link when the third action has an href (target and rel kept)', async t => {
+  const three = [
+    { id: 'a', label: 'Action a', icon: Icon, onSelect() {} },
+    { id: 'b', label: 'Action b', icon: Icon, onSelect() {} },
+    { id: 'c', label: 'Inviter', icon: Icon, href: '/invite?app=fitness', target: '_blank', rel: 'noopener', onSelect() {} },
+  ];
+  const opened = await openedLayer(t, 390, { agent: { ...agentWith(), headerActions: three } });
+  const header = await headerOf(opened, 'agent');
+  const more = header.querySelector('[data-testid=agent-layer-more]');
+  await opened.act(async () => more.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  for (let tries = 0; tries < 40 && !opened.window.document.querySelector('[data-testid=app-sheet] a'); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));
+  const link = opened.window.document.querySelector('[data-testid=app-sheet] [data-testid=agent-layer-action-c]');
+  assert.equal(link?.tagName, 'A', 'the overflow entry is an anchor');
+  assert.equal(link?.getAttribute('href'), '/invite?app=fitness');
+  assert.equal(link?.getAttribute('target'), '_blank');
+  assert.equal(link?.getAttribute('rel'), 'noopener');
+  await opened.unmount();
+});
+
+test('the screen header follows an action whose href, target or rel changes alone (the change key covers them)', async t => {
+  const { createElement: h, act, useState } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const shell = await bundle('screen-header-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
+  const window = dom(t, 390);
+  const Screen = ({ href, target, rel }) => { shell.useScreenHeader({ actions: [{ id: 'go', label: 'Ouvrir', icon: Icon, href, target, rel, onSelect() {} }] }); return null; };
+  const Host = () => {
+    const [link, setLink] = useState({ href: '/a' });
+    return h('div', null, h('button', { type: 'button', id: 'change', onClick: () => setLink({ href: '/b', target: '_blank', rel: 'noopener' }) }), h(Screen, link));
+  };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Host) }], route: { id: 'Jour', onChange() {} }, locale: 'fr' })));
+  const link = () => window.document.querySelector('[data-testid=header-action-go]');
+  assert.equal(link()?.getAttribute('href'), '/a');
+  await act(async () => window.document.querySelector('#change').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  assert.equal(link()?.getAttribute('href'), '/b', 'the new destination shows');
+  assert.equal(link()?.getAttribute('target'), '_blank');
+  assert.equal(link()?.getAttribute('rel'), 'noopener');
+  await act(async () => reactRoot.unmount());
+});
+
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));
 test('one layer at a time on a wide screen: opening the agent closes the product manager and back', t => oneLayerAt(t, 1280));

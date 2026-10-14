@@ -579,7 +579,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   </>;
   const down = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = box.current?.getBoundingClientRect();
-    if (!floating || !rect || event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+    if (!floating || !rect || event.button !== 0 || (event.target as HTMLElement).closest('button, a[href]')) return;
     drag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
