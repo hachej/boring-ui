@@ -120,14 +120,14 @@ test('the French words of the shell and of the chat and feedback labels use the 
   assert.deepEqual(checked.filter(value => value.includes("'")), [], 'an ASCII apostrophe in a French string');
 });
 
-test('nextSnapOnClose: a swipe, an outside press and a lost focus never close; every other reason does', async () => {
+test('nextSnapOnClose: a swipe, an outside press, a lost focus and Escape step down and never close; every other reason does', async () => {
   const { nextSnapOnClose } = await bundle('agent-layer.tsx');
   // Base UI's `details.reason` values for a drawer (reason-parts.js of @base-ui/react 1.8).
-  for (const reason of ['swipe', 'outside-press', 'focus-out']) {
+  for (const reason of ['swipe', 'outside-press', 'focus-out', 'escape-key']) {
     assert.equal(nextSnapOnClose(reason, true), 'peek', `${reason} with a peek`);
     assert.equal(nextSnapOnClose(reason, false), 'half', `${reason} without a peek`);
   }
-  for (const reason of ['escape-key', 'close-watcher', 'close-press', 'trigger-press', 'imperative-action', 'none']) {
+  for (const reason of ['close-watcher', 'close-press', 'trigger-press', 'imperative-action', 'none']) {
     assert.equal(nextSnapOnClose(reason, true), 'close', `${reason} with a peek`);
     assert.equal(nextSnapOnClose(reason, false), 'close', `${reason} without a peek`);
   }

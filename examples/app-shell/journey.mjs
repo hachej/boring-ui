@@ -177,6 +177,27 @@ try {
     await live();
   });
 
+  await step('B4 Escape on the phone drawer steps down to peek: from full with the composer focused, and from half with Close focused; the layer stays open', async () => {
+    await tap(TRIGGER);
+    await browser.until('half', `${q(LAYER)}?.dataset.state === 'half'`);
+    await settle();
+    await tap(INPUT);
+    await browser.until('full', `${q(LAYER)}?.dataset.state === 'full'`);
+    await settle();
+    await browser.press('Escape');
+    await browser.until('peek after Escape from full', `${q(LAYER)}?.dataset.state === 'peek'`);
+    await pause(700);
+    assert.equal(await browser.evaluate(`${q(LAYER)}?.dataset.state`), 'peek', 'still peek after the close animation');
+    await tap(TRIGGER);
+    await browser.until('half again', `${q(LAYER)}?.dataset.state === 'half'`);
+    await settle();
+    await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.focus()`);
+    await browser.press('Escape');
+    await browser.until('peek after Escape from half', `${q(LAYER)}?.dataset.state === 'peek'`);
+    await pause(700);
+    assert.equal(await browser.evaluate(`${q(LAYER)}?.dataset.state`), 'peek', 'still peek after the close animation');
+  });
+
   await step('C the account sheet: avatar opens it, Back closes it and the URL is unchanged, a choice closes it', async () => {
     const href = await browser.evaluate(`location.href`);
     await tap('[data-testid=account-button]');

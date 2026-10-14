@@ -72,11 +72,13 @@ const FULL = 1;
 const HOLD_MS = 350;
 
 /**
- * What a close request from the drawer becomes: a swipe, an outside press and a lost focus never close the layer. `reason` is Base UI's
- * `details.reason` (`'swipe'`, `'outside-press'`, `'focus-out'`, `'escape-key'`, `'close-watcher'`, `'close-press'`, `'trigger-press'`, `'imperative-action'`, `'none'`).
+ * What a close request from the drawer becomes. A swipe, an outside press, a lost focus and Escape never close the layer: they step down
+ * to peek (half without an `agent`), so the modal state goes and the coach stays reachable. Only the Close control closes it. `reason` is
+ * Base UI's `details.reason` (`'swipe'`, `'outside-press'`, `'focus-out'`, `'escape-key'`, `'close-watcher'`, `'close-press'`, `'trigger-press'`,
+ * `'imperative-action'`, `'none'`).
  */
 export function nextSnapOnClose(reason: string, hasPeek: boolean): 'peek' | 'half' | 'close' {
-  return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' ? (hasPeek ? 'peek' : 'half') : 'close';
+  return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' || reason === 'escape-key' ? (hasPeek ? 'peek' : 'half') : 'close';
 }
 
 type VoicePhase = 'idle' | 'starting' | 'recording' | 'transcribing';
@@ -456,6 +458,9 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const vv = useVisualViewport();
   const closeRef = useRef<HTMLButtonElement>(null);
   const vetoed = useRef(false);
+  // Set while the layer closes; cleared when it opens again (a close is final until the trigger or a choice opens the layer).
+  const closing = useRef(false);
+  useEffect(() => { if (snap !== 'closed') closing.current = false; }, [snap]);
   const open = snap !== 'closed' && !pointing;
   const peek = snap === 'peek';
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
@@ -491,7 +496,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     onOpenChange={(next, details) => {
       if (next) return;
       const outcome = nextSnapOnClose(details.reason, hasPeek);
-      if (outcome === 'close') { layer.close(); return; }
+      if (outcome === 'close') { closing.current = true; layer.close(); return; }
       details.cancel();
       vetoed.current = true;
       setTimeout(() => { vetoed.current = false; }, 120);
@@ -502,7 +507,8 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     }}
     onSnapPointChange={point => {
       // Vetoing a swipe-close makes the drawer snap back to where it was: that echo must not undo the snap we chose.
-      if (vetoed.current) return;
+      // Base UI also reports the first snap point (peek) as the drawer closes: that echo must not reopen the layer.
+      if (vetoed.current || closing.current) return;
       const next = toSnap(point, layer.peekPoint);
       if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next);
     }}>
