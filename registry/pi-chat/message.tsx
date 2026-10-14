@@ -110,15 +110,16 @@ function FileCard({ path, open, preview }: { readonly path: string; readonly ope
     </span>
   </>;
   return open
-    ? <button type="button" data-testid="message-file" data-path={path} aria-label={labels.openFile(name)} onClick={() => open(path)}
+    // The card keeps the `message-mention` test id of the chip it replaces, so a journey that clicks a sent mention still finds it.
+    ? <button type="button" data-testid="message-mention" data-path={path} aria-label={labels.openFile(name)} onClick={() => open(path)}
       className="flex min-h-11 max-w-[16rem] cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card p-1.5 pr-3 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60">{body}</button>
-    : <div data-testid="message-file" data-path={path} className="flex min-h-11 max-w-[16rem] items-center gap-2.5 rounded-xl border border-border bg-card p-1.5 pr-3">{body}</div>;
+    : <div data-testid="message-mention" data-path={path} className="flex min-h-11 max-w-[16rem] items-center gap-2.5 rounded-xl border border-border bg-card p-1.5 pr-3">{body}</div>;
 }
 
 /** The file cards of a message, above its text bubble. */
 function FileCards({ paths, open, preview }: { readonly paths: readonly string[]; readonly open: ((path: string) => void) | undefined; readonly preview: PreviewRead | undefined }) {
   return <ul data-testid="message-files" className="m-0 flex max-w-[85%] list-none flex-wrap justify-end gap-2 p-0">
-    {paths.map(path => <li key={path}><FileCard path={path} open={open} preview={preview} /></li>)}
+    {paths.map(path => <li key={path} data-testid="message-file"><FileCard path={path} open={open} preview={preview} /></li>)}
   </ul>;
 }
 
@@ -137,7 +138,7 @@ function UserText({ text, context }: { readonly text: string; readonly context: 
   const shown = files.length ? visibleParts(all, isFile) : all;
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   return <>
-    {files.length > 0 && <FileCards paths={files} open={context.openFile} preview={context.pieces.preview} />}
+    {files.length > 0 && <FileCards paths={files} open={context.openFile ?? open} preview={context.pieces.preview} />}
     {!(files.length > 0 && empty) && <div data-testid="user-text" className={bubble}>{shown.map((piece, at) => piece.kind === 'mention'
       ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
       : piece.kind === 'skill' ? <span key={at} data-testid="message-skill" data-skill={piece.value} className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-foreground">{piece.text}</span>

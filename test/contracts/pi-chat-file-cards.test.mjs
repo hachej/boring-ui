@@ -68,7 +68,7 @@ test('a sent upload mention is a card above the bubble, the raw mention is hidde
   const { controller, container, act } = await harness(t, { mentions: { search: async () => [] }, onOpenFile: () => {} });
   await act(async () => { controller.setText(SENT); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
-  const card = container.querySelector('[data-testid=message-file]');
+  const card = container.querySelector('[data-testid=message-mention]');
   assert.ok(card, 'the card renders for the mention');
   assert.equal(card.getAttribute('data-path'), 'uploads/report-1a2b3c4d.pdf');
   assert.match(card.textContent, /report\.pdf/, 'the card shows the file name without the upload suffix');
@@ -87,7 +87,7 @@ test('a card with onOpenFile is a button that opens the path; without it the car
   const { controller, container, act } = await harness(t, { mentions: { search: async () => [] }, onOpenFile: path => opened.push(path) });
   await act(async () => { controller.setText(SENT); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
-  const card = container.querySelector('[data-testid=message-file]');
+  const card = container.querySelector('[data-testid=message-mention]');
   assert.equal(card.tagName, 'BUTTON');
   await act(async () => card.click());
   assert.deepEqual(opened, ['uploads/report-1a2b3c4d.pdf']);
@@ -97,7 +97,7 @@ test('without onOpenFile the card is a plain element', async t => {
   const { controller, container, act } = await harness(t, { mentions: { search: async () => [] } });
   await act(async () => { controller.setText(SENT); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
-  assert.equal(container.querySelector('[data-testid=message-file]').tagName, 'DIV');
+  assert.equal(container.querySelector('[data-testid=message-mention]').tagName, 'DIV');
 });
 
 test('the type line and the card label are localised (fr: Tableur, ’ typography)', async t => {
@@ -105,7 +105,7 @@ test('the type line and the card label are localised (fr: Tableur, ’ typograph
   const { controller, container, act } = await harness(t, { mentions: { search: async () => [] }, onOpenFile: () => {}, locale: 'fr' });
   await act(async () => { controller.setText('Voir @uploads/budget-0a1b2c3d.xlsx'); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
-  const card = container.querySelector('[data-testid=message-file]');
+  const card = container.querySelector('[data-testid=message-mention]');
   assert.match(card.textContent, /Tableur/);
   assert.match(card.getAttribute('aria-label') ?? '', /budget\.xlsx/);
 });
@@ -118,7 +118,7 @@ test('an image card shows the thumbnail read through the host provider', async t
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
   await act(async () => new Promise(resolve => setTimeout(resolve, 0)));
   assert.deepEqual(read.map(item => item.path), ['uploads/photo-5e6f7a8b.png']);
-  assert.ok(container.querySelector('[data-testid=message-file] img')?.getAttribute('src')?.startsWith('data:image/png;base64,'));
+  assert.ok(container.querySelector('[data-testid=message-mention] img')?.getAttribute('src')?.startsWith('data:image/png;base64,'));
 });
 
 test('a large paste becomes a pending upload, named as pasted text, and small pastes stay inline', async t => {
@@ -239,7 +239,7 @@ test('an upload mention is a card when only attachments is set (no mentions sear
   const { controller, container, act } = await harness(t, { attachments: { upload: async () => [] }, onOpenFile: () => {} });
   await act(async () => { controller.setText(SENT); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
-  assert.ok(container.querySelector('[data-testid=message-file][data-path="uploads/report-1a2b3c4d.pdf"]'), 'the card renders');
+  assert.ok(container.querySelector('[data-testid=message-mention][data-path="uploads/report-1a2b3c4d.pdf"]'), 'the card renders');
   assert.equal(container.querySelector('[data-testid=user-text]').textContent.includes('@uploads'), false);
 });
 
@@ -251,7 +251,7 @@ test('AmbientChat forwards onOpenFile and pasteToFile', async t => {
     extra: { defaultState: 'expanded' } });
   await act(async () => { controller.setText(SENT); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
-  const card = container.querySelector('[data-testid=message-file]');
+  const card = container.querySelector('[data-testid=message-mention]');
   assert.equal(card?.tagName, 'BUTTON', 'the card is clickable through the ambient chat');
   await act(async () => card.click());
   assert.deepEqual(opened, ['uploads/report-1a2b3c4d.pdf']);
@@ -265,17 +265,28 @@ test('a thumbnail is dropped when its provider changes and when a read is unavai
   await act(async () => { controller.setText('See @uploads/photo-5e6f7a8b.png'); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
   await act(async () => flush());
-  assert.ok(container.querySelector('[data-testid=message-file] img'), 'the thumbnail shows');
+  assert.ok(container.querySelector('[data-testid=message-mention] img'), 'the thumbnail shows');
   await rerender({ mentions: { search: async () => [], preview: async () => undefined } });
   await act(async () => flush());
-  assert.equal(container.querySelector('[data-testid=message-file] img'), null, 'an unavailable read shows the icon');
+  assert.equal(container.querySelector('[data-testid=message-mention] img'), null, 'an unavailable read shows the icon');
   await rerender({ mentions: { search: async () => [], preview: good } });
   await act(async () => flush());
-  assert.ok(container.querySelector('[data-testid=message-file] img'));
+  assert.ok(container.querySelector('[data-testid=message-mention] img'));
   await rerender({ mentions: { search: async () => [], preview: async () => { throw new Error('Fictional read failure'); } } });
   await act(async () => flush());
-  assert.equal(container.querySelector('[data-testid=message-file] img'), null, 'a failed read shows the icon');
+  assert.equal(container.querySelector('[data-testid=message-mention] img'), null, 'a failed read shows the icon');
   await rerender({ mentions: { search: async () => [] } });
   await act(async () => flush());
-  assert.equal(container.querySelector('[data-testid=message-file] img'), null, 'a removed provider shows the icon');
+  assert.equal(container.querySelector('[data-testid=message-mention] img'), null, 'a removed provider shows the icon');
+});
+
+test('without onOpenFile a card opens through mentions.open, as the chip it replaces did', async t => {
+  const opened = [];
+  const { controller, container, act } = await harness(t, { mentions: { search: async () => [], open: path => opened.push(path) } });
+  await act(async () => { controller.setText(SENT); });
+  await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
+  const card = container.querySelector('[data-testid=message-mention][data-path="uploads/report-1a2b3c4d.pdf"]');
+  assert.equal(card?.tagName, 'BUTTON', 'the card is clickable through mentions.open');
+  await act(async () => card.click());
+  assert.deepEqual(opened, ['uploads/report-1a2b3c4d.pdf']);
 });
