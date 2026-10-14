@@ -38,7 +38,7 @@ async function load() {
 }
 
 /** A happy-dom page for rendering; restores the globals afterwards. */
-function dom(t, width) {
+function dom(width) {
   const names = ['window', 'document', 'navigator', 'history', 'location', 'HTMLElement', 'Element', 'Node', 'Text', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'getSelection', 'MutationObserver', 'ResizeObserver', 'Event', 'CustomEvent', 'EventTarget', 'KeyboardEvent', 'PopStateEvent', 'MouseEvent', 'IS_REACT_ACT_ENVIRONMENT'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
@@ -48,11 +48,11 @@ function dom(t, width) {
     const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name];
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof value === 'function' && /^[a-z]/.test(name) ? value.bind(window) : value });
   }
-  t.after(async () => {
+  const restore = async () => {
     for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name];
     await window.happyDOM.close();
-  });
-  return window;
+  };
+  return { window, restore };
 }
 
 const Icon = () => null;
@@ -91,32 +91,34 @@ async function fixture(t) {
   return { provider, notes, first, second, last };
 }
 
-/** Mounts `page` in a shell: the workspace layout on a wide screen, the screen layout on a phone. */
-async function mount(t, shell, { width, page, agent, improve }) {
-  const window = dom(t, width);
+/**
+ * Mounts a screen in a shell: the workspace layout, or the screen layout with `layout: 'screen'`. `screen(shell)` returns the render function
+ * of the nav item, so a screen can use the shell's own exports. The page's globals are set before the bundle loads, and unmount runs first.
+ */
+async function mount(t, { width, screen, agent, improve, layout = 'workspace' }) {
+  const { window, restore } = dom(width);
+  const shell = await load();
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const container = window.document.createElement('div');
   window.document.body.append(container);
   const reactRoot = createRoot(container);
-  const nav = [{ id: 'docs', label: 'Documents', icon: Icon, render: page }];
-  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'workspace', title: 'Fiches', nav, route: { id: 'docs', onChange() {} }, ...(agent ? { agent } : {}), ...(improve ? { improve } : {}) })));
+  const nav = [{ id: 'docs', label: 'Documents', icon: Icon, render: screen(shell) }];
+  const unmount = () => act(async () => reactRoot.unmount());
+  t.after(async () => { await unmount(); await restore(); });
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout, title: 'Fiches', nav, route: { id: 'docs', onChange() {} }, ...(agent ? { agent } : {}), ...(improve ? { improve } : {}) })));
   const q = selector => window.document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 200 && !ready(); n++) await act(async () => new Promise(done => setTimeout(done, 10))); };
   const click = async element => act(async () => element.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
   const back = async () => act(async () => window.dispatchEvent(new window.PopStateEvent('popstate')));
-  return { window, q, settle, click, back, act, unmount: () => act(async () => reactRoot.unmount()) };
+  return { window, q, settle, click, back, act };
 }
 
 for (const width of [1280, 390]) {
   test(`Documents at ${width}: the Library lists the workspace files and opens one in the viewer`, async t => {
-    const shell = await load();
-    const { Documents } = shell;
     const f = await fixture(t);
     const { createElement: h } = await import('react');
-    const page = () => h(Documents, { provider: f.provider });
-    const view = await mount(t, shell, { width, page });
-    t.after(() => view.unmount());
+    const view = await mount(t, { width, screen: shell => () => h(shell.Documents, { provider: f.provider }) });
     await view.settle(() => view.q('[role=treeitem][data-path="notes.md"] button'));
     assert.ok(view.q('[role=treeitem][data-path="notes.md"]'), 'the Library lists notes.md');
     assert.ok(view.q('[role=treeitem][data-path="brief.txt"]'), 'the Library lists brief.txt');
@@ -127,12 +129,9 @@ for (const width of [1280, 390]) {
 }
 
 test('Revisions at 1280: the history lists every saved revision, and an old one opens read-only in the viewer', async t => {
-  const shell = await load();
   const f = await fixture(t);
   const { createElement: h } = await import('react');
-  const page = () => h(shell.Documents, { provider: f.provider });
-  const view = await mount(t, shell, { width: 1280, page });
-  t.after(() => view.unmount());
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider: f.provider }) });
   await view.settle(() => view.q('[role=treeitem][data-path="brief.txt"] button'));
   await view.click(view.q('[role=treeitem][data-path="brief.txt"] button'));
   await view.settle(() => view.q('[data-testid=file-viewer][data-path="brief.txt"]'));
@@ -144,6 +143,7 @@ test('Revisions at 1280: the history lists every saved revision, and an old one 
   await view.click(rows[2]);
   await view.settle(() => view.q(`[data-testid=artifact-panel][data-artifact-revision="${f.first}"]`));
   assert.ok(view.q(`[data-testid=artifact-panel][data-artifact-revision="${f.first}"]`), 'the old revision is on show');
+  await view.settle(() => /Premier jet/.test(view.q('[data-testid=artifact-body]')?.textContent ?? ''));
   const body = view.q('[data-testid=artifact-body]')?.textContent ?? '';
   assert.match(body, /Premier jet/, 'the old bytes are shown');
   assert.doesNotMatch(body, /Version finale/, 'not the latest bytes');
@@ -151,18 +151,16 @@ test('Revisions at 1280: the history lists every saved revision, and an old one 
 });
 
 test('DocumentSheet at 390: one document opens over the app, « Toutes les fiches » is offered, and Back closes it', async t => {
-  const shell = await load();
   const f = await fixture(t);
   const { createElement: h, useState } = await import('react');
   const calls = [];
-  const Host = () => {
+  const Host = shell => () => {
     const [path, setPath] = useState('notes.md');
     return h('div', null,
       h('button', { type: 'button', id: 'open-sheet', onClick: () => setPath('notes.md') }, 'Voir la fiche'),
       h(shell.DocumentSheet, { provider: f.provider, path, onClose: () => { calls.push('closed'); setPath(undefined); }, onShowAll: () => calls.push('all') }));
   };
-  const view = await mount(t, shell, { width: 390, page: () => h(Host) });
-  t.after(() => view.unmount());
+  const view = await mount(t, { width: 390, screen: Host });
   await view.settle(() => view.q('[data-testid=document-sheet] [data-testid=file-viewer][data-path="notes.md"]'));
   assert.ok(view.q('[data-testid=document-sheet] [data-testid=file-viewer][data-path="notes.md"]'), 'the sheet shows the document');
   await view.click(view.q('[data-testid=document-sheet-all]'));
@@ -178,17 +176,15 @@ test('DocumentSheet at 390: one document opens over the app, « Toutes les fiche
 });
 
 test('useShellLayer: opening a full-screen view closes the agent layer, and Back closes the view', async t => {
-  const shell = await load();
   const { createElement: h, useLayoutEffect } = await import('react');
   let agent, doc;
-  const Probe = () => {
+  const probe = shell => () => {
     const layer = shell.useAgentLayer();
     const docLayer = shell.useShellLayer('documents-test');
     useLayoutEffect(() => { agent = layer; doc = docLayer; });
     return null;
   };
-  const view = await mount(t, shell, { width: 1280, page: () => h(Probe), agent: { controller: idleController }, improve: { controller: idleController } });
-  t.after(() => view.unmount());
+  const view = await mount(t, { width: 1280, screen: probe, agent: { controller: idleController }, improve: { controller: idleController } });
   await view.act(async () => agent.open('agent', 'half'));
   assert.equal(agent.showing, 'agent', 'the agent layer shows');
   await view.act(async () => doc.open());
