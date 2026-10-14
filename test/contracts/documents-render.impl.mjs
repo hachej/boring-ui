@@ -111,7 +111,8 @@ async function mount(t, { width, screen, agent, improve, layout = 'workspace' })
   const reactRoot = createRoot(container);
   const nav = [{ id: 'docs', label: 'Documents', icon: Icon, render: screen(shell) }];
   const unmount = () => act(async () => reactRoot.unmount());
-  t.after(async () => { await unmount(); await restore(); });
+  // React may finish work scheduled by the unmount a macrotask later: the globals stay until it has.
+  t.after(async () => { await unmount(); await new Promise(done => setTimeout(done, 50)); await restore(); });
   await act(async () => reactRoot.render(h(shell.AppShell, { layout, title: 'Fiches', nav, route: { id: 'docs', onChange() {} }, ...(agent ? { agent } : {}), ...(improve ? { improve } : {}) })));
   const q = selector => window.document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 200 && !ready(); n++) await act(async () => new Promise(done => setTimeout(done, 10))); };
