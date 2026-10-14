@@ -694,6 +694,7 @@ test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exi
   assert.equal(session.getSnapshot().phase, 'idle');
   await act(async () => composer.annotate());
   await act(async () => composer.annotate());
+  await until('Done finished', () => session.getSnapshot().phase !== 'processing');
   assert.equal(session.getSnapshot().phase, 'idle', 'the same toggle exits; with no notes there is nothing to send');
   await act(async () => ui.unmount());
 });
