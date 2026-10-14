@@ -497,10 +497,13 @@ test('voice: transcription is the host\'s callback; text only, timed segments, a
 
 // --- the registry components ---------------------------------------------------------------------------------------------------------
 
+let bundled;
 async function registry(t, url = 'https://fictional.invalid/settings/profile') {
   const out = join(root, '.cache/feedback-session-test');
   mkdirSync(out, { recursive: true });
-  await build({ entryPoints: [join(root, 'registry/feedback/feedback-session.tsx')], outfile: join(out, 'feedback-session.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+  // One bundle for the whole file (the import below is cached by URL anyway): a bundle per test only costs time on a slow runner.
+  bundled ??= build({ entryPoints: [join(root, 'registry/feedback/feedback-session.tsx')], outfile: join(out, 'feedback-session.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+  await bundled;
   const window = new Window({ url, settings: { disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } });
   const globals = new Map();
   for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT']) {
@@ -622,6 +625,8 @@ test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exi
   const ui = createRoot(document.getElementById('ui'));
   await act(async () => ui.render(createElement(Host)));
   const $t = id => document.querySelector(`[data-testid=${id}]`);
+  /** Waits (inside act) until `check()` holds: the mic's steps are asynchronous, and a slow runner must not make this a timing guess. */
+  const until = async (label, check) => { for (let i = 0; i < 300; i++) { if (check()) return; await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); }); } assert.fail(`timed out: ${label}`); };
   assert.deepEqual(Object.keys(composer).sort(), ['active', 'annotate', 'attach', 'clear', 'count', 'sent'], 'the composer prop is minimal');
   assert.deepEqual([composer.active, composer.count], [false, 0]);
 
@@ -640,30 +645,31 @@ test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exi
 
   // The mic: record, stop, the transcript is appended to the typed text.
   await act(async () => $t('feedback-bubble-mic').click());
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
-  assert.equal($t('feedback-bubble-mic').dataset.state, 'recording');
-  await act(async () => { $t('feedback-bubble-mic').click(); await new Promise(resolve => setTimeout(resolve, 30)); });
-  assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow');
+  await until('recording', () => $t('feedback-bubble-mic').dataset.state === 'recording');
+  await act(async () => $t('feedback-bubble-mic').click());
+  await until('the transcript is appended', () => $t('feedback-bubble-input').value === 'Say what it saves and it is slow');
   // A rejected transcription keeps the typed text and says so.
   transcribe = async () => { throw new Error('the transcription answered 502'); };
   await act(async () => $t('feedback-bubble-mic').click());
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
-  await act(async () => { $t('feedback-bubble-mic').click(); await new Promise(resolve => setTimeout(resolve, 30)); });
+  await until('recording again', () => $t('feedback-bubble-mic').dataset.state === 'recording');
+  await act(async () => $t('feedback-bubble-mic').click());
+  await until('the failure is said', () => $t('feedback-bubble-voice-problem'));
   assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow', 'the typed text is kept');
   assert.match($t('feedback-bubble-voice-problem').textContent, /could not be transcribed/);
   assert.equal($t('feedback-bubble-mic').dataset.state, 'idle');
   // Nothing recorded (a refused microphone) keeps the text too.
   window.navigator.mediaDevices.getUserMedia = async () => { throw Object.assign(new Error('no'), { name: 'NotAllowedError' }); };
-  await act(async () => { $t('feedback-bubble-mic').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => $t('feedback-bubble-mic').click());
+  await until('the refusal is said', () => /blocked/.test($t('feedback-bubble-voice-problem')?.textContent ?? ''));
   assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow');
-  assert.ok($t('feedback-bubble-voice-problem'));
 
   // Enter saves the pin; the count is 1. Esc with no pin open exits annotating (on the page, where the session swallows Esc).
   await act(async () => { keydown(window, $t('feedback-bubble-input'), 'Enter'); });
   assert.equal($t('feedback-bubble'), null);
   assert.equal(composer.count, 1);
   assert.equal(session.getSnapshot().phase, 'active');
-  await act(async () => { keydown(window, document.body, 'Escape'); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => { keydown(window, document.body, 'Escape'); });
+  await until('review', () => session.getSnapshot().phase === 'review');
   assert.equal(session.getSnapshot().phase, 'review', 'Esc exits annotating; the note waits for Send');
   assert.deepEqual([composer.active, composer.count], [false, 1]);
 
