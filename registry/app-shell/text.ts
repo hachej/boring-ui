@@ -30,6 +30,10 @@ export interface AppShellText {
   readonly tabs: string;
   /** The « ← » of a header. */
   readonly goBack: string;
+  /** The dock controls of the wide layer: float it over the app, or dock it on a side. */
+  readonly float: string;
+  readonly dockLeft: string;
+  readonly dockRight: string;
 }
 
 const en: AppShellText = {
@@ -49,6 +53,9 @@ const en: AppShellText = {
   darkMode: 'Dark mode',
   tabs: 'Navigation',
   goBack: 'Back',
+  float: 'Float over the app',
+  dockLeft: 'Dock on the left',
+  dockRight: 'Dock on the right',
 };
 
 const fr: AppShellText = {
@@ -68,6 +75,9 @@ const fr: AppShellText = {
   darkMode: 'Mode sombre',
   tabs: 'Navigation',
   goBack: 'Retour',
+  float: 'Flotter sur l\'app',
+  dockLeft: 'Ancrer à gauche',
+  dockRight: 'Ancrer à droite',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };

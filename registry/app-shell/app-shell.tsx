@@ -8,10 +8,10 @@
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarProvider } from '@/components/ui/sidebar';
 import { AccountAvatar, AccountMenu } from './account';
 import type { AccountSpec } from './account';
-import { AgentLayer, AgentLayerProvider } from './agent-layer';
+import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
 import { useIsCompact } from './compact';
@@ -70,12 +70,14 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
   // The structure is the same compact or expanded, so a resize never remounts a screen.
   return <SidebarProvider data-testid="app-shell" defaultOpen={layout === 'screen'} className="h-dvh min-h-0 overflow-hidden">
     {!compact && <AppSidebar title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
-    <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+    <AgentDockLayout>
+      <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
       <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} />
       <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} />
       {compact && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
-    </SidebarInset>
+      </div>
+    </AgentDockLayout>
     <AgentLayer />
   </SidebarProvider>;
 }

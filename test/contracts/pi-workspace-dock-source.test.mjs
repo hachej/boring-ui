@@ -5,18 +5,34 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import ts from 'typescript';
 
-// The docks of the pi-workspace item (registry/pi-workspace/dock.tsx): listed in the item, strict under the repository's settings, and the
+// The docks live in the dock item (registry/dock/dock.tsx); pi-workspace keeps `pi-workspace/dock` as a re-export of it. Listed in the items, strict under the repository's settings, and the
 // server-rendered structure a consumer gets. Pointer, keyboard and placement behaviour is proven in a browser by `npm run dock-app:journey`.
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const file = 'registry/pi-workspace/dock.tsx';
+const file = 'registry/dock/dock.tsx';
+const reexport = 'registry/pi-workspace/dock.tsx';
 const manifest = JSON.parse(readFileSync(`${root}registry.json`, 'utf8'));
-const item = manifest.items.find(entry => entry.name === 'pi-workspace');
+const item = manifest.items.find(entry => entry.name === 'dock');
+const workspace = manifest.items.find(entry => entry.name === 'pi-workspace');
 
-test('dock.tsx is part of the pi-workspace item and the committed build', () => {
-  assert.deepEqual(item.files.find(entry => entry.path === file), { path: file, type: 'registry:component', target: 'components/pi-workspace/dock.tsx' });
-  assert.match(item.description, /dock/i);
-  const built = JSON.parse(readFileSync(`${root}public/r/pi-workspace.json`, 'utf8'));
+test('dock.tsx is the dock item and in the committed build', () => {
+  assert.deepEqual(item.files, [{ path: file, type: 'registry:component', target: 'components/dock/dock.tsx' }]);
+  assert.deepEqual(item.registryDependencies, ['@boring-ui/theme', '@boring-ui/utils']);
+  const built = JSON.parse(readFileSync(`${root}public/r/dock.json`, 'utf8'));
   assert.equal(built.files.find(entry => entry.path === file)?.content, readFileSync(`${root}${file}`, 'utf8'));
+});
+
+test('pi-workspace re-exports every export of the dock item and depends on it; app-shell depends on dock, not pi-workspace', async () => {
+  assert.deepEqual(workspace.files.find(entry => entry.path === reexport), { path: reexport, type: 'registry:component', target: 'components/pi-workspace/dock.tsx' });
+  assert.ok(workspace.registryDependencies.includes('@boring-ui/dock'));
+  assert.equal(readFileSync(`${root}${reexport}`, 'utf8').replace(/^\/\/.*\n/gm, '').trim(), "export * from '../dock/dock';");
+  const shell = manifest.items.find(entry => entry.name === 'app-shell');
+  assert.ok(shell.registryDependencies.includes('@boring-ui/dock') && !shell.registryDependencies.includes('@boring-ui/pi-workspace'));
+  const out = `${root}.cache/pi-workspace-dock-test`;
+  mkdirSync(out, { recursive: true });
+  for (const [name, entry] of [['reexport', reexport], ['origin', file]]) await build({ entryPoints: [`${root}${entry}`], outfile: `${out}/${name}.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+  const [viaWorkspace, viaDock] = await Promise.all([import(pathToFileURL(`${out}/reexport.mjs`).href), import(pathToFileURL(`${out}/origin.mjs`).href)]);
+  assert.deepEqual(Object.keys(viaWorkspace).sort(), ['Dock', 'DockLayout', 'DockMain', 'useDock']);
+  assert.deepEqual(Object.keys(viaWorkspace).sort(), Object.keys(viaDock).sort());
 });
 
 test('dock.tsx compiles under the repository strict settings and imports only React and its installed sibling', () => {

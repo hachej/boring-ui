@@ -1,22 +1,24 @@
 'use client';
 
 // The AgentLayer: ONE agent's PiChat above the app. Compact (below 768px): a bottom drawer with three fixed snap points, peek, half and
-// full (shadcn `drawer`, Base UI variant). Expanded: a right panel (`sidebar`, the sidebar-15 right-sidebar pattern). The same layer shows
+// full (shadcn `drawer`, Base UI variant). Expanded: a `Dock` (the `dock` item) beside the app, docked on the left or the right (default right)
+// or floating over it; the person chooses and the choice is remembered. The same layer shows
 // the product manager (« Améliorer l'app ») when the account menu asks for it. Push-to-talk is an option of the agent.
 // Host concern: Pi has no layout. The chat is the borrowed NativeChatController rendered by PiChat; the screen context travels as the
 // submit's `context` (agent-context.ts). Nothing here is configurable beyond AgentSpec.
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentType, CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, SparklesIcon, XIcon } from 'lucide-react';
+import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from 'lucide-react';
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
 import { createVoiceCapture } from '@hachej/boring-feedback/page';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { Sidebar, SidebarContent, SidebarHeader, SidebarProvider } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { Dock, DockLayout, DockMain } from '../dock/dock';
+import type { DockApi } from '../dock/dock';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import { chatTextFor } from '../pi-chat/locale';
@@ -100,7 +102,17 @@ interface Internal extends AgentLayerApi {
   readonly host: HTMLElement | null;
   /** The shell's `locale`: the layer's own words when the agent spec sets none (`agent.chatProps.locale` first). */
   readonly locale: AppShellLocale | undefined;
+  /** Expanded only: the side the dock sits on while docked (the viewer's choice, remembered). */
+  readonly side: DockSide;
+  readonly setSide: (side: DockSide) => void;
+  /** Set by a dock control: the next placement or side change puts focus back on the panel's first dock control. */
+  readonly restoreFocus: { current: boolean };
 }
+
+type DockSide = 'left' | 'right';
+/** The dock's remembered state lives under this prefix (DockLayout's storageKey): `<key>.agent.floating`, `.width`, and the side. */
+const DOCK_KEY = 'boring.app-shell';
+const SIDE_KEY = `${DOCK_KEY}.agent.side`;
 
 const LayerContext = createContext<Internal | null>(null);
 
@@ -231,6 +243,11 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
   const probe = useRef<HTMLDivElement>(null);
   const { peekPoint, tabbar } = useMeasuredPeek(probe);
   const triggerUntil = useRef(0);
+  const restoreFocus = useRef(false);
+  const [side, setSideState] = useState<DockSide>('right');
+  // The side is the viewer's, remembered beside the Dock's own placement; read after mount so server and client markup agree.
+  useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
+  const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
   const specs = useRef({ agent, improve });
   specs.current = { agent, improve };
 
@@ -261,8 +278,8 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale,
-  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale]);
+    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
+  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -400,15 +417,16 @@ function Chats({ showing }: { readonly showing: Which }) {
 
 const ICON_BUTTON = 'inline-flex size-9 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 
-/** Title row: « ← » when the improve view has an agent to go back to, the title, then Expand or Collapse (compact only) and Close. */
-function Header({ text, title, compactSnap, closeRef }: { readonly text: AppShellText; readonly title: string; readonly compactSnap?: Snap; readonly closeRef?: Ref<HTMLButtonElement> }) {
+/** Title row: « ← » when the improve view has an agent to go back to, the title, then Expand or Collapse (compact only), the dock controls (expanded only) and Close. */
+function Header({ text, title, compactSnap, closeRef, controls, className, ...rest }: { readonly text: AppShellText; readonly title: string; readonly compactSnap?: Snap; readonly closeRef?: Ref<HTMLButtonElement>; readonly controls?: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'title'>) {
   const layer = useInternal();
   const back = layer.showing === 'improve' && layer.agent;
-  return <div data-testid="agent-layer-header" className="flex shrink-0 items-center gap-1 px-2 pb-1">
+  return <div data-testid="agent-layer-header" {...rest} className={cn('flex shrink-0 items-center gap-1 px-2 pb-1', className)}>
     {back && <button type="button" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent} className={ICON_BUTTON}><ArrowLeftIcon className="size-4" aria-hidden="true" /></button>}
     <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{title}</h2>
     {compactSnap === 'half' && <button type="button" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')} className={ICON_BUTTON}><ChevronUpIcon className="size-4" aria-hidden="true" /></button>}
     {compactSnap === 'full' && <button type="button" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')} className={ICON_BUTTON}><ChevronDownIcon className="size-4" aria-hidden="true" /></button>}
+    {controls}
     <button type="button" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close} className={ICON_BUTTON}><XIcon className="size-4" aria-hidden="true" /></button>
   </div>;
 }
@@ -514,29 +532,90 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   </Drawer>;
 }
 
-function ExpandedPanel() {
+/** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
+function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
   const layer = useInternal();
   const { text, title } = useTitle();
   const open = layer.snap !== 'closed';
+  const floating = api.floating;
+  const box = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) layer.close(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [open, layer]);
-  // Its own provider keeps the panel's width and open state apart from the left sidebar's (Ctrl+B belongs to that one); `contents` adds no box.
-  return <SidebarProvider open={open} onOpenChange={() => {}} className="contents" style={{ '--sidebar-width': '24rem' } as CSSProperties}>
-    <Sidebar side="right" collapsible="offcanvas" data-testid="agent-layer" data-state={open ? 'open' : 'closed'} aria-label={title} inert={!open} className="app-shell z-(--app-shell-z-layer)">
-      <SidebarHeader className="p-0 pt-2"><Header text={text} title={title} /></SidebarHeader>
-      <SidebarContent className="gap-0 overflow-hidden">
-        <VoiceProblem />
-        <ChatSlot />
-      </SidebarContent>
-    </Sidebar>
-  </SidebarProvider>;
+  // A dock control (or the divider's Alt+Arrow) moves or removes the element that had focus: it goes to the panel's first dock control instead of the page.
+  useLayoutEffect(() => {
+    const lost = !document.activeElement || document.activeElement === document.body;
+    const wanted = layer.restoreFocus.current || (open && lost && api.placement !== 'closed');
+    layer.restoreFocus.current = false;
+    if (wanted) box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
+  }, [api.placement, side, layer.restoreFocus]);
+  // A dragged window stays reachable: its remembered position is clamped to the viewport on open, on placement change and on every resize.
+  const [viewport, setViewport] = useState(0);
+  useEffect(() => { const resize = () => setViewport(count => count + 1); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize); }, []);
+  useLayoutEffect(() => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!pos || !floating || !open || !rect || !rect.width) return;
+    const left = Math.min(Math.max(pos.left, 0), Math.max(0, innerWidth - rect.width)), top = Math.min(Math.max(pos.top, 0), Math.max(0, innerHeight - rect.height));
+    if (left !== pos.left || top !== pos.top) setPos({ left, top });
+  }, [pos, floating, open, viewport]);
+  const act = (run: () => void) => () => { layer.restoreFocus.current = true; run(); };
+  const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
+    <button type="button" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)} className={ICON_BUTTON}><Icon className="size-4" aria-hidden="true" /></button>;
+  const controls = <>
+    {!floating && control('float', text.float, PictureInPicture2Icon, () => api.float())}
+    {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}
+    {(floating || side === 'left') && control('dock-right', text.dockRight, PanelRightIcon, () => { layer.setSide('right'); api.dock(); })}
+  </>;
+  const down = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!floating || !rect || event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+    drag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const move = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const grab = drag.current, rect = box.current?.getBoundingClientRect();
+    if (!grab || !rect) return;
+    setPos({ left: Math.min(Math.max(event.clientX - grab.dx, 0), Math.max(0, innerWidth - rect.width)), top: Math.min(Math.max(event.clientY - grab.dy, 0), Math.max(0, innerHeight - rect.height)) });
+  };
+  const end = () => { drag.current = null; };
+  return <div ref={box} data-testid="agent-layer" data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
+    style={floating ? pos ?? { right: 16, bottom: 16 } : undefined}
+    className={cn('app-shell flex min-h-0 flex-col bg-background text-foreground',
+      floating ? 'fixed z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border shadow-xl'
+        : cn('h-full min-w-0 flex-1', side === 'right' ? 'border-l border-border' : 'border-r border-border'))}>
+    <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden"><VoiceProblem /><ChatSlot /></div>
+  </div>;
 }
 
-/** The layer itself: the drawer on a phone, the right panel on a wide screen. Placed once by the shell. */
+function AgentDock({ side }: { readonly side: DockSide }) {
+  const layer = useInternal();
+  const { title } = useTitle();
+  return <Dock id="agent" side={side} floatable defaultWidth={384} minWidth={320} dragBelow={260} open={layer.snap !== 'closed'} onOpenChange={next => { if (!next) layer.close(); }} labels={{ region: title }}>
+    {api => <DockPanel api={api} side={side} />}
+  </Dock>;
+}
+
+/**
+ * Wraps the app's content (placed once by the shell): on a wide screen the agent dock sits on its left or right and the content reflows,
+ * or it floats over the content; on a phone this is only the content (the layer is the bottom drawer). Host concern: Pi has no layout.
+ */
+export function AgentDockLayout({ children }: { readonly children: ReactNode }): ReactElement {
+  const layer = useInternal();
+  const dock = layer.expanded && (layer.agent || layer.improve) ? <AgentDock side={layer.side} /> : null;
+  return <DockLayout storageKey={DOCK_KEY} persist="local">
+    {layer.side === 'left' && dock}
+    <DockMain>{children}</DockMain>
+    {layer.side === 'right' && dock}
+  </DockLayout>;
+}
+
+/** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell, for point mode on both. */
 export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
   const pointingAgent = usePointing(layer.agent?.feedback), pointingImprove = usePointing(layer.improve?.feedback);
@@ -547,9 +626,9 @@ export function AgentLayer(): ReactElement | null {
   const pointed = pointingAgent ? layer.agent : layer.improve;
   const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
   const locale = pointed?.chatProps?.locale ?? layer.locale;
-  // Point mode: the compact sheet steps aside (the wide panel does not cover the app); the bar sits above the tab bar, outside the layer.
+  // Point mode: the compact sheet steps aside (the wide dock does not cover the app); the bar sits above the tab bar, outside the layer.
   return <>
-    {layer.expanded ? <ExpandedPanel /> : <CompactSheet pointing={session !== undefined} />}
+    {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
     {session && <>
       <PointBar session={session} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
       <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />

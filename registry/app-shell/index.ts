@@ -11,5 +11,5 @@ export type { NavItem } from './nav';
 export { ScreenHeader, useScreenHeader } from './header';
 export type { ScreenHeaderSpec } from './header';
 export { useIsCompact } from './compact';
-export { AgentLayer, AgentTrigger, useAgentLayer } from './agent-layer';
+export { AgentDockLayout, AgentLayer, AgentTrigger, useAgentLayer } from './agent-layer';
 export { readAgentContext, useAgentContext } from './agent-context';
