@@ -20,7 +20,7 @@ import { AppSidebar, TabBar } from './nav';
 import type { NavItem } from './nav';
 import { AppSheet } from './sheet';
 import { appShellText } from './text';
-import type { AppShellText } from './text';
+import type { AppShellLocale, AppShellText } from './text';
 
 export interface AppShellProps {
   /** A `screen` (tabs), B `workspace` (list and detail), C `chat` (the app's `AgentWorkspace`; no `agent`). */
@@ -31,6 +31,8 @@ export interface AppShellProps {
   /** The product manager: adds « Améliorer l'app » to the account menu. */
   readonly improve?: AgentSpec;
   readonly account?: AccountSpec;
+  /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l'assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
+  readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
 }
@@ -61,7 +63,7 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
   const avatar = hasAccount ? <>
     <button type="button" data-testid="account-button" aria-label={account?.name ?? text.account} onClick={() => setAccountOpen(true)}
       className="inline-flex size-9 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11"><AccountAvatar account={account} /></button>
-    <AppSheet open={accountOpen} onOpenChange={setAccountOpen} title={account?.name ?? text.account}>
+    <AppSheet open={accountOpen} onOpenChange={setAccountOpen} title={text.account}>
       <AccountMenu account={account} improve={improve} text={text} done={() => setAccountOpen(false)} />
     </AppSheet>
   </> : null;
@@ -81,8 +83,8 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
 export function AppShell(props: AppShellProps) {
   const { layout, agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
-  const text = appShellText((agent ?? improve)?.chatProps?.locale);
-  return <AgentLayerProvider agent={agent} improve={improve}>
+  const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
+  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
     <HeaderProvider><Shell layout={layout} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

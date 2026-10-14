@@ -49,6 +49,16 @@ function useTabbarHeight(bar: { readonly current: HTMLElement | null }, shown: b
 
 const TAB = 'relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs outline-none focus-visible:bg-accent pointer-coarse:min-h-14';
 
+/** The tab bar's arrow keys: Left and Right move the focus between the tabs (wrapping). */
+const arrows = (event: KeyboardEvent<HTMLElement>) => {
+  const buttons = [...event.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')];
+  const at = buttons.indexOf(document.activeElement as HTMLElement);
+  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+  if (at < 0 || !step) return;
+  event.preventDefault();
+  buttons[(at + step + buttons.length) % buttons.length]!.focus();
+};
+
 /** The compact tab bar. With one item there is none. Exported for tests. */
 export function TabBar({ items, activeId, onChange, text }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void; readonly text: AppShellText }) {
   const bar = useRef<HTMLElement>(null);
@@ -58,14 +68,6 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   if (!shown) return null;
   const { tabs, overflow } = splitNav(items);
   const inOverflow = overflow.find(item => item.id === activeId);
-  const arrows = (event: KeyboardEvent<HTMLElement>) => {
-    const buttons = [...event.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')];
-    const at = buttons.indexOf(document.activeElement as HTMLElement);
-    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-    if (at < 0 || !step) return;
-    event.preventDefault();
-    buttons[(at + step + buttons.length) % buttons.length]!.focus();
-  };
   const tab = (item: NavItem) => <button key={item.id} type="button" role="tab" data-testid={`tab-${item.id}`} aria-selected={item.id === activeId} tabIndex={item.id === activeId ? 0 : -1}
     onClick={() => onChange(item.id)} className={cn(TAB, item.id === activeId ? 'text-primary' : 'text-muted-foreground')}>
     <item.icon className="size-5" />{item.label}{item.badge && <Dot className="absolute top-2 left-1/2 ml-2" />}

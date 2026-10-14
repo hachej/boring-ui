@@ -1,7 +1,7 @@
 // Installed-block consumer for the `pi-app` registry item: a disposable app outside this repository installs pi-app with the real pinned
 // shadcn CLI over HTTP (the release's absolute registry dependency URLs served by a local registry, so pi-chat, pi-workspace, viewers,
 // utils, button and theme resolve as they would from a hosted one), with every package pinned to an integrity-checked archive. It then
-// type-checks the copied source and a consumer page strictly and bundles the page for the browser (no kernel, server or Node code).
+// type-checks the copied source and a consumer page strictly (unused locals and parameters, verbatim imports, erasable syntax only) and bundles the page for the browser (no kernel, server or Node code).
 // Usage: npm run build && npm run registry:build && npm_config_cache=<cache> npm run test:app-registry-consumer
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,13 +11,16 @@ import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { assertConsumerTypeFiles, prepareConsumerIsolation, npmInstallFlags } from './consumer-isolation.mjs';
 import { consumerDependencies, packBoringDependencies, registryItemName, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
+import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => JSON.parse(readFileSync(join(root, 'public/r', `${name}.json`), 'utf8'));
 // The block and every item it needs, through registryDependencies.
 const closure = new Map();
-const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) visit(registryItemName(root, dependency)); };
+const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) if (!SHADCN_BUILTINS.includes(dependency)) visit(registryItemName(root, dependency)); };
 visit('pi-app');
+// The app shell too: a strict regression in the shell fails here, not only in the monorepo fixture check.
+visit('app-shell');
 visit('file-tree');
 const directory = mkdtempSync(join(tmpdir(), 'boring-app-consumer-'));
 const cache = process.env.npm_config_cache;
@@ -38,6 +41,10 @@ try {
   const union = { dependencies: pins };
   const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
   const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss']);
+  // The shadcn built-ins the shell installs (drawer, sidebar, avatar, dropdown-menu) import class-variance-authority and cn (shadcn's own package, which the base-nova built-ins depend on), which are not in any closure item (the base-nova variant below uses no vaul):
+  // pinned to this repository's lock, so the offline install finds it in the cache.
+  const lockedVersion = name => { const entry = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')).packages[`node_modules/${name}`]; assert.ok(entry?.version, `${name} is locked`); return entry.version; };
+  for (const name of ['class-variance-authority', 'cn']) dependencies[name] = lockedVersion(name);
   writeLockedManifest(root, directory, 'isolated-app-consumer', dependencies);
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archiveByName.values()]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
@@ -46,14 +53,14 @@ try {
   ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
 
   for (const path of ['src', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' },
+  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'base-nova', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' },
     iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
-  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/page.tsx'] }));
+  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
+    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/page.tsx'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
-  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, '--cwd', directory, '--yes'], installer);
+  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, '--cwd', directory, '--yes'], installer);
   for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
   const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
   assert.ok(css.includes('--background') && css.includes('.pi-chat'), 'theme tokens and the chat\'s scoped css merged into the host stylesheet');
