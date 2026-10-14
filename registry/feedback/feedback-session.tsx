@@ -359,7 +359,10 @@ function pointsInstead(): boolean {
  */
 function startAnnotating(session: FeedbackSession): void {
   const view = globalThis.window;
-  const onKey = (event: globalThis.KeyboardEvent): void => { if (event.key === 'Escape' && !session.getSnapshot().bubble) void session.done(); };
+  const onKey = (event: globalThis.KeyboardEvent): void => {
+    // Esc that ends annotating is spent: a host layer around the composer (a panel that closes on Esc) must not also react to it.
+    if (event.key === 'Escape' && !session.getSnapshot().bubble) { event.preventDefault(); event.stopPropagation(); void session.done(); }
+  };
   view?.addEventListener('keydown', onKey, { capture: true });
   session.start();
   const stop = session.subscribe(() => {
