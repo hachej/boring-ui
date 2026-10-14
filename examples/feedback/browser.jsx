@@ -59,6 +59,12 @@ const transcribe = async (audio, mimeType) => {
   return response.json();
 };
 
+/** The pin's mic: the same route, read as plain text (the pin has no timing to align: segments are joined). */
+const pinTranscribe = async audio => {
+  const answer = await transcribe(audio, audio.type || 'audio/webm');
+  return typeof answer.text === 'string' ? answer.text : (answer.segments ?? []).map(segment => segment.text).join(' ');
+};
+
 // Dev hook (development builds only): `await __fernhillModel('check feedback')` completes through the `/api/llm` model gateway
 // with this page's session; the page holds no model key (model-preview.mjs).
 if (process.env.NODE_ENV !== 'production') window.__fernhillModel = async text => {
@@ -207,7 +213,7 @@ function usePreview(chat) {
   return session?.session ?? null;
 }
 
-/** The default page: the composer's Feedback button, feedback mode on this page, one chip, and the chat. */
+/** The default page: the composer's ONE annotate toggle (pins on this page, a mic in each pin), the count chip, and the chat. */
 function App() {
   const overlay = usePickerOverlay();
   const copy = usePageCopy();
@@ -229,7 +235,7 @@ function App() {
   const composerFeedback = useComposerFeedback(session ?? undefined);
   return <>
     <SettingsPage saveLabel={copy.saveLabel} section={sectionOf(path)} onNavigate={navigate} />
-    {session && <NoteBubble session={session} />}
+    {session && <NoteBubble session={session} transcribe={pinTranscribe} />}
     {preview && <PreviewBanner session={preview} />}
     <Chooser choice={choice} />
     <div data-feedback-ignore="" data-testid="agent-bar">
@@ -261,7 +267,7 @@ function PhoneApp() {
     setSession(created);
     return () => { created.dispose(); delete window.__feedbackSession; };
   }, []);
-  const composerFeedback = useComposerFeedback(session ?? undefined, { entry: 'point' });
+  const composerFeedback = useComposerFeedback(session ?? undefined);
   const pointing = usePointing(session ?? undefined);
   const section = sectionOf(path);
   return <>

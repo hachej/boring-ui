@@ -235,7 +235,7 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
       <button type="button" className="boring-feedback-button" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</button>
       <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</button>
     </span>
-    <span className="boring-feedback-keys" data-testid="feedback-bubble-hint">{words.bubbleHint}{touchScreen() ? '' : ` · ${words.altHint}`}</span>
+    {!touchScreen() && <span className="boring-feedback-keys" data-testid="feedback-bubble-hint">{words.altHint}</span>}
   </div></>;
 }
 
