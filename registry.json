@@ -129,8 +129,8 @@
       "title": "Markdown editor",
       "description": "A host-owned styled wrapper over the concrete borrowed Markdown controller.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "marked@^17.0.6",
@@ -343,8 +343,8 @@
       "title": "HTML source and passive preview",
       "description": "Exact HTML source editing with a reconstructed passive preview and borrowed controller. Browser security qualification remains separate.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
@@ -435,8 +435,8 @@
       "title": "Pi chat",
       "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history, a human-in-the-loop question card, an Approve / Deny card for host tools wrapped with requireApproval optional artifact cards that open generated content in the host's panel, and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The optional pi-ambient and pi-workspace blocks build on it.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "marked@^17.0.6",
@@ -676,7 +676,7 @@
       "title": "Pi ambient agent",
       "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts for finished, failed and waiting tasks (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "@earendil-works/pi-durable@~1.2.0",
@@ -739,8 +739,8 @@
       "title": "Pi agent app",
       "description": "AgentWorkspace: a whole agent page in one component. Left: the sessions pane (search, New, rename, archive, delete; collapsible, a drawer on a narrow screen). Center: PiChat. Right: the artifact viewers (artifact panel with versions, file viewer, auto-open of new artifacts) in the ArtifactWorkspace panel, a full-screen sheet on a phone. Props are data and callbacks; hooks for the conversations handler (useConversations), the chat transport (useRemoteChat) and saved resources (useSaved).",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "lucide-react@^1.51.0",
@@ -827,8 +827,8 @@
       "title": "App shell: layouts, list/detail and agent layer",
       "description": "AppShell with three layouts. B \"workspace\" puts a ListDetail on a screen (phone: the list, then the detail as a stack step with Back; wide: a 20rem list and the detail side by side, sidebar as an icon rail). C \"chat\" wraps the app's own AgentWorkspace (untouched, passed as the nav item's render; install the pi-app item yourself) in the same sidebar, account menu and header; it takes no shell agent. A \"screen\": one screen at a time, every screen kept mounted. On a phone bottom tabs (at most four; more give three plus a « Plus » sheet) and an avatar button that opens the account sheet; on a wide screen the shadcn sidebar (icon rail, NavUser). One header per screen through useScreenHeader (title, subtitle, back, up to two actions, the rest behind « … »). The account menu holds « Améliorer l'app » (the improve agent), the app's own entries and sign out. AppSheet is the one bottom sheet (one open at a time, Back closes it). It mounts the AgentLayer: one agent's PiChat above the app (phone: a drawer with peek, half and full snap points; wide: a right panel), the improve agent in the same layer, optional push-to-talk and point mode. Also useAgentContext and readAgentContext (the screen on show travels as `context` with each submit) and useBackLayer, the one Back manager. Built on the shadcn drawer, sidebar, avatar and dropdown-menu of the host's own style (Base UI variants).",
       "dependencies": [
-        "@hachej/boring-feedback@^0.2.5",
-        "@hachej/boring-ui-kit@^0.2.5",
+        "@hachej/boring-feedback@^0.3.0",
+        "@hachej/boring-ui-kit@^0.3.0",
         "@base-ui/react@^1.8.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
@@ -935,8 +935,8 @@
       "title": "Viewers",
       "description": "The standard viewer top bar (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu) with Tailwind panes over it: the Markdown editor with a formatting toolbar and prose styling, the passive HTML preview and source editor, an image viewer with zoom and pan, and a PDF viewer. Owned, editable source over the borrowed controllers; no AI SDK.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "marked@^17.0.6",
@@ -1597,9 +1597,9 @@
       "title": "Feedback",
       "description": "Feedback from the chat composer: one Feedback button starts feedback mode on the application page (hover, click to pin a numbered note, hold ⌥ to use the app, optional voice), and one chip carries the notes to the next message. FeedbackBar, NoteBubble, FeedbackChip with its review, useComposerFeedback for the pi-chat composer, and PickerOverlay styles. Optional, not mounted by default: PointButton, AnnotateSheet, FeedbackList and FeedbackReport. Picking, masking, anchoring and placement stay in @hachej/boring-feedback/page and /ui, so restyling cannot weaken them.",
       "dependencies": [
-        "@hachej/boring-feedback@^0.2.5",
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-feedback@^0.3.0",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "lucide-react@^1.51.0"
@@ -2392,7 +2392,7 @@
       "title": "Feedback preview",
       "description": "PreviewBanner: a live, reversible preview of a change in the page (Approve / Discard) over `@hachej/boring-feedback/preview`, whose subagent calls models through a host gateway. Separate from `feedback` so annotation-only apps do not install the model SDK; install `feedback` first (its styles cover the banner).",
       "dependencies": [
-        "@hachej/boring-feedback@^0.2.5",
+        "@hachej/boring-feedback@^0.3.0",
         "@earendil-works/pi-ai@~1.2.0",
         "react@^19.0.0"
       ],
@@ -2410,8 +2410,8 @@
       "title": "Consumer task-list viewer",
       "description": "A consumer-defined task-list schema and controller over the shared text buffer, with a restylable borrowed React renderer.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "zod@^4.6.5"
@@ -2477,8 +2477,8 @@
       "title": "File tree",
       "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.2.5",
-        "@hachej/boring-files@^0.2.5",
+        "@hachej/boring-ui-kit@^0.3.0",
+        "@hachej/boring-files@^0.3.0",
         "react@^19.0.0",
         "radix-ui@^1.8.0",
         "lucide-react@^1.51.0"
