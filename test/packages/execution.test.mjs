@@ -281,7 +281,7 @@ test('virtual SQLite repository: seeded, git-enabled native env over the SQLite 
   };
   // Everything is read through Pi's native env; its shell has git bound to the same repository.
   const sh = async (repo, command) => { let output = ''; const result = getOrThrow(await repo.env.exec(command, { onOutput: text => { output += text; } }, context)); return { output, exitCode: result.exitCode }; };
-  const listed = async repo => (await sh(repo, 'find . -type f -not -path ".git/*" | sort')).output.trim().split('\n');
+  const listed = async repo => (await sh(repo, 'find . -type f -not -path "./.git/*" | sort')).output.trim().split('\n');
   let repo = await open();
   try {
     assert.deepEqual(await listed(repo), ['./README.md', './src/a.txt']);

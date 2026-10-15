@@ -44,7 +44,7 @@ test('hidden names: the presentation default set includes VCS, build and the pro
 
 test('workspace paths: leading ./ (repeated) is removed; a leading / stays so the provider refuses it, never aliases it', () => {
   assert.equal(workspacePath('./a/b.md'), 'a/b.md');
-  assert.equal(workspacePath('./a/b.md'), 'a/b.md');
+  assert.equal(workspacePath('././a/b.md'), 'a/b.md');
   assert.equal(workspacePath('/a/b.md'), '/a/b.md');
   assert.equal(workspacePath('/workspace/report.md'), '/workspace/report.md');
   assert.equal(workspacePath('/../x'), '/../x');

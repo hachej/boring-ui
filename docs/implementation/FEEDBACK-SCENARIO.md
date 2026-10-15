@@ -172,7 +172,7 @@ with `copy` yourself, as Ledgerly's `src/main.jsx` does.
 ## Two-minute manual checklist
 
 1. Run `npm run feedback:scenario` once. Then
-   `cd "$(node -p "require('.cache/evidence/feedback-scenario/summary.json').install.app")" && node serve.mjs`
+   `cd "$(node -p "require('./.cache/evidence/feedback-scenario/summary.json').install.app")" && node serve.mjs`
    and open the printed URL.
 2. **Feedback.** Click Feedback and hover "Save entry": the label reads
    `SaveBar · button «Save entry»`. Press ↑, then ↓. Hover a table row: it
