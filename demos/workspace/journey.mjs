@@ -1,6 +1,7 @@
 // Scripted browser journey over the real demo, including AP decisions, no-remount placement and icon-anchored chat popovers.
 // Screenshots go to .cache/evidence/saas-v2/. Run: npm run workspace-demo:journey
 import assert from 'node:assert/strict';
+import { expandTrace } from '../../scripts/trace-journey.mjs';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -255,6 +256,7 @@ try {
     await say('Does this invoice respect the policy?');
     await sees('the answer cites the policy and the invoice', 'No. Section 2 of the policy holds an invoice');
     assert.deepEqual(screenOf(app.contexts.at(-1).value), { name: 'Library document', params: { path: 'Policies/AP policy.md' } }, 'the screen context names the open document');
+    await expandTrace(browser);
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tool-name]')].map(item => item.textContent.trim()).join(' ')`);
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
     await browser.screenshot('4-policy.png');

@@ -6,6 +6,13 @@ const call = (name, args) => ({ tools: [{ name, args }] });
 const seen = ctx => JSON.stringify(ctx.messages);
 
 export const SOURCES = [{ name: 'workspace-demo', entries: Object.entries({
+  // Trace journey: real native read success and failure, with time to inspect the streaming line.
+  'Inspect Trace activity': [
+    { reasoning: 'Read the fictional policy, then check an invoice that does not exist.', tools: [{ name: 'read', args: { path: 'Policies/AP policy.md' } }], hold: 8000 },
+    { tools: [{ name: 'get_invoice', args: { id: 'INV-NONE' } }], hold: 8000 },
+    'Trace inspection finished. The fictional invoice was not found.',
+  ],
+  'Read the Trace policy': [call('read', { path: 'Policies/AP policy.md' }), 'Trace policy read finished.'],
   // Earlier conversations (seeded by the server).
   'month-end close': ['Left in the close: accruals for March, the bank reconciliation and the supplier statement check.'],
   'payment terms for Fernhill': ['Fernhill Labels is on net 30 from the invoice date.'],

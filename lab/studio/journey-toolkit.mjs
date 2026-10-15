@@ -1,6 +1,7 @@
 // The helpers every journey and scenario uses, over a driven browser (`launch` from @hachej/boring-testing/browser). Shared by the studio journey and the Cloudflare
 // recipe's journey: both pages use the same registry components, so the same selectors work. Nothing here depends on a variant.
 import assert from 'node:assert/strict';
+import { expandTrace } from '../../scripts/trace-journey.mjs';
 import { pause, q, qa } from '@hachej/boring-testing/browser';
 import { conversations } from './journey-ui.mjs';
 
@@ -105,7 +106,10 @@ export function createToolkit({ browser, pageUrl, step, app, restartHost, base, 
 
   // What the agent did, read from the page so it works against a remote deployment too: tool names and assistant text.
   // (A question and an artifact are shown as cards, not as tool rows.)
-  const domToolNames = () => browser.evaluate(`[...${qa('[data-testid=tool-name]')}.map(e => e.textContent), ...${qa('[data-testid=question-card]')}.map(() => 'ask_user'), ...${qa('[data-testid=artifact-card][data-state=ready]')}.map(() => 'present')]`);
+  const domToolNames = async () => {
+    await expandTrace(browser);
+    return browser.evaluate(`[...${qa('[data-testid=tool-name]')}.map(e => e.textContent), ...${qa('[data-testid=question-card]')}.map(() => 'ask_user'), ...${qa('[data-testid=artifact-card][data-state=ready]')}.map(() => 'present')]`);
+  };
   const assistantText = () => browser.evaluate(`${qa('[data-testid=transcript] article[data-role=assistant]')}.map(a => a.innerText).join('\\n')`);
   const userMessages = `${qa('[data-testid=transcript] article[data-role=user]')}.map(a => a.innerText.trim())`;
   // The native messages of the open conversation, when the studio runs in this process (not for a remote deployment).

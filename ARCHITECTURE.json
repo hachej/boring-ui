@@ -538,6 +538,7 @@
   "sourceDistribution": {
     "manifest": "registry.json",
     "format": "shadcn@4.21.4",
+    "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
     "runtimeImports": [
       "@hachej/boring-ui-kit/markdown-editor",
       "@hachej/boring-ui-kit/native-chat",
