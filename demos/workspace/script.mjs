@@ -23,12 +23,17 @@ export const SOURCES = [{ name: 'workspace-demo', entries: Object.entries({
     ctx => seen(ctx).includes('looking at: Library document {\\"path\\":\\"Library/AP policy.md\\"}') ? call('read', { path: 'Library/AP policy.md' }) : 'Open the policy and ask again.',
     call('get_invoice', { id: 'INV-2043' }),
     'No. Section 2 of the policy holds an invoice with the same supplier, PO and amount as an open one, and INV-2043 matches INV-2041. INV-2041 itself is fine: above 1,000 EUR it needs one approver.'],
-  // 4. The agent proposes; the approval card is the person's confirmation; the app's backend returns a receipt.
+  // 4. The agent reads the invoice, proposes, and the approval card is the person's confirmation; the backend returns a receipt.
   'What would you do with them': [
-    { text: 'I would approve INV-2041 but code it to 6300 Marketing, since it is the catalogue, and keep INV-2043 on hold. Approve below to save it.',
-      tools: [{ name: 'decide_invoice', args: { invoice: 'INV-2041', action: 'recode', account: '6300 Marketing', note: 'Catalogue is a marketing cost' } }] },
+    call('get_invoice', { id: 'INV-2041' }),
+    ctx => ({ text: 'I would approve INV-2041 but code it to 6300 Marketing, since it is the catalogue, and keep INV-2043 on hold. Approve below to save it.',
+      tools: [{ name: 'decide_invoice', args: { invoice: 'INV-2041', action: 'recode', account: '6300 Marketing', note: 'Catalogue is a marketing cost', expected: ctx.last.json.revision } }] }),
     call('show', { screen: 'invoice', id: 'INV-2041' }),
     ctx => `Done: INV-2041 is approved and coded to 6300 Marketing. Receipt ${ctx.results.find(result => result.name === 'decide_invoice')?.json?.receipt?.operationId ?? 'missing'}.`],
+  // 4b. A decision on a revision nobody reviewed is refused by the same backend, through the same tool and card.
+  'Now hold INV-2043': [
+    call('decide_invoice', { invoice: 'INV-2043', action: 'hold', expected: 'stale-revision' }),
+    ctx => ctx.last.isError ? `Not saved: ${ctx.last.json.reason}.` : 'Saved.'],
   // 6. Floating: the person leads, so a short answer and no navigation.
   'Why is this flagged': [
     ctx => seen(ctx).includes('Placement: floating') ? 'Linden Print Co sent two invoices, INV-2041 and INV-2043, for the same PO and amount.' : call('show', { screen: 'supplier', id: 'linden-print' })],

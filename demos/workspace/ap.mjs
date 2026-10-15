@@ -16,8 +16,8 @@ export const decisionSchema = z.strictObject({
   /** The account for `recode`. */
   account: z.enum(ACCOUNTS).optional(),
   note: z.string().max(200).optional(),
-  /** The revision of the record the person saw. */
-  expected: z.string().optional(),
+  /** The revision of the record the person (or the agent) reviewed. Required: a decision is never made on whatever is current. */
+  expected: z.string().min(1),
 });
 
 export async function openAccountsPayable({ filename, person }) {
@@ -37,21 +37,24 @@ export async function openAccountsPayable({ filename, person }) {
   const duplicatesOf = (invoice, all) => all.filter(other => other.id !== invoice.id && other.supplier === invoice.supplier && other.po === invoice.po && other.amount === invoice.amount && other.status !== 'rejected');
 
   async function decide(input) {
-    const decision = decisionSchema.parse(input);
+    const parsed = decisionSchema.safeParse(input);
+    if (!parsed.success) return { kind: 'denied', reason: 'Invalid decision' };
+    const decision = parsed.data;
     if (decision.action === 'recode' && !decision.account) return { kind: 'denied', reason: 'A re-code names the account' };
+    // One operation per (invoice, reviewed revision, decision): repeating a committed decision returns its receipt instead of a conflict.
+    const operationId = `decide-${createHash('sha256').update(`${decision.invoice}:${decision.expected}:${decision.action}:${decision.account ?? ''}`).digest('hex').slice(0, 24)}`;
+    const receiptOf = (receipt) => ({ kind: 'committed', receipt: { operationId: receipt.operationId, invoice: decision.invoice, action: decision.action, revision: receipt.changes[0].after.revision } });
+    const prior = await files.reconciliation.lookup(operationId, person);
+    if (prior.kind === 'committed') return receiptOf(prior.receipt);
     const current = await read(decision.invoice);
     if (!current) return { kind: 'denied', reason: 'Unknown invoice' };
-    if (decision.expected && decision.expected !== current.revision) return { kind: 'conflict', reason: 'The invoice changed since you opened it', current: current.revision };
+    if (decision.expected !== current.revision) return { kind: 'conflict', reason: 'The invoice changed since it was reviewed', current: current.revision };
     if (current.status !== 'pending') return { kind: 'conflict', reason: `The invoice is already ${current.status}`, current: current.revision };
     const { revision, ...record } = current;
     const next = { ...record, status: decision.action === 'hold' ? 'on-hold' : 'approved', ...(decision.action === 'recode' ? { account: decision.account, recodedFrom: record.account } : {}), ...(decision.note ? { note: decision.note } : {}) };
-    // One operation per (invoice, revision, decision): repeating the same call returns the same receipt instead of writing twice.
-    const operationId = `decide-${createHash('sha256').update(`${decision.invoice}:${revision}:${decision.action}:${decision.account ?? ''}`).digest('hex').slice(0, 24)}`;
     const result = await files.publication.publish({ operationId, atomicity: 'all-or-nothing',
       changes: [{ kind: 'replace', target: { ...locate(decision.invoice), revision }, bytes: encoder.encode(JSON.stringify(next)), mediaType: 'application/json' }] }, person);
-    if (result.kind !== 'committed') return result;
-    const [change] = result.receipt.changes;
-    return { kind: 'committed', receipt: { operationId: result.receipt.operationId, invoice: decision.invoice, action: decision.action, revision: change.after.revision } };
+    return result.kind === 'committed' ? receiptOf(result.receipt) : result;
   }
 
   return { list, read, decide, duplicatesOf, supplier: id => SUPPLIERS[id], close: () => store.close() };

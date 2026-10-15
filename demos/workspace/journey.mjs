@@ -35,6 +35,8 @@ try {
   const click = (label, expression) => browser.click(expression).then(() => label);
   const mouse = (type, x, y) => browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
   const lastContext = () => app.contexts.at(-1)?.value;
+  // The request context is the screen's fields with `placement` beside them (and this tab's id, which addresses the agent's commands).
+  const screenOf = value => ({ name: value.name, params: value.params });
   const row = title => `[...document.querySelectorAll('[data-testid=conversation-row]')].find(item => item.innerText.includes(${JSON.stringify(title)}))`;
 
   await step('start: three columns, the chat docked, earlier conversations listed', async () => {
@@ -56,7 +58,7 @@ try {
     await sees('the answer', 'I opened the queue in the viewer.');
     await browser.until('the queue is on show', `${viewing} === 'Approvals' && !!${q('[data-testid=approval-queue]')}`, 10000);
     assert.equal(lastContext().placement, 'docked');
-    assert.deepEqual(lastContext().screen, { name: 'Invoice', params: { id: 'INV-2044' } }, 'the request carried the screen the person was on');
+    assert.deepEqual(screenOf(lastContext()), { name: 'Invoice', params: { id: 'INV-2044' } }, 'the request carried the screen the person was on');
     assert.deepEqual(app.navigation.map(item => item.screen), ['approvals']);
     await browser.until('three rows', `document.querySelectorAll('[data-testid^=queue-row-]').length === 3`, 5000);
     await browser.screenshot('2-approvals.png');
@@ -88,7 +90,7 @@ try {
     await browser.until('INV-2043 open', `${viewing} === 'Invoice INV-2043'`, 10000);
     await say('Anything odd about this one?');
     await sees('the duplicate is named', 'INV-2043 looks like a duplicate of INV-2041');
-    assert.deepEqual(lastContext().screen, { name: 'Invoice', params: { id: 'INV-2043' } });
+    assert.deepEqual(screenOf(lastContext()), { name: 'Invoice', params: { id: 'INV-2043' } });
     assert.equal(app.navigation.length, 1, 'answering did not move the page');
   });
 
@@ -103,10 +105,22 @@ try {
     await browser.click(q('[data-testid=sessions-tab-conversations]'));
     await say('Does this invoice respect the policy?');
     await sees('the answer cites the policy and the invoice', 'No. Section 2 of the policy holds an invoice');
-    assert.deepEqual(app.contexts.at(-1).value.screen, { name: 'Library document', params: { path: 'Library/AP policy.md' } }, 'the screen context names the open document');
+    assert.deepEqual(screenOf(app.contexts.at(-1).value), { name: 'Library document', params: { path: 'Library/AP policy.md' } }, 'the screen context names the open document');
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tool-name]')].map(item => item.textContent.trim()).join(' ')`);
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
     await browser.screenshot('4-policy.png');
+    // The document is editable: leaving it with an unsaved edit asks first, and declining keeps the document and the edit.
+    await browser.type(q('[data-testid=library-document] [contenteditable=true]'), ' Draft edit.');
+    await browser.until('the edit is unsaved', `/Unsaved/.test(${q('[data-testid=library-document]')}.innerText)`, 10000);
+    await browser.evaluate(`window.__asked = 0; window.confirm = () => { window.__asked++; return false; }`);
+    await browser.click(q('[data-testid=nav-approvals]'));
+    await pause(300);
+    assert.equal(await browser.evaluate('window.__asked'), 1, 'leaving asked once');
+    assert.equal(await browser.evaluate(viewing), 'Library/AP policy.md', 'declining stays on the document');
+    assert.ok((await browser.evaluate(`${q('[data-testid=library-document]')}.innerText`)).includes('Draft edit.'), 'the edit is still there');
+    await browser.evaluate(`window.confirm = () => true`);
+    await browser.click(q('[data-testid=nav-approvals]'));
+    await browser.until('left the document', `${viewing} === 'Approvals'`, 5000);
   });
 
   await step('4 the agent proposes approve-and-recode; the person approves; the backend returns a receipt', async () => {
@@ -114,16 +128,31 @@ try {
     await browser.until('the approval card', `${q('[data-testid=approval-card]')}?.dataset.state === 'pending'`, 30000);
     assert.equal(await browser.evaluate(`${q('[data-testid=approval-summary]')}.innerText`), 'Approve INV-2041 coded to 6300 Marketing');
     assert.equal((await app.ap.read('INV-2041')).status, 'pending', 'nothing is saved before the person approves');
+    const reviewed = (await app.ap.read('INV-2041')).revision;
+    assert.ok((await browser.evaluate(`${q('[data-testid=approval-args]')}.textContent`)).includes(reviewed), 'the card carries the reviewed revision');
     await browser.screenshot('5-approval.png');
     await browser.click(q('[data-testid=approval-approve]'));
     await sees('the receipt in the answer', 'Done: INV-2041 is approved and coded to 6300 Marketing. Receipt decide-');
+    const receiptId = /Receipt (decide-[0-9a-f]+)/.exec(await browser.evaluate(body))[1];
+    // Repeating the committed decision returns the same receipt; any other decision on the old revision is refused.
+    const again = await app.ap.decide({ invoice: 'INV-2041', action: 'recode', account: '6300 Marketing', expected: reviewed });
+    assert.deepEqual([again.kind, again.receipt.operationId], ['committed', receiptId]);
+    assert.equal((await app.ap.decide({ invoice: 'INV-2041', action: 'hold', expected: reviewed })).kind, 'conflict');
     const saved = await app.ap.read('INV-2041');
     assert.deepEqual([saved.status, saved.account, saved.recodedFrom], ['approved', '6300 Marketing', '6200 Printing']);
     assert.equal((await app.ap.read('INV-2043')).status, 'pending');
     // The page shows the saved invoice (the agent opened it: the chat is docked).
     await browser.until('INV-2041 approved on the page', `${viewing} === 'Invoice INV-2041' && ${q('[data-testid=invoice-status]')}?.textContent === 'approved' && ${q('[data-testid=invoice-account]')}?.textContent === '6300 Marketing'`, 15000);
-    // A second decision on the same record is refused by the same backend: no double write.
-    assert.equal((await app.ap.decide({ invoice: 'INV-2041', action: 'approve' })).kind, 'conflict');
+    assert.equal((await app.ap.read('INV-2041')).status, 'approved', 'one write, however often it is repeated');
+  });
+
+  await step('4b a decision on a revision nobody reviewed is refused through the same tool and card', async () => {
+    await say('Now hold INV-2043, please.');
+    const cards = `[...document.querySelectorAll('[data-testid=approval-card]')]`;
+    await browser.until('a second approval card', `${cards}.length === 2 && ${cards}.at(-1).dataset.state === 'pending'`, 30000);
+    await browser.click(`${cards}.at(-1).querySelector('[data-testid=approval-approve]')`);
+    await sees('the refusal', 'Not saved: The invoice changed since it was reviewed.');
+    assert.equal((await app.ap.read('INV-2043')).status, 'pending', 'nothing was written');
   });
 
   await step('5 dragging the divider floats the chat: placement floating, the sessions pane goes, the app takes the full width', async () => {
@@ -151,7 +180,7 @@ try {
     await say('Why is this flagged?');
     await sees('the short answer', 'Linden Print Co sent two invoices, INV-2041 and INV-2043, for the same PO and amount.');
     assert.equal(lastContext().placement, 'floating');
-    assert.deepEqual(lastContext().screen, { name: 'Supplier', params: { id: 'linden-print' } });
+    assert.deepEqual(screenOf(lastContext()), { name: 'Supplier', params: { id: 'linden-print' } });
     assert.equal(app.navigation.length, moves, 'the agent did not move the page');
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print');
     await pause(300);
@@ -169,7 +198,26 @@ try {
     await browser.screenshot('8-docked-again.png');
   });
 
-  assert.deepEqual(app.contexts.map(item => item.value.placement), ['docked', 'docked', 'docked', 'docked', 'floating', 'docked']);
+  await step('agent commands are bound to their conversation and tab: a late or foreign command does not move the viewer', async () => {
+    const tab = lastContext().tab, earlier = app.earlier[0];
+    assert.ok(app.navigation.every(item => item.conversation === app.current && item.tab === tab), 'every command so far was addressed to this conversation and tab');
+    const where = await browser.evaluate(viewing);
+    await browser.click(row('Month-end close'));
+    await sees('the other conversation is open', 'Left in the close: accruals for March');
+    // A slow result of the first conversation arrives while the second is open; another tab's command for the second one arrives too.
+    app.navigate({ conversation: app.current, tab, screen: 'supplier', id: 'north-quay' });
+    app.navigate({ conversation: earlier, tab: 'another-tab', screen: 'supplier', id: 'north-quay' });
+    await pause(1500);
+    assert.equal(await browser.evaluate(viewing), where, 'neither command moved the viewer');
+    await browser.click(row("This week's approvals"));
+    await sees('back in the first conversation', 'I opened the queue in the viewer.');
+    await pause(1500);
+    assert.equal(await browser.evaluate(viewing), where, 'the stale command was dropped, not delivered on return');
+    app.navigate({ conversation: app.current, tab, screen: 'approvals' });
+    await browser.until('a command for this conversation and tab is applied', `${viewing} === 'Approvals'`, 5000);
+  });
+
+  assert.deepEqual(app.contexts.map(item => item.value.placement), ['docked', 'docked', 'docked', 'docked', 'docked', 'floating', 'docked']);
   assert.deepEqual(browser.problems, [], 'no page errors');
   console.log(`workspace-demo journey passed. Screenshots in ${evidence}`);
 } finally {

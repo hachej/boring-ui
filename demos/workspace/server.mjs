@@ -34,6 +34,7 @@ import { buildTailwind } from '../../examples/studio/tailwind.mjs';
 import { openAccountsPayable, decisionSchema } from './ap.mjs';
 import { ACCOUNTS, COMPANY, POLICY, SUPPLIERS, contractPdf, invoicePdf } from './data.mjs';
 
+const NAVIGATION_TTL_MS = 15_000;
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 const text = value => ({ output: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] });
@@ -66,6 +67,7 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
 
   // What the browser said about itself with each submit, by conversation; and what the agent asked the viewer to show.
   const contexts = [], latest = new Map(), navigation = [];
+  const navigate = command => { navigation.push({ seq: navigation.length + 1, at: Date.now(), ...command }); };
   const lines = invoice => `${invoice.id} ${SUPPLIERS[invoice.supplier].name} ${invoice.amount.toFixed(2)} ${invoice.currency} due ${invoice.due}, ${invoice.status}`;
   const tools = [
     defineTool({ name: 'pending_approvals', description: 'List the invoices waiting for a decision this week.', parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
@@ -79,10 +81,15 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
       } }),
     defineTool({ name: 'show', description: 'Open a screen in the viewer beside the chat: approvals, invoice (with id) or supplier (with id). Use it when the chat is docked.',
       parameters: Type.Object({ screen: Type.Union([Type.Literal('approvals'), Type.Literal('invoice'), Type.Literal('supplier')]), id: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'unsafe',
-      execute: async args => { navigation.push({ seq: navigation.length + 1, ...args }); return text(`Opened ${args.screen}${args.id ? ` ${args.id}` : ''} in the viewer.`); } }),
+      execute: async (args, api) => {
+        // The command belongs to the conversation that made it and to the tab that was talking to it; the page drops it otherwise.
+        const conversation = String(api.conversationId);
+        navigate({ conversation, tab: latest.get(conversation)?.tab, ...args });
+        return text(`Opened ${args.screen}${args.id ? ` ${args.id}` : ''} in the viewer.`);
+      } }),
     // The one way the agent changes an invoice: the app's own `decide`, after the person approves the card. Same receipt as the page's buttons.
-    requireApproval(defineTool({ name: 'decide_invoice', description: `Approve an invoice, approve it coded to another account (action recode, account one of: ${ACCOUNTS.join(', ')}), or put it on hold.`,
-      parameters: Type.Object({ invoice: Type.String(), action: Type.Union([Type.Literal('approve'), Type.Literal('recode'), Type.Literal('hold')]), account: Type.Optional(Type.String()), note: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'unsafe',
+    requireApproval(defineTool({ name: 'decide_invoice', description: `Approve an invoice, approve it coded to another account (action recode, account one of: ${ACCOUNTS.join(', ')}), or put it on hold. Pass the revision from get_invoice as expected: a changed invoice is refused.`,
+      parameters: Type.Object({ invoice: Type.String(), action: Type.Union([Type.Literal('approve'), Type.Literal('recode'), Type.Literal('hold')]), account: Type.Optional(Type.String()), note: Type.Optional(Type.String()), expected: Type.String({ description: 'The invoice revision you read with get_invoice' }) }, { additionalProperties: false }), replay: 'unsafe',
       execute: async args => { const result = await ap.decide(args); return { ...text(result), isError: result.kind !== 'committed' }; } }),
     { summarize: ({ invoice, action, account }) => action === 'recode' ? `Approve ${invoice} coded to ${account}` : `${action === 'hold' ? 'Hold' : 'Approve'} ${invoice}` }),
   ];
@@ -122,7 +129,9 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
       const url = new URL(request.url), route = url.pathname.slice('/api/ap'.length);
       if (request.method === 'GET' && route === '/state') {
         const invoices = await ap.list();
-        return json({ invoices, duplicates: Object.fromEntries(invoices.map(invoice => [invoice.id, ap.duplicatesOf(invoice, invoices).map(other => other.id)])), suppliers: SUPPLIERS, accounts: ACCOUNTS, navigation: navigation.filter(item => item.seq > Number(url.searchParams.get('after') ?? 0)) });
+        return json({ invoices, duplicates: Object.fromEntries(invoices.map(invoice => [invoice.id, ap.duplicatesOf(invoice, invoices).map(other => other.id)])), suppliers: SUPPLIERS, accounts: ACCOUNTS, latest: navigation.length,
+          // Only this tab's commands for the conversation it shows, and only fresh ones: a slow command is dropped, never delivered late.
+          navigation: navigation.filter(item => item.seq > Number(url.searchParams.get('after') ?? 0) && item.conversation === url.searchParams.get('conversation') && item.tab === url.searchParams.get('tab') && Date.now() - item.at < NAVIGATION_TTL_MS) });
       }
       const pdf = /^\/pdf\/(INV-\d{4})$/.exec(route);
       if (request.method === 'GET' && pdf) { const invoice = await ap.read(pdf[1]); return invoice ? new Response(invoicePdf(invoice), { headers: { 'content-type': 'application/pdf' } }) : new Response(null, { status: 404 }); }
@@ -164,7 +173,7 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, ap, contexts, navigation, submits, current: String(current.id), earlier,
+    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, ap, contexts, navigation, navigate, submits, current: String(current.id), earlier,
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); ap.close(); db.close(); },
   };
 }

@@ -32,16 +32,24 @@ const day = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en
 const Ap = createContext(null);
 const useAp = () => useContext(Ap);
 
-function ApProvider({ children, view, go }) {
+const TAB = Math.random().toString(36).slice(2); // this tab: agent commands are addressed to it
+
+function ApProvider({ children, view, go, conversation }) {
   const [state, setState] = useState({ invoices: [], suppliers: {}, accounts: [], duplicates: {} });
   const [receipts, setReceipts] = useState({});
-  const [seen, setSeen] = useState(0);
+  const seen = useRef(0), skip = useRef(true), current = useRef(conversation);
+  current.current = conversation;
+  // Switching conversation drops whatever the old one had pending: a late command never moves this conversation's viewer.
+  useEffect(() => { skip.current = true; }, [conversation]);
   const refresh = useCallback(async () => {
-    const body = await (await authorized(new Request(at(`/api/ap/state?after=${seen}`)))).json();
+    const asked = conversation;
+    const body = await (await authorized(new Request(at(`/api/ap/state?after=${seen.current}&conversation=${asked}&tab=${TAB}`)))).json();
     setState(body);
+    if (current.current !== asked) return;
+    if (skip.current) { skip.current = false; seen.current = body.latest; return; }
     const last = body.navigation.at(-1);
-    if (last) { setSeen(last.seq); go(last.screen === 'approvals' ? { screen: 'approvals' } : { screen: last.screen, id: last.id }); }
-  }, [seen, go]);
+    if (last) { seen.current = last.seq; go(last.screen === 'approvals' ? { screen: 'approvals' } : { screen: last.screen, id: last.id }); }
+  }, [conversation, go]);
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 400); return () => clearInterval(timer); }, [refresh]);
   const invoice = state.invoices.find(item => item.id === view.id);
   const supplier = state.suppliers[view.screen === 'supplier' ? view.id : invoice?.supplier];
@@ -192,15 +200,15 @@ function Screen({ view }) {
   return <div data-testid={`screen-${view.screen}`} className="mx-auto w-full max-w-4xl"><Experience key={view.screen} descriptor={SCREENS[view.screen]} cells={renderedCells} canView={() => true} /></div>;
 }
 
-function Document({ view, provider, close }) {
+function Document({ view, provider, close, onUnsaved }) {
   useAgentContext({ name: 'Library document', params: { path: view.path } });
   const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history }), [provider]);
   return <div data-testid="library-document" data-path={view.path} className="flex min-h-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
-    <FileViewer key={view.path} path={view.path} locator={provider.locate(view.path)} options={options} onClose={close} />
+    <FileViewer key={view.path} path={view.path} locator={provider.locate(view.path)} options={options} onClose={close} onUnsavedChange={onUnsaved} />
   </div>;
 }
 
-function Column({ view, go, provider }) {
+function Column({ view, go, provider, dirty }) {
   return <div data-testid="right-column" className="flex min-h-0 flex-1 flex-col bg-muted/30">
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-background px-4">
       <h1 className="mr-4 text-sm font-semibold">Harbor &amp; Pine · Accounts payable</h1>
@@ -208,19 +216,18 @@ function Column({ view, go, provider }) {
       <span data-testid="viewing" className="ml-auto truncate text-xs text-muted-foreground">{view.screen === 'file' ? view.path : `${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span>
     </header>
     <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 sm:p-6">
-      {view.screen === 'file' ? (provider ? <Document view={view} provider={provider} close={() => go({ screen: 'approvals' })} /> : null) : <Screen view={view} />}
+      {view.screen === 'file' ? (provider ? <Document view={view} provider={provider} close={() => go({ screen: 'approvals' })} onUnsaved={unsaved => { dirty.current = unsaved; }} /> : null) : <Screen view={view} />}
     </div>
   </div>;
 }
 
 // ---- The left dock: the sessions pane (conversations, Library) beside the chat while docked; AmbientChat alone while floating.
 const WIDE = 640;
-function Chat({ api, provider, go, view }) {
-  const [active, setActive] = useState(firstConversation);
+function Chat({ api, provider, go, view, active, setActive }) {
   const [pane, setPane] = useState('conversations');
   const wide = useRef(760);
   const conversations = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: active, onSelect: setActive });
-  const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: readAgentContext });
+  const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   // The sessions pane needs room: a narrow dock keeps only the chat. Docking back returns to the last width that had room for it.
   const sessions = api.width >= WIDE;
@@ -237,15 +244,23 @@ function App() {
   const [view, setView] = useState({ screen: 'approvals' });
   const [provider, setProvider] = useState();
   useEffect(() => { void connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(setProvider); }, []);
-  const go = useCallback(next => setView(next), []);
+  const [active, setActive] = useState(firstConversation);
+  // An open Library document may hold unsaved edits: leaving it (another file, a screen, an agent command) asks first.
+  const dirty = useRef(false);
+  const go = useCallback(next => {
+    if (dirty.current && !globalThis.confirm('This document has unsaved changes. Discard them and leave?')) return false;
+    dirty.current = false;
+    setView(next);
+    return true;
+  }, []);
   return <AgentContextProvider>
-    <ApProvider view={view} go={go}>
+    <ApProvider view={view} go={go} conversation={active}>
       <OpenFile.Provider value={path => go({ screen: 'file', path })}>
         <DockLayout storageKey="workspace-demo" className="h-full">
           <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultWidth={760} minWidth={300} labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
-            {api => <Chat api={api} provider={provider} go={go} view={view} />}
+            {api => <Chat api={api} provider={provider} go={go} view={view} active={active} setActive={setActive} />}
           </Dock>
-          <DockMain><Column view={view} go={go} provider={provider} /></DockMain>
+          <DockMain><Column view={view} go={go} provider={provider} dirty={dirty} /></DockMain>
         </DockLayout>
       </OpenFile.Provider>
     </ApProvider>
