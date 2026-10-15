@@ -10,19 +10,25 @@ import type { PiChatActions } from './session';
 // authority. See docs/architecture/PAGE-TOOLS.md (PLACE-1..3; draft PR 1698).
 export type ChatPlacement = 'docked' | 'floating';
 
-// Keyed by controller: a page can hold several chats, and floating or docking keeps the controller (PLACE-3).
-const placements = new WeakMap<NativeChatController, ChatPlacement>();
+// Keyed by controller (a page can hold several chats; floating or docking keeps the controller, PLACE-3). Each mounted presenter has its own
+// registration, so unmounting one never clears another's; the latest surviving registration wins.
+const placements = new WeakMap<NativeChatController, { readonly placement: ChatPlacement }[]>();
 
 /** Reports the placement of the chat showing `controller` while the caller is mounted. */
 export function useChatPlacement(controller: NativeChatController, placement: ChatPlacement): void {
   useLayoutEffect(() => {
-    placements.set(controller, placement);
-    return () => { if (placements.get(controller) === placement) placements.delete(controller); };
+    const entry = { placement };
+    const list = placements.get(controller) ?? [];
+    placements.set(controller, [...list, entry]);
+    return () => {
+      const rest = (placements.get(controller) ?? []).filter(item => item !== entry);
+      if (rest.length) placements.set(controller, rest); else placements.delete(controller);
+    };
   }, [controller, placement]);
 }
 
 export function readChatPlacement(controller: NativeChatController | undefined): ChatPlacement | undefined {
-  return controller ? placements.get(controller) : undefined;
+  return controller ? placements.get(controller)?.at(-1)?.placement : undefined;
 }
 
 export type RemoteChatState =
@@ -42,8 +48,8 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
   readonly fetch: (request: Request) => Promise<Response>;
   readonly identity: ChatIdentity | undefined;
   /**
-   * The current screen context, read at each submit (for example `readAgentContext` of the app-shell item). The submit's `context` is
-   * `{ placement, screen }`: the chat's placement (`docked` or `floating`, reported by `PiChat` / `AmbientChat`) and this value.
+   * The current screen context, read at each submit (for example `readAgentContext` of the app-shell item). The submit's `context` is this
+   * value as it is (so a host reading `name` and `params` keeps working) plus `placement`: `docked` or `floating`, reported by the chat.
    */
   readonly requestContext?: () => Readonly<Record<string, unknown>> | undefined;
 }): RemoteChatState {
@@ -58,7 +64,7 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
     let disposed = false, controller: NativeChatController | undefined, remote: RemoteChat | undefined;
     const context = () => {
       const placement = readChatPlacement(controller), screen = binding.requestContext?.();
-      return placement || screen ? { ...(placement && { placement }), ...(screen && { screen }) } : undefined;
+      return placement || screen ? { ...screen, ...(placement && { placement }) } : undefined;
     };
     setChat({ status: 'connecting', conversationId });
     void (async () => {

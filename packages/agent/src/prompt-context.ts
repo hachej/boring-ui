@@ -63,10 +63,11 @@ const ROLES = {
 } as const;
 
 /**
- * The text for the browser's request context, `{ placement, screen }` as `useRemoteChat` sends it. The host calls this in
+ * The text for the browser's request context: the screen's `{ name, params }` with `placement` beside them, as `useRemoteChat` sends it
+ * (an older client sends only `{ name, params }`, which still renders; a `{ screen }` wrapper is read too). The host calls this in
  * `createPromptContext({ context })` on the value it stored by conversation id. `placement` is `docked` or `floating` and picks the
- * agent's role; `screen` is `{ name, params }`. Both are advisory text from the browser: placement changes behaviour and never
- * authority (a docked agent writes no more than a floating one), and anything else in the value is ignored.
+ * agent's role. Both are advisory text from the browser: placement changes behaviour and never authority (a docked agent writes no
+ * more than a floating one), and anything else in the value is ignored.
  * See docs/architecture/PAGE-TOOLS.md (PLACE-1..3).
  */
 export function renderRequestContext(value: unknown): string | undefined {
@@ -74,8 +75,9 @@ export function renderRequestContext(value: unknown): string | undefined {
   const { placement, screen } = value as { placement?: unknown; screen?: unknown };
   const lines: string[] = [];
   if (placement === 'docked' || placement === 'floating') lines.push(`Placement: ${placement}. ${ROLES[placement]}`);
-  if (typeof screen === 'object' && screen !== null && typeof (screen as { name?: unknown }).name === 'string') {
-    const { name, params } = screen as { name: string; params?: unknown };
+  const shown = typeof screen === 'object' && screen !== null ? screen : value;
+  if (typeof (shown as { name?: unknown }).name === 'string') {
+    const { name, params } = shown as { name: string; params?: unknown };
     lines.push(`The person is looking at: ${name}${params && typeof params === 'object' && Object.keys(params).length ? ` ${JSON.stringify(params)}` : ''}`);
   }
   return lines.length ? lines.join('\n') : undefined;

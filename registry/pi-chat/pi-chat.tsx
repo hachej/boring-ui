@@ -20,6 +20,7 @@ import { Shimmer } from './shimmer';
 import { useChatSession, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
 import { useChatPlacement } from './use-remote-chat';
+import type { ChatPlacement } from './use-remote-chat';
 import type { ChatFeatureProps, FilesHandler } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
 import { chatTextFor } from './locale';
@@ -47,6 +48,8 @@ export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortCo
 
 export interface PiChatProps extends ChatFeatureProps {
   readonly controller: NativeChatController;
+  /** Where this chat is shown, reported with each submit (advisory, never authority). `docked` by default; a host that floats or tucks the same chat in a drawer says `floating`. */
+  readonly placement?: ChatPlacement | undefined;
   /** Every word the chat shows (title, placeholder, buttons, notices, empty states): a partial object over `defaultChatLabels`. */
   /** The chat's language: `en` (default) or `fr`. `labels` override any of its words. */
   readonly locale?: ChatLocale | undefined;
@@ -105,11 +108,11 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </span>;
 }
 
-function PiChatSession({ controller, mode = 'expert', className, actions, avatar, headerActions, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, onOpenFile, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
-  useChatPlacement(controller, 'docked');
+  useChatPlacement(controller, placement);
   const { title } = labels;
   const [browsingHistory, setBrowsingHistory] = useState(false);
   const [pickingConversation, setPickingConversation] = useState(false);
