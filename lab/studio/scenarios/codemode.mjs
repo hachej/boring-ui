@@ -24,6 +24,11 @@ return { counts, north };` }),
   expect: [{ replyNumbers: [...Object.values(counts), north] }, { toolCalls: { name: 'run_code', min: 1, max: 2 } }],
   async verify(t) {
     const { browser, q, qa } = t;
+    // Trace mounts its nested lines when expanded; inspect the visible steps rather than hidden cards.
+    for (let index = 0; index < await browser.evaluate(`${qa('[data-testid=activity]')}.length`); index++) {
+      const activity = `${qa('[data-testid=activity]')}[${index}]`;
+      if (await browser.evaluate(`${activity}.dataset.open === 'false'`)) await browser.click(`${activity}.querySelector('[data-slot=trace-collapsible-trigger]')`);
+    }
     assert.equal(await browser.evaluate(`${qa('[data-testid=tool-card][data-tool=run_code][data-status=completed]')}.length >= 1`), true, 'a completed run_code card is shown');
     const cards = await browser.evaluate(`${qa('[data-testid=tool-card]')}.map(e => e.dataset.tool)`);
     assert.ok(cards.length >= 1 && cards.length <= 2 && cards.every(card => card === 'run_code'), `tool cards: ${cards.join(' | ')}`);

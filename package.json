@@ -27,6 +27,7 @@
     "workspace-app:journey": "node examples/workspace-app/journey.mjs",
     "workspace-demo": "node demos/workspace/server.mjs",
     "workspace-demo:journey": "node demos/workspace/journey.mjs",
+    "workspace-demo:journey:trace": "node demos/workspace/journey-trace.mjs",
     "dock-app": "node examples/dock-app/server.mjs",
     "dock-app:journey": "node examples/dock-app/journey.mjs",
     "app-shell": "node examples/app-shell/server.mjs",

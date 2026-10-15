@@ -636,6 +636,13 @@
             "color": "transparent",
             "animation": "pi-chat-shimmer 2.2s linear infinite"
           },
+          "@media (prefers-reduced-motion: reduce)": {
+            ".pi-chat [data-slot=trace-line][data-status=running] > [data-slot=trace-title]": {
+              "animation": "none",
+              "background-image": "none",
+              "color": "inherit"
+            }
+          },
           ".pi-chat [data-testid=\"message-text\"][data-streaming=\"true\"] > :last-child:not([data-testid=\"code-block\"])::after": {
             "content": "\"\"",
             "display": "inline-block",

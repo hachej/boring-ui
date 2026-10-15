@@ -46,6 +46,14 @@ test('the app-shell closure ships no global tokens: no cssVars, and the theme it
   for (const name of APP_SHELL_CLOSURE()) assert.equal(manifest.items.find(entry => entry.name === name).cssVars, undefined, `${name} ships cssVars`);
 });
 
+test('pi-chat declares Trace as a style-resolved shadcn built-in, never a vendored item', () => {
+  const chat = manifest.items.find(item => item.name === 'pi-chat');
+  assert.ok(SHADCN_BUILTINS.includes('trace'));
+  assert.ok(chat.registryDependencies.includes('trace'));
+  assert.ok(!chat.files.some(file => /\/trace\.tsx$/.test(file.path)));
+  for (const name of ['activity', 'tool', 'queue']) assert.match(readFileSync(join(root, `registry/pi-chat/${name}.tsx`), 'utf8'), /from '@\/components\/ui\/trace'/);
+});
+
 test('the type-only exception admits only type imports: a runtime re-export of a model SDK is a value import', () => {
   const reexport = importKinds("export { stream } from '@earendil-works/pi-ai';\n");
   assert.ok(reexport.valued.has('@earendil-works/pi-ai') && !reexport.typeOnly.has('@earendil-works/pi-ai'));

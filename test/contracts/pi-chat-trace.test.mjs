@@ -84,4 +84,10 @@ test('PiChat composes nested Trace lines without changing native input or host t
   await render(view(), { groupTool: () => false });
   assert.equal(container.querySelectorAll('[data-testid="tool-card"]').length, 2, 'ungrouped tools still render');
   assert.equal(get('tool-card').closest('[data-testid="activity"]'), null);
+  const queued = view(false, true);
+  queued.docs['pi.inbox'] = { items: [{ id: 'queued-fictional', mode: 'followUp', content: 'Read another fictional file' }] };
+  await render(queued);
+  assert.equal(get('queue-item').querySelector('[data-slot="trace-line"]').getAttribute('data-status'), 'pending');
+  assert.match(get('queue-text').textContent, /Read another fictional file/);
+  assert.equal(get('queue-cancel').disabled, true, 'a read-only native queue cannot manufacture withdrawal permission');
 });
