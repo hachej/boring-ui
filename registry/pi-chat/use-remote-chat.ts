@@ -7,7 +7,7 @@ import type { PiChatActions } from './session';
 
 // ---- Placement: where the chat is shown, reported by the component that shows it and sent with each submit (see `useRemoteChat`).
 // `PiChat` reports `docked`, `AmbientChat` (also a docked chat floated by its divider) reports `floating`. Advisory for the model, never
-// authority. See docs/architecture/PAGE-TOOLS.md (PLACE-1..3; draft PR 1698).
+// authority. See docs/architecture/PAGE-TOOLS.md (PLACE-1..3).
 export type ChatPlacement = 'docked' | 'floating';
 
 // Keyed by controller (a page can hold several chats; floating or docking keeps the controller, PLACE-3). Each mounted presenter has its own
