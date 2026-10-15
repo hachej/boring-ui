@@ -88,6 +88,6 @@ test('PiChat composes nested Trace lines without changing native input or host t
   queued.docs['pi.inbox'] = { items: [{ id: 'queued-fictional', mode: 'followUp', content: 'Read another fictional file' }] };
   await render(queued);
   assert.equal(get('queue-item').querySelector('[data-slot="trace-line"]').getAttribute('data-status'), 'pending');
-  assert.match(get('queue-text').textContent, /Read another fictional file/);
+  assert.equal(get('queue-text').textContent, 'Read another fictional file', 'the queued message selector keeps its original text without the screen-reader status prefix');
   assert.equal(get('queue-cancel').disabled, true, 'a read-only native queue cannot manufacture withdrawal permission');
 });

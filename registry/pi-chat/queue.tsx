@@ -87,7 +87,7 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
         return <li key={String(item.id)} data-testid="queue-item" data-mode={item.mode} className={`flex min-h-10 items-center gap-1.5 pr-1.5 pl-3 ${index > 0 ? 'border-t border-border/70' : ''}`}>
           <TraceLine status="pending" className="flex-1">
             <TraceIcon>{steering ? <RouteIcon /> : <ListEndIcon />}</TraceIcon>
-            <TraceTitle data-testid="queue-text"><span className="sr-only">{steering ? labels.steering : labels.queued}: </span>{queuedText(item, labels.images)}</TraceTitle>
+            <TraceTitle><span className="sr-only">{steering ? labels.steering : labels.queued}: </span><span data-testid="queue-text">{queuedText(item, labels.images)}</span></TraceTitle>
           </TraceLine>
           {!steering && actions?.steer && <button type="button" data-testid="queue-steer" title={labels.steerHint} disabled={working} onClick={() => { void run(item, () => actions.steer!(item)); }}
             className={`${rowButton} h-8 px-2 text-sm max-sm:h-10 max-sm:px-2.5`}><CornerDownRightIcon className="size-3.5" aria-hidden="true" />{labels.steer}</button>}
