@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 test('CanvasEditor DOM controls with fictional fonts and assets (not browser, font or geometry qualification)', async t => {
   const window = new Window({ url: 'http://localhost/' });

@@ -61,7 +61,7 @@ The three reference applications in [PI-COMPLEMENT.md](../architecture/PI-COMPLE
 
 ## Current consumer migration
 
-A39/H01–H09 retain the historical revision-5 contract; in particular the old H09 release scenario is not reassigned to the current hub. [The owner map](../compatibility/HUB-M1.md#current-consumer-ownership) governs new work. A48 is additive and has no inherited pass. The [fictional companion fixture](../../examples/current-hub/README.md) supplies partial invocation/privacy/recovery evidence; the full journey remains unqualified.
+A39/H01–H09 retain the historical revision-5 contract; in particular the old H09 release scenario is not reassigned to the current hub. [The owner map](../compatibility/HUB-M1.md#current-consumer-ownership) governs new work. A48 is additive and has no inherited pass. The [fictional companion fixture](../../fixtures/current-hub/README.md) supplies partial invocation/privacy/recovery evidence; the full journey remains unqualified.
 
 | ID | Trigger | Evidence at the authority |
 | --- | --- | --- |
@@ -112,6 +112,8 @@ Targets below are proposals, not measurements or currently enforced tests. Calib
 Reference-provider tests use one real transaction for resource plus receipt; test inside-transaction rollback and post-commit/pre-ack recovery, never assume an atomic guarantee from a callback. Git CAS/trailer/retention and durable overlay guarantees require separate fault evidence. A metadata declaration or wiring-time comparison cannot certify them. Runtime/core/consumer release obligations remain unchanged and pending where not actually executed.
 
 ## Redaction consumer journeys
+
+These are the downstream consumer's acceptance journeys. The fictional example and tests that exercised them moved out of this repository; the consumer owns that evidence.
 
 Use a disposable local instance with invented fixtures, fake models and transcription unless a separate authorized real-model evaluation is requested. Never use production, patient/corpus/credential data or the person's browser as the test bed.
 

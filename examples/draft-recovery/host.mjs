@@ -1,5 +1,5 @@
 import { createResourceHandler } from '@hachej/boring-files/remote';
-import { openSqliteWorkspaces } from '../shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { DocumentRecordType, PageRecordType, TLDOCUMENT_ID, createTLSchema } from '@tldraw/tlschema';
 
 export const draftIdentity = Object.freeze({ principalId: 'fictional-editor', scopeId: 'fictional-draft-project', initiatorId: 'fictional-person' });

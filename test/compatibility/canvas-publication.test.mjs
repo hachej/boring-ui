@@ -11,8 +11,8 @@ import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { createTLSchema, createShapeId } from '@tldraw/tlschema';
 import { lastReadRevisions } from '@hachej/boring-agent/file-guard';
-import { createCanvasTools } from '../../examples/shared/canvas-tools.mjs';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { createCanvasTools } from '../../shared/canvas-tools.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const access = { principalId: 'fictional-agent', initiatorId: 'alice', scopeId: 'fictional-canvas' };
 const target = { resource: { providerId: 'canvas-test', path: 'board.tldraw' }, view: { kind: 'published' } };

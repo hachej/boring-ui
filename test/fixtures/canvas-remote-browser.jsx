@@ -8,7 +8,7 @@ import { defaultBindingUtils, defaultShapeUtils } from 'tldraw';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { createCanvasController } from '@hachej/boring-ui-kit/canvas';
 import { CanvasEditor } from '@hachej/boring-ui-kit/canvas-editor';
-import { connectCanvasPresentation } from '../../examples/shared/canvas-transport-client.mjs';
+import { connectCanvasPresentation } from '../../shared/canvas-transport-client.mjs';
 import { ASSETS } from './canvas-mounted-browser-assets.mjs';
 
 const root = createRoot(document.getElementById('root'));

@@ -41,7 +41,7 @@ function checkFeatures(root, registry, index) {
 }
 
 /**
- * SELF-2: agent-written content is never loaded into a host process. In packages/ and examples/ no source evaluates code (`eval`,
+ * SELF-2: agent-written content is never loaded into a host process. In packages/, examples/, fixtures/, lab/ and shared/ no source evaluates code (`eval`,
  * `Function`, `node:vm`) and every `import()`/`require()` names its module statically: a string, a package-prefixed template, or a URL
  * relative to the importing module's own file (`new URL(name, import.meta.url)`, the host's own folders). Bounded structural evidence: it
  * cannot follow data flow, which is why the runtime proof is a journey.
@@ -94,7 +94,7 @@ export function checkHostExecution(root) {
   const errors = [];
   let files = 0;
   const ignored = gitIgnored(root);
-  for (const top of ['packages', 'examples']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, file) => {
+  for (const top of ['packages', 'examples', 'fixtures', 'lab', 'shared']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, file) => {
     if (entry.isSymbolicLink()) return false;
     if (entry.isDirectory() || !/\.(?:[cm]?[jt]sx?)$/.test(entry.name) || entry.name.endsWith('.d.ts')) return;
     files++;
@@ -106,7 +106,7 @@ export function checkHostExecution(root) {
 }
 
 /**
- * BORING-PI-1 one harness: no host calls a pi-ai model function outside the native Harness. In packages/ and examples/ a file is
+ * BORING-PI-1 one harness: no host calls a pi-ai model function outside the native Harness. In packages/, examples/, fixtures/, lab/ and shared/ a file is
  * refused for a pi-ai reference unless it is in ONE_HARNESS_ALLOWED with a reason. Two rules, both lexical (one file, checker-resolved
  * bindings, no cross-file or property-name lookup):
  *  - Reference: `complete`, `stream` or `streamSimple` is imported from pi-ai, or read from a value bound to pi-ai: a namespace, a
@@ -126,8 +126,7 @@ export const ONE_HARNESS_ALLOWED = Object.freeze({
   'examples/bot/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
   'examples/feedback/builder.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
   'examples/feedback/server.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
-  'examples/redaction/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
-  'examples/validated-output/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
+  'fixtures/validated-output/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
 });
 const PI_AI_MODULE = /^@earendil-works\/pi-ai(?:\/|$)/;
 const GENERATION = new Set(['complete', 'stream', 'streamSimple']);
@@ -341,7 +340,7 @@ export function checkOneHarness(root, allowed = ONE_HARNESS_ALLOWED) {
   const errors = [];
   const texts = new Map();
   const ignored = gitIgnored(root);
-  for (const top of ['packages', 'examples']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, file) => {
+  for (const top of ['packages', 'examples', 'fixtures', 'lab', 'shared']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, file) => {
     if (entry.isSymbolicLink()) return false;
     if (entry.isDirectory() || !/\.(?:[cm]?[jt]sx?)$/.test(entry.name) || entry.name.endsWith('.d.ts')) return;
     texts.set(file, readFileSync(resolve(root, file), 'utf8'));

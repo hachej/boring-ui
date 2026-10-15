@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const script = fileURLToPath(new URL('../fixtures/delivery-guards-crash-child.mjs', import.meta.url));
 const access = { scopeId: 'cabinet', principalId: 'editor', initiatorId: 'fictional-reviewer' };

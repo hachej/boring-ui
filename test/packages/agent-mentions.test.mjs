@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createMentionResolver, workspaceMentionReader, MENTION_FILE_PREFIX } from '@hachej/boring-agent/mentions';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const enc = text => new TextEncoder().encode(text);
 const files = {

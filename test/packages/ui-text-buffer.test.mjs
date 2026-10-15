@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const identity = { scopeId: 'fictional', principalId: 'editor', initiatorId: 'person' };
 const target = { resource: { providerId: 'tasks', path: 'tasks.json' }, view: { kind: 'published' } };

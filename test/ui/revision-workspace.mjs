@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const later = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 test('revision workspace preserves file drafts, docked and floating chat mounts, and mobile Library navigation', async t => {

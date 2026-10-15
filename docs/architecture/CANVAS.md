@@ -74,7 +74,7 @@ Native `replay: 'safe'` qualifies reconciliation for newly admitted calls. Previ
 
 ## Authenticated remote presentation recipe
 
-`examples/shared/canvas-transport-server.mjs` and `canvas-transport-client.mjs` connect a trusted server's native presentation tools to one mounted canvas. The host supplies authentication and current authorization. The recipe supports selection and edit proposals, with strict native record validation, bounded JSON, one pending command and one poll per connection. It captures runtime, conversation, principal, scope and the complete mounted target. Opening a replacement viewer requires a new connection and new native tool names; existing registrations keep their original target.
+`shared/canvas-transport-server.mjs` and `canvas-transport-client.mjs` connect a trusted server's native presentation tools to one mounted canvas. The host supplies authentication and current authorization. The recipe supports selection and edit proposals, with strict native record validation, bounded JSON, one pending command and one poll per connection. It captures runtime, conversation, principal, scope and the complete mounted target. Opening a replacement viewer requires a new connection and new native tool names; existing registrations keep their original target.
 
 The server checks current permission when opening, invoking, delivering and acknowledging. The browser invokes the actual mounted command, which checks instance, epoch, resource revision, buffer version, mount, page and expiry. Revocation observed while awaiting policy prevents the continuation. Host authentication must also enforce its origin/CSRF policy and abort its revocation signal when access changes. This does not retract bytes already delivered or undo an editor effect.
 

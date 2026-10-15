@@ -7,8 +7,8 @@ import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
-import { createCanvasTransport } from '../../examples/shared/canvas-transport-server.mjs';
-import { schema, version } from '../../examples/shared/canvas-transport-protocol.mjs';
+import { createCanvasTransport } from '../../shared/canvas-transport-server.mjs';
+import { schema, version } from '../../shared/canvas-transport-protocol.mjs';
 import { admitDocumentTool } from './native-document.mjs';
 
 const [directory, phase] = process.argv.slice(2), keepAlive = setInterval(() => {}, 1000);

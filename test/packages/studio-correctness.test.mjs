@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
-import { createCorrectnessFixture } from '../../examples/studio/correctness-fixture.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
+import { createCorrectnessFixture } from '../../lab/studio/correctness-fixture.mjs';
 
 test('browser correctness fixture drives two repeated-ID questions through the real native Harness', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'boring-correctness-smoke-'));

@@ -6,8 +6,8 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { lastReadRevisions } from '@hachej/boring-agent/file-guard';
-import { createCanvasTools } from '../../examples/shared/canvas-tools.mjs';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { createCanvasTools } from '../../shared/canvas-tools.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { admitDocumentTool, toolResultText } from './native-document.mjs';
 
 const [directory, phase, mode, operation] = process.argv.slice(2);

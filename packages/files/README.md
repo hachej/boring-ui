@@ -62,7 +62,7 @@ Transport errors, mismatched or oversized acknowledgements and aborted observati
 
 Revocation suppresses disclosure until the handler constructs its response; already delivered bytes cannot be retracted. Aborting observation does not prove provider termination, rollback or an atomic revocation fence. Provider exceptions and response serialization failures may follow a commit, so the client retains uncertainty. The workspace provider's declared guarantees remain unchanged.
 
-Run `node examples/resource-transport.mjs` for a fictional exact-save and lookup journey through real Request/Response objects. Public-output tests also compose a native ToolTask and lost-acknowledgement Markdown reconciliation. The isolated document consumer exercises this adapter with strict types and a browser bundle without Pi, agent or React installed. These checks do not qualify deployed HTTP, browser identity policy or remote provider lifecycle.
+Run `node fixtures/resource-transport.mjs` for a fictional exact-save and lookup journey through real Request/Response objects. Public-output tests also compose a native ToolTask and lost-acknowledgement Markdown reconciliation. The isolated document consumer exercises this adapter with strict types and a browser bundle without Pi, agent or React installed. These checks do not qualify deployed HTTP, browser identity policy or remote provider lifecycle.
 
 `@hachej/boring-files/text` supplies the shared pure `applyTextEdits` transform and input parser. Edits run in order, require unique nonempty exact matches and preserve untouched whitespace. A failed edit refuses the whole transformation. It performs no I/O and grants no permission.
 
@@ -89,14 +89,14 @@ SQLite reads and receipt lookups of the SQLite workspace backend use deferred re
 
 The SQLite resource store of `@hachej/boring-files/sqlite` (`openSqliteResources`, `SqliteResourceProvider` and its option types) is
 removed. Its documents become files of a workspace; `SqliteConnection` and `openNodeConnection` stay in `@hachej/boring-files/sqlite`.
-A host that kept one store with rows per scope (the redaction and current-hub fixtures here) opens one SQLite-backed workspace per
+A host that kept one store with rows per scope (the current-hub fixture here) opens one SQLite-backed workspace per
 scope in the same database:
 
 | Old call | New call |
 | --- | --- |
 | `openSqliteResources({ filename, providerId, authorize })` | `connection = openNodeConnection(filename)`, `journal = createWorkspaceJournal(connection)`, then per scope `fs = openSqliteFileSystem({ connection, workspace: scopeId, cwd: '/workspace' })` and `createWorkspaceProvider({ identity: { providerId, instanceId: scopeId, incarnation: fs.incarnation, viewId: 'published' }, fs, journal })` |
 | `openSqliteResources({ connection, ... })` (a Durable Object) | the same calls with `durableObjectSqliteConnection(ctx.storage)` from `@hachej/boring-files/sqlite-durable-object` |
-| `authorize(action, target, access)` inside the store | the host checks its policy before calling the workspace's provider; [`examples/shared/sqlite-workspaces.mjs`](../../examples/shared/sqlite-workspaces.mjs) shows one way (a refused write whose operation committed and a refused lookup read `unknown`) |
+| `authorize(action, target, access)` inside the store | the host checks its policy before calling the workspace's provider; [`shared/sqlite-workspaces.mjs`](../../shared/sqlite-workspaces.mjs) shows one way (a refused write whose operation committed and a refused lookup read `unknown`) |
 | `provider.close()` | `connection.close()` by the connection's owner |
 | a `delete` change | the workspace's own file tools (`fs.remove`, Pi's `bash`); publication refuses deletes |
 | revisions were random ids; saving the same bytes made a new revision | revisions are Git blob ids: the same bytes keep their revision, and `before` equal to `after` is a valid committed change |

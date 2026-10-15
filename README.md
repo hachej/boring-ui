@@ -42,17 +42,11 @@ npm run morning
 
 Open **http://127.0.0.1:3000**. The example prepares fictional email, calendar and todo documents through native tasks. Edit a reply, review proposed changes and try the Send, Snooze, Slot and Tick actions. Send writes to a fictional outbox; it sends no email.
 
-For an existing-app example, stop the morning server and run:
-
-```bash
-npm run redaction:browser
-```
-
-The [fictional consultation guide](examples/redaction-browser/README.md) covers notes, human corrections, letter adoption and preparation views. Use fictional data when exploring these examples.
+Use fictional data when exploring these examples.
 
 ## Integrate with your application
 
-1. Start with the [UI guide](packages/ui/README.md) for controllers and renderers, or the [native composition examples](examples/native-compositions.ts) for Pi integration.
+1. Start with the [UI guide](packages/ui/README.md) for controllers and renderers, or the [native composition examples](fixtures/native-compositions.ts) for Pi integration.
 2. Supply your application's authentication, storage and authorization. Bind file access to one workspace provider and use conditional writes for documents that need revision checks and recovery.
 3. Add the chat and viewers your interface needs. Controllers have explicit lifetimes; a component can borrow a controller without owning its teardown.
 4. Use the [shadcn registry recipes](registry/README.md) to copy components into your application for customization. That guide covers registry setup, dependencies and installation checks.

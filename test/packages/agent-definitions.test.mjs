@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { defineTool } from '@earendil-works/pi-durable';
 import { Type } from '@earendil-works/pi-ai';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { loadAgentDefinition } from '@hachej/boring-agent/definitions';
 
 const encoder = new TextEncoder();

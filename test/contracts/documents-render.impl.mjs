@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 // The `documents` item rendered in happy-dom, over a fictional SQLite-backed workspace (the same fixture the Library journey uses): the
 // Library lists and opens a file; the Revisions panel lists the file's history and opens an old revision read-only; DocumentSheet opens one
