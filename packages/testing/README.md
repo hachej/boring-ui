@@ -53,6 +53,7 @@ abortable delays, priced usage, failures and turns a test drives by hand.
 - `script: { 'text in the user message': turns }`, or `sources: [{ name, entries: [{ match, turns }] }]` when several scripts share one
   model (the source answering most of the conversation's user messages is chosen; the earliest, then longest, match in the last user
   message picks the entry).
+- A `<request-context>` user message (the host's per-request context, `createPromptContext`) is not the person's message: scripts skip it when they choose the entry and count turns.
 - The turns answer that message in order: a user message starts turn 0 and every tool result starts the next one. A turn is `'text'`;
   `{ text, reasoning, tools: [{ name, args, id?, ms? }], delay, hold, usage: { input, output }, error }` (a tool's `ms` streams its arguments' JSON in
   small chunks that far apart, so the live call holds partial arguments as with a real provider); `{ text: { chunks, ms } }` (streamed in
