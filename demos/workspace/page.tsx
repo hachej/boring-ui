@@ -1,11 +1,13 @@
 // The browser side of the accounts-payable demo (served by ./server.mjs).
-//   [ sessions pane | chat ] [ right column ]
-// The left `Dock` holds the sessions pane (conversations and the Library) beside the chat; dragging its divider narrow floats the chat as
-// `AmbientChat` and the right column takes the whole width; docking it back restores all three. The right column shows one thing at a time:
-// a screen of the app (Approvals, Invoice, Supplier: each a fixed experience over registered cells, ./cells.mjs) or a Library document.
+//   [ chat ] [ right column ]
+// The left `Dock` holds the chat. Its header carries two icon buttons: conversations (the searchable list of `pi-chat`) and the Library (the
+// workspace's files), each a popover anchored to the chat, docked or floating. Dragging the divider narrow floats the chat as `AmbientChat`
+// and the right column takes the whole width; docking it back restores both. The right column shows one thing at a time:
+// a screen of the app (Approvals, Invoice, Supplier: each a fixed experience over registered cells, ./cells.mjs) or a workspace file.
 // Every screen publishes `useAgentContext`; the chat reports its placement (docked or floating) by itself.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { FolderOpenIcon, HistoryIcon, XIcon } from 'lucide-react';
 import { createRoot } from 'react-dom/client';
 import { Experience } from '@hachej/boring-ui-kit/experience';
 import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
@@ -14,7 +16,9 @@ import { Dock, DockLayout, DockMain } from '../../registry/dock/dock.tsx';
 import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
-import { SessionsPane } from '../../registry/pi-app/sessions.tsx';
+import { ConversationHistory } from '../../registry/pi-chat/history.tsx';
+import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
+import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-app/use-conversations.ts';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
@@ -22,7 +26,7 @@ import { Button } from '../../registry/button/button.tsx';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { ACTIONS, CELLS, SCREENS, experienceCells } from './cells.mjs';
 
-const { token, identity, conversation: firstConversation } = window.__APP__;
+const { token, identity, conversation: firstConversation, voice } = window.__APP__;
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const at = (path: string) => new URL(path, location.href);
 const money = (amount: number, currency = 'EUR') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
@@ -48,7 +52,7 @@ function ApProvider({ children, view, go, conversation }) {
     if (current.current !== asked) return;
     if (skip.current) { skip.current = false; seen.current = body.latest; return; }
     const last = body.navigation.at(-1);
-    if (last) { seen.current = last.seq; go(last.screen === 'approvals' ? { screen: 'approvals' } : { screen: last.screen, id: last.id }); }
+    if (last) { seen.current = last.seq; go(last.screen === 'approvals' ? { screen: 'approvals' } : last.screen === 'file' ? { screen: 'file', path: last.path } : { screen: last.screen, id: last.id }); }
   }, [conversation, go]);
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 400); return () => clearInterval(timer); }, [refresh]);
   const invoice = state.invoices.find(item => item.id === view.id);
@@ -221,22 +225,65 @@ function Column({ view, go, provider, dirty }) {
   </div>;
 }
 
-// ---- The left dock: the sessions pane (conversations, Library) beside the chat while docked; AmbientChat alone while floating.
+// ---- The left dock: the chat, with the conversations and the Library as header icons that open popovers anchored to it.
 const WIDE = 640;
+const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
+
+/** A popover anchored over the chat (docked `PiChat` or floating `AmbientChat`): a fixed frame at the chat's rectangle holding the panel and its backdrop. */
+function OverChat({ children }) {
+  const [rect, setRect] = useState<DOMRect>();
+  useLayoutEffect(() => { setRect(document.querySelector('[data-boring=pi-chat], [data-boring=ambient-chat]')?.getBoundingClientRect()); }, []);
+  if (!rect) return null;
+  return <div className="pointer-events-none fixed z-50 [&>*]:pointer-events-auto" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}>{children}</div>;
+}
+
+function LibraryPanel({ provider, view, go, close, feed }) {
+  useEffect(() => { const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); }; document.addEventListener('keydown', escape); return () => document.removeEventListener('keydown', escape); }, [close]);
+  return <>
+    <button type="button" tabIndex={-1} aria-hidden="true" data-testid="library-backdrop" onClick={close} className="absolute inset-0 cursor-default" />
+    <section role="dialog" aria-label="Library" data-testid="library-popover" className="absolute top-12 right-3 flex max-h-[min(34rem,calc(100%-4rem))] w-[23rem] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-lg">
+      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+        <h3 className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">Library</h3>
+        <Button size="icon-sm" variant="ghost" aria-label="Close Library" title="Close" onClick={close}><XIcon className="size-4" aria-hidden="true" /></Button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {provider ? <FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={view.screen === 'file' ? view.path : undefined} onOpen={path => { if (go({ screen: 'file', path })) close(); }} />
+          : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}
+      </div>
+    </section>
+  </>;
+}
+
 function Chat({ api, provider, go, view, active, setActive }) {
-  const [pane, setPane] = useState('conversations');
+  const [panel, setPanel] = useState<'history' | 'library' | undefined>();
   const wide = useRef(760);
   const conversations = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: active, onSelect: setActive });
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
+  // The files the person attaches (and a long paste) are saved in the workspace, under uploads/, through the same provider as the Library.
+  const attachments = useRevisionAttachments({ revisionProvider: provider });
+  // The workspace's change feed: the Library list reloads when the agent (or anyone) writes a file.
+  const [feed, setFeed] = useState(0);
+  useEffect(() => {
+    if (!provider?.changes) return;
+    const stop = new AbortController();
+    void (async () => { try { for await (const event of provider.changes({ signal: stop.signal })) setFeed(event.seq); } catch { /* the list keeps what it has */ } })();
+    return () => stop.abort();
+  }, [provider]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
-  // The sessions pane needs room: a narrow dock keeps only the chat. Docking back returns to the last width that had room for it.
-  const sessions = api.width >= WIDE;
-  if (!api.floating && sessions) wide.current = api.width;
-  if (api.floating) return <AmbientChat controller={chat.controller} actions={chat.actions} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(wide.current); }} />;
+  if (!api.floating && api.width >= WIDE) wide.current = api.width;
+  const toggle = (name: 'history' | 'library') => setPanel(current => current === name ? undefined : name);
+  const headerActions = [
+    { id: 'history', label: 'Conversations', icon: HistoryIcon, pressed: panel === 'history', onSelect: () => toggle('history') },
+    { id: 'library', label: 'Library', icon: FolderOpenIcon, pressed: panel === 'library', onSelect: () => toggle('library') },
+  ];
+  const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
+  const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: path => go({ screen: 'file', path }) };
   return <div className="flex min-h-0 flex-1">
-    {sessions && <SessionsPane drawer={false} conversations={conversations} view={pane} onViewChange={setPane}
-      libraryContent={() => provider ? <FileTree revisionProvider={provider} upload={false} history={false} selectedPath={view.screen === 'file' ? view.path : undefined} onOpen={path => go({ screen: 'file', path })} /> : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>} />}
-    <PiChat key={active} controller={chat.controller} actions={chat.actions} conversations={conversations} historyList={false} showHistory={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1" />
+    {api.floating
+      ? <AmbientChat {...common} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(wide.current); }} />
+      : <PiChat key={active} {...common} conversations={conversations} historyList={false} showHistory={false} showConnectionStatus={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1" />}
+    {panel === 'history' && conversations && <OverChat><ConversationHistory conversations={conversations} onClose={() => setPanel(undefined)} /></OverChat>}
+    {panel === 'library' && <OverChat><LibraryPanel provider={provider} view={view} go={go} close={() => setPanel(undefined)} feed={feed} /></OverChat>}
   </div>;
 }
 

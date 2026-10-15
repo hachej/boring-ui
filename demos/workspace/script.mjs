@@ -20,9 +20,18 @@ export const SOURCES = [{ name: 'workspace-demo', entries: Object.entries({
     'INV-2043 looks like a duplicate of INV-2041: same supplier, same PO-771 and the same 1,284.00 EUR, two days apart.'],
   // (b) The AP policy is open in the library column; the agent reads it and the invoice.
   'Does this invoice respect the policy': [
-    ctx => seen(ctx).includes('looking at: Library document {\\"path\\":\\"Library/AP policy.md\\"}') ? call('read', { path: 'Library/AP policy.md' }) : 'Open the policy and ask again.',
+    ctx => seen(ctx).includes('looking at: Library document {\\"path\\":\\"Policies/AP policy.md\\"}') ? call('read', { path: 'Policies/AP policy.md' }) : 'Open the policy and ask again.',
     call('get_invoice', { id: 'INV-2043' }),
     'No. Section 2 of the policy holds an invoice with the same supplier, PO and amount as an open one, and INV-2043 matches INV-2041. INV-2041 itself is fine: above 1,000 EUR it needs one approver.'],
+  // The person attaches a note (uploaded into the workspace, carried as an @path): the agent can read it.
+  'Please look at the attached note': [
+    ctx => /@uploads\/[^\s]*vendor-note/.test(seen(ctx)) ? call('read', { path: seen(ctx).match(/uploads\/[^\s"\\]*vendor-note[^\s"\\]*/)[0] }) : 'I do not see an attachment.',
+    'Read it: Linden Print asks for payment by the 3rd. I will keep that in mind for INV-2041.'],
+  // The agent writes a file in the workspace (observed, no receipt) and opens it in the viewer.
+  'create a new file tt.md': [
+    call('write', { path: 'tt.md', content: '# Notes\n\nINV-2043 duplicates INV-2041: hold it until Linden Print confirms.\n' }),
+    call('show', { screen: 'file', path: 'tt.md' }),
+    'I created tt.md in the workspace and opened it in the viewer.'],
   // 4. The agent reads the invoice, proposes, and the approval card is the person's confirmation; the backend returns a receipt.
   'What would you do with them': [
     call('get_invoice', { id: 'INV-2041' }),

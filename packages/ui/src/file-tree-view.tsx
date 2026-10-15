@@ -1,7 +1,7 @@
 'use client';
 
 import { Collapsible } from 'radix-ui';
-import { ChevronRight, File, Folder } from 'lucide-react';
+import { ChevronRight, File, FileCode, FileImage, FileSpreadsheet, FileText, Folder, Search } from 'lucide-react';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from './file-tree-shadcn.js';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
@@ -80,6 +80,14 @@ export const frenchFileTreeLabels: FileTreeLabels = {
 export type FileTreeLocale = 'en' | 'fr';
 const LOCALES: Readonly<Record<FileTreeLocale, FileTreeLabels>> = { en: defaultFileTreeLabels, fr: frenchFileTreeLabels };
 
+/** The icon of a file in the `list` variant, by its extension. */
+function FileIcon({ name }: { readonly name: string }) {
+  const extension = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+  const Icon = ['md', 'txt', 'pdf', 'doc', 'docx', 'rtf'].includes(extension) ? FileText : ['csv', 'xls', 'xlsx', 'tsv'].includes(extension) ? FileSpreadsheet
+    : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(extension) ? FileImage : ['json', 'js', 'mjs', 'ts', 'tsx', 'html', 'css', 'xml', 'yml', 'yaml'].includes(extension) ? FileCode : File;
+  return <Icon aria-hidden="true" className="text-muted-foreground" />;
+}
+
 export interface FileTreeProps {
   readonly revisionProvider: RevisionProvider;
   readonly onOpen?: (path: string) => void;
@@ -94,6 +102,13 @@ export interface FileTreeProps {
   readonly upload?: boolean;
   /** Offer each file's History button. Default true. */
   readonly history?: boolean;
+  /** Offer the Refresh button. Default true; a host whose tree follows the workspace's change feed (`refreshKey`) can hide it. */
+  readonly refresh?: boolean;
+  /**
+   * `plain` (default) is the unstyled tree. `list` is a polished file list: a search field with its icon, an icon by file type,
+   * rounded rows with hover and selected states in the theme's tokens.
+   */
+  readonly variant?: 'plain' | 'list';
   /** Reload the open folders and the current search whenever this value changes (for example after the agent saves a file). */
   readonly refreshKey?: unknown;
   /** Reload the open history panel whenever this value changes (for example the seq of the workspace's latest change event). */
@@ -121,7 +136,8 @@ export interface FileTreeViewProps extends Omit<FileTreeProps, 'revisionProvider
 }
 
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
-export function FileTreeView({ controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refreshKey, historyKey }: FileTreeViewProps) {
+export function FileTreeView({ controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'plain', refreshKey, historyKey }: FileTreeViewProps) {
+  const list = variant === 'list';
   const labels: FileTreeLabels = { ...LOCALES[locale], ...given };
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const shownKey = useRef(refreshKey);
@@ -190,9 +206,9 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
     const name = entry.path.split('/').at(-1);
     const parent = state.query && entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
     const button = <SidebarMenuButton tabIndex={-1} title={entry.path} isActive={selectedPath === entry.path}
-      className="min-w-0 flex-1 data-[active=true]:bg-transparent"
+      className={list ? 'min-w-0 flex-1 hover:bg-muted! data-[active=true]:bg-muted! data-[active=true]:text-foreground!' : 'min-w-0 flex-1 data-[active=true]:bg-transparent'}
       onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
-      {folder ? <><ChevronRight className="transition-transform" aria-hidden="true" /><Folder aria-hidden="true" /></> : <File aria-hidden="true" />}
+      {folder ? <><ChevronRight className="transition-transform" aria-hidden="true" /><Folder aria-hidden="true" className={list ? 'text-muted-foreground' : undefined} /></> : list ? <FileIcon name={name ?? ''} /> : <File aria-hidden="true" />}
       <span className="min-w-0 truncate">{name}</span>{parent && <span className="min-w-0 shrink truncate text-xs text-muted-foreground">{parent}</span>}
     </SidebarMenuButton>;
     const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path}
@@ -205,17 +221,18 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
         {folder ? <Collapsible.Trigger asChild>{button}</Collapsible.Trigger> : button}
         {!folder && history && <button type="button" aria-label={labels.historyOf(entry.path)} className="px-2 py-1 text-xs" onClick={() => setHistoryPath(entry.path)}>{labels.history}</button>}
       </div>
-      {folder && !state.query && <Collapsible.Content asChild><SidebarMenuSub role="group">{renderEntries(entry.path, level + 1)}</SidebarMenuSub></Collapsible.Content>}
+      {folder && !state.query && <Collapsible.Content asChild><SidebarMenuSub role="group" className={list ? 'border-border!' : undefined}>{renderEntries(entry.path, level + 1)}</SidebarMenuSub></Collapsible.Content>}
     </SidebarMenuItem>;
     return folder ? <Collapsible.Root key={entry.path} asChild open={state.expanded.has(entry.path)}
       onOpenChange={() => { void controller.toggle(entry.path); }}>{item}</Collapsible.Root> : item;
   };
 
   return <section data-boring="file-tree" className={className} aria-label={labels.region}>
-    <div className="flex flex-wrap items-center gap-2 p-2">
-      <input type="search" aria-label={labels.search} placeholder={labels.searchPlaceholder} className="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-sm" value={state.query}
+    <div className={list ? 'relative flex items-center gap-2 p-3 pb-1' : 'flex flex-wrap items-center gap-2 p-2'}>
+      {list && <Search aria-hidden="true" className="pointer-events-none absolute top-[1.875rem] left-5.5 size-4 -translate-y-1/2 text-muted-foreground" />}
+      <input type="search" aria-label={labels.search} placeholder={labels.searchPlaceholder} className={list ? 'h-9 min-w-0 flex-1 rounded-lg border border-border bg-background pr-3 pl-8 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring/60 focus-visible:ring-[3px] focus-visible:ring-ring/15' : 'min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-sm'} value={state.query}
         onChange={event => { void controller.search(event.currentTarget.value); }} />
-      <button type="button" onClick={() => { void (state.query ? controller.search(state.query) : controller.refresh()); }}>{labels.refresh}</button>
+      {refresh && <button type="button" onClick={() => { void (state.query ? controller.search(state.query) : controller.refresh()); }}>{labels.refresh}</button>}
       {upload && <label className="cursor-pointer text-sm">{labels.upload}<input aria-label={labels.uploadFiles} type="file" multiple className="sr-only" onChange={event => {
         const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; setUploadError('');
         void (async () => {
@@ -231,7 +248,7 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
       }} /></label>}
     </div>
     {uploadError && <p role="alert">{uploadError}</p>}
-    <SidebarMenu ref={tree} role="tree" aria-label={labels.tree} className="m-0 list-none p-2">
+    <SidebarMenu ref={tree} role="tree" aria-label={labels.tree} className={list ? 'm-0 list-none p-3' : 'm-0 list-none p-2'}>
       {state.query ? <>{state.search.entries.map(entry => renderEntry(entry, 1))}{listingStatus(state.search, '', true)}</> : renderEntries('', 1)}
     </SidebarMenu>
     {state.uploads.length > 0 && <ul aria-label={labels.uploads} className="list-none p-2 text-sm">{state.uploads.map(upload => <li key={upload.operationId} data-operation={upload.operationId}>
