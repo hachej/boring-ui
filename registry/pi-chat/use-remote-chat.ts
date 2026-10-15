@@ -3,7 +3,7 @@ import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import type { RemoteChat } from '@hachej/boring-ui-kit/remote-chat';
-import type { PiChatActions } from './pi-chat';
+import type { PiChatActions } from './session';
 
 // ---- Placement: where the chat is shown, reported by the component that shows it and sent with each submit (see `useRemoteChat`).
 // `PiChat` reports `docked`, `AmbientChat` (also a docked chat floated by its divider) reports `floating`. Advisory for the model, never
