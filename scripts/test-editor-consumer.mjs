@@ -92,8 +92,8 @@ controller.flush(controller.actions.selection());
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   const tests = html ? ['ui-html.test.mjs', 'ui-html-viewer.test.mjs'] : ['ui-markdown-editor.test.mjs', 'ui-markdown-navigation.test.mjs', 'ui-markdown-mounted.test.mjs', 'ui-markdown-proposals.test.mjs'];
   // Tests are copied flat; their host (one SQLite workspace per scope, public @hachej/boring-files entries only) sits beside them.
-  copyFileSync(join(root, 'examples/shared/sqlite-workspaces.mjs'), join(directory, 'sqlite-workspaces.mjs'));
-  for (const name of tests) writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8').replace("'../../examples/shared/sqlite-workspaces.mjs'", "'./sqlite-workspaces.mjs'"));
+  copyFileSync(join(root, 'shared/sqlite-workspaces.mjs'), join(directory, 'sqlite-workspaces.mjs'));
+  for (const name of tests) writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8').replace("'../../shared/sqlite-workspaces.mjs'", "'./sqlite-workspaces.mjs'"));
   run(process.execPath, ['--test', '--experimental-test-isolation=none', ...tests], isolated);
   writeFileSync(join(directory, 'browser-entry.js'), html ? `export { HtmlViewer } from '@hachej/boring-ui-kit/html-viewer';\nexport { createHtmlController } from '@hachej/boring-ui-kit/html';\n` : `export { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';\nexport { createMarkdownController } from '@hachej/boring-ui-kit/markdown';\n`);
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'browser-entry.js', '--bundle', '--platform=browser', '--format=esm', '--outfile=browser.js', '--metafile=browser-meta.json'], isolated);

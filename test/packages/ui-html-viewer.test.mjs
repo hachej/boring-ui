@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 test('HTML viewer structural DOM and resource behavior; HappyDOM does not qualify template inertness, CSP, Trusted Types or network isolation', { timeout: 30000 }, async t => {
   const window = new Window({ url: 'https://fictional.invalid/', settings: {

@@ -61,7 +61,7 @@ The three reference applications in [PI-COMPLEMENT.md](../architecture/PI-COMPLE
 
 ## Current consumer migration
 
-A39/H01–H09 retain the historical revision-5 contract; in particular the old H09 release scenario is not reassigned to the current hub. [The owner map](../compatibility/HUB-M1.md#current-consumer-ownership) governs new work. A48 is additive and has no inherited pass. The [fictional companion fixture](../../examples/current-hub/README.md) supplies partial invocation/privacy/recovery evidence; the full journey remains unqualified.
+A39/H01–H09 retain the historical revision-5 contract; in particular the old H09 release scenario is not reassigned to the current hub. [The owner map](../compatibility/HUB-M1.md#current-consumer-ownership) governs new work. A48 is additive and has no inherited pass. The [fictional companion fixture](../../fixtures/current-hub/README.md) supplies partial invocation/privacy/recovery evidence; the full journey remains unqualified.
 
 | ID | Trigger | Evidence at the authority |
 | --- | --- | --- |

@@ -9,8 +9,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Harness, createRegistry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { openPiStorage } from '../../examples/shared/pi-storage.mjs';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openPiStorage } from '../../shared/pi-storage.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { applyTextEdits, parseTextEdits } from '@hachej/boring-files/text';
 import { publicationDigest } from '@hachej/boring-files/publication';
@@ -35,7 +35,7 @@ const latest = path => ({ target: target(path), revision: { kind: 'latest' } });
 const replace = (operationId, ref, text) => ({ operationId, atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: ref, bytes: encoder.encode(text), mediaType: 'text/markdown' }] });
 
 /**
- * A host's SQLite database with one workspace per scope (`examples/shared/sqlite-workspaces.mjs`): each scope is a SQLite workspace
+ * A host's SQLite database with one workspace per scope (`shared/sqlite-workspaces.mjs`): each scope is a SQLite workspace
  * (`openSqliteFileSystem` + `createWorkspaceProvider`, the journal in the same database), and `authorize` is the host's policy at
  * the workspace boundary.
  */
@@ -334,7 +334,7 @@ test('SQLite settings: unknown names and values outside the allow-list are refus
   assert.equal(existsSync(filename), false);
 });
 
-test('SQLite settings: Pi\'s durable storage opened through its public adapter takes the same preset (examples/shared/pi-storage.mjs)', async t => {
+test('SQLite settings: Pi\'s durable storage opened through its public adapter takes the same preset (shared/pi-storage.mjs)', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'boring-sqlite-pi-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const filename = join(directory, 'state', 'main.pi.sqlite');

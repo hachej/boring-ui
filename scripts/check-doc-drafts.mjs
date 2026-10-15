@@ -29,7 +29,7 @@ export function checkDocDrafts(root) {
     }
   };
   const ignored = gitIgnored(root);
-  for (const directory of ['packages', 'examples']) if (existsSync(resolve(root, directory))) walkProject(root, directory, check, ignored);
+  for (const directory of ['packages', 'examples', 'fixtures', 'lab', 'shared']) if (existsSync(resolve(root, directory))) walkProject(root, directory, check, ignored);
   return errors;
 }
 

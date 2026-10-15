@@ -17,7 +17,7 @@
 //    `list_artifacts`), the artifact `index.json` or the `/api/workspace-resources` route. Files live in a workspace behind
 //    `createWorkspaceProvider`; agents use Pi's native file tools and `present`. Exempt: this file, which lists them, and the
 //    history section of a README headed exactly "## Migrating from the removed resource store" (the old call to new call note).
-import { readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -82,7 +82,7 @@ export function checkHandlers(root) {
   const reads = /function reads\([\s\S]*?\n}\n/.exec(transport)?.[0] ?? '';
   for (const needle of ['conversation.entries(', 'submissionByRequest(']) if (!reads.includes(needle)) errors.push(`BORING-HANDLER chat-transport.ts: ${needle} must be called inside reads()`);
   const examples = [];
-  walkProject(root, 'examples', (entry, file) => { if (!entry.isDirectory() && /\.(mjs|js|ts)$/.test(entry.name)) examples.push(resolve(root, file)); });
+  for (const top of ['examples', 'fixtures', 'lab', 'shared']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, file) => { if (!entry.isDirectory() && /\.(mjs|js|ts)$/.test(entry.name)) examples.push(resolve(root, file)); });
   for (const path of examples) {
     const text = readFileSync(path, 'utf8'), shown = path.slice(root.length + 1);
     if (text.includes('Readable.toWeb(')) errors.push(`BORING-HANDLER ${shown}: use webRequest from @hachej/boring-files/node-http instead of Readable.toWeb( on a live request`);

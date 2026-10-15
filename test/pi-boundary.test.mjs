@@ -210,7 +210,7 @@ test('vendored Pi and patch files are refused', (t) => {
   assert.ok(loadBoundary(f.directory).errors.some((p) => p.includes('patched upstream')));
 });
 
-// SELF-2: agent-written content is never evaluated or loaded into a host process (packages/ and examples/).
+// SELF-2: agent-written content is never evaluated or loaded into a host process (packages/, examples/, fixtures/, lab/ and shared/).
 for (const [name, body] of [
   ['eval', 'eval(text)'], ['global eval', 'globalThis.eval(text)'], ['Function constructor', 'new Function("return " + text)()'], ['Function call', 'Function(text)()'],
   ['computed import', 'await import(path)'], ['relative template import', 'await import(`./.agent/tools/${name}.mjs`)'], ['file URL import', 'await import(pathToFileURL(workspaceFile).href)'],

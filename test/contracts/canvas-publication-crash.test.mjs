@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const script = fileURLToPath(new URL('../fixtures/canvas-publication-crash-child.mjs', import.meta.url));
 const access = { scopeId: 'fictional-canvas', principalId: 'fictional-agent', initiatorId: 'fictional-reviewer', authorizationRef: 'fictional-grant-v1' };

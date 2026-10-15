@@ -157,16 +157,16 @@ console.log('server document import and validation completed without DOM or edit
   assert.ok(serverInputs.every(path => !/\/(?:@tldraw\/editor|react|react-dom|@hachej\/boring-(?:agent|files))\//.test(path)), 'Document edits must not load an editor, React, agent or resource implementation');
   const tests = ['ui-canvas-document.test.mjs', 'ui-canvas-proposals.test.mjs', 'ui-canvas.test.mjs', 'ui-canvas-editor-lifecycle.test.mjs', ...(editor ? ['ui-canvas-editor.test.mjs'] : []), ...(remote ? ['files-request-guard.test.mjs'] : [])];
   // Tests are copied flat; their host (one SQLite workspace per scope, public @hachej/boring-files entries only) sits beside them.
-  copyFileSync(join(root, 'examples/shared/sqlite-workspaces.mjs'), join(directory, 'sqlite-workspaces.mjs'));
-  for (const name of tests) writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8').replace("'../../examples/shared/sqlite-workspaces.mjs'", "'./sqlite-workspaces.mjs'"));
+  copyFileSync(join(root, 'shared/sqlite-workspaces.mjs'), join(directory, 'sqlite-workspaces.mjs'));
+  for (const name of tests) writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8').replace("'../../shared/sqlite-workspaces.mjs'", "'./sqlite-workspaces.mjs'"));
   run(process.execPath, ['--test', '--experimental-test-isolation=none', ...tests], isolated);
   if (remote) {
-    const copied = ['examples/shared/canvas-transport-protocol.mjs', 'examples/shared/canvas-transport-server.mjs', 'examples/shared/canvas-transport-client.mjs',
+    const copied = ['shared/canvas-transport-protocol.mjs', 'shared/canvas-transport-server.mjs', 'shared/canvas-transport-client.mjs',
       'test/compatibility/canvas-transport.test.mjs', 'test/compatibility/canvas-transport-protocol.test.mjs', 'test/fixtures/canvas-transport-crash-child.mjs', 'test/fixtures/native-document.mjs', 'test/compatibility/canvas-transport-client.test.mjs'];
     for (const path of copied) { mkdirSync(join(directory, path, '..'), { recursive: true }); copyFileSync(join(root, path), join(directory, path)); }
     run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/compatibility/canvas-transport.test.mjs', 'test/compatibility/canvas-transport-protocol.test.mjs', 'test/compatibility/canvas-transport-client.test.mjs'], isolated);
   }
-  writeFileSync(join(directory, 'browser-entry.js'), `export { createCanvasController, canvasMediaType } from '@hachej/boring-ui-kit/canvas';\n${editor ? "export { CanvasEditor } from '@hachej/boring-ui-kit/canvas-editor';\nimport 'tldraw/tldraw.css';\n" : ''}${remote ? "export { connectCanvasPresentation } from './examples/shared/canvas-transport-client.mjs';\n" : ''}`);
+  writeFileSync(join(directory, 'browser-entry.js'), `export { createCanvasController, canvasMediaType } from '@hachej/boring-ui-kit/canvas';\n${editor ? "export { CanvasEditor } from '@hachej/boring-ui-kit/canvas-editor';\nimport 'tldraw/tldraw.css';\n" : ''}${remote ? "export { connectCanvasPresentation } from './shared/canvas-transport-client.mjs';\n" : ''}`);
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'browser-entry.js', '--bundle', '--platform=browser', '--format=esm', '--outfile=browser.js', '--metafile=browser-meta.json'], isolated);
   const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'browser-meta.json'), 'utf8')).inputs);
   assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);

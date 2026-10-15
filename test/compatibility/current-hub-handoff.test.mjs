@@ -4,10 +4,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { fixtureActor, fixtureRequest, PRIVATE_MARKERS, openFixtureApp } from '../../examples/current-hub/app.mjs';
-import { provisionFixtureDefinition } from '../../examples/current-hub/definition.mjs';
-import { openFixtureCompanion } from '../../examples/current-hub/companion.mjs';
-import { openFixtureChangePath } from '../../examples/current-hub/change-path.mjs';
+import { fixtureActor, fixtureRequest, PRIVATE_MARKERS, openFixtureApp } from '../../fixtures/current-hub/app.mjs';
+import { provisionFixtureDefinition } from '../../fixtures/current-hub/definition.mjs';
+import { openFixtureCompanion } from '../../fixtures/current-hub/companion.mjs';
+import { openFixtureChangePath } from '../../fixtures/current-hub/change-path.mjs';
 import { admitDocumentTool, documentToolResult } from '../fixtures/native-document.mjs';
 import { scanHubRetention } from '../fixtures/hub-retention.mjs';
 
@@ -220,7 +220,7 @@ test('revocation across owner await and borrowed close do not create an unauthor
 });
 
 test('change tool captures the original request and actor before asynchronous native memo lookup', async () => {
-  const { createFixtureChangeTools } = await import('../../examples/current-hub/change-tools.mjs');
+  const { createFixtureChangeTools } = await import('../../fixtures/current-hub/change-tools.mjs');
   const waiting = gate(), release = gate();
   const actor = fixtureActor('amber');
   let current = actor, captured, calls = 0;

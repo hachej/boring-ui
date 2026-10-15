@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { marked } from 'marked';
 
 test('React/Tiptap Markdown editor public output (DOM environment, not browser qualification)', async t => {

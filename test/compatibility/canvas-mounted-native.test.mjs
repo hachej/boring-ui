@@ -6,7 +6,7 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { admitDocumentTool, documentToolResult } from '../fixtures/native-document.mjs';
 
 test('native ToolTasks select a captured mounted canvas and refuse stale or closed viewers', { timeout: 20000 }, async t => {

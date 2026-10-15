@@ -160,9 +160,9 @@ The native delivery task is version 2. Existing version 1 records migrate with e
 
 `resolveAccess` may return a Promise. When recovery reads the original actor from native producer input, pass that already-authenticated access as the sixth admission argument: `admit(tx, createProducer, target, taskOptions, context, access)`. Admission captures its identity before awaiting producer creation. Publication still resolves current access and compares the original identity. Omitting the sixth argument preserves resolution during admission; such a resolver must not read the same Harness or call `tx.task` after producer writes. Native transactions reject table reads after their first write. Explicit access is trusted host input, not authentication or a grant. Resolved credential fields are copied before digest, memo and provider awaits.
 
-Run `node examples/background-document.mjs` after building for fictional question, native producer and document delivery without a model, browser or shell. The example resolves a fixed fictional answer in trusted host code; it is not an authenticated remote human journey.
+Run `node fixtures/background-document.mjs` after building for fictional question, native producer and document delivery without a model, browser or shell. The example resolves a fixed fictional answer in trusted host code; it is not an authenticated remote human journey.
 
-Import interfaces with `import type`. See [scaffold guide](../../docs/contracts/SCAFFOLD.md), [native examples](../../examples/native-compositions.ts) and [implementation evidence](../../docs/implementation/PARTIAL.md).
+Import interfaces with `import type`. See [scaffold guide](../../docs/contracts/SCAFFOLD.md), [native examples](../../fixtures/native-compositions.ts) and [implementation evidence](../../docs/implementation/PARTIAL.md).
 
 ## Authorized conversation text
 
@@ -182,7 +182,7 @@ The adapter keeps the last bounded delivered window and no update queue. A slow 
 
 TLS, cookies, CORS, socket/proxy lifecycle, browser presentation and deployment authentication remain host qualifications. Public projection tests exercise actual native watches through in-process Fetch/Web Streams. `npm run test:projection-consumer` installs the agent archive without files/UI/execution packages, checks strict declarations, repeats the tests and builds the receiver for a browser. It requires the pinned registry archives in a writable npm cache.
 
-Run `node examples/conversation-projection.mjs` after building for a fictional authenticated stream and idle revocation demonstration.
+Run `node fixtures/conversation-projection.mjs` after building for a fictional authenticated stream and idle revocation demonstration.
 
 ## Authenticated question responses
 
@@ -222,7 +222,7 @@ Native configuration retains tool names. A later registry replacement or native 
 
 The resource must be UTF-8 `application/json`, optionally with `charset=utf-8`. The default accepted size is 65,536 bytes; `maxBytes` accepts integers from 1 to 1,048,576. This limits accepted bytes after the reader returns, not provider allocation. The loader preserves borrowed tool/provider ownership and checks an optional abort signal after awaited operations; it cannot interrupt a noncooperative reader or resolver.
 
-Run `node examples/agent-definitions.mjs` after building for a fictional definition, explicit native configuration and real document publication. `npm run test:definitions-consumer` installs files/agent archives with pinned registry dependencies, checks strict declarations and repeats exact-read, native publication, reopen and registry-replacement tests. Like the question consumer, this strict fixture explicitly installs the pinned optional model SDK declaration dependencies.
+Run `node fixtures/agent-definitions.mjs` after building for a fictional definition, explicit native configuration and real document publication. `npm run test:definitions-consumer` installs files/agent archives with pinned registry dependencies, checks strict declarations and repeats exact-read, native publication, reopen and registry-replacement tests. Like the question consumer, this strict fixture explicitly installs the pinned optional model SDK declaration dependencies.
 
 ## Structured output and native tool evidence
 

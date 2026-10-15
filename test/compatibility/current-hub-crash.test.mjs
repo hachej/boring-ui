@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AssistantEntry, ToolResultEntry, ToolTask } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { fixtureActor, fixtureRequest, openFixtureApp, PRIVATE_MARKERS } from '../../examples/current-hub/app.mjs';
-import { provisionFixtureDefinition } from '../../examples/current-hub/definition.mjs';
-import { openFixtureCompanion } from '../../examples/current-hub/companion.mjs';
+import { fixtureActor, fixtureRequest, openFixtureApp, PRIVATE_MARKERS } from '../../fixtures/current-hub/app.mjs';
+import { provisionFixtureDefinition } from '../../fixtures/current-hub/definition.mjs';
+import { openFixtureCompanion } from '../../fixtures/current-hub/companion.mjs';
 import { documentToolResult } from '../fixtures/native-document.mjs';
 
 const script = fileURLToPath(new URL('../fixtures/current-hub-crash-child.mjs', import.meta.url));

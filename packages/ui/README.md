@@ -84,7 +84,7 @@ A failed read retains the previous page and continuation for retry. `clearHistor
 
 Without a custom `source`, history defaults to the borrowed conversation. Set `history: false` to disable it. With a custom source, history is disabled unless the host supplies an explicit `{ id, entries }` native capability for that conversation. The ID must match before and after a read. Hosts remain responsible for current authorization and must dispose or disconnect presentation when its scope is revoked. Expert mode is not redaction.
 
-`test/packages/ui-native-chat-history.test.mjs` uses real native reset/head/fork records. `node examples/chat-history.mjs` demonstrates three native pages across a reset without model calls.
+`test/packages/ui-native-chat-history.test.mjs` uses real native reset/head/fork records. `node fixtures/chat-history.mjs` demonstrates three native pages across a reset without model calls.
 
 ## Headless canvas document edits
 
@@ -160,13 +160,13 @@ The renderer offers HTML source and preview modes with Save, Refresh, Reconcile 
 
 Preview refuses source beyond 262,144 UTF-16 units, traversal beyond 20,000 visited nodes or depth 128, and output beyond 1,048,576 units. Traversal/output limits do not bound peak allocation inside the browser parser. A parser or Trusted Types refusal leaves source viewing and saving available. No permissive Trusted Types policy or raw preview fallback is created. Server rendering does not parse or embed generated markup.
 
-Run `node examples/html-document.mjs` after building for a fictional authenticated resource save. `npm run test:html-consumer` installs isolated tarballs, checks strict concrete declarations, repeats controller/DOM tests and bundles both entries without native/server or heavy viewer implementations. `npm run test:html-registry-consumer` uses the actual shadcn CLI and drives the copied source recipe before and after restyling. These DOM checks do not qualify native parser inertness, iframe/CSP/Trusted Types security, browser input or network isolation. The attempted Chromium journey currently fails at startup under sandbox EPERM. Browser qualification remains open.
+Run `node fixtures/html-document.mjs` after building for a fictional authenticated resource save. `npm run test:html-consumer` installs isolated tarballs, checks strict concrete declarations, repeats controller/DOM tests and bundles both entries without native/server or heavy viewer implementations. `npm run test:html-registry-consumer` uses the actual shadcn CLI and drives the copied source recipe before and after restyling. These DOM checks do not qualify native parser inertness, iframe/CSP/Trusted Types security, browser input or network isolation. The attempted Chromium journey currently fails at startup under sandbox EPERM. Browser qualification remains open.
 
 ## Optional fixed and derived experiences
 
 Import `validateExperience` from `@hachej/boring-ui-kit/experience/compose` and `Experience` from `@hachej/boring-ui-kit/experience`. Install exact optional peers `@json-render/core@0.21.0`, `@json-render/react@0.21.0`, `zod@4.6.5` and React 19.3.0. The validation entry loads no React runtime, files, Pi or agent. The renderer uses the native json-render catalog, registry, providers and renderer.
 
-Descriptors use format `boring.experience`, version 1 and source `fixed`, `derived` or `generated`. Generated output comes through the optional composer below. The current installed layout kinds are `boring/stack`, `boring/row`, `boring/grid`, `boring/cell` and `boring/generated`, all version 1. Stack/row accept gap `small`, `medium` or `large`, defaulting to medium. Grid adds integer columns from 1 through 4. Cell props contain only a `ref` in `app/cell` form. Every used cell kind/version must appear in the descriptor's `kinds` map. See `examples/fixed-experience.mjs` for a complete descriptor.
+Descriptors use format `boring.experience`, version 1 and source `fixed`, `derived` or `generated`. Generated output comes through the optional composer below. The current installed layout kinds are `boring/stack`, `boring/row`, `boring/grid`, `boring/cell` and `boring/generated`, all version 1. Stack/row accept gap `small`, `medium` or `large`, defaulting to medium. Grid adds integer columns from 1 through 4. Cell props contain only a `ref` in `app/cell` form. Every used cell kind/version must appear in the descriptor's `kinds` map. See `fixtures/fixed-experience.mjs` for a complete descriptor.
 
 The host supplies `cells` with `ref`, `kind`, `version`, optional `maxUses` and a stable `render` React component. That component closes over its concrete controller and owning application's operations. Descriptor props and action parameters never reach it. Default maxUses is 1. Registration accepts only one version per kind and one cell per ref. `canView(ref)` is a synchronous host policy callback and must return literal true. The host rerenders Experience when its authorization or cell registrations change. The library checks access again in the cell renderer; unavailable cells show a placeholder. Each host action must still authorize when invoked.
 
@@ -191,7 +191,7 @@ The renderer exposes Use proposed layout, Dismiss proposed layout, Keep this lay
 
 Cell visibility validation is a current host preflight. A provider that promises atomic authorization of layout publication and its referenced resources must enforce both at its commit boundary. The renderer does not create that cross-resource guarantee. Live model quality, actual browser focus preservation and full A28-A29 remain unqualified. The bounded region/Pin implementation is described below.
 
-Run `node examples/experience-keep.mjs` after building for a fictional offer, adoption, conditional creation and receipt lookup. `npm run test:experience-consumer` additionally checks the concrete Keep declarations, real SQLite/controller and React controls, and the resource-enabled browser bundle from isolated installed archives. These are DOM and artifact checks, not a browser journey.
+Run `node fixtures/experience-keep.mjs` after building for a fictional offer, adoption, conditional creation and receipt lookup. `npm run test:experience-consumer` additionally checks the concrete Keep declarations, real SQLite/controller and React controls, and the resource-enabled browser bundle from isolated installed archives. These are DOM and artifact checks, not a browser journey.
 
 
 ## Optional metadata-only composition
@@ -208,7 +208,7 @@ Iteration captures definitions, candidates, cells and fallback before yielding t
 
 The required `signal` belongs to the host. Abort it when the host closes composition. Upstream cancellation releases a pending composition even when an evaluator does not cooperate; it does not prove provider termination. Calling the iterator's `return()` alone cannot interrupt its pending `next()`. On a final result, pass the descriptor to the existing document controller's `propose` with the selection captured before composition. A stale base refuses. Explicit adoption and Keep remain separate human actions.
 
-Run `node examples/generated-experience.mjs` after building for deterministic native composition followed by a real conditional SQLite Keep. The isolated experience consumer checks native evaluator declarations, metadata/cancellation behavior, rendered proposal controls and browser bundles from installed archives. Tests also exercise upstream `experimental_createEvaluator` with fictional fetch responses and host budget denial before each request. Those tests establish transport composition without a live Gateway/local model call, model-quality claim, actual browser journey or complete A27/A31 qualification. Full reference application recipes remain required. Region composition and Pin use the bounded API below.
+Run `node fixtures/generated-experience.mjs` after building for deterministic native composition followed by a real conditional SQLite Keep. The isolated experience consumer checks native evaluator declarations, metadata/cancellation behavior, rendered proposal controls and browser bundles from installed archives. Tests also exercise upstream `experimental_createEvaluator` with fictional fetch responses and host budget denial before each request. Those tests establish transport composition without a live Gateway/local model call, model-quality claim, actual browser journey or complete A27/A31 qualification. Full reference application recipes remain required. Region composition and Pin use the bounded API below.
 
 
 ## Generated regions and conditional Pin
@@ -225,7 +225,7 @@ Call `controller.actions.beginRegion(selection, region, trigger)` before host co
 
 `ExperienceDocument` accepts `onRegenerate(request)` for its **Regenerate** controls. The host owns the evaluator and its abort signal. **Use proposed region**, **Dismiss proposed region** and **Pin this region** separate acceptance and publication. Fixed sibling renderer identities remain stable across region edits. Cell and grid minima inherit the strongest enclosing region minimum; narrow regions can scroll. Borrowed resource controllers survive unmount.
 
-Run `node examples/generated-region.mjs` after building for a fictional native composition, offer, adoption and SQLite Pin receipt. Public tests and `npm run test:experience-consumer` exercise strict tarball declarations, real native composition, exact source, request races, DOM identity/selection and unknown-save reconciliation. DOM results do not qualify browser focus, geometry, live model quality or atomic cross-resource authorization.
+Run `node fixtures/generated-region.mjs` after building for a fictional native composition, offer, adoption and SQLite Pin receipt. Public tests and `npm run test:experience-consumer` exercise strict tarball declarations, real native composition, exact source, request races, DOM identity/selection and unknown-save reconciliation. DOM results do not qualify browser focus, geometry, live model quality or atomic cross-resource authorization.
 
 ## Consumer-defined text viewers
 

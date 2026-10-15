@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 import { launch, q } from '@hachej/boring-testing/browser';
 import { webRequest, sendWebResponse } from '@hachej/boring-files/node-http';
 import { openFileTreeHost } from './host.mjs';
-import { buildTailwind } from '../studio/tailwind.mjs';
+import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 
 const evidence = resolve('.cache/evidence/file-tree-browser'); mkdirSync(evidence, { recursive: true });
 const directory = mkdtempSync(join(tmpdir(), 'boring-file-tree-browser-'));

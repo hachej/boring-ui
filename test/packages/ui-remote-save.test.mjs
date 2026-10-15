@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createResourceClient, createResourceHandler } from '@hachej/boring-files/remote';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 

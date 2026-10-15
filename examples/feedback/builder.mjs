@@ -36,7 +36,7 @@ import { createFileGuard } from '@hachej/boring-agent/file-guard';
 import { BROWSER_PREVIEW_TOOL, createBrowserPreviewTool, createFeedbackCapability } from '@hachej/boring-feedback/agent';
 import { appElementResolution } from '@hachej/boring-feedback/page';
 import { parseFeedback } from '@hachej/boring-feedback/format';
-import { readFiles, writeFiles } from '../shared/workspace-tools.mjs';
+import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { ticketOutcomeOf, ticketsOnWrite } from './tickets.mjs';
 
 export const BUILDER_INSTRUCTIONS = `You are the builder assistant inside "Fernhill Studio", a fictional settings page. Be brief.

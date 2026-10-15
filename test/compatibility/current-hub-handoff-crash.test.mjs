@@ -6,9 +6,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { fixtureActor, openFixtureApp } from '../../examples/current-hub/app.mjs';
-import { openFixtureChangePath } from '../../examples/current-hub/change-path.mjs';
-import { openFixtureCompanion } from '../../examples/current-hub/companion.mjs';
+import { fixtureActor, openFixtureApp } from '../../fixtures/current-hub/app.mjs';
+import { openFixtureChangePath } from '../../fixtures/current-hub/change-path.mjs';
+import { openFixtureCompanion } from '../../fixtures/current-hub/companion.mjs';
 import { documentToolResult } from '../fixtures/native-document.mjs';
 
 const script = fileURLToPath(new URL('../fixtures/current-hub-handoff-crash-child.mjs', import.meta.url));

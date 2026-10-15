@@ -281,7 +281,7 @@ test('virtual SQLite repository: seeded, git-enabled native env over the SQLite 
   };
   // Everything is read through Pi's native env; its shell has git bound to the same repository.
   const sh = async (repo, command) => { let output = ''; const result = getOrThrow(await repo.env.exec(command, { onOutput: text => { output += text; } }, context)); return { output, exitCode: result.exitCode }; };
-  const listed = async repo => (await sh(repo, 'find . -type f -not -path "./.git/*" | sort')).output.trim().split('\n');
+  const listed = async repo => (await sh(repo, 'find . -type f -not -path ".git/*" | sort')).output.trim().split('\n');
   let repo = await open();
   try {
     assert.deepEqual(await listed(repo), ['./README.md', './src/a.txt']);
@@ -305,13 +305,13 @@ test('virtual SQLite repository: seeded, git-enabled native env over the SQLite 
   } finally { await repo.close(); db.close?.(); }
 });
 
-// ---- AWS Code Interpreter environment: the real AWS SDK client against the offline fake (examples/aws/fake-code-interpreter.mjs).
+// ---- AWS Code Interpreter environment: the real AWS SDK client against the offline fake (examples/hosts/aws/fake-code-interpreter.mjs).
 async function codeInterpreterFixture(t, users = ['user-a', 'user-b']) {
   const { mkdtempSync, mkdirSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const { createCodeInterpreterEnv, efsUserLayout } = await import('@hachej/boring-execution/aws-code-interpreter');
-  const { startFakeCodeInterpreter } = await import('../../examples/aws/fake-code-interpreter.mjs');
+  const { startFakeCodeInterpreter } = await import('../../examples/hosts/aws/fake-code-interpreter.mjs');
   const efs = mkdtempSync(join(tmpdir(), 'boring-efs-'));
   const arn = user => `arn:aws:elasticfilesystem:us-east-1:000000000000:access-point/fsap-${user}`;
   const fake = await startFakeCodeInterpreter({ accessPoints: Object.fromEntries(users.map(user => [arn(user), join(efs, 'users', user)])) });
@@ -699,7 +699,7 @@ test('errors leaving a virtual workspace are bounded: no stack frames reach a to
 });
 
 test('AWS example: a workspace is busy only for live work of its own user', async () => {
-  const { hasLiveWork } = await import('../../examples/aws/live-work.mjs');
+  const { hasLiveWork } = await import('../../examples/hosts/aws/live-work.mjs');
   const owners = { c1: 'alice', c2: 'bob', c3: 'bob' };
   const userOf = async id => owners[id];
   const task = conversationId => ({ record: { conversationId } });

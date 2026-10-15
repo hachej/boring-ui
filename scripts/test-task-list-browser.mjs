@@ -10,8 +10,8 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createResourceHandler } from '@hachej/boring-files/remote';
 import { launch } from '@hachej/boring-testing/browser';
-import { openSqliteWorkspaces } from '../examples/shared/sqlite-workspaces.mjs';
-import { createTaskListTools } from '../examples/shared/task-list-tools.mjs';
+import { openSqliteWorkspaces } from '../shared/sqlite-workspaces.mjs';
+import { createTaskListTools } from '../shared/task-list-tools.mjs';
 import { serializeTaskList, taskListMediaType } from '../registry/task-list-viewer/task-list-document.ts';
 import { admitDocumentTool, toolResultText } from '../test/fixtures/native-document.mjs';
 

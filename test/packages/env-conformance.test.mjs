@@ -16,7 +16,7 @@ import { createRemoteFileSystemHandler, createRemoteFileSystemLease } from '@hac
 import { createCodeInterpreterEnv } from '@hachej/boring-execution/aws-code-interpreter';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
-import { startFakeCodeInterpreter } from '../../examples/aws/fake-code-interpreter.mjs';
+import { startFakeCodeInterpreter } from '../../examples/hosts/aws/fake-code-interpreter.mjs';
 
 // Pi's assertions interface, over node:assert.
 const assertions = {
