@@ -232,11 +232,23 @@ function Document({ path, provider, close, onBack, onUnsaved }) {
   </div>;
 }
 
-/** While the chat floats, a file replaces the chat in the same floating window (same corner), with a back button. */
+/**
+ * While the chat floats, a file replaces the chat in a floating window at the same corner (the chat's remembered position). The window is
+ * clamped to the viewport on every resize: its top and left edges can never leave the screen, so the header with the back and close buttons
+ * is always reachable. Only the content below the pinned header scrolls.
+ */
 function FloatingViewer({ children }) {
-  const place = (() => { try { const value = JSON.parse(sessionStorage.getItem('boring.ambient.position') ?? 'null'); return typeof value?.right === 'number' && typeof value?.bottom === 'number' ? { right: value.right, bottom: value.bottom } : { right: 16, bottom: 16 }; } catch { return { right: 16, bottom: 16 }; } })();
-  return <div data-testid="floating-viewer" role="region" aria-label="File viewer" style={place}
-    className="pi-chat fixed z-50 flex h-[min(46rem,calc(100dvh-1rem))] w-[min(44rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-3xl border border-border bg-background text-foreground shadow-lg max-sm:inset-0 max-sm:h-dvh max-sm:w-auto max-sm:rounded-none max-sm:border-0">
+  const MARGIN = 8;
+  const measure = () => ({ w: window.innerWidth, h: window.innerHeight });
+  const [viewport, setViewport] = useState(measure);
+  useEffect(() => { const on = () => setViewport(measure()); window.addEventListener('resize', on); return () => window.removeEventListener('resize', on); }, []);
+  const phone = viewport.w < 640;
+  const width = Math.min(704, viewport.w - 2 * MARGIN), height = Math.min(736, viewport.h - 2 * MARGIN);
+  const stored = (() => { try { const value = JSON.parse(sessionStorage.getItem('boring.ambient.position') ?? 'null'); return typeof value?.right === 'number' && typeof value?.bottom === 'number' ? value : { right: 16, bottom: 16 }; } catch { return { right: 16, bottom: 16 }; } })();
+  const clamp = (value: number, max: number) => Math.max(MARGIN, Math.min(value, max));
+  const style = phone ? undefined : { width, height, right: clamp(stored.right, viewport.w - width - MARGIN), bottom: clamp(stored.bottom, viewport.h - height - MARGIN) };
+  return <div data-testid="floating-viewer" role="region" aria-label="File viewer" style={style}
+    className={cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-background text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0' : 'rounded-3xl')}>
     {children}
   </div>;
 }

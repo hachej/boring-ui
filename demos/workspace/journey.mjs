@@ -301,15 +301,45 @@ try {
     await browser.click(q('[data-testid=ambient-minimize]'));
     await browser.until('the collapsed bar', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
     await library();
+    await browser.until('a usable tree', `!!${q('[data-testid=library-popover] [role=treeitem]')}`, 10000);
     const bar = await browser.evaluate(rect('[data-boring=ambient-chat]')), above = await browser.evaluate(rect('[data-testid=library-popover]'));
     assert.ok(above.y >= 0 && above.y + above.h <= bar.y + 2 && above.h > 150, `the Library opens above the collapsed bar: ${JSON.stringify({ bar, above })}`);
-    await browser.until('a usable tree', `!!${q('[data-testid=library-popover] [role=treeitem]')}`, 10000);
     await browser.press('Escape');
     await browser.until('closed, and the bar was not collapsed further', `!${q('[data-testid=library-popover]')} && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
     await browser.click(q('[data-testid=ambient-title]'));
     await browser.until('expanded again', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`, 5000);
     await pause(300);
     await browser.screenshot('7-supplier.png');
+  });
+
+  await step('6b a PDF opened while the chat floats stays inside the viewport (1440x900 and 1280x720), with the header pinned and one scroll container', async () => {
+    const inside = `(() => { const box = selector => { const r = document.querySelector(selector)?.getBoundingClientRect(); return r && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth && r.width > 0; };
+      const win = document.querySelector('[data-testid=floating-viewer]');
+      return { back: box('[data-testid=floating-viewer] [data-testid=file-back]'), close: box('[data-testid=floating-viewer] [data-testid=viewer-close]'), window: box('[data-testid=floating-viewer]'),
+        pageOverflow: document.documentElement.scrollWidth > innerWidth, windowOverflow: win.scrollWidth > win.clientWidth, windowTop: win.getBoundingClientRect().top }; })()`;
+    for (const [width, height] of [[1440, 900], [1280, 720]]) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+      // The chat was dragged near the top earlier in the session: the window must still come up whole (its remembered corner is clamped).
+      await browser.evaluate(`sessionStorage.setItem('boring.ambient.position', JSON.stringify({ right: 40, bottom: 520 }))`);
+      await library();
+      await browser.click(q('[role=treeitem][data-path="Contracts"]'));
+      await browser.until('the contract in the tree', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
+      await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
+      await browser.until('the PDF replaces the floating chat', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}`, 15000);
+      await pause(500);
+      await browser.screenshot(`8-floating-pdf-${width}x${height}.png`);
+      const state = await browser.evaluate(inside);
+      assert.deepEqual([state.back, state.close, state.window, state.pageOverflow, state.windowOverflow], [true, true, true, false, false], `${width}x${height}: ${JSON.stringify(state)}`);
+      // It reflows when the window is resized while open.
+      await browser.send('Emulation.setDeviceMetricsOverride', { width: width - 200, height: height - 150, deviceScaleFactor: 1, mobile: false });
+      await pause(300);
+      const resized = await browser.evaluate(inside);
+      assert.deepEqual([resized.back, resized.close, resized.window, resized.pageOverflow], [true, true, true, false], `after a resize: ${JSON.stringify(resized)}`);
+      await browser.click(q('[data-testid=file-back]'));
+      await browser.until('the chat is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
+    }
+    await browser.send('Emulation.clearDeviceMetricsOverride');
+    await browser.evaluate(`sessionStorage.removeItem('boring.ambient.position')`);
   });
 
   await step('7 docking back restores the chat column; the conversation is intact and goes on', async () => {
