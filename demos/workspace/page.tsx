@@ -7,7 +7,8 @@
 // Supplier: each a fixed experience over registered cells, ./cells.mjs). Dragging the divider narrow floats the whole agent area.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftIcon, FolderOpenIcon, HistoryIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, FolderOpenIcon, HistoryIcon, PlusIcon, XIcon } from 'lucide-react';
+import { Popover } from '@base-ui/react/popover';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Experience } from '@hachej/boring-ui-kit/experience';
@@ -18,7 +19,7 @@ import { ArtifactWorkspace } from '../../registry/pi-workspace/workspace.tsx';
 import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
-import { ConversationHistory } from '../../registry/pi-chat/history.tsx';
+import { ConversationList } from '../../registry/pi-chat/history.tsx';
 import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-app/use-conversations.ts';
@@ -273,16 +274,51 @@ function Column({ view, go }) {
 const PANEL = 560; // the file viewer's width beside the chat
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
-/** A popover anchored over the chat (docked `PiChat` or floating `AmbientChat`): a fixed frame at the chat's rectangle holding the panel and its backdrop. A collapsed floating bar is only a bar high, so the panel then opens above it. */
-function OverChat({ children }) {
-  const [rect, setRect] = useState<DOMRect>();
-  useLayoutEffect(() => { setRect(document.querySelector('[data-boring=pi-chat], [data-boring=ambient-chat]')?.getBoundingClientRect()); }, []);
-  if (!rect) return null;
-  const above = rect.height < 200;
-  return <div data-placement={above ? 'above' : 'below'} className="pointer-events-none fixed z-50 [&>*]:pointer-events-auto" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}>{children(above)}</div>;
+/** Base UI owns positioning, collision shifting and dismissal. Only the collapsed bar may use the space above its own surface. */
+function AgentPopover({ name, close, children }) {
+  const [anchor, setAnchor] = useState();
+  const popup = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const trigger = document.querySelector<HTMLElement>(`[data-testid=chat-action-${name}], [data-testid=ambient-action-${name}]`);
+    const surface = trigger?.closest('[data-boring=ambient-chat], [data-dock=chat]');
+    if (!trigger || !surface) return;
+    const measure = () => {
+      const rect = surface.getBoundingClientRect(), above = surface.dataset.state === 'bar';
+      setAnchor({ trigger, above, offset: above ? trigger.getBoundingClientRect().top - rect.top + 6 : 6, width: Math.min(360, rect.width - 16), boundary: above ? { x: rect.left, y: 0, width: rect.width, height: window.innerHeight } : surface });
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(surface);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [name]);
+  if (!anchor) return null;
+  return <Popover.Root open onOpenChange={(open, details) => { if (!open && details.reason !== 'focus-out' && !anchor.trigger.contains(details.event.target)) close(true); }}>
+    <Popover.Portal>
+      <Popover.Positioner anchor={anchor.trigger} positionMethod="fixed" side={anchor.above ? 'top' : 'bottom'} sideOffset={anchor.offset} align="start"
+        collisionBoundary={anchor.boundary} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift' }} style={{ width: anchor.width }} className="z-50">
+        <Popover.Popup ref={popup} data-testid={name === 'history' ? 'conversations' : 'library-popover'} aria-label={name === 'history' ? 'History' : 'Library'}
+          initialFocus={() => popup.current?.querySelector('input[type=search]') ?? true} finalFocus={false}
+          className="pi-chat flex max-h-[min(34rem,var(--available-height))] w-full flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-lg outline-none">
+          {children}
+        </Popover.Popup>
+      </Popover.Positioner>
+    </Popover.Portal>
+  </Popover.Root>;
 }
 
-function LibraryPanel({ provider, file, openFile, close, feed, above }) {
+function HistoryPanel({ conversations, close }) {
+  return <>
+    <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+      <Popover.Title className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">History</Popover.Title>
+      {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew(); close(false); }}><PlusIcon className="size-3.5" aria-hidden="true" />New</Button>}
+      <Button size="icon-bar" variant="ghost" aria-label="Close History" title="Close History" onClick={() => close(true)}><XIcon className="size-4" aria-hidden="true" /></Button>
+    </header>
+    <ConversationList conversations={conversations} onPicked={() => close(false)} autoFocus />
+  </>;
+}
+
+function LibraryPanel({ provider, file, openFile, close, feed }) {
   const panel = useRef<HTMLElement>(null);
   // The search field takes focus once the tree has loaded, so typing filters at once.
   useEffect(() => {
@@ -291,21 +327,16 @@ function LibraryPanel({ provider, file, openFile, close, feed, above }) {
     focus();
     return () => cancelAnimationFrame(frame);
   }, [provider]);
-  return <>
-    <button type="button" tabIndex={-1} aria-hidden="true" data-testid="library-backdrop" onClick={() => close(true)} className="absolute inset-0 cursor-default" />
-    {/* Escape closes the Library and goes no further: it must not also collapse the floating chat. */}
-    <section ref={panel} role="dialog" aria-label="Library" data-testid="library-popover" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); } }}
-      className={cn('absolute right-3 flex w-[23rem] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-lg', above ? 'bottom-full mb-2 max-h-[min(26rem,60dvh)]' : 'top-12 max-h-[min(34rem,calc(100dvh-5rem))]')}>
+  return <div ref={panel} className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
-        <h3 className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">Library</h3>
+        <Popover.Title className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">Library</Popover.Title>
         <Button size="icon-sm" variant="ghost" aria-label="Close Library" title="Close" onClick={() => close(true)}><XIcon className="size-4" aria-hidden="true" /></Button>
       </header>
       <div className="min-h-0 flex-1 overflow-auto">
         {provider ? <FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) close(false); }} />
           : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}
       </div>
-    </section>
-  </>;
+  </div>;
 }
 
 function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, setActive }) {
@@ -362,13 +393,14 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, se
       className={cn('relative mr-2 min-w-0 [&>header]:h-14 [&>header]:border-0 [&>header]:px-3 [&>header]:py-0', !file.includes('/') && '[&_[data-testid=viewer-subtitle]]:hidden', api.floating ? 'flex-1' : 'shrink-0')} />}
   </div>;
   const pi = <PiChat key={active} {...common} header={false} conversations={conversations} historyList={false} showHistory={false} showConnectionStatus={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1 bg-transparent" />;
-  return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+  return <div className="flex min-h-0 min-w-0 flex-1 flex-col [&_[data-action]]:min-h-11 [&_[data-action]]:min-w-11 [&_[data-action]]:rounded-full [&_[data-action][aria-pressed=true]]:bg-foreground/10 [&_[data-action][aria-pressed=true]]:text-foreground">
     {!api.floating && header}
     {api.floating
       ? (viewer ? <FloatingViewer header={header}>{viewer}</FloatingViewer> : <AmbientChat {...common} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(base.current); }} />)
       : <ArtifactWorkspace chat={pi} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={360} minChat={340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset" className="bg-transparent" />}
-    {panel === 'history' && conversations && <OverChat>{above => <ConversationHistory conversations={conversations} placement={above ? 'above' : 'below'} onClose={() => closePanel(true)} />}</OverChat>}
-    {panel === 'library' && <OverChat>{above => <LibraryPanel provider={provider} file={file} openFile={openFile} close={closePanel} feed={feed} above={above} />}</OverChat>}
+    {panel && <AgentPopover key={panel} name={panel} close={closePanel}>
+      {panel === 'history' ? <HistoryPanel conversations={conversations} close={closePanel} /> : <LibraryPanel provider={provider} file={file} openFile={openFile} close={closePanel} feed={feed} />}
+    </AgentPopover>}
   </div>;
 }
 

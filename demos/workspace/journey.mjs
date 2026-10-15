@@ -69,14 +69,45 @@ try {
   const lastContext = () => app.contexts.at(-1)?.value;
   // The request context is the screen's fields with `placement` beside them (and this tab's id, which addresses the agent's commands).
   const screenOf = value => ({ name: value.name, params: value.params });
+  const anchoredPopover = async (name, where) => {
+    const measure = `(() => {
+      const button = document.querySelector('[data-testid=${where === 'floating' ? 'ambient' : 'chat'}-action-${name}]'), trigger = button.getBoundingClientRect();
+      const popup = document.querySelector('[data-testid=${name === 'history' ? 'conversations' : 'library-popover'}]').getBoundingClientRect();
+      const surface = document.querySelector('${where === 'floating' ? '[data-boring=ambient-chat]' : '[data-dock=chat]'}');
+      const panel = surface.getBoundingClientRect(), above = surface.dataset.state === 'bar';
+      return { gap: above ? panel.top - popup.bottom : popup.top - trigger.bottom, overlap: popup.left < trigger.right && popup.right > trigger.left,
+        width: popup.width, expectedWidth: Math.min(360, panel.width - 16), left: popup.left, triggerLeft: trigger.left,
+        expectedLeft: Math.max(Math.max(0, panel.left) + 8, Math.min(trigger.left, Math.min(innerWidth, panel.right) - 8 - popup.width)),
+        target: { width: trigger.width, height: trigger.height, radius: parseFloat(getComputedStyle(button).borderRadius), pressed: button.getAttribute('aria-pressed') },
+        bounded: popup.left >= Math.max(0, panel.left) + 7 && popup.right <= Math.min(innerWidth, panel.right) - 7 && popup.top >= 0 && popup.bottom <= innerHeight };
+    })()`;
+    await browser.until(`${name} is positioned at its trigger`, `(() => { const g = ${measure}; return g.gap >= 4 && g.gap <= 12; })()`, 10000);
+    const geometry = await browser.evaluate(measure);
+    assert.ok(geometry.gap >= 4 && geometry.gap <= 12, `${where} ${name} opens beside its trigger: ${JSON.stringify(geometry)}`);
+    assert.equal(geometry.overlap, true, `${where} ${name} overlaps its trigger`);
+    assert.ok(Math.abs(geometry.left - geometry.expectedLeft) < 2, `left aligned unless the panel requires a shift: ${JSON.stringify(geometry)}`);
+    assert.ok(Math.abs(geometry.width - geometry.expectedWidth) < 2, JSON.stringify(geometry));
+    assert.equal(geometry.bounded, true, JSON.stringify(geometry));
+    assert.ok(geometry.target.width >= 44 && geometry.target.height >= 44 && geometry.target.radius >= 22 && geometry.target.pressed === 'true', `a round, pressed touch target: ${JSON.stringify(geometry.target)}`);
+  };
+  const popoverShots = async name => {
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await pause(200);
+      await shot(`popover-${name}-${scheme}.png`);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
+  };
   const history = () => browser.evaluate(placement).then(async where => {
     if (!(await browser.evaluate(`!!${q('[data-testid=conversations]')}`))) await browser.click(q(where === 'floating' ? '[data-testid=ambient-action-history]' : '[data-testid=chat-action-history]'));
     await browser.until('the conversations list', `!!${q('[data-testid=conversations]')}`, 10000);
+    await anchoredPopover('history', where);
   });
   const library = async () => {
     const where = await browser.evaluate(placement);
     await browser.click(q(where === 'floating' ? '[data-testid=ambient-action-library]' : '[data-testid=chat-action-library]'));
     await browser.until('the Library', `!!${q('[data-testid=library-popover]')}`, 10000);
+    await anchoredPopover('library', where);
   };
   const openConversation = async title => { await history(); await browser.click(row(title)); await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000); };
   const row = title => `[...document.querySelectorAll('[data-testid=conversation-row]')].find(item => item.innerText.includes(${JSON.stringify(title)}))`;
@@ -94,6 +125,7 @@ try {
     assert.equal(await browser.evaluate(viewing), 'Approvals');
     await pause(300);
     await browser.screenshot('1-start-history.png');
+    await popoverShots('docked-history');
     // One search field with a compact icon toggle for Archived (no text button); pressing it toggles the filter.
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=conversations] input[type=search]').length`), 1);
     const archived = `${q('[data-testid=conversations-archived]')}`;
@@ -103,7 +135,13 @@ try {
     await browser.click(archived);
     await browser.until('the filter is off', `${archived}.getAttribute('aria-pressed') === 'false'`, 5000);
     await browser.press('Escape');
-    await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000);
+    await browser.until('the list closed, focus on History', `!${q('[data-testid=conversations]')} && document.activeElement?.dataset.testid === 'chat-action-history'`, 5000);
+    await history();
+    await browser.click(q('[data-testid=chat-action-history]'));
+    await browser.until('the same trigger toggles History closed', `!${q('[data-testid=conversations]')}`, 5000);
+    await history();
+    await browser.click(q('[data-testid=right-column] h1'));
+    await browser.until('an outside click closes History', `!${q('[data-testid=conversations]')}`, 5000);
     await browser.screenshot('1-start.png');
     assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] > header')}`), false, 'the host owns the one header');
     await headerShots('docked-empty');
@@ -158,6 +196,7 @@ try {
     await browser.until('the Library lists top-level folders, no nested Library folder', `!!${q('[role=treeitem][data-path="Policies"]')} && !!${q('[role=treeitem][data-path="Contracts"]')} && !${q('[role=treeitem][data-path="Library"]')}`, 15000);
     assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=library-popover] button')].some(item => item.textContent.trim() === 'Refresh')`), false, 'no text Refresh button');
     await browser.screenshot('4a-library.png');
+    await popoverShots('docked-library');
     await browser.click(q('[role=treeitem][data-path="Policies"]'));
     await browser.until('the policy in the tree', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 15000);
     await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
@@ -338,8 +377,13 @@ try {
     assert.deepEqual(screenOf(lastContext()), { name: 'Supplier', params: { id: 'linden-print' } });
     assert.equal(app.navigation.length, moves, 'the agent did not move the page');
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print');
+    await history();
+    await popoverShots('floating-history');
+    await browser.press('Escape');
+    await browser.until('History closed without collapsing chat, focus on its trigger', `!${q('[data-testid=conversations]')} && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded' && document.activeElement?.dataset.testid === 'ambient-action-history'`, 5000);
     // The Library icon works from the floating chat too: the popover sits over the chat and a pick opens the document in the right column.
     await library();
+    await popoverShots('floating-library');
     const popover = await browser.evaluate(rect('[data-testid=library-popover]')), floatingChat = await browser.evaluate(rect('[data-boring=ambient-chat]'));
     assert.ok(popover.x >= floatingChat.x - 1 && popover.right <= floatingChat.right + 1, `anchored to the chat: ${JSON.stringify([popover, floatingChat])}`);
     // A pick opens the file IN PLACE of the floating chat (same window, a back button); back returns to the conversation.
@@ -360,6 +404,7 @@ try {
     await browser.until('the collapsed bar', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
     await library();
     await browser.until('a usable tree', `!!${q('[data-testid=library-popover] [role=treeitem]')}`, 10000);
+    await popoverShots('collapsed-library');
     const bar = await browser.evaluate(rect('[data-boring=ambient-chat]')), above = await browser.evaluate(rect('[data-testid=library-popover]'));
     assert.ok(above.y >= 0 && above.y + above.h <= bar.y + 2 && above.h > 150, `the Library opens above the collapsed bar: ${JSON.stringify({ bar, above })}`);
     await browser.press('Escape');
