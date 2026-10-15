@@ -155,8 +155,10 @@ export function createScriptedModel(options: ScriptedModelOptions = {}): Scripte
   let calls = 0;
 
   type Chosen = { user: string; turns?: readonly Turn[]; source?: string; problem?: string };
+  // A host's per-request context (`createPromptContext`) is a user message the person did not write: scripts answer the person's message.
+  const asked = (message: Message) => message.role === 'user' && !textOf(message).startsWith('<request-context>\n');
   function turnsFor(messages: readonly Message[]): Chosen {
-    const texts = messages.filter(message => message.role === 'user').map(textOf);
+    const texts = messages.filter(asked).map(textOf);
     const user = texts.at(-1) ?? '';
     const score = (source: ScriptSource) => texts.filter(text => pick(source.entries, text)).length;
     const best = Math.max(0, ...sources.map(score));
@@ -188,7 +190,7 @@ export function createScriptedModel(options: ScriptedModelOptions = {}): Scripte
     const run = async () => {
       push({ type: 'start', partial: message });
       const messages = context.messages as readonly Message[];
-      const lastUser = messages.map(item => item.role).lastIndexOf('user');
+      const lastUser = messages.findLastIndex(asked);
       const { user, turns, problem, source } = turnsFor(messages);
       const after = messages.slice(lastUser + 1);
       const resultOf = (result: ToolResultMessage): ScriptedResult => {
