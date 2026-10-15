@@ -55,7 +55,8 @@
     "ignore": "5.3.2",
     "radix-ui": "1.8.0",
     "@base-ui/react": "1.9.0",
-    "class-variance-authority": "0.7.1"
+    "class-variance-authority": "0.7.1",
+    "@tanstack/react-table": "8.21.3"
   },
   "packages": {
     "files": {

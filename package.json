@@ -104,6 +104,7 @@
     "@json-render/react": "0.21.0",
     "@modelcontextprotocol/sdk": "1.32.0",
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
+    "@tanstack/react-table": "8.21.3",
     "@tiptap/core": "3.31.4",
     "@tiptap/extension-bubble-menu": "3.31.4",
     "@tiptap/extension-floating-menu": "3.31.4",

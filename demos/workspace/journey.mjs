@@ -24,6 +24,7 @@ mkdirSync(evidence, { recursive: true });
 const step = async (name, run) => { const started = Date.now(); await run(); console.log(`ok  ${name} (${Date.now() - started} ms)`); };
 const rect = selector => `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right }; })()`;
 const placement = `${q('[data-dock=chat]')}?.dataset.placement`;
+const WIDTH = Number(process.env.APP_WIDTH ?? 1280), SCHEME = process.env.APP_SCHEME ?? 'light';
 const INPUT = q('[data-testid=composer-input]');
 const body = `document.body.innerText`;
 const viewing = `${q('[data-testid=viewing]')}?.textContent`;
@@ -34,7 +35,9 @@ const reader = await connectRevisionProvider({ endpoint: new URL('/api/resources
 let browser;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
-  if (process.env.APP_SCHEME) await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME }] });
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: 900, deviceScaleFactor: 1, mobile: false });
+  await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: SCHEME }] });
+  const shot = name => browser.screenshot(`${SCHEME}-${name}`);
   const say = async text => { await browser.until('the composer', `!!${INPUT}`, 20000); await browser.type(INPUT, text); await browser.press('Enter'); };
   const sees = (label, text, timeout = 30000) => browser.until(label, `${body}.includes(${JSON.stringify(text)})`, timeout);
   const click = (label, expression) => browser.click(expression).then(() => label);
@@ -66,7 +69,7 @@ try {
     for (const title of ['Month-end close checklist', 'Fernhill Labels terms', "This week's approvals"]) assert.ok(titles.some(text => text.includes(title)), `${title} in ${JSON.stringify(titles)}`);
     assert.equal(await browser.evaluate(viewing), 'Approvals');
     await pause(300);
-    await browser.screenshot('1-start-history.png');
+    await shot('1-start-history.png');
     // One search field with a compact icon toggle for Archived (no text button); pressing it toggles the filter.
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=conversations] input[type=search]').length`), 1);
     const archived = `${q('[data-testid=conversations-archived]')}`;
@@ -77,7 +80,26 @@ try {
     await browser.until('the filter is off', `${archived}.getAttribute('aria-pressed') === 'false'`, 5000);
     await browser.press('Escape');
     await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000);
-    await browser.screenshot('1-start.png');
+    await shot('1-start.png');
+  });
+
+  await step('0 the app chrome; the agent opens the Dashboard', async () => {
+    const nav = await browser.evaluate(`[...document.querySelectorAll('[data-sidebar=menu-button]')].map(item => item.textContent.trim())`);
+    for (const name of ['Dashboard', 'Approvals', 'Invoices', 'Suppliers', 'Payments', 'Reports', 'Settings']) assert.ok(nav.some(text => text.startsWith(name)), `${name} in the nav ${JSON.stringify(nav)}`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=nav-approvals-count]')}?.textContent`), '3', 'the approvals count badge');
+    assert.ok((await browser.evaluate(`${q('[data-testid=team-switcher]')}.innerText`)).includes('Harbor & Pine Foods'), 'company switcher');
+    assert.ok(await browser.evaluate(`!!${q('[data-testid=breadcrumb]')} && !!${q('[data-testid=app-search]')} && !!${q('[data-testid=notifications]')} && !!${q('[data-testid=profile-menu]')}`), 'top bar: breadcrumb, search, notifications, profile');
+    await say('Give me an overview of the week.');
+    await sees('the answer', 'I opened the Dashboard');
+    await browser.until('the dashboard', `${viewing} === 'Dashboard' && !!${q('[data-testid=kpi-cards]')}`, 10000);
+    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid^=kpi-]:not([data-testid=kpi-cards])').length`), 4, 'four KPI cards');
+    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=recent-invoices] tbody tr').length`), 6, 'six recent invoices');
+    assert.equal(lastContext().placement, 'docked');
+    assert.deepEqual(screenOf(lastContext()), { name: 'Approvals', params: {} });
+    await pause(400);
+    await shot('0-dashboard.png');
+    await browser.click(q('[data-testid=nav-approvals]'));
+    await browser.until('the approvals screen', `${viewing} === 'Approvals'`, 10000);
   });
 
   await step('1 docked: the agent opens the Approvals queue in the viewer', async () => {
@@ -89,9 +111,9 @@ try {
     await browser.until('the queue is on show', `${viewing} === 'Approvals' && !!${q('[data-testid=approval-queue]')}`, 10000);
     assert.equal(lastContext().placement, 'docked');
     assert.deepEqual(screenOf(lastContext()), { name: 'Invoice', params: { id: 'INV-2044' } }, 'the request carried the screen the person was on');
-    assert.deepEqual(app.navigation.map(item => item.screen), ['approvals']);
+    assert.deepEqual(app.navigation.map(item => item.screen), ['dashboard', 'approvals']);
     await browser.until('three rows', `document.querySelectorAll('[data-testid^=queue-row-]').length === 3`, 5000);
-    await browser.screenshot('2-approvals.png');
+    await shot('2-approvals.png');
   });
 
   await step('2 the person opens an invoice: PDF and extracted fields', async () => {
@@ -101,7 +123,7 @@ try {
     for (const text of ['Linden Print Co', 'LP-7710', 'PO-771', '6200 Printing']) assert.ok(fields.includes(text), `${text} in the fields`);
     await browser.until('the PDF viewer', `!!${q('[data-testid=invoice-pdf] [data-pdf]')}`, 15000);
     await pause(500);
-    await browser.screenshot('3-invoice.png');
+    await shot('3-invoice.png');
   });
 
   await step('a earlier conversations: switching keeps each transcript', async () => {
@@ -121,14 +143,14 @@ try {
     await say('Anything odd about this one?');
     await sees('the duplicate is named', 'INV-2043 looks like a duplicate of INV-2041');
     assert.deepEqual(screenOf(lastContext()), { name: 'Invoice', params: { id: 'INV-2043' } });
-    assert.equal(app.navigation.length, 1, 'answering did not move the page');
+    assert.equal(app.navigation.length, 2, 'answering did not move the page');
   });
 
   await step('b the AP policy opened from the Library; the answer uses the document and the invoice', async () => {
     await library();
     await browser.until('the Library lists top-level folders, no nested Library folder', `!!${q('[role=treeitem][data-path="Policies"]')} && !!${q('[role=treeitem][data-path="Contracts"]')} && !${q('[role=treeitem][data-path="Library"]')}`, 15000);
     assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=library-popover] button')].some(item => item.textContent.trim() === 'Refresh')`), false, 'no text Refresh button');
-    await browser.screenshot('4a-library.png');
+    await shot('4a-library.png');
     await browser.click(q('[role=treeitem][data-path="Policies"]'));
     await browser.until('the policy in the tree', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 15000);
     await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
@@ -140,7 +162,7 @@ try {
     assert.deepEqual(screenOf(app.contexts.at(-1).value), { name: 'Library document', params: { path: 'Policies/AP policy.md' } }, 'the screen context names the open document');
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tool-name]')].map(item => item.textContent.trim()).join(' ')`);
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
-    await browser.screenshot('4-policy.png');
+    await shot('4-policy.png');
     // The document is editable: leaving it with an unsaved edit asks first, and declining keeps the document and the edit.
     await browser.click(q('[data-testid=library-document] [data-testid$=-mode-source]'));
     await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), ' Draft edit.');
@@ -163,7 +185,7 @@ try {
     assert.equal((await app.ap.read('INV-2041')).status, 'pending', 'nothing is saved before the person approves');
     const reviewed = (await app.ap.read('INV-2041')).revision;
     assert.ok((await browser.evaluate(`${q('[data-testid=approval-args]')}.textContent`)).includes(reviewed), 'the card carries the reviewed revision');
-    await browser.screenshot('5-approval.png');
+    await shot('5-approval.png');
     await browser.click(q('[data-testid=approval-approve]'));
     await sees('the receipt in the answer', 'Done: INV-2041 is approved and coded to 6300 Marketing. Receipt decide-');
     const receiptId = /Receipt (decide-[0-9a-f]+)/.exec(await browser.evaluate(body))[1];
@@ -194,13 +216,13 @@ try {
     await browser.until('the composer', `!!${INPUT}`, 20000);
     await browser.attachFiles(q('[data-testid=composer-file]'), [note]);
     await browser.until('the upload is saved and attached as a file mention', `/^uploads\\/vendor-note.*\\.txt$/.test(${q('[data-testid=mention-chip]')}?.dataset.path ?? '')`, 15000);
-    await browser.screenshot('4c-attachment-chip.png');
+    await shot('4c-attachment-chip.png');
     await say('Please look at the attached note.');
     await browser.until('a file card in the message', `!!${q('[data-testid=message-file]')}`, 15000);
     await sees('the agent read it', 'Read it: Linden Print asks for payment by the 3rd.');
     const names = (await reader.list({ directory: 'uploads' })).entries.map(entry => entry.path);
     assert.ok(names.some(path => /^uploads\/vendor-note.*\.txt$/.test(path)), `uploaded into the workspace: ${names}`);
-    await browser.screenshot('4d-attachment-card.png');
+    await shot('4d-attachment-card.png');
   });
 
   await step('d the agent writes tt.md (observed, no receipt) and opens it; the Library lists it live', async () => {
@@ -215,9 +237,46 @@ try {
     assert.equal((await app.ap.read('INV-2043')).status, 'pending', 'a file write is not an invoice decision');
     await library();
     await browser.until('tt.md in the tree', `!!${q('[role=treeitem][data-path="tt.md"]')}`, 15000);
-    await browser.screenshot('4e-agent-file.png');
+    await shot('4e-agent-file.png');
     await browser.press('Escape');
     await browser.until('the Library closed', `!${q('[data-testid=library-popover]')}`, 5000);
+    await browser.click(q('[data-testid=nav-approvals]'));
+    await browser.until('back on the queue', `${viewing} === 'Approvals'`, 5000);
+  });
+
+  await step('e the Invoices table filters, sorts and pages; Suppliers and the supplier tabs', async () => {
+    await browser.click(q('[data-testid=nav-invoices]'));
+    await browser.until('the invoices table', `!!${q('[data-testid=invoice-table] table')}`, 10000);
+    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=invoice-table] tbody tr').length`), 10, 'a page of ten');
+    assert.ok(/Page 1 of 2/.test(await browser.evaluate(`${q('[data-testid=table-pagination]')}.innerText`)), 'pagination');
+    const amount = await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=invoice-table] tbody tr td:nth-child(5)')).textAlign`);
+    assert.ok(['end', 'right'].includes(amount), `amounts are right-aligned: ${amount}`);
+    await browser.screenshot(`${SCHEME}-6a-invoices.png`);
+    await browser.click(q('[data-testid=filter-status]'));
+    await browser.click(q('[data-testid=filter-option-overdue]'));
+    await browser.until('only overdue rows', `(() => { const rows = [...document.querySelectorAll('[data-testid=invoice-table] tbody tr')]; return rows.length >= 1 && rows.length < 10 && rows.every(row => /overdue/i.test(row.innerText)); })()`, 5000);
+    await browser.screenshot(`${SCHEME}-6b-invoices-filtered.png`);
+    await browser.press('Escape');
+    await browser.click(`[...document.querySelectorAll('[data-testid=table-filter] ~ *, [data-testid=invoice-table] button')].find(item => item.textContent.trim() === 'Reset')`);
+    await browser.until('all rows again', `document.querySelectorAll('[data-testid=invoice-table] tbody tr').length === 10`, 5000);
+    await browser.click(`[...document.querySelectorAll('[data-testid=invoice-table] thead button')].find(item => item.textContent.trim() === 'Amount')`);
+    await browser.click(`[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent.trim() === 'Desc')`);
+    await browser.until('largest amount first', `/4,290\\.00/.test(document.querySelector('[data-testid=invoice-table] tbody tr td:nth-child(5)')?.innerText ?? '')`, 5000);
+    await browser.click(`[...document.querySelectorAll('[data-testid=table-pagination] button')].find(item => item.textContent.trim().startsWith('Go to page 2'))`);
+    await browser.until('page two', `/Page 2 of 2/.test(${q('[data-testid=table-pagination]')}.innerText)`, 5000);
+    await browser.click(q('[data-testid=nav-suppliers]'));
+    await browser.until('seven suppliers', `document.querySelectorAll('[data-testid^=supplier-row-]').length === 7`, 10000);
+    await shot('6c-suppliers.png');
+    await browser.click(q('[data-testid=supplier-row-linden-print]'));
+    await browser.until('the supplier page', `${viewing} === 'Supplier linden-print' && !!${q('[data-testid=supplier-flag]')}`, 10000);
+    await shot('6d-supplier-overview.png');
+    await browser.click(q('[data-testid=supplier-tab-invoices]'));
+    await browser.until('the supplier invoices', `document.querySelectorAll('[data-testid^=supplier-invoice-]').length >= 3`, 5000);
+    await shot('6e-supplier-invoices.png');
+    await browser.click(q('[data-testid=supplier-tab-contract]'));
+    await browser.until('the contract tab', `!!${q('[data-testid=open-contract]')}`, 5000);
+    await shot('6f-supplier-contract.png');
+    for (const screen of ['payments', 'reports', 'settings']) { await browser.click(q(`[data-testid=nav-${screen}]`)); await browser.until(`${screen}`, `${viewing} === ${JSON.stringify(screen[0].toUpperCase() + screen.slice(1))}`, 5000); await pause(300); await shot(`6g-${screen}.png`); }
     await browser.click(q('[data-testid=nav-approvals]'));
     await browser.until('back on the queue', `${viewing} === 'Approvals'`, 5000);
   });
@@ -232,9 +291,9 @@ try {
     await browser.until('floating, as AmbientChat', `${placement} === 'floating' && !!${q('[data-boring=ambient-chat]')} && !${q('[data-boring=pi-chat]')}`, 10000);
     assert.ok(await browser.evaluate(`!!${q('[data-testid=ambient-action-history]')} && !!${q('[data-testid=ambient-action-library]')}`), 'the history and Library icons live in the floating chat header too');
     const main = await browser.evaluate(rect('[data-boring=dock-main]'));
-    assert.ok(main.x < 2 && Math.round(main.w) === 1500, `the right column takes the full width: ${JSON.stringify(main)}`);
+    assert.ok(main.x < 2 && Math.round(main.w) === WIDTH, `the right column takes the full width: ${JSON.stringify(main)}`);
     await pause(400);
-    await browser.screenshot('6-floating.png');
+    await shot('6-floating.png');
   });
 
   await step('6 floating, on the supplier page: a short answer and the page stays where it is', async () => {
@@ -257,7 +316,7 @@ try {
     await browser.press('Escape');
     await browser.until('the Library closed', `!${q('[data-testid=library-popover]')}`, 5000);
     await pause(300);
-    await browser.screenshot('7-supplier.png');
+    await shot('7-supplier.png');
   });
 
   await step('7 docking back restores the chat column; the conversation is intact and goes on', async () => {
@@ -268,7 +327,7 @@ try {
     await say('Thanks, that is all for today.');
     await sees('the conversation goes on', 'INV-2044 from North Quay is the one left in the queue.');
     assert.equal(lastContext().placement, 'docked');
-    await browser.screenshot('8-docked-again.png');
+    await shot('8-docked-again.png');
   });
 
   await step('agent commands are bound to their conversation and tab: a late or foreign command does not move the viewer', async () => {
@@ -290,7 +349,7 @@ try {
     await browser.until('a command for this conversation and tab is applied', `${viewing} === 'Approvals'`, 5000);
   });
 
-  assert.deepEqual(app.contexts.map(item => item.value.placement), ['docked', 'docked', 'docked', 'docked', 'docked', 'docked', 'docked', 'floating', 'docked']);
+  assert.deepEqual(app.contexts.map(item => item.value.placement), ['docked', 'docked', 'docked', 'docked', 'docked', 'docked', 'docked', 'docked', 'floating', 'docked']);
   assert.deepEqual(browser.problems, [], 'no page errors');
   console.log(`workspace-demo journey passed. Screenshots in ${evidence}`);
 } finally {

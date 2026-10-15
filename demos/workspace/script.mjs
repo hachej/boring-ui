@@ -9,6 +9,10 @@ export const SOURCES = [{ name: 'workspace-demo', entries: Object.entries({
   // Earlier conversations (seeded by the server).
   'month-end close': ['Left in the close: accruals for March, the bank reconciliation and the supplier statement check.'],
   'payment terms for Fernhill': ['Fernhill Labels is on net 30 from the invoice date.'],
+  // 0. The agent opens the Dashboard first.
+  'overview of the week': [
+    ctx => seen(ctx).includes('Placement: docked') ? call('show', { screen: 'dashboard' }) : 'Open the dashboard to see the week.',
+    'I opened the Dashboard: three invoices are waiting for you, one supplier is past due and the week is on track.'],
   // 1. Docked: the agent leads and opens the queue in the viewer.
   'what needs my approval this week': [
     ctx => seen(ctx).includes('Placement: docked') ? call('pending_approvals', {}) : 'Three invoices are waiting; ask me to open the queue.',

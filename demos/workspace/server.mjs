@@ -7,7 +7,7 @@
 // Imports shared helpers from examples/ by their current path; re-point them after the examples restructure. Fictional content only.
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,8 +89,8 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
         const matches = ap.duplicatesOf(invoice, await ap.list()).map(lines);
         return text({ ...invoice, supplier: SUPPLIERS[invoice.supplier].name, terms: SUPPLIERS[invoice.supplier].terms, lookAlikes: matches });
       } }),
-    defineTool({ name: 'show', description: 'Open something in the viewer beside the chat: the approvals queue, an invoice (with id), a supplier (with id) or any workspace file (screen file, with its path). Use it when the chat is docked.',
-      parameters: Type.Object({ screen: Type.Union([Type.Literal('approvals'), Type.Literal('invoice'), Type.Literal('supplier'), Type.Literal('file')]), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'unsafe',
+    defineTool({ name: 'show', description: 'Open something in the viewer beside the chat: the dashboard, the approvals queue, the invoices list, the suppliers list, an invoice (with id), a supplier (with id) or any workspace file (screen file, with its path). Use it when the chat is docked.',
+      parameters: Type.Object({ screen: Type.Union([Type.Literal('dashboard'), Type.Literal('approvals'), Type.Literal('invoices'), Type.Literal('suppliers'), Type.Literal('invoice'), Type.Literal('supplier'), Type.Literal('file')]), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'unsafe',
       execute: async (args, api) => {
         // The command belongs to the conversation that made it and to the tab that was talking to it; the page drops it otherwise.
         if (args.screen === 'file' && !args.path) return { ...text('Name the file to open as path.'), isError: true };
@@ -159,8 +159,8 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
 
   const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['demos/workspace', 'packages/ui/src', 'registry/feedback', 'registry/dock', 'registry/pi-app', 'registry/documents', 'registry/viewers'] }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
-    '@layer base{*,::before,::after{box-sizing:border-box}ul,ol{list-style:none;margin:0;padding:0}h1,h2,h3,p{margin:0}button{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer}button:disabled{cursor:default}}',
+  const css = [await buildTailwind({ extraCss: readFileSync(here('./saas/theme.css'), 'utf8'), extraDirectories: ['demos/workspace', 'packages/ui/src', 'registry/feedback', 'registry/dock', 'registry/pi-app', 'registry/documents', 'registry/viewers'] }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+    '@layer base{*,::before,::after{box-sizing:border-box;border-color:var(--border)}ul,ol{list-style:none;margin:0;padding:0}h1,h2,h3,p{margin:0}button{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer}button:disabled{cursor:default}}',
     'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>${COMPANY} - Accounts payable (fictional)</title>
 <link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversation: String(current.id), identity: { runtimeId: 'app', ...person }, voice: Boolean(voice) })}</script>

@@ -9,7 +9,11 @@ import { z } from 'zod';
 const none = z.strictObject({});
 /** The kinds. `flags` are the enumerated metadata a composer may see; `actions` the named actions a cell of the kind may use. */
 export const KINDS = {
-  'ap/approval-queue': { version: 1, description: 'Invoices waiting for a decision', props: none, actions: ['open_invoice'], flags: ['needs-decision'] },
+  'ap/kpi-cards': { version: 1, description: 'The week in four figures: to approve, due this week, overdue, paid this month', props: none, actions: [], flags: ['time-bound'] },
+  'ap/recent-invoices': { version: 1, description: 'The latest invoices received', props: none, actions: ['open_invoice'], flags: [] },
+  'ap/invoice-table': { version: 1, description: 'Every invoice, filterable and sortable', props: z.strictObject({ scope: z.enum(['all', 'payments']) }), actions: ['open_invoice', 'open_supplier'], flags: [] },
+  'ap/supplier-list': { version: 1, description: 'The suppliers and what is open with each', props: none, actions: ['open_supplier'], flags: [] },
+  'ap/approval-queue': { version: 1, description: 'Invoices waiting for a decision', props: none, actions: ['open_invoice', 'open_supplier'], flags: ['needs-decision'] },
   'ap/cash-due': { version: 1, description: 'What falls due and when', props: z.strictObject({ scope: z.enum(['all', 'supplier']) }), actions: [], flags: ['time-bound'] },
   'ap/invoice-summary': { version: 1, description: 'The extracted fields of one invoice, with its decision buttons', props: none, actions: ['approve', 'recode', 'hold', 'open_supplier'], flags: ['needs-decision', 'amount-bucket'] },
   'ap/invoice-pdf': { version: 1, description: 'The invoice document as received', props: none, actions: [], flags: [] },
@@ -23,13 +27,20 @@ export const ACTIONS = { open_invoice: { durable: false }, open_supplier: { dura
 
 /** Cell instances: `state` maps a binding name to a path of the app's state (resolved per viewer by the page). */
 export const CELLS = [
+  { ref: 'dashboard/kpis', kind: 'ap/kpi-cards', props: {}, state: { rows: '/ap/invoices' } },
+  { ref: 'dashboard/recent', kind: 'ap/recent-invoices', props: {}, state: { rows: '/ap/invoices' } },
+  { ref: 'invoices/table', kind: 'ap/invoice-table', props: { scope: 'all' }, state: { rows: '/ap/invoices' } },
+  { ref: 'payments/table', kind: 'ap/invoice-table', props: { scope: 'payments' }, state: { rows: '/ap/invoices' } },
+  { ref: 'suppliers/list', kind: 'ap/supplier-list', props: {}, state: { rows: '/ap/suppliers' } },
+  { ref: 'reports/kpis', kind: 'ap/kpi-cards', props: {}, state: { rows: '/ap/invoices' } },
+  { ref: 'reports/cash-due', kind: 'ap/cash-due', props: { scope: 'all' }, state: { rows: '/ap/unpaid' } },
   { ref: 'approvals/queue', kind: 'ap/approval-queue', props: {}, state: { rows: '/ap/approvals' } },
   { ref: 'approvals/cash-due', kind: 'ap/cash-due', props: { scope: 'all' }, state: { rows: '/ap/approvals' } },
   { ref: 'invoice/summary', kind: 'ap/invoice-summary', props: {}, state: { invoice: '/ap/invoice' } },
   { ref: 'invoice/duplicates', kind: 'ap/duplicate-alert', props: { scope: 'invoice' }, state: { matches: '/ap/invoice/duplicates' } },
   { ref: 'invoice/pdf', kind: 'ap/invoice-pdf', props: {}, state: { invoice: '/ap/invoice' } },
   { ref: 'invoice/policy', kind: 'ap/policy-excerpt', props: {}, state: { invoice: '/ap/invoice' } },
-  { ref: 'supplier/card', kind: 'ap/supplier-card', props: {}, state: { supplier: '/ap/supplier', invoices: '/ap/supplier/invoices' } },
+  { ref: 'supplier/card', kind: 'ap/supplier-card', props: {}, state: { supplier: '/ap/supplier', invoices: '/ap/supplier/invoices', all: '/ap/supplier/all' } },
   { ref: 'supplier/duplicates', kind: 'ap/duplicate-alert', props: { scope: 'supplier' }, state: { matches: '/ap/supplier/duplicates' } },
   { ref: 'supplier/cash-due', kind: 'ap/cash-due', props: { scope: 'supplier' }, state: { rows: '/ap/supplier/invoices' } },
 ];
@@ -51,7 +62,12 @@ const cell = ref => ({ type: 'boring/cell', props: { ref }, children: [] });
 const screen = (name, title, elements) => validateExperience({ format: 'boring.experience', version: 1, name, title, source: 'fixed', kinds, root: 'page', elements }, { cells: experienceCells, canView: () => true });
 
 export const SCREENS = {
-  approvals: screen('approvals', 'Approvals', { page: stack(['queue', 'due']), queue: cell('approvals/queue'), due: cell('approvals/cash-due') }),
+  dashboard: screen('dashboard', 'Dashboard', { page: stack(['kpis', 'recent']), kpis: cell('dashboard/kpis'), recent: cell('dashboard/recent') }),
+  invoices: screen('invoices', 'Invoices', { page: stack(['table']), table: cell('invoices/table') }),
+  suppliers: screen('suppliers', 'Suppliers', { page: stack(['list']), list: cell('suppliers/list') }),
+  payments: screen('payments', 'Payments', { page: stack(['table']), table: cell('payments/table') }),
+  reports: screen('reports', 'Reports', { page: stack(['kpis', 'due']), kpis: cell('reports/kpis'), due: cell('reports/cash-due') }),
+  approvals: screen('approvals', 'Approvals', { page: stack(['queue']), queue: cell('approvals/queue') }),
   invoice: screen('invoice', 'Invoice', { page: stack(['summary', 'duplicates', 'documents']), summary: cell('invoice/summary'), duplicates: cell('invoice/duplicates'),
     documents: row(['pdf', 'policy']), pdf: cell('invoice/pdf'), policy: cell('invoice/policy') }),
   supplier: screen('supplier', 'Supplier', { page: stack(['card', 'duplicates', 'due']), card: cell('supplier/card'), duplicates: cell('supplier/duplicates'), due: cell('supplier/cash-due') }),
