@@ -7,9 +7,8 @@ import { runCaptured } from './run-captured.mjs';
 import { prepareConsumerIsolation, assertConsumerTypeFiles, npmInstallFlags } from './consumer-isolation.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-assert.ok(process.argv.length === 2 || process.argv.length === 3 && ['--html', '--redaction'].includes(process.argv[2]), 'Expected no option, --html or --redaction');
+assert.ok(process.argv.length === 2 || process.argv.length === 3 && process.argv[2] === '--html', 'Expected no option or --html');
 const html = process.argv[2] === '--html';
-const redaction = process.argv[2] === '--redaction';
 const directory = mkdtempSync(join(tmpdir(), 'boring-editor-consumer-'));
 const cache = process.env.npm_config_cache;
 assert.ok(cache, 'Set npm_config_cache to a writable npm cache (npm run sets it)');
@@ -106,36 +105,5 @@ controller.flush(controller.actions.selection());
     assert.ok(inputs.every(path => !/@tiptap|tldraw|marked|entities|@hachej\/boring-execution/.test(path)));
   } else assert.ok(inputs.some(path => path.includes('@tiptap/')));
   assert.ok(inputs.every(path => !/pi-durable|@earendil-works|@hachej\/boring-agent|sqlite|node:/.test(path)), 'browser bundle must exclude kernel and server filesystem');
-  if (redaction) {
-    const installedManifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
-    const installedLock = JSON.parse(readFileSync(join(directory, 'package-lock.json'), 'utf8'));
-    for (const name of ['@earendil-works/pi-durable', '@earendil-works/pi-ai', '@earendil-works/chord', '@modelcontextprotocol/sdk', 'zod', '@json-render/core', '@json-render/react']) {
-      installedManifest.dependencies[name] = rootManifest.devDependencies[name]; include(name);
-    }
-    for (const [path, entry] of Object.entries(packages)) if (path && !installedLock.packages[path]) installedLock.packages[path] = entry;
-    installedLock.packages[''].dependencies = installedManifest.dependencies;
-    writeFileSync(join(directory, 'package.json'), JSON.stringify(installedManifest));
-    writeFileSync(join(directory, 'package-lock.json'), JSON.stringify(installedLock));
-    const packed = JSON.parse(run('npm', ['pack', join(root, 'packages/agent'), '--json', '--ignore-scripts', '--pack-destination', join(directory, 'packs')]))[0];
-    run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), join(directory, 'packs', packed.filename)]);
-    run('npm', ['ci', ...npmInstallFlags(cache)]);
-    for (const path of ['examples/redaction-browser', 'examples/redaction', 'examples/shared', 'test/compatibility', 'test/contracts', 'test/fixtures', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-    for (const name of ['runtime.mjs', 'server.mjs', 'fixtures.mjs', 'client.mjs', 'session.mjs', 'view.jsx', 'action-binding.mjs', 'preparation-composition.mjs', 'preparation-session.mjs', 'preparation-view.jsx']) copyFileSync(join(root, 'examples/redaction-browser', name), join(directory, 'examples/redaction-browser', name));
-    for (const name of ['app.mjs', 'bindings.mjs', 'reservation.mjs', 'proposals.mjs', 'corrections.mjs', 'adoption.mjs', 'adoption-bindings.mjs', 'scripted-model.mjs', 'preparation.mjs', 'preparation-model.mjs', 'preparation-fixtures.mjs', 'preparation-schema.mjs']) copyFileSync(join(root, 'examples/redaction', name), join(directory, 'examples/redaction', name));
-    copyFileSync(join(root, 'examples/shared/sqlite-workspaces.mjs'), join(directory, 'examples/shared/sqlite-workspaces.mjs'));
-    const nativeTests = ['test/compatibility/redaction-preparation.test.mjs', 'test/compatibility/redaction-preparation-composition.test.mjs', 'test/compatibility/redaction-browser-runtime.test.mjs', 'test/compatibility/redaction.test.mjs', 'test/compatibility/redaction-proposals.test.mjs', 'test/compatibility/redaction-adoption.test.mjs', 'test/contracts/redaction-crash.test.mjs', 'test/contracts/redaction-adoption-crash.test.mjs'];
-    for (const path of nativeTests) copyFileSync(join(root, path), join(directory, path));
-    for (const name of ['redaction-browser-dom.mjs', 'redaction-preparation-dom.mjs', 'redaction-preparation-crash-child.mjs', 'redaction-crash-child.mjs', 'redaction-adoption-crash-child.mjs']) copyFileSync(join(root, 'test/fixtures', name), join(directory, 'test/fixtures', name));
-    if (existsSync(join(root, 'test/fixtures/redaction-browser-crash-child.mjs'))) copyFileSync(join(root, 'test/fixtures/redaction-browser-crash-child.mjs'), join(directory, 'test/fixtures/redaction-browser-crash-child.mjs'));
-    run(process.execPath, ['--test', '--experimental-test-isolation=none', ...nativeTests], isolated);
-    run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'examples/redaction-browser/view.jsx', '--bundle', '--packages=external', '--platform=node', '--format=esm', '--jsx=automatic', '--outfile=dist/redaction-browser-view.js'], isolated);
-    run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/redaction-browser-dom.mjs', 'test/fixtures/redaction-preparation-dom.mjs'], isolated);
-    run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'examples/redaction-browser/view.jsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=redaction-browser.js', '--metafile=redaction-browser-meta.json'], isolated);
-    const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'redaction-browser-meta.json'), 'utf8')).inputs);
-    assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
-    assert.ok(inputs.some(path => path.endsWith('examples/redaction-browser/view.jsx')));
-    assert.ok(inputs.every(path => !/@earendil-works|@hachej\/boring-(agent|execution)|sqlite|node:|redaction-browser\/(runtime|server|fixtures)\.mjs|redaction\/(app|proposals|scripted-model|preparation|preparation-model|preparation-fixtures)\.mjs/.test(path)), 'Redaction UI must exclude native/server/private fixture code');
-    console.log('PASS: isolated fictional redaction admission, exact flush, corrections/adoption, SIGKILL recovery and real DOM/dictation controls; browser bundle only, not Chromium execution');
-  }
   console.log('PASS: isolated registry dependencies, packed ' + (html ? 'HTML viewer' : 'Markdown editor') + ', strict declarations, DOM controls and browser bundle; no browser journey claimed');
 } finally { rmSync(directory, { recursive: true, force: true }); }

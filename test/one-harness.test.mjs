@@ -94,7 +94,7 @@ test('the packages and examples of this repository have no pi-ai reference outsi
   assert.ok(result.files > 100);
   assert.deepEqual([...result.allowed].sort(), [
     'examples/bot/scripted-model.mjs', 'examples/feedback/builder.mjs', 'examples/feedback/model-preview.mjs', 'examples/feedback/server.mjs',
-    'examples/redaction/scripted-model.mjs', 'examples/validated-output/scripted-model.mjs', 'packages/agent/src/memory/optchat.ts',
+    'examples/validated-output/scripted-model.mjs', 'packages/agent/src/memory/optchat.ts',
     'packages/browser/src/models.ts', 'packages/feedback/src/preview/agent.ts', 'packages/testing/src/model.ts',
   ]);
 });

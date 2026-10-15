@@ -32,7 +32,7 @@ The gate used existing fake models, fictional test fixtures and fake transcripti
 
 ## Validator seam — executed, confirmed
 
-Command in v4: `node scripts/probe-redaction.mjs ../boring-clinic-redaction`.
+Historical command in v4, at revision a752da78e (the script was removed with the redaction example): `node scripts/probe-redaction.mjs ../boring-clinic-redaction`.
 
 ```text
 CONFIRMED: preparation accepts unsupported SCORE2 without trace; refuses it with empty trace.

@@ -89,7 +89,7 @@ SQLite reads and receipt lookups of the SQLite workspace backend use deferred re
 
 The SQLite resource store of `@hachej/boring-files/sqlite` (`openSqliteResources`, `SqliteResourceProvider` and its option types) is
 removed. Its documents become files of a workspace; `SqliteConnection` and `openNodeConnection` stay in `@hachej/boring-files/sqlite`.
-A host that kept one store with rows per scope (the redaction and current-hub fixtures here) opens one SQLite-backed workspace per
+A host that kept one store with rows per scope (the current-hub fixture here) opens one SQLite-backed workspace per
 scope in the same database:
 
 | Old call | New call |

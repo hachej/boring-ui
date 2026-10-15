@@ -113,6 +113,8 @@ Reference-provider tests use one real transaction for resource plus receipt; tes
 
 ## Redaction consumer journeys
 
+These are the downstream consumer's acceptance journeys. The fictional example and tests that exercised them moved out of this repository; the consumer owns that evidence.
+
 Use a disposable local instance with invented fixtures, fake models and transcription unless a separate authorized real-model evaluation is requested. Never use production, patient/corpus/credential data or the person's browser as the test bed.
 
 1. Attach beside existing Cloudflare/hub/dev auth; preserve cabinet-wide visibility and requester attribution. Keep the readonly clinical assistant free of required mounts/exec.

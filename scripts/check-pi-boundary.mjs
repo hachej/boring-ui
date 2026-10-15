@@ -126,7 +126,6 @@ export const ONE_HARNESS_ALLOWED = Object.freeze({
   'examples/bot/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
   'examples/feedback/builder.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
   'examples/feedback/server.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
-  'examples/redaction/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
   'examples/validated-output/scripted-model.mjs': 'Fictional scripted model for tests or a keyless example: exports a Models value over a scripted provider for the native Harness. No real model is called.',
 });
 const PI_AI_MODULE = /^@earendil-works\/pi-ai(?:\/|$)/;

@@ -42,13 +42,7 @@ npm run morning
 
 Open **http://127.0.0.1:3000**. The example prepares fictional email, calendar and todo documents through native tasks. Edit a reply, review proposed changes and try the Send, Snooze, Slot and Tick actions. Send writes to a fictional outbox; it sends no email.
 
-For an existing-app example, stop the morning server and run:
-
-```bash
-npm run redaction:browser
-```
-
-The [fictional consultation guide](examples/redaction-browser/README.md) covers notes, human corrections, letter adoption and preparation views. Use fictional data when exploring these examples.
+Use fictional data when exploring these examples.
 
 ## Integrate with your application
 
