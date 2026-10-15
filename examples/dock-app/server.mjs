@@ -16,14 +16,14 @@ import { defineAgent } from '@hachej/boring-agent/agents';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
 import { createConversations } from '@hachej/boring-agent/conversations';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
-import { buildTailwind } from '../studio/tailwind.mjs';
+import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 
 export async function startDockApp({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   // The model: a real provider, or the keyless scripted layer of the journeys (./script.mjs), chosen by the host process only.
-  const models = scripted ? (await (await import('../studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
+  const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
   const env = new NodeExecutionEnv({ cwd: join(directory, 'workspace') });

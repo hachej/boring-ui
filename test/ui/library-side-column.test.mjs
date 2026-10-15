@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 test('Library is a right-side column by default: toggled from the viewer bar and the left pane, a sheet on a phone, center and pane unchanged', async t => {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { openValidatedOutputFixture } from '../../examples/validated-output/app.mjs';
+import { openValidatedOutputFixture } from '../../fixtures/validated-output/app.mjs';
 
 const script = fileURLToPath(new URL('../fixtures/validation-repair-crash-child.mjs', import.meta.url));
 const actor = { principalId: 'fictional-editor', initiatorId: 'fictional-human', scopeId: 'fictional-team' };

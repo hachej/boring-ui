@@ -470,7 +470,7 @@ try {
     await scheme('light');
   });
 
-  if (process.env.STUDIO_MODEL === 'scripted') assert.deepEqual((await import('../studio/scripted-model.mjs')).misses, [], 'every message the scripted model saw had a script');
+  if (process.env.STUDIO_MODEL === 'scripted') assert.deepEqual((await import('../../lab/studio/scripted-model.mjs')).misses, [], 'every message the scripted model saw had a script');
   assert.deepEqual(browser.problems.filter(problem => !/Failed to load resource|ERR_CONNECTION|net::|TypeError: Failed to fetch|network error/i.test(problem)), []);
   writeFileSync(join(evidence, 'journey.json'), JSON.stringify({ provider: app.provider, steps }, null, 2));
   console.log(JSON.stringify({ provider: app.provider, steps }, null, 2));

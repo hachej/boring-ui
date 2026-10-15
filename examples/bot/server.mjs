@@ -14,7 +14,7 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createVirtualWorkspace } from '@hachej/boring-execution/virtual';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
-import { buildTailwind } from '../studio/tailwind.mjs';
+import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 import { createBot } from './agent.mjs';
 import { SELF_SEED } from './self.mjs';
 

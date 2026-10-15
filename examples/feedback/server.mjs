@@ -33,7 +33,7 @@ import { createFeedbackStore, feedbackMentionReader } from '@hachej/boring-feedb
 import { parseSaveRequest, saveResponseOf } from '@hachej/boring-feedback/ui';
 import { createTicketSinks } from '@hachej/boring-feedback/tickets';
 import { answerBrowserPreview } from '@hachej/boring-feedback/agent';
-import { buildTailwind, registryCss } from '../studio/tailwind.mjs';
+import { buildTailwind, registryCss } from '../../lab/studio/tailwind.mjs';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { builderAgent } from './builder.mjs';
 import { openFeedbackWorkspace } from './workspace.mjs';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createExperienceDocumentController } from '@hachej/boring-ui-kit/experience/document';
 
 const identity = { scopeId: 'fictional-project', principalId: 'editor', initiatorId: 'alice' };

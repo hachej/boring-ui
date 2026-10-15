@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 test('fixed and derived experiences with real React/json-render/SQLite in HappyDOM; no browser or full experience qualification', { timeout: 30000 }, async t => {
   const window = new Window({ url: 'https://fictional.invalid/' }), globals = new Map();

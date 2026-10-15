@@ -7,8 +7,8 @@ import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import { toolResultText } from '../fixtures/native-document.mjs';
-import { createCanvasTransport } from '../../examples/shared/canvas-transport-server.mjs';
-import { schema, version } from '../../examples/shared/canvas-transport-protocol.mjs';
+import { createCanvasTransport } from '../../shared/canvas-transport-server.mjs';
+import { schema, version } from '../../shared/canvas-transport-protocol.mjs';
 
 const identity = { runtimeId: 'fictional-runtime', conversationId: 'fictional-conversation', scopeId: 'fictional-scope', principalId: 'fictional-person' };
 const target = { instanceId: 'viewer', epoch: 'epoch', subject: { scopeId: identity.scopeId, base: { kind: 'absent', target: { resource: { providerId: 'fictional', path: 'board.tldraw' }, view: { kind: 'published' } } }, bufferVersion: 0, mountId: 'mount', pageId: 'page:one' } };

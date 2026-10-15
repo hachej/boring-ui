@@ -9,7 +9,7 @@ import { createTLSchema, DocumentRecordType, PageRecordType, TLDOCUMENT_ID } fro
 import { createResourceHandler } from '@hachej/boring-files/remote';
 import { canvasMediaType } from '@hachej/boring-ui-kit/canvas-document';
 import { launch } from '@hachej/boring-testing/browser';
-import { openSqliteWorkspaces } from '../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../shared/sqlite-workspaces.mjs';
 
 const evidence = resolve(process.env.CANVAS_PROPOSALS_EVIDENCE ?? '.cache/evidence/canvas-proposals-browser');
 mkdirSync(evidence, { recursive: true });

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 test('Markdown outline and caret retention in a DOM (not browser qualification)', async t => {
   const window = new Window({ url: 'https://fictional.invalid/' });

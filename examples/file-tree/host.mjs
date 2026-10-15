@@ -1,5 +1,5 @@
 import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
-import { openSqliteWorkspaces } from '../shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 /** Fictional auth and workspace selection; a real host uses its OAuth session here. */
 export async function openFileTreeHost({ filename }) {

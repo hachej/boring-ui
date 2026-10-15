@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTLSchema } from '@tldraw/tlschema';
-import { schema, version, parseOpen, parseEnvelope, parseResult, parseInput, json } from '../../examples/shared/canvas-transport-protocol.mjs';
+import { schema, version, parseOpen, parseEnvelope, parseResult, parseInput, json } from '../../shared/canvas-transport-protocol.mjs';
 
 const target = () => ({ instanceId: 'viewer', epoch: 'epoch', subject: { scopeId: 'fictional', bufferVersion: 0, mountId: 'mount', pageId: 'page:one',
   base: { kind: 'absent', target: { resource: { providerId: 'fictional', path: 'board.canvas' }, view: { kind: 'published' } } } } });

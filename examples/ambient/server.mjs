@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { configureOffered, firstMessageTitle } from '../shared/conversation-host.mjs';
+import { configureOffered, firstMessageTitle } from '../../shared/conversation-host.mjs';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -24,9 +24,9 @@ import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
-import { readFiles, writeFiles } from '../shared/workspace-tools.mjs';
+import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { createResourceHandler } from '@hachej/boring-files/remote';
-import { buildTailwind } from '../studio/tailwind.mjs';
+import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 const PROVIDERS = {
@@ -49,7 +49,7 @@ export async function startAmbient({ directory, port = 0, provider = process.env
   let models = modelsOverride;
   if (scripted && !models) {
     provider = 'openai';
-    models = (await (await import('../studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).AMBIENT_SOURCES })).models;
+    models = (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).AMBIENT_SOURCES })).models;
   }
   if (!models) { models = createModels(); models.setProvider(await PROVIDERS[provider]()); }
 

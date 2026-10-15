@@ -15,8 +15,8 @@ import { createTLSchema, DocumentRecordType, PageRecordType, TLDOCUMENT_ID, toRi
 import { createResourceHandler } from '@hachej/boring-files/remote';
 import { canvasMediaType } from '@hachej/boring-ui-kit/canvas-document';
 import { launch } from '@hachej/boring-testing/browser';
-import { createCanvasTransport } from '../examples/shared/canvas-transport-server.mjs';
-import { openSqliteWorkspaces } from '../examples/shared/sqlite-workspaces.mjs';
+import { createCanvasTransport } from '../shared/canvas-transport-server.mjs';
+import { openSqliteWorkspaces } from '../shared/sqlite-workspaces.mjs';
 import { admitDocumentTool, toolResultText } from '../test/fixtures/native-document.mjs';
 import { runCaptured } from './run-captured.mjs';
 

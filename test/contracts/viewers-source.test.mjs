@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 // Compiles the viewers registry source as a consumer would and drives it in a DOM environment (structure and behaviour, not browser
 // geometry: the studio scenarios `docs-*` are the browser evidence).

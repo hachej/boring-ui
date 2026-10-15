@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { openValidatedOutputFixture } from '../../examples/validated-output/app.mjs';
+import { openValidatedOutputFixture } from '../../fixtures/validated-output/app.mjs';
 
 const actor = { principalId: 'fictional-editor', initiatorId: 'fictional-human', scopeId: 'fictional-team' };
 const decode = bytes => new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);

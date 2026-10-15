@@ -9,5 +9,5 @@
     "erasableSyntaxOnly": true,
     "disableSourceOfProjectReferenceRedirect": true
   },
-  "include": ["examples/**/*.ts", "test/types/**/*.ts"]
+  "include": ["examples/**/*.ts", "fixtures/**/*.ts", "lab/**/*.ts", "test/types/**/*.ts"]
 }

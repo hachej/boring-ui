@@ -18,7 +18,7 @@ export const BROWSER_GLOBS = [
   /^packages\/files\/src\/(?!sqlite\.ts$|remote-handler\.ts$).+\.ts$/,
   /^packages\/execution\/src\/(?:remote-files|remote-shell)(?:-io|-protocol)?\.ts$/,
   /^registry\/.+\.tsx?$/,
-  /^examples\/studio\/(?:panels\/)?[\w-]+\.jsx$/,
+  /^lab\/studio\/(?:panels\/)?[\w-]+\.jsx$/,
   // The opt-in agent worker (BORING-PI-5) is browser code too: its runtime entries, shims and the examples that compose them.
   /^packages\/browser\/src\/(?:[\w-]+|shims\/[\w-]+)\.ts$/,
   /^packages\/agent\/src\/(?:approval|ask-user|memory\/optchat(?:-core)?)\.ts$/,
@@ -26,7 +26,7 @@ export const BROWSER_GLOBS = [
   /^examples\/browser-agent\/(?:page|worker)\/[\w-]+\.jsx?$/,
 ];
 /** Roots whose relative imports are followed, so browser modules the globs do not name (share-link.mjs, ...) are covered too. */
-const BROWSER_ENTRIES = /^examples\/[\w-]+\/browser\.jsx$/;
+const BROWSER_ENTRIES = /^(?:examples|lab|fixtures)\/[\w-]+\/browser\.jsx$/;
 
 /** The only files allowed to touch a raw API, with the proof each must carry that it feature-detects first. */
 export const ALLOWLIST = {
@@ -94,7 +94,7 @@ export function scanSource(file, source) {
 function listFiles(root) {
   const out = [];
   const ignored = gitIgnored(root);
-  for (const top of ['packages', 'registry', 'examples']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, path) => { if (!entry.isDirectory()) out.push(path); }, ignored);
+  for (const top of ['packages', 'registry', 'examples', 'fixtures', 'lab', 'shared']) if (existsSync(resolve(root, top))) walkProject(root, top, (entry, path) => { if (!entry.isDirectory()) out.push(path); }, ignored);
   return out;
 }
 

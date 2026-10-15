@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { PublicationNotDispatchedError } from '@hachej/boring-files/publication';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const later = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const entry = path => ({ path, kind: 'file', size: 1 });

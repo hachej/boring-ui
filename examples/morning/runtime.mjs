@@ -6,7 +6,7 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { accessSnapshot, publicationSnapshot, publicationDigest, parsePublicationResult } from '@hachej/boring-files/publication';
-import { openSqliteWorkspaces } from '../shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { morningIdentity, emailSchema, calendarSchema, todoSchema, actionSchemas } from './documents.mjs';
 import { privateCanaries, initialEmail, initialCalendar, initialTodo } from './fixtures.mjs';
 

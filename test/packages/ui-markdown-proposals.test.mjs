@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 test('mounted Markdown proposal review preserves exact text and conditional acceptance', { timeout: 30000 }, async t => {
   const window = new Window({ url: 'https://fictional.invalid/' });

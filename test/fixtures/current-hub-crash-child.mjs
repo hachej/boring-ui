@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { fixtureActor, fixtureRequest, openFixtureApp } from '../../examples/current-hub/app.mjs';
-import { provisionFixtureDefinition } from '../../examples/current-hub/definition.mjs';
-import { openFixtureCompanion } from '../../examples/current-hub/companion.mjs';
+import { fixtureActor, fixtureRequest, openFixtureApp } from '../../fixtures/current-hub/app.mjs';
+import { provisionFixtureDefinition } from '../../fixtures/current-hub/definition.mjs';
+import { openFixtureCompanion } from '../../fixtures/current-hub/companion.mjs';
 import { admitDocumentTool, documentToolResult } from './native-document.mjs';
 
 const [directory, appId, mode = 'app'] = process.argv.slice(2);
