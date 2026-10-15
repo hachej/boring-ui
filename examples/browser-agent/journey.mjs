@@ -14,6 +14,7 @@
 // shows the stored summary with the raw arguments collapsed, and the repository (changed and deleted files, an empty
 // folder) is restored from SQLite after a reload.
 import assert from 'node:assert/strict';
+import { expandTrace } from '../../scripts/trace-journey.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launch } from '@hachej/boring-testing/browser';
@@ -59,6 +60,7 @@ try {
     await browser.type(MESSAGE, 'Build a small todo app in index.html, check it, and commit it.');
     await browser.click(SUBMIT);
     await browser.until('finished', `${idle} && /Built a todo app in index.html \\(\\d+ bytes, 2 starter items\\)/.test(${logText})`, 60000);
+    await expandTrace(browser);
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=transcript] [data-testid=tool-name]')].map(e => e.textContent.trim())`);
     for (const name of ['write', 'bash', 'run_code']) assert.ok(tools.some(tool => tool.includes(name)), `tool card ${name} in ${tools.join(', ')}`);
     await browser.click(tab('Git'));
@@ -117,6 +119,7 @@ try {
     await prompt('List the notes in the fixture API.');
     await browser.until('notes listed', `${idle} && /The fixture API returned: .*Call the placeholder plumber/.test(${logText})`, 60000);
     assert.equal(await browser.evaluate(`${cards}.length`), 0);
+    await expandTrace(browser);
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=transcript] [data-testid=tool-name]')].map(e => e.textContent.trim())`);
     assert.ok(tools.some(tool => tool.includes('api_get')), `api_get card in ${tools.join(', ')}`);
     assert.equal(app.requests.filter(request => request === 'GET /fixture/api/notes').length, 1);
@@ -215,6 +218,7 @@ try {
   await step('OptChat memory: the model zooms a view line down to the exact original message', async () => {
     await prompt('Use zoom to reopen the message about my dog.');
     await browser.until('zoomed to the message', `${idle} && /Opened: \\d+\\+0\\|user: Remember: my dog is called Biscuit\\./.test(${logText})`, 60000);
+    await expandTrace(browser);
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=transcript] [data-testid=tool-name]')].map(e => e.textContent.trim())`);
     assert.ok(tools.some(tool => tool.includes('zoom')), `zoom card in ${tools.join(', ')}`);
   });

@@ -183,19 +183,19 @@ async function composer(t) {
     assert.ok(labels.length >= 2, `the header text changed as steps progressed: ${labels.join(' | ')}`);
     assert.ok(labels.some(label => /^Reading /.test(label)), `a live label names the file: ${labels.join(' | ')}`);
     assert.ok(counts.length >= 2, `the step counter grew: ${counts.join(' | ')}`);
-    // Finished: one collapsed summary line with a check, tool names still in the DOM, nothing visible.
+    // Finished: one collapsed summary line with a check. Trace mounts the steps when expanded.
     const done = await browser.evaluate(turn);
     assert.equal(done.blocks, 1); assert.equal(done.state, 'done'); assert.equal(done.open, 'false'); assert.equal(done.visible, 0, 'no step row is visible until expanded');
     assert.match(done.label, /^Used .*read ×3/, done.label);
-    const names = await browser.evaluate(`${qa('[data-testid=tool-name]')}.map(e => e.textContent)`);
-    assert.ok(names.filter(name => name === 'read').length >= 3 && names.length >= 4, `tool calls in the DOM: ${names.join(', ')}`);
-    assert.ok(Number(done.count.split(' ')[0]) >= names.length, `the counter covers every step: ${done.count}`);
     assert.equal(await browser.evaluate(`${qa('[data-testid=tool-group]')}.length`), 0, 'no separate groups');
     await browser.screenshot('chatui-tools-collapsed.png');
     await dark('dark'); try { await browser.until('dark', `matchMedia('(prefers-color-scheme: dark)').matches`); await browser.screenshot('chatui-tools-collapsed-dark.png'); } finally { await dark('light'); }
     // Expand: every step as one compact row with its status; a row expands to arguments and result.
     await browser.click(`${q('[data-testid=activity]')}.querySelector('button')`);
-    await browser.until('rows visible', `${qa('[data-testid=activity-step]')}.filter(e => e.offsetParent !== null).length >= ${names.length}`);
+    await browser.until('rows visible', `${qa('[data-testid=activity-step]')}.filter(e => e.offsetParent !== null).length >= 4`);
+    const names = await browser.evaluate(`${qa('[data-testid=tool-name]')}.map(e => e.textContent)`);
+    assert.ok(names.filter(name => name === 'read').length >= 3 && names.length >= 4, `tool calls in the DOM: ${names.join(', ')}`);
+    assert.ok(Number(done.count.split(' ')[0]) >= names.length, `the counter covers every step: ${done.count}`);
     // Every step is one row with its status (a reasoning step may sit among the tool calls).
     const statuses = await browser.evaluate(`${qa('[data-testid=activity-step]')}.map(e => e.dataset.status)`);
     assert.ok(statuses.length >= names.length && statuses.every(status => status === 'completed'), `every step completed: ${statuses.join(', ')}`);
@@ -208,7 +208,13 @@ async function composer(t) {
     await browser.click(`document.querySelector('.studio-mode input')`);
     await browser.until('expert rows have no details', `${qa('[data-testid=activity]')}.length === 1 && ${qa('[data-testid=tool-card][data-status=completed] [data-testid=tool-details]')}.length === 0`);
     await browser.click(`document.querySelector('.studio-mode input')`);
-    await browser.until('developer mode shows them again', `${qa('[data-testid=tool-card][data-status=completed] [data-testid=tool-details]')}.length >= 3`);
+    const completed = qa('[data-testid=tool-card][data-status=completed]');
+    await browser.until('developer mode restores step disclosures', `${completed}.length >= 4 && [...${completed}].every(card => card.querySelector('[data-slot=trace-collapsible-trigger]'))`);
+    for (let index = 0; index < await browser.evaluate(`${completed}.length`); index++) {
+      const trigger = `${completed}[${index}].querySelector('[data-slot=trace-collapsible-trigger]')`;
+      if (await browser.evaluate(`${trigger}.getAttribute('aria-expanded') === 'false'`)) await browser.click(trigger);
+    }
+    await browser.until('developer mode shows every successful output', `${qa('[data-testid=tool-card][data-status=completed] [data-testid=tool-details]')}.length >= 4`);
   });
   await step('many tabs on a share link: hidden tabs release their chat stream, so every tab connects when shown (the browser allows ~6 connections per host)', async () => {
     const link = `${t.pageUrl}?variant=${t.variantId()}&conversation=${await t.history.current()}`;
