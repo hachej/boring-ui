@@ -17,7 +17,7 @@ The library defines no verbs of its own (navigate, highlight, prefill…) and no
 
 ### 1.1 Shape
 
-The same chat is either **docked** (`PiChat` in a `Dock` or `ArtifactWorkspace`) or **floating** (`AmbientChat`, including a docked chat floated by its divider, and the `AgentLayer` over the app: the phone drawer and the wide-screen panel). The component that sends a submit adds its placement to the request context:
+The same chat is either **docked**, beside the page (`PiChat` in a `Dock` or `ArtifactWorkspace`, and the `AgentLayer` panel expanded beside the app on a wide screen), or **floating**, over the page (`AmbientChat`, including a docked chat floated by its divider, the `AgentLayer` panel floated over the app, and the `AgentLayer` phone drawer). The component that sends a submit adds its placement to the request context:
 
 ```json
 { "name": "invoice", "params": { "id": 42 }, "placement": "docked" }
