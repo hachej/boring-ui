@@ -1108,6 +1108,12 @@
           ".boring-viewer .boring-markdown-toolbar::-webkit-scrollbar": {
             "display": "none"
           },
+          "@container (max-width: 40rem)": {
+            ".boring-viewer .boring-markdown-toolbar": {
+              "flex-wrap": "wrap",
+              "overflow-x": "visible"
+            }
+          },
           ".boring-viewer .boring-markdown-tool": {
             "display": "inline-flex",
             "flex": "none",

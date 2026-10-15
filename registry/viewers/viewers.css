@@ -61,6 +61,13 @@
   .boring-viewer .boring-markdown-toolbar::-webkit-scrollbar {
     display: none;
   }
+  /* In a narrow viewer (a side panel) the tools wrap onto a second row instead of hiding behind a scroll the person cannot see. */
+  @container (max-width: 40rem) {
+    .boring-viewer .boring-markdown-toolbar {
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
+  }
   .boring-viewer .boring-markdown-tool {
     display: inline-flex;
     flex: none;

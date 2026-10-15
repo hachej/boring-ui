@@ -33,6 +33,7 @@ import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 import { openAccountsPayable, decisionSchema } from './ap.mjs';
+import { validWorkspacePath } from './paths.mjs';
 import { ACCOUNTS, COMPANY, POLICY, SUPPLIERS, contractPdf, invoicePdf } from './data.mjs';
 
 const NAVIGATION_TTL_MS = 15_000;
@@ -45,11 +46,14 @@ Each request starts with a request-context block: where the chat is placed and w
 /** Seeds the workspace: Policies/AP policy.md and Contracts/ with one supply agreement per supplier. */
 async function seedLibrary(files, access) {
   const locate = path => ({ resource: { providerId: 'workspace', path }, view: { kind: 'published' } });
-  const documents = [['Policies/AP policy.md', new TextEncoder().encode(POLICY), 'text/markdown'],
-    ...Object.values(SUPPLIERS).map(supplier => [supplier.contract, contractPdf(supplier), 'application/pdf'])];
-  for (const [index, [path, bytes, mediaType]] of documents.entries()) {
-    const result = await files.publication.publish({ operationId: `seed-library-${index}`, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes, mediaType }] }, access);
-    if (result.kind !== 'committed') throw new Error(`Library seed ${path} failed: ${result.kind}`);
+  // Stable operation ids: a restart on the same data folder repeats each seed (a committed one returns its receipt). The policy moved from
+  // Library/ to Policies/ with a new id (the old `seed-library-0` names the old path); the contracts keep theirs.
+  const documents = [['seed-policy-ap', 'Policies/AP policy.md', new TextEncoder().encode(POLICY), 'text/markdown'],
+    ...Object.values(SUPPLIERS).map((supplier, index) => [`seed-library-${index + 1}`, supplier.contract, contractPdf(supplier), 'application/pdf'])];
+  for (const [operationId, path, bytes, mediaType] of documents) {
+    const result = await files.publication.publish({ operationId, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes, mediaType }] }, access);
+    // `conflict`: the file is already there (the person edited it since the first start); a seed never overwrites.
+    if (result.kind !== 'committed' && result.kind !== 'conflict') throw new Error(`Library seed ${path} failed: ${result.kind}`);
   }
 }
 
@@ -93,10 +97,18 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
       parameters: Type.Object({ screen: Type.Union([Type.Literal('approvals'), Type.Literal('invoice'), Type.Literal('supplier'), Type.Literal('file')]), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'unsafe',
       execute: async (args, api) => {
         // The command belongs to the conversation that made it and to the tab that was talking to it; the page drops it otherwise.
-        if (args.screen === 'file' && !args.path) return { ...text('Name the file to open as path.'), isError: true };
+        // A file path is checked here, before anything is queued: it must be a plain workspace-relative path of a file that exists.
+        let command = args;
+        if (args.screen === 'file') {
+          const path = validWorkspacePath(args.path);
+          if (!path) return { ...text('Not a workspace file path: give a path relative to the workspace root, such as Policies/AP policy.md (no leading /, no .. segments).'), isError: true };
+          const found = await files.read({ target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, person);
+          if (found.kind !== 'available') return { ...text(`No such file: ${path}.`), isError: true };
+          command = { screen: 'file', path };
+        }
         const conversation = String(api.conversationId);
-        navigate({ conversation, tab: latest.get(conversation)?.tab, ...args });
-        return text(`Opened ${args.screen === 'file' ? args.path : `${args.screen}${args.id ? ` ${args.id}` : ''}`} in the viewer.`);
+        navigate({ conversation, tab: latest.get(conversation)?.tab, ...command });
+        return text(`Opened ${command.screen === 'file' ? command.path : `${command.screen}${command.id ? ` ${command.id}` : ''}`} in the viewer.`);
       } }),
     // The one way the agent changes an invoice: the app's own `decide`, after the person approves the card. Same receipt as the page's buttons.
     requireApproval(defineTool({ name: 'decide_invoice', description: `Approve an invoice, approve it coded to another account (action recode, account one of: ${ACCOUNTS.join(', ')}), or put it on hold. Pass the revision from get_invoice as expected: a changed invoice is refused.`,
@@ -114,13 +126,16 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
   harness.resume();
   const start = init => agent.createConversation(harness, context, { init });
   // Earlier conversations, so the sessions list is not empty. The current one is created last and so listed first.
+  // Only on a fresh data folder: a restart keeps the conversations it has (and never asks the model the seed questions again).
+  const existing = (await conversations.list({ owner: agent.id, archived: 'all' })).items;
   const earlier = [];
-  for (const [title, question] of [['Month-end close checklist', 'Remind me what is left in the month-end close.'], ['Fernhill Labels terms', 'What are the payment terms for Fernhill Labels?']]) {
+  if (existing.length === 0) for (const [title, question] of [['Month-end close checklist', 'Remind me what is left in the month-end close.'], ['Fernhill Labels terms', 'What are the payment terms for Fernhill Labels?']]) {
     const old = await conversations.create(agent.id, { start, title });
     await (await old.submit({ type: 'input', requestId: `seed-${old.id}`, content: question }, context)).wait(context);
     earlier.push(String(old.id));
   }
-  const current = await conversations.create(agent.id, { start, title: 'This week\'s approvals' });
+  const current = existing.length ? existing[0] : await conversations.create(agent.id, { start, title: 'This week\'s approvals' });
+  if (existing.length) earlier.push(...existing.slice(1).map(item => String(item.id)));
 
   const voice = !scripted && process.env.OPENAI_API_KEY ? transcribeWith(process.env.OPENAI_API_KEY) : undefined;
   const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
@@ -187,6 +202,8 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, ap, contexts, navigation, navigate, submits, current: String(current.id), earlier,
+    /** How many operations the publication journal holds (agent writes add none: they are observed, never receipted). */
+    publications: () => Number(db.all('SELECT COUNT(*) AS n FROM boring_operations')[0].n),
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); ap.close(); db.close(); },
   };
 }

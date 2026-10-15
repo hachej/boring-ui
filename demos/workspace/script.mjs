@@ -32,6 +32,16 @@ export const SOURCES = [{ name: 'workspace-demo', entries: Object.entries({
     call('write', { path: 'tt.md', content: '# Notes\n\nINV-2043 duplicates INV-2041: hold it until Linden Print confirms.\n' }),
     call('show', { screen: 'file', path: 'tt.md' }),
     'I created tt.md in the workspace and opened it in the viewer.'],
+  // The `show` tool takes only plain workspace paths of files that exist (test/examples/workspace-demo.test.mjs drives these through the tool).
+  'open with dotted path': [
+    call('write', { path: 'dot.md', content: '# Dot\n' }),
+    call('show', { screen: 'file', path: './dot.md' }),
+    ctx => ctx.last.isError ? 'Refused.' : 'Opened dot.md.'],
+  'open escaping path': [call('show', { screen: 'file', path: '../outside.md' }), ctx => ctx.last.isError ? 'Refused.' : 'Opened.'],
+  'open absolute path': [call('show', { screen: 'file', path: '/etc/passwd' }), ctx => ctx.last.isError ? 'Refused.' : 'Opened.'],
+  'open missing file': [call('show', { screen: 'file', path: 'nothing-here.md' }), ctx => ctx.last.isError ? 'Refused.' : 'Opened.'],
+  // Written while the Library is open (the journey submits it from outside the page): the Library list updates live, with no receipt.
+  'write the live note': [call('write', { path: 'live.md', content: '# Live\n\nWritten while the Library was open.\n' }), 'Wrote live.md.'],
   // 4. The agent reads the invoice, proposes, and the approval card is the person's confirmation; the backend returns a receipt.
   'What would you do with them': [
     call('get_invoice', { id: 'INV-2041' }),

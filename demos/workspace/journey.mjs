@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { insecureUrl, launch, pause, q } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
@@ -231,6 +232,28 @@ try {
     await browser.until('the viewer closed', `!${q('[data-testid=library-document]')}`, 5000);
   });
 
+  await step('d2 the Library stays open while the agent writes: it updates live, the change event is the agent\'s and no receipt is minted', async () => {
+    const stop = new AbortController(), events = [];
+    void (async () => { try { for await (const event of reader.changes({ signal: stop.signal })) events.push(event); } catch { /* stopped */ } })();
+    await library();
+    await browser.until('the search field has focus', `document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]')`, 10000);
+    await browser.until('the tree is listed', `!!${q('[role=treeitem][data-path="Policies"]')}`, 15000);
+    assert.ok(!(await browser.evaluate(`!!${q('[role=treeitem][data-path="live.md"]')}`)), 'live.md does not exist yet');
+    const receipts = app.publications();
+    const conversation = await app.conversations.open('ap-helper', Number(app.current));
+    await (await conversation.submit({ type: 'input', requestId: 'journey-live-note', content: 'Please write the live note.' }, context)).wait(context);
+    await browser.until('live.md appears in the open Library', `!!${q('[data-testid=library-popover] [role=treeitem][data-path="live.md"]')}`, 15000);
+    assert.equal(app.publications(), receipts, 'the publication journal is unchanged after the agent write');
+    for (let i = 0; i < 50 && !events.some(event => event.path === 'live.md'); i++) await pause(100);
+    assert.ok(events.some(event => event.path === 'live.md' && event.source === 'agent'), `an agent change event for live.md: ${JSON.stringify(events)}`);
+    assert.ok((await reader.history('live.md')).every(version => version.source === 'agent'), 'history says agent');
+    await browser.screenshot('4f-library-live.png');
+    // Escape closes the Library only (the chat is not collapsed) and focus goes back to the icon that opened it.
+    await browser.press('Escape');
+    await browser.until('the Library closed, focus on its icon', `!${q('[data-testid=library-popover]')} && document.activeElement?.dataset.testid === 'chat-action-library'`, 5000);
+    stop.abort();
+  });
+
   await step('5 dragging the divider floats the chat: placement floating, the sessions pane goes, the app takes the full width', async () => {
     const divider = await browser.evaluate(rect('[data-testid=dock-divider-chat]'));
     const from = { x: divider.x + divider.w / 2, y: divider.y + divider.h / 2 };
@@ -274,6 +297,17 @@ try {
     await browser.screenshot('7a-floating-file.png');
     await browser.click(q('[data-testid=file-back]'));
     await browser.until('the conversation is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
+    // From the collapsed bar (about 48px high) the Library opens above it, inside the viewport, and stays usable.
+    await browser.click(q('[data-testid=ambient-minimize]'));
+    await browser.until('the collapsed bar', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
+    await library();
+    const bar = await browser.evaluate(rect('[data-boring=ambient-chat]')), above = await browser.evaluate(rect('[data-testid=library-popover]'));
+    assert.ok(above.y >= 0 && above.y + above.h <= bar.y + 2 && above.h > 150, `the Library opens above the collapsed bar: ${JSON.stringify({ bar, above })}`);
+    await browser.until('a usable tree', `!!${q('[data-testid=library-popover] [role=treeitem]')}`, 10000);
+    await browser.press('Escape');
+    await browser.until('closed, and the bar was not collapsed further', `!${q('[data-testid=library-popover]')} && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
+    await browser.click(q('[data-testid=ambient-title]'));
+    await browser.until('expanded again', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`, 5000);
     await pause(300);
     await browser.screenshot('7-supplier.png');
   });
@@ -304,6 +338,10 @@ try {
     await sees('back in the first conversation', 'I opened the queue in the viewer.');
     await pause(1500);
     assert.equal(await browser.evaluate(viewing), where, 'the stale command was dropped, not delivered on return');
+    // A file command that bypasses the tool's check (a bad path) never reaches the viewer: the page stays up.
+    app.navigate({ conversation: app.current, tab, screen: 'file', path: '../outside.md' });
+    await pause(1500);
+    assert.ok(await browser.evaluate(`!!${INPUT} && !${q('[data-testid=library-document]')}`), 'the page survived a bad file path');
     app.navigate({ conversation: app.current, tab, screen: 'approvals' });
     await browser.until('a command for this conversation and tab is applied', `${viewing} === 'Approvals'`, 5000);
   });
