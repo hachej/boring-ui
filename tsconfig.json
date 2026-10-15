@@ -1,4 +1,7 @@
 {
+  "compilerOptions": {
+    "paths": { "@/components/ui/*": ["./examples/app-shell/components/ui/*"] }
+  },
   "files": [],
   "references": [
     { "path": "packages/files" },
