@@ -68,7 +68,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
           <TraceDescription data-testid="activity-count" className="text-xs">{labels.steps(steps.length)}</TraceDescription>
         </TraceLine>
       </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent keepMounted>
+      <TraceCollapsibleContent>
         <Trace data-testid="activity-steps">
           {steps.map(step => <div key={step.key} data-testid="activity-step" data-kind={step.kind} data-status={stepStatus(step)}>
             {step.kind === 'tool'

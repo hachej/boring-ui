@@ -1,3 +1,5 @@
+// Pinned shadcn@4.21.4 Base UI fixture, installed with `shadcn add trace` on 2026-10-15.
+// https://ui.shadcn.com/r/styles/base-nova/trace.json. MIT, Copyright (c) 2023 shadcn.
 import * as React from "react"
 import { cn } from "cn"
 
