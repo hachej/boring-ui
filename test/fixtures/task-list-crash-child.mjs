@@ -4,8 +4,8 @@ import { Harness, createRegistry, defineExtension } from '@earendil-works/pi-dur
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { createTaskListTools } from '../../examples/shared/task-list-tools.mjs';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { createTaskListTools } from '../../shared/task-list-tools.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { applyTaskListOperations, readTaskList, serializeTaskList, taskListMediaType } from '../../registry/task-list-viewer/task-list-document.ts';
 import { admitDocumentTool, documentToolResult } from './native-document.mjs';
 

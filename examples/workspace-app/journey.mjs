@@ -13,7 +13,7 @@ import { insecureUrl, launch, pause, q, qa } from '@hachej/boring-testing/browse
 
 process.env.STUDIO_MODEL = 'scripted';
 const { startWorkspaceApp } = await import('./server.mjs');
-const { misses } = await import('../studio/scripted-model.mjs');
+const { misses } = await import('../../lab/studio/scripted-model.mjs');
 const evidence = process.env.APP_EVIDENCE ?? '.cache/evidence/workspace-app';
 mkdirSync(evidence, { recursive: true });
 const step = async (name, run) => { const started = Date.now(); await run(); console.log(`ok  ${name} (${Date.now() - started} ms)`); };

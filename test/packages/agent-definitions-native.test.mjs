@@ -8,7 +8,7 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { createModels } from '@earendil-works/pi-ai/models';
 import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { loadAgentDefinition } from '@hachej/boring-agent/definitions';
 import { admitDocumentTool, createSaveNoteTool, documentToolResult } from '../fixtures/native-document.mjs';
 

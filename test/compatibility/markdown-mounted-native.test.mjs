@@ -6,7 +6,7 @@ import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { Type } from '@earendil-works/pi-ai';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { admitDocumentTool, documentToolResult } from '../fixtures/native-document.mjs';
 

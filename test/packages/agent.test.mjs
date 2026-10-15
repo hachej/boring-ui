@@ -14,7 +14,7 @@ import { createFileGuard } from '@hachej/boring-agent/file-guard';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { admitDocumentTool, createSaveNoteTool, documentToolResult, toolResultText } from '../fixtures/native-document.mjs';
 
 const target = { resource: { providerId: 'documents', path: 'notes.md' }, view: { kind: 'published' } };

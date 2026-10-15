@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { publicationDigest } from '@hachej/boring-files/publication';
 
 const target = { resource: { providerId: 'documents', path: 'notes.md' }, view: { kind: 'published' } };

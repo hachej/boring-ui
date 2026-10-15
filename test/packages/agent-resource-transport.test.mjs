@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Harness, MemoryStorage, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createResourceClient, createResourceHandler } from '@hachej/boring-files/remote';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { admitDocumentTool, createSaveNoteTool, documentToolResult } from '../fixtures/native-document.mjs';

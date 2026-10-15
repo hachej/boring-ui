@@ -4,7 +4,7 @@ import { Harness, MemoryStorage, createRegistry, defineExtension, defineTask } f
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createDocumentDelivery } from '@hachej/boring-agent/delivery';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const actor = { principalId: 'fictional-editor', initiatorId: 'fictional-person', scopeId: 'fictional-scope' };
 const target = { resource: { providerId: 'fictional', path: 'document.md' }, view: { kind: 'published' } };

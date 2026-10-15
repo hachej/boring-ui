@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { Window } from 'happy-dom';
 import { build } from 'esbuild';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { fixtureActor, PRIVATE_MARKERS, openFixtureApp } from '../../examples/current-hub/app.mjs';
-import { provisionFixtureDefinition } from '../../examples/current-hub/definition.mjs';
-import { createFixtureHubView } from '../../examples/current-hub/fixed-view.mjs';
+import { fixtureActor, PRIVATE_MARKERS, openFixtureApp } from '../../fixtures/current-hub/app.mjs';
+import { provisionFixtureDefinition } from '../../fixtures/current-hub/definition.mjs';
+import { createFixtureHubView } from '../../fixtures/current-hub/fixed-view.mjs';
 
 const gate = () => Promise.withResolvers();
 const pause = () => new Promise(resolve => setTimeout(resolve, 5));
@@ -240,7 +240,7 @@ test('fixed cells reject wrong app, forged results and late replies without owni
 });
 
 test('fixed view browser bundle excludes server and native packages', async () => {
-  const entry = resolve(fileURLToPath(new URL('../../examples/current-hub/fixed-view.mjs', import.meta.url)));
+  const entry = resolve(fileURLToPath(new URL('../../fixtures/current-hub/fixed-view.mjs', import.meta.url)));
   const result = await build({ entryPoints: [entry], bundle: true, write: false, platform: 'browser', format: 'esm',
     metafile: true, external: ['react', 'react/jsx-runtime'] });
   const paths = Object.keys(result.metafile.inputs);

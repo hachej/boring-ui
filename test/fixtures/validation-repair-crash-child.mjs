@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { openValidatedOutputFixture } from '../../examples/validated-output/app.mjs';
+import { openValidatedOutputFixture } from '../../fixtures/validated-output/app.mjs';
 
 // Keep the event loop alive until the parent's SIGKILL; an empty loop makes Node exit with code 13 on the pending promises.
 setInterval(() => {}, 1000);

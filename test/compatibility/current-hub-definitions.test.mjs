@@ -6,11 +6,11 @@ import { join } from 'node:path';
 import { Harness, createRegistry, defineDoc } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { fixtureActor, fixtureRequest, PRIVATE_MARKERS, openFixtureApp } from '../../examples/current-hub/app.mjs';
-import { provisionFixtureDefinition } from '../../examples/current-hub/definition.mjs';
-import { openFixtureCompanion } from '../../examples/current-hub/companion.mjs';
+import { fixtureActor, fixtureRequest, PRIVATE_MARKERS, openFixtureApp } from '../../fixtures/current-hub/app.mjs';
+import { provisionFixtureDefinition } from '../../fixtures/current-hub/definition.mjs';
+import { openFixtureCompanion } from '../../fixtures/current-hub/companion.mjs';
 import { admitDocumentTool, documentToolResult } from '../fixtures/native-document.mjs';
 import { scanHubRetention } from '../fixtures/hub-retention.mjs';
 

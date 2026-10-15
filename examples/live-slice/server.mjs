@@ -9,7 +9,7 @@ import { Harness, MemoryStorage, createRegistry, defineExtension, defineTool, Us
 import { createModels } from '@earendil-works/pi-ai/models';
 import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { openSqliteWorkspaces } from '../shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createResourceHandler } from '@hachej/boring-files/remote';
 import { createConversationProjectionHandler } from '@hachej/boring-agent/projection';
 

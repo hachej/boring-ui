@@ -10,8 +10,8 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { applyTaskListOperations, emptyTaskList, parseTaskList, parseTaskListOperations, readTaskList, serializeTaskList, taskListKind, taskListMediaType } from '../../registry/task-list-viewer/task-list-document.ts';
-import { createTaskListTools } from '../../examples/shared/task-list-tools.mjs';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { createTaskListTools } from '../../shared/task-list-tools.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { admitDocumentTool, documentToolResult } from '../fixtures/native-document.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;

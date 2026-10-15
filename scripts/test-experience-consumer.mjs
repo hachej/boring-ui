@@ -81,7 +81,7 @@ void regionSnapshots; void snapshots;
   const headlessTests = ['ui-experience.test.mjs', 'ui-experience-composition.test.mjs', 'ui-experience-regions.test.mjs'];
   for (const name of headlessTests) copyFileSync(join(root, 'test/packages', name), join(directory, name));
   run(process.execPath, ['--test', '--experimental-test-isolation=none', ...headlessTests], isolated);
-  copyFileSync(join(root, 'examples/current-hub/fixed-view.mjs'), join(directory, 'fixed-view.mjs'));
+  copyFileSync(join(root, 'fixtures/current-hub/fixed-view.mjs'), join(directory, 'fixed-view.mjs'));
   const bundles = [
     ['hub-view', "export { createFixtureHubView } from './fixed-view.mjs';\n"],
     ['browser', "export { Experience } from '@hachej/boring-ui-kit/experience';\nexport { composeExperience, validateExperience } from '@hachej/boring-ui-kit/experience/compose';\nexport { composeExperienceRegion } from '@hachej/boring-ui-kit/experience/regions';\n"],
@@ -122,8 +122,8 @@ void tools;
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   const resourceTests = ['ui-experience-viewer.test.mjs', 'ui-experience-document.test.mjs', 'ui-experience-document-viewer.test.mjs', 'ui-experience-composition-viewer.test.mjs', 'ui-experience-region-document.test.mjs', 'ui-experience-region-viewer.test.mjs'];
   // Tests are copied flat; their host (one SQLite workspace per scope, public @hachej/boring-files entries only) sits beside them.
-  copyFileSync(join(root, 'examples/shared/sqlite-workspaces.mjs'), join(directory, 'sqlite-workspaces.mjs'));
-  for (const name of resourceTests) writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8').replace("'../../examples/shared/sqlite-workspaces.mjs'", "'./sqlite-workspaces.mjs'"));
+  copyFileSync(join(root, 'shared/sqlite-workspaces.mjs'), join(directory, 'sqlite-workspaces.mjs'));
+  for (const name of resourceTests) writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8').replace("'../../shared/sqlite-workspaces.mjs'", "'./sqlite-workspaces.mjs'"));
   run(process.execPath, ['--test', '--experimental-test-isolation=none', ...resourceTests], isolated);
   writeFileSync(join(directory, 'resource-entry.js'), "export { ExperienceDocument } from '@hachej/boring-ui-kit/experience/document-viewer';\nexport { createExperienceDocumentController } from '@hachej/boring-ui-kit/experience/document';\n");
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'resource-entry.js', '--bundle', '--platform=browser', '--format=esm', '--outfile=resource.js', '--metafile=resource-meta.json'], isolated);
@@ -146,9 +146,9 @@ void tools;
     writeFileSync(join(directory, 'package-lock.json'), JSON.stringify(installedLock));
     run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache)]);
     run('npm', ['ci', ...npmInstallFlags(cache)]);
-    for (const path of ['examples/morning', 'examples/shared', 'test/compatibility', 'test/fixtures', 'dist']) mkdirSync(join(directory, path), { recursive: true });
+    for (const path of ['examples/morning', 'shared', 'test/compatibility', 'test/fixtures', 'dist']) mkdirSync(join(directory, path), { recursive: true });
     for (const name of ['runtime.mjs', 'documents.mjs', 'fixtures.mjs', 'composition.mjs', 'view.jsx', 'client.mjs', 'server.mjs']) copyFileSync(join(root, 'examples/morning', name), join(directory, 'examples/morning', name));
-    copyFileSync(join(root, 'examples/shared/sqlite-workspaces.mjs'), join(directory, 'examples/shared/sqlite-workspaces.mjs'));
+    copyFileSync(join(root, 'shared/sqlite-workspaces.mjs'), join(directory, 'shared/sqlite-workspaces.mjs'));
     for (const name of ['morning.test.mjs', 'morning-composition.test.mjs']) copyFileSync(join(root, 'test/compatibility', name), join(directory, 'test/compatibility', name));
     for (const name of ['morning-crash-child.mjs', 'morning-dom.mjs', 'native-document.mjs']) copyFileSync(join(root, 'test/fixtures', name), join(directory, 'test/fixtures', name));
     run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/compatibility/morning.test.mjs', 'test/compatibility/morning-composition.test.mjs'], isolated);

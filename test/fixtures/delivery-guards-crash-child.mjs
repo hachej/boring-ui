@@ -6,7 +6,7 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createDocumentDelivery } from '@hachej/boring-agent/delivery';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 const [directory, phase, mode] = process.argv.slice(2);
 assert.ok(directory && ['hold', 'recover', 'downgrade'].includes(phase)

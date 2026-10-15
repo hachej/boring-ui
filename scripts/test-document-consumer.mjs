@@ -36,10 +36,10 @@ try {
   run(process.execPath, ['consumer.mjs'], isolated);
   mkdirSync(join(directory, 'test/packages'), { recursive: true });
   mkdirSync(join(directory, 'test/fixtures'), { recursive: true });
-  mkdirSync(join(directory, 'examples/shared'), { recursive: true });
+  mkdirSync(join(directory, 'shared'), { recursive: true });
   // files.test.mjs is not copied: it drives the workspace provider over Pi's environments, which this consumer must not install.
   const publicTests = ['files-remote.test.mjs', 'ui.test.mjs', 'ui-html.test.mjs', 'ui-remote-save.test.mjs', 'ui-text-drafts.test.mjs'].map(name => 'test/packages/' + name);
-  for (const path of [...publicTests, 'examples/shared/sqlite-workspaces.mjs', 'test/fixtures/text-draft-sqlite.mjs', 'test/fixtures/text-draft-sqlite-crash-child.mjs']) copyFileSync(join(root, path), join(directory, path));
+  for (const path of [...publicTests, 'shared/sqlite-workspaces.mjs', 'test/fixtures/text-draft-sqlite.mjs', 'test/fixtures/text-draft-sqlite-crash-child.mjs']) copyFileSync(join(root, path), join(directory, path));
   run(process.execPath, ['--test', '--experimental-test-isolation=none', ...publicTests], isolated);
   writeFileSync(join(directory, 'browser.mjs'), "export { createResourceClient } from '@hachej/boring-files/remote';\n");
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'browser.mjs', '--bundle', '--platform=browser', '--format=esm', '--outfile=browser.js', '--metafile=browser-meta.json'], isolated);

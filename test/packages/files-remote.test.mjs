@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PublicationNotDispatchedError } from '@hachej/boring-files/publication';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createResourceClient, createResourceHandler } from '@hachej/boring-files/remote';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';

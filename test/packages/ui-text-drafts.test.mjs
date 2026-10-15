@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { openTextDraftSqlite } from '../fixtures/text-draft-sqlite.mjs';
 
 const identity = { principalId: 'fictional-editor', scopeId: 'fictional-project', initiatorId: 'fictional-alice' };

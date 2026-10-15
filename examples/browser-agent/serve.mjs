@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readBody, sendWebResponse } from '@hachej/boring-files/node-http';
 import { fileURLToPath } from 'node:url';
-import { buildTailwind } from '../studio/tailwind.mjs';
+import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 import { buildBrowserAgent } from './build.mjs';
 import { GATEWAY_HOSTS } from './worker/gateway.js';
 

@@ -9,6 +9,6 @@ packages/ui/r/
 *.tsbuildinfo
 *.tgz
 .claude/worktrees/
-examples/cloudflare/public/
+examples/hosts/cloudflare/public/
 .wrangler/
 .dev.vars

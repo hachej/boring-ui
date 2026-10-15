@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import { createExperienceDocumentController } from '@hachej/boring-ui-kit/experience/document';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { openTextDraftSqlite } from '../fixtures/text-draft-sqlite.mjs';
 
 const identity = { principalId: 'fictional-editor', scopeId: 'fictional-project', initiatorId: 'fictional-person' };

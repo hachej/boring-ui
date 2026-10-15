@@ -2,7 +2,7 @@
   "$schema": "https://ui.shadcn.com/schema/registry-item.json",
   "name": "theme",
   "title": "Theme",
-  "description": "The shadcn tokens every Tailwind item is styled with (neutral base, light and dark) and their Tailwind v4 `@theme inline` bindings. The CLI adds only the tokens the host does not define yet. The examples compile the same values (examples/studio/tailwind.mjs).",
+  "description": "The shadcn tokens every Tailwind item is styled with (neutral base, light and dark) and their Tailwind v4 `@theme inline` bindings. The CLI adds only the tokens the host does not define yet. The examples compile the same values (lab/studio/tailwind.mjs).",
   "cssVars": {
     "theme": {
       "color-background": "var(--background)",

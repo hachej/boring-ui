@@ -172,8 +172,8 @@ controller.flush(controller.actions.selection());
   };
   copyFileSync(join(root, 'test/fixtures', recipe.fixture), join(directory, 'test/fixtures', recipe.fixture));
   // The tests' host: one SQLite workspace per scope over the installed @hachej/boring-files (public entry points only).
-  mkdirSync(join(directory, 'examples/shared'), { recursive: true });
-  copyFileSync(join(root, 'examples/shared/sqlite-workspaces.mjs'), join(directory, 'examples/shared/sqlite-workspaces.mjs'));
+  mkdirSync(join(directory, 'shared'), { recursive: true });
+  copyFileSync(join(root, 'shared/sqlite-workspaces.mjs'), join(directory, 'shared/sqlite-workspaces.mjs'));
   if (!html && !taskList) {
     const proposals = readFileSync(join(root, 'test/packages/ui-markdown-proposals.test.mjs'), 'utf8');
     assert.equal(proposals.split("'@hachej/boring-ui-kit/markdown-editor'").length, 2);
@@ -221,7 +221,7 @@ controller.flush(controller.actions.selection());
     mkdirSync(join(directory, 'registry'), { recursive: true });
     symlinkSync('../src/components/task-list-viewer', join(directory, 'registry/task-list-viewer'));
     mkdirSync(join(directory, 'test/compatibility'), { recursive: true });
-    for (const path of ['examples/shared/task-list-tools.mjs', 'test/compatibility/task-list.test.mjs', 'test/fixtures/task-list-crash-child.mjs', 'test/fixtures/native-document.mjs']) {
+    for (const path of ['shared/task-list-tools.mjs', 'test/compatibility/task-list.test.mjs', 'test/fixtures/task-list-crash-child.mjs', 'test/fixtures/native-document.mjs']) {
       copyFileSync(join(root, path), join(directory, path));
     }
     run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/compatibility/task-list.test.mjs'], isolated);

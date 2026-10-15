@@ -22,15 +22,15 @@ import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
-import { readFiles, writeFiles } from '../shared/workspace-tools.mjs';
-import { buildTailwind } from '../studio/tailwind.mjs';
+import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
+import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 
 export async function startWorkspaceApp({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   // The model: a real provider, or the keyless scripted layer of the journeys (./script.mjs), chosen by the host process only.
-  const models = scripted ? (await (await import('../studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
+  const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
   const agentAccess = { ...person, principalId: 'fictional-agent' };

@@ -5,9 +5,9 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
-import { connectCanvasPresentation } from '../../examples/shared/canvas-transport-client.mjs';
-import { createCanvasTransport } from '../../examples/shared/canvas-transport-server.mjs';
-import { schema, version } from '../../examples/shared/canvas-transport-protocol.mjs';
+import { connectCanvasPresentation } from '../../shared/canvas-transport-client.mjs';
+import { createCanvasTransport } from '../../shared/canvas-transport-server.mjs';
+import { schema, version } from '../../shared/canvas-transport-protocol.mjs';
 import { admitDocumentTool, toolResultText } from '../fixtures/native-document.mjs';
 const target = { instanceId: 'viewer', epoch: 'mount', subject: { scopeId: 'fictional', base: { kind: 'revision', target: { resource: { providerId: 'fictional', path: 'board.canvas' }, view: { kind: 'published' }, revision: 'r1' } }, bufferVersion: 0, mountId: 'm1', pageId: 'page:one' } };
 
