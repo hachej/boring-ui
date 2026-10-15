@@ -19,6 +19,7 @@ import { ChatNotices, Notice } from './notice';
 import { Shimmer } from './shimmer';
 import { useChatSession, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
+import { useChatPlacement } from './chat-placement';
 import type { ChatFeatureProps, FilesHandler } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
 import { chatTextFor } from './locale';
@@ -108,6 +109,7 @@ function PiChatSession({ controller, mode = 'expert', className, actions, avatar
   onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, onOpenFile, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
+  useChatPlacement(controller, 'docked');
   const { title } = labels;
   const [browsingHistory, setBrowsingHistory] = useState(false);
   const [pickingConversation, setPickingConversation] = useState(false);

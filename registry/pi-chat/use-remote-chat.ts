@@ -4,6 +4,7 @@ import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/n
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import type { RemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import type { PiChatActions } from './pi-chat';
+import { readChatPlacement } from './chat-placement';
 
 export type RemoteChatState =
   | { readonly status: 'connecting'; readonly conversationId: string | undefined }
@@ -21,7 +22,10 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
   readonly endpoint: (conversationId: string) => string | URL;
   readonly fetch: (request: Request) => Promise<Response>;
   readonly identity: ChatIdentity | undefined;
-  /** The current screen context, read at each submit and sent as the submit's `context` (for example `readAgentContext` of the app-shell item). */
+  /**
+   * The current screen context, read at each submit (for example `readAgentContext` of the app-shell item). The submit's `context` is
+   * `{ placement, screen }`: the chat's placement (`docked` or `floating`, reported by `PiChat` / `AmbientChat`) and this value.
+   */
   readonly requestContext?: () => Readonly<Record<string, unknown>> | undefined;
 }): RemoteChatState {
   const url = conversationId === undefined ? undefined : String(endpoint(conversationId));
@@ -33,11 +37,15 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
     if (conversationId === undefined || !identity || url === undefined) return;
     const setChat = (chat: RemoteChatState) => setStored({ binding, chat });
     let disposed = false, controller: NativeChatController | undefined, remote: RemoteChat | undefined;
+    const context = () => {
+      const placement = readChatPlacement(controller), screen = binding.requestContext?.();
+      return placement || screen ? { ...(placement && { placement }), ...(screen && { screen }) } : undefined;
+    };
     setChat({ status: 'connecting', conversationId });
     void (async () => {
       while (!disposed) {
         try {
-          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: () => binding.requestContext?.() });
+          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: context });
           if (disposed) return void remote.close();
           controller = createNativeChatController({ identity, ...remote });
           await controller.connect();

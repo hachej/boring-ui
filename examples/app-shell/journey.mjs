@@ -429,8 +429,8 @@ try {
     for (let i = 0; i < 100 && app.submits.length === before; i++) await pause(100);
     const sent = app.submits.at(-1);
     assert.equal(sent.agent, 'coach');
-    assert.deepEqual(sent.body.context, { name: 'Progrès', params: { range: 30 } });
-    assert.equal(app.contexts.at(-1).value.name, 'Progrès', 'the transport handed the context to the host');
+    assert.deepEqual(sent.body.context, { placement: 'docked', screen: { name: 'Progrès', params: { range: 30 } } });
+    assert.equal(app.contexts.at(-1).value.screen.name, 'Progrès', 'the transport handed the context to the host');
     await browser.until('the reply', `document.body.innerText.includes('Hier : 8 200 pas')`, 20000);
   });
 
