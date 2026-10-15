@@ -60,11 +60,13 @@ test('floating and docking a chat changes the placement sent with the next submi
   const first = controller;
   const send = async text => { await act(async () => { await controller.send('followUp', { text }); }); };
 
-  await send('one');
-  await act(async () => dock.float());
-  await send('two');
-  await act(async () => dock.dock());
-  await send('three');
+  try {
+    await send('one');
+    await act(async () => dock.float());
+    await send('two');
+    await act(async () => dock.dock());
+    await send('three');
+  } finally { await act(async () => root_.unmount()); } // closes the chat's stream
   assert.equal(controller, first, 'floating and docking keep the controller');
   assert.deepEqual(submits.map(body => body.context), [
     { placement: 'docked', screen }, { placement: 'floating', screen }, { placement: 'docked', screen }]);
