@@ -1,25 +1,16 @@
-// The browser side of the accounts-payable demo (served by ./server.mjs).
-//   [ agent area: chat (+ file viewer) ] [ the app: its own screens ]
-// The agent is self-contained in the left `Dock`: the chat, and the files it works with (Library documents, files the agent wrote, uploads).
-// A file opens in the agent's own viewer, beside the chat (`ArtifactWorkspace`, the dock widens while it is open) or, when the chat is
-// floating (`AmbientChat`), in place of the chat in the same floating window with a back button. The chat header's two icons open the
-// conversations list and the Library as popovers anchored to the chat. The app column holds only the app's screens (Approvals, Invoice,
-// Supplier: each a fixed experience over registered cells, ./cells.mjs). Dragging the divider narrow floats the whole agent area.
+// One ArtifactWorkspace holds the conversation and its file column in every Dock placement.
+// The host owns navigation and its fixed cell-based screens. Pi owns execution.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftIcon, FolderOpenIcon, HistoryIcon, PlusIcon, XIcon } from 'lucide-react';
-import { Popover } from '@base-ui/react/popover';
+import { ArrowLeftIcon, MaximizeIcon, PanelLeftIcon, PanelTopIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Experience } from '@hachej/boring-ui-kit/experience';
-import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { Dock, DockLayout, DockMain } from '../../registry/dock/dock.tsx';
+import { Dock, DockLayout, DockMain, useDock } from '../../registry/dock/dock.tsx';
 import { ArtifactWorkspace } from '../../registry/pi-workspace/workspace.tsx';
-import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
-import { ConversationList } from '../../registry/pi-chat/history.tsx';
 import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-app/use-conversations.ts';
@@ -32,6 +23,10 @@ import { cn } from '../../registry/utils/utils.ts';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { ACTIONS, CELLS, SCREENS, experienceCells } from './cells.mjs';
 import { validWorkspacePath } from './paths.mjs';
+import { FinanceCell, Mark, Status } from './finance';
+import { WorkspaceNav, SiteHeader } from './navigation';
+import { SCREEN_NAMES } from './screen-names.mjs';
+import { SidebarProvider, SidebarInset, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
 
 const { token, identity, conversation: firstConversation, voice } = window.__APP__;
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -46,7 +41,7 @@ const useAp = () => useContext(Ap);
 const TAB = Math.random().toString(36).slice(2); // this tab: agent commands are addressed to it
 
 function ApProvider({ children, view, go, conversation }) {
-  const [state, setState] = useState({ invoices: [], suppliers: {}, accounts: [], duplicates: {} });
+  const [state, setState] = useState({ invoices: [], suppliers: {}, accounts: [], budgets: [], duplicates: {} });
   const [receipts, setReceipts] = useState({});
   const seen = useRef(0), skip = useRef(true), current = useRef(conversation);
   current.current = conversation;
@@ -59,17 +54,20 @@ function ApProvider({ children, view, go, conversation }) {
     if (current.current !== asked) return;
     if (skip.current) { skip.current = false; seen.current = body.latest; return; }
     const last = body.navigation.at(-1);
-    if (last) { seen.current = last.seq; go(last.screen === 'approvals' ? { screen: 'approvals' } : last.screen === 'file' ? { screen: 'file', path: last.path } : { screen: last.screen, id: last.id }); }
+    if (last) { seen.current = last.seq; go(last.screen === 'file' ? { screen: 'file', path: last.path } : { screen: last.screen, id: last.id }, true); }
   }, [conversation, go]);
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 400); return () => clearInterval(timer); }, [refresh]);
   const invoice = state.invoices.find(item => item.id === view.id);
   const supplier = state.suppliers[view.screen === 'supplier' ? view.id : invoice?.supplier];
   const named = item => ({ ...item, supplierName: state.suppliers[item.supplier]?.name });
   const resolve = path => ({
+    '/ap/invoices': state.invoices.map(named),
+    '/ap/suppliers': state.suppliers,
+    '/ap/budgets': state.budgets,
     '/ap/approvals': state.invoices.filter(item => item.status === 'pending' && item.week).map(named),
     '/ap/invoice': invoice && named(invoice),
     '/ap/invoice/duplicates': (state.duplicates[view.id] ?? []).map(id => state.invoices.find(item => item.id === id)).filter(Boolean),
-    '/ap/supplier': supplier,
+    '/ap/supplier': supplier && { ...supplier, openBalance: state.invoices.filter(item => item.supplier === supplier.id && item.status !== 'approved').reduce((sum, item) => sum + item.amount, 0) },
     '/ap/supplier/invoices': state.invoices.filter(item => item.supplier === supplier?.id && item.status !== 'approved').map(named),
     '/ap/supplier/duplicates': state.invoices.filter(item => item.supplier === supplier?.id && (state.duplicates[item.id] ?? []).length),
   })[path];
@@ -81,24 +79,25 @@ function ApProvider({ children, view, go, conversation }) {
     setReceipts(previous => ({ ...previous, [args.invoice]: result }));
     await refresh();
   }, [go, refresh]);
-  return <Ap.Provider value={{ resolve, act, receipts, accounts: state.accounts, suppliers: state.suppliers }}>{children}</Ap.Provider>;
+  return <Ap.Provider value={{ resolve, act, receipts, accounts: state.accounts, suppliers: state.suppliers, approvalCount: state.invoices.filter(item => item.status === 'pending' && item.week).length }}>{children}</Ap.Provider>;
 }
 
 // ---- Cell renderers, one per kind. They read their bindings through `resolve` and act through named actions.
-const card = 'rounded-lg border border-border bg-card p-4 text-card-foreground';
+const card = 'rounded-xl border border-border bg-card p-5 text-card-foreground';
 const label = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
 const Badge = ({ tone = 'muted', children }) => <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tone === 'warn' ? 'bg-destructive/10 text-destructive' : tone === 'ok' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{children}</span>;
 
 function ApprovalQueue({ cell }) {
   const { resolve, act } = useAp();
   const rows = resolve(cell.state.rows) ?? [];
-  return <section data-testid="approval-queue" className={card} aria-label="Approval queue">
+  return <section data-testid="approval-queue" className={`${card} @container`} aria-label="Approval queue">
     <h2 className="mb-3 text-sm font-semibold">Waiting for your approval <span className="font-normal text-muted-foreground">({rows.length})</span></h2>
     {rows.length === 0 ? <p className="text-sm text-muted-foreground">Nothing is waiting.</p> : <ul className="divide-y divide-border">
       {rows.map(row => <li key={row.id}><button type="button" data-testid={`queue-row-${row.id}`} onClick={() => act('open_invoice', { id: row.id })} className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-muted/50">
-        <span className="w-20 shrink-0 font-mono text-xs text-muted-foreground">{row.id}</span>
-        <span className="min-w-0 flex-1 truncate font-medium">{row.supplierName}</span>
-        <span className="hidden shrink-0 text-muted-foreground sm:inline">due {day(row.due)}</span>
+        <Mark name={row.supplierName} />
+        <span className="min-w-0 flex-1"><span className="block truncate font-medium">{row.supplierName}</span><span className="text-xs text-muted-foreground">{row.id} · {row.account.slice(5)}</span></span>
+        <span className="hidden @[32rem]:inline"><Status value={row.status} /></span>
+        <span className="hidden shrink-0 text-muted-foreground @[32rem]:inline">due {day(row.due)}</span>
         <span className="w-24 shrink-0 text-right tabular-nums">{money(row.amount, row.currency)}</span>
       </button></li>)}
     </ul>}
@@ -124,12 +123,12 @@ function InvoiceSummary({ cell }) {
   const receipt = receipts[invoice.id];
   const done = invoice.status !== 'pending';
   const decide = (action, extra = {}) => act(action, { invoice: invoice.id, expected: invoice.revision, ...extra });
-  return <section data-testid="invoice-summary" data-invoice={invoice.id} className={card} aria-label={`Invoice ${invoice.id}`}>
+  return <section data-testid="invoice-summary" data-invoice={invoice.id} className={`${card} @container`} aria-label={`Invoice ${invoice.id}`}>
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="text-lg font-semibold"><button type="button" data-testid="open-supplier" className="underline-offset-4 hover:underline" onClick={() => act('open_supplier', { id: invoice.supplier })}>{invoice.supplierName}</button></h2><p className="text-sm text-muted-foreground">{invoice.id} · {invoice.number} · {invoice.description}</p></div>
       <Badge tone={invoice.status === 'approved' ? 'ok' : invoice.status === 'on-hold' ? 'warn' : 'muted'}><span data-testid="invoice-status">{invoice.status}</span></Badge>
     </div>
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 @[36rem]:grid-cols-4 [&_dd]:m-0">
       {[['Amount', money(invoice.amount, invoice.currency)], ['Invoice date', day(invoice.date)], ['Due', day(invoice.due)], ['PO', invoice.po]].map(([name, value]) => <div key={name}><dt className={label}>{name}</dt><dd className="font-medium tabular-nums">{value}</dd></div>)}
       <div><dt className={label}>Account</dt><dd data-testid="invoice-account" className="font-medium">{invoice.account}</dd></div>
     </dl>
@@ -197,18 +196,21 @@ function SupplierCard({ cell }) {
   </section>;
 }
 
-const RENDER = { 'ap/approval-queue': ApprovalQueue, 'ap/cash-due': CashDue, 'ap/invoice-summary': InvoiceSummary, 'ap/duplicate-alert': DuplicateAlert,
+function Finance({ cell }) {
+  const { resolve, act } = useAp();
+  return <FinanceCell kind={cell.kind} rows={resolve(cell.state.rows) ?? []} suppliers={resolve(cell.state.suppliers) ?? {}} budgets={resolve(cell.state.budgets) ?? []} act={act} />;
+}
+const RENDER = { ...Object.fromEntries(['ap/kpis', 'ap/transactions', 'ap/suppliers', 'ap/budgets', 'ap/goals', 'ap/payments'].map(kind => [kind, Finance])), 'ap/approval-queue': ApprovalQueue, 'ap/cash-due': CashDue, 'ap/invoice-summary': InvoiceSummary, 'ap/duplicate-alert': DuplicateAlert,
   'ap/invoice-pdf': InvoicePdf, 'ap/policy-excerpt': PolicyExcerpt, 'ap/supplier-card': SupplierCard };
 const renderedCells = experienceCells.map(entry => { const cell = CELLS.find(item => item.ref === entry.ref), Component = RENDER[cell.kind]; return { ...entry, render: () => <Component cell={cell} /> }; });
 
 // ---- The right column.
 const OpenFile = createContext(() => {});
-const SCREEN_NAMES = { approvals: 'Approvals', invoice: 'Invoice', supplier: 'Supplier' };
 
 function Screen({ view }) {
   // What the person is looking at, for the agent: the screen and what it shows (an id, never record content).
   useAgentContext({ name: SCREEN_NAMES[view.screen], params: view.id ? { id: view.id } : {} });
-  return <div data-testid={`screen-${view.screen}`} className="mx-auto w-full max-w-4xl"><Experience key={view.screen} descriptor={SCREENS[view.screen]} cells={renderedCells} canView={() => true} /></div>;
+  return <div data-testid={`screen-${view.screen}`} className="mx-auto w-full max-w-7xl"><Experience key={view.screen} descriptor={SCREENS[view.screen]} cells={renderedCells} canView={() => true} /></div>;
 }
 
 /** A viewer that cannot render (a path the workspace refuses, a failed read) shows its error inline, with a way back, never a blank page. */
@@ -241,7 +243,7 @@ function Document({ path, provider, close, onBack, onUnsaved }) {
  * clamped to the viewport on every resize: its top and left edges can never leave the screen, so the header with the back and close buttons
  * is always reachable. Only the content below the pinned header scrolls.
  */
-function FloatingViewer({ children, header }) {
+function FloatingViewer({ children, header, active }) {
   const MARGIN = 8;
   const measure = () => ({ w: window.innerWidth, h: window.innerHeight });
   const [viewport, setViewport] = useState(measure);
@@ -251,116 +253,38 @@ function FloatingViewer({ children, header }) {
   const stored = (() => { try { const value = JSON.parse(sessionStorage.getItem('boring.ambient.position') ?? 'null'); return typeof value?.right === 'number' && typeof value?.bottom === 'number' ? value : { right: 16, bottom: 16 }; } catch { return { right: 16, bottom: 16 }; } })();
   const clamp = (value: number, max: number) => Math.max(MARGIN, Math.min(value, max));
   const style = phone ? undefined : { width, height, right: clamp(stored.right, viewport.w - width - MARGIN), bottom: clamp(stored.bottom, viewport.h - height - MARGIN) };
-  return <div data-testid="floating-viewer" role="region" aria-label="File viewer" style={style}
-    className={cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-muted text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0 p-2' : 'rounded-3xl p-2')}>
+  return <div data-testid={active ? 'floating-viewer' : 'agent-workspace'} role={active ? 'region' : undefined} aria-label={active ? 'File viewer' : undefined} style={active ? style : undefined}
+    className={active ? cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-muted text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0 p-2' : 'rounded-3xl p-2') : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
     {header}
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
+    <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1', active && 'rounded-2xl border border-border bg-background shadow-sm')}>{children}</div>
   </div>;
 }
 
 /** The app column: its own chrome (title, navigation) and its own screens. No documents here. */
-function Column({ view, go }) {
+function Column({ view }) {
   return <div data-testid="right-column" className="flex min-h-0 flex-1 flex-col bg-background">
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-background px-4">
-      <h1 className="mr-4 text-sm font-semibold">Harbor &amp; Pine · Accounts payable</h1>
-      <Button size="sm" variant={view.screen === 'approvals' ? 'secondary' : 'ghost'} data-testid="nav-approvals" onClick={() => go({ screen: 'approvals' })}>Approvals</Button>
-      <span data-testid="viewing" className="ml-auto truncate text-xs text-muted-foreground">{`${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span>
-    </header>
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-muted/20 p-4 sm:p-6"><Screen view={view} /></div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 lg:p-7"><div className="mx-auto mb-6 flex w-full max-w-7xl shrink-0 items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight">{SCREEN_NAMES[view.screen]}</h1><p className="mt-1 text-sm text-muted-foreground">{({ dashboard: 'Your accounts payable, at a glance.', approvals: 'Review this week’s invoices and keep payments moving.', invoices: 'Every invoice, from arrival to approval.', suppliers: 'The people and teams behind your business.', spend: 'Make room for what matters next.', payments: 'Approved invoices, ready for the next payment run.', invoice: 'Review the details before you decide.', supplier: 'Terms, documents and outstanding invoices.' })[view.screen]}</p></div><span data-testid="viewing" className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">{`${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span></div><Screen view={view} /></div>
   </div>;
 }
 
-// ---- The left dock: the chat, with the conversations and the Library as header icons that open popovers anchored to it.
+// ---- The agent's workspace. History and Library live in the app-owned navigation.
 const PANEL = 560; // the file viewer's width beside the chat
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
-/** Base UI owns positioning, collision shifting and dismissal. Only the collapsed bar may use the space above its own surface. */
-function AgentPopover({ name, close, children }) {
-  const [anchor, setAnchor] = useState();
-  const popup = useRef<HTMLElement>(null);
-  useLayoutEffect(() => {
-    const trigger = document.querySelector<HTMLElement>(`[data-testid=chat-action-${name}], [data-testid=ambient-action-${name}]`);
-    const surface = trigger?.closest('[data-boring=ambient-chat], [data-dock=chat]');
-    if (!trigger || !surface) return;
-    const measure = () => {
-      const rect = surface.getBoundingClientRect(), above = surface.dataset.state === 'bar';
-      setAnchor({ trigger, above, offset: above ? trigger.getBoundingClientRect().top - rect.top + 6 : 6, width: Math.min(360, rect.width - 16), boundary: above ? { x: rect.left, y: 0, width: rect.width, height: window.innerHeight } : surface });
-    };
-    measure();
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
-    observer?.observe(surface);
-    window.addEventListener('resize', measure);
-    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
-  }, [name]);
-  if (!anchor) return null;
-  return <Popover.Root open onOpenChange={(open, details) => { if (!open && details.reason !== 'focus-out' && !anchor.trigger.contains(details.event.target)) close(true); }}>
-    <Popover.Portal>
-      <Popover.Positioner anchor={anchor.trigger} positionMethod="fixed" side={anchor.above ? 'top' : 'bottom'} sideOffset={anchor.offset} align="start"
-        collisionBoundary={anchor.boundary} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift' }} style={{ width: anchor.width }} className="z-50">
-        <Popover.Popup ref={popup} data-testid={name === 'history' ? 'conversations' : 'library-popover'} aria-label={name === 'history' ? 'History' : 'Library'}
-          initialFocus={() => popup.current?.querySelector('input[type=search]') ?? true} finalFocus={false}
-          className="pi-chat flex max-h-[min(34rem,var(--available-height))] w-full flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-lg outline-none">
-          {children}
-        </Popover.Popup>
-      </Popover.Positioner>
-    </Popover.Portal>
-  </Popover.Root>;
-}
-
-function HistoryPanel({ conversations, close }) {
-  return <>
-    <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
-      <Popover.Title className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">History</Popover.Title>
-      {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew(); close(false); }}><PlusIcon className="size-3.5" aria-hidden="true" />New</Button>}
-      <Button size="icon-bar" variant="ghost" aria-label="Close History" title="Close History" onClick={() => close(true)}><XIcon className="size-4" aria-hidden="true" /></Button>
-    </header>
-    <ConversationList conversations={conversations} onPicked={() => close(false)} autoFocus />
-  </>;
-}
-
-function LibraryPanel({ provider, file, openFile, close, feed }) {
-  const panel = useRef<HTMLElement>(null);
-  // The search field takes focus once the tree has loaded, so typing filters at once.
-  useEffect(() => {
-    let frame = 0, tries = 0;
-    const focus = () => { const input = panel.current?.querySelector('input[type=search]'); if (input) input.focus(); else if (tries++ < 60) frame = requestAnimationFrame(focus); };
-    focus();
-    return () => cancelAnimationFrame(frame);
-  }, [provider]);
-  return <div ref={panel} className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
-        <Popover.Title className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">Library</Popover.Title>
-        <Button size="icon-sm" variant="ghost" aria-label="Close Library" title="Close" onClick={() => close(true)}><XIcon className="size-4" aria-hidden="true" /></Button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-auto">
-        {provider ? <FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) close(false); }} />
-          : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}
-      </div>
-  </div>;
-}
-
-function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, setActive }) {
-  const [panel, setPanel] = useState<'history' | 'library' | undefined>();
-  const base = useRef(760), widened = useRef(false);
+function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, conversations }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  const base = useRef(620), widened = useRef(false);
   const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
   const [panelWidth, setPanelWidth] = useState(PANEL);
   const renderHeader = useCallback(header => headerTarget ? createPortal(header, headerTarget) : null, [headerTarget]);
   const viewerWindow = useMemo(() => ({ renderHeader }), [renderHeader]);
-  const conversations = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: active, onSelect: setActive });
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
   // The files the person attaches (and a long paste) are saved in the workspace, under uploads/, through the same provider as the Library.
   const attachments = useRevisionAttachments({ revisionProvider: provider });
-  // The workspace's change feed: the Library list reloads when the agent (or anyone) writes a file.
-  const [feed, setFeed] = useState(0);
-  useEffect(() => {
-    if (!provider?.changes) return;
-    const stop = new AbortController();
-    void (async () => { try { for await (const event of provider.changes({ signal: stop.signal })) setFeed(event.seq); } catch { /* the list keeps what it has */ } })();
-    return () => stop.abort();
-  }, [provider]);
   // The agent area widens by the viewer's width while a file is open beside the chat, and goes back when it closes.
-  if (!api.floating && !file && !widened.current) base.current = api.width;
-  const side = !api.floating && Boolean(file);
+  if (api.placement === 'docked' && !file && !widened.current) base.current = api.width;
+  const side = api.placement === 'docked' && Boolean(file);
+  const replaceChat = Boolean(file) && (api.floating || isMobile);
   useLayoutEffect(() => {
     const panel = document.querySelector('[data-testid=workspace-panel]');
     if (!side || !panel || typeof ResizeObserver === 'undefined') return;
@@ -374,38 +298,75 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, se
     if (side && !widened.current) { widened.current = true; api.setWidth(Math.min(base.current + PANEL, Math.max(base.current, Math.round(window.innerWidth * 0.62)))); }
     else if (!side && widened.current) { widened.current = false; if (!api.floating) api.setWidth(base.current); }
   }, [side]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (chat.status !== 'ready' || file) return;
+    const composer = document.querySelector<HTMLTextAreaElement>('[data-dock=chat] [data-testid=composer-input]');
+    if (composer?.checkVisibility()) composer.focus({ preventScroll: true });
+  }, [api.placement, file, chat.status]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
-  // Closing returns focus to the icon that opened the panel (a pick moves focus to the opened file instead).
-  const closePanel = (refocus: boolean) => { const name = panel; setPanel(undefined); if (refocus && name) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid=chat-action-${name}], [data-testid=ambient-action-${name}]`)?.focus()); };
-  const toggle = (name: 'history' | 'library') => setPanel(current => current === name ? undefined : name);
   const headerActions = [
-    { id: 'history', label: 'Conversations', icon: HistoryIcon, pressed: panel === 'history', onSelect: () => toggle('history') },
-    { id: 'library', label: 'Library', icon: FolderOpenIcon, pressed: panel === 'library', onSelect: () => toggle('library') },
+    ...(isMobile ? [{ id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) }] : []),
+    { id: 'page', label: 'Agent as page', icon: MaximizeIcon, onSelect: () => api.setPlacement('page') },
+  ];
+  const placementActions = [
+    { id: 'float', label: 'Float agent', icon: PanelTopIcon, onSelect: api.float },
+    ...(api.placement === 'page' ? [{ id: 'dock', label: 'Dock beside app', icon: PanelLeftIcon, onSelect: api.dock }] : headerActions),
   ];
   const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
   const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
   const viewer = file && provider ? <ViewerWindowProvider value={viewerWindow}><Document path={file} provider={provider} close={closeFile} onUnsaved={setUnsaved} /></ViewerWindowProvider> : null;
   const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
-    {api.floating
+    {replaceChat
       ? <Button data-testid="file-back" aria-label="Back to Chat" title="Back to Chat" onClick={closeFile} className="gap-1 px-2 text-sm"><ArrowLeftIcon className="size-4" aria-hidden="true" />Chat</Button>
-      : <div className="flex min-w-0 flex-1 items-center gap-1 px-4"><h2 className="m-0 mr-2 truncate text-sm font-semibold tracking-tight">AP helper</h2><BlockActions actions={headerActions} testId="chat-action" menuLabel="More actions" /></div>}
-    {file && <div ref={setHeaderTarget} data-testid="agent-file-header" title={file} style={api.floating ? undefined : { width: panelWidth }}
-      className={cn('relative mr-2 min-w-0 [&>header]:h-14 [&>header]:border-0 [&>header]:px-3 [&>header]:py-0', !file.includes('/') && '[&_[data-testid=viewer-subtitle]]:hidden', api.floating ? 'flex-1' : 'shrink-0')} />}
+      : <div className="flex min-w-0 flex-1 items-center gap-1 px-4"><h2 className="m-0 mr-2 truncate text-sm font-semibold tracking-tight">AP helper</h2><BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" /></div>}
+    {file && <div ref={setHeaderTarget} data-testid="agent-file-header" title={file} style={replaceChat ? undefined : { width: panelWidth }}
+      className={cn('relative mr-2 min-w-0 [&>header]:h-14 [&>header]:border-0 [&>header]:px-3 [&>header]:py-0', !file.includes('/') && '[&_[data-testid=viewer-subtitle]]:hidden', replaceChat ? 'flex-1' : 'shrink-0')} />}
   </div>;
-  const pi = <PiChat key={active} {...common} header={false} conversations={conversations} historyList={false} showHistory={false} showConnectionStatus={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1 bg-transparent" />;
-  return <div className="flex min-h-0 min-w-0 flex-1 flex-col [&_[data-action]]:min-h-11 [&_[data-action]]:min-w-11 [&_[data-action]]:rounded-full [&_[data-action][aria-pressed=true]]:bg-foreground/10 [&_[data-action][aria-pressed=true]]:text-foreground">
-    {!api.floating && header}
-    {api.floating
-      ? (viewer ? <FloatingViewer header={header}>{viewer}</FloatingViewer> : <AmbientChat {...common} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(base.current); }} />)
-      : <ArtifactWorkspace chat={pi} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={360} minChat={340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset" className="bg-transparent" />}
-    {panel && <AgentPopover key={panel} name={panel} close={closePanel}>
-      {panel === 'history' ? <HistoryPanel conversations={conversations} close={closePanel} /> : <LibraryPanel provider={provider} file={file} openFile={openFile} close={closePanel} feed={feed} />}
-    </AgentPopover>}
+  const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
+    <AmbientChat key={active} {...common} conversations={conversations} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
   </div>;
+  return <FloatingViewer active={replaceChat} header={!api.floating || file ? header : null}>
+    <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
+      className={cn('bg-transparent', replaceChat && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1 [&>[data-testid=workspace-panel]]:border-0 [&>[data-testid=workspace-panel]]:rounded-none')} />
+  </FloatingViewer>;
+}
+
+function WorkspaceLayout(props) {
+  const api = useDock('chat');
+  props.dock.current = api;
+  const { approvalCount } = useAp();
+  const [panel, setPanel] = useState();
+  const [theme, setTheme] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    const media = matchMedia('(prefers-color-scheme: dark)'), update = () => setTheme(media.matches ? 'dark' : 'light');
+    media.addEventListener('change', update); return () => media.removeEventListener('change', update);
+  }, [theme]);
+  const conversations = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: props.active, onSelect: props.setActive });
+  const [feed, setFeed] = useState(0);
+  useEffect(() => {
+    if (!props.provider?.changes) return;
+    const stop = new AbortController();
+    void (async () => { try { for await (const event of props.provider.changes({ signal: stop.signal })) setFeed(event.seq); } catch { /* keep the last list */ } })();
+    return () => stop.abort();
+  }, [props.provider]);
+  return <>
+    <WorkspaceNav {...props} api={api} count={approvalCount} panel={panel} setPanel={setPanel} conversations={conversations} feed={feed} />
+    <SidebarInset className="min-h-0 overflow-hidden md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0">
+      <SiteHeader title={api?.placement === 'page' ? 'Agent' : SCREEN_NAMES[props.view.screen]} theme={theme} setTheme={setTheme} />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultPlacement="page" defaultWidth={620} minWidth={300} className="bg-muted/40" labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
+          {api => <Chat {...props} api={api} conversations={conversations} />}
+        </Dock>
+        <DockMain><Column view={props.view} /></DockMain>
+      </div>
+    </SidebarInset>
+  </>;
 }
 
 function App() {
   const [view, setView] = useState({ screen: 'approvals' });
+  const dock = useRef();
   const [file, setFile] = useState<string | undefined>();
   const [provider, setProvider] = useState();
   useEffect(() => { void connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(setProvider); }, []);
@@ -416,16 +377,15 @@ function App() {
   const openFile = useCallback((raw: string) => { const path = validWorkspacePath(raw); if (!path) return false; if (path === file) return true; if (!leave()) return false; dirty.current = false; setFile(path); return true; }, [file]);
   const closeFile = useCallback(() => { if (!leave()) return false; dirty.current = false; setFile(undefined); return true; }, []);
   // Commands (the agent's `show`) reach the app's screens, or the agent's own viewer for a file.
-  const go = useCallback(next => { if (next.screen === 'file') return openFile(next.path); setView(next); return true; }, [openFile]);
+  const go = useCallback((next, fromAgent = false) => { if (next.screen === 'file') return openFile(next.path); setView(next); if (fromAgent || dock.current?.placement === 'page') dock.current?.setPlacement('floating'); return true; }, [openFile]);
   return <AgentContextProvider>
     <ApProvider view={view} go={go} conversation={active}>
       <OpenFile.Provider value={openFile}>
-        <DockLayout storageKey="workspace-demo" className="h-full">
-          <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultWidth={760} minWidth={300} className="bg-muted/70" labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
-            {api => <Chat api={api} provider={provider} file={file} openFile={openFile} closeFile={closeFile} setUnsaved={unsaved => { dirty.current = unsaved; }} active={active} setActive={setActive} />}
-          </Dock>
-          <DockMain><Column view={view} go={go} /></DockMain>
-        </DockLayout>
+        <SidebarProvider style={{ '--sidebar-width': '15rem', minHeight: 0, height: '100%' }}>
+          <DockLayout storageKey="workspace-demo" minMain={600} className="h-full">
+            <WorkspaceLayout view={view} go={go} dock={dock} provider={provider} file={file} openFile={openFile} closeFile={closeFile} setUnsaved={unsaved => { dirty.current = unsaved; }} active={active} setActive={setActive} />
+          </DockLayout>
+        </SidebarProvider>
       </OpenFile.Provider>
     </ApProvider>
   </AgentContextProvider>;

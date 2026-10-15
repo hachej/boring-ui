@@ -13,7 +13,7 @@ import { cn } from '../utils/utils';
  */
 
 /** What a dock is doing now. `floating` keeps the content mounted in a zero-width slot so it can render its own floating surface. */
-export type DockPlacement = 'docked' | 'floating' | 'sheet' | 'closed';
+export type DockPlacement = 'page' | 'docked' | 'floating' | 'sheet' | 'closed';
 
 /** What a dock and the controls around it can do. */
 export interface DockApi {
@@ -24,6 +24,8 @@ export interface DockApi {
   /** Whether the layout is wide enough to dock it (false below `narrowBelow`). */
   readonly canDock: boolean;
   readonly width: number;
+  /** Page fills the main area; docked sits beside it; floating uses the host's ambient surface. Opens the dock. */
+  readonly setPlacement: (next: 'page' | 'docked' | 'floating') => void;
   readonly setOpen: (next: boolean) => void;
   readonly toggle: () => void;
   /** Float it (only for a `floatable` dock). Opens it if closed. */
@@ -68,6 +70,8 @@ export interface DockProps {
   readonly onOpenChange?: (open: boolean) => void;
   /** Floating at first, before the person docks it. */
   readonly defaultFloating?: boolean;
+  /** Initial placement. Takes precedence over defaultFloating; remembered choices take precedence over both. */
+  readonly defaultPlacement?: 'page' | 'docked' | 'floating';
   /**
    * While docked, the dock is the containing block of its content's fixed overlays (a full-screen sheet, a drawer, a viewer's full screen):
    * they cover the dock, not the page. Floating and sheet placements are unaffected.
@@ -81,7 +85,7 @@ export interface DockProps {
 
 export interface DockMainProps { readonly children: ReactNode; readonly className?: string }
 
-interface DockRecord { readonly width?: number | undefined; readonly floating?: boolean | undefined; readonly open?: boolean | undefined }
+interface DockRecord { readonly width?: number | undefined; readonly placement?: 'page' | 'docked' | 'floating' | undefined; readonly floating?: boolean | undefined; readonly open?: boolean | undefined }
 interface LayoutContext {
   readonly size: number;
   readonly minMain: number;
@@ -117,15 +121,16 @@ export function DockLayout({ children, storageKey = 'boring.dock', persist = 'se
   const read = useCallback((id: string): DockRecord => {
     const storage = store(persist);
     const get = (name: string) => { try { return storage?.getItem(`${storageKey}.${id}.${name}`) ?? null; } catch { return null; } };
-    const width = Number(get('width')), floating = get('floating'), open = get('open');
-    return { width: Number.isFinite(width) && width > 0 ? width : undefined, floating: floating === null ? undefined : floating === '1', open: open === null ? undefined : open === '1' };
+    const width = Number(get('width')), floating = get('floating'), open = get('open'), placement = get('placement');
+    return { width: Number.isFinite(width) && width > 0 ? width : undefined, placement: placement === 'page' || placement === 'docked' || placement === 'floating' ? placement : undefined,
+      floating: floating === null ? undefined : floating === '1', open: open === null ? undefined : open === '1' };
   }, [persist, storageKey]);
   const update = useCallback((id: string, patch: DockRecord) => {
     setRecords(current => ({ ...current, [id]: { ...current[id], ...patch } }));
     const storage = store(persist);
     for (const [name, value] of Object.entries(patch)) {
       if (value === undefined) continue;
-      try { storage?.setItem(`${storageKey}.${id}.${name}`, typeof value === 'boolean' ? (value ? '1' : '0') : String(Math.round(value))); } catch { /* the layout is a convenience */ }
+      try { storage?.setItem(`${storageKey}.${id}.${name}`, typeof value === 'boolean' ? (value ? '1' : '0') : typeof value === 'number' ? String(Math.round(value)) : value); } catch { /* the layout is a convenience */ }
     }
   }, [persist, storageKey]);
   const publish = useCallback((id: string, api: DockApi | undefined) => {
@@ -147,7 +152,9 @@ const sameApi = (a: DockApi, b: DockApi) => a.placement === b.placement && a.ope
 
 /** The page's own content between the docks; it takes the remaining width. */
 export function DockMain({ children, className }: DockMainProps) {
-  return <main data-boring="dock-main" className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className)}>{children}</main>;
+  const layout = useContext(Layout);
+  const replaced = Object.values(layout?.apis ?? {}).some(api => api.placement === 'page');
+  return <main data-boring="dock-main" hidden={replaced} inert={replaced} className={cn('relative min-h-0 min-w-0 flex-1 flex-col overflow-hidden', replaced ? 'hidden' : 'flex', className)}>{children}</main>;
 }
 
 /** A dock's api from anywhere inside the `DockLayout` (undefined until that dock has rendered). */
@@ -159,7 +166,7 @@ export function useDock(id: string): DockApi | undefined {
 
 /** One dock beside the main content. Order the children as they should appear: left docks, `DockMain`, right docks. */
 export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, floatable = false, dragBelow, narrowBelow, narrow = floatable ? 'float' : 'hide',
-  open: controlledOpen, defaultOpen = true, onOpenChange, defaultFloating = false, contained = false, onPlacementChange, labels, className }: DockProps) {
+  open: controlledOpen, defaultOpen = true, onOpenChange, defaultFloating = false, defaultPlacement, contained = false, onPlacementChange, labels, className }: DockProps) {
   const layout = useContext(Layout);
   if (!layout) throw new Error('Dock must be used inside a DockLayout');
   const { size, minMain, update, publish, occupied } = layout;
@@ -171,25 +178,30 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
   const controlled = controlledOpen !== undefined;
   const open = controlled ? controlledOpen : record.open ?? defaultOpen;
   const narrowNow = narrowBelow !== undefined && size > 0 && size < narrowBelow;
-  const floatingChosen = floatable && (record.floating ?? defaultFloating);
+  const chosen = record.placement ?? (record.floating === undefined ? defaultPlacement ?? (defaultFloating ? 'floating' : 'docked') : record.floating ? 'floating' : 'docked');
   const placement: DockPlacement = !open ? 'closed'
+    : chosen === 'page' ? 'page'
     : narrowNow ? (narrow === 'float' && floatable ? 'floating' : narrow === 'sheet' ? 'sheet' : 'closed')
-    : floatingChosen ? 'floating' : 'docked';
+    : chosen === 'floating' && floatable ? 'floating' : 'docked';
   const max = Math.max(minWidth, size - minMain - occupied(id));
   const width = Math.round(Math.min(Math.max(record.width ?? defaultWidth, minWidth), max));
 
   const setOpen = useCallback((next: boolean) => { if (!controlled) update(id, { open: next }); onOpenChange?.(next); }, [controlled, id, onOpenChange, update]);
-  const setFloating = useCallback((next: boolean) => { if (floatable) update(id, { floating: next }); }, [floatable, id, update]);
+  const setPlacement = useCallback((next: 'page' | 'docked' | 'floating') => {
+    if (next === 'floating' && !floatable) return;
+    update(id, { placement: next, floating: next === 'floating' });
+    if (!open) setOpen(true);
+  }, [floatable, id, open, setOpen, update]);
   const api: DockApi = {
     id, placement, open, floating: placement === 'floating', canDock: !narrowNow, width,
-    setOpen, toggle: () => setOpen(!open),
-    float: () => { setFloating(true); if (!open) setOpen(true); },
-    dock: () => { setFloating(false); if (!open) setOpen(true); },
+    setPlacement, setOpen, toggle: () => setOpen(!open),
+    float: () => setPlacement('floating'),
+    dock: () => setPlacement('docked'),
     setWidth: (next: number) => resize(next),
   };
   const latest = useRef(api); latest.current = api;
   // What `useDock` hands out: the current state, with actions that always reach this render's dock.
-  const actions = useMemo(() => ({ setOpen: (next: boolean) => latest.current.setOpen(next), toggle: () => latest.current.toggle(), float: () => latest.current.float(), dock: () => latest.current.dock(), setWidth: (next: number) => latest.current.setWidth(next) }), []);
+  const actions = useMemo(() => ({ setPlacement: (next: 'page' | 'docked' | 'floating') => latest.current.setPlacement(next), setOpen: (next: boolean) => latest.current.setOpen(next), toggle: () => latest.current.toggle(), float: () => latest.current.float(), dock: () => latest.current.dock(), setWidth: (next: number) => latest.current.setWidth(next) }), []);
   useLayoutEffect(() => { publish(id, { ...latest.current, ...actions }); });
   useLayoutEffect(() => () => publish(id, undefined), [id, publish]);
   const reported = useRef(placement);
@@ -231,7 +243,7 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
   const panel = <section ref={section} data-boring="dock" data-dock={id} data-side={side} data-placement={placement} aria-label={labels?.region}
     {...(hidden ? { hidden: true, inert: true } : {})}
     style={docked ? { width } : undefined}
-    className={cn('relative flex min-h-0 min-w-0 flex-col', docked && 'shrink-0 overflow-hidden bg-background text-foreground', docked && contained && '[contain:layout]',
+    className={cn('relative flex min-h-0 min-w-0 flex-col', docked && 'shrink-0 overflow-hidden bg-background text-foreground', (docked || placement === 'page') && contained && '[contain:layout]', placement === 'page' && 'flex-1 overflow-hidden bg-background text-foreground',
       placement === 'floating' && 'w-0 flex-none overflow-visible', placement === 'sheet' && 'fixed inset-0 z-50 bg-background text-foreground', hidden && 'hidden',
       dragging && '[&_iframe]:pointer-events-none select-none', className)}>
     {typeof children === 'function' ? children(api) : children}

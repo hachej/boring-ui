@@ -1,0 +1,1 @@
+export const SCREEN_NAMES = { dashboard: 'Dashboard', approvals: 'Approvals', invoices: 'Invoices', invoice: 'Invoice', suppliers: 'Suppliers', supplier: 'Supplier', spend: 'Spend', payments: 'Payments' };

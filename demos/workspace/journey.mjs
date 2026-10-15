@@ -1,16 +1,6 @@
-// Real-browser journey for the workspace demo (scripted model, no key): one person, one accounts-payable week, a dozen moments.
-//   1  chat docked: "what needs my approval this week?" and the agent opens the Approvals queue in the viewer
-//   2  the person opens an invoice (PDF and extracted fields)
-//   a  the history icon in the chat header lists earlier conversations (a search field with an Archived icon toggle); switching keeps each transcript
-//   3  the person clicks another invoice; the agent sees it (screen context) and spots a duplicate
-//   b  the Library icon in the chat header opens the file list; the AP policy opened from it lands in the agent's own viewer beside the chat (the agent area widens; the app column shows no document); the viewer closes with a guard for unsaved edits; "does this invoice respect the policy?" is answered from the document and the invoice
-//   c  attaching a file uploads it into the workspace (a file card in the message); the composer has no microphone without a transcription key
-//   d  "create a new file tt.md and open it": the agent writes it (history entry 'agent', no receipt) and opens it in the viewer; the Library lists it live
-//   4  the agent proposes "approve, coded to another account"; the person approves the card; the backend returns a receipt
-//   5  dragging the divider floats the chat: placement is floating, the right column takes the full width
-//   6  on the supplier page "why is this flagged?" gets a short answer and the page does not move
-//   7  docking back restores the chat column and the conversation goes on
-// Screenshots go to .cache/evidence/workspace-demo/. Run: npm run workspace-demo:journey
+// Scripted real-browser journey: one mounted agent across page, docked and floating placements; app-owned History and Library.
+// Retains the AP decisions, file guards, uploads and conversation/tab command checks. Adds the finance screen and theme/size matrix.
+// Screenshots go to .cache/evidence/agent-page/. Run: npm run workspace-demo:journey
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,7 +10,7 @@ import { insecureUrl, launch, pause, q } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
 const { startWorkspaceDemo } = await import('./server.mjs');
-const evidence = process.env.APP_EVIDENCE ?? '.cache/evidence/workspace-demo';
+const evidence = process.env.APP_EVIDENCE ?? '.cache/evidence/agent-page';
 mkdirSync(evidence, { recursive: true });
 const step = async (name, run) => { const started = Date.now(); await run(); console.log(`ok  ${name} (${Date.now() - started} ms)`); };
 const rect = selector => `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right }; })()`;
@@ -69,54 +59,36 @@ try {
   const lastContext = () => app.contexts.at(-1)?.value;
   // The request context is the screen's fields with `placement` beside them (and this tab's id, which addresses the agent's commands).
   const screenOf = value => ({ name: value.name, params: value.params });
-  const anchoredPopover = async (name, where) => {
-    const measure = `(() => {
-      const button = document.querySelector('[data-testid=${where === 'floating' ? 'ambient' : 'chat'}-action-${name}]'), trigger = button.getBoundingClientRect();
-      const popup = document.querySelector('[data-testid=${name === 'history' ? 'conversations' : 'library-popover'}]').getBoundingClientRect();
-      const surface = document.querySelector('${where === 'floating' ? '[data-boring=ambient-chat]' : '[data-dock=chat]'}');
-      const panel = surface.getBoundingClientRect(), above = surface.dataset.state === 'bar';
-      return { gap: above ? panel.top - popup.bottom : popup.top - trigger.bottom, overlap: popup.left < trigger.right && popup.right > trigger.left,
-        width: popup.width, expectedWidth: Math.min(360, panel.width - 16), left: popup.left, triggerLeft: trigger.left,
-        expectedLeft: Math.max(Math.max(0, panel.left) + 8, Math.min(trigger.left, Math.min(innerWidth, panel.right) - 8 - popup.width)),
-        target: { width: trigger.width, height: trigger.height, radius: parseFloat(getComputedStyle(button).borderRadius), pressed: button.getAttribute('aria-pressed') },
-        bounded: popup.left >= Math.max(0, panel.left) + 7 && popup.right <= Math.min(innerWidth, panel.right) - 7 && popup.top >= 0 && popup.bottom <= innerHeight };
-    })()`;
-    await browser.until(`${name} is positioned at its trigger`, `(() => { const g = ${measure}; return g.gap >= 4 && g.gap <= 12; })()`, 10000);
-    const geometry = await browser.evaluate(measure);
-    assert.ok(geometry.gap >= 4 && geometry.gap <= 12, `${where} ${name} opens beside its trigger: ${JSON.stringify(geometry)}`);
-    assert.equal(geometry.overlap, true, `${where} ${name} overlaps its trigger`);
-    assert.ok(Math.abs(geometry.left - geometry.expectedLeft) < 2, `left aligned unless the panel requires a shift: ${JSON.stringify(geometry)}`);
-    assert.ok(Math.abs(geometry.width - geometry.expectedWidth) < 2, JSON.stringify(geometry));
-    assert.equal(geometry.bounded, true, JSON.stringify(geometry));
-    assert.ok(geometry.target.width >= 44 && geometry.target.height >= 44 && geometry.target.radius >= 22 && geometry.target.pressed === 'true', `a round, pressed touch target: ${JSON.stringify(geometry.target)}`);
-  };
-  const popoverShots = async name => {
-    for (const scheme of ['light', 'dark']) {
-      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
-      await pause(200);
-      await shot(`popover-${name}-${scheme}.png`);
+  const navigation = async () => {
+    if (await browser.evaluate(`innerWidth < 768 && !${q('[data-sidebar=sidebar][data-mobile=true]')}`)) {
+      await browser.click(`${q('[data-testid=ambient-action-navigation]')}?.checkVisibility() ? ${q('[data-testid=ambient-action-navigation]')} : ${q('[data-sidebar=trigger]')}`);
+      await browser.until('mobile navigation', `!!${q('[data-sidebar=sidebar][data-mobile=true]')}`, 5000);
     }
-    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
   };
-  const history = () => browser.evaluate(placement).then(async where => {
-    if (!(await browser.evaluate(`!!${q('[data-testid=conversations]')}`))) await browser.click(q(where === 'floating' ? '[data-testid=ambient-action-history]' : '[data-testid=chat-action-history]'));
+  const history = async () => {
+    await navigation();
+    if (!(await browser.evaluate(`!!${q('[data-testid=conversations]')}`))) await browser.click(q('[data-testid=nav-history]'));
     await browser.until('the conversations list', `!!${q('[data-testid=conversations]')}`, 10000);
-    await anchoredPopover('history', where);
-  });
+  };
   const library = async () => {
-    const where = await browser.evaluate(placement);
-    await browser.click(q(where === 'floating' ? '[data-testid=ambient-action-library]' : '[data-testid=chat-action-library]'));
-    await browser.until('the Library', `!!${q('[data-testid=library-popover]')}`, 10000);
-    await anchoredPopover('library', where);
+    await navigation();
+    await browser.click(q('[data-testid=nav-library]'));
+    await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]')`, 10000);
+  };
+  const dockAgent = async () => {
+    if (await browser.evaluate(placement) === 'floating') await browser.click(q('[data-testid=ambient-dock]'));
+    await browser.until('docked', `${placement} === 'docked'`, 10000);
   };
   const openConversation = async title => { await history(); await browser.click(row(title)); await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000); };
   const row = title => `[...document.querySelectorAll('[data-testid=conversation-row]')].find(item => item.innerText.includes(${JSON.stringify(title)}))`;
 
-  await step('start: three columns, the chat docked, earlier conversations listed', async () => {
+  await step('start: Agent as the page, with history and Library in app-owned navigation', async () => {
     await browser.until('the chat is live', `!!${INPUT}`, 30000);
-    assert.equal(await browser.evaluate(placement), 'docked');
+    assert.equal(await browser.evaluate(placement), 'page');
+    assert.equal(await browser.evaluate(`${q('[data-boring=dock-main]')}.hidden`), true);
+    await browser.evaluate(`window.__conversation = ${q('[data-boring=pi-chat]')}; window.__composer = ${INPUT}; void 0;`);
     assert.ok(await browser.evaluate(`!!${q('[data-testid=right-column]')} && !${q('[data-testid=conversations]')} && !${q('[data-testid=connection]')}`), 'chat and right column only: no sessions pane, no Live badge');
-    assert.ok(await browser.evaluate(`!!${q('[data-testid=chat-action-history]')} && !!${q('[data-testid=chat-action-library]')}`), 'history and Library icons in the chat header');
+    assert.ok(await browser.evaluate(`!!${q('[data-testid=nav-history]')} && !!${q('[data-testid=nav-library]')} && !${q('[data-testid=chat-action-history]')}`), 'one set of history and Library controls, in the left navigation');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=composer-attach]')} || !!${q('[data-testid=composer-file]')}`), true, 'the composer can attach files');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=composer-voice]')}`), false, 'no microphone without a transcription key');
     await history();
@@ -125,7 +97,6 @@ try {
     assert.equal(await browser.evaluate(viewing), 'Approvals');
     await pause(300);
     await browser.screenshot('1-start-history.png');
-    await popoverShots('docked-history');
     // One search field with a compact icon toggle for Archived (no text button); pressing it toggles the filter.
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=conversations] input[type=search]').length`), 1);
     const archived = `${q('[data-testid=conversations-archived]')}`;
@@ -135,27 +106,83 @@ try {
     await browser.click(archived);
     await browser.until('the filter is off', `${archived}.getAttribute('aria-pressed') === 'false'`, 5000);
     await browser.press('Escape');
-    await browser.until('the list closed, focus on History', `!${q('[data-testid=conversations]')} && document.activeElement?.dataset.testid === 'chat-action-history'`, 5000);
-    await history();
-    await browser.click(q('[data-testid=chat-action-history]'));
-    await browser.until('the same trigger toggles History closed', `!${q('[data-testid=conversations]')}`, 5000);
-    await history();
-    await browser.click(q('[data-testid=right-column] h1'));
-    await browser.until('an outside click closes History', `!${q('[data-testid=conversations]')}`, 5000);
+    await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000);
     await browser.screenshot('1-start.png');
     assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] > header')}`), false, 'the host owns the one header');
     await headerShots('docked-empty');
   });
 
-  await step('1 docked: the agent opens the Approvals queue in the viewer', async () => {
-    // Open another screen first, so the agent visibly moves the page.
-    await browser.click(q('[data-testid=queue-row-INV-2044]'));
-    await browser.until('INV-2044 open', `${viewing} === 'Invoice INV-2044'`, 10000);
+  await step('phone Agent page: a Library file replaces chat, keeps its header in bounds, and Back restores the same conversation', async () => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await browser.until('phone page', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388`, 10000);
+    await browser.evaluate(`window.__phoneComposer = ${INPUT}; window.__phoneTranscript = ${q('[data-testid=transcript]')}; void 0;`);
+    await library();
+    await browser.click(q('[role=treeitem][data-path="Policies"]'));
+    await browser.until('phone policy listed', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 10000);
+    await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
+    await browser.until('phone page file loaded', `!!${q('[data-testid=library-document]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 15000);
+    assert.equal(await browser.evaluate(placement), 'page', 'opening a file does not float the Agent page');
+    const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=agent-panel-header] button')]; return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
+    assert.equal(header.back, true, 'the phone page file has a Chat back button');
+    assert.ok(header.controls.length > 1 && header.controls.every(control => control.inside), JSON.stringify(header));
+    assert.equal(header.chatVisible, false, 'the file replaces the split chat on a phone');
+    assert.equal(header.overflow, false);
+    assert.equal(await browser.evaluate(`window.__phoneComposer === ${INPUT} && window.__phoneTranscript === ${q('[data-testid=transcript]')}`), true, 'the hidden conversation stays mounted');
+    await shot('review-phone-page-file.png');
+    await browser.click(q('[data-testid=file-back]'));
+    await browser.until('Back restores and focuses the same page composer', `${placement} === 'page' && !${q('[data-testid=library-document]')} && ${INPUT}.checkVisibility() && document.activeElement === window.__phoneComposer`, 10000);
+    assert.equal(await browser.evaluate(`window.__phoneComposer === ${INPUT} && window.__phoneTranscript === ${q('[data-testid=transcript]')}`), true);
+    await shot('review-phone-page-back.png');
+    await browser.send('Emulation.clearDeviceMetricsOverride');
+    await browser.until('desktop page controls', `!!${q('[data-testid=chat-action-float]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 10000);
+  });
+
+  await step('keyboard placement controls focus the surviving composer', async () => {
+    await browser.evaluate(`${q('[data-testid=chat-action-float]')}.focus()`);
+    await browser.press('Enter');
+    await browser.until('keyboard Float transfers focus', `${placement} === 'floating' && document.activeElement === ${INPUT} && ${INPUT}.checkVisibility()`, 5000);
+    await browser.evaluate(`${q('[data-testid=ambient-action-page]')}.focus()`);
+    await browser.press('Enter');
+    await browser.until('keyboard Page transfers focus', `${placement} === 'page' && document.activeElement === ${INPUT} && ${INPUT}.checkVisibility()`, 5000);
+    assert.equal(await browser.evaluate(`window.__composer === ${INPUT}`), true);
+  });
+
+  await step('pill → page → float → page normalizes window state without remounting the page conversation', async () => {
+    await browser.click(q('[data-testid=chat-action-float]'));
+    await browser.click(q('[data-testid=ambient-minimize]'));
+    await browser.click(q('[data-testid=ambient-minimize]'));
+    await browser.until('the floating pill', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'minimized'`, 5000);
+    await browser.click(q('[data-testid=nav-agent]'));
+    await browser.until('the pill opens as the Agent page', `${placement} === 'page' && !!${INPUT} && !!${q('[data-testid=transcript]')}`, 5000);
+    await browser.evaluate(`window.__pageComposer = ${INPUT}; window.__pageTranscript = ${q('[data-testid=transcript]')}; void 0;`);
+    await browser.press('Escape');
+    await browser.click(q('[data-testid=chat-action-float]'));
+    await browser.until('floating is expanded, not the remembered pill or bar', `${placement} === 'floating' && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`, 5000);
+    assert.equal(await browser.evaluate(`window.__pageComposer === ${INPUT} && window.__pageTranscript === ${q('[data-testid=transcript]')}`), true);
+    await browser.click(q('[data-testid=nav-agent]'));
+    await browser.until('back to page with focus', `${placement} === 'page' && document.activeElement === ${INPUT}`, 5000);
+    assert.equal(await browser.evaluate(`window.__pageComposer === ${INPUT} && window.__pageTranscript === ${q('[data-testid=transcript]')}`), true);
+    await browser.evaluate(`window.__conversation = ${q('[data-boring=pi-chat]')}; window.__composer = ${INPUT}; void 0;`);
+  });
+
+  await step('Agent page → show Approvals → floating → dock beside → back to page, without a remount', async () => {
     await say('Hello, what needs my approval this week?');
     await sees('the answer', 'I opened the queue in the viewer.');
     await browser.until('the queue is on show', `${viewing} === 'Approvals' && !!${q('[data-testid=approval-queue]')}`, 10000);
     assert.equal(lastContext().placement, 'docked');
-    assert.deepEqual(screenOf(lastContext()), { name: 'Invoice', params: { id: 'INV-2044' } }, 'the request carried the screen the person was on');
+    assert.deepEqual(screenOf(lastContext()), { name: 'Approvals', params: {} });
+    await browser.until('show gave the main area to the app and floated the agent', `${placement} === 'floating' && !${q('[data-boring=dock-main]')}.hidden`, 10000);
+    await browser.type(INPUT, 'Draft kept across placements');
+    await dockAgent();
+    await browser.click(q('[data-testid=nav-agent]'));
+    await browser.until('Agent is the page again', `${placement} === 'page' && ${q('[data-boring=dock-main]')}.hidden`, 10000);
+    assert.equal(await browser.evaluate(`window.__conversation === ${q('[data-boring=pi-chat]')} && window.__composer === ${INPUT}`), true, 'the exact conversation and composer DOM nodes survived');
+    assert.equal(await browser.evaluate(`${INPUT}.value`), 'Draft kept across placements');
+    await sees('transcript kept on the page', 'I opened the queue in the viewer.');
+    await browser.evaluate(`${INPUT}.select()`);
+    await browser.press('Backspace');
+    await browser.click(q('[data-testid=chat-action-dock]'));
+    await browser.until('beside the app again', `${placement} === 'docked'`, 5000);
     assert.deepEqual(app.navigation.map(item => item.screen), ['approvals']);
     await browser.until('three rows', `document.querySelectorAll('[data-testid^=queue-row-]').length === 3`, 5000);
     await browser.screenshot('2-approvals.png');
@@ -167,6 +194,7 @@ try {
     const fields = await browser.evaluate(`${q('[data-testid=invoice-summary]')}.innerText`);
     for (const text of ['Linden Print Co', 'LP-7710', 'PO-771', '6200 Printing']) assert.ok(fields.includes(text), `${text} in the fields`);
     await browser.until('the PDF viewer', `!!${q('[data-testid=invoice-pdf] [data-pdf]')}`, 15000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=screen-invoice]')}.scrollWidth > ${q('[data-testid=screen-invoice]')}.clientWidth`), false, 'invoice cells wrap inside the app while the agent is docked');
     await pause(500);
     await browser.screenshot('3-invoice.png');
   });
@@ -196,7 +224,6 @@ try {
     await browser.until('the Library lists top-level folders, no nested Library folder', `!!${q('[role=treeitem][data-path="Policies"]')} && !!${q('[role=treeitem][data-path="Contracts"]')} && !${q('[role=treeitem][data-path="Library"]')}`, 15000);
     assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=library-popover] button')].some(item => item.textContent.trim() === 'Refresh')`), false, 'no text Refresh button');
     await browser.screenshot('4a-library.png');
-    await popoverShots('docked-library');
     await browser.click(q('[role=treeitem][data-path="Policies"]'));
     await browser.until('the policy in the tree', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 15000);
     await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
@@ -252,6 +279,8 @@ try {
     // The page shows the saved invoice (the agent opened it: the chat is docked).
     await browser.until('INV-2041 approved on the page', `${viewing} === 'Invoice INV-2041' && ${q('[data-testid=invoice-status]')}?.textContent === 'approved' && ${q('[data-testid=invoice-account]')}?.textContent === '6300 Marketing'`, 15000);
     assert.equal((await app.ap.read('INV-2041')).status, 'approved', 'one write, however often it is repeated');
+    await browser.until('the show tool floated the agent again', `${placement} === 'floating'`, 5000);
+    await dockAgent();
   });
 
   await step('4b a decision on a revision nobody reviewed is refused through the same tool and card', async () => {
@@ -327,7 +356,7 @@ try {
     await browser.screenshot('4f-library-live.png');
     // Escape closes the Library only (the chat is not collapsed) and focus goes back to the icon that opened it.
     await browser.press('Escape');
-    await browser.until('the Library closed, focus on its icon', `!${q('[data-testid=library-popover]')} && document.activeElement?.dataset.testid === 'chat-action-library'`, 5000);
+    await browser.until('the Library closed, focus on its icon', `!${q('[data-testid=library-popover]')} && document.activeElement?.dataset.testid === 'nav-library'`, 5000);
     stop.abort();
   });
 
@@ -345,6 +374,14 @@ try {
     assert.ok(/rgba\(0, 0, 0, 0\)|transparent/.test(card.divider), `no visible divider between the chat and the card: ${card.divider}`);
     await coherentHeader();
     await shot('9-docked-pdf.png');
+    await browser.evaluate(`window.__openDocument = ${q('[data-testid=library-document]')}; window.__fileComposer = ${INPUT}; void 0;`);
+    await browser.click(q('[data-testid=nav-agent]'));
+    await browser.until('page with the same open file', `${placement} === 'page' && window.__openDocument === ${q('[data-testid=library-document]')}`, 5000);
+    await browser.click(q('[data-testid=chat-action-float]'));
+    await browser.until('floating with the same open file', `${placement} === 'floating' && !!${q('[data-testid=floating-viewer]')} && window.__openDocument === ${q('[data-testid=library-document]')}`, 5000);
+    await browser.click(q('[data-testid=nav-agent]'));
+    await browser.click(q('[data-testid=chat-action-dock]'));
+    await browser.until('docked with the exact same composer and file', `${placement} === 'docked' && window.__fileComposer === ${INPUT} && window.__openDocument === ${q('[data-testid=library-document]')}`, 5000);
     await browser.click(q('[data-testid=agent-panel-header] [data-testid=viewer-close]'));
     await browser.until('closed: the width is back', `!${q('[data-testid=library-document]')} && Math.abs(${rect('[data-dock=chat]')}.w - ${before}) < 2`, 5000);
   });
@@ -357,9 +394,10 @@ try {
     await browser.until('the hint', `!!${q('[data-testid=dock-hint-chat]')}`, 3000);
     await mouse('mouseReleased', 150, from.y);
     await browser.until('floating, as AmbientChat', `${placement} === 'floating' && !!${q('[data-boring=ambient-chat]')} && !${q('[data-boring=pi-chat]')}`, 10000);
-    assert.ok(await browser.evaluate(`!!${q('[data-testid=ambient-action-history]')} && !!${q('[data-testid=ambient-action-library]')}`), 'the history and Library icons live in the floating chat header too');
+    assert.ok(await browser.evaluate(`!!${q('[data-testid=nav-history]')} && !!${q('[data-testid=nav-library]')}`), 'the app navigation stays available while the agent floats');
     const main = await browser.evaluate(rect('[data-boring=dock-main]'));
-    assert.ok(main.x < 2 && Math.round(main.w) === 1500, `the right column takes the full width: ${JSON.stringify(main)}`);
+    const host = await browser.evaluate(rect('[data-slot=sidebar-inset]'));
+    assert.ok(main.x >= 230 && Math.abs(main.w - host.w) < 2, `the app takes the content area beside its own navigation: ${JSON.stringify({ main, host })}`);
     await pause(400);
     await browser.screenshot('6-floating.png');
   });
@@ -377,20 +415,15 @@ try {
     assert.deepEqual(screenOf(lastContext()), { name: 'Supplier', params: { id: 'linden-print' } });
     assert.equal(app.navigation.length, moves, 'the agent did not move the page');
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print');
-    await history();
-    await popoverShots('floating-history');
-    await browser.press('Escape');
-    await browser.until('History closed without collapsing chat, focus on its trigger', `!${q('[data-testid=conversations]')} && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded' && document.activeElement?.dataset.testid === 'ambient-action-history'`, 5000);
     // The Library icon works from the floating chat too: the popover sits over the chat and a pick opens the document in the right column.
     await library();
-    await popoverShots('floating-library');
-    const popover = await browser.evaluate(rect('[data-testid=library-popover]')), floatingChat = await browser.evaluate(rect('[data-boring=ambient-chat]'));
-    assert.ok(popover.x >= floatingChat.x - 1 && popover.right <= floatingChat.right + 1, `anchored to the chat: ${JSON.stringify([popover, floatingChat])}`);
+    const popover = await browser.evaluate(rect('[data-testid=library-popover]')), sidebar = await browser.evaluate(rect('[data-sidebar=sidebar]'));
+    assert.ok(popover.x >= sidebar.x && popover.right <= sidebar.right, 'the same Library piece is in the app-owned left pane');
     // A pick opens the file IN PLACE of the floating chat (same window, a back button); back returns to the conversation.
     await browser.click(q('[role=treeitem][data-path="Policies"]'));
     await browser.until('the policy in the tree', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 15000);
     await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
-    await browser.until('the viewer replaces the floating chat', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}`, 15000);
+    await browser.until('the viewer replaces the floating chat without unmounting it', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}.checkVisibility()`, 15000);
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print', 'the app did not move');
     assert.ok(await browser.evaluate(`!${q('[data-testid=right-column] [data-testid=library-document]')}`), 'not in the app column');
     await pause(400);
@@ -404,9 +437,8 @@ try {
     await browser.until('the collapsed bar', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
     await library();
     await browser.until('a usable tree', `!!${q('[data-testid=library-popover] [role=treeitem]')}`, 10000);
-    await popoverShots('collapsed-library');
     const bar = await browser.evaluate(rect('[data-boring=ambient-chat]')), above = await browser.evaluate(rect('[data-testid=library-popover]'));
-    assert.ok(above.y >= 0 && above.y + above.h <= bar.y + 2 && above.h > 150, `the Library opens above the collapsed bar: ${JSON.stringify({ bar, above })}`);
+    assert.ok(above.y >= 0 && above.y + above.h <= 950 && above.h > 150, `the Library stays usable in the left navigation while the ambient bar is collapsed: ${JSON.stringify({ bar, above })}`);
     await browser.press('Escape');
     await browser.until('closed, and the bar was not collapsed further', `!${q('[data-testid=library-popover]')} && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
     await browser.click(q('[data-testid=ambient-title]'));
@@ -428,7 +460,7 @@ try {
       await browser.click(q('[role=treeitem][data-path="Contracts"]'));
       await browser.until('the contract in the tree', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
       await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
-      await browser.until('the PDF replaces the floating chat', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}`, 15000);
+      await browser.until('the PDF replaces the floating chat without unmounting it', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}.checkVisibility()`, 15000);
       await pause(500);
       await browser.screenshot(`8-floating-pdf-${width}x${height}.png`);
       const state = await browser.evaluate(inside);
@@ -493,9 +525,46 @@ try {
   });
 
   assert.deepEqual(app.contexts.map(item => item.value.placement), ['docked', 'docked', 'docked', 'docked', 'docked', 'docked', 'docked', 'floating', 'docked']);
+  await step('finance screens: search, status tabs, account filters, and all screens in both themes and sizes', async () => {
+    await browser.click(q('[data-testid=nav-invoices]'));
+    await browser.until('twenty invoices', `document.querySelectorAll('[data-testid=transactions-table] tbody tr').length === 20`, 10000);
+    const search = q('[aria-label="Search invoices"]');
+    await browser.type(search, 'INV-2043');
+    await browser.until('search filters the real rows', `document.querySelectorAll('[data-testid=transactions-table] tbody tr').length === 1 && ${q('[data-testid=transactions-table] tbody')}.innerText.includes('INV-2043')`, 5000);
+    await browser.evaluate(`${search}.select()`); await browser.press('Backspace');
+    await browser.click(`[...document.querySelectorAll('[role=tab]')].find(e => e.textContent === 'Pending')`);
+    assert.ok(await browser.evaluate(`[...document.querySelectorAll('[data-testid=transactions-table] tbody tr')].every(row => row.innerText.includes('Pending'))`));
+    await browser.click(`[...document.querySelectorAll('[aria-label="Expense account filters"] button')].find(e => e.textContent === 'Printing')`);
+    assert.ok(await browser.evaluate(`document.querySelectorAll('[data-testid=transactions-table] tbody tr').length > 0 && [...document.querySelectorAll('[data-testid=transactions-table] tbody tr')].every(row => row.innerText.includes('Printing'))`));
+    for (const [width, height] of [[1440, 900], [1280, 720]]) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+      for (const screen of ['dashboard', 'approvals', 'invoices', 'suppliers', 'spend', 'payments', 'invoice', 'supplier', 'agent']) {
+        if (screen === 'invoice' || screen === 'supplier') {
+          await browser.click(q('[data-testid=nav-approvals]'));
+          await browser.click(q('[data-testid=queue-row-INV-2043]'));
+          if (screen === 'supplier') await browser.click(q('[data-testid=open-supplier]'));
+        } else await browser.click(q(`[data-testid=nav-${screen}]`));
+        await browser.until('the requested screen', screen === 'agent' ? `${placement} === 'page'` : `!!${q(`[data-testid=screen-${screen}]`)} && !${q('[data-boring=dock-main]')}.hidden`, 10000);
+        if (screen !== 'agent' && await browser.evaluate(`${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`)) await browser.click(q('[data-testid=ambient-minimize]'));
+        if (screen === 'suppliers') assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=supplier-directory] > button').length`), 7);
+        if (screen === 'spend') assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=budget-rings] svg').length`), 4);
+        for (const scheme of ['light', 'dark']) {
+          await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+          await pause(screen === 'invoice' ? 1000 : 300);
+          assert.equal(await browser.evaluate('document.documentElement.scrollWidth > innerWidth'), false, `${screen} does not overflow at ${width}x${height}`);
+          await shot(`${screen}-${scheme}-${width}x${height}.png`);
+        }
+      }
+    }
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await browser.until('page remains page on a phone', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388`, 10000);
+    assert.equal(await browser.evaluate(`${q('[data-boring=dock-main]')}.hidden`), true);
+    await shot('agent-page-phone.png');
+  });
   assert.deepEqual(browser.problems, [], 'no page errors');
   console.log(`workspace-demo journey passed. Screenshots in ${evidence}`);
 } finally {
+  await browser?.screenshot('last-state.png');
   await browser?.close();
   await app.close();
 }

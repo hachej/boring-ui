@@ -1,57 +1,49 @@
 # Workspace demo: an accounts-payable week
 
-A fictional company, Harbor & Pine Foods, pays its suppliers. One person approves invoices with an agent beside the page. Everything here is invented: names, amounts, invoices and PDFs.
+Harbor & Pine Foods is a fictional company with 20 invoices, seven suppliers and four expense-account budgets. Names, amounts, documents and people are invented. No payment leaves the demo.
 
-```
- agent area (one surface)                                          |  the app: its own chrome and screens
- chat (header icons: conversations, Library)  | file viewer (an inset|  Approvals, Invoice, Supplier
- docked: the viewer opens beside the chat,    | card, only while a |  (no documents here)
- the agent area widens                        | file is open)      |
- floating: the viewer (the same inset card) replaces the chat in the same window, with a Chat back button, clamped to the viewport
-```
+## The flow
 
-## The story
+1. Click **Agent**. One `ArtifactWorkspace` fills the content area with its conversation and file column. The app stays mounted but hidden.
+2. Ask "what needs my approval this week?" The agent's `show` tool opens Approvals in the app and floats the same conversation as `AmbientChat`.
+3. Dock the agent beside the app, or click **Agent** to return to its page. The controller, transcript, composer draft and open file survive without a conversation remount.
+4. Open an invoice to inspect its PDF and extracted fields. The agent can identify the duplicate, read the AP policy and propose a re-code. An approval card asks the person before the backend conditionally saves the decision and returns a receipt.
+5. While floating on a supplier page, ask "why is this flagged?" The agent answers without moving the page.
 
-1. The chat is docked. You ask "what needs my approval this week?" and the agent opens the Approvals queue in the viewer.
-2. You open an invoice: the PDF and its extracted fields.
-3. You click another invoice. The agent sees where you are (the screen context) and notices it is a duplicate of the first.
-4. The agent proposes "approve it, coded to Marketing". An approval card asks you; once you approve, the app's backend saves it and returns a receipt.
-5. You drag the divider. The agent area floats (its header keeps the history and Library icons) and the app takes the full width. A file opened now replaces the chat in the floating window, with a Chat button to go back.
-6. On the supplier page you ask "why is this flagged?". The agent answers in a line and does not move the page, because the chat is floating and you lead.
-7. You dock the agent area back. The conversation is intact.
+The app owns its left nav: Dashboard, Approvals with a count, Invoices, Suppliers, Spend, Payments, Agent, History and Library. History uses the same `ConversationList` as the chat-header popover and `AgentWorkspace` sessions pane. Library uses the shared `FileTree`. This demo puts them only in the app nav to avoid duplicate header controls. Both pieces remain available for chat-header compositions. On a phone the ambient header has an Open navigation action.
 
-Along the way: an open Library document with unsaved edits asks before you leave it, agent commands that move the viewer are addressed to one conversation and tab (a late or foreign one is dropped), and the history icon in the chat header opens the searchable conversations list (a search field with an Archived icon toggle) where each keeps its transcript. The Library icon opens the workspace's files (Policies, Contracts) and picking one opens it in the agent's own viewer (beside the chat when docked, the agent area widening; in place of the chat when floating), never in the app, so the agent can answer "does this invoice respect the policy?" from the document and the invoice.
+A Library file opens in the agent's own file column, never in an app screen. While floating it replaces the visible chat in a viewport-clamped window, with a Chat back button. The conversation remains mounted underneath. Leaving an unsaved or unconfirmed document asks first. Agent commands are addressed to one conversation and tab; late or foreign commands do not navigate.
 
-The composer can attach files (they are uploaded into the workspace under `uploads/` and the message shows a file card; a long paste becomes a file too). Ask "create a new file tt.md and open it": the agent writes it with Pi's native `write` over the same workspace provider the Library uses (observed: a history entry with source `agent` and a change event, no receipt), then opens it with `show`, which opens a file in the agent's viewer (and an app screen in the app); the Library list updates from the change feed. Closing the viewer, opening another file or an agent command that replaces the open file asks first when it holds unsaved edits.
+Attachments and long pastes become workspace files. Ask "create a new file tt.md and open it" to exercise native `write` and `show`. Agent writes add history with source `agent` and a change event, not a publication receipt. The open Library refreshes from that feed.
 
-**Voice:** the composer shows a microphone only when the server has a transcription provider. Set `OPENAI_API_KEY` (not the scripted model) and `/api/transcribe` forwards the recording to OpenAI; without a key the microphone is hidden.
+Voice is available only when the server has a transcription provider. A private run with `OPENAI_API_KEY` enables `/api/transcribe`; the scripted public demo shows no microphone.
 
-## What it shows
+## Composition
 
-| Piece | Where |
-| --- | --- |
-| Placement (`docked` or `floating`) travels with each request and changes the agent's role, never its permissions | [PAGE-TOOLS.md](../../docs/architecture/PAGE-TOOLS.md), `renderRequestContext` in `@hachej/boring-agent/prompt-context` |
-| Layout: the agent area is the chat `Dock` (it floats into `AmbientChat`) with `ArtifactWorkspace` (`variant="inset"`: the viewer is a rounded card inside the panel, no hard divider) pairing the chat and the file viewer; header icon actions open `ConversationHistory` and a Library `FileTree` (`variant="list"`), `FileViewer` for documents | `registry/dock`, `registry/pi-app`, `page.tsx` |
-| Screens as fixed experiences over registered cells (props schema, `$state` bindings, named actions, metadata) | [EXPERIENCE.md](../../docs/architecture/EXPERIENCE.md), `cells.mjs` |
-| One way to change an invoice: a conditional write that names the revision that was reviewed (the agent reads it with `get_invoice` and the approval card shows it) and returns a receipt; a stale revision is refused and repeating a committed decision returns the same receipt. The buttons and the agent's `decide_invoice` tool (behind the approval card) call the same function | `ap.mjs`, `server.mjs` |
+- `Dock` controls placement only. [The Dock guide](../../registry/README.md#docks-dock) owns its API; [PAGE-TOOLS.md](../../docs/architecture/PAGE-TOOLS.md) owns the request-context role. Page reports `docked` because the agent leads.
+- One `ArtifactWorkspace` contains one `AmbientChat`, embedded for page and docked layouts. The renderer and the current file stay mounted across placement changes.
+- Every app screen is a fixed Experience over registered cells with schemas, state bindings, named actions and metadata in `cells.mjs`. `finance.tsx` renders the KPI cards, searchable and filterable transaction tables, supplier cards, budget rings and savings goals. No table dependency is needed.
+- The invoice buttons and the agent's `decide_invoice` tool call the same conditional backend operation in `ap.mjs`. Stale reviewed revisions are refused; repeating an accepted decision returns its receipt.
+- This is host presentation and fictional app policy, not a new Pi execution mechanism. Pi retains the native Harness and tools.
 
-## Run it
+## Run and verify
 
 ```sh
 npm ci && npm run build
-npm run workspace-demo:journey      # the whole story in headless Chromium with a scripted model, no key; screenshots in .cache/evidence/workspace-demo/
-npm run workspace-demo              # serves the app; with a model key (OPENAI_API_KEY) the agent is a real model
+npm run workspace-demo:journey
+npm run workspace-demo
 ```
 
-The journey needs a Chromium binary (`CHROMIUM=/path/to/chrome-headless-shell`, as the other journeys). The scripted model (`script.mjs`) reads the request it answers, so the journey fails if the placement or the screen stops reaching the model.
+The journey uses Chromium and a scripted model without a key. Set `CHROMIUM` to its binary. Screenshots go to `.cache/evidence/agent-page/`, including every app screen and the Agent page in light and dark at 1440×900 and 1280×720. The journey checks placement, DOM identity, draft and transcript retention, file viewing, history, approvals, uploads, live Library updates and phone layout. Search, status tabs and account chips filter the rendered invoices.
 
-## Deploy (a plan, nothing is deployed)
+Inside the shared implementation VM, run all npm, Node and TypeScript commands through the lane's `capped` wrapper with `TMPDIR=/var/tmp`.
 
-- **Host recipe:** a single container on a small VM or a container service with one volume. The app is one Node process with SQLite and a data folder, and the chat is a long-lived stream, which suits a single instance. The AWS recipe (one EFS folder per user) and the Cloudflare recipe (a Durable Object) fit multi-user products; this demo has one fictional user.
-- **Needs:** Node 22, `npm ci && npm run build`, a writable `APP_DATA` folder on the volume, `PORT`, and one HTTPS front (the host's own or a proxy; streaming responses must not be buffered).
-- **Public safety:** the demo issues its bearer token to whoever loads the page, so a public copy runs the scripted model (`STUDIO_MODEL=scripted`, no provider key on the server) or sits behind the host's sign-in with a spend cap. The data is fictional; reset the volume on a schedule.
-- **Env:** `STUDIO_MODEL=scripted` for the public copy; `OPENAI_API_KEY` only for a private copy with a real model.
+## Template credits
 
-## Roadmap
+The sidebar, site header, KPI cards, transactions table, budget rings and goal-card layouts adapt [Abderrahim Ghazali's shadcn-fintech](https://github.com/abderrahimghazali/shadcn-fintech/tree/e338240d10c908ab49403adbcd0bb4cc980ebfce), pinned at `e338240d10c908ab49403adbcd0bb4cc980ebfce`, MIT, copyright 2026 Abderrahim Ghazali. The full notice is in [third-party notices](../../packages/ui/THIRD_PARTY_NOTICES.md#workspace-demo-shadcn-fintech). The port maps its Next, Base UI and Tailwind presentation to the repo's existing shadcn sidebar, input and button components. It copies no logos or avatar assets. Supplier marks are fictional initials.
 
-- "Today in AP": a fixed shell with a generated region whose candidates are these cells, composed from metadata only (`candidates()` in `cells.mjs` already lists ids, kinds and flags).
+## Deployment plan
+
+Nothing is deployed. A single Node 22 process with SQLite and a writable `APP_DATA` volume fits this fictional single-user demo. Set `PORT` behind an HTTPS front that does not buffer streams. The server gives its bearer token to anyone loading the page, so a public copy must use `STUDIO_MODEL=scripted` without a provider key, or sit behind host authentication and a spend cap. Reset fictional data on a schedule.
+
+A future "Today in AP" generated region can use the registered cell metadata from `candidates()` without exposing invoice contents to a layout evaluator. It is not implemented here.

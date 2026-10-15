@@ -101,6 +101,8 @@ export interface AmbientArtifactPanelApi extends WorkspacePanelApi {
 
 export interface AmbientChatProps extends ChatFeatureProps {
   readonly controller: NativeChatController;
+  /** Embed the expanded conversation in a host workspace. Switching this flag changes layout without remounting the transcript or composer. The host supplies the header. */
+  readonly embedded?: boolean;
   /**
    * Every word the window shows, over `defaultAmbientLabels` (the chat's labels, the toasts' and its own): `title` while the conversation has
    * none of its own, `placeholder` while idle, `working(seconds)` while the agent works.
@@ -232,9 +234,10 @@ export function AmbientChat(props: AmbientChatProps) {
   if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });
   // The window state and the toasts belong to the bar, not to one conversation: they survive switching conversations.
   const [local, setLocal] = useState<AmbientState>(props.defaultState ?? 'bar');
+  if (props.embedded && local !== 'expanded') setLocal('expanded');
   const internalStore = useMemo(createNotificationStore, []);
   const text = useMergedText<AmbientLabels, AmbientIcons>(props.labels, props.icons, AMBIENT_TEXT);
-  return <ChatTextProvider value={text}><AmbientSession key={mount.sequence} {...props} labels={text.labels} icons={text.icons} activeController={active} windowState={props.state ?? local} store={props.notifications || internalStore}
+  return <ChatTextProvider value={text}><AmbientSession key={mount.sequence} {...props} labels={text.labels} icons={text.icons} activeController={active} windowState={props.embedded ? 'expanded' : props.state ?? local} store={props.notifications || internalStore}
     onWindowState={next => { if (props.state === undefined) setLocal(next); props.onStateChange?.(next); }} /></ChatTextProvider>;
 }
 
@@ -242,12 +245,12 @@ const iconButton = 'inline-flex size-8 shrink-0 cursor-pointer items-center just
 
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
-function AmbientSession({ controller, labels, icons, avatar, headerActions, messageActions, variant = 'contrast', mode = 'expert', actions,
+function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, messageActions, variant = 'contrast', mode = 'expert', actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
   renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
-  useChatPlacement(controller, 'floating');
+  useChatPlacement(controller, embedded ? 'docked' : 'floating');
   const stateRef = useRef(windowState); stateRef.current = windowState;
   // The artifact open inside the window, and whether it follows the newest version. It belongs to the expanded window: leaving that state closes it.
   const [opened, setOpened] = useState<{ readonly descriptor: ArtifactDescriptor; readonly follow: boolean } | null>(null);
@@ -381,7 +384,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   const refocusTitle = useRef(false);
   useEffect(() => { if (!expanded && refocusTitle.current) { refocusTitle.current = false; titleButton.current?.focus(); } }, [expanded]);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Escape' || event.defaultPrevented || !expanded || picking) return;
+    if (embedded || event.key !== 'Escape' || event.defaultPrevented || !expanded || picking) return;
     event.preventDefault();
     // Escape steps back: full screen, then the artifact, then the window.
     if (fullscreen) return setFullscreen(false);
@@ -399,12 +402,12 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   const status = waitingForAnswer ? 'input' : working ? 'working' : outcome;
   const label = waitingForAnswer ? labels.waitingForAnswer : labels.working(seconds);
   const panelOpen = expanded && shownArtifact !== undefined && artifactPanel !== undefined;
-  const surface = cn('relative flex flex-col border border-border bg-background text-foreground shadow-lg', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
+  const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent text-foreground' : cn('relative flex flex-col border border-border bg-background text-foreground shadow-lg', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
     !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
-  const rootClass = cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
+  const rootClass = embedded ? cn('pi-chat relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className) : cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
     : cn('transition-[width] motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
-  const rootStyle = phone ? undefined : { right: placed.right, bottom: placed.bottom };
+  const rootStyle = phone || embedded ? undefined : { right: placed.right, bottom: placed.bottom };
 
   if (minimized) return <div ref={root} data-boring="ambient-chat" data-state="minimized" data-variant={variant} className={cn(rootClass, phone && 'flex justify-end')} style={rootStyle} onKeyDown={onKeyDown}>
     {notifications !== false && <AgentNotifications store={store} variant={variant} placement="inline" systemNotifications={systemNotifications} onActivate={onActivate} labels={labels}
@@ -423,18 +426,8 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   </div>;
 
   const visibleRows = transcript.visible(rows);
-  return <div ref={root} data-boring="ambient-chat" data-state={windowState} data-variant={variant} data-phone={phone ? 'true' : undefined} role="region" aria-label={labels.region(shownTitle)}
-    className={rootClass} style={rootStyle} onKeyDown={onKeyDown}>
-    {notifications !== false && !(phone && expanded) && <AgentNotifications store={store} variant={variant} placement="inline" systemNotifications={systemNotifications} onActivate={onActivate} labels={labels}
-      {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-full" />}
-    {picking && conversations && <ConversationHistory conversations={conversations} placement={expanded ? 'below' : 'above'} onClose={() => setPicking(false)} />}
-    <div data-testid="ambient-surface" className={surface}>
-    <ArtifactWorkspace open={panelOpen} onClose={() => { setOpened(null); setFullscreen(false); }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
-      defaultWidth={600} minPanel={320} minChat={300} sheetBelow={720}
-      panel={api => shownArtifact && artifactPanel ? artifactPanel(shownArtifact, { ...api, versions: known, follow: opened?.follow ?? true,
-        select: version => setOpened(current => current ? (version === 'latest' ? { descriptor: known[0] ?? current.descriptor, follow: true } : { descriptor: version, follow: false }) : current) }) : null}
-      chat={<section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header data-testid="ambient-header" className={cn('flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14', !expanded && 'border-b border-border')}>
+  const conversation = <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14', !expanded && 'border-b border-border')}>
         <button type="button" data-testid="ambient-minimize" aria-label={labels.minimize} title={labels.minimize} onClick={() => { setPicking(false); setWindowState(expanded ? 'bar' : 'minimized'); }} className={iconButton}><icons.minimize className="size-4" aria-hidden="true" /></button>
         <span data-testid="ambient-status" data-status={status ?? 'idle'} role="img" aria-label={status === 'working' ? labels.statusWorking : status === 'input' ? labels.needsInput : status === 'done' ? labels.finished : status === 'error' ? labels.failedRun : undefined}
           aria-hidden={status ? undefined : 'true'} className={cn('flex shrink-0 items-center justify-center', status ? 'mx-1.5 w-5' : 'w-1.5')}>
@@ -482,7 +475,18 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
         <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
         <Composer {...composer} layout="inline" placeholder={working || waitingForAnswer ? label : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
       </div>
-      </section>} />
+      </section>;
+  return <div ref={root} data-boring={embedded ? 'pi-chat' : 'ambient-chat'} data-state={windowState} data-variant={variant} data-phone={phone ? 'true' : undefined} role="region" aria-label={labels.region(shownTitle)}
+    className={rootClass} style={rootStyle} onKeyDown={onKeyDown}>
+    {!embedded && notifications !== false && !(phone && expanded) && <AgentNotifications store={store} variant={variant} placement="inline" systemNotifications={systemNotifications} onActivate={onActivate} labels={labels}
+      {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-full" />}
+    {picking && conversations && <ConversationHistory conversations={conversations} placement={expanded ? 'below' : 'above'} onClose={() => setPicking(false)} />}
+    <div data-testid="ambient-surface" className={surface}>
+      {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={() => { setOpened(null); setFullscreen(false); }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
+        defaultWidth={600} minPanel={320} minChat={300} sheetBelow={720}
+        panel={api => shownArtifact ? artifactPanel(shownArtifact, { ...api, versions: known, follow: opened?.follow ?? true,
+          select: version => setOpened(current => current ? (version === 'latest' ? { descriptor: known[0] ?? current.descriptor, follow: true } : { descriptor: version, follow: false }) : current) }) : null}
+        chat={conversation} /> : conversation}
     </div>
   </div>;
 }
