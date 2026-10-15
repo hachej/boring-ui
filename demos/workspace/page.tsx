@@ -1,10 +1,10 @@
 // The browser side of the accounts-payable demo (served by ./server.mjs).
-//   [ chat ] [ right column ]
-// The left `Dock` holds the chat. Its header carries two icon buttons: conversations (the searchable list of `pi-chat`) and the Library (the
-// workspace's files), each a popover anchored to the chat, docked or floating. Dragging the divider narrow floats the chat as `AmbientChat`
-// and the right column takes the whole width; docking it back restores both. The right column shows one thing at a time:
-// a screen of the app (Approvals, Invoice, Supplier: each a fixed experience over registered cells, ./cells.mjs) or a workspace file.
-// Every screen publishes `useAgentContext`; the chat reports its placement (docked or floating) by itself.
+//   [ agent area: chat (+ file viewer) ] [ the app: its own screens ]
+// The agent is self-contained in the left `Dock`: the chat, and the files it works with (Library documents, files the agent wrote, uploads).
+// A file opens in the agent's own viewer, beside the chat (`ArtifactWorkspace`, the dock widens while it is open) or, when the chat is
+// floating (`AmbientChat`), in place of the chat in the same floating window with a back button. The chat header's two icons open the
+// conversations list and the Library as popovers anchored to the chat. The app column holds only the app's screens (Approvals, Invoice,
+// Supplier: each a fixed experience over registered cells, ./cells.mjs). Dragging the divider narrow floats the whole agent area.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FolderOpenIcon, HistoryIcon, XIcon } from 'lucide-react';
@@ -13,6 +13,7 @@ import { Experience } from '@hachej/boring-ui-kit/experience';
 import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { Dock, DockLayout, DockMain } from '../../registry/dock/dock.tsx';
+import { ArtifactWorkspace } from '../../registry/pi-workspace/workspace.tsx';
 import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
@@ -204,29 +205,38 @@ function Screen({ view }) {
   return <div data-testid={`screen-${view.screen}`} className="mx-auto w-full max-w-4xl"><Experience key={view.screen} descriptor={SCREENS[view.screen]} cells={renderedCells} canView={() => true} /></div>;
 }
 
-function Document({ view, provider, close, onUnsaved }) {
-  useAgentContext({ name: 'Library document', params: { path: view.path } });
+/** The agent's file viewer: one flat frame (a single header with the name, path, mode toggle and close) over the editor. `onBack` returns to the chat where the file replaces it. */
+function Document({ path, provider, close, onBack, onUnsaved }) {
+  useAgentContext({ name: 'Library document', params: { path } });
   const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history }), [provider]);
-  return <div data-testid="library-document" data-path={view.path} className="flex min-h-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
-    <FileViewer key={view.path} path={view.path} locator={provider.locate(view.path)} options={options} onClose={close} onUnsavedChange={onUnsaved} />
+  return <div data-testid="library-document" data-path={path} className="flex min-h-0 min-w-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
+    <FileViewer key={path} path={path} locator={provider.locate(path)} options={options} onClose={close} {...(onBack ? { onBack, backLabel: 'Chat' } : {})} onUnsavedChange={onUnsaved} />
   </div>;
 }
 
-function Column({ view, go, provider, dirty }) {
-  return <div data-testid="right-column" className="flex min-h-0 flex-1 flex-col bg-muted/30">
+/** While the chat floats, a file replaces the chat in the same floating window (same corner), with a back button. */
+function FloatingViewer({ children }) {
+  const place = (() => { try { const value = JSON.parse(sessionStorage.getItem('boring.ambient.position') ?? 'null'); return typeof value?.right === 'number' && typeof value?.bottom === 'number' ? { right: value.right, bottom: value.bottom } : { right: 16, bottom: 16 }; } catch { return { right: 16, bottom: 16 }; } })();
+  return <div data-testid="floating-viewer" role="region" aria-label="File viewer" style={place}
+    className="pi-chat fixed z-50 flex h-[min(46rem,calc(100dvh-1rem))] w-[min(44rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-3xl border border-border bg-background text-foreground shadow-lg max-sm:inset-0 max-sm:h-dvh max-sm:w-auto max-sm:rounded-none max-sm:border-0">
+    {children}
+  </div>;
+}
+
+/** The app column: its own chrome (title, navigation) and its own screens. No documents here. */
+function Column({ view, go }) {
+  return <div data-testid="right-column" className="flex min-h-0 flex-1 flex-col bg-background">
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-background px-4">
       <h1 className="mr-4 text-sm font-semibold">Harbor &amp; Pine · Accounts payable</h1>
       <Button size="sm" variant={view.screen === 'approvals' ? 'secondary' : 'ghost'} data-testid="nav-approvals" onClick={() => go({ screen: 'approvals' })}>Approvals</Button>
-      <span data-testid="viewing" className="ml-auto truncate text-xs text-muted-foreground">{view.screen === 'file' ? view.path : `${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span>
+      <span data-testid="viewing" className="ml-auto truncate text-xs text-muted-foreground">{`${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span>
     </header>
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 sm:p-6">
-      {view.screen === 'file' ? (provider ? <Document view={view} provider={provider} close={() => go({ screen: 'approvals' })} onUnsaved={unsaved => { dirty.current = unsaved; }} /> : null) : <Screen view={view} />}
-    </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-muted/20 p-4 sm:p-6"><Screen view={view} /></div>
   </div>;
 }
 
 // ---- The left dock: the chat, with the conversations and the Library as header icons that open popovers anchored to it.
-const WIDE = 640;
+const PANEL = 560; // the file viewer's width beside the chat
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
 /** A popover anchored over the chat (docked `PiChat` or floating `AmbientChat`): a fixed frame at the chat's rectangle holding the panel and its backdrop. */
@@ -237,7 +247,7 @@ function OverChat({ children }) {
   return <div className="pointer-events-none fixed z-50 [&>*]:pointer-events-auto" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}>{children}</div>;
 }
 
-function LibraryPanel({ provider, view, go, close, feed }) {
+function LibraryPanel({ provider, file, openFile, close, feed }) {
   useEffect(() => { const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); }; document.addEventListener('keydown', escape); return () => document.removeEventListener('keydown', escape); }, [close]);
   return <>
     <button type="button" tabIndex={-1} aria-hidden="true" data-testid="library-backdrop" onClick={close} className="absolute inset-0 cursor-default" />
@@ -247,16 +257,16 @@ function LibraryPanel({ provider, view, go, close, feed }) {
         <Button size="icon-sm" variant="ghost" aria-label="Close Library" title="Close" onClick={close}><XIcon className="size-4" aria-hidden="true" /></Button>
       </header>
       <div className="min-h-0 flex-1 overflow-auto">
-        {provider ? <FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={view.screen === 'file' ? view.path : undefined} onOpen={path => { if (go({ screen: 'file', path })) close(); }} />
+        {provider ? <FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) close(); }} />
           : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}
       </div>
     </section>
   </>;
 }
 
-function Chat({ api, provider, go, view, active, setActive }) {
+function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, setActive }) {
   const [panel, setPanel] = useState<'history' | 'library' | undefined>();
-  const wide = useRef(760);
+  const base = useRef(760), widened = useRef(false);
   const conversations = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: active, onSelect: setActive });
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
   // The files the person attaches (and a long paste) are saved in the workspace, under uploads/, through the same provider as the Library.
@@ -269,45 +279,53 @@ function Chat({ api, provider, go, view, active, setActive }) {
     void (async () => { try { for await (const event of provider.changes({ signal: stop.signal })) setFeed(event.seq); } catch { /* the list keeps what it has */ } })();
     return () => stop.abort();
   }, [provider]);
+  // The agent area widens by the viewer's width while a file is open beside the chat, and goes back when it closes.
+  if (!api.floating && !file && !widened.current) base.current = api.width;
+  const side = !api.floating && Boolean(file);
+  useEffect(() => {
+    if (side && !widened.current) { widened.current = true; api.setWidth(Math.min(base.current + PANEL, Math.max(base.current, Math.round(window.innerWidth * 0.62)))); }
+    else if (!side && widened.current) { widened.current = false; if (!api.floating) api.setWidth(base.current); }
+  }, [side]); // eslint-disable-line react-hooks/exhaustive-deps
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
-  if (!api.floating && api.width >= WIDE) wide.current = api.width;
   const toggle = (name: 'history' | 'library') => setPanel(current => current === name ? undefined : name);
   const headerActions = [
     { id: 'history', label: 'Conversations', icon: HistoryIcon, pressed: panel === 'history', onSelect: () => toggle('history') },
     { id: 'library', label: 'Library', icon: FolderOpenIcon, pressed: panel === 'library', onSelect: () => toggle('library') },
   ];
   const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
-  const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: path => go({ screen: 'file', path }) };
+  const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile };
+  const viewer = file && provider ? <Document path={file} provider={provider} close={closeFile} onBack={api.floating ? closeFile : undefined} onUnsaved={setUnsaved} /> : null;
+  const pi = <PiChat key={active} {...common} conversations={conversations} historyList={false} showHistory={false} showConnectionStatus={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1 bg-transparent" />;
   return <div className="flex min-h-0 flex-1">
     {api.floating
-      ? <AmbientChat {...common} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(wide.current); }} />
-      : <PiChat key={active} {...common} conversations={conversations} historyList={false} showHistory={false} showConnectionStatus={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1" />}
+      ? (viewer ? <FloatingViewer>{viewer}</FloatingViewer> : <AmbientChat {...common} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(base.current); }} />)
+      : <ArtifactWorkspace chat={pi} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={360} minChat={340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" className="bg-transparent [&_[data-testid=workspace-panel]]:bg-transparent" />}
     {panel === 'history' && conversations && <OverChat><ConversationHistory conversations={conversations} onClose={() => setPanel(undefined)} /></OverChat>}
-    {panel === 'library' && <OverChat><LibraryPanel provider={provider} view={view} go={go} close={() => setPanel(undefined)} feed={feed} /></OverChat>}
+    {panel === 'library' && <OverChat><LibraryPanel provider={provider} file={file} openFile={openFile} close={() => setPanel(undefined)} feed={feed} /></OverChat>}
   </div>;
 }
 
 function App() {
   const [view, setView] = useState({ screen: 'approvals' });
+  const [file, setFile] = useState<string | undefined>();
   const [provider, setProvider] = useState();
   useEffect(() => { void connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(setProvider); }, []);
   const [active, setActive] = useState(firstConversation);
-  // An open Library document may hold unsaved edits: leaving it (another file, a screen, an agent command) asks first.
+  // An open document may hold unsaved edits: leaving it (another file, closing it, an agent command) asks first. App screens never touch it.
   const dirty = useRef(false);
-  const go = useCallback(next => {
-    if (dirty.current && !globalThis.confirm('This document has unsaved changes. Discard them and leave?')) return false;
-    dirty.current = false;
-    setView(next);
-    return true;
-  }, []);
+  const leave = () => !dirty.current || globalThis.confirm('This document has unsaved changes. Discard them and leave?');
+  const openFile = useCallback((path: string) => { if (path === file) return true; if (!leave()) return false; dirty.current = false; setFile(path); return true; }, [file]);
+  const closeFile = useCallback(() => { if (!leave()) return false; dirty.current = false; setFile(undefined); return true; }, []);
+  // Commands (the agent's `show`) reach the app's screens, or the agent's own viewer for a file.
+  const go = useCallback(next => { if (next.screen === 'file') return openFile(next.path); setView(next); return true; }, [openFile]);
   return <AgentContextProvider>
     <ApProvider view={view} go={go} conversation={active}>
-      <OpenFile.Provider value={path => go({ screen: 'file', path })}>
+      <OpenFile.Provider value={openFile}>
         <DockLayout storageKey="workspace-demo" className="h-full">
-          <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultWidth={760} minWidth={300} labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
-            {api => <Chat api={api} provider={provider} go={go} view={view} active={active} setActive={setActive} />}
+          <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultWidth={760} minWidth={300} className="bg-muted/70" labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
+            {api => <Chat api={api} provider={provider} file={file} openFile={openFile} closeFile={closeFile} setUnsaved={unsaved => { dirty.current = unsaved; }} active={active} setActive={setActive} />}
           </Dock>
-          <DockMain><Column view={view} go={go} provider={provider} dirty={dirty} /></DockMain>
+          <DockMain><Column view={view} go={go} /></DockMain>
         </DockLayout>
       </OpenFile.Provider>
     </ApProvider>

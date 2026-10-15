@@ -3,7 +3,7 @@
 //   2  the person opens an invoice (PDF and extracted fields)
 //   a  the history icon in the chat header lists earlier conversations (a search field with an Archived icon toggle); switching keeps each transcript
 //   3  the person clicks another invoice; the agent sees it (screen context) and spots a duplicate
-//   b  the Library icon in the chat header opens the file list; the AP policy opened from it in the right column; "does this invoice respect the policy?" is answered from the document and the invoice
+//   b  the Library icon in the chat header opens the file list; the AP policy opened from it lands in the agent's own viewer beside the chat (the agent area widens; the app column shows no document); the viewer closes with a guard for unsaved edits; "does this invoice respect the policy?" is answered from the document and the invoice
 //   c  attaching a file uploads it into the workspace (a file card in the message); the composer has no microphone without a transcription key
 //   d  "create a new file tt.md and open it": the agent writes it (history entry 'agent', no receipt) and opens it in the viewer; the Library lists it live
 //   4  the agent proposes "approve, coded to another account"; the person approves the card; the backend returns a receipt
@@ -132,7 +132,12 @@ try {
     await browser.click(q('[role=treeitem][data-path="Policies"]'));
     await browser.until('the policy in the tree', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 15000);
     await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
-    await browser.until('the policy in the right column', `${q('[data-testid=library-document]')}?.dataset.path === 'Policies/AP policy.md'`, 15000);
+    await browser.until('the policy in the agent viewer', `${q('[data-testid=library-document]')}?.dataset.path === 'Policies/AP policy.md'`, 15000);
+    // The file lives in the agent area, beside the chat (the dock widened); the app column shows no document and stays on its screen.
+    const placed = await browser.evaluate(`({ inDock: !!${q('[data-dock=chat] [data-testid=library-document]')}, inApp: !!${q('[data-testid=right-column] [data-testid=library-document]')}, chat: ${rect('[data-boring=pi-chat]')}, doc: ${rect('[data-testid=library-document]')}, dock: ${rect('[data-dock=chat]')} })`);
+    assert.ok(placed.inDock && !placed.inApp, `the document is in the agent area, not the app: ${JSON.stringify(placed)}`);
+    assert.ok(placed.doc.x >= placed.chat.right - 2 && placed.dock.w > 760, `beside the chat, in a widened agent area: ${JSON.stringify(placed)}`);
+    assert.equal(await browser.evaluate(viewing), 'Invoice INV-2043', 'the app did not move');
     await browser.until('its text', `${q('[data-testid=library-document]')}.innerText.includes('Approval limits')`, 15000);
     await browser.until('the Library closed after picking', `!${q('[data-testid=library-popover]')}`, 5000);
     await say('Does this invoice respect the policy?');
@@ -146,14 +151,16 @@ try {
     await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), ' Draft edit.');
     await browser.until('the edit is unsaved', `/Unsaved/.test(${q('[data-testid=library-document]')}.innerText)`, 10000);
     await browser.evaluate(`window.__asked = 0; window.confirm = () => { window.__asked++; return false; }`);
-    await browser.click(q('[data-testid=nav-approvals]'));
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
     await pause(300);
     assert.equal(await browser.evaluate('window.__asked'), 1, 'leaving asked once');
-    assert.equal(await browser.evaluate(viewing), 'Policies/AP policy.md', 'declining stays on the document');
+    assert.equal(await browser.evaluate(`${q('[data-testid=library-document]')}?.dataset.path`), 'Policies/AP policy.md', 'declining stays on the document');
     assert.ok((await browser.evaluate(`${q('[data-testid=library-document] textarea.boring-markdown-source')}.value`)).includes('Draft edit.'), 'the edit is still there');
     await browser.evaluate(`window.confirm = () => true`);
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.until('the viewer closed, the agent area is narrow again', `!${q('[data-testid=library-document]')} && ${rect('[data-dock=chat]')}.w < 800`, 5000);
     await browser.click(q('[data-testid=nav-approvals]'));
-    await browser.until('left the document', `${viewing} === 'Approvals'`, 5000);
+    await browser.until('Approvals', `${viewing} === 'Approvals'`, 5000);
   });
 
   await step('4 the agent proposes approve-and-recode; the person approves; the backend returns a receipt', async () => {
@@ -204,10 +211,12 @@ try {
   });
 
   await step('d the agent writes tt.md (observed, no receipt) and opens it; the Library lists it live', async () => {
-    const before = app.navigation.length;
+    const before = app.navigation.length, appWas = await browser.evaluate(viewing);
     await say('Can you create a new file tt.md and open it?');
     await sees('the answer', 'I created tt.md in the workspace and opened it in the viewer.');
-    await browser.until('tt.md open in the right column', `${viewing} === 'tt.md' && ${q('[data-testid=library-document]')}?.dataset.path === 'tt.md'`, 15000);
+    await browser.until('tt.md open in the agent viewer', `${q('[data-dock=chat] [data-testid=library-document]')}?.dataset.path === 'tt.md'`, 15000);
+    assert.ok(!(await browser.evaluate(`!!${q('[data-testid=right-column] [data-testid=library-document]')}`)), 'not in the app column');
+    assert.equal(await browser.evaluate(viewing), appWas, 'the app stayed where it was');
     await browser.until('its text', `${q('[data-testid=library-document]')}.innerText.includes('INV-2043 duplicates INV-2041')`, 15000);
     assert.equal(app.navigation.length, before + 1);
     const versions = await reader.history('tt.md');
@@ -218,8 +227,8 @@ try {
     await browser.screenshot('4e-agent-file.png');
     await browser.press('Escape');
     await browser.until('the Library closed', `!${q('[data-testid=library-popover]')}`, 5000);
-    await browser.click(q('[data-testid=nav-approvals]'));
-    await browser.until('back on the queue', `${viewing} === 'Approvals'`, 5000);
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.until('the viewer closed', `!${q('[data-testid=library-document]')}`, 5000);
   });
 
   await step('5 dragging the divider floats the chat: placement floating, the sessions pane goes, the app takes the full width', async () => {
@@ -254,8 +263,17 @@ try {
     await library();
     const popover = await browser.evaluate(rect('[data-testid=library-popover]')), floatingChat = await browser.evaluate(rect('[data-boring=ambient-chat]'));
     assert.ok(popover.x >= floatingChat.x - 1 && popover.right <= floatingChat.right + 1, `anchored to the chat: ${JSON.stringify([popover, floatingChat])}`);
-    await browser.press('Escape');
-    await browser.until('the Library closed', `!${q('[data-testid=library-popover]')}`, 5000);
+    // A pick opens the file IN PLACE of the floating chat (same window, a back button); back returns to the conversation.
+    await browser.click(q('[role=treeitem][data-path="Policies"]'));
+    await browser.until('the policy in the tree', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 15000);
+    await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
+    await browser.until('the viewer replaces the floating chat', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}`, 15000);
+    assert.equal(await browser.evaluate(viewing), 'Supplier linden-print', 'the app did not move');
+    assert.ok(await browser.evaluate(`!${q('[data-testid=right-column] [data-testid=library-document]')}`), 'not in the app column');
+    await pause(400);
+    await browser.screenshot('7a-floating-file.png');
+    await browser.click(q('[data-testid=file-back]'));
+    await browser.until('the conversation is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
     await pause(300);
     await browser.screenshot('7-supplier.png');
   });
@@ -264,7 +282,7 @@ try {
     await browser.click(q('[data-testid=ambient-dock]'));
     await browser.until('docked again', `${placement} === 'docked' && !!${q('[data-boring=pi-chat]')}`, 10000);
     for (const text of ['I opened the queue in the viewer.', 'INV-2043 looks like a duplicate of INV-2041', 'Receipt decide-', 'Linden Print Co sent two invoices']) await sees(`still there: ${text}`, text, 10000);
-    assert.equal(await browser.evaluate(viewing), 'Supplier linden-print', 'the right column stayed on the supplier page');
+    assert.equal(await browser.evaluate(viewing), 'Supplier linden-print', 'the app column stayed on the supplier page');
     await say('Thanks, that is all for today.');
     await sees('the conversation goes on', 'INV-2044 from North Quay is the one left in the queue.');
     assert.equal(lastContext().placement, 'docked');
